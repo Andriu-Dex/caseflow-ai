@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Environment files and secrets
+.env
+.env.*
+!.env.example
+!.env.template
+
+# Next.js
+.next/
+out/
+
+# Build and generated output
+dist/
+build/
+*.tsbuildinfo
+
+# Test and coverage output
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+
+# Runtime logs and local data
+*.log
+logs/
+tmp/
+temp/
+.storage/
+minio-data/
+
+# Prisma generated artifacts
+prisma/generated/
+
+# IDE and editor files
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
