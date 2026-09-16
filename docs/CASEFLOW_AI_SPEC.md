@@ -1,7 +1,7 @@
 # CASEFlow AI — CASEFLOW_AI_SPEC
 > **Producto:** CASEFlow AI  
-> **Categoría:** Plataforma CASE integrada asistida por inteligencia artificial  
-> **Uso principal:** fuente de verdad funcional y arquitectónica para desarrollo humano y agentes de código
+> **Categoría:** Plataforma I-CASE integrada asistida por inteligencia artificial  
+> **Uso principal:** fuente de verdad funcional y arquitectónica para desarrollo humano y agentes de código  
 
 ---
 
@@ -31,9 +31,9 @@ CASEFlow AI debe evolucionar mediante esta especificación. Cuando una decisión
 
 ## 1.1 Definición
 
-**CASEFlow AI** es una plataforma web CASE integrada, multiusuario y multiproyecto, asistida por inteligencia artificial, orientada a gestionar proyectos de software y producir de forma guiada, trazable, versionada y revisable los artefactos del ciclo de vida del desarrollo.
+**CASEFlow AI** es una plataforma web **I-CASE** integrada, multiusuario y multiproyecto, asistida por inteligencia artificial, orientada a gestionar proyectos de software y transformar progresivamente conocimiento, análisis y diseño aprobados en documentación, diagramas y **proyectos de software funcionales, ejecutables y verificables**.
 
-La plataforma no debe limitarse a generar texto o imágenes. Su propuesta central es mantener un repositorio coherente de artefactos estructurados y relaciones entre ellos.
+La plataforma no debe limitarse a generar texto, imágenes o documentación. Su propuesta central es mantener un repositorio coherente de artefactos estructurados y relaciones entre ellos, y utilizar dicho repositorio como entrada trazable para procesos de forward engineering y generación controlada de software.
 
 Los cuatro verbos centrales del producto son:
 
@@ -56,7 +56,12 @@ Permitir que un equipo de software pueda:
 - detectar inconsistencias;
 - analizar el impacto de cambios;
 - construir documentación viva;
-- exportar resultados;
+- planificar la construcción de la solución;
+- generar y revisar UI Blueprints y mockups antes de la implementación definitiva;
+- generar un proyecto de software funcional dentro de un `TargetTemplate` soportado;
+- generar esquema de datos, contratos API, backend, frontend y pruebas;
+- validar el proyecto generado en un sandbox aislado;
+- exportar documentación y código fuente ejecutable;
 - utilizar IA de forma controlada, explicable e intercambiable.
 
 ## 1.3 Generalidad
@@ -122,6 +127,24 @@ CASEFlow AI debe minimizar acoplamiento con:
 - un único motor de diagramación;
 - una única herramienta de mockups;
 - una única metodología.
+
+## 2.6 Forward engineering controlado
+
+CASEFlow AI debe soportar **forward engineering** desde artefactos aprobados hacia software ejecutable.
+
+La generación de software:
+
+- MUST partir de artefactos trazables;
+- MUST utilizar un `TargetTemplate` soportado;
+- MUST pasar por un `GenerationPlan`;
+- MUST incorporar revisión humana del diseño antes de la generación oficial de código;
+- MUST validar el resultado mediante herramientas determinísticas;
+- MUST conservar trazabilidad entre requisitos, diseño, implementación y pruebas;
+- MUST NOT depender de un único LLM para producir el proyecto completo en una sola llamada.
+
+La generación oficial de código sigue el mismo principio del resto de CASEFlow AI:
+
+> **Generar → Revisar → Aprobar → Relacionar → Construir → Validar.**
 
 ---
 
@@ -350,6 +373,15 @@ Son artefactos, entre otros:
 - Architecture Decision.
 - Diagram source.
 - UI Blueprint.
+- Generation Plan.
+- Implementation Plan.
+- Conceptual/Logical Data Model.
+- API Contract.
+- Construction Module.
+- Endpoint.
+- Generated Source File metadata.
+- Generated Test Case.
+- Generated Project Snapshot.
 
 Pueden ser vistas derivadas:
 
@@ -657,11 +689,11 @@ Requirement
   ↓ SATISFIED_BY
 UseCase
   ↓ REPRESENTED_BY
-Diagram
+Screen / UI Blueprint
   ↓ REALIZED_BY
-Screen
-  ↓ SUPPORTED_BY
 Architecture Component
+  ↓ IMPLEMENTED_BY
+API / Module / Entity / Source File
   ↓ VALIDATED_BY
 Test Case
 ```
@@ -924,7 +956,9 @@ CRDT/Yjs queda fuera de V1.
 
 # 19. Alcance funcional por versiones
 
-## 19.1 V1 — Primera versión funcional
+## 19.1 V1 — Primera versión funcional completa
+
+V1 debe ser un producto I-CASE completo y demostrable. No se considera suficiente producir únicamente documentación o diagramas.
 
 ### Gestión
 
@@ -965,23 +999,78 @@ CRDT/Yjs queda fuera de V1.
 - arquitectura de software;
 - árbol de navegación;
 - UI Blueprint;
-- mockups.
+- mockups;
+- `DesignSystemProfile`;
+- revisión y aprobación del diseño previo a construcción.
 
-### Integración
+### Integración CASE
 
 - versionado;
 - estados;
 - revisiones;
 - aprobación;
-- trazabilidad básica;
+- evidencia;
+- trazabilidad;
 - Impact Analysis básico;
 - Consistency Engine básico;
 - auditoría.
 
+### Construction & Code Generation
+
+V1 MUST incluir:
+
+- `TargetTemplate` único oficialmente soportado;
+- `GenerationPlan`;
+- modelo de dominio conceptual;
+- revisión de UI/UX mediante UI Blueprints y mockups;
+- `ImplementationPlan`;
+- modelo de datos lógico/físico;
+- generación de Prisma Schema y migraciones iniciales;
+- generación de contratos REST/OpenAPI;
+- generación de backend NestJS;
+- generación de cliente TypeScript desde contratos API;
+- generación de frontend Next.js/React;
+- generación de pruebas;
+- catálogo controlado de dependencias;
+- validación en sandbox Docker;
+- auto-repair limitado;
+- `GeneratedProjectSnapshot`;
+- trazabilidad hasta componentes de construcción;
+- exportación ZIP del proyecto;
+- instrucciones de ejecución;
+- proyecto que pueda instalarse, probarse, compilarse y ejecutarse.
+
+### Target Stack V1
+
+El único stack de generación oficialmente soportado en V1 será:
+
+```text
+CASEFLOW_WEB_TS_V1
+
+Language       → TypeScript
+Frontend       → Next.js + React
+UI             → Tailwind CSS + shadcn/ui
+Forms          → React Hook Form + Zod
+Server State   → TanStack Query
+Backend        → NestJS
+API            → REST + OpenAPI
+ORM            → Prisma
+Database       → PostgreSQL
+Architecture   → Modular Monolith
+Workspace      → pnpm workspaces
+E2E            → Playwright
+Containers     → Docker
+```
+
+La arquitectura deberá permitir incorporar otros `TargetTemplate` en versiones posteriores sin reescribir el núcleo.
+
 ### Documentación
 
 - documentación viva;
-- exportación inicial.
+- documentación técnica derivada;
+- exportación Markdown/HTML/PDF;
+- README del proyecto generado;
+- `.env.example` del proyecto generado.
 
 ### IA
 
@@ -995,11 +1084,15 @@ CRDT/Yjs queda fuera de V1.
 - diagramas como código;
 - sugerencia de arquitectura;
 - UI Blueprint;
-- Impact Analysis semántico;
-- Consistency Review semántico;
+- asistencia para Generation Plan;
+- asistencia para Implementation Plan;
+- implementación de lógica de negocio no trivial;
+- reparación controlada de errores de generación;
 - resúmenes documentales.
 
-## 19.2 V2
+## 19.2 V1.1 / V2
+
+Capacidades que pueden ampliarse después de disponer de un producto V1 completo:
 
 - actividad;
 - secuencia;
@@ -1008,34 +1101,42 @@ CRDT/Yjs queda fuera de V1.
 - despliegue;
 - ER;
 - estados;
-- matriz de trazabilidad completa;
-- baselines avanzadas;
-- comparación visual de versiones;
-- comentarios/menciones mejorados;
-- solicitudes de revisión avanzadas;
-- Impact Analysis avanzado;
-- Consistency Engine semántico mejorado;
+- comparación avanzada de baselines;
+- comentarios/menciones avanzados;
+- Impact Analysis semántico avanzado;
+- Consistency Engine semántico avanzado;
 - BYOK completo;
-- presupuesto de IA;
-- integración ampliada con proveedores.
+- MFA;
+- presupuestos de IA;
+- roles personalizados;
+- ProjectTemplate Builder;
+- Project Assistant;
+- integración Git;
+- push automático a GitHub/GitLab;
+- preview gestionado avanzado;
+- despliegue automático;
+- integración Figma;
+- múltiples motores de diagramación.
 
-## 19.3 V3 / visión futura
+## 19.3 V2/V3 — múltiples TargetTemplates y reverse engineering
 
-- casos de prueba;
-- pruebas automáticas;
-- requisito → prueba;
-- documentación API;
-- scaffolding;
-- generación asistida de código;
-- reverse engineering;
-- Git;
-- CI/CD;
-- plugins;
+Futuro:
+
+- `CASEFLOW_DJANGO_REACT`;
+- `CASEFLOW_SPRING_REACT`;
+- stacks móviles;
+- arquitecturas de microservicios;
+- generación de CI/CD específica del proyecto;
+- reverse engineering de repositorios externos;
+- sincronización bidireccional con Git;
+- plugins de generación;
 - API pública;
 - edición colaborativa avanzada;
-- modelos locales;
+- modelos locales avanzados;
 - múltiples metodologías;
 - plantillas personalizadas.
+
+V1 deliberadamente soporta un solo Target Stack para garantizar calidad, trazabilidad y verificabilidad.
 
 ---
 
@@ -1118,6 +1219,9 @@ EmbeddingProvider
 TranscriptionProvider
 DocumentParser
 ExportProvider
+CodeGenerationEngine
+SandboxExecutionProvider
+SourceArchiveProvider
 ```
 
 Los módulos funcionales no deben depender directamente de SDKs externos.
@@ -1154,19 +1258,28 @@ Los archivos grandes no deben almacenarse dentro de PostgreSQL.
 
 ## 23.2 StorageProvider
 
-Durante desarrollo:
+CASEFlow AI utilizará la abstracción:
 
 ```text
-LocalStorageProvider
+StorageProvider
 ```
 
-Producción/futuro:
+Implementación S3-compatible preferida para desarrollo local:
 
 ```text
 S3StorageProvider
+→ SeaweedFS
 ```
 
-compatible con AWS S3, MinIO y otros servicios S3-compatible.
+Producción/futuro podrá utilizar la misma abstracción con:
+
+```text
+AWS S3
+Cloudflare R2
+otros servicios S3-compatible
+```
+
+Un `LocalStorageProvider` simple MAY mantenerse únicamente para tests o desarrollo puntual cuando no se requiera comportamiento S3.
 
 En base de datos se conserva:
 
@@ -1280,6 +1393,22 @@ ImpactFinding
 ConsistencyRule
 ConsistencyRun
 ConsistencyFinding
+
+TargetTemplate
+TargetTemplateVersion
+DesignSystemProfile
+ApprovedDependency
+GenerationPlan
+GenerationPlanVersion
+ImplementationPlan
+ImplementationPlanVersion
+GeneratedProjectSnapshot
+GeneratedProjectFile
+GenerationRun
+GenerationStageRun
+SandboxValidationRun
+SandboxValidationFinding
+CodeTraceLink
 
 AuditEvent
 ```
@@ -1536,6 +1665,10 @@ suggestActors()
 generateUseCases()
 generateDiagram()
 suggestArchitecture()
+proposeGenerationPlan()
+proposeImplementationPlan()
+implementBusinessLogic()
+repairGeneratedCode()
 analyzeImpact()
 reviewConsistency()
 ```
@@ -2194,6 +2327,13 @@ Sin proveedor disponible, CASEFlow AI debe seguir permitiendo:
 - documentación estructurada;
 - diagramas/manuales cuando el motor local lo permita.
 
+La generación de software debe degradarse de forma segura:
+
+- las partes determinísticas y basadas en plantillas MAY continuar;
+- CASEFlow AI MUST NOT fingir que puede completar lógica específica que requiera interpretación semántica si no dispone de un mecanismo válido;
+- el usuario debe poder continuar manualmente y exportar el estado alcanzado;
+- la indisponibilidad de IA no debe corromper un `GenerationPlan`, `ImplementationPlan` ni snapshot existente.
+
 ---
 
 # 61. Retrieval strategy por tarea
@@ -2276,6 +2416,11 @@ PROJECT_CHAT → STANDARD
 13. Priorizar software gratuito cuando no reduzca calidad o confiabilidad de forma inaceptable.
 14. No añadir dependencias o servicios externos sin justificar su función.
 15. No asumir decisiones marcadas como pendientes.
+16. No generar código oficial antes de aprobar Generation Plan y diseño requerido.
+17. No ejecutar código generado dentro del proceso principal de CASEFlow AI.
+18. Utilizar el sandbox definido para instalar, probar y compilar proyectos generados.
+19. No instalar dependencias fuera del catálogo aprobado sin validación explícita.
+20. No sobrescribir silenciosamente código/snapshots generados previamente.
 
 ---
 
@@ -2374,49 +2519,113 @@ PROJECT_CHAT → STANDARD
 - funcionamiento sin IA;
 - OmniRoute free-first opcional.
 
----
-
-# 66. Decisiones todavía abiertas
-
-Las siguientes áreas se definirán en bloques posteriores y **NO DEBEN asumirse todavía como cerradas**.
-
 ## Bloque 7
 
-- seguridad;
-- autenticación detallada;
-- autorización;
+- autenticación propia y Argon2id;
+- sesiones revocables;
+- RBAC + reglas contextuales;
 - aislamiento multi-tenant;
-- política de sesiones;
-- secretos;
+- archivos privados;
 - auditoría de seguridad;
-- protección contra abuso.
+- EmailProvider + NotificationOutbox;
+- MFA preparado para futuro.
 
 ## Bloque 8
 
-- estrategia de despliegue;
-- Docker;
+- Docker y perfiles de despliegue;
+- FREE-DEMO sustituible;
 - CI/CD;
-- entornos;
-- dominio/TLS;
 - observabilidad;
-- backups;
-- disaster recovery;
-- infraestructura gratuita/inicial;
-- escalabilidad operativa.
+- backups y restore;
+- escalabilidad horizontal;
+- procesamiento asíncrono;
+- política free-first, not free-at-all-costs.
 
-## Posteriores
+## Bloque 9
 
-- esquema Prisma final;
-- endpoints finales;
-- diseño UI definitivo;
-- selección de componentes;
-- proveedor IA inicial real;
-- configuración concreta de OmniRoute;
-- proveedor de correo;
-- pruebas;
-- estrategia de releases;
-- licencia;
-- branding final.
+- V1 como producto mínimo completo;
+- P0/P1/P2;
+- estrategia multinivel de pruebas;
+- AI Evaluation Suite;
+- Definition of Done;
+- quality gates;
+- generality test;
+- release candidates.
+
+## Bloque 10
+
+- roadmap por vertical slices;
+- orden de dependencias;
+- checkpoints;
+- hardening;
+- feature freeze;
+- prioridad de completar V1 antes de mejoras.
+
+## Bloque 11 — Construction & Code Generation
+
+- forward engineering como P0;
+- Target Stack único `CASEFLOW_WEB_TS_V1`;
+- Generation Plan antes de código;
+- UI Blueprint + Stitch/fallback antes del backend definitivo;
+- Design Baseline aprobada;
+- Implementation Plan;
+- generación híbrida determinística/templates/AST/IA;
+- OpenAPI como puente frontend/backend;
+- catálogo aprobado de dependencias;
+- modular monolith;
+- sandbox Docker;
+- auto-repair limitado;
+- GeneratedProjectSnapshot;
+- trazabilidad requisito → diseño → código → prueba;
+- ZIP ejecutable como salida V1;
+- múltiples stacks posteriores mediante TargetTemplate.
+
+---
+
+# 66. Decisiones abiertas después de los Bloques 1–11
+
+Las decisiones estructurales necesarias para iniciar V1 se consideran cerradas.
+
+Las siguientes decisiones pueden resolverse durante implementación sin bloquear el comienzo:
+
+## Implementación UI de CASEFlow AI
+
+- branding visual definitivo;
+- design tokens definitivos;
+- layout final del producto CASEFlow;
+- contenido de onboarding.
+
+## AI
+
+- proveedor inicial concreto;
+- modelos iniciales;
+- embedding model;
+- configuración operativa final de OmniRoute;
+- reranker futuro.
+
+## Infraestructura
+
+- proveedor exacto de API staging;
+- proveedor exacto de PostgreSQL staging;
+- proveedor exacto de Redis staging;
+- proveedor exacto de correo staging;
+- dominio público.
+
+## Construction
+
+- detalle final del esquema interno de `GenerationPlan`;
+- detalle final del esquema interno de `ImplementationPlan`;
+- estrategia exacta de generación de clientes OpenAPI;
+- librería concreta de templates (`Handlebars`, `Eta` u otra equivalente);
+- límites exactos de CPU/memoria/timeout del sandbox;
+- política exacta de network allowlist del sandbox;
+- formato interno final del `CodeTraceLink`;
+- UX final del visor de generación;
+- si la preview temporal entra en V1 o V1.1.
+
+Estas decisiones MUST NOT contradecir silenciosamente decisiones aprobadas.
+
+Una decisión que modifique arquitectura debe registrarse mediante DEC/ADR y reflejarse en esta especificación.
 
 ---
 
@@ -2514,7 +2723,7 @@ La implementación inicial utilizará:
 
 ```text
 Argon2id
-````
+```
 
 Los parámetros deben poder actualizarse conforme evolucionen las recomendaciones de seguridad.
 
@@ -2860,7 +3069,7 @@ PostgreSQL Row-Level Security puede evaluarse como capa adicional, pero no susti
 
 Las fuentes y exports privados no deben exponerse mediante URLs públicas permanentes.
 
-Los objetos en S3/MinIO/R2 deben permanecer privados.
+Los objetos en S3/SeaweedFS/R2 deben permanecer privados.
 
 El acceso podrá realizarse mediante:
 
@@ -3209,7 +3418,7 @@ Servicios previstos:
 ```text
 PostgreSQL + pgvector
 Redis
-MinIO
+SeaweedFS (S3-compatible)
 Mailpit
 ```
 
@@ -3931,7 +4140,9 @@ V1 debe constituir por sí misma:
 * un producto utilizable;
 * un producto desplegable;
 * un producto demostrable;
-* una herramienta CASE funcional.
+* una herramienta I-CASE funcional;
+* una herramienta capaz de producir documentación y diseño;
+* una herramienta capaz de generar al menos un proyecto web funcional dentro del Target Stack soportado.
 
 V2/V3 deben representar mejoras incrementales, no funcionalidades esenciales omitidas de V1.
 
@@ -3951,70 +4162,115 @@ P2
 
 V1 no existe sin:
 
-* Authentication.
-* Workspace.
-* Project.
-* Project members.
-* Knowledge Sources.
-* entrada manual.
-* PDF/DOCX/TXT/Markdown.
-* Actors.
-* RF.
-* RNF.
-* Use Cases.
-* edición manual.
-* versionamiento.
-* review/approval.
-* evidencia.
-* use case diagram.
-* system architecture.
-* software architecture.
-* navigation tree.
-* UI Blueprint.
-* mockup funcional.
-* traceability.
-* live documentation.
-* export.
-* al menos un provider/gateway de IA.
-* candidate review.
-* manual fallback.
-* security isolation.
-* basic audit.
-* basic Impact Analysis.
-* basic Consistency Engine.
-* generalidad.
+### Gestión y seguridad
+
+- Authentication.
+- Workspace.
+- Project.
+- Project members.
+- roles/permisos básicos.
+- security isolation.
+- basic audit.
+
+### Knowledge / Analysis / Design
+
+- Knowledge Sources.
+- entrada manual.
+- PDF/DOCX/TXT/Markdown.
+- Actors.
+- RF.
+- RNF.
+- Use Cases.
+- edición manual.
+- versionamiento.
+- review/approval.
+- evidencia.
+- use case diagram.
+- system architecture.
+- software architecture.
+- navigation tree.
+- UI Blueprint.
+- mockup funcional.
+- traceability.
+- basic Impact Analysis.
+- basic Consistency Engine.
+
+### Construction
+
+- `TargetTemplate` `CASEFLOW_WEB_TS_V1`.
+- `GenerationPlan`.
+- conceptual domain model.
+- mockup/UI review antes de construcción definitiva.
+- Design Baseline aprobada.
+- `ImplementationPlan`.
+- Prisma schema/migrations.
+- REST/OpenAPI contracts.
+- NestJS backend generation.
+- generated TypeScript API client.
+- Next.js frontend generation.
+- test generation.
+- Approved Dependency Catalog.
+- Docker sandbox validation.
+- limited auto-repair.
+- `GeneratedProjectSnapshot`.
+- code traceability.
+- ZIP export.
+- README + `.env.example`.
+- proyecto generado instalable, compilable y ejecutable.
+
+### Documentation / AI / Generality
+
+- live documentation.
+- export documental.
+- al menos un provider/gateway de IA operativo para tareas que lo requieran.
+- candidate review.
+- manual fallback.
+- generality validation.
 
 ## 120.2 P1 — Alta prioridad
 
-Debe intentarse incluir en V1 siempre que no amenace P0:
+Debe intentarse incluir cuando no amenace P0:
 
-* búsqueda híbrida;
-* pgvector;
-* semantic duplicate detection;
-* semantic consistency;
-* semantic impact analysis;
-* comentarios;
-* baseline;
-* version comparison;
-* Stitch;
-* OmniRoute avanzado;
-* email notifications;
-* job progress.
+- búsqueda híbrida completa;
+- pgvector avanzado;
+- semantic duplicate detection;
+- semantic consistency;
+- semantic impact analysis;
+- comentarios;
+- baseline comparison;
+- Stitch como proveedor preferente;
+- OmniRoute avanzado;
+- email notifications;
+- job progress en tiempo real;
+- preview temporal gestionada del proyecto generado;
+- visor/diff avanzado de archivos generados;
+- reparación IA más sofisticada.
 
 ## 120.3 P2 — Posponible
 
 Puede moverse a V1.1/V2:
 
-* BYOK completo;
-* MFA;
-* roles personalizados;
-* ProjectTemplate personalizado;
-* Figma integration;
-* múltiples diagram engines;
-* Project Assistant;
-* collaborative real-time editing;
-* advanced dashboards;
-* advanced AI budgets.
+- BYOK completo;
+- MFA;
+- roles personalizados;
+- ProjectTemplate Builder;
+- Figma integration;
+- múltiples diagram engines;
+- Project Assistant;
+- collaborative real-time editing;
+- advanced dashboards;
+- advanced AI budgets;
+- Git push automático;
+- deployment automático;
+- múltiples TargetTemplates;
+- Django/Spring/mobile generation;
+- reverse engineering.
+
+Cuando exista conflicto:
+
+```text
+P0 > P1 > P2
+```
 
 ---
 
@@ -4153,7 +4409,7 @@ Los tests deben verificar según corresponda:
 
 # 126. End-to-End Tests
 
-Debe existir al menos un E2E principal:
+Debe existir al menos un E2E principal que atraviese el ciclo I-CASE completo:
 
 ```text
 Register/Login
@@ -4172,16 +4428,35 @@ Approval
  ↓
 Use Cases
  ↓
-Design
+Architecture / Navigation
  ↓
-Traceability
+UI Blueprint
  ↓
-Quality
+Mockup
  ↓
-Documentation
+Design Approval
  ↓
-Export
+Generation Plan
+ ↓
+Implementation Plan
+ ↓
+Code Generation
+ ↓
+Sandbox Validation
+ ↓
+Generated Project Snapshot
+ ↓
+ZIP Export
 ```
+
+La prueba debe verificar, como mínimo:
+
+- que los artefactos utilizados estén aprobados cuando la política lo exija;
+- que la generación conserve trazabilidad;
+- que el proyecto generado utilice el TargetTemplate esperado;
+- que no existan dependencias fuera del catálogo sin aprobación;
+- que `lint`, `typecheck`, `test` y `build` se ejecuten en sandbox;
+- que el ZIP exportado contenga instrucciones y configuración reproducible.
 
 Si este flujo deja de funcionar, la versión no debe liberarse.
 
@@ -4199,9 +4474,11 @@ Tutorías Académicas
 Inventory Demo
 ```
 
-El tercer proyecto debe funcionar sin agregar lógica específica al código.
+Al menos dos de estos dominios deben recorrer también el pipeline de Construction hasta producir un proyecto generado válido.
 
-Si implementar un nuevo dominio requiere cambiar el núcleo:
+El tercer proyecto debe poder gestionarse sin agregar lógica específica al núcleo.
+
+Si implementar o generar un nuevo dominio soportado requiere modificar el núcleo de CASEFlow:
 
 > existe un problema de generalidad.
 
@@ -4353,7 +4630,9 @@ Una feature se considera `DONE` únicamente si:
 * registra auditoría cuando corresponde;
 * maneja loading/empty/error en UI;
 * está integrada;
-* está revisada cuando corresponde.
+* está revisada cuando corresponde;
+* conserva trazabilidad hacia/desde construcción cuando aplique;
+* no rompe el pipeline de generación cuando afecte artefactos usados para construir software.
 
 ---
 
@@ -4383,6 +4662,44 @@ Generate Candidate
 Review Candidate
 Accept / Edit / Discard
 ```
+
+---
+
+# 135.1 Definition of Done — Generated Project
+
+Un `GeneratedProjectSnapshot` se considera válido únicamente cuando:
+
+- fue producido desde un `GenerationPlan` aprobado;
+- utiliza una Design Baseline válida;
+- utiliza un `ImplementationPlan` identificable;
+- pertenece a un `TargetTemplate` soportado;
+- respeta el Approved Dependency Catalog;
+- no contiene secretos reales;
+- incluye `.env.example`;
+- incluye README de ejecución;
+- incluye schema/migraciones requeridas;
+- incluye backend y frontend integrados;
+- incluye pruebas mínimas derivadas del plan;
+- conserva un manifest de trazabilidad;
+- pasó las validaciones P0 del sandbox.
+
+Validaciones P0 para `CASEFLOW_WEB_TS_V1`:
+
+```text
+install
+format/lint
+typecheck
+test
+build
+```
+
+Si una validación P0 falla después de agotar el auto-repair permitido:
+
+```text
+GeneratedProjectSnapshot.status = VALIDATION_FAILED
+```
+
+El resultado puede conservarse para diagnóstico, pero MUST NOT presentarse como proyecto generado exitosamente.
 
 ---
 
@@ -4539,83 +4856,122 @@ Stitch offline
 
 # 143. Criterios de aceptación V1
 
-CASEFlow AI puede declararse `1.0.0` únicamente cuando sea posible demostrar:
+CASEFlow AI puede declararse `1.0.0` únicamente cuando sea posible demostrar el ciclo integral.
 
 ## Gestión
 
-* autenticación;
-* Workspace;
-* Project;
-* miembros;
-* permisos básicos.
+- autenticación;
+- Workspace;
+- Project;
+- miembros;
+- permisos básicos.
 
 ## Knowledge
 
-* texto/documentos;
-* procesamiento;
-* fragmentos;
-* evidencia;
-* aislamiento.
+- texto/documentos;
+- procesamiento;
+- fragmentos;
+- evidencia;
+- aislamiento.
 
 ## Analysis
 
-* actores;
-* RF;
-* RNF;
-* casos de uso;
-* edición;
-* versionado;
-* review;
-* approval.
+- actores;
+- RF;
+- RNF;
+- casos de uso;
+- edición;
+- versionado;
+- review;
+- approval.
 
 ## Design
 
-* use case diagram;
-* system architecture;
-* software architecture;
-* navigation tree;
-* UI Blueprint;
-* mockup.
+- use case diagram;
+- system architecture;
+- software architecture;
+- navigation tree;
+- UI Blueprint;
+- mockup;
+- revisión/aprobación de diseño.
 
 ## Integration CASE
 
-* relaciones;
-* evidencia;
-* trazabilidad;
-* historial;
-* approval.
+- relaciones;
+- evidencia;
+- trazabilidad;
+- historial;
+- approval;
+- Impact Analysis básico;
+- Consistency Engine básico.
 
-## Quality
+## Construction
 
-* Consistency Engine básico;
-* Impact Analysis básico.
+- Generation Plan aprobado;
+- modelo conceptual;
+- Design Baseline aprobada;
+- Implementation Plan;
+- TargetTemplate `CASEFLOW_WEB_TS_V1`;
+- modelo lógico/físico;
+- Prisma Schema/migrations;
+- OpenAPI;
+- backend NestJS;
+- cliente API TypeScript;
+- frontend Next.js/React;
+- pruebas;
+- sandbox aislado;
+- auto-repair limitado;
+- GeneratedProjectSnapshot;
+- manifest de trazabilidad;
+- ZIP ejecutable.
+
+## Validación del proyecto generado
+
+Al menos un proyecto representativo debe completar con éxito:
+
+```text
+install
+→ lint
+→ typecheck
+→ test
+→ build
+```
+
+y poder iniciarse siguiendo únicamente las instrucciones exportadas.
 
 ## AI
 
-* al menos un provider/gateway operativo;
-* candidate flow;
-* evidence grounding;
-* manual fallback.
+- al menos un provider/gateway operativo;
+- candidate flow;
+- evidence grounding;
+- manual fallback;
+- asistencia de construcción cuando la lógica lo requiera.
 
 ## Documentation
 
-* living documentation;
-* export funcional.
+- living documentation;
+- export funcional;
+- documentación del proyecto generado.
 
 ## Generality
 
-* al menos dos dominios distintos.
+- varios dominios gestionables;
+- al menos dos dominios deben demostrar generación de software sin modificar el núcleo.
 
 ## Security
 
-* aislamiento entre usuarios/proyectos.
+- aislamiento entre usuarios/proyectos;
+- código generado ejecutado únicamente en sandbox;
+- sandbox sin secretos internos de CASEFlow.
 
 ## Operations
 
-* despliegue reproducible;
-* CI verde;
-* backup;
-* restore probado.
+- despliegue reproducible de CASEFlow;
+- CI verde;
+- backup;
+- restore probado.
+
+V1 requiere cero bugs P0/P1 conocidos.
 
 ---
 
@@ -4626,7 +4982,10 @@ CASEFlow AI puede declararse `1.0.0` únicamente cuando sea posible demostrar:
 * pérdida/corrupción de datos;
 * bypass de autorización;
 * aplicación no inicia;
-* flujo central roto.
+* flujo central roto;
+* ejecución de código generado fuera del sandbox definido;
+* proyecto marcado como válido sin pasar validaciones P0;
+* contaminación de un proyecto generado con datos/código de otro Project.
 
 ## P1 — Critical
 
@@ -4745,11 +5104,1197 @@ No se deben mantener manualmente dos fuentes distintas para la misma informació
 
 ---
 
-# 149. Roadmap de implementación
+# 149. Bloque 11 extraordinario — Construction & Code Generation
 
-CASEFlow AI se construirá mediante incrementos verticales.
+El descubrimiento de que el proyecto I-CASE debe producir no solo documentación y diagramas sino también un proyecto de software completo y funcional modifica el alcance de V1.
 
-Orden principal:
+Esta capacidad se incorpora como parte central del producto, no como un plugin decorativo.
+
+CASEFlow AI debe realizar **forward engineering controlado**:
+
+```text
+Knowledge
+   ↓
+Analysis
+   ↓
+Approved Requirements
+   ↓
+Use Cases
+   ↓
+Architecture / Navigation
+   ↓
+Generation Plan
+   ↓
+Conceptual Domain Model
+   ↓
+UI Blueprints
+   ↓
+Mockups
+   ↓
+Human Design Review
+   ↓
+Approved Design Baseline
+   ↓
+Implementation Plan
+   ↓
+Logical / Physical Data Model
+   ↓
+API Contracts
+   ↓
+Backend + Frontend + Tests
+   ↓
+Sandbox Validation
+   ↓
+Generated Project Snapshot
+   ↓
+ZIP / Preview
+```
+
+La generación de software NO debe interpretarse como:
+
+> “Enviar todo el proyecto a un LLM y aceptar cientos de archivos sin validación.”
+
+La implementación debe ser incremental, auditable, trazable y verificable.
+
+---
+
+# 150. Definición de proyecto generado funcional
+
+Para V1, un **proyecto generado funcional** es una aplicación web cuya implementación:
+
+- deriva de artefactos aprobados de CASEFlow AI;
+- utiliza el TargetTemplate soportado;
+- incluye frontend y backend;
+- incluye persistencia PostgreSQL/Prisma;
+- implementa navegación y flujos P0 derivados de requisitos/casos de uso;
+- incorpora autenticación/autorización cuando el proyecto aprobado lo requiera;
+- incluye validaciones principales;
+- contiene pruebas mínimas derivadas de los criterios de aceptación y flujos;
+- contiene configuración reproducible;
+- contiene README;
+- contiene `.env.example`;
+- puede instalarse;
+- puede pasar lint;
+- puede pasar typecheck;
+- puede pasar tests;
+- puede compilarse;
+- puede iniciarse siguiendo las instrucciones exportadas.
+
+V1 **NO promete** que cualquier software imaginable pueda convertirse automáticamente en un sistema listo para producción sin revisión humana.
+
+La promesa de V1 es más concreta:
+
+> **CASEFlow AI genera aplicaciones web funcionales y verificables dentro de un Target Stack oficialmente soportado, a partir de artefactos aprobados y trazables.**
+
+---
+
+# 151. TargetTemplate
+
+## 151.1 Propósito
+
+`TargetTemplate` describe una familia de software que CASEFlow AI sabe construir.
+
+Debe definir, como mínimo:
+
+- identifier;
+- versión;
+- lenguaje;
+- frontend framework;
+- backend framework;
+- arquitectura;
+- API style;
+- ORM;
+- database;
+- UI stack;
+- testing stack;
+- generación soportada;
+- reglas de código;
+- catálogo de dependencias;
+- comandos de validación;
+- capacidades opcionales.
+
+## 151.2 TargetTemplate V1
+
+V1 incluirá únicamente:
+
+```text
+CASEFLOW_WEB_TS_V1
+```
+
+La limitación a un único TargetTemplate es deliberada.
+
+Se prioriza:
+
+- consistencia;
+- verificabilidad;
+- calidad;
+- velocidad de desarrollo;
+- menor superficie de fallos.
+
+## 151.3 Futuro
+
+La arquitectura puede soportar:
+
+```text
+CASEFLOW_WEB_TS_V1
+CASEFLOW_DJANGO_REACT
+CASEFLOW_SPRING_REACT
+CASEFLOW_MOBILE
+CASEFLOW_MICROSERVICES
+```
+
+La existencia futura de estos templates no debe introducir abstracciones innecesarias antes de necesitarlas.
+
+---
+
+# 152. Target Stack oficial de V1
+
+```text
+Language       → TypeScript
+
+Frontend
+├── Next.js
+├── React
+├── Tailwind CSS
+├── shadcn/ui
+├── React Hook Form
+├── Zod
+└── TanStack Query
+
+Backend
+├── NestJS
+├── REST
+└── OpenAPI
+
+Persistence
+├── Prisma
+└── PostgreSQL
+
+Architecture
+└── Modular Monolith
+
+Workspace
+└── pnpm workspaces
+
+Testing
+├── unit/integration stack del repositorio
+└── Playwright para E2E
+
+Runtime / validation
+└── Docker
+```
+
+CASEFlow AI y los proyectos generados pueden compartir TypeScript, pero son productos/repositorios lógicamente independientes.
+
+---
+
+# 153. Arquitectura del proyecto generado
+
+V1 utilizará un **modular monolith**.
+
+Estructura conceptual:
+
+```text
+generated-project/
+├── apps/
+│   ├── web/
+│   └── api/
+├── packages/
+│   ├── contracts/
+│   └── api-client/
+├── prisma/
+├── docker/
+├── .env.example
+├── package.json
+├── pnpm-workspace.yaml
+└── README.md
+```
+
+El backend se divide en módulos funcionales:
+
+```text
+AuthModule
+UsersModule
+ProductsModule
+OrdersModule
+InventoryModule
+...
+```
+
+Los nombres dependen del proyecto.
+
+Cada módulo puede contener:
+
+```text
+controller
+service
+dto
+domain/application rules
+persistence integration
+tests
+```
+
+V1 no generará microservicios salvo que una decisión futura modifique el TargetTemplate.
+
+---
+
+# 154. DesignSystemProfile
+
+La generación visual debe compartir reglas entre mockups y frontend.
+
+V1 incluirá:
+
+```text
+CASEFLOW_STANDARD_WEB_V1
+```
+
+Este perfil define, como mínimo:
+
+```text
+UI library     → shadcn/ui
+Styling        → Tailwind CSS
+Icons          → Lucide
+Forms          → React Hook Form + Zod
+Server state   → TanStack Query
+Navigation     → responsive application navigation
+Tables         → reusable standard data tables
+Dialogs        → standard accessible dialogs
+Feedback       → consistent toast/alert patterns
+```
+
+`DesignSystemProfile` es configuración estructurada.
+
+No debe convertirse en un prompt libre sin versión.
+
+---
+
+# 155. Approved Dependency Catalog
+
+Cada `TargetTemplateVersion` debe tener un catálogo de dependencias permitidas.
+
+Ejemplo conceptual:
+
+```text
+Framework
+✓ next
+✓ react
+✓ @nestjs/*
+✓ prisma
+
+UI
+✓ tailwindcss
+✓ shadcn-compatible components
+✓ lucide-react
+
+Forms / Validation
+✓ react-hook-form
+✓ zod
+
+Server state
+✓ @tanstack/react-query
+
+Testing
+✓ approved testing packages
+```
+
+La IA **MUST NOT** instalar libremente cualquier paquete encontrado o imaginado.
+
+Si una capacidad requiere una dependencia no aprobada:
+
+```text
+DependencyProposal
+        ↓
+Validation / Human decision
+        ↓
+ApprovedDependency
+```
+
+o la generación debe resolver la necesidad mediante herramientas ya disponibles.
+
+El catálogo debe versionarse con el TargetTemplate.
+
+---
+
+# 156. GenerationPlan
+
+## 156.1 Objetivo
+
+`GenerationPlan` responde:
+
+> **¿Qué sistema vamos a construir?**
+
+Debe existir antes de la generación oficial.
+
+## 156.2 Entradas
+
+Puede derivarse de:
+
+- requisitos aprobados;
+- RNF relevantes;
+- actores;
+- casos de uso;
+- reglas de negocio;
+- restricciones;
+- arquitectura aprobada;
+- ADR;
+- navegación existente;
+- UI Blueprint existente;
+- glosario.
+
+## 156.3 Contenido mínimo
+
+Debe incluir:
+
+- módulos funcionales propuestos;
+- entidades conceptuales;
+- actores/roles relevantes;
+- workflows principales;
+- pantallas previstas;
+- navegación;
+- integraciones externas;
+- requisitos de autenticación/autorización;
+- requisitos técnicos relevantes;
+- riesgos;
+- trazabilidad de cada elemento.
+
+## 156.4 Estado
+
+Conceptualmente:
+
+```text
+DRAFT
+GENERATED
+IN_REVIEW
+APPROVED
+CHANGES_REQUESTED
+SUPERSEDED
+```
+
+## 156.5 Gate
+
+CASEFlow AI MUST NOT comenzar una generación oficial de código si el `GenerationPlan` requerido no está aprobado.
+
+---
+
+# 157. Conceptual Domain Model
+
+Después o como parte del Generation Plan debe existir un modelo conceptual del dominio.
+
+Ejemplo:
+
+```text
+User
+Product
+Category
+Order
+OrderItem
+Payment
+```
+
+Este modelo:
+
+- identifica conceptos;
+- identifica relaciones;
+- NO es todavía el Prisma Schema definitivo;
+- puede evolucionar durante la revisión de UI/UX;
+- debe conservar trazabilidad hacia requisitos y casos de uso.
+
+Separación:
+
+```text
+Conceptual Model
+      ↓
+Design Review
+      ↓
+Logical Model
+      ↓
+Physical Model / Prisma
+```
+
+---
+
+# 158. UI/UX antes de la implementación definitiva
+
+CASEFlow AI debe validar la interacción del usuario antes de congelar backend y persistencia definitivos.
+
+Secuencia:
+
+```text
+GenerationPlan
+      ↓
+Conceptual Domain Model
+      ↓
+Navigation Tree
+      ↓
+UI Blueprints
+      ↓
+Mockups
+      ↓
+Human Design Review
+```
+
+Este orden permite detectar:
+
+- campos omitidos;
+- acciones faltantes;
+- navegación incorrecta;
+- workflows incompletos;
+- decisiones que implican datos adicionales;
+- inconsistencias entre requisito y pantalla;
+
+antes de generar grandes cantidades de código.
+
+---
+
+# 159. Generación de mockups
+
+La fuente canónica continúa siendo:
+
+```text
+UIBlueprint
+```
+
+La representación visual se obtiene mediante:
+
+```text
+UIBlueprint
+     │
+     ├── StitchMockupProvider
+     │
+     └── InternalWireframeRenderer
+```
+
+Stitch será el proveedor preferente cuando esté disponible y resulte adecuado.
+
+CASEFlow AI MUST NOT depender de Stitch para conservar o interpretar el diseño.
+
+Contexto recomendado para un proveedor externo:
+
+```text
+UIBlueprint
++
+NavigationTree
++
+Requirements
++
+UseCases
++
+DesignSystemProfile
++
+TargetTemplate UI constraints
+```
+
+---
+
+# 160. Human Design Review y Design Baseline
+
+El usuario debe poder:
+
+- aprobar diseño;
+- editar UI Blueprint;
+- regenerar mockup;
+- solicitar cambios;
+- justificar excepciones.
+
+Cuando el conjunto requerido de diseño se estabiliza se crea/congela una:
+
+```text
+DESIGN_BASELINE
+```
+
+Esta baseline puede contener versiones exactas de:
+
+- requisitos relevantes;
+- casos de uso;
+- arquitectura;
+- navegación;
+- UI Blueprints;
+- ADR.
+
+La generación oficial debe registrar qué Design Baseline utilizó.
+
+---
+
+# 161. ImplementationPlan
+
+`ImplementationPlan` responde:
+
+> **¿Cómo exactamente construiremos el sistema aprobado?**
+
+Se produce después del Design Gate.
+
+Debe mapear, cuando aplique:
+
+- módulos NestJS;
+- entidades persistentes;
+- relaciones;
+- DTO;
+- endpoints;
+- políticas de autorización;
+- servicios;
+- Next.js routes;
+- screens;
+- forms;
+- tables;
+- reusable components;
+- API client operations;
+- tests;
+- environment variables;
+- external adapters.
+
+Ejemplo:
+
+```text
+CU-006 Gestionar productos
+  ↓
+ProductsModule
+  ↓
+GET /products
+POST /products
+PATCH /products/{id}
+  ↓
+ProductsPage
+CreateProductDialog
+EditProductDialog
+  ↓
+ProductService tests
+ProductsPage E2E
+```
+
+El ImplementationPlan debe ser versionable y revisable.
+
+---
+
+# 162. Modelo lógico y físico
+
+Después del Design Gate se finalizan:
+
+```text
+Conceptual Domain Model
+        ↓
+Logical Data Model
+        ↓
+Physical Data Model
+        ↓
+Prisma Schema
+```
+
+La generación debe respetar:
+
+- 3FN cuando sea apropiado;
+- constraints;
+- FK;
+- unique constraints;
+- índices;
+- tipos;
+- nullability;
+- trazabilidad;
+- requisitos de seguridad.
+
+La IA puede sugerir el modelo, pero el esquema final pasa por validación determinística y revisión cuando corresponda.
+
+---
+
+# 163. Estrategia híbrida de generación
+
+CASEFlow AI NO utilizará un único mecanismo para generar todo.
+
+Debe combinar:
+
+```text
+Templates
++
+Deterministic Generation
++
+AST Transformations
++
+AI Assistance
+```
+
+## 163.1 Determinístico
+
+Adecuado para:
+
+- estructura del workspace;
+- configuración;
+- Dockerfiles;
+- `.env.example`;
+- tsconfig;
+- módulos registrados;
+- contratos repetibles;
+- rutas predecibles;
+- API clients;
+- boilerplate;
+- manifests.
+
+## 163.2 Templates
+
+Adecuado para:
+
+- módulos estándar;
+- CRUD;
+- formularios estándar;
+- tablas;
+- layout;
+- paginación;
+- respuestas de error;
+- configuración repetible.
+
+## 163.3 AST
+
+Adecuado para cambios estructurales TypeScript donde editar strings sea frágil.
+
+## 163.4 IA
+
+Adecuada para:
+
+- reglas de negocio específicas;
+- workflows no triviales;
+- validaciones semánticas;
+- lógica derivada;
+- adaptación de componentes complejos;
+- generación/reparación acotada que requiera razonamiento.
+
+La IA no debe generar de nuevo archivos enteros si una modificación estructural determinística resulta suficiente.
+
+---
+
+# 164. Template Engine
+
+CASEFlow AI utilizará un motor de templates interno detrás de una abstracción propia.
+
+La implementación concreta puede ser:
+
+- Handlebars;
+- Eta;
+- otra alternativa equivalente.
+
+La decisión concreta puede tomarse durante Foundation/Construction implementation.
+
+Los templates:
+
+- deben versionarse junto al TargetTemplate;
+- deben probarse;
+- no deben contener secretos;
+- deben producir resultados reproducibles a partir de la misma entrada.
+
+---
+
+# 165. Transformaciones TypeScript con AST
+
+`ts-morph` será la opción inicial recomendada cuando se necesite manipular TypeScript estructuralmente.
+
+Casos:
+
+- agregar imports;
+- registrar módulos;
+- crear métodos;
+- añadir propiedades;
+- modificar arrays de metadata;
+- analizar exports;
+- validar estructura.
+
+Preferir AST sobre reemplazos frágiles de texto cuando la operación requiera comprender código TypeScript.
+
+No utilizar AST mecánicamente cuando un template simple sea suficiente.
+
+---
+
+# 166. OpenAPI como contrato de integración
+
+El backend generado será responsable del contrato API.
+
+Flujo:
+
+```text
+ImplementationPlan
+      ↓
+NestJS DTO / Controllers
+      ↓
+OpenAPI
+      ↓
+Generated TypeScript API Client
+      ↓
+Next.js
+```
+
+Objetivo:
+
+- evitar duplicar contratos manualmente;
+- reducir inconsistencias frontend/backend;
+- permitir validación;
+- mantener trazabilidad.
+
+El frontend generado SHOULD consumir el cliente/API layer oficial en lugar de duplicar manualmente cada contrato.
+
+---
+
+# 167. Generación de backend
+
+El generador NestJS debe producir según el plan:
+
+- modules;
+- controllers;
+- services;
+- DTO;
+- authorization guards/policies cuando correspondan;
+- persistence access;
+- validation;
+- error handling;
+- OpenAPI metadata;
+- tests.
+
+Reglas:
+
+- controllers SHOULD mantenerse delgados;
+- lógica de aplicación/dominio no debe concentrarse en controllers;
+- input externo debe validarse;
+- acceso a datos debe respetar las fronteras definidas;
+- secretos no deben incorporarse al código;
+- endpoints deben derivar del ImplementationPlan.
+
+---
+
+# 168. Cliente API generado
+
+CASEFlow AI debe generar o derivar un cliente TypeScript a partir de OpenAPI.
+
+El cliente:
+
+- centraliza acceso al API;
+- contiene tipos;
+- evita llamadas dispersas sin contrato;
+- permite que TanStack Query consuma operaciones consistentes.
+
+La estrategia concreta de codegen OpenAPI puede definirse durante implementación.
+
+---
+
+# 169. Generación de frontend
+
+El frontend se genera desde:
+
+```text
+Approved UI Blueprints
++
+Navigation Tree
++
+DesignSystemProfile
++
+ImplementationPlan
++
+Generated API Client
+```
+
+Debe producir:
+
+- routes;
+- layouts;
+- navigation;
+- forms;
+- tables;
+- dialogs;
+- loading states;
+- empty states;
+- success/error feedback;
+- authorization-aware UI cuando aplique;
+- responsive behavior;
+- accessibility básica.
+
+El mockup es guía visual.
+
+El `UIBlueprint` y `DesignSystemProfile` son fuentes estructuradas.
+
+---
+
+# 170. Generación de pruebas
+
+La generación debe crear pruebas proporcionalmente al artefacto.
+
+Fuentes posibles:
+
+```text
+Requirement acceptance criteria
+Use Case flows
+Business rules
+RNF verification method
+ImplementationPlan
+```
+
+Tipos:
+
+- unit;
+- integration;
+- E2E para flujos principales.
+
+Ejemplo:
+
+```text
+RF-014
+Acceptance Criterion AC-03
+       ↓
+TEST-021
+       ↓
+OrdersService / POST /orders
+```
+
+No se exige generar cobertura perfecta automáticamente.
+
+Sí se exige que los tests P0 generados sean ejecutables y formen parte de la validación.
+
+---
+
+# 171. Artefactos de construcción y trazabilidad
+
+La trazabilidad se amplía.
+
+Ejemplo:
+
+```text
+SourceFragment
+  ↓
+RF-014
+  ↓
+CU-005
+  ↓
+UI-004
+  ↓
+ImplementationPlan item
+  ↓
+POST /orders
+  ↓
+OrdersModule
+  ↓
+orders.service.ts
+  ↓
+TEST-021
+```
+
+Tipos de construcción relevantes pueden incluir:
+
+```text
+DATA_MODEL
+DATABASE_SCHEMA
+API_CONTRACT
+MODULE
+ENDPOINT
+SCREEN_IMPLEMENTATION
+COMPONENT
+TEST_CASE
+SOURCE_FILE
+BUILD
+GENERATED_PROJECT
+```
+
+No es necesario convertir cada línea de código en un Artifact.
+
+Debe conservarse granularidad suficiente para:
+
+- Impact Analysis;
+- traceability;
+- regeneration decisions;
+- validation;
+- auditoría.
+
+---
+
+# 172. GeneratedProjectSnapshot
+
+Cada generación oficial produce un snapshot identificable.
+
+Ejemplo:
+
+```text
+GEN-001
+Project: RestGest Mateos
+TargetTemplate: CASEFLOW_WEB_TS_V1
+GenerationPlan: GP-001 v2
+DesignBaseline: DESIGN_1.0
+ImplementationPlan: IP-001 v1
+Status: VALID
+```
+
+Debe registrar:
+
+- project;
+- target template/version;
+- generation plan/version;
+- design baseline;
+- implementation plan/version;
+- timestamp;
+- initiator;
+- generation runs;
+- archive/storage reference;
+- manifest;
+- hashes;
+- validation result;
+- traceability manifest.
+
+Un snapshot formalizado es inmutable.
+
+Una nueva generación produce otro snapshot.
+
+---
+
+# 173. Regeneración y cambios posteriores
+
+CASEFlow AI MUST NOT sobrescribir silenciosamente un snapshot anterior.
+
+Si cambia:
+
+```text
+RF-014 v3 → RF-014 v4
+```
+
+Impact Analysis puede detectar:
+
+```text
+CU-005
+UI-004
+POST /orders
+OrdersService
+TEST-021
+```
+
+El usuario puede decidir:
+
+- mantener;
+- revisar;
+- regenerar elemento afectado;
+- crear nueva generación;
+- justificar que no aplica.
+
+V1 no realizará sincronización bidireccional automática de cambios realizados externamente después de descargar el ZIP.
+
+Reverse engineering / importación de cambios desde Git queda para una fase futura.
+
+---
+
+# 174. SandboxExecutionProvider
+
+El código generado **MUST NOT** ejecutarse dentro del proceso principal de CASEFlow AI.
+
+Debe existir:
+
+```text
+SandboxExecutionProvider
+```
+
+V1 podrá utilizar Docker como implementación.
+
+El sandbox debe aislar:
+
+- filesystem;
+- procesos;
+- variables;
+- secretos;
+- recursos;
+- red cuando sea posible.
+
+Requisitos:
+
+- no recibir secretos internos de CASEFlow;
+- no montar directorios sensibles del host;
+- no utilizar modo privilegiado;
+- aplicar timeout;
+- aplicar límites de CPU/memoria;
+- utilizar workspace temporal;
+- destruir/limpiar recursos temporales de forma segura;
+- registrar resultados de comandos.
+
+La instalación de dependencias puede requerir acceso a un registry aprobado.
+
+Después de instalar, las etapas posteriores SHOULD operar sin red o con egress mínimo/allowlist cuando sea viable.
+
+---
+
+# 175. Pipeline de validación del proyecto generado
+
+Estados conceptuales:
+
+```text
+PLANNED
+GENERATING
+GENERATED
+INSTALLING
+LINTING
+TYPECHECKING
+TESTING
+BUILDING
+VALIDATING
+READY
+```
+
+Fallos:
+
+```text
+GENERATION_FAILED
+INSTALL_FAILED
+LINT_FAILED
+TYPECHECK_FAILED
+TEST_FAILED
+BUILD_FAILED
+VALIDATION_FAILED
+CANCELLED
+```
+
+Pipeline P0:
+
+```text
+Generate
+  ↓
+Install
+  ↓
+Lint / Format validation
+  ↓
+Typecheck
+  ↓
+Tests
+  ↓
+Build
+  ↓
+Structural validation
+  ↓
+Traceability validation
+  ↓
+READY
+```
+
+CASEFlow debe mostrar qué etapa falló y evidencia del fallo sin exponer secretos.
+
+---
+
+# 176. Auto-repair controlado
+
+CASEFlow AI puede intentar reparar un proyecto generado cuando falle una etapa.
+
+Regla inicial:
+
+```text
+MAX_AUTO_REPAIR_ROUNDS = 3
+```
+
+Cada ronda:
+
+1. captura diagnóstico relevante;
+2. determina archivos permitidos;
+3. construye contexto mínimo;
+4. solicita o aplica reparación;
+5. registra diff;
+6. repite validación afectada;
+7. continúa solo si la reparación es válida.
+
+No se permiten ciclos autónomos infinitos.
+
+Después del máximo:
+
+```text
+VALIDATION_FAILED
+```
+
+y el usuario recibe el diagnóstico para revisión manual.
+
+Una reparación no debe modificar artefactos aprobados de análisis/diseño para “hacer pasar” el código.
+
+Si descubre una inconsistencia aguas arriba, debe crear un finding.
+
+---
+
+# 177. Preview y exportación
+
+## 177.1 ZIP — P0
+
+V1 debe exportar un ZIP que contenga:
+
+- código fuente;
+- lockfile;
+- workspace config;
+- Prisma schema/migrations requeridas;
+- `.env.example`;
+- Dockerfiles/Compose requerido por el TargetTemplate;
+- README;
+- instrucciones de instalación;
+- instrucciones de ejecución;
+- pruebas;
+- manifest de generación/trazabilidad apropiado.
+
+No debe contener:
+
+- secretos reales;
+- tokens;
+- credenciales CASEFlow;
+- caches innecesarios;
+- `node_modules`.
+
+## 177.2 Preview — P1
+
+CASEFlow puede iniciar temporalmente el proyecto generado dentro de un entorno controlado y ofrecer una preview.
+
+La preview es altamente deseable para demostración, pero no bloquea V1 si el ZIP generado:
+
+- pasa validaciones;
+- puede iniciarse reproduciblemente fuera del sandbox.
+
+## 177.3 Futuro
+
+- crear repositorio Git;
+- push GitHub/GitLab;
+- deploy automático;
+- environments generados.
+
+---
+
+# 178. Seguridad de Construction
+
+Además de la seguridad general:
+
+- código generado se considera no confiable hasta validarse;
+- ningún LLM recibe secretos del runtime;
+- ningún proyecto generado recibe credenciales internas de CASEFlow;
+- dependencias se limitan mediante catálogo;
+- logs de build deben sanitizarse;
+- archives deben almacenarse como objetos privados;
+- descargas requieren autorización;
+- Project A no puede utilizar artefactos/código de Project B;
+- sandbox debe tener lifecycle limitado;
+- comandos ejecutables deben provenir del TargetTemplate/validator, no de texto arbitrario devuelto por un modelo.
+
+La IA puede proponer cambios de archivos, pero no comandos arbitrarios con privilegios sobre el host.
+
+---
+
+# 179. Definition of Done — Construction Pipeline
+
+Construction V1 se considera DONE cuando:
+
+1. un usuario puede seleccionar el TargetTemplate;
+2. CASEFlow genera/revisa un GenerationPlan;
+3. existe modelo conceptual;
+4. se producen UI Blueprints;
+5. se genera mockup mediante Stitch o fallback;
+6. el usuario puede aprobar una Design Baseline;
+7. se genera/revisa ImplementationPlan;
+8. se genera modelo lógico/físico;
+9. se produce Prisma Schema;
+10. se producen contratos/API;
+11. se genera backend;
+12. se genera API client;
+13. se genera frontend;
+14. se generan pruebas;
+15. el proyecto se valida en sandbox;
+16. el auto-repair respeta su límite;
+17. se genera GeneratedProjectSnapshot;
+18. existe trazabilidad hasta construcción;
+19. el ZIP se exporta;
+20. el proyecto puede ejecutarse siguiendo su README.
+
+---
+
+# 180. Roadmap de implementación actualizado
+
+CASEFlow AI seguirá vertical slices y gates.
+
+Orden actualizado:
 
 ```text
 Foundation
@@ -4766,7 +6311,7 @@ AI-assisted Analysis
  ↓
 Use Cases
  ↓
-Design
+Design Foundations
  ↓
 Traceability
  ↓
@@ -4778,13 +6323,25 @@ Baselines
  ↓
 Living Documentation
  ↓
-Collaboration / Notifications
+Construction Foundation
  ↓
-External Improvements
+Generation Plan
+ ↓
+UI/Mockup Design Gate
+ ↓
+Implementation Plan
+ ↓
+Code Generation
+ ↓
+Sandbox Validation
+ ↓
+Generated Project Export
+ ↓
+Collaboration / Notifications
  ↓
 Hardening
  ↓
-Generality Test
+Generality Validation
  ↓
 Demo Hardening
  ↓
@@ -4793,44 +6350,42 @@ Release Candidate
 1.0.0
 ```
 
+P0 anterior incompleto tiene prioridad sobre P1/P2 posterior.
+
 ---
 
-# 150. Incremento 0 — Foundation
-
-Objetivo:
-
-> Crear una base estable y reproducible antes de funcionalidades de dominio.
+# 181. Incremento 0 — Foundation
 
 Implementar:
 
-* monorepo;
-* pnpm workspaces;
-* Next.js;
-* NestJS;
-* worker;
-* Prisma;
-* PostgreSQL;
-* Redis;
-* MinIO;
-* Mailpit;
-* TypeScript;
-* ESLint;
-* Prettier;
-* Docker Compose;
-* `.env.example`;
-* CI inicial.
+- monorepo;
+- pnpm workspaces;
+- Next.js;
+- NestJS;
+- worker;
+- Prisma;
+- PostgreSQL + pgvector;
+- Redis;
+- SeaweedFS S3-compatible;
+- Mailpit;
+- TypeScript;
+- ESLint;
+- Prettier;
+- Docker Compose;
+- `.env.example`;
+- CI inicial.
 
 Gate:
 
 ```text
-pnpm install
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm build
+install
+lint
+typecheck
+test
+build
 ```
 
-Release objetivo:
+Release objetivo conceptual:
 
 ```text
 0.1.0
@@ -4838,56 +6393,44 @@ Release objetivo:
 
 ---
 
-# 151. Incremento 1 — Identity / Workspace / Project
+# 182. Incremento 1 — Identity / Workspace / Project
 
 Implementar:
 
-* registration;
-* login;
-* logout;
-* refresh;
-* sessions;
-* Workspace;
-* membership;
-* Project;
-* ProjectTemplate inicial;
-* phases;
-* roles iniciales;
-* audit inicial.
+- registration;
+- login/logout;
+- rotating refresh sessions;
+- Workspace;
+- memberships;
+- Project;
+- template inicial;
+- phases;
+- roles;
+- authorization;
+- audit inicial.
 
 Gate:
 
-Usuario autorizado puede gestionar su Project.
-
-Usuario no autorizado no puede acceder.
-
-Release objetivo:
-
-```text
-0.2.0
-```
+- usuario autorizado accede;
+- usuario no autorizado no accede;
+- aislamiento probado.
 
 ---
 
-# 152. Incremento 2 — Artifact Core
+# 183. Incremento 2 — Artifact Core
 
 Implementar:
 
-```text
-Artifact
-ArtifactVersion
-ArtifactState
-Review
-Approval
-Archive
-Audit
-```
-
-Primera validación mediante un artefacto simple como:
-
-```text
-NOTE
-```
+- Artifact;
+- ArtifactVersion;
+- lifecycle;
+- ReviewRequest;
+- ReviewDecision;
+- approval;
+- archive;
+- audit;
+- codes;
+- version immutability.
 
 Gate:
 
@@ -4902,225 +6445,132 @@ Archive
 History
 ```
 
-Release objetivo:
-
-```text
-0.3.0
-```
-
 ---
 
-# 153. Incremento 3 — Knowledge Base
+# 184. Incremento 3 — Knowledge Base
 
-Fuentes P0:
+Implementar P0:
 
-* manual text;
-* TXT;
-* Markdown;
-* PDF;
-* DOCX.
+- manual text;
+- TXT;
+- Markdown;
+- PDF;
+- DOCX;
+- hash/dedupe;
+- extraction;
+- fragments;
+- full-text search;
+- evidence references.
 
-Pipeline:
-
-```text
-Upload
-Validate
-Hash
-Extract
-Normalize
-Chunk
-Index
-```
-
-Primero:
-
-```text
-Structured Search
-+
-Full Text Search
-```
-
-Posteriormente:
-
-```text
-pgvector
-```
+Después incorporar pgvector/hybrid search.
 
 Gate:
 
-Una fuente puede procesarse, visualizarse y utilizarse como evidencia.
-
-Release objetivo:
-
-```text
-0.4.0
-```
+> una fuente puede procesarse, visualizarse y convertirse en evidencia.
 
 ---
 
-# 154. Incremento 4 — Manual Analysis
+# 185. Incremento 4 — Manual Analysis
 
 Implementar:
 
-* Actor;
-* Stakeholder;
-* RF;
-* RNF;
-* Business Rule;
-* Constraint;
-* Assumption;
-* Glossary;
-* AcceptanceCriterion;
-* Evidence.
-
-También:
-
-* versioning;
-* review;
-* approval;
-* consistency checks básicos.
+- Actor;
+- Stakeholder;
+- RF;
+- RNF;
+- Business Rule;
+- Constraint;
+- Assumption;
+- Glossary;
+- AcceptanceCriterion;
+- Evidence.
 
 Gate:
 
-Se puede realizar análisis completo manual sin IA.
-
-Release objetivo:
-
-```text
-0.5.0
-```
+> análisis completo manual sin IA.
 
 ---
 
-# 155. Incremento 5 — AI-assisted Analysis
+# 186. Incremento 5 — AI-assisted Analysis
 
 Implementar:
 
-```text
-AIOrchestrator
-ModelRouter
-AIExecutionGateway
-PromptTemplate
-PromptVersion
-AIRun
-ArtifactCandidate
-ContextBuilder
-```
+- AIOrchestrator;
+- ModelRouter;
+- AIExecutionGateway;
+- ContextBuilder;
+- PromptTemplate/Version;
+- AIRun;
+- ArtifactCandidate.
 
-Primera función IA:
+Primera tarea:
 
-> Extraer candidatos a requisitos desde fuentes.
+> extracción de candidatos a requisitos con evidencia.
 
 Después:
 
-* actores;
-* RF;
-* RNF;
-* reglas de negocio.
-
-Pipeline:
-
-```text
-Sources
- ↓
-Context
- ↓
-AI
- ↓
-Structured Output
- ↓
-Schema Validation
- ↓
-Domain Validation
- ↓
-Candidates
- ↓
-Human Review
- ↓
-Artifacts
-```
-
-La IA no escribe directamente artefactos oficiales.
-
----
-
-# 156. Incremento 6 — Use Cases
-
-Implementar:
-
-```text
-UseCase
-UseCaseActor
-Precondition
-Postcondition
-UseCaseFlow
-UseCaseFlowStep
-```
-
-Primero flujo manual.
-
-Después:
-
-```text
-AI-assisted Use Case generation
-```
-
-Generar vista de casos de uso mediante DiagramProvider.
+- actores;
+- RNF;
+- reglas;
+- casos de uso.
 
 Gate:
 
-Los casos de uso están relacionados con requisitos y actores.
+> IA genera candidatos; humano conserva control.
 
 ---
 
-# 157. Incremento 7 — Design
+# 187. Incremento 6 — Use Cases
 
 Implementar:
 
-* System Architecture.
-* Software Architecture.
-* ADR.
-* Navigation Tree.
-* UI Blueprint.
-* Internal Wireframe Renderer.
-
-Después:
-
-```text
-StitchMockupProvider
-```
+- UseCase;
+- actors;
+- pre/postconditions;
+- flows;
+- steps;
+- requirements linkage;
+- manual creation;
+- AI assistance;
+- use-case diagram.
 
 Gate:
 
-Un Use Case puede relacionarse con una pantalla/UI Blueprint y componentes de arquitectura.
+> casos de uso aprobables y trazables.
 
 ---
 
-# 158. Incremento 8 — Traceability
+# 188. Incremento 7 — Design Foundations
 
 Implementar:
 
-```text
-ArtifactRelationship
-RelationshipType
-RelationshipValidation
-```
+- System Architecture;
+- Software Architecture;
+- ADR;
+- Navigation Tree;
+- UI Blueprint;
+- DesignSystemProfile;
+- InternalWireframeRenderer.
 
-UI debe mostrar:
-
-* incoming relationships;
-* outgoing relationships;
-* evidence.
-
-Agregar:
-
-```text
-Traceability Matrix
-```
+Stitch puede agregarse cuando el adapter esté listo.
 
 Gate:
 
-Debe poder navegarse:
+> Use Case → UI/Architecture trazable.
+
+---
+
+# 189. Incremento 8 — Traceability
+
+Implementar:
+
+- ArtifactRelationship;
+- RelationshipType;
+- RelationshipValidation;
+- incoming/outgoing views;
+- traceability matrix.
+
+Gate:
 
 ```text
 Source
@@ -5130,93 +6580,63 @@ Source
 → Architecture
 ```
 
-y en sentido inverso.
+navegable en ambos sentidos.
 
 ---
 
-# 159. Incremento 9 — Impact Analysis
+# 190. Incremento 9 — Impact Analysis
 
-Primero:
+Primero determinístico:
 
-```text
-Deterministic Impact Analysis
-```
+- version changes;
+- relationships;
+- dependencies;
+- baselines.
 
-Basado en:
-
-* version changes;
-* relationships;
-* dependencies;
-* baselines.
-
-Después:
-
-```text
-Semantic AI Impact Analysis
-```
-
-La UI debe distinguir:
-
-```text
-Confirmed by traceability
-Suggested by AI
-```
-
----
-
-# 160. Incremento 10 — Consistency Engine
-
-Primero reglas determinísticas.
-
-Ejemplos:
-
-```text
-RNF_MISSING_METRIC
-REQUIREMENT_WITHOUT_ACCEPTANCE_CRITERIA
-APPROVED_REQUIREMENT_WITHOUT_USE_CASE
-OBSOLETE_RELATIONSHIP
-ORPHAN_ACTOR
-ARCHITECTURE_BASED_ON_OLD_VERSION
-```
-
-Después:
-
-```text
-Semantic Consistency Review
-```
-
-Estados:
-
-```text
-OPEN
-RESOLVED
-WAIVED
-```
-
----
-
-# 161. Incremento 11 — Baselines
-
-Implementar:
-
-```text
-Baseline
-BaselineItem
-Freeze
-Basic Compare
-```
-
-Una baseline congelada es inmutable.
+Después semántico si el tiempo permite.
 
 Gate:
 
-Puede congelarse el análisis aprobado de un proyecto y compararse posteriormente.
+> un cambio aguas arriba identifica dependencias potencialmente afectadas.
 
 ---
 
-# 162. Incremento 12 — Living Documentation
+# 191. Incremento 10 — Consistency Engine
 
-Generar documentación desde:
+Reglas P0:
+
+- RNF missing metric;
+- requirement without acceptance criteria;
+- approved requirement without expected downstream relationship;
+- obsolete relationship;
+- orphan actor;
+- stale architecture/design dependency.
+
+Gate:
+
+> inconsistencias intencionales producen findings correctos.
+
+---
+
+# 192. Incremento 11 — Baselines
+
+Implementar:
+
+- Baseline;
+- BaselineItem;
+- freeze;
+- basic compare;
+- analysis/design baseline types cuando corresponda.
+
+Gate:
+
+> una baseline congelada no cambia.
+
+---
+
+# 193. Incremento 12 — Living Documentation
+
+Generar desde:
 
 ```text
 Approved Artifacts
@@ -5226,123 +6646,226 @@ Project Metadata
 Traceability
 ```
 
-Secciones iniciales:
+Export P0:
 
-* Project Overview.
-* Knowledge Sources.
-* Actors.
-* Requirements.
-* Use Cases.
-* Architecture.
-* Navigation.
-* Interfaces.
-* Traceability.
-* Decisions.
+- Markdown;
+- HTML;
+- PDF.
 
-Exportación P0:
+Gate:
 
-```text
-Markdown
-HTML
-PDF
-```
-
-DOCX puede añadirse posteriormente.
+> documentación actualizada sin copiar manualmente los artefactos.
 
 ---
 
-# 163. Incremento 13 — Collaboration / Notifications
+# 194. Incremento 13 — Construction Foundation
 
 Implementar:
 
-* comments;
-* ReviewRequest;
-* ReviewDecision;
-* NotificationOutbox;
-* Mailpit;
-* EmailProvider.
+- TargetTemplate;
+- TargetTemplateVersion;
+- DesignSystemProfile;
+- ApprovedDependency;
+- GenerationPlan;
+- ImplementationPlan;
+- GenerationRun;
+- GeneratedProjectSnapshot;
+- CodeTraceLink;
+- CodeGenerationEngine;
+- SandboxExecutionProvider contract.
 
-Emails mínimos:
+También:
 
-* invitation;
-* password reset;
-* review request.
+- templates base;
+- catálogo de dependencias;
+- coding standard del TargetTemplate.
 
-Una falla de email no bloquea el flujo principal.
+Gate:
 
----
-
-# 164. Incremento 14 — P1 Improvements
-
-Cuando los P0 se encuentren completos se pueden priorizar:
-
-* Stitch;
-* OmniRoute advanced routing;
-* pgvector improvements;
-* semantic Impact Analysis;
-* semantic Consistency;
-* advanced AI routing;
-* email provider production;
-* additional diagrams.
+> CASEFlow puede representar y versionar una futura generación sin generar todavía el proyecto completo.
 
 ---
 
-# 165. Incremento 15 — Hardening
+# 195. Incremento 14 — Generation Plan + Design Gate
 
-Durante Hardening se detiene temporalmente la expansión funcional.
+Implementar:
+
+```text
+Approved Analysis
+→ GenerationPlan
+→ Conceptual Model
+→ Navigation/UIBlueprint
+→ Mockup
+→ Human Review
+→ DESIGN_BASELINE
+```
+
+Stitch:
+
+- preferente cuando esté operativo;
+- fallback interno siempre disponible.
+
+Gate:
+
+> no existe generación oficial sin plan y diseño requerido aprobados.
+
+---
+
+# 196. Incremento 15 — Implementation Plan + Data/API
+
+Implementar:
+
+```text
+Design Baseline
+→ ImplementationPlan
+→ Logical Model
+→ Physical Model
+→ Prisma Schema
+→ REST/OpenAPI contracts
+```
+
+Gate:
+
+- modelo válido;
+- Prisma validate pasa;
+- endpoints mapeados a requisitos/use cases;
+- dependencias permitidas.
+
+---
+
+# 197. Incremento 16 — Backend / Client / Frontend Generation
+
+Implementar incrementalmente:
+
+```text
+NestJS Backend
+      ↓
+OpenAPI
+      ↓
+TypeScript API Client
+      ↓
+Next.js Frontend
+```
+
+Combinar:
+
+- templates;
+- deterministic generation;
+- ts-morph cuando corresponda;
+- AI para lógica específica.
+
+Gate:
+
+> aplicación generada estructuralmente completa.
+
+---
+
+# 198. Incremento 17 — Tests / Sandbox / Auto-repair / Export
+
+Implementar:
+
+- generated tests;
+- sandbox Docker;
+- resource limits;
+- command allowlist;
+- install;
+- lint;
+- typecheck;
+- test;
+- build;
+- structural validation;
+- max 3 auto-repair rounds;
+- snapshot;
+- ZIP.
+
+Gate:
+
+```text
+READY
+```
+
+solo si todas las validaciones P0 pasan.
+
+---
+
+# 199. Incremento 18 — Collaboration / Notifications
+
+Implementar según prioridad disponible:
+
+- comments;
+- ReviewRequest;
+- NotificationOutbox;
+- Mailpit;
+- EmailProvider;
+- review notifications.
+
+Una falla de email no bloquea negocio.
+
+---
+
+# 200. Incremento 19 — Hardening
+
+Detener expansión funcional significativa.
 
 Prioridades:
 
-* bugs;
-* authorization;
-* security;
-* UX;
-* indexes;
-* performance;
-* responsive design;
-* accessibility;
-* tests;
-* SonarQube;
-* Trivy;
-* deployment;
-* backup;
-* restore.
+- P0/P1 bugs;
+- authorization;
+- sandbox security;
+- project isolation;
+- code generation reproducibility;
+- migrations;
+- indexes;
+- performance;
+- accessibility;
+- tests;
+- SonarQube;
+- Trivy;
+- deployment;
+- backup/restore.
 
 ---
 
-# 166. Incremento 16 — Generality Validation
+# 201. Incremento 20 — Generality Validation
 
-Antes del Release Candidate deben ejecutarse proyectos de prueba en dominios distintos.
+Probar:
 
-Mínimo:
+- RestGest Mateos;
+- Tutorías Académicas;
+- Sistema de Inventario.
+
+Al menos dos deben completar:
 
 ```text
-RestGest Mateos
-Tutorías Académicas
-Sistema de Inventario
+Artifacts
+→ Design
+→ Generation Plan
+→ Code
+→ Validation
+→ ZIP
 ```
 
-El tercero debe poder gestionarse sin modificar el código del núcleo.
+sin modificar el core para ese dominio.
 
 ---
 
-# 167. Incremento 17 — Demo Hardening
+# 202. Incremento 21 — Demo Hardening
 
 Preparar:
 
-* proyecto demo;
-* seeds;
-* fallback de IA;
-* fallback de mockups;
-* fuentes preparadas;
-* datos realistas;
-* contingencias.
-
-Toda función externa crítica debe tener una forma segura de demostración.
+- demo seeds;
+- proyectos de respaldo;
+- fuentes;
+- AI fallback;
+- Stitch fallback;
+- generated snapshot válido;
+- ZIP prevalidado;
+- procedimiento de preview si está disponible;
+- contingencia sin Internet.
 
 ---
 
-# 168. Incremento 18 — Release Candidate
+# 203. Incremento 22 — Release Candidate
 
 Publicar:
 
@@ -5352,148 +6875,148 @@ Publicar:
 
 Ejecutar:
 
-* E2E;
-* AI evaluation;
-* isolation;
-* security;
-* performance;
-* migrations;
-* backup;
-* restore;
-* exports;
-* generality;
-* demo rehearsal.
+- full E2E;
+- generated-project E2E;
+- isolation;
+- sandbox security;
+- AI evaluation;
+- migrations;
+- backup/restore;
+- exports;
+- generality;
+- demo rehearsal.
 
-No liberar V1 con P0/P1 conocidos.
-
----
-
-# 169. Estrategia de vertical slices
-
-CASEFlow AI no debe desarrollarse durante semanas mediante capas aisladas.
-
-Preferir:
-
-```text
-Requirement vertical slice
-├── DB
-├── Domain
-├── API
-├── Frontend
-├── Authorization
-├── Tests
-└── Audit
-```
-
-Después:
-
-```text
-Use Case vertical slice
-```
-
-Cada incremento debe dejar el repositorio ejecutable.
+No liberar con P0/P1 conocidos.
 
 ---
 
-# 170. Trabajo paralelo del equipo
+# 204. Estrategia de vertical slices
 
-El paralelismo debe ocurrir dentro de un objetivo integrado.
+Cada incremento debe dejar el producto ejecutable.
 
-Ejemplo para Requirements:
+Ejemplo de Requirements:
 
 ```text
-Developer A → domain + Prisma
-Developer B → API
-Developer C → frontend
-Developer D → review/versioning
-Developer E → tests
-Developer F → AI candidate workflow
+DB
+→ Domain
+→ API
+→ Authorization
+→ Frontend
+→ Tests
+→ Audit
 ```
 
-No se recomienda que cada integrante construya un subsistema aislado durante semanas y se intente integrar todo al final.
+Ejemplo de Construction:
+
+```text
+GenerationPlan
+→ persisted model
+→ API
+→ UI review
+→ tests
+→ traceability
+```
+
+Luego:
+
+```text
+BackendGeneration
+→ files
+→ sandbox
+→ validation
+→ UI results
+```
+
+No construir todas las capas en aislamiento durante semanas.
 
 ---
 
-# 171. Pull Requests
+# 205. Trabajo paralelo
 
-Cada Pull Request debe resolver una unidad coherente.
+El equipo puede paralelizar dentro del mismo objetivo integrado.
 
-Ejemplos correctos:
+Ejemplo durante Construction:
 
 ```text
-feat(requirements): add acceptance criteria persistence
-feat(review): add independent approval policy
-feat(knowledge): add PDF ingestion
+Developer A → GenerationPlan/domain model
+Developer B → template/code engine
+Developer C → UI/Design Gate
+Developer D → sandbox/validation
+Developer E → tests/traceability
+Developer F → AI generation/repair
 ```
 
-Evitar PR con múltiples funcionalidades no relacionadas.
+Todos deben respetar contratos compartidos.
 
 ---
 
-# 172. Uso de agentes de código
+# 206. Pull Requests
 
-Los agentes no deben recibir instrucciones excesivamente generales como:
+Cada PR debe resolver una unidad coherente.
 
-> Construye CASEFlow AI.
-
-Cada tarea debe definir:
-
-* objetivo;
-* archivos/contexto;
-* restricciones;
-* alcance;
-* tests esperados.
-
-Ejemplo:
+Ejemplos:
 
 ```text
-Read:
-- AGENTS.md
-- docs/CASEFLOW_AI_SPEC.md
-
-Goal:
-Implement ArtifactVersion creation.
-
-Constraints:
-- approved versions are immutable;
-- preserve 3NF;
-- do not modify auth;
-- add tests;
-- no new dependency without justification.
+feat(generation): add target template persistence
+feat(mockups): add design approval gate
+feat(codegen): generate NestJS module skeleton
+feat(sandbox): validate generated project build
 ```
+
+Evitar PR que mezcle múltiples etapas no relacionadas.
 
 ---
 
-# 173. Regla de roadmap para agentes
+# 207. Uso de agentes de código
 
-Un agente MUST NOT implementar funcionalidad de un incremento posterior cuando dependa de un P0 incompleto de un incremento anterior, salvo instrucción explícita del usuario.
-
-Ejemplo prohibido:
+Los agentes deben leer:
 
 ```text
-Implement Project Assistant
+AGENTS.md
+docs/CASEFLOW_AI_SPEC.md
+ADRs relevantes
 ```
 
-cuando:
+Una tarea debe indicar:
 
-```text
-Artifact Review
-```
+- objetivo;
+- contexto;
+- constraints;
+- alcance;
+- tests;
+- gate esperado.
 
-todavía se encuentre incompleto.
+No solicitar genéricamente:
+
+> “Construye todo CASEFlow.”
 
 ---
 
-# 174. Checkpoints de arquitectura
+# 208. Regla de roadmap para agentes
+
+Un agente MUST NOT:
+
+- implementar P1/P2 si bloquea P0;
+- saltar el Design Gate;
+- generar código oficial antes de aprobar el plan requerido;
+- ejecutar código generado fuera del sandbox;
+- instalar dependencias arbitrarias;
+- sobrescribir snapshots;
+- reinterpretar el TargetTemplate por iniciativa propia;
+- introducir otro stack sin decisión explícita.
+
+---
+
+# 209. Checkpoints de arquitectura
 
 ## Checkpoint A — Artifact Core
 
 Verificar:
 
-* versioning;
-* immutability;
-* review;
-* approval.
+- identity/version;
+- immutability;
+- review;
+- approval.
 
 ## Checkpoint B — Manual Analysis
 
@@ -5505,268 +7028,299 @@ Verificar:
 
 Verificar:
 
-> La IA genera candidates y no escribe directamente en dominio oficial.
+> IA produce candidates y no contamina artefactos oficiales.
 
 ## Checkpoint D — Design
 
 Verificar:
 
-> Analysis y Design están conectados mediante trazabilidad real.
+> análisis y diseño están trazados.
 
-## Checkpoint E — Pre-RC
+## Checkpoint E — Construction Planning
 
 Verificar:
 
-> Flujo completo funcionando en varios dominios.
+> GenerationPlan + Design Gate + ImplementationPlan son coherentes.
+
+## Checkpoint F — Code Generation
+
+Verificar:
+
+> generated project passes sandbox P0 validations.
+
+## Checkpoint G — Pre-RC
+
+Verificar:
+
+> flujo I-CASE completo en varios dominios.
 
 ---
 
-# 175. Después de V1
+# 210. Después de V1
 
-Antes de:
+Antes de `1.0.0`:
 
-```text
-1.0.0
-```
+> completar el producto I-CASE integral.
 
-la prioridad es:
+Después:
 
-> completar el producto.
+> mejorar, ampliar stacks y diferenciar.
 
-Después de:
+Evoluciones candidatas:
 
 ```text
-1.0.0
+1.1 → preview/deployment improvements
+1.2 → additional diagrams
+1.3 → Project Assistant
+1.4 → BYOK + model analytics
+1.5 → ProjectTemplate Builder
+1.6 → Git integration
+1.7 → richer code regeneration
+2.0 → additional TargetTemplates / reverse engineering
 ```
 
-la prioridad cambia a:
-
-> mejorar y diferenciar el producto.
-
-Ejemplos de evolución:
-
-```text
-1.1 → additional diagrams
-1.2 → Project Assistant
-1.3 → BYOK + model analytics
-1.4 → ProjectTemplate Builder
-1.5 → advanced mockup integrations
-1.6 → Test Case Generation
-1.7 → Git integration
-2.0 → expanded Construction/Testing lifecycle
-```
-
-La secuencia podrá cambiar según valor y tiempo.
+La secuencia se prioriza por valor/impacto/riesgo.
 
 ---
 
-# 176. Priorización post-V1
+# 211. Principio final de implementación
 
-Toda mejora podrá evaluarse mediante:
-
-```text
-User Value
-+
-Evaluation Impact
-+
-Differentiation
-+
-Technical Value
--
-Implementation Time
--
-Risk
-```
-
-Debe priorizarse aquello que aumente valor real o diferenciación.
-
-Ejemplo:
-
-```text
-Project Assistant
-→ alto impacto potencial
-```
-
-frente a:
-
-```text
-Kubernetes
-→ bajo impacto para la demostración inicial
-```
+> **CASEFlow AI será desarrollado mediante incrementos verticales integrables. Cada incremento debe dejar el producto ejecutable y verificable. V1 debe completar el ciclo Knowledge → Analysis → Design → Construction → Validation → Export. La IA y los servicios externos apoyan el proceso, pero no sustituyen el núcleo determinístico, la revisión humana ni la validación automática.**
 
 ---
 
-# 177. Principio final de implementación
+# 212. Reglas de arquitectura congeladas para V1
 
-> **CASEFlow AI será desarrollado mediante incrementos verticales integrables. Cada incremento debe dejar el producto ejecutable y verificable. El equipo priorizará completar el flujo funcional integral de V1 antes de desarrollar capacidades avanzadas de V2/V3. Las integraciones externas y la inteligencia artificial se construirán sobre capacidades determinísticas previamente funcionales, nunca en sustitución de ellas.**
+Se consideran estables:
+
+1. TypeScript como lenguaje principal de CASEFlow.
+2. Next.js + React para frontend CASEFlow.
+3. NestJS para API CASEFlow.
+4. PostgreSQL + Prisma.
+5. Redis + BullMQ.
+6. pgvector.
+7. StorageProvider S3-compatible.
+8. SeaweedFS como almacenamiento S3-compatible local.
+9. REST + OpenAPI.
+10. monorepo.
+11. 3FN.
+12. Artifact + ArtifactVersion.
+13. human-in-the-loop.
+14. Project Knowledge Base.
+15. evidence/provenance.
+16. traceability.
+17. Impact Analysis.
+18. Consistency Engine.
+19. Living Documentation.
+20. provider/gateway agnostic AI.
+21. manual fallback.
+22. security isolation.
+23. Docker.
+24. V1 como producto completo.
+25. Construction como P0.
+26. `CASEFLOW_WEB_TS_V1` como único TargetTemplate V1.
+27. modular monolith para proyectos generados.
+28. UI Blueprint como fuente canónica de UI.
+29. Stitch opcional + fallback interno.
+30. Design Gate antes de generación oficial.
+31. generation híbrida.
+32. Approved Dependency Catalog.
+33. sandbox obligatorio.
+34. máximo inicial de 3 auto-repair rounds.
+35. GeneratedProjectSnapshot inmutable.
+36. ZIP reproducible como salida P0.
+
+Cambios a estas reglas requieren decisión explícita y actualización documental.
 
 ---
 
-# 178. Reglas de arquitectura congeladas para V1
+# 213. Registro de decisiones — continuación
 
-Las siguientes decisiones se consideran estables para comenzar implementación:
-
-1. TypeScript como lenguaje principal.
-2. Next.js + React para frontend.
-3. NestJS para API.
-4. PostgreSQL como base de datos principal.
-5. Prisma como ORM inicial.
-6. Redis + BullMQ para jobs.
-7. pgvector para búsqueda vectorial inicial.
-8. Storage externo mediante StorageProvider.
-9. S3-compatible como protocolo preferente de object storage.
-10. Monorepo.
-11. REST + OpenAPI.
-12. 3FN para el dominio.
-13. Artifact + ArtifactVersion separados.
-14. Human-in-the-loop.
-15. Flow flexible.
-16. Project Knowledge Base.
-17. Evidence/provenance.
-18. Traceability graph.
-19. Impact Analysis.
-20. Consistency Engine.
-21. Living Documentation.
-22. AI provider-agnostic.
-23. AI gateway-agnostic.
-24. OmniRoute opcional.
-25. Manual fallback.
-26. UI Blueprint como fuente canónica.
-27. ProjectTemplate extensible.
-28. Security isolation obligatorio.
-29. Docker para entornos reproducibles.
-30. V1 como producto integral.
-
-Estas decisiones pueden cambiar únicamente mediante una decisión arquitectónica explícita y documentada.
-
----
-
-# 179. Registro de decisiones — continuación
-
-| ID      | Decisión                                                             | Estado   |
-| ------- | -------------------------------------------------------------------- | -------- |
-| DEC-031 | Autenticación V1 mediante email/password propia                      | Accepted |
-| DEC-032 | Argon2id será el algoritmo inicial de password hashing               | Accepted |
-| DEC-033 | Access tokens cortos + refresh tokens rotatorios                     | Accepted |
-| DEC-034 | La revisión independiente permanece activada por defecto             | Accepted |
-| DEC-035 | Autorización mediante RBAC + reglas contextuales                     | Accepted |
-| DEC-036 | El aislamiento multi-project será obligatorio en backend y tests     | Accepted |
-| DEC-037 | Archivos privados mediante acceso autorizado/signed URLs             | Accepted |
-| DEC-038 | Mailpit se utilizará para email local                                | Accepted |
-| DEC-039 | EmailProvider será intercambiable                                    | Accepted |
-| DEC-040 | Se utilizará NotificationOutbox para notificaciones                  | Accepted |
+| ID | Decisión | Estado |
+|---|---|---|
+| DEC-031 | Autenticación V1 mediante email/password propia | Accepted |
+| DEC-032 | Argon2id será el algoritmo inicial de password hashing | Accepted |
+| DEC-033 | Access tokens cortos + refresh tokens rotatorios | Accepted |
+| DEC-034 | La revisión independiente permanece activada por defecto | Accepted |
+| DEC-035 | Autorización mediante RBAC + reglas contextuales | Accepted |
+| DEC-036 | El aislamiento multi-project será obligatorio en backend y tests | Accepted |
+| DEC-037 | Archivos privados mediante acceso autorizado/signed URLs | Accepted |
+| DEC-038 | Mailpit se utilizará para email local | Accepted |
+| DEC-039 | EmailProvider será intercambiable | Accepted |
+| DEC-040 | Se utilizará NotificationOutbox para notificaciones | Accepted |
 | DEC-041 | BYOK se diseñará desde ahora pero podrá implementarse posteriormente | Accepted |
-| DEC-042 | V1 no tendrá enlaces públicos anónimos                               | Accepted |
-| DEC-043 | MFA se prepara pero no bloquea V1                                    | Accepted |
-| DEC-044 | Existirán perfiles LOCAL, TEST_CI, STAGING y PRODUCTION              | Accepted |
-| DEC-045 | Docker será parte del entorno desde V1                               | Accepted |
-| DEC-046 | Se priorizará un perfil FREE-DEMO reemplazable                       | Accepted |
-| DEC-047 | Kubernetes no será requisito de V1                                   | Accepted |
-| DEC-048 | Nginx será reverse proxy inicial en infraestructura propia           | Accepted |
-| DEC-049 | main se mantendrá estable mediante PR y CI                           | Accepted |
-| DEC-050 | Se utilizará Conventional Commits                                    | Accepted |
-| DEC-051 | La producción se promoverá inicialmente de forma controlada          | Accepted |
-| DEC-052 | El software utilizará Semantic Versioning                            | Accepted |
-| DEC-053 | Prisma Migrate será el mecanismo de migración                        | Accepted |
-| DEC-054 | Se implementarán logs estructurados y correlation IDs                | Accepted |
-| DEC-055 | Se implementarán health checks                                       | Accepted |
-| DEC-056 | Se realizarán backups propios y pruebas de restauración              | Accepted |
-| DEC-057 | RPO inicial objetivo <= 6 h                                          | Accepted |
-| DEC-058 | RTO inicial objetivo <= 4 h                                          | Accepted |
-| DEC-059 | API/Web deberán ser escalables horizontalmente                       | Accepted |
-| DEC-060 | Operaciones pesadas serán asíncronas                                 | Accepted |
-| DEC-061 | Se utilizará graceful degradation                                    | Accepted |
-| DEC-062 | Se adopta la política free-first, not free-at-all-costs              | Accepted |
-| DEC-063 | V1 será un producto mínimo completo, no un prototipo parcial         | Accepted |
-| DEC-064 | P0 tendrá prioridad absoluta sobre P1/P2                             | Accepted |
-| DEC-065 | El flujo E2E completo será release blocker                           | Accepted |
-| DEC-066 | La generalidad se probará con varios dominios                        | Accepted |
-| DEC-067 | Los tests normales no dependerán de proveedores IA reales            | Accepted |
-| DEC-068 | Existirá AI Evaluation Suite separada                                | Accepted |
-| DEC-069 | Cross-project isolation será release blocker                         | Accepted |
-| DEC-070 | Definition of Done incluirá seguridad, tests, auditoría y UX         | Accepted |
-| DEC-071 | Global coverage objetivo inicial >= 70 %                             | Accepted |
-| DEC-072 | Áreas críticas aspirarán a >= 85 % coverage                          | Accepted |
-| DEC-073 | V1 requerirá cero bugs P0/P1 conocidos                               | Accepted |
-| DEC-074 | Se realizará Feature Freeze antes de release/presentación            | Accepted |
-| DEC-075 | Se utilizarán Release Candidates antes de 1.0.0                      | Accepted |
-| DEC-076 | SonarQube podrá utilizarse como herramienta de calidad               | Accepted |
-| DEC-077 | El desarrollo seguirá vertical slices                                | Accepted |
-| DEC-078 | La IA se implementará después del flujo manual correspondiente       | Accepted |
-| DEC-079 | Integraciones externas no podrán sustituir al núcleo determinístico  | Accepted |
-| DEC-080 | Hardening y Generality Test precederán al Release Candidate          | Accepted |
-| DEC-081 | Los agentes respetarán el orden de dependencias del roadmap          | Accepted |
-| DEC-082 | Después de V1 la prioridad pasará de completar a diferenciar         | Accepted |
-| DEC-083| Local S3-compatible development storage will use SeaweedFS
-instead of MinIO due to MinIO Community distribution changes.   | Accepted |
+| DEC-042 | V1 no tendrá enlaces públicos anónimos | Accepted |
+| DEC-043 | MFA se prepara pero no bloquea V1 | Accepted |
+| DEC-044 | Existirán perfiles LOCAL, TEST_CI, STAGING y PRODUCTION | Accepted |
+| DEC-045 | Docker será parte del entorno desde V1 | Accepted |
+| DEC-046 | Se priorizará un perfil FREE-DEMO reemplazable | Accepted |
+| DEC-047 | Kubernetes no será requisito de V1 | Accepted |
+| DEC-048 | Nginx será reverse proxy inicial en infraestructura propia | Accepted |
+| DEC-049 | main se mantendrá estable mediante PR y CI | Accepted |
+| DEC-050 | Se utilizará Conventional Commits | Accepted |
+| DEC-051 | La producción se promoverá inicialmente de forma controlada | Accepted |
+| DEC-052 | El software utilizará Semantic Versioning | Accepted |
+| DEC-053 | Prisma Migrate será el mecanismo de migración | Accepted |
+| DEC-054 | Se implementarán logs estructurados y correlation IDs | Accepted |
+| DEC-055 | Se implementarán health checks | Accepted |
+| DEC-056 | Se realizarán backups propios y pruebas de restauración | Accepted |
+| DEC-057 | RPO inicial objetivo <= 6 h | Accepted |
+| DEC-058 | RTO inicial objetivo <= 4 h | Accepted |
+| DEC-059 | API/Web deberán ser escalables horizontalmente | Accepted |
+| DEC-060 | Operaciones pesadas serán asíncronas | Accepted |
+| DEC-061 | Se utilizará graceful degradation | Accepted |
+| DEC-062 | Se adopta la política free-first, not free-at-all-costs | Accepted |
+| DEC-063 | V1 será un producto mínimo completo, no un prototipo parcial | Accepted |
+| DEC-064 | P0 tendrá prioridad absoluta sobre P1/P2 | Accepted |
+| DEC-065 | El flujo E2E completo será release blocker | Accepted |
+| DEC-066 | La generalidad se probará con varios dominios | Accepted |
+| DEC-067 | Los tests normales no dependerán de proveedores IA reales | Accepted |
+| DEC-068 | Existirá AI Evaluation Suite separada | Accepted |
+| DEC-069 | Cross-project isolation será release blocker | Accepted |
+| DEC-070 | Definition of Done incluirá seguridad, tests, auditoría y UX | Accepted |
+| DEC-071 | Global coverage objetivo inicial >= 70 % | Accepted |
+| DEC-072 | Áreas críticas aspirarán a >= 85 % coverage | Accepted |
+| DEC-073 | V1 requerirá cero bugs P0/P1 conocidos | Accepted |
+| DEC-074 | Se realizará Feature Freeze antes de release/presentación | Accepted |
+| DEC-075 | Se utilizarán Release Candidates antes de 1.0.0 | Accepted |
+| DEC-076 | SonarQube podrá utilizarse como herramienta de calidad | Accepted |
+| DEC-077 | El desarrollo seguirá vertical slices | Accepted |
+| DEC-078 | La IA se implementará después del flujo manual correspondiente | Accepted |
+| DEC-079 | Integraciones externas no podrán sustituir al núcleo determinístico | Accepted |
+| DEC-080 | Hardening y Generality Test precederán al Release Candidate | Accepted |
+| DEC-081 | Los agentes respetarán el orden de dependencias del roadmap | Accepted |
+| DEC-082 | Después de V1 la prioridad pasará de completar a diferenciar | Accepted |
+| DEC-083 | El almacenamiento S3-compatible local utilizará SeaweedFS en lugar de MinIO debido a cambios de distribución de MinIO Community | Accepted |
+| DEC-084 | Construction & Code Generation pasa a ser capacidad P0 de V1 | Accepted |
+| DEC-085 | V1 soportará un único TargetTemplate oficial: CASEFLOW_WEB_TS_V1 | Accepted |
+| DEC-086 | Los proyectos generados utilizarán arquitectura modular monolith en V1 | Accepted |
+| DEC-087 | El frontend generado usará Next.js + React + Tailwind CSS + shadcn/ui | Accepted |
+| DEC-088 | Los formularios generados usarán React Hook Form + Zod y el estado servidor TanStack Query | Accepted |
+| DEC-089 | El backend generado usará NestJS + REST/OpenAPI + Prisma + PostgreSQL | Accepted |
+| DEC-090 | Todo run oficial de construcción requiere un GenerationPlan aprobado | Accepted |
+| DEC-091 | UI Blueprint y mockups se revisarán antes de congelar la implementación definitiva | Accepted |
+| DEC-092 | Stitch será proveedor preferente de mockups cuando esté disponible; existirá fallback interno | Accepted |
+| DEC-093 | CASEFLOW_STANDARD_WEB_V1 será el DesignSystemProfile inicial | Accepted |
+| DEC-094 | Un Design Baseline aprobado precede a la generación oficial de código | Accepted |
+| DEC-095 | ImplementationPlan se genera después de aprobar el diseño | Accepted |
+| DEC-096 | El modelo conceptual precede al diseño y el modelo lógico/físico se finaliza después del Design Gate | Accepted |
+| DEC-097 | La generación combinará templates, generación determinística, AST y asistencia IA | Accepted |
+| DEC-098 | ts-morph será la opción inicial para transformaciones estructurales TypeScript cuando aporte seguridad | Accepted |
+| DEC-099 | OpenAPI será el contrato principal para derivar el cliente TypeScript frontend-backend | Accepted |
+| DEC-100 | La IA no podrá incorporar dependencias arbitrarias fuera del Approved Dependency Catalog | Accepted |
+| DEC-101 | El código generado nunca se ejecutará dentro del proceso principal de CASEFlow AI | Accepted |
+| DEC-102 | La validación de proyectos generados se ejecutará en sandbox Docker aislado | Accepted |
+| DEC-103 | El auto-repair tendrá un máximo inicial de 3 rondas por validación fallida | Accepted |
+| DEC-104 | Cada generación oficial produce un GeneratedProjectSnapshot identificable e inmutable | Accepted |
+| DEC-105 | La regeneración no sobrescribirá silenciosamente snapshots o cambios existentes | Accepted |
+| DEC-106 | La trazabilidad se extenderá desde fuente/requisito hasta API, módulos, archivos y pruebas | Accepted |
+| DEC-107 | ZIP ejecutable y reproducible será salida P0 de V1 | Accepted |
+| DEC-108 | Preview temporal será P1 y no bloqueará V1 | Accepted |
+| DEC-109 | Git push y despliegue automático quedan fuera del P0 de V1 | Accepted |
+| DEC-110 | Django, Spring y otros stacks se incorporarán como futuros TargetTemplates | Accepted |
+| DEC-111 | La generación será incremental por etapas y no una generación one-shot del repositorio completo | Accepted |
+| DEC-112 | Un GeneratedProject válido debe pasar install, lint, typecheck, test y build | Accepted |
+| DEC-113 | V1 no implementará sincronización bidireccional automática de cambios externos del código generado | Accepted |
+| DEC-114 | La generalidad de Construction se validará generando software en al menos dos dominios distintos | Accepted |
 
 ---
 
-# 180. Decisiones abiertas después de los Bloques 1–10
+# 214. Decisiones abiertas después de los Bloques 1–11
 
-Las decisiones siguientes pueden resolverse durante implementación sin bloquear el inicio del proyecto:
+Las decisiones necesarias para iniciar implementación están suficientemente cerradas.
 
-## Implementación UI
+Pueden decidirse durante implementación, sin alterar silenciosamente la arquitectura:
 
-* component library definitiva;
-* iconografía;
-* design tokens;
-* layout final;
-* branding visual.
+## UI de CASEFlow AI
+
+- branding definitivo;
+- design tokens finales;
+- onboarding;
+- layout refinado.
 
 ## AI
 
-* proveedor inicial concreto;
-* modelos iniciales;
-* configuración final de OmniRoute;
-* embedding model;
-* estrategia final de reranking.
+- proveedores/modelos iniciales exactos;
+- embedding model;
+- reranking;
+- configuración operacional de OmniRoute.
 
 ## Infraestructura
 
-* proveedor exacto de API staging;
-* proveedor exacto de PostgreSQL staging;
-* proveedor exacto de Redis staging;
-* proveedor exacto de correo staging;
-* dominio público.
+- proveedor exacto de staging para API;
+- PostgreSQL staging;
+- Redis staging;
+- email staging;
+- dominio.
 
-## Integraciones
+## Construction
 
-* fecha exacta de incorporación de Stitch;
-* PlantUML en V1 o V2;
-* Figma en V2;
-* ClamAV en V1 o V1.x.
+- template engine concreto;
+- OpenAPI client generator concreto;
+- parámetros exactos del sandbox;
+- network policy exacta del sandbox;
+- UX final del diff/visor;
+- si preview temporal entra en 1.0 o 1.1;
+- formato final del manifest de trazabilidad.
 
-## Producto
-
-* nombres definitivos de algunas pantallas;
-* branding completo;
-* logo;
-* contenido de onboarding;
-* métricas avanzadas.
-
-Estas decisiones MUST NOT reinterpretar o contradecir silenciosamente las decisiones ya aprobadas.
-
-Cuando una decisión abierta tenga impacto arquitectónico, deberá registrarse como nueva DEC o ADR.
+Una decisión abierta no puede contradecir una DEC Accepted.
 
 ---
 
-# 181. Source of Truth
+# 215. Source of Truth
 
-La prioridad documental del proyecto será:
+Prioridad documental:
 
 ```text
 1. CASEFLOW_AI_SPEC.md
 2. ADRs aprobados
-3. AGENTS.md para reglas operativas de agentes
+3. AGENTS.md
 4. OpenAPI / Prisma / código estructurado
-5. README y documentación secundaria
+5. README / documentación secundaria
 ```
 
-Si `AGENTS.md` contradice `CASEFLOW_AI_SPEC.md`:
+Si `AGENTS.md` contradice esta especificación:
 
 > prevalece `CASEFLOW_AI_SPEC.md`.
 
-Si una decisión arquitectónica posterior aprobada mediante ADR modifica esta especificación:
+Un ADR posterior puede modificar una decisión, pero debe actualizarse esta especificación para evitar divergencia.
 
-> CASEFLOW_AI_SPEC.md debe actualizarse.
+---
+
+# 216. Estado de esta especificación
+
+Esta versión consolida los **Bloques 1–11**, incluyendo el requisito extraordinario de Construction & Code Generation.
+
+CASEFlow AI queda definido como una plataforma I-CASE que debe cubrir en V1:
+
+```text
+Knowledge
+→ Analysis
+→ Design
+→ Construction
+→ Validation
+→ Documentation
+→ Export
+```
+
+El siguiente paso de planificación ya no requiere otro bloque arquitectónico principal.
+
+Antes de iniciar implementación significativa deben quedar sincronizados:
+
+```text
+docs/CASEFLOW_AI_SPEC.md
+AGENTS.md
+README.md
+```
+
+`AGENTS.md` deberá reflejar especialmente:
+
+- Construction como P0;
+- TargetTemplate V1;
+- Design Gate;
+- catálogo de dependencias;
+- sandbox;
+- auto-repair limitado;
+- prohibición de one-shot generation;
+- reglas de snapshot/regeneración;
+- Definition of Done del proyecto generado.

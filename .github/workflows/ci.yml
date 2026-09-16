@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  quality:
+    name: Quality (infrastructure-independent)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.27.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm build
+      - run: pnpm test
+      - run: pnpm test:coverage
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 14
+
+  integration:
+    name: Integration (PostgreSQL + pgvector)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.6-pg18
+        env:
+          POSTGRES_USER: caseflow_ci
+          POSTGRES_PASSWORD: caseflow_ci_password
+          POSTGRES_DB: caseflow_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U caseflow_ci -d caseflow_ci"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: postgresql://caseflow_ci:caseflow_ci_password@localhost:5432/caseflow_ci?schema=public
+      DATABASE_TEST_URL: postgresql://caseflow_ci:caseflow_ci_password@localhost:5432/caseflow_ci_test?schema=public
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.27.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:test:prepare
+      - run: pnpm test:integration

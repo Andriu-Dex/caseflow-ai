@@ -1,0 +1,11 @@
+// CASEFlow AI — Prisma schema (foundation placeholder)
+// No domain entities are defined yet. Models are added in later increments
+// once the corresponding domain/design work has been approved.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}

@@ -1,0 +1,14 @@
+{
+  "identities": [
+    {
+      "name": "caseflow",
+      "credentials": [
+        {
+          "accessKey": "caseflow",
+          "secretKey": "caseflow-local-dev"
+        }
+      ],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}

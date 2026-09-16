@@ -1,0 +1,29 @@
+{
+  "name": "@caseflow-ai/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CASEFlow AI API application (NestJS foundation)",
+  "scripts": {
+    "dev": "node --watch --require ts-node/register src/main.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@caseflow-ai/contracts": "workspace:*",
+    "@nestjs/common": "11.2.3",
+    "@nestjs/core": "11.2.3",
+    "@nestjs/platform-express": "11.2.3",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "11.2.3",
+    "@types/express": "5.0.6",
+    "@types/node": "24.13.4",
+    "@types/supertest": "7.2.1",
+    "supertest": "7.2.2",
+    "ts-node": "10.9.2",
+    "typescript": "5.9.3"
+  }
+}

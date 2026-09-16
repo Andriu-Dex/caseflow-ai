@@ -1,0 +1,17 @@
+node_modules
+.pnpm-store
+dist
+build
+.next
+out
+coverage
+.nyc_output
+playwright-report
+test-results
+prisma/generated
+pnpm-lock.yaml
+next-env.d.ts
+
+# Preserved specification/contract documents (do not reformat)
+docs/CASEFLOW_AI_SPEC.md
+AGENTS.md

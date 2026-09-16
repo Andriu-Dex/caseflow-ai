@@ -1,0 +1,91 @@
+name: caseflow-ai
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.6-pg18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: caseflow
+      POSTGRES_PASSWORD: caseflow-local-dev
+      POSTGRES_DB: caseflow
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U caseflow -d caseflow']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:8.10.1-alpine
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'redis-cli ping | grep -q PONG']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.47
+    restart: unless-stopped
+    command:
+      - server
+      - -dir=/data
+      - -s3
+      - -s3.port=8333
+      - -s3.config=/etc/seaweedfs/s3-config.json
+    ports:
+      - '8333:8333'
+    volumes:
+      - seaweedfs_data:/data
+      - ./seaweedfs/s3-config.json:/etc/seaweedfs/s3-config.json:ro
+    healthcheck:
+      test: ['CMD', 'nc', '-z', '127.0.0.1', '8333']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  storage-init:
+    image: amazon/aws-cli:2.36.46
+    depends_on:
+      seaweedfs:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: caseflow
+      AWS_SECRET_ACCESS_KEY: caseflow-local-dev
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - >
+        aws --endpoint-url=http://seaweedfs:8333 s3api head-bucket --bucket caseflow ||
+        aws --endpoint-url=http://seaweedfs:8333 s3api create-bucket --bucket caseflow
+    restart: 'no'
+
+  mailpit:
+    image: axllent/mailpit:v1.31.1
+    restart: unless-stopped
+    ports:
+      - '1025:1025'
+      - '8025:8025'
+    volumes:
+      - mailpit_data:/data
+    command:
+      - '--database=/data/mailpit.db'
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '--spider', 'http://localhost:8025/']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
+  redis_data:
+  seaweedfs_data:
+  mailpit_data:
