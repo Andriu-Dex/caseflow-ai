@@ -11,6 +11,7 @@ node_modules/
 # Next.js
 .next/
 out/
+next-env.d.ts
 
 # Build and generated output
 dist/
@@ -49,3 +50,4 @@ Desktop.ini
 *.tmp
 *.temp
 *.swp
+instruction.md

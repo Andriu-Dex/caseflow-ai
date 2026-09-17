@@ -1,0 +1,5 @@
+# Normalize line endings to LF for everyone, regardless of the checking-out
+# developer's core.autocrlf setting (Windows commonly defaults this to true,
+# which would otherwise produce CRLF files that fail Prettier's LF expectation
+# immediately after a fresh clone).
+* text=auto eol=lf
