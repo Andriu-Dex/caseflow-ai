@@ -53,8 +53,9 @@ describe('artifact lifecycle', () => {
 });
 
 describe('artifact types and codes', () => {
-  it('names the nine first-deliverable artifact types', () => {
+  it('names the first-deliverable artifact types including Project Context', () => {
     expect([...FIRST_DELIVERABLE_ARTIFACT_TYPE_CODES]).toEqual([
+      'PROJECT_CONTEXT',
       'REQUIREMENT',
       'USE_CASE',
       'DATA_MODEL',

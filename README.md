@@ -6,7 +6,7 @@ CASEFlow AI is an integrated, AI-assisted I-CASE (Computer-Aided Software Engine
 
 ## Current status
 
-This repository implements **Increment 0 — Foundation** (released as `v0.1.0`) plus **Increment 1A — Project + Artifact Foundation**: a minimal `Workspace` → `Project` model, generic `Artifact` / `ArtifactVersion` persistence with controlled artifact types and an immutable version history, PostgreSQL runtime access from the API through Prisma 7, and a minimal Project/Artifact REST API. There is **no** authentication, no AI integration, no diagrams and no code generation yet.
+This repository implements **Increment 0 — Foundation** (released as `v0.1.0`), **Increment 1A — Project + Artifact Foundation**, and **Increment 1B — Project Context**. It provides the minimal `Workspace` → `Project` model, generic immutable `Artifact` / `ArtifactVersion` persistence, and one structured, versioned canonical Project Context per project. There is **no** authentication, AI generation, diagrams or code generation yet.
 
 Delivery is currently prioritized around the **First Deliverable MVP** (requirements, use cases, data model, navigation, architecture, UI blueprint/mockups, review, versioning and basic traceability). See `docs/FIRST_DELIVERABLE_MVP.md` and `docs/CASEFLOW_AI_SPEC.md` §217–§219.
 
@@ -110,6 +110,8 @@ pnpm dev
 ## OpenAPI
 
 The API's OpenAPI document is generated from the same zod contracts (`packages/contracts`) that validate requests. Interactive Swagger UI is served at `/docs` (JSON at `/docs/openapi.json`) only when `NODE_ENV` is not `production`. To write the document to `apps/api/openapi/openapi.json` (git-ignored, deterministic, no database required) run `pnpm build && pnpm openapi:generate`.
+
+Project Context uses the semantic routes `POST /projects/{projectId}/context`, `GET /projects/{projectId}/context`, and `POST /projects/{projectId}/context/versions`. Generic artifact creation intentionally rejects `PROJECT_CONTEXT`.
 
 ## Infrastructure commands
 

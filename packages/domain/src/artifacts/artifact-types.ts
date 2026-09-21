@@ -3,6 +3,7 @@
 // this constant only names the types the first deliverable depends on.
 
 export const FIRST_DELIVERABLE_ARTIFACT_TYPE_CODES = [
+  'PROJECT_CONTEXT',
   'REQUIREMENT',
   'USE_CASE',
   'DATA_MODEL',

@@ -50,6 +50,13 @@ describe('ArtifactsService (rule branches)', () => {
     service = new ArtifactsService(prisma as unknown as PrismaService);
   });
 
+  it('rejects PROJECT_CONTEXT through the generic artifact workflow', async () => {
+    await expect(
+      service.createArtifact(projectId, { type: 'PROJECT_CONTEXT', title: 'Contexto' }),
+    ).rejects.toMatchObject({ status: 422 });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it('creates the artifact and version 1 using the type default prefix', async () => {
     tx.project.findUnique.mockResolvedValue({ id: projectId });
     tx.artifactType.findUnique.mockResolvedValue({ code: 'REQUIREMENT', defaultCodePrefix: 'RF' });

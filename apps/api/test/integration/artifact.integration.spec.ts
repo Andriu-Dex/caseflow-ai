@@ -74,7 +74,9 @@ describe('Artifact + ArtifactVersion foundation', () => {
     });
 
     it('accepts every first-deliverable artifact type', async () => {
-      for (const type of FIRST_DELIVERABLE_ARTIFACT_TYPE_CODES) {
+      for (const type of FIRST_DELIVERABLE_ARTIFACT_TYPE_CODES.filter(
+        (code) => code !== 'PROJECT_CONTEXT',
+      )) {
         const artifact = await ctx.artifacts.createArtifact(projectId, { type, title: type });
         expect(artifact.type).toBe(type);
       }

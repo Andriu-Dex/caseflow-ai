@@ -56,6 +56,12 @@ describe('official Prisma migrations on caseflow_test', () => {
         'artifacts',
         'artifact_versions',
         'project_code_counters',
+        'project_context_details',
+        'project_context_actors',
+        'project_context_needs',
+        'project_context_constraints',
+        'project_context_business_rules',
+        'project_context_scope_items',
       ]),
     );
   });
