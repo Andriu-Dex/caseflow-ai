@@ -4,10 +4,12 @@ import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { ProjectsModule } from './projects/projects.module';
 import { ProjectContextModule } from './project-context/project-context.module';
+import { AIModule } from './ai/ai.module';
 
 @Module({
   imports: [
     DatabaseModule.forRoot(),
+    AIModule,
     HealthModule,
     ProjectsModule,
     ArtifactsModule,

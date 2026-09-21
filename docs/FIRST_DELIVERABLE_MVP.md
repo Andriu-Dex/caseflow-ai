@@ -25,7 +25,7 @@ Planificación (Gantt/PERT) y reflexión/evidencia del equipo siguen siendo acti
 | --- | -------------------------------- | --------- |
 | 1A  | Project + Artifact Foundation    | Entregado |
 | 1B  | Project Context                  | Entregado |
-| 1C  | AI Generation Foundation         | Pendiente |
+| 1C  | AI Generation Foundation         | Entregado |
 | 1D  | Requirements                     | Pendiente |
 | 1E  | Use Cases                        | Pendiente |
 | 1F  | Data Model + Diagram Engine      | Pendiente |
@@ -51,6 +51,10 @@ No incluye todavía generación con IA, diagramas, generadores de requisitos/cas
 ## Estado tras el Incremento 1B
 
 Cada proyecto puede registrar manualmente un único contexto canónico `PROJECT_CONTEXT` (`CTX-001`) y crear versiones completas e inmutables. El contexto estructura problema, objetivo, alcance dentro/fuera, actores, necesidades, restricciones, reglas de negocio y contexto adicional. Este artefacto será la entrada de la generación posterior; todavía no realiza llamadas de IA.
+
+## Estado tras el Incremento 1C
+
+Existe una ruta interna `Feature → AIOrchestrator → AIProvider` para generación estructurada validada con Zod, un adapter OpenAI-compatible sin SDK de proveedor, prompts versionados en código y auditoría `AIRun` basada en hashes. La IA permanece deshabilitada por defecto y no existen endpoints ni generación de Requirements en este incremento.
 
 ## Probar la API manualmente (desarrollo)
 
