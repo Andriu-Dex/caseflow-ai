@@ -12,6 +12,7 @@
     "dev:web": "pnpm --filter @caseflow-ai/web run dev",
     "dev:api": "pnpm --filter @caseflow-ai/api run dev",
     "dev:worker": "pnpm --filter @caseflow-ai/worker run dev",
+    "openapi:generate": "pnpm --filter @caseflow-ai/api run openapi:generate",
     "build": "pnpm -r --if-present run build",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -21,15 +22,19 @@
     "infra:down": "docker compose -f infra/docker/compose.yml down",
     "infra:status": "docker compose -f infra/docker/compose.yml ps",
     "infra:logs": "docker compose -f infra/docker/compose.yml logs -f",
+    "postinstall": "node scripts/generate-prisma-client.mjs",
     "db:validate": "prisma validate",
+    "db:generate": "node scripts/generate-prisma-client.mjs",
     "db:migrate": "prisma migrate deploy",
     "db:test:prepare": "node scripts/prepare-test-database.mjs",
+    "db:test:migrate": "node scripts/migrate-test-database.mjs",
+    "db:seed:dev": "node scripts/seed-development.mjs",
     "test": "vitest run",
     "test:unit": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.mts",
     "test:coverage": "vitest run --coverage",
-    "verify": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run build && pnpm run test && pnpm run test:coverage",
-    "verify:integration": "pnpm run db:test:prepare && pnpm run test:integration"
+    "verify": "pnpm run db:generate && pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run build && pnpm run test && pnpm run test:coverage",
+    "verify:integration": "pnpm run db:test:prepare && pnpm run db:test:migrate && pnpm run test:integration"
   },
   "dependencies": {
     "@prisma/client": "7.10.0"

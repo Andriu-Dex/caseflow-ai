@@ -6,7 +6,12 @@
     "composite": false,
     "declaration": false,
     "declarationMap": false,
-    "noEmit": true
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@caseflow-ai/contracts": ["../packages/contracts/src/index.ts"],
+      "@caseflow-ai/domain": ["../packages/domain/src/index.ts"]
+    }
   },
   "include": ["**/*.ts"]
 }

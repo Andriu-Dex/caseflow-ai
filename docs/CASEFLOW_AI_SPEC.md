@@ -6352,6 +6352,8 @@ Release Candidate
 
 P0 anterior incompleto tiene prioridad sobre P1/P2 posterior.
 
+> **Nota de priorización (DEC-115):** el orden anterior describe el orden de dependencias a largo plazo. La planificación inmediata de calendario fue reordenada alrededor del **Primer Entregable Funcional (First Deliverable MVP)**. Ver §217–§219. Ningún elemento de este roadmap fue eliminado; Identity, Workspace, RBAC, Knowledge Base, RAG, Construction y Code Generation fueron repriorizados, no cancelados.
+
 ---
 
 # 181. Incremento 0 — Foundation
@@ -6415,9 +6417,13 @@ Gate:
 - usuario no autorizado no accede;
 - aislamiento probado.
 
+> **Nota de priorización (DEC-115):** este incremento **no** es el siguiente en el calendario inmediato. Su implementación completa (registration, login, sesiones, memberships, RBAC) queda diferida hasta después del Primer Entregable (§218, Incremento 1J). El Incremento 1A introduce únicamente la relación estructural mínima `Workspace → Project` para no contradecir este modelo.
+
 ---
 
 # 183. Incremento 2 — Artifact Core
+
+> **Nota de priorización (DEC-115):** la base de identidad/versión de `Artifact` y `ArtifactVersion` se adelanta en el Incremento 1A (§218). Este incremento conserva el alcance restante: ReviewRequest, ReviewDecision, approval, archive, audit y edición de borradores.
 
 Implementar:
 
@@ -7222,6 +7228,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-112 | Un GeneratedProject válido debe pasar install, lint, typecheck, test y build | Accepted |
 | DEC-113 | V1 no implementará sincronización bidireccional automática de cambios externos del código generado | Accepted |
 | DEC-114 | La generalidad de Construction se validará generando software en al menos dos dominios distintos | Accepted |
+| DEC-115 | El calendario inmediato se repriorizó alrededor del Primer Entregable Funcional (§217–§219); Identity/Workspace/RBAC, Knowledge Base, RAG y Construction se difieren, no se cancelan. Supera solo la priorización de calendario de §180 y §182 | Accepted |
 
 ---
 
@@ -7324,3 +7331,86 @@ README.md
 - prohibición de one-shot generation;
 - reglas de snapshot/regeneración;
 - Definition of Done del proyecto generado.
+
+---
+
+# 217. Primer Entregable Funcional (First Deliverable MVP)
+
+El instructor del curso aclaró el primer entregable funcional exigido. Las actividades de planificación y gestión del proyecto siguen siendo documentación principalmente elaborada por el equipo; **a partir de Análisis de Requisitos, el software CASEFlow AI mismo debe generar los artefactos CASE solicitados**.
+
+## 217.1 Alcance
+
+El primer entregable funcional académico requiere que el software produzca:
+
+- requisitos funcionales (RF) y no funcionales (RNF);
+- casos de uso estructurados (mínimo cuatro para el entregable académico);
+- representación del modelo de casos de uso (diagrama);
+- modelo de datos (ER o clases);
+- árbol de navegación;
+- arquitectura de software;
+- arquitectura de sistema;
+- UI Blueprint;
+- bocetos/mockups;
+- revisión y edición humana;
+- persistencia y versionamiento;
+- trazabilidad básica.
+
+## 217.2 Actividades fuera del núcleo P0 de generación
+
+La planificación del proyecto (Gantt, PERT y afines) y la reflexión/evidencia del equipo permanecen como actividades académicas **elaboradas por el equipo**. No forman parte de la generación P0 de CASEFlow AI.
+
+## 217.3 Relación con el resto de la especificación
+
+- El First Deliverable MVP **no reemplaza** la visión V1 de §1–§216; la reordena en el calendario.
+- Se mantienen íntegramente las reglas de human-in-the-loop, artefactos estructurados y versionados, fuente canónica sobre render, aislamiento por proyecto y funcionamiento sin IA.
+- La IA que genere artefactos en este entregable debe seguir el flujo `AI Output → Schema Validation → Domain Validation → Candidate → Human Review → Official Artifact` (DEC-025). Cada artefacto debe poder crearse y editarse manualmente (DEC-028, DEC-078).
+- La generación de código y el resto de Construction siguen siendo P0 de V1 (DEC-084), pero quedan posteriores al primer entregable.
+
+---
+
+# 218. Roadmap inmediato reordenado — Primer Entregable
+
+El siguiente orden gobierna el calendario inmediato. Cada incremento es un vertical slice y deja el repositorio ejecutable.
+
+| ID | Incremento | Alcance |
+|---|---|---|
+| 1A | Project + Artifact Foundation | `Workspace` y `Project` mínimos, `Artifact`, `ArtifactVersion`, tipos de artefacto controlados, ciclo de vida, migraciones, runtime Prisma y API mínima de persistencia. Sin generación. |
+| 1B | Project Context | Contexto del proyecto (objetivo, descripción, alcance) como base de la generación. |
+| 1C | AI Generation Foundation | `AIOrchestrator`, `ModelRouter`, gateway/provider, salida estructurada, candidatos y evidencia. |
+| 1D | Requirements | RF/RNF estructurados (§27), generación asistida y edición manual. |
+| 1E | Use Cases | Casos de uso estructurados (§28), mínimo cuatro. |
+| 1F | Data Model + Diagram Engine | Modelo de datos (ER/clases) y motor de diagramas (Mermaid), incluido el diagrama de casos de uso. |
+| 1G | Navigation + Architecture | Árbol de navegación, arquitectura de software y de sistema. |
+| 1H | UI Blueprint + Mockups | `UIBlueprint` canónico y bocetos/mockups con fallback interno. |
+| 1I | Traceability + Versions + Export | Trazabilidad básica, historial/comparación de versiones y exportación. |
+| 1J | First Deliverable Hardening | Estabilización, revisión humana de extremo a extremo y preparación de la entrega. |
+
+Tras el Incremento 1J se retoma el orden de dependencias de §180: Identity / Workspace / RBAC completos, Knowledge Base, RAG, Construction y Code Generation, sin cambios de alcance.
+
+## 218.1 Decisiones de modelo del Incremento 1A
+
+- **Workspace → Project.** Todo `Project` pertenece obligatoriamente a un `Workspace` (§3.1). El Incremento 1A crea únicamente las columnas mínimas de `Workspace`. `User`, memberships y RBAC pertenecen al incremento de Identity.
+- **Sin autenticación en 1A.** Los workspaces de desarrollo se crean mediante un seed de desarrollo explícito o fixtures de prueba, nunca mediante comportamiento hardcodeado de producción.
+- **Tipo de artefacto.** Se representa mediante una tabla de referencia normalizada (`artifact_types`), no un enum de base de datos, para poder añadir tipos sin `ALTER TYPE`. Los tipos iniciales son `REQUIREMENT`, `USE_CASE`, `DATA_MODEL`, `USE_CASE_DIAGRAM`, `NAVIGATION_TREE`, `SOFTWARE_ARCHITECTURE`, `SYSTEM_ARCHITECTURE`, `UI_BLUEPRINT` y `MOCKUP`.
+- **Estado y origen.** `ArtifactVersion.status` usa exactamente `DRAFT`, `GENERATED`, `IN_REVIEW`, `APPROVED`, `CHANGES_REQUESTED` (§5.2). `ArtifactVersion.origin` usa exactamente `MANUAL`, `AI_GENERATED`, `AI_ASSISTED`, `IMPORTED` (§6.3).
+- **`current_state` derivado.** El estado vigente de un artefacto se deriva de su versión vigente (la de mayor `version_number`); no se persiste un duplicado en `Artifact` (coherente con §5.4).
+- **Contenido genérico.** `metadata_auxiliary` (JSONB, objeto) es únicamente el mecanismo genérico auxiliar de §6.2. Los detalles de dominio de cada tipo se modelarán en tablas relacionales por su propio slice (§26).
+- **Inmutabilidad.** En 1A, una `ArtifactVersion` no se edita en sitio: editar crea una nueva versión. Solo las columnas de ciclo de vida (`status`, `submitted_at`, `approved_at`) pueden cambiar, y nunca en una versión `APPROVED`. Una versión no puede eliminarse. Se aplica en base de datos. El autosave de borradores (§15.2) se define en el Incremento 2.
+- **Aislamiento.** `artifact_versions` referencia `(artifact_id, project_id)` con una clave foránea compuesta hacia `artifacts (id, project_id)`, de modo que una versión no puede cruzar la frontera de proyecto. Todo acceso por API usa `projectId` en la ruta.
+- **Códigos.** `Artifact.code` es único por proyecto y se asigna con un contador monótono por `(project, prefijo)`; un código nunca se reutiliza (§31.4). El prefijo de código es una capacidad interna del servicio (p. ej. RNF para requisitos no funcionales en el Incremento 1D); la API pública no lo expone y no acepta prefijos arbitrarios.
+- **OpenAPI.** El documento OpenAPI se genera desde los mismos esquemas zod de `packages/contracts` que validan las solicitudes (una sola fuente de verdad). La UI interactiva (`/docs`) solo se sirve fuera de producción; el documento JSON se genera de forma determinística con `pnpm openapi:generate`.
+- **Versiones secuenciales.** `version_number` es único por artefacto y se asigna dentro de una transacción con bloqueo de la fila del artefacto.
+
+## 218.2 Documento de alcance
+
+`docs/FIRST_DELIVERABLE_MVP.md` resume este alcance para el equipo. Esta especificación es la fuente de verdad; ante discrepancia prevalece este documento.
+
+---
+
+# 219. DEC-115 — Repriorización del calendario alrededor del Primer Entregable
+
+- **Contexto.** El instructor exige que, desde Análisis de Requisitos, el propio software genere los artefactos CASE del primer entregable (§217).
+- **Decisión.** Reordenar el calendario inmediato como en §218. La tarea anteriormente planificada «Increment 1A — Identity Persistence Foundation» **no** se implementa; su lugar lo toma «Increment 1A — Project + Artifact Foundation».
+- **Supera.** Únicamente la priorización de calendario de §180 (orden de incrementos inmediatos) y §182 (Identity como siguiente incremento). No modifica ninguna decisión aprobada DEC-001…DEC-114.
+- **Conserva.** Identity, Workspace, RBAC, Knowledge Base, RAG, Construction y Code Generation permanecen en el alcance de V1.
+- **Estado.** Accepted.

@@ -6,7 +6,9 @@ CASEFlow AI is an integrated, AI-assisted I-CASE (Computer-Aided Software Engine
 
 ## Current status
 
-This repository currently implements **Increment 0 — Foundation** only: a working pnpm/TypeScript monorepo, the three Foundation applications (web, API, worker), local infrastructure, Prisma/PostgreSQL wiring, and a Vitest-based quality/testing baseline. **No product functionality exists yet** — no authentication, no Workspace/Project/Artifact model, no AI integration, no code generation. Those belong to later increments.
+This repository implements **Increment 0 — Foundation** (released as `v0.1.0`) plus **Increment 1A — Project + Artifact Foundation**: a minimal `Workspace` → `Project` model, generic `Artifact` / `ArtifactVersion` persistence with controlled artifact types and an immutable version history, PostgreSQL runtime access from the API through Prisma 7, and a minimal Project/Artifact REST API. There is **no** authentication, no AI integration, no diagrams and no code generation yet.
+
+Delivery is currently prioritized around the **First Deliverable MVP** (requirements, use cases, data model, navigation, architecture, UI blueprint/mockups, review, versioning and basic traceability). See `docs/FIRST_DELIVERABLE_MVP.md` and `docs/CASEFLOW_AI_SPEC.md` §217–§219.
 
 ## Technology foundation
 
@@ -42,6 +44,7 @@ packages/*      Shared workspace libraries:
   integrations    external-integration placeholder
   config          shared configuration placeholder
 prisma/         Prisma schema and migrations (PostgreSQL + pgvector)
+scripts/        Portable Node scripts for database preparation, migration and seeding
 infra/          Local infrastructure: infra/docker/compose.yml and related config
 docs/           Product/architecture specification and completion reports
 ```
@@ -60,6 +63,8 @@ pnpm install
 pnpm infra:up
 pnpm db:migrate
 pnpm db:test:prepare
+pnpm db:test:migrate
+pnpm db:seed:dev
 pnpm dev
 ```
 
@@ -73,29 +78,38 @@ pnpm install
 pnpm infra:up
 pnpm db:migrate
 pnpm db:test:prepare
+pnpm db:test:migrate
+pnpm db:seed:dev
 pnpm dev
 ```
 
-`pnpm dev` runs the web, API, and worker together (via `concurrently`); use `pnpm dev:web` / `pnpm dev:api` / `pnpm dev:worker` to run just one.
+`pnpm install` also generates the Prisma client (`postinstall`). `pnpm dev` runs the web, API, and worker together (via `concurrently`); use `pnpm dev:web` / `pnpm dev:api` / `pnpm dev:worker` to run just one.
 
 ## Local URLs
 
-| Service      | URL                               |
-| ------------ | --------------------------------- |
-| Web          | http://localhost:3000             |
-| API health   | http://localhost:3001/health/live |
-| Mailpit UI   | http://localhost:8025             |
-| SeaweedFS S3 | http://localhost:8333             |
+| Service      | URL                                              |
+| ------------ | ------------------------------------------------ |
+| Web          | http://localhost:3000                            |
+| API health   | http://localhost:3001/health/live                |
+| API (1A)     | http://localhost:3001/projects                   |
+| Swagger UI   | http://localhost:3001/docs (non-production only) |
+| Mailpit UI   | http://localhost:8025                            |
+| SeaweedFS S3 | http://localhost:8333                            |
 
 ## Quality commands
 
-| Command                 | Purpose                                                                                                                                                           |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm verify`           | The full infrastructure-independent quality gate: format check, lint, typecheck, build, unit tests, coverage. Never starts Docker or touches a database.          |
-| `pnpm test`             | The normal deterministic test suite for everyday use.                                                                                                             |
-| `pnpm test:unit`        | Tests that require no external infrastructure.                                                                                                                    |
-| `pnpm test:integration` | Tests that require infrastructure to already be running (currently: PostgreSQL). Use `pnpm verify:integration` if you also need the test database prepared first. |
-| `pnpm test:coverage`    | The unit suite with coverage instrumentation and a report.                                                                                                        |
+| Command                   | Purpose                                                                                                                                                                                       |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm verify`             | The full infrastructure-independent quality gate: format check, lint, typecheck, build, unit tests, coverage. Never starts Docker or touches a database.                                      |
+| `pnpm test`               | The normal deterministic test suite for everyday use.                                                                                                                                         |
+| `pnpm test:unit`          | Tests that require no external infrastructure.                                                                                                                                                |
+| `pnpm test:integration`   | Tests that require infrastructure to already be running (currently: PostgreSQL) and a migrated `caseflow_test`. Use `pnpm verify:integration` to prepare and migrate the test database first. |
+| `pnpm verify:integration` | `db:test:prepare` → `db:test:migrate` → `test:integration`. Only ever touches `caseflow_test`.                                                                                                |
+| `pnpm test:coverage`      | The unit suite with coverage instrumentation and a report.                                                                                                                                    |
+
+## OpenAPI
+
+The API's OpenAPI document is generated from the same zod contracts (`packages/contracts`) that validate requests. Interactive Swagger UI is served at `/docs` (JSON at `/docs/openapi.json`) only when `NODE_ENV` is not `production`. To write the document to `apps/api/openapi/openapi.json` (git-ignored, deterministic, no database required) run `pnpm build && pnpm openapi:generate`.
 
 ## Infrastructure commands
 
@@ -108,14 +122,17 @@ pnpm dev
 
 ## Database commands
 
-| Command                | Purpose                                                                                                                                                |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `pnpm db:validate`     | Validate `prisma/schema.prisma`.                                                                                                                       |
-| `pnpm db:migrate`      | Apply pending Prisma migrations (`prisma migrate deploy`).                                                                                             |
-| `pnpm db:test:prepare` | Idempotently create the isolated `caseflow_test` database (if missing) and enable pgvector in it. Portable — works the same on Windows, Linux, and CI. |
+| Command                | Purpose                                                                                                                                                   |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm db:validate`     | Validate `prisma/schema.prisma`.                                                                                                                          |
+| `pnpm db:migrate`      | Apply pending Prisma migrations (`prisma migrate deploy`).                                                                                                |
+| `pnpm db:generate`     | Generate the Prisma client into `apps/api/src/generated/prisma` (git-ignored; also runs on `pnpm install`).                                               |
+| `pnpm db:test:prepare` | Idempotently create the isolated `caseflow_test` database (if missing) and enable pgvector in it. Portable — works the same on Windows, Linux, and CI.    |
+| `pnpm db:test:migrate` | Apply the same official Prisma migrations to `caseflow_test` only. Refuses to run against the development database or any database not ending in `_test`. |
+| `pnpm db:seed:dev`     | Development-only, idempotent seed: creates the `dev-workspace` Workspace (there is no Identity/Workspace management yet). Prints its `workspaceId`.       |
 
 - **`caseflow`** is the normal local development database.
-- **`caseflow_test`** is a separate, isolated database used only by integration tests. It is never read or written by the running applications.
+- **`caseflow_test`** is a separate, isolated database used only by integration tests. It is never read or written by the running applications. Both databases are built from the same `prisma/migrations` history; `db:push` is never used.
 
 ## Troubleshooting
 
@@ -135,6 +152,7 @@ If a native PostgreSQL service is running, you will likely need to stop it while
 ## Architecture documentation
 
 - **`docs/CASEFLOW_AI_SPEC.md`** is the authoritative product and architecture specification.
+- **`docs/FIRST_DELIVERABLE_MVP.md`** summarizes the current delivery scope (a summary, not a second source of truth).
 - **`AGENTS.md`** is the operational contract for AI coding agents working in this repository — stricter and narrower than the spec, but must never contradict it.
 
 When the two disagree, `docs/CASEFLOW_AI_SPEC.md` wins (see `AGENTS.md`'s own instruction-priority rules).
