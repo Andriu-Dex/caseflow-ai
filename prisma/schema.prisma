@@ -41,6 +41,13 @@ enum ArtifactOrigin {
   @@map("artifact_origin")
 }
 
+enum ProjectContextScopeType {
+  IN_SCOPE
+  OUT_OF_SCOPE
+
+  @@map("project_context_scope_type")
+}
+
 // Logical team/organization that groups projects (spec §3.1).
 model Workspace {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -124,10 +131,90 @@ model ArtifactVersion {
   approvedAt        DateTime?             @map("approved_at") @db.Timestamptz(6)
 
   artifact Artifact @relation(fields: [artifactId, projectId], references: [id, projectId], onDelete: Restrict, onUpdate: Restrict)
+  projectContextDetail ProjectContextDetail?
 
   @@unique([artifactId, versionNumber])
   @@index([projectId])
   @@map("artifact_versions")
+}
+
+// Structured, immutable Project Context snapshot owned by one ArtifactVersion.
+model ProjectContextDetail {
+  artifactVersionId String  @id @map("artifact_version_id") @db.Uuid
+  problemStatement  String  @map("problem_statement")
+  objective         String
+  additionalContext String? @map("additional_context")
+
+  artifactVersion ArtifactVersion             @relation(fields: [artifactVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  actors          ProjectContextActor[]
+  needs           ProjectContextNeed[]
+  constraints     ProjectContextConstraint[]
+  businessRules   ProjectContextBusinessRule[]
+  scopeItems      ProjectContextScopeItem[]
+
+  @@map("project_context_details")
+}
+
+model ProjectContextActor {
+  id                String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  artifactVersionId String  @map("artifact_version_id") @db.Uuid
+  position          Int
+  name              String
+  description       String?
+
+  context ProjectContextDetail @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([artifactVersionId, position])
+  @@map("project_context_actors")
+}
+
+model ProjectContextNeed {
+  id                String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  artifactVersionId String @map("artifact_version_id") @db.Uuid
+  position          Int
+  description       String
+
+  context ProjectContextDetail @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([artifactVersionId, position])
+  @@map("project_context_needs")
+}
+
+model ProjectContextConstraint {
+  id                String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  artifactVersionId String @map("artifact_version_id") @db.Uuid
+  position          Int
+  description       String
+
+  context ProjectContextDetail @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([artifactVersionId, position])
+  @@map("project_context_constraints")
+}
+
+model ProjectContextBusinessRule {
+  id                String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  artifactVersionId String @map("artifact_version_id") @db.Uuid
+  position          Int
+  description       String
+
+  context ProjectContextDetail @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([artifactVersionId, position])
+  @@map("project_context_business_rules")
+}
+
+model ProjectContextScopeItem {
+  id                String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  artifactVersionId String                  @map("artifact_version_id") @db.Uuid
+  position          Int
+  type              ProjectContextScopeType
+  description       String
+
+  context ProjectContextDetail @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([artifactVersionId, position])
+  @@map("project_context_scope_items")
 }
 
 // Monotonic per-(project, prefix) counter used to allocate artifact codes.

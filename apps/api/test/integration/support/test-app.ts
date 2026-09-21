@@ -7,6 +7,8 @@ import { DatabaseModule } from '../../../src/database/database.module';
 import { PrismaService } from '../../../src/database/prisma.service';
 import { ProjectsModule } from '../../../src/projects/projects.module';
 import { ProjectsService } from '../../../src/projects/projects.service';
+import { ProjectContextModule } from '../../../src/project-context/project-context.module';
+import { ProjectContextService } from '../../../src/project-context/project-context.service';
 import { getTestConnectionString, resetTestData } from './test-database';
 
 export interface TestContext {
@@ -14,6 +16,7 @@ export interface TestContext {
   prisma: PrismaService;
   projects: ProjectsService;
   artifacts: ArtifactsService;
+  projectContext: ProjectContextService;
   // Raw connection for asserting database-level rules, bypassing the services.
   sql: Client;
   close: () => Promise<void>;
@@ -28,7 +31,12 @@ export async function createTestContext(): Promise<TestContext> {
   await resetTestData(sql);
 
   const moduleRef = await Test.createTestingModule({
-    imports: [DatabaseModule.forRoot({ connectionString }), ProjectsModule, ArtifactsModule],
+    imports: [
+      DatabaseModule.forRoot({ connectionString }),
+      ProjectsModule,
+      ArtifactsModule,
+      ProjectContextModule,
+    ],
   }).compile();
   const app = moduleRef.createNestApplication();
   await app.init();
@@ -38,6 +46,7 @@ export async function createTestContext(): Promise<TestContext> {
     prisma: app.get(PrismaService),
     projects: app.get(ProjectsService),
     artifacts: app.get(ArtifactsService),
+    projectContext: app.get(ProjectContextService),
     sql,
     close: async () => {
       await app.close();

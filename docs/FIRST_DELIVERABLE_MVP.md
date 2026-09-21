@@ -24,7 +24,7 @@ Planificación (Gantt/PERT) y reflexión/evidencia del equipo siguen siendo acti
 | ID  | Incremento                       | Estado    |
 | --- | -------------------------------- | --------- |
 | 1A  | Project + Artifact Foundation    | Entregado |
-| 1B  | Project Context                  | Pendiente |
+| 1B  | Project Context                  | Entregado |
 | 1C  | AI Generation Foundation         | Pendiente |
 | 1D  | Requirements                     | Pendiente |
 | 1E  | Use Cases                        | Pendiente |
@@ -48,6 +48,10 @@ Existe la base persistente sobre la que se construirán los siguientes increment
 
 No incluye todavía generación con IA, diagramas, generadores de requisitos/casos de uso, autenticación ni exportación.
 
+## Estado tras el Incremento 1B
+
+Cada proyecto puede registrar manualmente un único contexto canónico `PROJECT_CONTEXT` (`CTX-001`) y crear versiones completas e inmutables. El contexto estructura problema, objetivo, alcance dentro/fuera, actores, necesidades, restricciones, reglas de negocio y contexto adicional. Este artefacto será la entrada de la generación posterior; todavía no realiza llamadas de IA.
+
 ## Probar la API manualmente (desarrollo)
 
 Sin autenticación en 1A, el workspace de desarrollo se crea con un seed explícito:
@@ -69,3 +73,6 @@ Rutas (siempre acotadas por proyecto):
 | POST   | `/projects/{projectId}/artifacts`                       | Crear artefacto manual (`type`, `title`)     |
 | GET    | `/projects/{projectId}/artifacts/{artifactId}`          | Leer artefacto y su versión vigente          |
 | POST   | `/projects/{projectId}/artifacts/{artifactId}/versions` | Crear una nueva versión (editar = versionar) |
+| POST   | `/projects/{projectId}/context`                         | Crear el contexto canónico y su versión 1    |
+| GET    | `/projects/{projectId}/context`                         | Leer la versión vigente del contexto         |
+| POST   | `/projects/{projectId}/context/versions`                | Crear una versión completa nueva             |
