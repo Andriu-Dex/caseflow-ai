@@ -55,7 +55,7 @@ jobs:
           --health-retries=10
     env:
       DATABASE_URL: postgresql://caseflow_ci:caseflow_ci_password@localhost:5432/caseflow_ci?schema=public
-      DATABASE_TEST_URL: postgresql://caseflow_ci:caseflow_ci_password@localhost:5432/caseflow_ci_test?schema=public
+      DATABASE_TEST_URL: postgresql://caseflow_ci:caseflow_ci_password@localhost:5432/caseflow_test?schema=public
     steps:
       - uses: actions/checkout@v4
 
