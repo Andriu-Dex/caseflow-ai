@@ -7387,6 +7387,15 @@ El siguiente orden gobierna el calendario inmediato. Cada incremento es un verti
 
 Tras el Incremento 1J se retoma el orden de dependencias de §180: Identity / Workspace / RBAC completos, Knowledge Base, RAG, Construction y Code Generation, sin cambios de alcance.
 
+## 218.3 Decisiones de implementación del Incremento 1C
+
+- La frontera inicial es `Feature → AIOrchestrator → AIProvider`; el router avanzado se difiere hasta que existan múltiples proveedores o reglas reales de selección.
+- `AI_PROVIDER=disabled` es el modo predeterminado y no requiere credenciales. El primer adapter es `openai_compatible`, implementado con `fetch` nativo y sin fallback ni reintentos automáticos.
+- Los prompts son definiciones inmutables y versionadas en código. El contenido de proyecto se transporta exclusivamente como mensajes de rol `user`, separado de las instrucciones de sistema.
+- La salida se valida con el esquema Zod entregado por el feature antes de producir un `ValidatedGenerationCandidate<T>`.
+- `ai_runs` conserva metadatos, hashes SHA-256 y procedencia opcional hacia la versión exacta de contexto; no conserva claves, encabezados de autorización ni payloads completos.
+- Incremento 1C no expone endpoints de generación y no persiste artefactos de producto.
+
 ## 218.1 Decisiones de modelo del Incremento 1A
 
 - **Workspace → Project.** Todo `Project` pertenece obligatoriamente a un `Workspace` (§3.1). El Incremento 1A crea únicamente las columnas mínimas de `Workspace`. `User`, memberships y RBAC pertenecen al incremento de Identity.

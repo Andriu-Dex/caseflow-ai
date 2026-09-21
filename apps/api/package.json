@@ -8,11 +8,14 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node --env-file-if-exists=../../.env dist/main.js",
     "openapi:generate": "node dist/openapi/generate-openapi.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "pnpm --filter @caseflow-ai/ai run build && pnpm --filter @caseflow-ai/config run build && pnpm --filter @caseflow-ai/integrations run build && tsc --noEmit"
   },
   "dependencies": {
+    "@caseflow-ai/ai": "workspace:*",
+    "@caseflow-ai/config": "workspace:*",
     "@caseflow-ai/contracts": "workspace:*",
     "@caseflow-ai/domain": "workspace:*",
+    "@caseflow-ai/integrations": "workspace:*",
     "@nestjs/common": "11.2.3",
     "@nestjs/core": "11.2.3",
     "@nestjs/platform-express": "11.2.3",

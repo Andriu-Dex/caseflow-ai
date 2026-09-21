@@ -10,6 +10,9 @@ export default defineConfig({
     alias: {
       '@caseflow-ai/contracts': fromRoot('./packages/contracts/src/index.ts'),
       '@caseflow-ai/domain': fromRoot('./packages/domain/src/index.ts'),
+      '@caseflow-ai/ai': fromRoot('./packages/ai/src/index.ts'),
+      '@caseflow-ai/config': fromRoot('./packages/config/src/index.ts'),
+      '@caseflow-ai/integrations': fromRoot('./packages/integrations/src/index.ts'),
     },
   },
   test: {
