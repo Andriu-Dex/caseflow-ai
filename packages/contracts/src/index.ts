@@ -27,6 +27,19 @@ export {
   createArtifactRequestSchema,
   createArtifactVersionRequestSchema,
 } from './artifacts/artifact.contract';
+
+export {
+  PROJECT_CONTEXT_COLLECTION_LIMIT,
+  PROJECT_CONTEXT_SCOPE_TYPES,
+  projectContextActorInputSchema,
+  projectContextRequestSchema,
+  projectContextResponseSchema,
+  projectContextScopeItemInputSchema,
+} from './project-context/project-context.contract';
+export type {
+  ProjectContextRequest,
+  ProjectContextResponse,
+} from './project-context/project-context.contract';
 export type {
   ArtifactOrigin,
   ArtifactResponse,
