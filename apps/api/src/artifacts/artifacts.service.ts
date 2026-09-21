@@ -38,6 +38,11 @@ export class ArtifactsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async createArtifact(projectId: string, input: CreateArtifactInput): Promise<ArtifactResponse> {
+    if (input.type === 'PROJECT_CONTEXT') {
+      throw new UnprocessableEntityException(
+        'El contexto del proyecto debe crearse mediante su endpoint específico.',
+      );
+    }
     return this.prisma.$transaction(async (tx) => {
       const project = await tx.project.findUnique({
         where: { id: projectId },

@@ -7401,7 +7401,17 @@ Tras el Incremento 1J se retoma el orden de dependencias de §180: Identity / Wo
 - **OpenAPI.** El documento OpenAPI se genera desde los mismos esquemas zod de `packages/contracts` que validan las solicitudes (una sola fuente de verdad). La UI interactiva (`/docs`) solo se sirve fuera de producción; el documento JSON se genera de forma determinística con `pnpm openapi:generate`.
 - **Versiones secuenciales.** `version_number` es único por artefacto y se asigna dentro de una transacción con bloqueo de la fila del artefacto.
 
-## 218.2 Documento de alcance
+## 218.2 Decisiones de modelo del Incremento 1B
+
+- **Contexto canónico.** Cada proyecto puede tener como máximo un artefacto `PROJECT_CONTEXT`, con prefijo `CTX`. La unicidad se refuerza mediante un índice único parcial en base de datos.
+- **Versionamiento común.** Project Context reutiliza `Artifact` → `ArtifactVersion`; cada edición crea una versión completa nueva y nunca modifica una versión previa.
+- **Estructura relacional.** El detalle de cada versión conserva `problem_statement`, `objective` y `additional_context`; actores, necesidades, restricciones, reglas de negocio y elementos de alcance se almacenan en tablas relacionadas con posición determinística. `IN_SCOPE` y `OUT_OF_SCOPE` son los únicos tipos de alcance.
+- **Inmutabilidad.** El detalle y todas sus colecciones pertenecen a una `ArtifactVersion` específica y la base de datos rechaza su actualización o eliminación.
+- **API semántica.** El flujo público es `/projects/{projectId}/context`; la creación genérica de artefactos rechaza `PROJECT_CONTEXT` para impedir bypass de la invariante canónica.
+- **Límites de entrada.** Cada colección admite hasta 100 elementos; las descripciones de elementos admiten 2 000 caracteres, `problemStatement` y `additionalContext` 10 000, `objective` 5 000 y nombres de actor 200. Estos límites permiten describir proyectos reales y acotan solicitudes abusivas.
+- **Sin IA ni UI provisional.** El contexto funciona manualmente. La IA pertenece a 1C. La pantalla se difiere hasta disponer de selección coherente de proyecto, evitando IDs hardcodeados.
+
+## 218.3 Documento de alcance
 
 `docs/FIRST_DELIVERABLE_MVP.md` resume este alcance para el equipo. Esta especificación es la fuente de verdad; ante discrepancia prevalece este documento.
 

@@ -7,6 +7,7 @@ import {
   createArtifactRequestSchema,
   createArtifactVersionRequestSchema,
   createProjectRequestSchema,
+  projectContextRequestSchema,
 } from '@caseflow-ai/contracts';
 import request from 'supertest';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -35,6 +36,8 @@ const PROJECT = '/projects/{projectId}';
 const ARTIFACTS = '/projects/{projectId}/artifacts';
 const ARTIFACT = '/projects/{projectId}/artifacts/{artifactId}';
 const VERSIONS = '/projects/{projectId}/artifacts/{artifactId}/versions';
+const CONTEXT = '/projects/{projectId}/context';
+const CONTEXT_VERSIONS = '/projects/{projectId}/context/versions';
 
 describe('OpenAPI contract', () => {
   let app: INestApplication;
@@ -79,6 +82,9 @@ describe('OpenAPI contract', () => {
         `POST ${ARTIFACTS}`,
         `GET ${ARTIFACT}`,
         `POST ${VERSIONS}`,
+        `GET ${CONTEXT}`,
+        `POST ${CONTEXT}`,
+        `POST ${CONTEXT_VERSIONS}`,
       ].sort(),
     );
     expect(Object.keys(document.paths)).not.toContain('/health/ready');
@@ -101,9 +107,12 @@ describe('OpenAPI contract', () => {
       'createArtifact',
       'createArtifactVersion',
       'createProject',
+      'createProjectContext',
+      'createProjectContextVersion',
       'getArtifact',
       'getHealthLive',
       'getProject',
+      'getProjectContext',
       'listProjects',
     ]);
   });
@@ -116,6 +125,8 @@ describe('OpenAPI contract', () => {
     expect(body('/projects')).toEqual(toOpenApiSchema(createProjectRequestSchema, 'input'));
     expect(body(ARTIFACTS)).toEqual(toOpenApiSchema(createArtifactRequestSchema, 'input'));
     expect(body(VERSIONS)).toEqual(toOpenApiSchema(createArtifactVersionRequestSchema, 'input'));
+    expect(body(CONTEXT)).toEqual(toOpenApiSchema(projectContextRequestSchema, 'input'));
+    expect(body(CONTEXT_VERSIONS)).toEqual(toOpenApiSchema(projectContextRequestSchema, 'input'));
 
     expect(body('/projects').required).toEqual(['workspaceId', 'name']);
     expect(body(ARTIFACTS).required).toEqual(['type', 'title']);
@@ -144,6 +155,8 @@ describe('OpenAPI contract', () => {
       'path:artifactId:true',
       'path:projectId:true',
     ]);
+    expect(params(CONTEXT, 'get')).toEqual(['path:projectId:true']);
+    expect(params(CONTEXT_VERSIONS, 'post')).toEqual(['path:projectId:true']);
     expect(params('/projects', 'get').sort()).toEqual([
       'query:limit:false',
       'query:offset:false',
@@ -165,6 +178,9 @@ describe('OpenAPI contract', () => {
     expect(statuses(ARTIFACTS, 'post')).toEqual(['201', '400', '404', '422']);
     expect(statuses(ARTIFACT, 'get')).toEqual(['200', '400', '404']);
     expect(statuses(VERSIONS, 'post')).toEqual(['201', '400', '404']);
+    expect(statuses(CONTEXT, 'post')).toEqual(['201', '400', '404', '409']);
+    expect(statuses(CONTEXT, 'get')).toEqual(['200', '400', '404']);
+    expect(statuses(CONTEXT_VERSIONS, 'post')).toEqual(['201', '400', '404']);
   });
 
   it('describes response schemas', async () => {
@@ -191,6 +207,10 @@ describe('OpenAPI contract', () => {
     ]);
     expect(schema(VERSIONS, 'post', '201').properties.versionNumber.type).toBe('integer');
     expect(schema(ARTIFACT, 'get', '404').properties.message.type).toBe('string');
+    expect(schema(CONTEXT, 'post', '201').properties.type.enum).toEqual(['PROJECT_CONTEXT']);
+    expect(
+      schema(CONTEXT, 'post', '201').properties.scopeItems.items.properties.position.type,
+    ).toBe('integer');
   });
 
   it('does not leak database or implementation internals', async () => {
