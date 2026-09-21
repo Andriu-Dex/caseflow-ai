@@ -48,6 +48,25 @@ enum ProjectContextScopeType {
   @@map("project_context_scope_type")
 }
 
+enum AIRunStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+
+  @@map("ai_run_status")
+}
+
+enum AIErrorCode {
+  AI_NOT_CONFIGURED
+  AI_PROVIDER_UNAVAILABLE
+  AI_TIMEOUT
+  AI_RATE_LIMITED
+  AI_INVALID_OUTPUT
+  AI_PROVIDER_ERROR
+
+  @@map("ai_error_code")
+}
+
 // Logical team/organization that groups projects (spec §3.1).
 model Workspace {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -73,6 +92,7 @@ model Project {
   workspace    Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   artifacts    Artifact[]
   codeCounters ProjectCodeCounter[]
+  aiRuns       AIRun[]
 
   @@index([workspaceId, createdAt, id])
   @@map("projects")
@@ -132,8 +152,10 @@ model ArtifactVersion {
 
   artifact Artifact @relation(fields: [artifactId, projectId], references: [id, projectId], onDelete: Restrict, onUpdate: Restrict)
   projectContextDetail ProjectContextDetail?
+  sourceForAIRuns       AIRun[]
 
   @@unique([artifactId, versionNumber])
+  @@unique([id, projectId])
   @@index([projectId])
   @@map("artifact_versions")
 }
@@ -228,4 +250,35 @@ model ProjectCodeCounter {
 
   @@id([projectId, codePrefix])
   @@map("project_code_counters")
+}
+
+// Auditable metadata for an AI invocation. Inputs and outputs are represented
+// by SHA-256 hashes; provider secrets and complete payloads are never stored.
+model AIRun {
+  id                      String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId               String?      @map("project_id") @db.Uuid
+  sourceArtifactVersionId String?      @map("source_artifact_version_id") @db.Uuid
+  provider                String
+  model                   String?
+  capability              String
+  purpose                 String
+  promptKey               String       @map("prompt_key")
+  promptVersion           Int          @map("prompt_version")
+  status                  AIRunStatus
+  startedAt               DateTime     @default(now()) @map("started_at") @db.Timestamptz(6)
+  completedAt             DateTime?    @map("completed_at") @db.Timestamptz(6)
+  latencyMs               Int?         @map("latency_ms")
+  inputTokens             Int?         @map("input_tokens")
+  outputTokens            Int?         @map("output_tokens")
+  totalTokens             Int?         @map("total_tokens")
+  errorCode               AIErrorCode? @map("error_code")
+  inputHash               String       @map("input_hash") @db.Char(64)
+  outputHash              String?      @map("output_hash") @db.Char(64)
+
+  project               Project?         @relation(fields: [projectId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sourceArtifactVersion ArtifactVersion? @relation(fields: [sourceArtifactVersionId, projectId], references: [id, projectId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([projectId, startedAt, id])
+  @@index([sourceArtifactVersionId])
+  @@map("ai_runs")
 }

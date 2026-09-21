@@ -10,7 +10,10 @@
     "baseUrl": ".",
     "paths": {
       "@caseflow-ai/contracts": ["../packages/contracts/src/index.ts"],
-      "@caseflow-ai/domain": ["../packages/domain/src/index.ts"]
+      "@caseflow-ai/domain": ["../packages/domain/src/index.ts"],
+      "@caseflow-ai/ai": ["../packages/ai/src/index.ts"],
+      "@caseflow-ai/config": ["../packages/config/src/index.ts"],
+      "@caseflow-ai/integrations": ["../packages/integrations/src/index.ts"]
     }
   },
   "include": ["**/*.ts"]

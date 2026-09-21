@@ -60,12 +60,21 @@ importers:
 
   apps/api:
     dependencies:
+      '@caseflow-ai/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
+      '@caseflow-ai/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@caseflow-ai/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
       '@caseflow-ai/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@caseflow-ai/integrations':
+        specifier: workspace:*
+        version: link:../../packages/integrations
       '@nestjs/common':
         specifier: 11.2.3
         version: 11.2.3(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2)
@@ -172,9 +181,17 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  packages/ai: {}
+  packages/ai:
+    dependencies:
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
 
-  packages/config: {}
+  packages/config:
+    dependencies:
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
 
   packages/contracts:
     dependencies:
@@ -184,7 +201,11 @@ importers:
 
   packages/domain: {}
 
-  packages/integrations: {}
+  packages/integrations:
+    dependencies:
+      '@caseflow-ai/ai':
+        specifier: workspace:*
+        version: link:../ai
 
   packages/ui: {}
 

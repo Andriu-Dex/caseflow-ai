@@ -6,7 +6,7 @@ CASEFlow AI is an integrated, AI-assisted I-CASE (Computer-Aided Software Engine
 
 ## Current status
 
-This repository implements **Increment 0 — Foundation** (released as `v0.1.0`), **Increment 1A — Project + Artifact Foundation**, and **Increment 1B — Project Context**. It provides the minimal `Workspace` → `Project` model, generic immutable `Artifact` / `ArtifactVersion` persistence, and one structured, versioned canonical Project Context per project. There is **no** authentication, AI generation, diagrams or code generation yet.
+This repository implements **Increment 0 — Foundation**, **Increment 1A — Project + Artifact Foundation**, **Increment 1B — Project Context**, and the **Increment 1C — AI Generation Foundation**. It provides provider-independent, schema-validated and auditable AI infrastructure, but deliberately has no product generation endpoint or Requirements generation yet.
 
 Delivery is currently prioritized around the **First Deliverable MVP** (requirements, use cases, data model, navigation, architecture, UI blueprint/mockups, review, versioning and basic traceability). See `docs/FIRST_DELIVERABLE_MVP.md` and `docs/CASEFLOW_AI_SPEC.md` §217–§219.
 
@@ -40,9 +40,9 @@ packages/*      Shared workspace libraries:
   domain          framework-free domain placeholder
   contracts       shared API contracts/types (CommonJS, consumable by apps/api)
   ui              shared UI package (ESM, for apps/web)
-  ai              AI orchestration placeholder
-  integrations    external-integration placeholder
-  config          shared configuration placeholder
+  ai              provider-independent AI contracts and orchestration
+  integrations    OpenAI-compatible provider adapter
+  config          validated shared configuration
 prisma/         Prisma schema and migrations (PostgreSQL + pgvector)
 scripts/        Portable Node scripts for database preparation, migration and seeding
 infra/          Local infrastructure: infra/docker/compose.yml and related config
@@ -84,6 +84,8 @@ pnpm dev
 ```
 
 `pnpm install` also generates the Prisma client (`postinstall`). `pnpm dev` runs the web, API, and worker together (via `concurrently`); use `pnpm dev:web` / `pnpm dev:api` / `pnpm dev:worker` to run just one.
+
+AI is optional. The default `AI_PROVIDER=disabled` starts the API without a key and preserves all manual functionality. To prepare the adapter for later feature slices, set `AI_PROVIDER=openai_compatible` together with `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`, and optionally `AI_TIMEOUT_MS`. No public AI generation route exists in Increment 1C.
 
 ## Local URLs
 
