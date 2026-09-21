@@ -9,6 +9,8 @@ coverage
 playwright-report
 test-results
 prisma/generated
+apps/api/src/generated
+apps/api/openapi
 pnpm-lock.yaml
 next-env.d.ts
 

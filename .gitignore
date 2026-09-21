@@ -51,3 +51,8 @@ Desktop.ini
 *.temp
 *.swp
 instruction.md
+# Prisma client generated into the API app (pnpm db:generate)
+apps/api/src/generated/
+
+# Generated OpenAPI document (pnpm openapi:generate)
+apps/api/openapi/

@@ -1,11 +1,144 @@
-// CASEFlow AI — Prisma schema (foundation placeholder)
-// No domain entities are defined yet. Models are added in later increments
-// once the corresponding domain/design work has been approved.
+// CASEFlow AI — Prisma schema.
+//
+// Increment 1A (Project + Artifact Foundation): Workspace, Project, controlled
+// artifact types, Artifact, ArtifactVersion and per-project code counters.
+// Users, memberships and RBAC belong to the Identity increment; subtype tables
+// (requirements, use cases, ...) belong to their own vertical slices.
+//
+// Database-level rules that Prisma cannot express (CHECK constraints, the
+// ArtifactVersion immutability trigger, artifact_types seed rows) live in the
+// migration SQL and are part of the schema contract.
 
 generator client {
-  provider = "prisma-client-js"
+  provider            = "prisma-client"
+  output              = "../apps/api/src/generated/prisma"
+  moduleFormat        = "cjs"
+  importFileExtension = ""
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+// Lifecycle of an ArtifactVersion (spec §5.2).
+enum ArtifactVersionStatus {
+  DRAFT
+  GENERATED
+  IN_REVIEW
+  APPROVED
+  CHANGES_REQUESTED
+
+  @@map("artifact_version_status")
+}
+
+// Where an ArtifactVersion came from (spec §6.3).
+enum ArtifactOrigin {
+  MANUAL
+  AI_GENERATED
+  AI_ASSISTED
+  IMPORTED
+
+  @@map("artifact_origin")
+}
+
+// Logical team/organization that groups projects (spec §3.1).
+model Workspace {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug      String   @unique
+  name      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  projects Project[]
+
+  @@map("workspaces")
+}
+
+// Main functional unit of the system (spec §3.2). Domain-independent.
+model Project {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  name        String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace    Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  artifacts    Artifact[]
+  codeCounters ProjectCodeCounter[]
+
+  @@index([workspaceId, createdAt, id])
+  @@map("projects")
+}
+
+// Controlled reference table of artifact types. Adding a type is a data
+// migration (INSERT), not an ALTER TYPE.
+model ArtifactType {
+  code              String   @id
+  defaultCodePrefix String   @map("default_code_prefix")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  artifacts Artifact[]
+
+  @@map("artifact_types")
+}
+
+// Stable logical identity of an artifact (spec §6.2, §31.1).
+// The "current state" is derived from the latest ArtifactVersion.
+model Artifact {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId        String   @map("project_id") @db.Uuid
+  artifactTypeCode String   @map("artifact_type_code")
+  code             String
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project      Project           @relation(fields: [projectId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  artifactType ArtifactType      @relation(fields: [artifactTypeCode], references: [code], onDelete: Restrict, onUpdate: Restrict)
+  versions     ArtifactVersion[]
+
+  // Project-scoped, never-reused codes (spec §31.4).
+  @@unique([projectId, code])
+  // Target of the composite foreign key that keeps versions inside the
+  // artifact's project (spec §32).
+  @@unique([id, projectId])
+  @@index([projectId, artifactTypeCode])
+  @@map("artifacts")
+}
+
+// Historical state of an artifact (spec §6.2, §15). Content columns are
+// immutable; see the trigger in the 1A migration.
+model ArtifactVersion {
+  id                String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  artifactId        String                @map("artifact_id") @db.Uuid
+  // Denormalized from the artifact and enforced by the composite foreign key.
+  projectId         String                @map("project_id") @db.Uuid
+  versionNumber     Int                   @map("version_number")
+  title             String
+  status            ArtifactVersionStatus
+  origin            ArtifactOrigin
+  // Auxiliary structured metadata only (spec §6.2). Never a substitute for
+  // relational modeling of domain entities.
+  metadataAuxiliary Json                  @default("{}") @map("metadata_auxiliary")
+  createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  submittedAt       DateTime?             @map("submitted_at") @db.Timestamptz(6)
+  approvedAt        DateTime?             @map("approved_at") @db.Timestamptz(6)
+
+  artifact Artifact @relation(fields: [artifactId, projectId], references: [id, projectId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([artifactId, versionNumber])
+  @@index([projectId])
+  @@map("artifact_versions")
+}
+
+// Monotonic per-(project, prefix) counter used to allocate artifact codes.
+// Counters only increase, so an archived artifact's code is never reused.
+model ProjectCodeCounter {
+  projectId  String @map("project_id") @db.Uuid
+  codePrefix String @map("code_prefix")
+  lastNumber Int    @map("last_number")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@id([projectId, codePrefix])
+  @@map("project_code_counters")
 }

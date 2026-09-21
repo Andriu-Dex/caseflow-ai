@@ -1,0 +1,71 @@
+# Primer Entregable Funcional (First Deliverable MVP)
+
+> Resumen de alcance para el equipo. La fuente de verdad es `docs/CASEFLOW_AI_SPEC.md` (§217–§219, DEC-115). Ante cualquier discrepancia, prevalece la especificación.
+
+## Qué exige el entregable
+
+A partir de Análisis de Requisitos, el propio software CASEFlow AI debe generar los artefactos CASE solicitados:
+
+- requisitos funcionales y no funcionales;
+- casos de uso estructurados (mínimo cuatro);
+- representación del modelo de casos de uso (diagrama);
+- modelo de datos (ER o clases);
+- árbol de navegación;
+- arquitectura de software y arquitectura de sistema;
+- UI Blueprint y bocetos/mockups;
+- revisión y edición humana;
+- persistencia y versionamiento;
+- trazabilidad básica.
+
+Planificación (Gantt/PERT) y reflexión/evidencia del equipo siguen siendo actividades académicas elaboradas por el equipo; no las genera CASEFlow AI.
+
+## Roadmap inmediato
+
+| ID  | Incremento                       | Estado    |
+| --- | -------------------------------- | --------- |
+| 1A  | Project + Artifact Foundation    | Entregado |
+| 1B  | Project Context                  | Pendiente |
+| 1C  | AI Generation Foundation         | Pendiente |
+| 1D  | Requirements                     | Pendiente |
+| 1E  | Use Cases                        | Pendiente |
+| 1F  | Data Model + Diagram Engine      | Pendiente |
+| 1G  | Navigation + Architecture        | Pendiente |
+| 1H  | UI Blueprint + Mockups           | Pendiente |
+| 1I  | Traceability + Versions + Export | Pendiente |
+| 1J  | First Deliverable Hardening      | Pendiente |
+
+Identity, Workspace/RBAC completos, Knowledge Base, RAG, Construction y Code Generation no se cancelan: se retoman tras 1J.
+
+## Estado tras el Incremento 1A
+
+Existe la base persistente sobre la que se construirán los siguientes incrementos:
+
+- `Workspace` y `Project` mínimos (un proyecto pertenece siempre a un workspace);
+- `Artifact` (identidad estable) y `ArtifactVersion` (estado histórico inmutable);
+- tipos de artefacto controlados (`artifact_types`): `REQUIREMENT`, `USE_CASE`, `DATA_MODEL`, `USE_CASE_DIAGRAM`, `NAVIGATION_TREE`, `SOFTWARE_ARCHITECTURE`, `SYSTEM_ARCHITECTURE`, `UI_BLUEPRINT`, `MOCKUP`;
+- ciclo de vida `DRAFT`, `GENERATED`, `IN_REVIEW`, `APPROVED`, `CHANGES_REQUESTED` y origen `MANUAL`, `AI_GENERATED`, `AI_ASSISTED`, `IMPORTED`;
+- API mínima para crear/leer proyectos y crear/leer artefactos y sus versiones.
+
+No incluye todavía generación con IA, diagramas, generadores de requisitos/casos de uso, autenticación ni exportación.
+
+## Probar la API manualmente (desarrollo)
+
+Sin autenticación en 1A, el workspace de desarrollo se crea con un seed explícito:
+
+```bash
+pnpm infra:up
+pnpm db:migrate
+pnpm db:seed:dev        # imprime el workspaceId
+pnpm dev:api
+```
+
+Rutas (siempre acotadas por proyecto):
+
+| Método | Ruta                                                    | Propósito                                    |
+| ------ | ------------------------------------------------------- | -------------------------------------------- |
+| POST   | `/projects`                                             | Crear proyecto (`workspaceId`, `name`)       |
+| GET    | `/projects?workspaceId=…`                               | Listar proyectos de un workspace             |
+| GET    | `/projects/{projectId}`                                 | Leer proyecto                                |
+| POST   | `/projects/{projectId}/artifacts`                       | Crear artefacto manual (`type`, `title`)     |
+| GET    | `/projects/{projectId}/artifacts/{artifactId}`          | Leer artefacto y su versión vigente          |
+| POST   | `/projects/{projectId}/artifacts/{artifactId}/versions` | Crear una nueva versión (editar = versionar) |
