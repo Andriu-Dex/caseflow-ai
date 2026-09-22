@@ -40,12 +40,12 @@ describe('Project + Artifact HTTP API', () => {
 
     const artifactRes = await http()
       .post(`/projects/${projectId}/artifacts`)
-      .send({ type: 'USE_CASE', title: 'CU inicial', metadataAuxiliary: { k: 'v' } });
+      .send({ type: 'DATA_MODEL', title: 'Modelo inicial', metadataAuxiliary: { k: 'v' } });
     expect(artifactRes.status).toBe(201);
     expect(artifactRes.body).toMatchObject({
       projectId,
-      type: 'USE_CASE',
-      code: 'CU-001',
+      type: 'DATA_MODEL',
+      code: 'MD-001',
       currentVersion: { versionNumber: 1, status: 'DRAFT', origin: 'MANUAL' },
     });
     const artifactId = artifactRes.body.id as string;
@@ -67,7 +67,7 @@ describe('Project + Artifact HTTP API', () => {
     const b = (await http().post('/projects').send({ workspaceId, name: 'B' })).body.id as string;
     const artifact = await http()
       .post(`/projects/${a}/artifacts`)
-      .send({ type: 'USE_CASE', title: 'CU' });
+      .send({ type: 'DATA_MODEL', title: 'Modelo' });
 
     const read = await http().get(`/projects/${b}/artifacts/${artifact.body.id}`);
     const write = await http()
@@ -91,7 +91,7 @@ describe('Project + Artifact HTTP API', () => {
 
     const smuggledOrigin = await http()
       .post(`/projects/${project}/artifacts`)
-      .send({ type: 'USE_CASE', title: 't', origin: 'AI_GENERATED', status: 'APPROVED' });
+      .send({ type: 'DATA_MODEL', title: 't', origin: 'AI_GENERATED', status: 'APPROVED' });
     expect(smuggledOrigin.status).toBe(400);
 
     const missing = await http().get('/projects/00000000-0000-4000-8000-000000000000');
@@ -137,7 +137,7 @@ describe('Project + Artifact HTTP API', () => {
 
     const response = await http()
       .post(`/projects/${project}/artifacts`)
-      .send({ type: 'USE_CASE', title: 'prefijo falso', codePrefix: 'ALT' });
+      .send({ type: 'DATA_MODEL', title: 'prefijo falso', codePrefix: 'ALT' });
 
     expect(response.status).toBe(400);
   });

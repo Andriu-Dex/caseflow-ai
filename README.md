@@ -6,7 +6,7 @@ CASEFlow AI is an integrated, AI-assisted I-CASE (Computer-Aided Software Engine
 
 ## Current status
 
-This repository implements Foundation through **Increment 1D — Requirements**. It supports manual RF/RNF creation and versioning plus optional, schema-validated AI candidate generation from an exact Project Context version, human selection, lifecycle review, provenance, and relational dependencies.
+This repository implements Foundation through **Increment 1E — Use Cases**. It supports structured manual RF/RNF and CU creation/versioning, optional schema-validated AI candidate generation, human selection, lifecycle review, and exact relational provenance from Use Cases to approved Requirement versions.
 
 Delivery is currently prioritized around the **First Deliverable MVP** (requirements, use cases, data model, navigation, architecture, UI blueprint/mockups, review, versioning and basic traceability). See `docs/FIRST_DELIVERABLE_MVP.md` and `docs/CASEFLOW_AI_SPEC.md` §217–§219.
 
@@ -85,7 +85,7 @@ pnpm dev
 
 `pnpm install` also generates the Prisma client (`postinstall`). `pnpm dev` runs the web, API, and worker together (via `concurrently`); use `pnpm dev:web` / `pnpm dev:api` / `pnpm dev:worker` to run just one.
 
-AI is optional. The default `AI_PROVIDER=disabled` starts the API without a key and preserves all manual functionality. To prepare the adapter for later feature slices, set `AI_PROVIDER=openai_compatible` together with `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`, and optionally `AI_TIMEOUT_MS`. No public AI generation route exists in Increment 1C.
+AI is optional. The default `AI_PROVIDER=disabled` starts the API without a key and preserves all manual functionality. To enable the adapter, set `AI_PROVIDER=openai_compatible` together with `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`, and optionally `AI_TIMEOUT_MS`. Requirements and Use Cases expose optional candidate-generation routes; with the disabled provider they return `AI_NOT_CONFIGURED`.
 
 The OpenAI-compatible adapter specifically requires `POST {AI_BASE_URL}/chat/completions` with strict `json_schema` response support; compatibility with every OpenAI-like provider is not implied. Normal tests never call a live provider.
 
