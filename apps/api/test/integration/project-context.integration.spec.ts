@@ -147,6 +147,18 @@ describe('Project Context integration', () => {
     ).toBe(404);
   });
 
+  it('enforces the explicit human approval gate lifecycle', async () => {
+    const project = await createProject(ctx, 'Approval Gate');
+    const draft = await service.create(project.id, contextInput());
+    expect(draft.version.status).toBe('DRAFT');
+    await expect(service.transition(project.id, draft.version.id, 'APPROVED')).rejects.toThrow(
+      'Transición',
+    );
+    await service.transition(project.id, draft.version.id, 'IN_REVIEW');
+    const approved = await service.transition(project.id, draft.version.id, 'APPROVED');
+    expect(approved.status).toBe('APPROVED');
+  });
+
   it('enforces the canonical uniqueness invariant in PostgreSQL', async () => {
     const project = await createProject(ctx, 'Database Unique');
     await service.create(project.id, contextInput());

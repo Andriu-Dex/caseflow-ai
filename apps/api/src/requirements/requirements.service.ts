@@ -13,6 +13,7 @@ import {
 } from '@caseflow-ai/contracts';
 import { PrismaService } from '../database/prisma.service';
 import type { Prisma } from '../generated/prisma/client';
+import { analyzeRequirementQuality } from './requirement-quality';
 
 type Tx = Prisma.TransactionClient;
 const detailInclude = {
@@ -95,6 +96,7 @@ export class RequirementsService {
       where: {
         id: sourceContextVersionId,
         projectId,
+        status: 'APPROVED',
         artifact: { artifactTypeCode: 'PROJECT_CONTEXT' },
       },
       include: {
@@ -110,13 +112,16 @@ export class RequirementsService {
       },
     });
     if (!context?.projectContextDetail)
-      throw new NotFoundException('Versión de contexto no encontrada.');
+      throw new UnprocessableEntityException(
+        'La generación requiere una versión exacta APPROVED del contexto del mismo proyecto.',
+      );
     try {
       const result = await this.ai.generateStructured({
         projectId,
         sourceArtifactVersionId: sourceContextVersionId,
         promptKey: 'requirements.generate',
-        promptVersion: 1,
+        // ISO/IEC/IEEE 29148:2018-aligned quality principles (spec §4.4).
+        promptVersion: 2,
         messages: [{ role: 'user', content: JSON.stringify(context.projectContextDetail) }],
         outputSchema: requirementGenerationOutputSchema,
         schemaName: 'requirements_generation',
@@ -225,6 +230,24 @@ export class RequirementsService {
       }
       return { items: [...created.values()] };
     });
+  }
+  // Deterministic ISO/IEC/IEEE 29148:2018-aligned quality check over every
+  // current Requirement in the project (spec §4.3). Not a certification
+  // claim; human review remains authoritative.
+  async qualityReport(projectId: string) {
+    const { items } = await this.list(projectId);
+    return analyzeRequirementQuality(
+      items.map((item) => ({
+        id: item.id,
+        code: item.code,
+        name: item.requirement.name,
+        description: item.requirement.description,
+        origin: item.version.origin,
+        dependencyArtifactIds: item.requirement.dependencyArtifactIds,
+        sourceContextVersionId: item.requirement.sourceContextVersionId,
+        aiRunId: item.requirement.aiRunId,
+      })),
+    );
   }
   async transition(
     projectId: string,

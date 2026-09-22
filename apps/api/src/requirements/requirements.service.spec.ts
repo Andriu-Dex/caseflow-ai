@@ -70,7 +70,7 @@ describe('RequirementsService', () => {
       prisma as unknown as PrismaService,
       ai as unknown as AIOrchestrator,
     );
-    await expect(s.generate('p', 'v')).rejects.toThrow('Versión');
+    await expect(s.generate('p', 'v')).rejects.toThrow('APPROVED');
     await expect(s.generate('p', 'v')).rejects.toMatchObject({
       response: { code: 'AI_NOT_CONFIGURED' },
     });
