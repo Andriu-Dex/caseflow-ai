@@ -7404,6 +7404,15 @@ Tras el Incremento 1J se retoma el orden de dependencias de §180: Identity / Wo
 - La aceptación es transaccional: una dependencia hacia un candidato no seleccionado se rechaza; dependencias duplicadas, propias, cruzadas o cíclicas se rechazan.
 - La procedencia es `RequirementDetail → RequirementCandidate → RequirementGeneration → AIRun → Project Context ArtifactVersion` y también se conservan enlaces directos auditables.
 
+## 218.5 Decisiones de implementación del Incremento 1E
+
+- `USE_CASE` conserva la identidad genérica `Artifact` y el código estable `CU`; cada `ArtifactVersion` posee un snapshot relacional inmutable con nombre, objetivo, actor principal, actores secundarios ordenados, pre/postcondiciones, pasos del flujo principal y flujos alternativos con pasos.
+- Cada vínculo apunta a una versión exacta de `REQUIREMENT` del mismo proyecto. La generación acepta exclusivamente versiones `APPROVED`; la creación manual permite versiones válidas del mismo proyecto para conservar el trabajo determinístico sin IA.
+- `use-cases.generate@1` admite hasta 20 candidatos. Cada caso admite hasta 100 pasos principales, 25 flujos alternativos y 50 pasos por flujo alternativo. Las referencias emitidas deben pertenecer exactamente al conjunto de fuentes suministrado; una referencia inventada produce `AI_INVALID_OUTPUT` sin persistir candidatos.
+- La aceptación seleccionada es transaccional y crea `AI_GENERATED/GENERATED`. La procedencia es `UseCaseDetail → UseCaseCandidate → UseCaseGeneration → AIRun → use-cases.generate@1`, con `UseCaseCandidateSource/UseCaseGenerationSource → Requirement ArtifactVersion` para todas las fuentes exactas.
+- La validación académica informa si existen al menos cuatro casos de uso oficiales (`acceptedCount`, `minimumRequired=4`, `satisfied`). No restringe la cardinalidad del producto, no fabrica casos y no bloquea el flujo normal.
+- El diagrama de casos de uso se difiere al Incremento 1F. La acumulación Contexto → Requisitos → Casos de Uso ya justifica un próximo flujo frontend coordinado, pero 1E no introduce una interfaz provisional con identificadores hardcodeados.
+
 ## 218.1 Decisiones de modelo del Incremento 1A
 
 - **Workspace → Project.** Todo `Project` pertenece obligatoriamente a un `Workspace` (§3.1). El Incremento 1A crea únicamente las columnas mínimas de `Workspace`. `User`, memberships y RBAC pertenecen al incremento de Identity.

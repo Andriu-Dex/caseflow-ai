@@ -28,6 +28,7 @@ export {
   createArtifactVersionRequestSchema,
 } from './artifacts/artifact.contract';
 export * from './requirements/requirement.contract';
+export * from './use-cases/use-case.contract';
 
 export {
   PROJECT_CONTEXT_COLLECTION_LIMIT,
