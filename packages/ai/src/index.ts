@@ -12,6 +12,7 @@ export const AI_ERROR_CODES = [
 export type AIErrorCode = (typeof AI_ERROR_CODES)[number];
 export type AICapability = 'STRUCTURED_OUTPUT';
 export type AIModelProfile = 'FAST' | 'BALANCED' | 'QUALITY' | 'LOCAL';
+const MAX_OUTPUT_TOKENS_LIMIT = 1_000_000;
 
 export class AIError extends Error {
   constructor(
@@ -42,6 +43,7 @@ export interface AIProviderRequest {
   modelProfile: AIModelProfile;
   model?: string;
   temperature?: number;
+  maxOutputTokens?: number;
   timeoutMs: number;
   signal?: AbortSignal;
 }
@@ -129,6 +131,7 @@ export interface StructuredGenerationInput<T> {
   modelProfile?: AIModelProfile;
   model?: string;
   temperature?: number;
+  maxOutputTokens?: number;
   timeoutMs?: number;
 }
 
@@ -142,6 +145,16 @@ export class AIOrchestrator {
   async generateStructured<T>(
     input: StructuredGenerationInput<T>,
   ): Promise<ValidatedGenerationCandidate<T>> {
+    if (
+      input.maxOutputTokens !== undefined &&
+      (!Number.isInteger(input.maxOutputTokens) ||
+        input.maxOutputTokens <= 0 ||
+        input.maxOutputTokens > MAX_OUTPUT_TOKENS_LIMIT)
+    )
+      throw new AIError(
+        'AI_PROVIDER_ERROR',
+        'El presupuesto de salida debe ser un entero positivo válido.',
+      );
     if (input.sourceArtifactVersionId && !input.projectId)
       throw new AIError('AI_PROVIDER_ERROR', 'La procedencia de contexto requiere un proyecto.');
     const prompt = this.prompts.get(input.promptKey, input.promptVersion);
@@ -168,6 +181,7 @@ export class AIOrchestrator {
         modelProfile: input.modelProfile ?? 'BALANCED',
         model: input.model,
         temperature: input.temperature,
+        maxOutputTokens: input.maxOutputTokens,
         timeoutMs: input.timeoutMs ?? this.defaultTimeoutMs,
       });
       const candidate = input.outputSchema.safeParse(response.payload);
