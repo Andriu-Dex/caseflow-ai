@@ -63,6 +63,14 @@ describe('official Prisma migrations on caseflow_test', () => {
         'project_context_business_rules',
         'project_context_scope_items',
         'ai_runs',
+        'requirement_details',
+        'requirement_actors',
+        'requirement_preconditions',
+        'requirement_postconditions',
+        'requirement_dependencies',
+        'requirement_generations',
+        'requirement_candidates',
+        'requirement_candidate_dependencies',
       ]),
     );
   });
