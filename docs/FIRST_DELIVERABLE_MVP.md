@@ -27,7 +27,7 @@ Planificación (Gantt/PERT) y reflexión/evidencia del equipo siguen siendo acti
 | 1B  | Project Context                  | Entregado |
 | 1C  | AI Generation Foundation         | Entregado |
 | 1D  | Requirements                     | Entregado |
-| 1E  | Use Cases                        | Pendiente |
+| 1E  | Use Cases                        | Entregado |
 | 1F  | Data Model + Diagram Engine      | Pendiente |
 | 1G  | Navigation + Architecture        | Pendiente |
 | 1H  | UI Blueprint + Mockups           | Pendiente |
@@ -60,6 +60,10 @@ Existe una ruta interna `Feature → AIOrchestrator → AIProvider` para generac
 
 Los requisitos RF/RNF son artefactos estructurados, versionados y revisables. Pueden crearse manualmente sin IA o generarse como candidatos persistidos desde una versión exacta del contexto; aceptar candidatos crea artefactos `GENERATED`, conserva procedencia y resuelve dependencias seleccionadas.
 
+## Estado tras el Incremento 1E
+
+Los casos de uso CU son artefactos estructurados, versionados y revisables. Actores, pre/postcondiciones, flujo principal, flujos alternativos y vínculos a versiones exactas de requisitos se conservan relacionalmente. La generación opcional usa únicamente versiones `APPROVED`, persiste candidatos antes de crear artefactos oficiales y mantiene procedencia completa. La validación académica informa si existen al menos cuatro casos oficiales sin limitar el producto a cuatro ni fabricar procesos. El diagrama se mantiene fuera de este incremento.
+
 ## Probar la API manualmente (desarrollo)
 
 Sin autenticación en 1A, el workspace de desarrollo se crea con un seed explícito:
@@ -84,3 +88,5 @@ Rutas (siempre acotadas por proyecto):
 | POST   | `/projects/{projectId}/context`                         | Crear el contexto canónico y su versión 1    |
 | GET    | `/projects/{projectId}/context`                         | Leer la versión vigente del contexto         |
 | POST   | `/projects/{projectId}/context/versions`                | Crear una versión completa nueva             |
+| POST   | `/projects/{projectId}/use-cases`                       | Crear un caso de uso manual                  |
+| GET    | `/projects/{projectId}/use-cases`                       | Listar casos de uso                          |

@@ -93,6 +93,15 @@ describe('OpenAPI contract', () => {
         'POST /projects/{projectId}/requirements/generations/{generationId}/accept',
         'POST /projects/{projectId}/requirements/{requirementId}/versions',
         'POST /projects/{projectId}/requirements/{requirementId}/versions/{versionId}/transition',
+        'GET /projects/{projectId}/use-cases',
+        'GET /projects/{projectId}/use-cases/academic-validation',
+        'GET /projects/{projectId}/use-cases/generations/{generationId}',
+        'GET /projects/{projectId}/use-cases/{useCaseId}',
+        'POST /projects/{projectId}/use-cases',
+        'POST /projects/{projectId}/use-cases/generate',
+        'POST /projects/{projectId}/use-cases/generations/{generationId}/accept',
+        'POST /projects/{projectId}/use-cases/{useCaseId}/versions',
+        'POST /projects/{projectId}/use-cases/{useCaseId}/versions/{versionId}/transition',
       ].sort(),
     );
     expect(Object.keys(document.paths)).not.toContain('/health/ready');
@@ -113,6 +122,7 @@ describe('OpenAPI contract', () => {
     );
     expect(ids.sort()).toEqual([
       'acceptRequirementCandidates',
+      'acceptUseCaseCandidates',
       'createArtifact',
       'createArtifactVersion',
       'createProject',
@@ -120,16 +130,24 @@ describe('OpenAPI contract', () => {
       'createProjectContextVersion',
       'createRequirement',
       'createRequirementVersion',
+      'createUseCase',
+      'createUseCaseVersion',
       'generateRequirements',
+      'generateUseCases',
       'getArtifact',
       'getHealthLive',
       'getProject',
       'getProjectContext',
       'getRequirement',
       'getRequirementGeneration',
+      'getUseCase',
+      'getUseCaseGeneration',
       'listProjects',
       'listRequirements',
+      'listUseCases',
       'transitionArtifactVersion',
+      'transitionUseCaseVersion',
+      'validateAcademicUseCases',
     ]);
   });
 
