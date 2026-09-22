@@ -64,7 +64,7 @@ describe('Requirements integration', () => {
     ).rejects.toThrow('Dependencia');
   });
   it('generates candidates from an exact context and accepts dependencies transactionally', async () => {
-    const context = await ctx.projectContext.create(projectId, {
+    const draftContext = await ctx.projectContext.create(projectId, {
       problemStatement: 'Procesos manuales',
       objective: 'Automatizar',
       scopeItems: [],
@@ -73,6 +73,9 @@ describe('Requirements integration', () => {
       constraints: [],
       businessRules: [],
     });
+    await ctx.projectContext.transition(projectId, draftContext.version.id, 'IN_REVIEW');
+    await ctx.projectContext.transition(projectId, draftContext.version.id, 'APPROVED');
+    const contextVersionId = draftContext.version.id;
     const payload = {
       candidates: [
         {
@@ -110,7 +113,7 @@ describe('Requirements integration', () => {
       new PromptRegistry([
         {
           key: 'requirements.generate',
-          version: 1,
+          version: 2,
           capability: 'STRUCTURED_OUTPUT',
           purpose: 'requirements_generation',
           systemInstructions: 'policy',
@@ -119,9 +122,9 @@ describe('Requirements integration', () => {
       new PrismaAIRunRecorder(ctx.prisma),
     );
     const service = new RequirementsService(ctx.prisma, ai);
-    const generation = await service.generate(projectId, context.version.id);
+    const generation = await service.generate(projectId, contextVersionId);
     expect(generation).toMatchObject({
-      sourceContextVersionId: context.version.id,
+      sourceContextVersionId: contextVersionId,
       aiRunId: expect.any(String),
     });
     await expect(

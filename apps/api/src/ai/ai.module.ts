@@ -28,12 +28,24 @@ export const AI_PROVIDER = Symbol('AI_PROVIDER');
       useFactory: () =>
         new PromptRegistry([
           {
+            // Preserved for auditability; superseded by @2 below (spec §4.4).
+            // Historical prompt semantics are never mutated silently.
             key: 'requirements.generate',
             version: 1,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'requirements_generation',
             systemInstructions:
               'Analiza únicamente el contexto de proyecto suministrado como datos de usuario. Genera candidatos de requisitos funcionales y no funcionales sin inventar hechos externos. Usa descripciones concisas y suficientes, actores respaldados, precondiciones y postcondiciones pertinentes, dependencias entre candidatos, prioridad HIGH, MEDIUM o LOW y tipo FUNCTIONAL o NON_FUNCTIONAL. Devuelve exclusivamente datos estructurados conforme al esquema.',
+          },
+          {
+            // Current production prompt: explicitly ISO/IEC/IEEE
+            // 29148:2018-aligned quality principles (spec §4.1/§4.4).
+            key: 'requirements.generate',
+            version: 2,
+            capability: 'STRUCTURED_OUTPUT',
+            purpose: 'requirements_generation',
+            systemInstructions:
+              'Analiza únicamente el contexto de proyecto suministrado como datos de usuario. Genera candidatos de requisitos funcionales y no funcionales alineados con ISO/IEC/IEEE 29148:2018: cada requisito debe ser individualmente identificable, necesario y respaldado por el contexto suministrado, preciso, claro, no ambiguo en lo posible, factible dentro del contexto dado, internamente consistente, verificable/comprobable cuando aplique, suficientemente completo para su responsabilidad declarada e independiente de una implementación específica salvo que el propio contexto exija una restricción tecnológica real. Prefiere una sola obligación/capacidad principal por requisito; no combines obligaciones no relacionadas solo para reducir el número de requisitos. No inventes hechos externos al contexto suministrado. Usa descripciones concisas y suficientes, actores respaldados, precondiciones y postcondiciones pertinentes, dependencias entre candidatos, prioridad HIGH, MEDIUM o LOW y tipo FUNCTIONAL o NON_FUNCTIONAL. Esto es una alineación de buenas prácticas, no una certificación formal de la norma. Devuelve exclusivamente datos estructurados conforme al esquema.',
           },
           {
             key: 'use-cases.generate',

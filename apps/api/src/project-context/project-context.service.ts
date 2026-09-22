@@ -3,9 +3,10 @@ import {
   Injectable,
   InternalServerErrorException,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import type { ProjectContextRequest, ProjectContextResponse } from '@caseflow-ai/contracts';
-import { formatArtifactCode } from '@caseflow-ai/domain';
+import { canTransitionArtifactVersionStatus, formatArtifactCode } from '@caseflow-ai/domain';
 import { PrismaService } from '../database/prisma.service';
 import type { Prisma } from '../generated/prisma/client';
 
@@ -109,6 +110,33 @@ export class ProjectContextService {
         input,
       );
       return this.toResponse(artifact.id, projectId, artifact.code, version);
+    });
+  }
+
+  // Explicit human approval gate (spec §5): official downstream generation
+  // (Requirements) requires an APPROVED context version. AI never approves.
+  async transition(
+    projectId: string,
+    versionId: string,
+    status: 'DRAFT' | 'IN_REVIEW' | 'APPROVED' | 'CHANGES_REQUESTED',
+  ) {
+    const version = await this.prisma.artifactVersion.findFirst({
+      where: {
+        id: versionId,
+        projectId,
+        artifact: { artifactTypeCode: PROJECT_CONTEXT_TYPE },
+      },
+    });
+    if (!version) throw new NotFoundException('Versión no encontrada.');
+    if (!canTransitionArtifactVersionStatus(version.status, status))
+      throw new UnprocessableEntityException('Transición de estado no permitida.');
+    return this.prisma.artifactVersion.update({
+      where: { id: versionId },
+      data: {
+        status,
+        submittedAt: status === 'IN_REVIEW' ? new Date() : version.submittedAt,
+        approvedAt: status === 'APPROVED' ? new Date() : version.approvedAt,
+      },
     });
   }
 
