@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadAIConfig, loadDiagramRendererConfig } from './index';
+import { loadAIConfig, loadDiagramRendererConfig, loadStorageConfig } from './index';
 
 describe('loadAIConfig', () => {
   it('defaults safely to disabled without secrets', () =>
@@ -37,4 +37,25 @@ describe('loadDiagramRendererConfig', () => {
     ).toMatchObject({ timeoutMs: 5000 }));
   it('rejects kroki configuration without a base URL', () =>
     expect(() => loadDiagramRendererConfig({ DIAGRAM_RENDERER: 'kroki' })).toThrow());
+});
+
+describe('loadStorageConfig', () => {
+  const env = {
+    S3_ENDPOINT: 'http://localhost:8333',
+    S3_BUCKET: 'caseflow',
+    S3_ACCESS_KEY_ID: 'caseflow',
+    S3_SECRET_ACCESS_KEY: 'secret',
+    S3_REGION: 'us-east-1',
+  };
+  it('loads complete storage configuration', () =>
+    expect(loadStorageConfig(env)).toEqual({
+      configured: true,
+      endpoint: 'http://localhost:8333',
+      bucket: 'caseflow',
+      accessKeyId: 'caseflow',
+      secretAccessKey: 'secret',
+      region: 'us-east-1',
+    }));
+  it('safely reports unconfigured storage instead of throwing', () =>
+    expect(loadStorageConfig({ S3_ENDPOINT: env.S3_ENDPOINT })).toEqual({ configured: false }));
 });

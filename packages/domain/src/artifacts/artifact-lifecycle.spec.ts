@@ -63,6 +63,7 @@ describe('artifact types and codes', () => {
   it('names the first-deliverable artifact types including Project Context', () => {
     expect([...FIRST_DELIVERABLE_ARTIFACT_TYPE_CODES]).toEqual([
       'PROJECT_CONTEXT',
+      'PROJECT_SOURCE',
       'REQUIREMENT',
       'USE_CASE',
       'DATA_MODEL',

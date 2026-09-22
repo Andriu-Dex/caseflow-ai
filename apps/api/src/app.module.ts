@@ -8,6 +8,7 @@ import { AIModule } from './ai/ai.module';
 import { RequirementsModule } from './requirements/requirements.module';
 import { UseCasesModule } from './use-cases/use-cases.module';
 import { DataModelsModule } from './data-models/data-models.module';
+import { SourcesModule } from './sources/sources.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { DataModelsModule } from './data-models/data-models.module';
     RequirementsModule,
     UseCasesModule,
     DataModelsModule,
+    SourcesModule,
   ],
 })
 export class AppModule {}

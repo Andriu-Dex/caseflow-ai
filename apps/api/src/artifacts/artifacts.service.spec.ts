@@ -64,6 +64,9 @@ describe('ArtifactsService (rule branches)', () => {
     await expect(
       service.createArtifact(projectId, { type: 'USE_CASE_DIAGRAM', title: 'Diagrama' }),
     ).rejects.toMatchObject({ status: 422 });
+    await expect(
+      service.createArtifact(projectId, { type: 'PROJECT_SOURCE', title: 'Fuente' }),
+    ).rejects.toMatchObject({ status: 422 });
   });
 
   it('creates the artifact and version 1 using the type default prefix', async () => {
