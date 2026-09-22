@@ -13,6 +13,8 @@ import { RequirementsModule } from '../../../src/requirements/requirements.modul
 import { RequirementsService } from '../../../src/requirements/requirements.service';
 import { UseCasesModule } from '../../../src/use-cases/use-cases.module';
 import { UseCasesService } from '../../../src/use-cases/use-cases.service';
+import { DataModelsModule } from '../../../src/data-models/data-models.module';
+import { DataModelsService } from '../../../src/data-models/data-models.service';
 import { getTestConnectionString, resetTestData } from './test-database';
 
 export interface TestContext {
@@ -23,6 +25,7 @@ export interface TestContext {
   projectContext: ProjectContextService;
   requirements: RequirementsService;
   useCases: UseCasesService;
+  dataModels: DataModelsService;
   // Raw connection for asserting database-level rules, bypassing the services.
   sql: Client;
   close: () => Promise<void>;
@@ -44,6 +47,7 @@ export async function createTestContext(): Promise<TestContext> {
       ProjectContextModule,
       RequirementsModule,
       UseCasesModule,
+      DataModelsModule,
     ],
   }).compile();
   const app = moduleRef.createNestApplication();
@@ -57,6 +61,7 @@ export async function createTestContext(): Promise<TestContext> {
     projectContext: app.get(ProjectContextService),
     requirements: app.get(RequirementsService),
     useCases: app.get(UseCasesService),
+    dataModels: app.get(DataModelsService),
     sql,
     close: async () => {
       await app.close();

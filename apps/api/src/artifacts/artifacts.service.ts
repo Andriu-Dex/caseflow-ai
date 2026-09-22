@@ -38,7 +38,11 @@ export class ArtifactsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async createArtifact(projectId: string, input: CreateArtifactInput): Promise<ArtifactResponse> {
-    if (['PROJECT_CONTEXT', 'REQUIREMENT', 'USE_CASE'].includes(input.type)) {
+    if (
+      ['PROJECT_CONTEXT', 'REQUIREMENT', 'USE_CASE', 'DATA_MODEL', 'USE_CASE_DIAGRAM'].includes(
+        input.type,
+      )
+    ) {
       throw new UnprocessableEntityException(
         'Este artefacto estructurado debe crearse mediante su endpoint específico.',
       );

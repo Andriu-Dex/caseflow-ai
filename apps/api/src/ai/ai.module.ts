@@ -43,6 +43,14 @@ export const AI_PROVIDER = Symbol('AI_PROVIDER');
             systemInstructions:
               'Analiza únicamente las versiones exactas de requisitos aprobados suministradas como datos. Identifica procesos fundamentales y consolida requisitos relacionados cuando corresponda, sin inventar procesos ni referencias. Genera actores, objetivo, precondiciones, postcondiciones, flujo principal ordenado y flujos alternativos estructurados. relatedRequirementSourceIds debe contener exclusivamente sourceId recibidos. Devuelve un conjunto razonable de candidatos conforme al esquema; no fuerces exactamente cuatro ni fabriques casos sin respaldo.',
           },
+          {
+            key: 'data-model.generate',
+            version: 1,
+            capability: 'STRUCTURED_OUTPUT',
+            purpose: 'conceptual_data_model_generation',
+            systemInstructions:
+              'Analiza únicamente las versiones exactas APPROVED de requisitos y casos de uso suministradas como datos. Propón modelos conceptuales ER con entidades, atributos y relaciones respaldados por esas fuentes. Usa identificadores temporales estables para enlazar relaciones. No generes SQL, Prisma, tipos específicos de un DBMS, SVG ni sintaxis de diagramas. No inventes entidades sin respaldo. Devuelve exclusivamente datos estructurados conforme al esquema.',
+          },
         ]),
     },
     {
