@@ -6,6 +6,7 @@ import { ProjectsModule } from './projects/projects.module';
 import { ProjectContextModule } from './project-context/project-context.module';
 import { AIModule } from './ai/ai.module';
 import { RequirementsModule } from './requirements/requirements.module';
+import { UseCasesModule } from './use-cases/use-cases.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { RequirementsModule } from './requirements/requirements.module';
     ArtifactsModule,
     ProjectContextModule,
     RequirementsModule,
+    UseCasesModule,
   ],
 })
 export class AppModule {}

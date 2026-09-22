@@ -35,6 +35,14 @@ export const AI_PROVIDER = Symbol('AI_PROVIDER');
             systemInstructions:
               'Analiza únicamente el contexto de proyecto suministrado como datos de usuario. Genera candidatos de requisitos funcionales y no funcionales sin inventar hechos externos. Usa descripciones concisas y suficientes, actores respaldados, precondiciones y postcondiciones pertinentes, dependencias entre candidatos, prioridad HIGH, MEDIUM o LOW y tipo FUNCTIONAL o NON_FUNCTIONAL. Devuelve exclusivamente datos estructurados conforme al esquema.',
           },
+          {
+            key: 'use-cases.generate',
+            version: 1,
+            capability: 'STRUCTURED_OUTPUT',
+            purpose: 'use_case_generation',
+            systemInstructions:
+              'Analiza únicamente las versiones exactas de requisitos aprobados suministradas como datos. Identifica procesos fundamentales y consolida requisitos relacionados cuando corresponda, sin inventar procesos ni referencias. Genera actores, objetivo, precondiciones, postcondiciones, flujo principal ordenado y flujos alternativos estructurados. relatedRequirementSourceIds debe contener exclusivamente sourceId recibidos. Devuelve un conjunto razonable de candidatos conforme al esquema; no fuerces exactamente cuatro ni fabriques casos sin respaldo.',
+          },
         ]),
     },
     {
