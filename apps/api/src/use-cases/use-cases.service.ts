@@ -113,6 +113,7 @@ export class UseCasesService {
         messages: [{ role: 'user', content: JSON.stringify({ requirementSources: sources }) }],
         outputSchema: useCaseGenerationOutputSchema,
         schemaName: 'use_cases_generation',
+        maxOutputTokens: 8192,
       });
       const allowed = new Set(sources.map((source) => source.sourceId));
       if (
