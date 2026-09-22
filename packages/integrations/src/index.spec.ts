@@ -9,6 +9,7 @@ const request = {
   outputSchema: { type: 'object' },
   schemaName: 'probe',
   modelProfile: 'BALANCED' as const,
+  maxOutputTokens: 4096,
   timeoutMs: 100,
 };
 function provider(fetchMock: typeof fetch) {
@@ -44,6 +45,7 @@ describe('OpenAICompatibleProvider', () => {
         { role: 'system', content: 'SYSTEM' },
         { role: 'user', content: 'UNTRUSTED' },
       ],
+      max_tokens: 4096,
     });
     expect(result).toMatchObject({ payload: { ok: true }, usage: { totalTokens: 3 } });
   });
@@ -61,7 +63,7 @@ describe('OpenAICompatibleProvider', () => {
     await expect(operation).rejects.not.toThrow(/top-secret/);
   });
 
-  it('rejects malformed and non-JSON provider output', async () => {
+  it('rejects malformed and truncated provider output without leaking diagnostics', async () => {
     const malformed = vi
       .fn()
       .mockResolvedValue(
@@ -70,17 +72,20 @@ describe('OpenAICompatibleProvider', () => {
     await expect(provider(malformed).generateStructured(request)).rejects.toMatchObject({
       code: 'AI_PROVIDER_ERROR',
     });
-    const invalid = vi
-      .fn()
-      .mockResolvedValue(
-        new Response(
-          JSON.stringify({ model: 'm', choices: [{ message: { content: 'no-json' } }] }),
-          { status: 200 },
-        ),
-      );
-    await expect(provider(invalid).generateStructured(request)).rejects.toMatchObject({
+    const invalid = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          model: 'm',
+          choices: [{ message: { content: '{"ok":"top-secret' } }],
+        }),
+        { status: 200 },
+      ),
+    );
+    const operation = provider(invalid).generateStructured(request);
+    await expect(operation).rejects.toMatchObject({
       code: 'AI_INVALID_OUTPUT',
     });
+    await expect(operation).rejects.not.toThrow(/top-secret/);
   });
 
   it('normalizes timeout without retries', async () => {

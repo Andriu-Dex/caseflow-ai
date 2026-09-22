@@ -51,6 +51,9 @@ export class OpenAICompatibleProvider implements AIProvider {
               json_schema: { name: request.schemaName, strict: true, schema: request.outputSchema },
             },
             ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
+            ...(request.maxOutputTokens === undefined
+              ? {}
+              : { max_tokens: request.maxOutputTokens }),
           }),
         },
       );

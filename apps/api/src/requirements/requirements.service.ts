@@ -120,6 +120,7 @@ export class RequirementsService {
         messages: [{ role: 'user', content: JSON.stringify(context.projectContextDetail) }],
         outputSchema: requirementGenerationOutputSchema,
         schemaName: 'requirements_generation',
+        maxOutputTokens: 4096,
       });
       const generationId = await this.prisma.$transaction(async (tx) => {
         const generation = await tx.requirementGeneration.create({
