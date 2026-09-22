@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { AIOrchestrator } from '@caseflow-ai/ai';
+import { AIError, type AIOrchestrator } from '@caseflow-ai/ai';
 import type { PrismaService } from '../database/prisma.service';
 import { UseCasesService } from './use-cases.service';
 const detail = {
@@ -137,6 +137,9 @@ describe('UseCasesService', () => {
       ai as unknown as AIOrchestrator,
     );
     await expect(service.generate('p', ['r'])).resolves.toEqual(generation);
+    expect(ai.generateStructured).toHaveBeenCalledWith(
+      expect.objectContaining({ maxOutputTokens: 8192 }),
+    );
     ai.generateStructured.mockResolvedValueOnce({
       data: { candidates: [{ ...candidate, relatedRequirementSourceIds: ['invented'] }] },
       metadata: { runId: 'run' },
@@ -144,6 +147,23 @@ describe('UseCasesService', () => {
     await expect(service.generate('p', ['r'])).rejects.toMatchObject({
       response: { code: 'AI_INVALID_OUTPUT' },
     });
+  });
+  it('does not persist candidates when structured output is invalid', async () => {
+    const prisma = {
+      artifactVersion: { findMany: vi.fn().mockResolvedValue([requirementVersion]) },
+      $transaction: vi.fn(),
+    };
+    const ai = {
+      generateStructured: vi.fn().mockRejectedValue(new AIError('AI_INVALID_OUTPUT', 'safe')),
+    };
+    const service = new UseCasesService(
+      prisma as unknown as PrismaService,
+      ai as unknown as AIOrchestrator,
+    );
+    await expect(service.generate('p', ['r'])).rejects.toMatchObject({
+      response: { code: 'AI_INVALID_OUTPUT' },
+    });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
   it('accepts candidates transactionally and enforces lifecycle', async () => {
     const tx = transaction();

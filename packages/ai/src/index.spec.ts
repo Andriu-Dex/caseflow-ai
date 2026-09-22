@@ -43,6 +43,7 @@ function input() {
     messages: [{ role: 'user' as const, content: 'UNTRUSTED PROJECT CONTENT' }],
     outputSchema: z.object({ value: z.string() }),
     schemaName: 'probe',
+    maxOutputTokens: 4096,
   };
 }
 
@@ -66,6 +67,7 @@ describe('AIOrchestrator', () => {
     });
     expect(provider.lastRequest?.systemInstructions).toBe(prompt.systemInstructions);
     expect(provider.lastRequest?.messages).toEqual(input().messages);
+    expect(provider.lastRequest?.maxOutputTokens).toBe(4096);
     expect(audit.start).toHaveBeenCalledWith(
       expect.objectContaining({
         inputHash: expect.stringMatching(/^[a-f0-9]{64}$/),
@@ -85,6 +87,22 @@ describe('AIOrchestrator', () => {
     await expect(operation).rejects.toMatchObject({ code: 'AI_INVALID_OUTPUT' });
     expect(audit.fail).toHaveBeenCalledWith('run-1', 'AI_INVALID_OUTPUT', expect.any(Number));
   });
+
+  it.each([0, -1, Number.NaN, 1.5, 1_000_001])(
+    'rejects invalid output token budget %s before provider execution',
+    async (maxOutputTokens) => {
+      const provider = new FakeAIProvider(response);
+      const audit = recorder();
+      await expect(
+        new AIOrchestrator(provider, new PromptRegistry([prompt]), audit).generateStructured({
+          ...input(),
+          maxOutputTokens,
+        }),
+      ).rejects.toMatchObject({ code: 'AI_PROVIDER_ERROR' });
+      expect(provider.lastRequest).toBeUndefined();
+      expect(audit.start).not.toHaveBeenCalled();
+    },
+  );
 
   it.each(['AI_PROVIDER_UNAVAILABLE', 'AI_TIMEOUT', 'AI_RATE_LIMITED'] as const)(
     'preserves normalized %s errors',

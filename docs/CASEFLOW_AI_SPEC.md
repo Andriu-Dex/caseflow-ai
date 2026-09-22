@@ -7413,6 +7413,13 @@ Tras el Incremento 1J se retoma el orden de dependencias de §180: Identity / Wo
 - La validación académica informa si existen al menos cuatro casos de uso oficiales (`acceptedCount`, `minimumRequired=4`, `satisfied`). No restringe la cardinalidad del producto, no fabrica casos y no bloquea el flujo normal.
 - El diagrama de casos de uso se difiere al Incremento 1F. La acumulación Contexto → Requisitos → Casos de Uso ya justifica un próximo flujo frontend coordinado, pero 1E no introduce una interfaz provisional con identificadores hardcodeados.
 
+## 218.6 Compatibilidad con proveedores reales
+
+- La abstracción pública usa `maxOutputTokens` como presupuesto opcional, entero positivo y neutral al proveedor. Cada adapter lo traduce al campo de su protocolo; el adapter OpenAI-compatible usa `max_tokens`.
+- `requirements.generate@1` solicita 4096 tokens de salida y `use-cases.generate@1`, 8192. Los presupuestos pertenecen a cada feature y no al adapter reutilizable.
+- Para la validación actual de desarrollo, Groq es el proveedor directo de referencia, OmniRoute es el router de desarrollo y Cloudflare Workers AI es el proveedor estructurado de respaldo. Todos siguen siendo reemplazables mediante `AIProvider`; estas elecciones no constituyen dependencias permanentes del dominio.
+- Los tests y CI nunca requieren proveedores reales: ejecutan con `AI_PROVIDER=disabled`, `FakeAIProvider` o HTTP simulado. Las validaciones live son manuales y separadas.
+
 ## 218.1 Decisiones de modelo del Incremento 1A
 
 - **Workspace → Project.** Todo `Project` pertenece obligatoriamente a un `Workspace` (§3.1). El Incremento 1A crea únicamente las columnas mínimas de `Workspace`. `User`, memberships y RBAC pertenecen al incremento de Identity.
