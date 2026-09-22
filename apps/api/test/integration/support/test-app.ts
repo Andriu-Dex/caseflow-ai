@@ -1,6 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { FakeDiagramProvider } from '@caseflow-ai/integrations';
+import { FakeDiagramProvider, FakeStorageProvider } from '@caseflow-ai/integrations';
 import { Client } from 'pg';
 import { ArtifactsModule } from '../../../src/artifacts/artifacts.module';
 import { ArtifactsService } from '../../../src/artifacts/artifacts.service';
@@ -17,6 +17,9 @@ import { UseCasesService } from '../../../src/use-cases/use-cases.service';
 import { DataModelsModule } from '../../../src/data-models/data-models.module';
 import { DataModelsService } from '../../../src/data-models/data-models.service';
 import { DIAGRAM_PROVIDER } from '../../../src/data-models/diagram-provider.token';
+import { SourcesModule } from '../../../src/sources/sources.module';
+import { SourcesService } from '../../../src/sources/sources.service';
+import { STORAGE_PROVIDER } from '../../../src/sources/storage-provider.token';
 import { getTestConnectionString, resetTestData } from './test-database';
 
 // A minimal, always-valid graphical SVG: ordinary integration tests (Postgres
@@ -35,6 +38,7 @@ export interface TestContext {
   requirements: RequirementsService;
   useCases: UseCasesService;
   dataModels: DataModelsService;
+  sources: SourcesService;
   // Raw connection for asserting database-level rules, bypassing the services.
   sql: Client;
   close: () => Promise<void>;
@@ -57,10 +61,13 @@ export async function createTestContext(): Promise<TestContext> {
       RequirementsModule,
       UseCasesModule,
       DataModelsModule,
+      SourcesModule,
     ],
   })
     .overrideProvider(DIAGRAM_PROVIDER)
     .useValue(new FakeDiagramProvider({ svg: FAKE_DIAGRAM_SVG }))
+    .overrideProvider(STORAGE_PROVIDER)
+    .useValue(new FakeStorageProvider())
     .compile();
   const app = moduleRef.createNestApplication();
   await app.init();
@@ -74,6 +81,7 @@ export async function createTestContext(): Promise<TestContext> {
     requirements: app.get(RequirementsService),
     useCases: app.get(UseCasesService),
     dataModels: app.get(DataModelsService),
+    sources: app.get(SourcesService),
     sql,
     close: async () => {
       await app.close();

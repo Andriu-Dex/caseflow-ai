@@ -78,6 +78,7 @@ describe('Artifact + ArtifactVersion foundation', () => {
         (code) =>
           ![
             'PROJECT_CONTEXT',
+            'PROJECT_SOURCE',
             'REQUIREMENT',
             'USE_CASE',
             'DATA_MODEL',

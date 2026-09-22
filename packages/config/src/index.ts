@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 export { loadDiagramRendererConfig } from './diagram-config';
 export type { DiagramRendererConfig } from './diagram-config';
+export { loadStorageConfig } from './storage-config';
+export type { StorageConfig } from './storage-config';
 
 const disabledSchema = z.object({ AI_PROVIDER: z.literal('disabled').default('disabled') });
 const openAICompatibleSchema = z.object({

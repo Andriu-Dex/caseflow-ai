@@ -51,6 +51,33 @@ enum ProjectContextScopeType {
   @@map("project_context_scope_type")
 }
 
+// What kind of real-world material a Project Source is (spec: First
+// Deliverable source intake). Semantic, user-declared — never inferred
+// solely from MIME type/extension.
+enum ProjectSourceKind {
+  PDF
+  AUDIO
+  IMAGE
+  FORM
+  INVOICE
+  TEXT
+  NOTES
+  OTHER
+
+  @@map("project_source_kind")
+}
+
+// Whether usable textual knowledge exists for a source version yet.
+enum SourceExtractionState {
+  PENDING
+  EXTRACTED
+  MANUAL
+  UNSUPPORTED
+  FAILED
+
+  @@map("source_extraction_state")
+}
+
 enum AIRunStatus {
   RUNNING
   SUCCEEDED
@@ -154,6 +181,7 @@ model Project {
   codeCounters         ProjectCodeCounter[]
   aiRuns               AIRun[]
   dataModelGenerations DataModelGeneration[]
+  sourceReportCandidates SourceReportCandidate[]
 
   @@index([workspaceId, createdAt, id])
   @@map("projects")
@@ -224,6 +252,8 @@ model ArtifactVersion {
   dataModelGenerationSources DataModelGenerationSource[]
   diagramDetail              DiagramDetail?
   diagramSources             DiagramSourceVersion[]
+  sourceDetail               SourceDetail?
+  sourceReportCandidates     SourceReportCandidate[]
 
   @@unique([artifactId, versionNumber])
   @@unique([id, projectId])
@@ -353,6 +383,8 @@ model AIRun {
   useCaseGeneration     UseCaseGeneration?
   dataModelGeneration   DataModelGeneration?
   dataModelDetails      DataModelDetail[]
+  sourceReportCandidate SourceReportCandidate?
+  sourceReportDetails   SourceReportDetail[]
 
   @@index([projectId, startedAt, id])
   @@index([sourceArtifactVersionId])
@@ -760,4 +792,67 @@ model UseCaseCandidateSource {
 
   @@id([candidateId, requirementVersionId])
   @@map("use_case_candidate_sources")
+}
+
+// Increment: Project Source intake. The original uploaded file is immutable
+// evidence, stored in S3-compatible object storage (StorageProvider); only
+// metadata/hash/reference and, when locally extractable, the extracted text
+// live here. Never replaced by a cleaned AI interpretation — that is the
+// separate, optional SourceReportDetail.
+model SourceDetail {
+  artifactVersionId String                @id @map("artifact_version_id") @db.Uuid
+  sourceKind        ProjectSourceKind     @map("source_kind")
+  // User-defined meaning/purpose (spec 2.2) — never inferred.
+  purpose           String
+  businessArea      String?               @map("business_area")
+  description       String?
+  originalFilename  String                @map("original_filename")
+  mimeType          String                @map("mime_type")
+  sizeBytes         Int                   @map("size_bytes")
+  contentHash       String                @map("content_hash")
+  storageKey        String                @map("storage_key")
+  language          String?
+  extractionState   SourceExtractionState @map("extraction_state")
+  extractedText     String?               @map("extracted_text")
+
+  artifactVersion ArtifactVersion     @relation(fields: [artifactVersionId], references: [id], onDelete: Restrict)
+  report          SourceReportDetail?
+
+  @@map("source_details")
+}
+
+// One candidate-first AI interpretation attempt for one exact source version.
+// Deliberately one candidate per generation call (an interpretation is not a
+// menu of alternatives); acceptance is still a distinct explicit action.
+model SourceReportCandidate {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId       String   @map("project_id") @db.Uuid
+  sourceVersionId String   @map("source_version_id") @db.Uuid
+  aiRunId         String   @unique @map("ai_run_id") @db.Uuid
+  content         Json
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project        Project             @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  sourceVersion  ArtifactVersion     @relation(fields: [sourceVersionId], references: [id], onDelete: Restrict)
+  aiRun          AIRun               @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+  acceptedDetail SourceReportDetail?
+
+  @@map("source_report_candidates")
+}
+
+// Structured interpretation of a source's extracted content (spec §8):
+// summary, actors, business concepts, candidate rules/constraints, needs,
+// facts, ambiguities, provenance. Immutable once created; attached to the
+// same ArtifactVersion as its SourceDetail. Never an official Requirement.
+model SourceReportDetail {
+  artifactVersionId     String  @id @map("artifact_version_id") @db.Uuid
+  content               Json
+  generationCandidateId String? @unique @map("generation_candidate_id") @db.Uuid
+  aiRunId               String? @map("ai_run_id") @db.Uuid
+
+  sourceDetail SourceDetail            @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict)
+  candidate    SourceReportCandidate?  @relation(fields: [generationCandidateId], references: [id], onDelete: Restrict)
+  aiRun        AIRun?                  @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+
+  @@map("source_report_details")
 }
