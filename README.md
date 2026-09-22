@@ -6,7 +6,7 @@ CASEFlow AI is an integrated, AI-assisted I-CASE (Computer-Aided Software Engine
 
 ## Current status
 
-This repository implements Foundation through **Increment 1E — Use Cases**. It supports structured manual RF/RNF and CU creation/versioning, optional schema-validated AI candidate generation, human selection, lifecycle review, and exact relational provenance from Use Cases to approved Requirement versions.
+This repository implements Foundation through **Increment 1F — Data Model + Diagram Engine**. It supports structured/versioned RF/RNF, Use Cases and conceptual ER models, candidate-first AI generation, exact provenance, deterministic Mermaid ER and PlantUML Use Case sources, and safe derived SVG output.
 
 Delivery is currently prioritized around the **First Deliverable MVP** (requirements, use cases, data model, navigation, architecture, UI blueprint/mockups, review, versioning and basic traceability). See `docs/FIRST_DELIVERABLE_MVP.md` and `docs/CASEFLOW_AI_SPEC.md` §217–§219.
 

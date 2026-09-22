@@ -7,6 +7,7 @@ import { ProjectContextModule } from './project-context/project-context.module';
 import { AIModule } from './ai/ai.module';
 import { RequirementsModule } from './requirements/requirements.module';
 import { UseCasesModule } from './use-cases/use-cases.module';
+import { DataModelsModule } from './data-models/data-models.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { UseCasesModule } from './use-cases/use-cases.module';
     ProjectContextModule,
     RequirementsModule,
     UseCasesModule,
+    DataModelsModule,
   ],
 })
 export class AppModule {}

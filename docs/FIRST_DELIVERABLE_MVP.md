@@ -28,7 +28,7 @@ Planificación (Gantt/PERT) y reflexión/evidencia del equipo siguen siendo acti
 | 1C  | AI Generation Foundation         | Entregado |
 | 1D  | Requirements                     | Entregado |
 | 1E  | Use Cases                        | Entregado |
-| 1F  | Data Model + Diagram Engine      | Pendiente |
+| 1F  | Data Model + Diagram Engine      | Entregado |
 | 1G  | Navigation + Architecture        | Pendiente |
 | 1H  | UI Blueprint + Mockups           | Pendiente |
 | 1I  | Traceability + Versions + Export | Pendiente |
@@ -63,6 +63,10 @@ Los requisitos RF/RNF son artefactos estructurados, versionados y revisables. Pu
 ## Estado tras el Incremento 1E
 
 Los casos de uso CU son artefactos estructurados, versionados y revisables. Actores, pre/postcondiciones, flujo principal, flujos alternativos y vínculos a versiones exactas de requisitos se conservan relacionalmente. La generación opcional usa únicamente versiones `APPROVED`, persiste candidatos antes de crear artefactos oficiales y mantiene procedencia completa. La validación académica informa si existen al menos cuatro casos oficiales sin limitar el producto a cuatro ni fabricar procesos. El diagrama se mantiene fuera de este incremento.
+
+## Estado tras el Incremento 1F
+
+Los modelos conceptuales ER son artefactos `DATA_MODEL` estructurados y versionados, con creación manual y generación candidata desde versiones exactas aprobadas. El motor determinístico deriva Mermaid ER y UML PlantUML de casos de uso desde datos CASE validados, conserva la procedencia y genera una representación SVG segura sin depender de servicios públicos ni permitir que la IA produzca diagramas autoritativos.
 
 ## Probar la API manualmente (desarrollo)
 

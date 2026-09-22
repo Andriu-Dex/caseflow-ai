@@ -22,14 +22,14 @@ describe('Artifact + ArtifactVersion foundation', () => {
   describe('creation', () => {
     it('creates an artifact with a MANUAL DRAFT first version inside one project', async () => {
       const artifact = await ctx.artifacts.createArtifact(projectId, {
-        type: 'DATA_MODEL',
+        type: 'NAVIGATION_TREE',
         title: 'Registrar pedido',
         metadataAuxiliary: { note: 'inicial' },
       });
 
       expect(artifact.projectId).toBe(projectId);
-      expect(artifact.type).toBe('DATA_MODEL');
-      expect(artifact.code).toBe('MD-001');
+      expect(artifact.type).toBe('NAVIGATION_TREE');
+      expect(artifact.code).toBe('NAV-001');
       expect(artifact.currentVersion).toMatchObject({
         artifactId: artifact.id,
         versionNumber: 1,
@@ -58,7 +58,7 @@ describe('Artifact + ArtifactVersion foundation', () => {
 
       for (const [origin, status] of expectations) {
         const artifact = await ctx.artifacts.createArtifact(projectId, {
-          type: 'DATA_MODEL',
+          type: 'NAVIGATION_TREE',
           title: `CU ${origin}`,
           origin,
         });
@@ -75,7 +75,14 @@ describe('Artifact + ArtifactVersion foundation', () => {
 
     it('accepts generic first-deliverable artifact types', async () => {
       for (const type of FIRST_DELIVERABLE_ARTIFACT_TYPE_CODES.filter(
-        (code) => !['PROJECT_CONTEXT', 'REQUIREMENT', 'USE_CASE'].includes(code),
+        (code) =>
+          ![
+            'PROJECT_CONTEXT',
+            'REQUIREMENT',
+            'USE_CASE',
+            'DATA_MODEL',
+            'USE_CASE_DIAGRAM',
+          ].includes(code),
       )) {
         const artifact = await ctx.artifacts.createArtifact(projectId, { type, title: type });
         expect(artifact.type).toBe(type);
@@ -91,7 +98,7 @@ describe('Artifact + ArtifactVersion foundation', () => {
     it('rejects a missing project', async () => {
       await expect(
         ctx.artifacts.createArtifact('00000000-0000-4000-8000-000000000000', {
-          type: 'DATA_MODEL',
+          type: 'NAVIGATION_TREE',
           title: 'x',
         }),
       ).rejects.toThrow('Proyecto no encontrado.');
@@ -106,10 +113,10 @@ describe('Artifact + ArtifactVersion foundation', () => {
 
       const codes: string[] = [];
       for (const [type, codePrefix] of [
-        ['DATA_MODEL', undefined],
-        ['DATA_MODEL', 'ALT'],
-        ['DATA_MODEL', undefined],
-        ['DATA_MODEL', undefined],
+        ['NAVIGATION_TREE', undefined],
+        ['NAVIGATION_TREE', 'ALT'],
+        ['NAVIGATION_TREE', undefined],
+        ['NAVIGATION_TREE', undefined],
       ] as const) {
         const artifact = await ctx.artifacts.createArtifact(project.id, {
           type,
@@ -119,12 +126,12 @@ describe('Artifact + ArtifactVersion foundation', () => {
         codes.push(artifact.code);
       }
       const inOther = await ctx.artifacts.createArtifact(other.id, {
-        type: 'DATA_MODEL',
+        type: 'NAVIGATION_TREE',
         title: 't',
       });
 
-      expect(codes).toEqual(['MD-001', 'ALT-001', 'MD-002', 'MD-003']);
-      expect(inOther.code).toBe('MD-001');
+      expect(codes).toEqual(['NAV-001', 'ALT-001', 'NAV-002', 'NAV-003']);
+      expect(inOther.code).toBe('NAV-001');
     });
 
     it('never reuses a code, even when many artifacts are created concurrently', async () => {
@@ -133,13 +140,13 @@ describe('Artifact + ArtifactVersion foundation', () => {
 
       const created = await Promise.all(
         Array.from({ length: 8 }, (_, index) =>
-          ctx.artifacts.createArtifact(project.id, { type: 'DATA_MODEL', title: `r${index}` }),
+          ctx.artifacts.createArtifact(project.id, { type: 'NAVIGATION_TREE', title: `r${index}` }),
         ),
       );
 
       const codes = created.map((artifact) => artifact.code).sort();
       expect(codes).toEqual(
-        Array.from({ length: 8 }, (_, index) => `MD-${String(index + 1).padStart(3, '0')}`),
+        Array.from({ length: 8 }, (_, index) => `NAV-${String(index + 1).padStart(3, '0')}`),
       );
     });
   });
@@ -147,7 +154,7 @@ describe('Artifact + ArtifactVersion foundation', () => {
   describe('versioning', () => {
     it('keeps artifact identity, appends sequential versions and preserves earlier ones', async () => {
       const artifact = await ctx.artifacts.createArtifact(projectId, {
-        type: 'DATA_MODEL',
+        type: 'NAVIGATION_TREE',
         title: 'Modelo v1',
         metadataAuxiliary: { revision: 1 },
       });

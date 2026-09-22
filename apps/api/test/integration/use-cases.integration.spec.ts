@@ -85,7 +85,7 @@ describe('Use Cases integration', () => {
       'Referencia',
     );
     const generic = await ctx.artifacts.createArtifact(projectId, {
-      type: 'DATA_MODEL',
+      type: 'NAVIGATION_TREE',
       title: 'Modelo',
     });
     await expect(
