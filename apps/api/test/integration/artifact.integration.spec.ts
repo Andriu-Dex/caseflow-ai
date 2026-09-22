@@ -22,14 +22,14 @@ describe('Artifact + ArtifactVersion foundation', () => {
   describe('creation', () => {
     it('creates an artifact with a MANUAL DRAFT first version inside one project', async () => {
       const artifact = await ctx.artifacts.createArtifact(projectId, {
-        type: 'REQUIREMENT',
+        type: 'USE_CASE',
         title: 'Registrar pedido',
         metadataAuxiliary: { note: 'inicial' },
       });
 
       expect(artifact.projectId).toBe(projectId);
-      expect(artifact.type).toBe('REQUIREMENT');
-      expect(artifact.code).toBe('RF-001');
+      expect(artifact.type).toBe('USE_CASE');
+      expect(artifact.code).toBe('CU-001');
       expect(artifact.currentVersion).toMatchObject({
         artifactId: artifact.id,
         versionNumber: 1,
@@ -73,9 +73,9 @@ describe('Artifact + ArtifactVersion foundation', () => {
       }
     });
 
-    it('accepts every first-deliverable artifact type', async () => {
+    it('accepts generic first-deliverable artifact types', async () => {
       for (const type of FIRST_DELIVERABLE_ARTIFACT_TYPE_CODES.filter(
-        (code) => code !== 'PROJECT_CONTEXT',
+        (code) => code !== 'PROJECT_CONTEXT' && code !== 'REQUIREMENT',
       )) {
         const artifact = await ctx.artifacts.createArtifact(projectId, { type, title: type });
         expect(artifact.type).toBe(type);
@@ -91,7 +91,7 @@ describe('Artifact + ArtifactVersion foundation', () => {
     it('rejects a missing project', async () => {
       await expect(
         ctx.artifacts.createArtifact('00000000-0000-4000-8000-000000000000', {
-          type: 'REQUIREMENT',
+          type: 'USE_CASE',
           title: 'x',
         }),
       ).rejects.toThrow('Proyecto no encontrado.');
@@ -106,9 +106,9 @@ describe('Artifact + ArtifactVersion foundation', () => {
 
       const codes: string[] = [];
       for (const [type, codePrefix] of [
-        ['REQUIREMENT', undefined],
-        ['REQUIREMENT', 'RNF'],
-        ['REQUIREMENT', undefined],
+        ['USE_CASE', undefined],
+        ['USE_CASE', 'ALT'],
+        ['USE_CASE', undefined],
         ['USE_CASE', undefined],
       ] as const) {
         const artifact = await ctx.artifacts.createArtifact(project.id, {
@@ -119,12 +119,12 @@ describe('Artifact + ArtifactVersion foundation', () => {
         codes.push(artifact.code);
       }
       const inOther = await ctx.artifacts.createArtifact(other.id, {
-        type: 'REQUIREMENT',
+        type: 'USE_CASE',
         title: 't',
       });
 
-      expect(codes).toEqual(['RF-001', 'RNF-001', 'RF-002', 'CU-001']);
-      expect(inOther.code).toBe('RF-001');
+      expect(codes).toEqual(['CU-001', 'ALT-001', 'CU-002', 'CU-003']);
+      expect(inOther.code).toBe('CU-001');
     });
 
     it('never reuses a code, even when many artifacts are created concurrently', async () => {
@@ -133,13 +133,13 @@ describe('Artifact + ArtifactVersion foundation', () => {
 
       const created = await Promise.all(
         Array.from({ length: 8 }, (_, index) =>
-          ctx.artifacts.createArtifact(project.id, { type: 'REQUIREMENT', title: `r${index}` }),
+          ctx.artifacts.createArtifact(project.id, { type: 'USE_CASE', title: `r${index}` }),
         ),
       );
 
       const codes = created.map((artifact) => artifact.code).sort();
       expect(codes).toEqual(
-        Array.from({ length: 8 }, (_, index) => `RF-${String(index + 1).padStart(3, '0')}`),
+        Array.from({ length: 8 }, (_, index) => `CU-${String(index + 1).padStart(3, '0')}`),
       );
     });
   });

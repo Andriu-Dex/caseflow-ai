@@ -23,7 +23,20 @@ export const AI_PROVIDER = Symbol('AI_PROVIDER');
           : new OpenAICompatibleProvider(config);
       },
     },
-    { provide: PromptRegistry, useFactory: () => new PromptRegistry([]) },
+    {
+      provide: PromptRegistry,
+      useFactory: () =>
+        new PromptRegistry([
+          {
+            key: 'requirements.generate',
+            version: 1,
+            capability: 'STRUCTURED_OUTPUT',
+            purpose: 'requirements_generation',
+            systemInstructions:
+              'Analiza únicamente el contexto de proyecto suministrado como datos de usuario. Genera candidatos de requisitos funcionales y no funcionales sin inventar hechos externos. Usa descripciones concisas y suficientes, actores respaldados, precondiciones y postcondiciones pertinentes, dependencias entre candidatos, prioridad HIGH, MEDIUM o LOW y tipo FUNCTIONAL o NON_FUNCTIONAL. Devuelve exclusivamente datos estructurados conforme al esquema.',
+          },
+        ]),
+    },
     {
       provide: AIOrchestrator,
       inject: [AI_PROVIDER, PromptRegistry, PrismaAIRunRecorder],

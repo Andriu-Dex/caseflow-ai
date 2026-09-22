@@ -85,6 +85,14 @@ describe('OpenAPI contract', () => {
         `GET ${CONTEXT}`,
         `POST ${CONTEXT}`,
         `POST ${CONTEXT_VERSIONS}`,
+        'GET /projects/{projectId}/requirements',
+        'GET /projects/{projectId}/requirements/generations/{generationId}',
+        'GET /projects/{projectId}/requirements/{requirementId}',
+        'POST /projects/{projectId}/requirements',
+        'POST /projects/{projectId}/requirements/generate',
+        'POST /projects/{projectId}/requirements/generations/{generationId}/accept',
+        'POST /projects/{projectId}/requirements/{requirementId}/versions',
+        'POST /projects/{projectId}/requirements/{requirementId}/versions/{versionId}/transition',
       ].sort(),
     );
     expect(Object.keys(document.paths)).not.toContain('/health/ready');
@@ -104,16 +112,24 @@ describe('OpenAPI contract', () => {
       Object.values(item as Record<string, { operationId?: string }>).map((op) => op.operationId),
     );
     expect(ids.sort()).toEqual([
+      'acceptRequirementCandidates',
       'createArtifact',
       'createArtifactVersion',
       'createProject',
       'createProjectContext',
       'createProjectContextVersion',
+      'createRequirement',
+      'createRequirementVersion',
+      'generateRequirements',
       'getArtifact',
       'getHealthLive',
       'getProject',
       'getProjectContext',
+      'getRequirement',
+      'getRequirementGeneration',
       'listProjects',
+      'listRequirements',
+      'transitionArtifactVersion',
     ]);
   });
 

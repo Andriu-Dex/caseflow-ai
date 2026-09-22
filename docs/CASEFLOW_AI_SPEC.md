@@ -7396,6 +7396,14 @@ Tras el Incremento 1J se retoma el orden de dependencias de §180: Identity / Wo
 - `ai_runs` conserva metadatos, hashes SHA-256 y procedencia opcional hacia la versión exacta de contexto; no conserva claves, encabezados de autorización ni payloads completos.
 - Incremento 1C no expone endpoints de generación y no persiste artefactos de producto.
 
+## 218.4 Decisiones de implementación del Incremento 1D
+
+- `REQUIREMENT` conserva la identidad genérica de artefacto; su subtipo versionado normaliza tipo, prioridad, actores, precondiciones, postcondiciones y dependencias.
+- `FUNCTIONAL` asigna códigos `RF`; `NON_FUNCTIONAL`, `RNF`. El cliente no controla prefijos.
+- `requirements.generate@1` produce hasta 20 candidatos estrictos desde una versión explícita de Project Context. Los candidatos se persisten separados de los artefactos oficiales.
+- La aceptación es transaccional: una dependencia hacia un candidato no seleccionado se rechaza; dependencias duplicadas, propias, cruzadas o cíclicas se rechazan.
+- La procedencia es `RequirementDetail → RequirementCandidate → RequirementGeneration → AIRun → Project Context ArtifactVersion` y también se conservan enlaces directos auditables.
+
 ## 218.1 Decisiones de modelo del Incremento 1A
 
 - **Workspace → Project.** Todo `Project` pertenece obligatoriamente a un `Workspace` (§3.1). El Incremento 1A crea únicamente las columnas mínimas de `Workspace`. `User`, memberships y RBAC pertenecen al incremento de Identity.
