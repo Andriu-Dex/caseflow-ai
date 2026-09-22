@@ -6,7 +6,7 @@ CASEFlow AI is an integrated, AI-assisted I-CASE (Computer-Aided Software Engine
 
 ## Current status
 
-This repository implements **Increment 0 — Foundation**, **Increment 1A — Project + Artifact Foundation**, **Increment 1B — Project Context**, and the **Increment 1C — AI Generation Foundation**. It provides provider-independent, schema-validated and auditable AI infrastructure, but deliberately has no product generation endpoint or Requirements generation yet.
+This repository implements Foundation through **Increment 1D — Requirements**. It supports manual RF/RNF creation and versioning plus optional, schema-validated AI candidate generation from an exact Project Context version, human selection, lifecycle review, provenance, and relational dependencies.
 
 Delivery is currently prioritized around the **First Deliverable MVP** (requirements, use cases, data model, navigation, architecture, UI blueprint/mockups, review, versioning and basic traceability). See `docs/FIRST_DELIVERABLE_MVP.md` and `docs/CASEFLOW_AI_SPEC.md` §217–§219.
 
@@ -86,6 +86,8 @@ pnpm dev
 `pnpm install` also generates the Prisma client (`postinstall`). `pnpm dev` runs the web, API, and worker together (via `concurrently`); use `pnpm dev:web` / `pnpm dev:api` / `pnpm dev:worker` to run just one.
 
 AI is optional. The default `AI_PROVIDER=disabled` starts the API without a key and preserves all manual functionality. To prepare the adapter for later feature slices, set `AI_PROVIDER=openai_compatible` together with `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`, and optionally `AI_TIMEOUT_MS`. No public AI generation route exists in Increment 1C.
+
+The OpenAI-compatible adapter specifically requires `POST {AI_BASE_URL}/chat/completions` with strict `json_schema` response support; compatibility with every OpenAI-like provider is not implied. Normal tests never call a live provider.
 
 ## Local URLs
 
