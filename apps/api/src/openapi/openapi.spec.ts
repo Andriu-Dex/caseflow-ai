@@ -259,12 +259,34 @@ describe('OpenAPI contract', () => {
       'APPROVED',
       'CHANGES_REQUESTED',
     ]);
+    // SYSTEM_GENERATED (1F.1): the deterministic Use Case Diagram origin is a
+    // real, documented ArtifactOrigin value, not an undocumented DB-only enum.
+    expect(artifact.properties.currentVersion.properties.origin.enum).toEqual([
+      'MANUAL',
+      'AI_GENERATED',
+      'AI_ASSISTED',
+      'SYSTEM_GENERATED',
+      'IMPORTED',
+    ]);
     expect(schema(VERSIONS, 'post', '201').properties.versionNumber.type).toBe('integer');
     expect(schema(ARTIFACT, 'get', '404').properties.message.type).toBe('string');
     expect(schema(CONTEXT, 'post', '201').properties.type.enum).toEqual(['PROJECT_CONTEXT']);
     expect(
       schema(CONTEXT, 'post', '201').properties.scopeItems.items.properties.position.type,
     ).toBe('integer');
+    // 1F.1: the generation-batch/acceptance routes now document a response
+    // schema too (previously only their request bodies were typed).
+    const DATA_MODELS = '/projects/{projectId}/data-models';
+    expect(schema(`${DATA_MODELS}/generate`, 'post', '201').properties.candidates.type).toBe(
+      'array',
+    );
+    expect(
+      schema(`${DATA_MODELS}/generations/{generationId}`, 'get', '200').properties.candidates.type,
+    ).toBe('array');
+    expect(
+      schema(`${DATA_MODELS}/generations/{generationId}/accept`, 'post', '201').properties.items
+        .type,
+    ).toBe('array');
   });
 
   it('does not leak database or implementation internals', async () => {

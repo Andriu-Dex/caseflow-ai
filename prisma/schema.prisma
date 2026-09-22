@@ -31,11 +31,14 @@ enum ArtifactVersionStatus {
   @@map("artifact_version_status")
 }
 
-// Where an ArtifactVersion came from (spec §6.3).
+// Where an ArtifactVersion came from (spec §6.3). SYSTEM_GENERATED is
+// deterministically derived by CASEFlow from already approved/structured CASE
+// data (e.g. a Use Case Diagram) — no manual authoring and no AI involvement.
 enum ArtifactOrigin {
   MANUAL
   AI_GENERATED
   AI_ASSISTED
+  SYSTEM_GENERATED
   IMPORTED
 
   @@map("artifact_origin")

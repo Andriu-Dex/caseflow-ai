@@ -6,7 +6,7 @@ CASEFlow AI is an integrated, AI-assisted I-CASE (Computer-Aided Software Engine
 
 ## Current status
 
-This repository implements Foundation through **Increment 1F — Data Model + Diagram Engine**. It supports structured/versioned RF/RNF, Use Cases and conceptual ER models, candidate-first AI generation, exact provenance, deterministic Mermaid ER and PlantUML Use Case sources, and safe derived SVG output.
+This repository implements Foundation through **Increment 1F.1 — Diagram Rendering Stabilization**. It supports structured/versioned RF/RNF, Use Cases and conceptual ER models, candidate-first AI generation, exact provenance, and deterministic Mermaid ER/PlantUML Use Case sources rendered into real graphical SVG by a local, self-hosted Kroki deployment (never a public endpoint) behind a `DiagramProvider` abstraction, with renderer output sanitized through an explicit XML allowlist before being persisted or returned.
 
 Delivery is currently prioritized around the **First Deliverable MVP** (requirements, use cases, data model, navigation, architecture, UI blueprint/mockups, review, versioning and basic traceability). See `docs/FIRST_DELIVERABLE_MVP.md` and `docs/CASEFLOW_AI_SPEC.md` §217–§219.
 
@@ -89,6 +89,8 @@ AI is optional. The default `AI_PROVIDER=disabled` starts the API without a key 
 
 The OpenAI-compatible adapter specifically requires `POST {AI_BASE_URL}/chat/completions` with strict `json_schema` response support; compatibility with every OpenAI-like provider is not implied. Normal tests never call a live provider.
 
+Diagram rendering (Data Model ER / Use Case Diagram) requires local Kroki, started by `pnpm infra:up`. Set `DIAGRAM_RENDERER=kroki` and `KROKI_BASE_URL=http://localhost:8000` (both already in `.env.example`), and optionally `DIAGRAM_RENDER_TIMEOUT_MS`. With `DIAGRAM_RENDERER=disabled` (or unset) the API starts without attempting any outbound call, but an actual diagram creation/generation request then fails with `DIAGRAM_NOT_CONFIGURED`; unit and ordinary integration tests never depend on a live renderer (they use `FakeDiagramProvider`). Kroki is always self-hosted — CASEFlow never calls the public kroki.io service.
+
 ## Local URLs
 
 | Service      | URL                                              |
@@ -99,17 +101,18 @@ The OpenAI-compatible adapter specifically requires `POST {AI_BASE_URL}/chat/com
 | Swagger UI   | http://localhost:3001/docs (non-production only) |
 | Mailpit UI   | http://localhost:8025                            |
 | SeaweedFS S3 | http://localhost:8333                            |
+| Kroki        | http://localhost:8000 (local only, not public)   |
 
 ## Quality commands
 
-| Command                   | Purpose                                                                                                                                                                                       |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm verify`             | The full infrastructure-independent quality gate: format check, lint, typecheck, build, unit tests, coverage. Never starts Docker or touches a database.                                      |
-| `pnpm test`               | The normal deterministic test suite for everyday use.                                                                                                                                         |
-| `pnpm test:unit`          | Tests that require no external infrastructure.                                                                                                                                                |
-| `pnpm test:integration`   | Tests that require infrastructure to already be running (currently: PostgreSQL) and a migrated `caseflow_test`. Use `pnpm verify:integration` to prepare and migrate the test database first. |
-| `pnpm verify:integration` | `db:test:prepare` → `db:test:migrate` → `test:integration`. Only ever touches `caseflow_test`.                                                                                                |
-| `pnpm test:coverage`      | The unit suite with coverage instrumentation and a report.                                                                                                                                    |
+| Command                   | Purpose                                                                                                                                                                                                                         |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm verify`             | The full infrastructure-independent quality gate: format check, lint, typecheck, build, unit tests, coverage. Never starts Docker or touches a database.                                                                        |
+| `pnpm test`               | The normal deterministic test suite for everyday use.                                                                                                                                                                           |
+| `pnpm test:unit`          | Tests that require no external infrastructure.                                                                                                                                                                                  |
+| `pnpm test:integration`   | Tests that require infrastructure to already be running (PostgreSQL, and local Kroki for the real-renderer suite) and a migrated `caseflow_test`. Use `pnpm verify:integration` to prepare and migrate the test database first. |
+| `pnpm verify:integration` | `db:test:prepare` → `db:test:migrate` → `test:integration`. Only ever touches `caseflow_test`.                                                                                                                                  |
+| `pnpm test:coverage`      | The unit suite with coverage instrumentation and a report.                                                                                                                                                                      |
 
 ## OpenAPI
 
@@ -121,7 +124,7 @@ Project Context uses the semantic routes `POST /projects/{projectId}/context`, `
 
 | Command             | Purpose                                                                                                   |
 | ------------------- | --------------------------------------------------------------------------------------------------------- |
-| `pnpm infra:up`     | Start PostgreSQL, Redis, SeaweedFS, and Mailpit via Docker Compose.                                       |
+| `pnpm infra:up`     | Start PostgreSQL, Redis, SeaweedFS, Mailpit, and local Kroki (diagram rendering) via Docker Compose.      |
 | `pnpm infra:down`   | Stop the containers. **Named volumes (and therefore your data) are preserved** — this never deletes them. |
 | `pnpm infra:status` | Show container/health status.                                                                             |
 | `pnpm infra:logs`   | Follow logs for all infrastructure containers.                                                            |

@@ -1,5 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { FakeDiagramProvider } from '@caseflow-ai/integrations';
 import { Client } from 'pg';
 import { ArtifactsModule } from '../../../src/artifacts/artifacts.module';
 import { ArtifactsService } from '../../../src/artifacts/artifacts.service';
@@ -15,7 +16,15 @@ import { UseCasesModule } from '../../../src/use-cases/use-cases.module';
 import { UseCasesService } from '../../../src/use-cases/use-cases.service';
 import { DataModelsModule } from '../../../src/data-models/data-models.module';
 import { DataModelsService } from '../../../src/data-models/data-models.service';
+import { DIAGRAM_PROVIDER } from '../../../src/data-models/diagram-provider.token';
 import { getTestConnectionString, resetTestData } from './test-database';
+
+// A minimal, always-valid graphical SVG: ordinary integration tests (Postgres
+// only) must not depend on a live renderer (AGENTS.md §23/47). Real
+// Mermaid/PlantUML-via-Kroki compatibility is verified separately in
+// diagram-rendering.integration.spec.ts against a live local Kroki.
+const FAKE_DIAGRAM_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><g><circle cx="1" cy="1" r="1"></circle></g></svg>';
 
 export interface TestContext {
   app: INestApplication;
@@ -49,7 +58,10 @@ export async function createTestContext(): Promise<TestContext> {
       UseCasesModule,
       DataModelsModule,
     ],
-  }).compile();
+  })
+    .overrideProvider(DIAGRAM_PROVIDER)
+    .useValue(new FakeDiagramProvider({ svg: FAKE_DIAGRAM_SVG }))
+    .compile();
   const app = moduleRef.createNestApplication();
   await app.init();
 

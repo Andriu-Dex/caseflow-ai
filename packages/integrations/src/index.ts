@@ -6,6 +6,22 @@ import {
   type AIUsage,
 } from '@caseflow-ai/ai';
 
+export {
+  DIAGRAM_PROVIDER_ERROR_CODES,
+  DiagramProviderError,
+  DisabledDiagramProvider,
+  FakeDiagramProvider,
+} from './diagram-provider';
+export type {
+  DiagramFormat,
+  DiagramProvider,
+  DiagramProviderErrorCode,
+  DiagramProviderRequest,
+  DiagramProviderResponse,
+} from './diagram-provider';
+export { KrokiDiagramProvider, KROKI_ENGINE_VERSION } from './kroki-diagram-provider';
+export type { KrokiDiagramProviderConfig } from './kroki-diagram-provider';
+
 export interface OpenAICompatibleProviderConfig {
   baseUrl: string;
   apiKey: string;

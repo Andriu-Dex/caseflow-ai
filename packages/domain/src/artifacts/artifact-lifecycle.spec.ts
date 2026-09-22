@@ -17,7 +17,13 @@ describe('artifact lifecycle', () => {
       'APPROVED',
       'CHANGES_REQUESTED',
     ]);
-    expect(ARTIFACT_ORIGINS).toEqual(['MANUAL', 'AI_GENERATED', 'AI_ASSISTED', 'IMPORTED']);
+    expect(ARTIFACT_ORIGINS).toEqual([
+      'MANUAL',
+      'AI_GENERATED',
+      'AI_ASSISTED',
+      'SYSTEM_GENERATED',
+      'IMPORTED',
+    ]);
   });
 
   it.each([
@@ -40,8 +46,9 @@ describe('artifact lifecycle', () => {
     expect(canTransitionArtifactVersionStatus('CHANGES_REQUESTED', 'APPROVED')).toBe(false);
   });
 
-  it('starts AI_GENERATED versions as GENERATED and every other origin as DRAFT', () => {
+  it('starts AI_GENERATED/SYSTEM_GENERATED versions as GENERATED and every other origin as DRAFT', () => {
     expect(initialStatusForOrigin('AI_GENERATED')).toBe('GENERATED');
+    expect(initialStatusForOrigin('SYSTEM_GENERATED')).toBe('GENERATED');
     expect(initialStatusForOrigin('MANUAL')).toBe('DRAFT');
     expect(initialStatusForOrigin('AI_ASSISTED')).toBe('DRAFT');
     expect(initialStatusForOrigin('IMPORTED')).toBe('DRAFT');

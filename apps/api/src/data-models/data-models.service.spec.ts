@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AIError, type AIOrchestrator } from '@caseflow-ai/ai';
+import { DiagramProviderError, FakeDiagramProvider } from '@caseflow-ai/integrations';
 import type { PrismaService } from '../database/prisma.service';
 import { DataModelsService } from './data-models.service';
 import { DiagramEngine } from './diagram-engine';
+
+const FAKE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><g></g></svg>';
 
 const now = new Date('2026-01-01T00:00:00Z');
 const input = {
@@ -140,6 +143,7 @@ function setup() {
       prisma as unknown as PrismaService,
       ai as unknown as AIOrchestrator,
       new DiagramEngine(),
+      new FakeDiagramProvider({ svg: FAKE_SVG }),
     ),
   };
 }
@@ -252,36 +256,93 @@ describe('DataModelsService', () => {
   });
   it('rejects missing generations and invalid candidate selections', async () => {
     const { service, prisma, tx } = setup();
-    prisma.dataModelGeneration.findFirst.mockResolvedValue(null);
+    // accept() now looks the generation up twice (a preview before rendering
+    // diagrams, then again inside the write transaction): both mocks mirror
+    // the same shared value so either lookup sees consistent state.
+    let generationLookup: unknown = null;
+    prisma.dataModelGeneration.findFirst.mockImplementation(() =>
+      Promise.resolve(generationLookup),
+    );
+    tx.dataModelGeneration.findFirst.mockImplementation(() => Promise.resolve(generationLookup));
+
     await expect(service.getGeneration('project', 'missing')).rejects.toThrow('no encontrada');
-    tx.dataModelGeneration.findFirst
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ id: 'generation', projectId: 'project', candidates: [] })
-      .mockResolvedValueOnce({
-        id: 'generation',
-        projectId: 'project',
-        aiRunId: 'run',
-        candidates: [
-          {
-            id: 'candidate',
-            candidateId: 'c',
-            acceptedArtifactId: 'already',
-            title: input.title,
-            modelKind: 'ER',
-            entities: input.entities,
-            relationships: input.relationships,
-          },
-        ],
-      });
+
+    generationLookup = null;
     await expect(service.accept('project', 'missing', ['candidate'])).rejects.toThrow(
       'no encontrada',
     );
+
+    generationLookup = { id: 'generation', projectId: 'project', candidates: [] };
     await expect(service.accept('project', 'generation', ['unknown'])).rejects.toThrow(
       'no encontrado',
     );
+
+    generationLookup = {
+      id: 'generation',
+      projectId: 'project',
+      aiRunId: 'run',
+      candidates: [
+        {
+          id: 'candidate',
+          candidateId: 'c',
+          acceptedArtifactId: 'already',
+          title: input.title,
+          modelKind: 'ER',
+          entities: input.entities,
+          relationships: input.relationships,
+        },
+      ],
+    };
     await expect(service.accept('project', 'generation', ['candidate'])).rejects.toThrow(
       'ya fue aceptado',
     );
+  });
+  it('fails the whole accept batch before writing anything when rendering fails', async () => {
+    const { prisma, tx } = setup();
+    const failing = new DiagramProviderError('DIAGRAM_PROVIDER_UNAVAILABLE', 'down');
+    const service = new DataModelsService(
+      prisma as unknown as PrismaService,
+      { generateStructured: vi.fn() } as unknown as AIOrchestrator,
+      new DiagramEngine(),
+      new FakeDiagramProvider(failing),
+    );
+    const generation = {
+      id: 'generation',
+      projectId: 'project',
+      aiRunId: 'run',
+      candidates: [
+        {
+          id: 'candidate',
+          candidateId: 'c',
+          acceptedArtifactId: null,
+          title: input.title,
+          modelKind: 'ER',
+          entities: input.entities,
+          relationships: input.relationships,
+        },
+      ],
+    };
+    prisma.dataModelGeneration.findFirst.mockResolvedValue(generation);
+    await expect(service.accept('project', 'generation', ['candidate'])).rejects.toMatchObject({
+      response: { code: 'DIAGRAM_PROVIDER_UNAVAILABLE' },
+    });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(tx.artifact.create).not.toHaveBeenCalled();
+  });
+  it('normalizes a renderer failure on manual creation without writing any row', async () => {
+    const { tx, prisma, ai } = setup();
+    const failing = new DiagramProviderError('DIAGRAM_INVALID_SOURCE', 'bad source');
+    const service = new DataModelsService(
+      prisma as unknown as PrismaService,
+      ai as unknown as AIOrchestrator,
+      new DiagramEngine(),
+      new FakeDiagramProvider(failing),
+    );
+    await expect(service.create('project', input)).rejects.toMatchObject({
+      response: { code: 'DIAGRAM_INVALID_SOURCE' },
+    });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(tx.artifact.create).not.toHaveBeenCalled();
   });
   it('rejects invalid use case diagram sources and missing persisted diagrams', async () => {
     const { service, prisma } = setup();

@@ -1,9 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AIOrchestrator, FakeAIProvider, PromptRegistry } from '@caseflow-ai/ai';
+import { FakeDiagramProvider } from '@caseflow-ai/integrations';
 import { PrismaAIRunRecorder } from '../../src/ai/ai-run-recorder';
 import { DataModelsService } from '../../src/data-models/data-models.service';
 import { DiagramEngine } from '../../src/data-models/diagram-engine';
 import { createTestContext, createWorkspace, type TestContext } from './support/test-app';
+
+const FAKE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><g></g></svg>';
 
 const model = (title = 'Modelo') => ({
   title,
@@ -122,7 +125,12 @@ describe('Data Model + Diagram Engine integration', () => {
       ]),
       new PrismaAIRunRecorder(ctx.prisma),
     );
-    const service = new DataModelsService(ctx.prisma, ai, new DiagramEngine());
+    const service = new DataModelsService(
+      ctx.prisma,
+      ai,
+      new DiagramEngine(),
+      new FakeDiagramProvider({ svg: FAKE_SVG }),
+    );
     const generation = await service.generate(
       projectId,
       [approvedRequirementId],
@@ -164,8 +172,90 @@ describe('Data Model + Diagram Engine integration', () => {
     });
     expect(diagram.source).toContain('actor "Usuario"');
     expect(diagram.source).not.toMatch(/include|extend/);
+    // A deterministic diagram derived by CASEFlow itself (no manual authoring,
+    // no AI) must be SYSTEM_GENERATED, not MANUAL (spec §6.3).
+    const version = await ctx.prisma.artifactVersion.findUniqueOrThrow({
+      where: { id: diagram.versionId },
+    });
+    expect(version).toMatchObject({ origin: 'SYSTEM_GENERATED', status: 'GENERATED' });
     await expect(
       ctx.dataModels.generateUseCaseDiagram(projectId, [approvedRequirementId]),
     ).rejects.toThrow('APPROVED');
+  });
+
+  it('protects DataModelsService.version under concurrent version creation', async () => {
+    const created = await ctx.dataModels.create(projectId, model('Concurrente'));
+
+    await Promise.all(
+      Array.from({ length: 8 }, (_, index) =>
+        ctx.dataModels.version(projectId, created.id, model(`Concurrente v${index}`)),
+      ),
+    );
+
+    const numbers = (
+      await ctx.prisma.artifactVersion.findMany({
+        where: { artifactId: created.id },
+        select: { versionNumber: true },
+        orderBy: { versionNumber: 'asc' },
+      })
+    ).map((version) => version.versionNumber);
+    expect(numbers).toEqual(Array.from({ length: 9 }, (_, index) => index + 1));
+  });
+
+  it('rejects an AI data model candidate referencing a nonexistent entity: AI_INVALID_OUTPUT, no batch, no artifact', async () => {
+    const beforeGenerations = await ctx.prisma.dataModelGeneration.count({ where: { projectId } });
+    const beforeArtifacts = await ctx.prisma.artifact.count({
+      where: { projectId, artifactTypeCode: 'DATA_MODEL' },
+    });
+    const provider = new FakeAIProvider({
+      provider: 'fake',
+      model: 'fake-v1',
+      payload: {
+        candidates: [
+          {
+            candidateId: 'candidate-1',
+            ...model('Inválido'),
+            relationships: [
+              {
+                sourceEntityId: 'user',
+                targetEntityId: 'nonexistent-entity',
+                sourceCardinality: 'ONE',
+                targetCardinality: 'ZERO_OR_MORE',
+              },
+            ],
+          },
+        ],
+      },
+      usage: null,
+      latencyMs: 1,
+    });
+    const ai = new AIOrchestrator(
+      provider,
+      new PromptRegistry([
+        {
+          key: 'data-model.generate',
+          version: 1,
+          capability: 'STRUCTURED_OUTPUT',
+          purpose: 'conceptual_data_model_generation',
+          systemInstructions: 'policy',
+        },
+      ]),
+      new PrismaAIRunRecorder(ctx.prisma),
+    );
+    const service = new DataModelsService(
+      ctx.prisma,
+      ai,
+      new DiagramEngine(),
+      new FakeDiagramProvider({ svg: FAKE_SVG }),
+    );
+    await expect(
+      service.generate(projectId, [approvedRequirementId], [approvedUseCaseId]),
+    ).rejects.toMatchObject({ response: { code: 'AI_INVALID_OUTPUT' } });
+    expect(await ctx.prisma.dataModelGeneration.count({ where: { projectId } })).toBe(
+      beforeGenerations,
+    );
+    expect(
+      await ctx.prisma.artifact.count({ where: { projectId, artifactTypeCode: 'DATA_MODEL' } }),
+    ).toBe(beforeArtifacts);
   });
 });
