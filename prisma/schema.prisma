@@ -66,6 +66,17 @@ enum AIErrorCode {
 
   @@map("ai_error_code")
 }
+enum RequirementType {
+  FUNCTIONAL
+  NON_FUNCTIONAL
+  @@map("requirement_type")
+}
+enum RequirementPriority {
+  HIGH
+  MEDIUM
+  LOW
+  @@map("requirement_priority")
+}
 
 // Logical team/organization that groups projects (spec §3.1).
 model Workspace {
@@ -153,6 +164,8 @@ model ArtifactVersion {
   artifact Artifact @relation(fields: [artifactId, projectId], references: [id, projectId], onDelete: Restrict, onUpdate: Restrict)
   projectContextDetail ProjectContextDetail?
   sourceForAIRuns       AIRun[]
+  requirementDetail     RequirementDetail?
+  sourcedRequirements   RequirementDetail[] @relation("RequirementSourceContext")
 
   @@unique([artifactId, versionNumber])
   @@unique([id, projectId])
@@ -277,8 +290,101 @@ model AIRun {
 
   project               Project?         @relation(fields: [projectId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   sourceArtifactVersion ArtifactVersion? @relation(fields: [sourceArtifactVersionId, projectId], references: [id, projectId], onDelete: Restrict, onUpdate: Restrict)
+  requirementDetails RequirementDetail[]
+  requirementGeneration RequirementGeneration?
 
   @@index([projectId, startedAt, id])
   @@index([sourceArtifactVersionId])
   @@map("ai_runs")
+}
+
+model RequirementDetail {
+  artifactVersionId String @id @map("artifact_version_id") @db.Uuid
+  requirementType RequirementType @map("requirement_type")
+  name String
+  description String
+  priority RequirementPriority
+  generationCandidateId String? @unique @map("generation_candidate_id") @db.Uuid
+  sourceContextVersionId String? @map("source_context_version_id") @db.Uuid
+  aiRunId String? @map("ai_run_id") @db.Uuid
+  artifactVersion ArtifactVersion @relation(fields:[artifactVersionId], references:[id], onDelete:Restrict)
+  sourceContextVersion ArtifactVersion? @relation("RequirementSourceContext", fields:[sourceContextVersionId], references:[id], onDelete:Restrict)
+  aiRun AIRun? @relation(fields:[aiRunId], references:[id], onDelete:Restrict)
+  actors RequirementActor[]
+  preconditions RequirementPrecondition[]
+  postconditions RequirementPostcondition[]
+  dependencies RequirementDependency[]
+  @@map("requirement_details")
+}
+model RequirementActor {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  artifactVersionId String @map("artifact_version_id") @db.Uuid
+  position Int
+  name String
+  requirement RequirementDetail @relation(fields:[artifactVersionId], references:[artifactVersionId], onDelete:Restrict)
+  @@unique([artifactVersionId,position])
+  @@map("requirement_actors")
+}
+model RequirementPrecondition {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  artifactVersionId String @map("artifact_version_id") @db.Uuid
+  position Int
+  description String
+  requirement RequirementDetail @relation(fields:[artifactVersionId], references:[artifactVersionId], onDelete:Restrict)
+  @@unique([artifactVersionId,position])
+  @@map("requirement_preconditions")
+}
+model RequirementPostcondition {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  artifactVersionId String @map("artifact_version_id") @db.Uuid
+  position Int
+  description String
+  requirement RequirementDetail @relation(fields:[artifactVersionId], references:[artifactVersionId], onDelete:Restrict)
+  @@unique([artifactVersionId,position])
+  @@map("requirement_postconditions")
+}
+model RequirementDependency {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  artifactVersionId String @map("artifact_version_id") @db.Uuid
+  dependsOnArtifactId String @map("depends_on_artifact_id") @db.Uuid
+  requirement RequirementDetail @relation(fields:[artifactVersionId], references:[artifactVersionId], onDelete:Restrict)
+  @@unique([artifactVersionId,dependsOnArtifactId])
+  @@map("requirement_dependencies")
+}
+model RequirementGeneration {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId String @map("project_id") @db.Uuid
+  sourceContextVersionId String @map("source_context_version_id") @db.Uuid
+  aiRunId String @unique @map("ai_run_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  aiRun AIRun @relation(fields:[aiRunId],references:[id],onDelete:Restrict)
+  candidates RequirementCandidate[]
+  @@index([projectId,createdAt])
+  @@map("requirement_generations")
+}
+model RequirementCandidate {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  generationId String @map("generation_id") @db.Uuid
+  candidateId String @map("candidate_id")
+  requirementType RequirementType @map("requirement_type")
+  name String
+  description String
+  priority RequirementPriority
+  actors Json
+  preconditions Json
+  postconditions Json
+  acceptedArtifactId String? @map("accepted_artifact_id") @db.Uuid
+  generation RequirementGeneration @relation(fields:[generationId], references:[id], onDelete:Restrict)
+  outgoingDependencies RequirementCandidateDependency[] @relation("CandidateFrom")
+  incomingDependencies RequirementCandidateDependency[] @relation("CandidateTo")
+  @@unique([generationId,candidateId])
+  @@map("requirement_candidates")
+}
+model RequirementCandidateDependency {
+  candidateId String @map("candidate_id") @db.Uuid
+  dependsOnCandidateId String @map("depends_on_candidate_id") @db.Uuid
+  candidate RequirementCandidate @relation("CandidateFrom",fields:[candidateId],references:[id],onDelete:Restrict)
+  dependsOn RequirementCandidate @relation("CandidateTo",fields:[dependsOnCandidateId],references:[id],onDelete:Restrict)
+  @@id([candidateId,dependsOnCandidateId])
+  @@map("requirement_candidate_dependencies")
 }

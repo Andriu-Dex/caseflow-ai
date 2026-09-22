@@ -38,7 +38,7 @@ export class ArtifactsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async createArtifact(projectId: string, input: CreateArtifactInput): Promise<ArtifactResponse> {
-    if (input.type === 'PROJECT_CONTEXT') {
+    if (input.type === 'PROJECT_CONTEXT' || input.type === 'REQUIREMENT') {
       throw new UnprocessableEntityException(
         'El contexto del proyecto debe crearse mediante su endpoint específico.',
       );
