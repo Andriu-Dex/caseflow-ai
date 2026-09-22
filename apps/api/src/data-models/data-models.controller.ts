@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   acceptDataModelCandidatesRequestSchema,
+  dataModelGenerationResponseSchema,
   dataModelInputSchema,
   dataModelListResponseSchema,
   dataModelResponseSchema,
@@ -44,6 +45,7 @@ export class DataModelsController {
     summary: 'Generar candidatos de modelo conceptual',
   })
   @ApiZodBody(generateDataModelRequestSchema)
+  @ApiZodResponse(201, 'Data Model generation batch.', dataModelGenerationResponseSchema)
   generate(
     @Param('projectId', uuidParamPipe) projectId: string,
     @Body(new ZodValidationPipe(generateDataModelRequestSchema))
@@ -56,6 +58,7 @@ export class DataModelsController {
     operationId: 'getDataModelGeneration',
     summary: 'Consultar candidatos de modelo',
   })
+  @ApiZodResponse(200, 'Data Model generation batch.', dataModelGenerationResponseSchema)
   generation(
     @Param('projectId', uuidParamPipe) projectId: string,
     @Param('generationId', uuidParamPipe) generationId: string,
@@ -68,6 +71,7 @@ export class DataModelsController {
     summary: 'Aceptar candidatos de modelo',
   })
   @ApiZodBody(acceptDataModelCandidatesRequestSchema)
+  @ApiZodResponse(201, 'Data Models.', dataModelListResponseSchema)
   accept(
     @Param('projectId', uuidParamPipe) projectId: string,
     @Param('generationId', uuidParamPipe) generationId: string,

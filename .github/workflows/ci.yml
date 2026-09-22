@@ -53,9 +53,27 @@ jobs:
           --health-interval=5s
           --health-timeout=5s
           --health-retries=10
+      # Local, self-hosted diagram rendering for the real-renderer integration
+      # path (never a public kroki.io endpoint). Pinned to the same tag as
+      # infra/docker/compose.yml.
+      kroki-mermaid:
+        image: yuzutech/kroki-mermaid:0.32.1
+      kroki:
+        image: yuzutech/kroki:0.32.1
+        env:
+          KROKI_MERMAID_HOST: kroki-mermaid
+        ports:
+          - 8000:8000
+        options: >-
+          --health-cmd="wget -q -O /dev/null http://localhost:8000/health"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
     env:
       DATABASE_URL: postgresql://caseflow_ci:caseflow_ci_password@localhost:5432/caseflow_ci?schema=public
       DATABASE_TEST_URL: postgresql://caseflow_ci:caseflow_ci_password@localhost:5432/caseflow_test?schema=public
+      DIAGRAM_RENDERER: kroki
+      KROKI_BASE_URL: http://localhost:8000
     steps:
       - uses: actions/checkout@v4
 

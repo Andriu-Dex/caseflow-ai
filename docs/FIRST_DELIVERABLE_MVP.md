@@ -21,18 +21,19 @@ Planificación (Gantt/PERT) y reflexión/evidencia del equipo siguen siendo acti
 
 ## Roadmap inmediato
 
-| ID  | Incremento                       | Estado    |
-| --- | -------------------------------- | --------- |
-| 1A  | Project + Artifact Foundation    | Entregado |
-| 1B  | Project Context                  | Entregado |
-| 1C  | AI Generation Foundation         | Entregado |
-| 1D  | Requirements                     | Entregado |
-| 1E  | Use Cases                        | Entregado |
-| 1F  | Data Model + Diagram Engine      | Entregado |
-| 1G  | Navigation + Architecture        | Pendiente |
-| 1H  | UI Blueprint + Mockups           | Pendiente |
-| 1I  | Traceability + Versions + Export | Pendiente |
-| 1J  | First Deliverable Hardening      | Pendiente |
+| ID   | Incremento                       | Estado    |
+| ---- | -------------------------------- | --------- |
+| 1A   | Project + Artifact Foundation    | Entregado |
+| 1B   | Project Context                  | Entregado |
+| 1C   | AI Generation Foundation         | Entregado |
+| 1D   | Requirements                     | Entregado |
+| 1E   | Use Cases                        | Entregado |
+| 1F   | Data Model + Diagram Engine      | Entregado |
+| 1F.1 | Diagram Rendering Stabilization  | Entregado |
+| 1G   | Navigation + Architecture        | Pendiente |
+| 1H   | UI Blueprint + Mockups           | Pendiente |
+| 1I   | Traceability + Versions + Export | Pendiente |
+| 1J   | First Deliverable Hardening      | Pendiente |
 
 Identity, Workspace/RBAC completos, Knowledge Base, RAG, Construction y Code Generation no se cancelan: se retoman tras 1J.
 
@@ -66,7 +67,11 @@ Los casos de uso CU son artefactos estructurados, versionados y revisables. Acto
 
 ## Estado tras el Incremento 1F
 
-Los modelos conceptuales ER son artefactos `DATA_MODEL` estructurados y versionados, con creación manual y generación candidata desde versiones exactas aprobadas. El motor determinístico deriva Mermaid ER y UML PlantUML de casos de uso desde datos CASE validados, conserva la procedencia y genera una representación SVG segura sin depender de servicios públicos ni permitir que la IA produzca diagramas autoritativos.
+Los modelos conceptuales ER son artefactos `DATA_MODEL` estructurados y versionados, con creación manual y generación candidata desde versiones exactas aprobadas. El motor determinístico deriva Mermaid ER y UML PlantUML de casos de uso desde datos CASE validados y conserva la procedencia, sin permitir que la IA produzca diagramas autoritativos. En 1F el SVG entregado era todavía una previsualización textual fija de la fuente (sin layout gráfico ni compatibilidad demostrada con un motor real) — ver Incremento 1F.1.
+
+## Estado tras el Incremento 1F.1 (Diagram Rendering Stabilization)
+
+El SVG entregado ahora es un render gráfico real: la fuente Mermaid ER/PlantUML determinística se envía a un Kroki local propio (nunca un servicio público) detrás de la abstracción `DiagramProvider`, y el SVG resultante se sanea con un parser XML real antes de persistirse/entregarse. Kroki es la autoridad de compatibilidad — una fuente malformada falla explícitamente en vez de aceptarse por una validación interna superficial. El diagrama de casos de uso pasa a origin `SYSTEM_GENERATED` (nuevo valor aditivo de `ArtifactOrigin`), reflejando que es derivado determinísticamente por CASEFlow sin autoría manual ni IA. Un fallo del renderizador no destruye ni corrompe el modelo/casos de uso estructurados: la solicitud de creación/generación falla limpiamente antes de escribir cualquier fila.
 
 ## Probar la API manualmente (desarrollo)
 

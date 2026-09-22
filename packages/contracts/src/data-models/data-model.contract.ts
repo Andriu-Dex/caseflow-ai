@@ -129,9 +129,8 @@ export const dataModelResponseSchema = z.object({
 });
 export const dataModelListResponseSchema = z.object({ items: z.array(dataModelResponseSchema) });
 
-const generationCandidateSchema = dataModelFieldsSchema
-  .extend({ candidateId: text(80) })
-  .superRefine(validateModel);
+const generationCandidateFieldsSchema = dataModelFieldsSchema.extend({ candidateId: text(80) });
+const generationCandidateSchema = generationCandidateFieldsSchema.superRefine(validateModel);
 export const dataModelGenerationOutputSchema = z
   .object({ candidates: z.array(generationCandidateSchema).min(1).max(5) })
   .strict()
@@ -157,6 +156,26 @@ export const generateDataModelRequestSchema = z
 export const acceptDataModelCandidatesRequestSchema = z
   .object({ candidateIds: z.array(z.uuid()).min(1).max(5) })
   .strict();
+
+const dataModelGenerationCandidateResponseSchema = generationCandidateFieldsSchema.extend({
+  id: z.uuid(),
+  generationId: z.uuid(),
+  acceptedArtifactId: z.uuid().nullable(),
+});
+export const dataModelGenerationResponseSchema = z.object({
+  id: z.uuid(),
+  projectId: z.uuid(),
+  aiRunId: z.uuid(),
+  createdAt: z.iso.datetime(),
+  sources: z.array(
+    z.object({
+      generationId: z.uuid(),
+      artifactVersionId: z.uuid(),
+      sourceId: z.uuid(),
+    }),
+  ),
+  candidates: z.array(dataModelGenerationCandidateResponseSchema),
+});
 
 export const diagramResponseSchema = z.object({
   id: z.uuid(),

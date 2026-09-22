@@ -1,11 +1,13 @@
 import {
+  Inject,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { AIError, AIOrchestrator } from '@caseflow-ai/ai';
-import { formatArtifactCode } from '@caseflow-ai/domain';
+import { formatArtifactCode, initialStatusForOrigin } from '@caseflow-ai/domain';
+import { DiagramProviderError, type DiagramProvider } from '@caseflow-ai/integrations';
 import {
   DATA_MODEL_MAX_OUTPUT_TOKENS,
   dataModelGenerationOutputSchema,
@@ -14,8 +16,11 @@ import {
 import { PrismaService } from '../database/prisma.service';
 import type { Prisma } from '../generated/prisma/client';
 import { DiagramEngine } from './diagram-engine';
+import { DIAGRAM_PROVIDER } from './diagram-provider.token';
+import { sanitizeDiagramSvg } from './svg-sanitizer';
 
 type Tx = Prisma.TransactionClient;
+type RenderedDiagram = { source: string; svg: string; generatorVersion: string };
 const detailInclude = {
   entities: {
     orderBy: { position: 'asc' as const },
@@ -27,16 +32,29 @@ const detailInclude = {
   },
 };
 
+// Renderer failures map to a normalized, non-leaking HTTP error: a malformed
+// source is a client-visible problem (422), everything else is a transient
+// infrastructure problem (503) — never a fake/placeholder SVG.
+function mapDiagramProviderError(error: DiagramProviderError): never {
+  if (error.code === 'DIAGRAM_INVALID_SOURCE')
+    throw new UnprocessableEntityException({ message: error.message, code: error.code });
+  throw new ServiceUnavailableException({ message: error.message, code: error.code });
+}
+
 @Injectable()
 export class DataModelsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ai: AIOrchestrator,
     private readonly diagrams: DiagramEngine,
+    @Inject(DIAGRAM_PROVIDER) private readonly diagramProvider: DiagramProvider,
   ) {}
 
-  create(projectId: string, input: DataModelInput) {
-    return this.prisma.$transaction((tx) => this.createInTx(tx, projectId, input, 'MANUAL'));
+  async create(projectId: string, input: DataModelInput) {
+    const diagram = await this.renderDiagram('MERMAID_ER', this.diagrams.generateER(input));
+    return this.prisma.$transaction((tx) =>
+      this.createInTx(tx, projectId, input, diagram, 'MANUAL'),
+    );
   }
   async list(projectId: string) {
     const rows = await this.prisma.artifact.findMany({
@@ -68,6 +86,7 @@ export class DataModelsService {
     return this.map(row, row.versions[0]);
   }
   async version(projectId: string, id: string, input: DataModelInput) {
+    const diagram = await this.renderDiagram('MERMAID_ER', this.diagrams.generateER(input));
     return this.prisma.$transaction(async (tx) => {
       const locked = await tx.$queryRaw<
         { id: string }[]
@@ -88,7 +107,7 @@ export class DataModelsService {
         },
       });
       await this.insertDetail(tx, version.id, input);
-      await this.insertERDiagram(tx, version.id, input);
+      await this.insertDiagramDetail(tx, version.id, 'ER', 'MERMAID_ER', diagram, [version.id]);
       return this.loadAndMap(tx, id, version.id);
     });
   }
@@ -189,13 +208,33 @@ export class DataModelsService {
     return generation;
   }
   async accept(projectId: string, generationId: string, candidateIds: string[]) {
+    const selected = new Set(candidateIds);
+    const preview = await this.prisma.dataModelGeneration.findFirst({
+      where: { id: generationId, projectId },
+      include: { candidates: true },
+    });
+    if (!preview) throw new NotFoundException('Generación no encontrada.');
+    const previewCandidates = preview.candidates.filter((candidate) => selected.has(candidate.id));
+    if (previewCandidates.length !== selected.size)
+      throw new NotFoundException('Candidato no encontrado.');
+    // Diagrams are rendered before the write transaction opens: no network
+    // I/O is performed while a database transaction/lock is held, and a
+    // render failure for any selected candidate fails the whole batch before
+    // anything is written (preserves the existing all-or-nothing guarantee).
+    const diagrams = new Map<string, RenderedDiagram>();
+    for (const candidate of previewCandidates) {
+      const parsed = this.parseCandidate(candidate);
+      diagrams.set(
+        candidate.id,
+        await this.renderDiagram('MERMAID_ER', this.diagrams.generateER(parsed)),
+      );
+    }
     return this.prisma.$transaction(async (tx) => {
       const generation = await tx.dataModelGeneration.findFirst({
         where: { id: generationId, projectId },
         include: { candidates: true },
       });
       if (!generation) throw new NotFoundException('Generación no encontrada.');
-      const selected = new Set(candidateIds);
       const candidates = generation.candidates.filter((candidate) => selected.has(candidate.id));
       if (candidates.length !== selected.size)
         throw new NotFoundException('Candidato no encontrado.');
@@ -203,19 +242,12 @@ export class DataModelsService {
       for (const candidate of candidates) {
         if (candidate.acceptedArtifactId)
           throw new UnprocessableEntityException('El candidato ya fue aceptado.');
-        const parsed = dataModelGenerationOutputSchema.shape.candidates.element.safeParse({
-          candidateId: candidate.candidateId,
-          title: candidate.title,
-          modelKind: candidate.modelKind,
-          entities: candidate.entities,
-          relationships: candidate.relationships,
-        });
-        if (!parsed.success)
-          throw new UnprocessableEntityException('El candidato persistido no es válido.');
+        const parsed = this.parseCandidate(candidate);
         const created = await this.createInTx(
           tx,
           projectId,
-          parsed.data,
+          parsed,
+          diagrams.get(candidate.id)!,
           'AI_GENERATED',
           generation.id,
           candidate.id,
@@ -229,6 +261,24 @@ export class DataModelsService {
       }
       return { items };
     });
+  }
+  private parseCandidate(candidate: {
+    candidateId: string;
+    title: string;
+    modelKind: string;
+    entities: unknown;
+    relationships: unknown;
+  }): DataModelInput {
+    const parsed = dataModelGenerationOutputSchema.shape.candidates.element.safeParse({
+      candidateId: candidate.candidateId,
+      title: candidate.title,
+      modelKind: candidate.modelKind,
+      entities: candidate.entities,
+      relationships: candidate.relationships,
+    });
+    if (!parsed.success)
+      throw new UnprocessableEntityException('El candidato persistido no es válido.');
+    return parsed.data;
   }
 
   async getERDiagram(projectId: string, dataModelId: string) {
@@ -266,6 +316,18 @@ export class DataModelsService {
       throw new UnprocessableEntityException(
         'Se requieren versiones exactas APPROVED de casos de uso del mismo proyecto.',
       );
+    const source = this.diagrams.generateUseCase({
+      systemName: 'Sistema',
+      useCases: sources.map((item) => ({
+        code: item.artifact.code,
+        name: item.useCaseDetail!.name,
+        actors: [
+          item.useCaseDetail!.primaryActor,
+          ...item.useCaseDetail!.secondaryActors.map((actor) => actor.name),
+        ],
+      })),
+    });
+    const diagram = await this.renderDiagram('PLANTUML', source);
     return this.prisma.$transaction(async (tx) => {
       const number = await this.allocate(tx, projectId, 'DIA');
       const artifact = await tx.artifact.create({
@@ -275,43 +337,27 @@ export class DataModelsService {
           code: formatArtifactCode('DIA', number),
         },
       });
+      // Deterministic derivation from already-approved structured data, with
+      // no manual authoring and no AI involvement — SYSTEM_GENERATED, not
+      // MANUAL (spec §6.3).
       const version = await tx.artifactVersion.create({
         data: {
           artifactId: artifact.id,
           projectId,
           versionNumber: 1,
           title: 'Diagrama de casos de uso',
-          status: 'GENERATED',
-          origin: 'MANUAL',
+          status: initialStatusForOrigin('SYSTEM_GENERATED'),
+          origin: 'SYSTEM_GENERATED',
         },
       });
-      const source = this.diagrams.generateUseCase({
-        systemName: 'Sistema',
-        useCases: sources.map((item) => ({
-          code: item.artifact.code,
-          name: item.useCaseDetail!.name,
-          actors: [
-            item.useCaseDetail!.primaryActor,
-            ...item.useCaseDetail!.secondaryActors.map((actor) => actor.name),
-          ],
-        })),
-      });
-      this.diagrams.validate('PLANTUML', source);
-      const svg = this.diagrams.renderSvg('PLANTUML', source);
-      const detail = await tx.diagramDetail.create({
-        data: {
-          artifactVersionId: version.id,
-          kind: 'USE_CASE',
-          sourceFormat: 'PLANTUML',
-          generatorVersion: 'caseflow-svg-v1',
-          source,
-          svg,
-          sources: {
-            create: unique.map((sourceArtifactVersionId) => ({ sourceArtifactVersionId })),
-          },
-        },
-        include: { sources: true },
-      });
+      const detail = await this.insertDiagramDetail(
+        tx,
+        version.id,
+        'USE_CASE',
+        'PLANTUML',
+        diagram,
+        unique,
+      );
       return this.mapDiagram(artifact, version, detail);
     });
   }
@@ -332,10 +378,70 @@ export class DataModelsService {
     return this.mapDiagram(row, version, diagram);
   }
 
+  // Validates, renders and sanitizes a diagram. Performed outside any
+  // database transaction (callers render before opening one): a renderer
+  // failure aborts the whole request cleanly, before any row is written, so
+  // canonical structured data is never destroyed and no fake SVG is ever
+  // stored. The deterministic source itself needs no separate persistence to
+  // "survive" the failure: manual input is the caller's own request body
+  // (trivially retryable) and AI candidates already persisted independently
+  // in `generate()` remain available for another `accept()` call.
+  private async renderDiagram(
+    format: 'MERMAID_ER' | 'PLANTUML',
+    source: string,
+  ): Promise<RenderedDiagram> {
+    this.diagrams.validate(format, source);
+    try {
+      const rendered = await this.diagramProvider.render({ format, source });
+      let svg: string;
+      try {
+        svg = sanitizeDiagramSvg(rendered.svg);
+      } catch (cause) {
+        throw new DiagramProviderError(
+          'DIAGRAM_UNSAFE_OUTPUT',
+          'El renderizador produjo contenido no seguro.',
+          { cause },
+        );
+      }
+      return {
+        source,
+        svg,
+        generatorVersion: `caseflow-diagram-source-v1+${this.diagramProvider.id}`,
+      };
+    } catch (error) {
+      if (error instanceof DiagramProviderError) mapDiagramProviderError(error);
+      throw error;
+    }
+  }
+  private async insertDiagramDetail(
+    tx: Tx,
+    versionId: string,
+    kind: 'ER' | 'USE_CASE',
+    sourceFormat: 'MERMAID_ER' | 'PLANTUML',
+    diagram: RenderedDiagram,
+    sourceVersionIds: string[],
+  ) {
+    return tx.diagramDetail.create({
+      data: {
+        artifactVersionId: versionId,
+        kind,
+        sourceFormat,
+        generatorVersion: diagram.generatorVersion,
+        source: diagram.source,
+        svg: diagram.svg,
+        sources: {
+          create: sourceVersionIds.map((sourceArtifactVersionId) => ({ sourceArtifactVersionId })),
+        },
+      },
+      include: { sources: true },
+    });
+  }
+
   private async createInTx(
     tx: Tx,
     projectId: string,
     input: DataModelInput,
+    diagram: RenderedDiagram,
     origin: 'MANUAL' | 'AI_GENERATED',
     generationId?: string,
     candidateId?: string,
@@ -358,7 +464,7 @@ export class DataModelsService {
       },
     });
     await this.insertDetail(tx, version.id, input, generationId, candidateId, aiRunId);
-    await this.insertERDiagram(tx, version.id, input);
+    await this.insertDiagramDetail(tx, version.id, 'ER', 'MERMAID_ER', diagram, [version.id]);
     return this.loadAndMap(tx, artifact.id, version.id);
   }
   private async insertDetail(
@@ -408,22 +514,6 @@ export class DataModelsService {
         targetCardinality: relationship.targetCardinality,
         description: relationship.description,
       })),
-    });
-  }
-  private async insertERDiagram(tx: Tx, versionId: string, input: DataModelInput) {
-    const source = this.diagrams.generateER(input);
-    this.diagrams.validate('MERMAID_ER', source);
-    const svg = this.diagrams.renderSvg('MERMAID_ER', source);
-    await tx.diagramDetail.create({
-      data: {
-        artifactVersionId: versionId,
-        kind: 'ER',
-        sourceFormat: 'MERMAID_ER',
-        generatorVersion: 'caseflow-svg-v1',
-        source,
-        svg,
-        sources: { create: { sourceArtifactVersionId: versionId } },
-      },
     });
   }
   private async allocate(tx: Tx, projectId: string, prefix: string) {
