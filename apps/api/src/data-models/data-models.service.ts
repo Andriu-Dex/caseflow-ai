@@ -6,7 +6,11 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { AIError, AIOrchestrator } from '@caseflow-ai/ai';
-import { formatArtifactCode, initialStatusForOrigin } from '@caseflow-ai/domain';
+import {
+  canTransitionArtifactVersionStatus,
+  formatArtifactCode,
+  initialStatusForOrigin,
+} from '@caseflow-ai/domain';
 import { DiagramProviderError, type DiagramProvider } from '@caseflow-ai/integrations';
 import {
   DATA_MODEL_MAX_OUTPUT_TOKENS,
@@ -109,6 +113,28 @@ export class DataModelsService {
       await this.insertDetail(tx, version.id, input);
       await this.insertDiagramDetail(tx, version.id, 'ER', 'MERMAID_ER', diagram, [version.id]);
       return this.loadAndMap(tx, id, version.id);
+    });
+  }
+
+  async transition(
+    projectId: string,
+    artifactId: string,
+    versionId: string,
+    status: 'DRAFT' | 'IN_REVIEW' | 'APPROVED' | 'CHANGES_REQUESTED',
+  ) {
+    const version = await this.prisma.artifactVersion.findFirst({
+      where: { id: versionId, projectId, artifactId, artifact: { artifactTypeCode: 'DATA_MODEL' } },
+    });
+    if (!version) throw new NotFoundException('Versión no encontrada.');
+    if (!canTransitionArtifactVersionStatus(version.status, status))
+      throw new UnprocessableEntityException('Transición de estado no permitida.');
+    return this.prisma.artifactVersion.update({
+      where: { id: versionId },
+      data: {
+        status,
+        submittedAt: status === 'IN_REVIEW' ? new Date() : version.submittedAt,
+        approvedAt: status === 'APPROVED' ? new Date() : version.approvedAt,
+      },
     });
   }
 

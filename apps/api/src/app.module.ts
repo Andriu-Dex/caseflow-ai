@@ -13,6 +13,7 @@ import { StructuredAnalysisModule } from './structured-analysis/structured-analy
 import { MockupsModule } from './mockups/mockups.module';
 import { StalenessModule } from './staleness/staleness.module';
 import { TraceabilityModule } from './traceability/traceability.module';
+import { ReadinessModule } from './readiness/readiness.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { TraceabilityModule } from './traceability/traceability.module';
     MockupsModule,
     StalenessModule,
     TraceabilityModule,
+    ReadinessModule,
   ],
 })
 export class AppModule {}

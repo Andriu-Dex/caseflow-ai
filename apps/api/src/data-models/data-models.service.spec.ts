@@ -131,7 +131,7 @@ function setup() {
   const prisma = {
     $transaction: vi.fn((callback) => callback(tx)),
     artifact: { findMany: vi.fn(), findFirst: vi.fn() },
-    artifactVersion: { findMany: vi.fn() },
+    artifactVersion: { findMany: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
     dataModelGeneration: { findFirst: vi.fn() },
   };
   const ai = { generateStructured: vi.fn() };
@@ -174,6 +174,24 @@ describe('DataModelsService', () => {
     await expect(
       service.version('project', 'artifact', { ...input, title: 'V2' }),
     ).resolves.toMatchObject({ id: 'artifact' });
+  });
+  it('enforces the artifact lifecycle transition rules', async () => {
+    const { service, prisma } = setup();
+    prisma.artifactVersion.findFirst.mockResolvedValueOnce({ id: 'version', status: 'GENERATED' });
+    prisma.artifactVersion.update.mockResolvedValue({ id: 'version', status: 'IN_REVIEW' });
+    await expect(
+      service.transition('project', 'artifact', 'version', 'IN_REVIEW'),
+    ).resolves.toMatchObject({ status: 'IN_REVIEW' });
+
+    prisma.artifactVersion.findFirst.mockResolvedValueOnce({ id: 'version', status: 'DRAFT' });
+    await expect(service.transition('project', 'artifact', 'version', 'APPROVED')).rejects.toThrow(
+      'no permitida',
+    );
+
+    prisma.artifactVersion.findFirst.mockResolvedValueOnce(null);
+    await expect(service.transition('project', 'artifact', 'missing', 'IN_REVIEW')).rejects.toThrow(
+      'no encontrada',
+    );
   });
   it('validates exact approved generation sources and persists candidates', async () => {
     const { service, prisma, tx, ai } = setup();

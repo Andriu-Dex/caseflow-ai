@@ -35,6 +35,7 @@ export * from './structured-analysis/structured-analysis.contract';
 export * from './mockups/mockup.contract';
 export * from './staleness/staleness.contract';
 export * from './traceability/traceability.contract';
+export * from './readiness/readiness.contract';
 
 export {
   PROJECT_CONTEXT_COLLECTION_LIMIT,
