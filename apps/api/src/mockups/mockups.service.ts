@@ -43,6 +43,39 @@ export class MockupsService {
     return this.map(row, row.versions[0]!);
   }
 
+  // Authoritative collection for Export (spec Phase H): APPROVED mockups
+  // derived exactly from the selected authoritative UI Blueprint version —
+  // never a mockup left over from a superseded blueprint version.
+  async listApprovedForBlueprint(projectId: string, uiBlueprintVersionId: string) {
+    const rows = await this.prisma.artifact.findMany({
+      where: { projectId, artifactTypeCode: 'MOCKUP', versions: { some: { status: 'APPROVED' } } },
+      include: {
+        versions: {
+          where: { status: 'APPROVED' },
+          orderBy: { versionNumber: 'desc' },
+          take: 1,
+          include: { mockupDetail: true },
+        },
+      },
+      orderBy: { code: 'asc' },
+    });
+    return rows
+      .filter((row) => row.versions[0]?.mockupDetail?.uiBlueprintVersionId === uiBlueprintVersionId)
+      .map((row) => {
+        const version = row.versions[0]!;
+        const detail = version.mockupDetail!;
+        return {
+          id: row.id,
+          projectId: row.projectId,
+          code: row.code,
+          versionId: version.id,
+          uiBlueprintVersionId: detail.uiBlueprintVersionId,
+          svg: detail.svg,
+          createdAt: version.createdAt.toISOString(),
+        };
+      });
+  }
+
   async getPreview(projectId: string, mockupId: string) {
     const row = await this.findLatest(projectId, mockupId);
     const version = row.versions[0]!;

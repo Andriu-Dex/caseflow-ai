@@ -14,6 +14,7 @@ import { MockupsModule } from './mockups/mockups.module';
 import { StalenessModule } from './staleness/staleness.module';
 import { TraceabilityModule } from './traceability/traceability.module';
 import { ReadinessModule } from './readiness/readiness.module';
+import { ExportModule } from './export/export.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { ReadinessModule } from './readiness/readiness.module';
     StalenessModule,
     TraceabilityModule,
     ReadinessModule,
+    ExportModule,
   ],
 })
 export class AppModule {}

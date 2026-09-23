@@ -140,6 +140,25 @@ export class StructuredAnalysisService {
     return this.map(row, row.versions[0]!);
   }
 
+  // Exact-version lookup, used by Export (spec Phase H) which selects its own
+  // authoritative version via FirstDeliverableSnapshotService rather than
+  // always taking the latest version regardless of status (get() above).
+  async getVersion(projectId: string, kind: StructuredAnalysisKind, id: string, versionId: string) {
+    const row = await this.prisma.artifact.findFirst({
+      where: { id, projectId, artifactTypeCode: kind },
+      include: {
+        versions: {
+          where: { id: versionId },
+          take: 1,
+          include: { structuredAnalysisDetail: true },
+        },
+      },
+    });
+    if (!row?.versions[0]?.structuredAnalysisDetail)
+      throw new NotFoundException('Artefacto no encontrado.');
+    return this.map(row, row.versions[0]);
+  }
+
   async version(
     projectId: string,
     kind: StructuredAnalysisKind,
@@ -345,6 +364,47 @@ export class StructuredAnalysisService {
     const version = row?.versions[0];
     const diagram = version?.diagramDetail;
     if (!row || !version || !diagram) throw new NotFoundException('Diagrama no encontrado.');
+    return this.mapDiagram(row, version, diagram);
+  }
+
+  // Exact-version diagram lookup, used by Export (spec Phase H): the diagram
+  // must be bound to the exact selected authoritative version, never to
+  // whatever version happens to be latest (getDiagram() above).
+  async getDiagramForVersion(
+    projectId: string,
+    kind: StructuredAnalysisKind,
+    id: string,
+    versionId: string,
+  ) {
+    if (!KIND_CONFIG[kind].diagram)
+      throw new NotFoundException('Este tipo de artefacto no tiene diagrama.');
+    const row = await this.prisma.artifact.findFirst({
+      where: { id, projectId, artifactTypeCode: kind },
+      include: {
+        versions: {
+          where: { id: versionId },
+          take: 1,
+          include: { diagramDetail: { include: { sources: true } } },
+        },
+      },
+    });
+    const version = row?.versions[0];
+    const diagram = version?.diagramDetail;
+    if (!row || !version || !diagram) throw new NotFoundException('Diagrama no encontrado.');
+    return this.mapDiagram(row, version, diagram);
+  }
+
+  private mapDiagram(
+    row: { id: string; projectId: string; code: string },
+    version: { id: string },
+    diagram: {
+      kind: string;
+      sourceFormat: string;
+      source: string;
+      svg: string;
+      sources: { sourceArtifactVersionId: string }[];
+    },
+  ) {
     return {
       id: row.id,
       projectId: row.projectId,

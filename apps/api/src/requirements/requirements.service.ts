@@ -45,6 +45,28 @@ export class RequirementsService {
     });
     return { items: rows.map((r) => this.map(r, r.versions[0]!)) };
   }
+  // Authoritative collection for Export (spec Phase H): each artifact's own
+  // highest APPROVED version, never a newer DRAFT on top of it — unlike
+  // list() above, which always takes the latest version regardless of status.
+  async listApproved(projectId: string) {
+    const rows = await this.prisma.artifact.findMany({
+      where: {
+        projectId,
+        artifactTypeCode: 'REQUIREMENT',
+        versions: { some: { status: 'APPROVED' } },
+      },
+      include: {
+        versions: {
+          where: { status: 'APPROVED' },
+          orderBy: { versionNumber: 'desc' },
+          take: 1,
+          include: { requirementDetail: { include: detailInclude } },
+        },
+      },
+      orderBy: { code: 'asc' },
+    });
+    return { items: rows.map((r) => this.map(r, r.versions[0]!)) };
+  }
   async get(projectId: string, id: string) {
     const row = await this.prisma.artifact.findFirst({
       where: { id, projectId, artifactTypeCode: 'REQUIREMENT' },
