@@ -11,6 +11,7 @@ import { DataModelsModule } from './data-models/data-models.module';
 import { SourcesModule } from './sources/sources.module';
 import { StructuredAnalysisModule } from './structured-analysis/structured-analysis.module';
 import { MockupsModule } from './mockups/mockups.module';
+import { StalenessModule } from './staleness/staleness.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { MockupsModule } from './mockups/mockups.module';
     SourcesModule,
     StructuredAnalysisModule,
     MockupsModule,
+    StalenessModule,
   ],
 })
 export class AppModule {}

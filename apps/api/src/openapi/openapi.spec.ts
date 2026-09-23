@@ -165,6 +165,7 @@ describe('OpenAPI contract', () => {
         'POST /projects/{projectId}/mockups',
         'POST /projects/{projectId}/mockups/{mockupId}/versions',
         'POST /projects/{projectId}/mockups/{mockupId}/versions/{versionId}/transition',
+        'GET /projects/{projectId}/staleness',
       ].sort(),
     );
     expect(Object.keys(document.paths)).not.toContain('/health/ready');
@@ -275,6 +276,7 @@ describe('OpenAPI contract', () => {
         'getMockupPreview',
         'createMockupVersion',
         'transitionMockupVersion',
+        'getProjectStaleness',
       ].sort(),
     );
   });

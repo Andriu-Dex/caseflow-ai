@@ -24,6 +24,8 @@ import { StructuredAnalysisModule } from '../../../src/structured-analysis/struc
 import { StructuredAnalysisService } from '../../../src/structured-analysis/structured-analysis.service';
 import { MockupsModule } from '../../../src/mockups/mockups.module';
 import { MockupsService } from '../../../src/mockups/mockups.service';
+import { StalenessModule } from '../../../src/staleness/staleness.module';
+import { StalenessService } from '../../../src/staleness/staleness.service';
 import { getTestConnectionString, resetTestData } from './test-database';
 
 // A minimal, always-valid graphical SVG: ordinary integration tests (Postgres
@@ -45,6 +47,7 @@ export interface TestContext {
   sources: SourcesService;
   structuredAnalysis: StructuredAnalysisService;
   mockups: MockupsService;
+  staleness: StalenessService;
   // Raw connection for asserting database-level rules, bypassing the services.
   sql: Client;
   close: () => Promise<void>;
@@ -70,6 +73,7 @@ export async function createTestContext(): Promise<TestContext> {
       SourcesModule,
       StructuredAnalysisModule,
       MockupsModule,
+      StalenessModule,
     ],
   })
     .overrideProvider(DIAGRAM_PROVIDER)
@@ -92,6 +96,7 @@ export async function createTestContext(): Promise<TestContext> {
     sources: app.get(SourcesService),
     structuredAnalysis: app.get(StructuredAnalysisService),
     mockups: app.get(MockupsService),
+    staleness: app.get(StalenessService),
     sql,
     close: async () => {
       await app.close();
