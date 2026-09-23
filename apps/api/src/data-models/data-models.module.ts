@@ -27,6 +27,8 @@ import { AIModule } from '../ai/ai.module';
       },
     },
   ],
-  exports: [DataModelsService],
+  // DiagramEngine/DIAGRAM_PROVIDER are also reused by StructuredAnalysisModule
+  // (Navigation/Software/System Architecture diagrams) — one renderer wiring.
+  exports: [DataModelsService, DiagramEngine, DIAGRAM_PROVIDER],
 })
 export class DataModelsModule {}

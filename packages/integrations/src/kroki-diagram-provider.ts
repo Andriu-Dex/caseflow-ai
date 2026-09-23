@@ -15,7 +15,10 @@ export const KROKI_ENGINE_VERSION = '0.32.1';
 // POST /{diagramType}/svg with the raw diagram source as the request body.
 const KROKI_DIAGRAM_TYPE: Record<DiagramFormat, string> = {
   MERMAID_ER: 'mermaid',
+  MERMAID_FLOWCHART: 'mermaid',
   PLANTUML: 'plantuml',
+  PLANTUML_COMPONENT: 'plantuml',
+  PLANTUML_DEPLOYMENT: 'plantuml',
 };
 
 // Response bound applied while streaming, independent of any Content-Length

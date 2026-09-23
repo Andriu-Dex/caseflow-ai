@@ -89,4 +89,51 @@ describe('DiagramEngine', () => {
     };
     expect(() => engine.validate('MERMAID_ER', engine.generateER(withMarkup))).toThrow('no válida');
   });
+
+  it('generates a deterministic Mermaid flowchart from a navigation tree, with and without a parent', () => {
+    const source = engine.generateNavigationFlowchart({
+      nodes: [
+        { localId: 'home', label: 'Home' },
+        { localId: 'orders', label: 'Orders', parentLocalId: 'home' },
+      ],
+    });
+    expect(source).toBe('flowchart TD\n  home["Home"]\n  orders["Orders"]\n  home --> orders');
+    expect(() => engine.validate('MERMAID_FLOWCHART', source)).not.toThrow();
+  });
+
+  it('generates a deterministic PlantUML component diagram, with and without a dependency description', () => {
+    const source = engine.generateSoftwareComponentDiagram({
+      components: [
+        { localId: 'api', name: 'API' },
+        { localId: 'web', name: 'Web' },
+      ],
+      dependencies: [
+        { fromLocalId: 'web', toLocalId: 'api', description: 'calls' },
+        { fromLocalId: 'web', toLocalId: 'api' },
+      ],
+    });
+    expect(source).toContain('component "API" as api');
+    expect(source).toContain('web --> api : "calls"');
+    expect(source).toContain('web --> api\n');
+    expect(() => engine.validate('PLANTUML_COMPONENT', source)).not.toThrow();
+  });
+
+  it('generates a deterministic PlantUML deployment diagram, with and without a link description', () => {
+    const source = engine.generateSystemDeploymentDiagram({
+      nodes: [
+        { localId: 'server', name: 'Server', kind: 'RUNTIME' },
+        { localId: 'db', name: 'Database', kind: 'DATABASE' },
+        { localId: 'other', name: 'Other', kind: 'UNKNOWN_KIND' },
+      ],
+      links: [
+        { fromLocalId: 'server', toLocalId: 'db', description: 'reads/writes' },
+        { fromLocalId: 'server', toLocalId: 'other' },
+      ],
+    });
+    expect(source).toContain('server --> db : "reads/writes"');
+    expect(source).toContain('server --> other\n');
+    // An unrecognized kind falls back to the generic 'node' keyword.
+    expect(source).toContain('node "Other" as other');
+    expect(() => engine.validate('PLANTUML_DEPLOYMENT', source)).not.toThrow();
+  });
 });

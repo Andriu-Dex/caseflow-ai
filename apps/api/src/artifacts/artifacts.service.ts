@@ -46,6 +46,11 @@ export class ArtifactsService {
         'DATA_MODEL',
         'USE_CASE_DIAGRAM',
         'PROJECT_SOURCE',
+        'NAVIGATION_TREE',
+        'SOFTWARE_ARCHITECTURE',
+        'SYSTEM_ARCHITECTURE',
+        'UI_BLUEPRINT',
+        'MOCKUP',
       ].includes(input.type)
     ) {
       throw new UnprocessableEntityException(

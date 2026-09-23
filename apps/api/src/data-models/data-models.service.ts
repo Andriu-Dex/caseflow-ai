@@ -14,7 +14,7 @@ import {
   type DataModelInput,
 } from '@caseflow-ai/contracts';
 import { PrismaService } from '../database/prisma.service';
-import type { Prisma } from '../generated/prisma/client';
+import type { DiagramKind, DiagramSourceFormat, Prisma } from '../generated/prisma/client';
 import { DiagramEngine } from './diagram-engine';
 import { DIAGRAM_PROVIDER } from './diagram-provider.token';
 import { sanitizeDiagramSvg } from './svg-sanitizer';
@@ -615,8 +615,8 @@ export class DataModelsService {
     artifact: { id: string; projectId: string; code: string },
     version: { id: string; versionNumber: number; createdAt: Date },
     detail: {
-      kind: 'ER' | 'USE_CASE';
-      sourceFormat: 'MERMAID_ER' | 'PLANTUML';
+      kind: DiagramKind;
+      sourceFormat: DiagramSourceFormat;
       source: string;
       svg: string;
       sources: { sourceArtifactVersionId: string }[];

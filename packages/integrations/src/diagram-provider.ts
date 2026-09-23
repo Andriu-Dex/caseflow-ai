@@ -1,4 +1,5 @@
-export type DiagramFormat = 'MERMAID_ER' | 'PLANTUML';
+export type DiagramFormat =
+  'MERMAID_ER' | 'PLANTUML' | 'MERMAID_FLOWCHART' | 'PLANTUML_COMPONENT' | 'PLANTUML_DEPLOYMENT';
 
 export const DIAGRAM_PROVIDER_ERROR_CODES = [
   'DIAGRAM_NOT_CONFIGURED',

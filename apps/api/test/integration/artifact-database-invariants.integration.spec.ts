@@ -13,6 +13,14 @@ describe('Artifact database invariants', () => {
     const workspace = await createWorkspace(ctx.prisma);
     projectId = (await ctx.projects.create({ workspaceId: workspace.id, name: 'P1' })).id;
     otherProjectId = (await ctx.projects.create({ workspaceId: workspace.id, name: 'P2' })).id;
+    // Every current first-deliverable artifact type now has a dedicated
+    // endpoint; this test-only type exercises the generic Artifact/
+    // ArtifactVersion database invariants in isolation.
+    await ctx.prisma.artifactType.upsert({
+      where: { code: 'GENERIC_TEST_TYPE' },
+      create: { code: 'GENERIC_TEST_TYPE', defaultCodePrefix: 'GEN' },
+      update: {},
+    });
   });
 
   afterAll(async () => {
@@ -21,7 +29,7 @@ describe('Artifact database invariants', () => {
 
   async function newArtifact(): Promise<{ artifactId: string; versionId: string }> {
     const artifact = await ctx.artifacts.createArtifact(projectId, {
-      type: 'MOCKUP',
+      type: 'GENERIC_TEST_TYPE',
       title: 'Boceto',
       metadataAuxiliary: { a: 1 },
     });

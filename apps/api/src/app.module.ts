@@ -9,6 +9,7 @@ import { RequirementsModule } from './requirements/requirements.module';
 import { UseCasesModule } from './use-cases/use-cases.module';
 import { DataModelsModule } from './data-models/data-models.module';
 import { SourcesModule } from './sources/sources.module';
+import { StructuredAnalysisModule } from './structured-analysis/structured-analysis.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { SourcesModule } from './sources/sources.module';
     UseCasesModule,
     DataModelsModule,
     SourcesModule,
+    StructuredAnalysisModule,
   ],
 })
 export class AppModule {}
