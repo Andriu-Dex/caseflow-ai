@@ -21,6 +21,9 @@ const contextInclude = {
       constraints: { orderBy: { position: 'asc' as const } },
       businessRules: { orderBy: { position: 'asc' as const } },
       scopeItems: { orderBy: { position: 'asc' as const } },
+      sources: {
+        include: { sourceVersion: { include: { artifact: true } } },
+      },
     },
   },
 } satisfies Prisma.ArtifactVersionInclude;
@@ -140,13 +143,29 @@ export class ProjectContextService {
     });
   }
 
-  private insertSnapshot(
+  private async insertSnapshot(
     tx: Transaction,
     artifactId: string,
     projectId: string,
     versionNumber: number,
     input: ProjectContextRequest,
   ): Promise<ContextVersion> {
+    const sourceVersionIds = [...new Set(input.sourceVersionIds ?? [])];
+    if (sourceVersionIds.length) {
+      const sources = await tx.artifactVersion.findMany({
+        where: {
+          id: { in: sourceVersionIds },
+          projectId,
+          status: 'APPROVED',
+          artifact: { artifactTypeCode: 'PROJECT_SOURCE' },
+        },
+        select: { id: true },
+      });
+      if (sources.length !== sourceVersionIds.length)
+        throw new UnprocessableEntityException(
+          'Las fuentes referenciadas deben ser versiones exactas APPROVED de Project Source del mismo proyecto.',
+        );
+    }
     return tx.artifactVersion.create({
       data: {
         artifactId,
@@ -172,6 +191,7 @@ export class ProjectContextService {
             scopeItems: {
               create: input.scopeItems.map((item, position) => ({ ...item, position })),
             },
+            sources: { create: sourceVersionIds.map((sourceVersionId) => ({ sourceVersionId })) },
           },
         },
       },
@@ -241,6 +261,12 @@ export class ProjectContextService {
         position,
         type,
         description,
+      })),
+      sources: detail.sources.map((link) => ({
+        id: link.sourceVersion.artifact.id,
+        versionId: link.sourceVersionId,
+        code: link.sourceVersion.artifact.code,
+        title: link.sourceVersion.title,
       })),
     };
   }
