@@ -280,6 +280,7 @@ model ArtifactVersion {
   structuredAnalysisGenerationSources StructuredAnalysisGenerationSource[]
   mockupDetail               MockupDetail?             @relation("MockupOwnVersion")
   mockupsSourcedFromHere     MockupDetail[]            @relation("MockupUiBlueprintSource")
+  projectContextSourceLinks  ProjectContextSource[]
 
   @@unique([artifactId, versionNumber])
   @@unique([id, projectId])
@@ -295,6 +296,7 @@ model ProjectContextDetail {
   additionalContext String? @map("additional_context")
 
   artifactVersion ArtifactVersion              @relation(fields: [artifactVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sources         ProjectContextSource[]
   actors          ProjectContextActor[]
   needs           ProjectContextNeed[]
   constraints     ProjectContextConstraint[]
@@ -364,6 +366,19 @@ model ProjectContextScopeItem {
 
   @@unique([artifactVersionId, position])
   @@map("project_context_scope_items")
+}
+
+// Exact provenance: which approved PROJECT_SOURCE versions support this
+// Project Context version (requirements.md Phase B). Insert-only, validated
+// by trigger (same project, exact APPROVED PROJECT_SOURCE).
+model ProjectContextSource {
+  projectContextVersionId String          @map("project_context_version_id") @db.Uuid
+  sourceVersionId         String          @map("source_version_id") @db.Uuid
+  context                 ProjectContextDetail @relation(fields: [projectContextVersionId], references: [artifactVersionId], onDelete: Restrict, onUpdate: Restrict)
+  sourceVersion           ArtifactVersion @relation(fields: [sourceVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@id([projectContextVersionId, sourceVersionId])
+  @@map("project_context_sources")
 }
 
 // Monotonic per-(project, prefix) counter used to allocate artifact codes.

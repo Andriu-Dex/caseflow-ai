@@ -25,10 +25,16 @@ export const projectContextRequestSchema = z
     constraints: z.array(orderedDescriptionInputSchema).max(PROJECT_CONTEXT_COLLECTION_LIMIT),
     businessRules: z.array(orderedDescriptionInputSchema).max(PROJECT_CONTEXT_COLLECTION_LIMIT),
     additionalContext: narrative(10_000).optional(),
+    // Exact APPROVED PROJECT_SOURCE versions of the same project that support
+    // this context snapshot (requirements.md Phase B). Optional: a context
+    // may still be authored before any source is approved.
+    sourceVersionIds: z.array(z.uuid()).max(PROJECT_CONTEXT_COLLECTION_LIMIT).default([]),
   })
   .strict();
 
-export type ProjectContextRequest = z.infer<typeof projectContextRequestSchema>;
+// z.input (not z.infer): sourceVersionIds has a default, so callers/fixtures
+// may omit it, matching the existing CreateArtifactRequest convention.
+export type ProjectContextRequest = z.input<typeof projectContextRequestSchema>;
 
 const positionedDescriptionSchema = z.object({
   id: z.uuid(),
@@ -68,6 +74,10 @@ export const projectContextResponseSchema = z.object({
   constraints: z.array(positionedDescriptionSchema),
   businessRules: z.array(positionedDescriptionSchema),
   additionalContext: z.string().nullable(),
+  // Answers "which approved source versions support this context?" (Phase B).
+  sources: z.array(
+    z.object({ id: z.uuid(), versionId: z.uuid(), code: z.string(), title: z.string() }),
+  ),
 });
 
 export type ProjectContextResponse = z.infer<typeof projectContextResponseSchema>;
