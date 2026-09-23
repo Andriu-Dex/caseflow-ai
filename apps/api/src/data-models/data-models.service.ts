@@ -74,6 +74,24 @@ export class DataModelsService {
     });
     return { items: rows.map((row) => this.map(row, row.versions[0]!)) };
   }
+  // Exact-version lookup, used by Export (spec Phase H) which selects its own
+  // authoritative version via FirstDeliverableSnapshotService rather than
+  // always taking the latest version regardless of status (get() below).
+  async getVersion(projectId: string, id: string, versionId: string) {
+    const row = await this.prisma.artifact.findFirst({
+      where: { id, projectId, artifactTypeCode: 'DATA_MODEL' },
+      include: {
+        versions: {
+          where: { id: versionId },
+          take: 1,
+          include: { dataModelDetail: { include: detailInclude } },
+        },
+      },
+    });
+    if (!row?.versions[0]?.dataModelDetail)
+      throw new NotFoundException('Modelo de datos no encontrado.');
+    return this.map(row, row.versions[0]);
+  }
   async get(projectId: string, id: string) {
     const row = await this.prisma.artifact.findFirst({
       where: { id, projectId, artifactTypeCode: 'DATA_MODEL' },
@@ -313,6 +331,26 @@ export class DataModelsService {
       include: {
         versions: {
           orderBy: { versionNumber: 'desc' },
+          take: 1,
+          include: { diagramDetail: { include: { sources: true } } },
+        },
+      },
+    });
+    const version = row?.versions[0];
+    const diagram = version?.diagramDetail;
+    if (!row || !version || !diagram) throw new NotFoundException('Diagrama ER no encontrado.');
+    return this.mapDiagram(row, version, diagram);
+  }
+
+  // Exact-version diagram lookup, used by Export (spec Phase H): the ER
+  // diagram must be bound to the exact selected authoritative Data Model
+  // version, never to whatever version happens to be latest (above).
+  async getERDiagramForVersion(projectId: string, dataModelId: string, versionId: string) {
+    const row = await this.prisma.artifact.findFirst({
+      where: { id: dataModelId, projectId, artifactTypeCode: 'DATA_MODEL' },
+      include: {
+        versions: {
+          where: { id: versionId },
           take: 1,
           include: { diagramDetail: { include: { sources: true } } },
         },

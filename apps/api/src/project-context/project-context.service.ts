@@ -88,6 +88,21 @@ export class ProjectContextService {
     return this.toResponse(artifact.id, artifact.projectId, artifact.code, version);
   }
 
+  // Exact-version lookup, used by Export (spec Phase H) which selects its own
+  // authoritative version via FirstDeliverableSnapshotService rather than
+  // always taking the latest version regardless of status (getCurrent above).
+  async getVersion(projectId: string, artifactId: string, versionId: string) {
+    const artifact = await this.prisma.artifact.findFirst({
+      where: { id: artifactId, projectId, artifactTypeCode: PROJECT_CONTEXT_TYPE },
+      include: { versions: { where: { id: versionId }, take: 1, include: contextInclude } },
+    });
+    const version = artifact?.versions[0];
+    if (!artifact || !version?.projectContextDetail) {
+      throw new NotFoundException('Contexto del proyecto no encontrado.');
+    }
+    return this.toResponse(artifact.id, artifact.projectId, artifact.code, version);
+  }
+
   async createVersion(
     projectId: string,
     input: ProjectContextRequest,

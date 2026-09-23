@@ -30,6 +30,8 @@ import { TraceabilityModule } from '../../../src/traceability/traceability.modul
 import { TraceabilityService } from '../../../src/traceability/traceability.service';
 import { ReadinessModule } from '../../../src/readiness/readiness.module';
 import { ReadinessService } from '../../../src/readiness/readiness.service';
+import { ExportModule } from '../../../src/export/export.module';
+import { ExportService } from '../../../src/export/export.service';
 import { getTestConnectionString, resetTestData } from './test-database';
 
 // A minimal, always-valid graphical SVG: ordinary integration tests (Postgres
@@ -54,6 +56,7 @@ export interface TestContext {
   staleness: StalenessService;
   traceability: TraceabilityService;
   readiness: ReadinessService;
+  export: ExportService;
   // Raw connection for asserting database-level rules, bypassing the services.
   sql: Client;
   close: () => Promise<void>;
@@ -82,6 +85,7 @@ export async function createTestContext(): Promise<TestContext> {
       StalenessModule,
       TraceabilityModule,
       ReadinessModule,
+      ExportModule,
     ],
   })
     .overrideProvider(DIAGRAM_PROVIDER)
@@ -107,6 +111,7 @@ export async function createTestContext(): Promise<TestContext> {
     staleness: app.get(StalenessService),
     traceability: app.get(TraceabilityService),
     readiness: app.get(ReadinessService),
+    export: app.get(ExportService),
     sql,
     close: async () => {
       await app.close();

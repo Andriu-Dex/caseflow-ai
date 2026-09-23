@@ -1,0 +1,109 @@
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { firstDeliverableExportSchema } from '@caseflow-ai/contracts';
+import { renderExportHtml } from '../../src/export/export-html';
+import { createTestContext, createWorkspace, type TestContext } from './support/test-app';
+
+async function approveSource(ctx: TestContext, projectId: string, title = 'Notas') {
+  const source = await ctx.sources.create(
+    projectId,
+    { title, sourceKind: 'NOTES', purpose: 'Conocimiento del proyecto' },
+    { originalname: 'n.txt', mimetype: 'text/plain', size: 4, buffer: Buffer.from('abcd') },
+  );
+  await ctx.sources.transition(projectId, source.id, source.version.id, 'IN_REVIEW');
+  return ctx.sources.transition(projectId, source.id, source.version.id, 'APPROVED');
+}
+
+async function approveContext(ctx: TestContext, projectId: string, sourceVersionIds: string[]) {
+  const context = await ctx.projectContext.create(projectId, {
+    problemStatement: 'p',
+    objective: 'o',
+    scopeItems: [],
+    actors: [{ name: 'Usuario' }],
+    needs: [],
+    constraints: [],
+    businessRules: [],
+    sourceVersionIds,
+  });
+  await ctx.projectContext.transition(projectId, context.version.id, 'IN_REVIEW');
+  return ctx.projectContext.transition(projectId, context.version.id, 'APPROVED');
+}
+
+describe('Export (First Deliverable, Phase H)', () => {
+  let ctx: TestContext;
+
+  beforeAll(async () => {
+    ctx = await createTestContext();
+  });
+
+  afterAll(async () => {
+    await ctx.close();
+  });
+
+  it('produces a coherent export for an empty project', async () => {
+    const workspace = await createWorkspace(ctx.prisma, 'Export Empty');
+    const projectId = (await ctx.projects.create({ workspaceId: workspace.id, name: 'Vacío' })).id;
+
+    const snapshot = await ctx.export.buildSnapshot(projectId);
+    expect(snapshot.sources).toEqual([]);
+    expect(snapshot.context).toBeNull();
+    expect(snapshot.requirements).toEqual([]);
+    expect(snapshot.dataModel).toBeNull();
+    expect(snapshot.readiness.ready).toBe(false);
+  });
+
+  it("never leaks another project's sources into this project's export (isolation)", async () => {
+    const workspace = await createWorkspace(ctx.prisma, 'Export Isolation');
+    const projectA = (await ctx.projects.create({ workspaceId: workspace.id, name: 'A' })).id;
+    const projectB = (await ctx.projects.create({ workspaceId: workspace.id, name: 'B' })).id;
+
+    await approveSource(ctx, projectA, 'Fuente de A');
+    const exportB = await ctx.export.buildSnapshot(projectB);
+    expect(exportB.sources).toEqual([]);
+  });
+
+  it('excludes a newer DRAFT context version and keeps the previously APPROVED one authoritative', async () => {
+    const workspace = await createWorkspace(ctx.prisma, 'Export Draft Not Displacing');
+    const projectId = (await ctx.projects.create({ workspaceId: workspace.id, name: 'P' })).id;
+    const source = await approveSource(ctx, projectId);
+    const context = await approveContext(ctx, projectId, [source.id]);
+    // A newer DRAFT version must not displace the APPROVED one in the export.
+    await ctx.projectContext.createVersion(projectId, {
+      problemStatement: 'draft más nuevo',
+      objective: 'o',
+      scopeItems: [],
+      actors: [{ name: 'Usuario' }],
+      needs: [],
+      constraints: [],
+      businessRules: [],
+      sourceVersionIds: [source.id],
+    });
+
+    const snapshot = await ctx.export.buildSnapshot(projectId);
+    expect(snapshot.context?.version.versionNumber).toBe(context.versionNumber);
+    expect(snapshot.context?.problemStatement).toBe('p');
+  });
+
+  it('contains no binary source bodies in the JSON export', async () => {
+    const workspace = await createWorkspace(ctx.prisma, 'Export No Binary');
+    const projectId = (await ctx.projects.create({ workspaceId: workspace.id, name: 'P' })).id;
+    await approveSource(ctx, projectId);
+
+    const snapshot = await ctx.export.buildSnapshot(projectId);
+    const serialized = JSON.stringify(snapshot);
+    expect(serialized).not.toMatch(/storageKey/i);
+    expect(serialized).not.toMatch(/AAAAAAAAAAAA/); // no base64-looking blob leaked in
+  });
+
+  it('escapes a malicious project name in the HTML export instead of injecting it raw', async () => {
+    const workspace = await createWorkspace(ctx.prisma, 'Export XSS');
+    const maliciousName = '<script>alert(1)</script>';
+    const projectId = (
+      await ctx.projects.create({ workspaceId: workspace.id, name: maliciousName })
+    ).id;
+
+    const snapshot = firstDeliverableExportSchema.parse(await ctx.export.buildSnapshot(projectId));
+    const html = renderExportHtml(snapshot);
+    expect(html).not.toContain(maliciousName);
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+  });
+});
