@@ -10,6 +10,7 @@ import { UseCasesModule } from './use-cases/use-cases.module';
 import { DataModelsModule } from './data-models/data-models.module';
 import { SourcesModule } from './sources/sources.module';
 import { StructuredAnalysisModule } from './structured-analysis/structured-analysis.module';
+import { MockupsModule } from './mockups/mockups.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { StructuredAnalysisModule } from './structured-analysis/structured-analy
     DataModelsModule,
     SourcesModule,
     StructuredAnalysisModule,
+    MockupsModule,
   ],
 })
 export class AppModule {}
