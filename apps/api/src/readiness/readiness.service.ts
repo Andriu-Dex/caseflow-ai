@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { ReadinessStage } from '@caseflow-ai/contracts';
 import { PrismaService } from '../database/prisma.service';
+import { FirstDeliverableSnapshotService } from '../first-deliverable/first-deliverable-snapshot.service';
 import { RequirementsService } from '../requirements/requirements.service';
 import { StalenessService } from '../staleness/staleness.service';
 import { TraceabilityService } from '../traceability/traceability.service';
@@ -29,16 +30,14 @@ export class ReadinessService {
     private readonly requirements: RequirementsService,
     private readonly staleness: StalenessService,
     private readonly traceability: TraceabilityService,
+    private readonly snapshot: FirstDeliverableSnapshotService,
   ) {}
 
   // Read-only deterministic evaluation of persisted authoritative state
   // (spec Phase G): never creates, approves or mutates anything. Authoritative
-  // version selection policy: for each artifact, the highest-versionNumber
-  // version with status=APPROVED (never "latest version regardless of
-  // status") — a newer DRAFT never displaces an older APPROVED version. When
-  // several artifacts of the same type exist, they are ordered by `code`
-  // ascending and the first one with a qualifying APPROVED version is used;
-  // this is a documented, deterministic tie-break, not a semantic choice.
+  // version selection is delegated to FirstDeliverableSnapshotService — the
+  // single shared "current authoritative version" policy also used by Export
+  // (spec Phase H), never duplicated here.
   async evaluate(projectId: string) {
     const [
       sources,
@@ -55,11 +54,11 @@ export class ReadinessService {
       this.contextStage(projectId),
       this.requirementsStage(projectId),
       this.useCasesStage(projectId),
-      this.approvedArtifactVersion(projectId, 'DATA_MODEL'),
-      this.approvedArtifactVersion(projectId, 'NAVIGATION_TREE'),
-      this.approvedArtifactVersion(projectId, 'SOFTWARE_ARCHITECTURE'),
-      this.approvedArtifactVersion(projectId, 'SYSTEM_ARCHITECTURE'),
-      this.approvedArtifactVersion(projectId, 'UI_BLUEPRINT'),
+      this.snapshot.approvedArtifactVersion(projectId, 'DATA_MODEL'),
+      this.snapshot.approvedArtifactVersion(projectId, 'NAVIGATION_TREE'),
+      this.snapshot.approvedArtifactVersion(projectId, 'SOFTWARE_ARCHITECTURE'),
+      this.snapshot.approvedArtifactVersion(projectId, 'SYSTEM_ARCHITECTURE'),
+      this.snapshot.approvedArtifactVersion(projectId, 'UI_BLUEPRINT'),
     ]);
 
     const useCaseDiagramStage = await this.useCaseDiagramStage(
@@ -463,38 +462,5 @@ export class ReadinessService {
         ? 'Actualizar y volver a aprobar el Contexto del Proyecto con el conocimiento de fuente más reciente.'
         : null,
     });
-  }
-
-  // Authoritative selection when several artifacts of the same
-  // (project-level-singleton-in-practice) type each have their own exact
-  // APPROVED version: the most recently approved one wins, not lexicographic
-  // code order. This is still deterministic (approvedAt is set once, at the
-  // exact transition, and never changes afterward) and matches the intuitive
-  // "the latest approval decision is the current authoritative one" policy,
-  // without requiring a full Baseline subsystem. Within one artifact, its own
-  // highest-versionNumber APPROVED version is always used — a newer DRAFT
-  // never displaces it.
-  private async approvedArtifactVersion(
-    projectId: string,
-    artifactTypeCode: string,
-  ): Promise<{ code: string; versionId: string } | null> {
-    const artifacts = await this.prisma.artifact.findMany({
-      where: { projectId, artifactTypeCode },
-      include: {
-        versions: {
-          where: { status: 'APPROVED' },
-          orderBy: { versionNumber: 'desc' },
-          take: 1,
-        },
-      },
-    });
-    let best: { code: string; versionId: string; approvedAt: Date } | null = null;
-    for (const artifact of artifacts) {
-      const version = artifact.versions[0];
-      if (!version?.approvedAt) continue;
-      if (!best || version.approvedAt > best.approvedAt)
-        best = { code: artifact.code, versionId: version.id, approvedAt: version.approvedAt };
-    }
-    return best ? { code: best.code, versionId: best.versionId } : null;
   }
 }

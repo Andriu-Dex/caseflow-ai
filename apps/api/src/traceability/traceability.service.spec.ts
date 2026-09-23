@@ -119,4 +119,42 @@ describe('TraceabilityService', () => {
     expect(nodes).toHaveLength(TRACEABILITY_MAX_NODES);
     expect(truncated).toBe(true);
   });
+
+  it('never returns a dangling edge: every edge endpoint is present in the returned node set (hardening check 2)', async () => {
+    const prisma = emptyPrisma();
+    const context = {
+      id: 'ctx-v1',
+      artifactId: 'ctx',
+      versionNumber: 1,
+      status: 'APPROVED',
+      origin: 'MANUAL',
+      title: 'Contexto',
+      artifact: { id: 'ctx', code: 'CTX-001' },
+    };
+    const requirement = {
+      id: 'rf-v1',
+      artifactId: 'rf',
+      versionNumber: 1,
+      status: 'APPROVED',
+      origin: 'AI_GENERATED',
+      title: 'RF',
+      artifact: { id: 'rf', code: 'RF-001' },
+    };
+    prisma.artifactVersion.findMany.mockResolvedValue([context, requirement]);
+    prisma.requirementDetail.findMany.mockResolvedValue([
+      {
+        artifactVersionId: 'rf-v1',
+        sourceContextVersionId: 'ctx-v1',
+        generationCandidateId: null,
+        aiRun: null,
+      },
+    ]);
+    const service = new TraceabilityService(prisma as unknown as PrismaService);
+    const { nodes, edges } = await service.buildGraph('p');
+    const nodeIds = new Set(nodes.map((n) => n.id));
+    for (const edge of edges) {
+      expect(nodeIds.has(edge.fromId)).toBe(true);
+      expect(nodeIds.has(edge.toId)).toBe(true);
+    }
+  });
 });
