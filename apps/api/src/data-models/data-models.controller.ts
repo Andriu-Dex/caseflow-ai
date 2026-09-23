@@ -9,6 +9,7 @@ import {
   diagramResponseSchema,
   generateDataModelRequestSchema,
   generateDiagramRequestSchema,
+  transitionArtifactVersionRequestSchema,
 } from '@caseflow-ai/contracts';
 import type { z } from 'zod';
 import { uuidParamPipe } from '../common/uuid-param.pipe';
@@ -99,6 +100,18 @@ export class DataModelsController {
     @Body(new ZodValidationPipe(dataModelInputSchema)) body: z.output<typeof dataModelInputSchema>,
   ) {
     return this.service.version(projectId, dataModelId, body);
+  }
+  @Post(':dataModelId/versions/:versionId/transition')
+  @ApiOperation({ operationId: 'transitionDataModelVersion', summary: 'Cambiar estado del modelo' })
+  @ApiZodBody(transitionArtifactVersionRequestSchema)
+  transition(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('dataModelId', uuidParamPipe) dataModelId: string,
+    @Param('versionId', uuidParamPipe) versionId: string,
+    @Body(new ZodValidationPipe(transitionArtifactVersionRequestSchema))
+    body: z.output<typeof transitionArtifactVersionRequestSchema>,
+  ) {
+    return this.service.transition(projectId, dataModelId, versionId, body.status);
   }
   @Get(':dataModelId/diagram')
   @ApiOperation({

@@ -113,6 +113,7 @@ describe('OpenAPI contract', () => {
         'POST /projects/{projectId}/data-models/generate',
         'POST /projects/{projectId}/data-models/generations/{generationId}/accept',
         'POST /projects/{projectId}/data-models/{dataModelId}/versions',
+        'POST /projects/{projectId}/data-models/{dataModelId}/versions/{versionId}/transition',
         'POST /projects/{projectId}/diagrams/use-cases',
         'GET /projects/{projectId}/sources',
         'GET /projects/{projectId}/sources/{sourceId}',
@@ -167,6 +168,7 @@ describe('OpenAPI contract', () => {
         'POST /projects/{projectId}/mockups/{mockupId}/versions/{versionId}/transition',
         'GET /projects/{projectId}/staleness',
         'GET /projects/{projectId}/traceability',
+        'GET /projects/{projectId}/readiness',
       ].sort(),
     );
     expect(Object.keys(document.paths)).not.toContain('/health/ready');
@@ -195,6 +197,7 @@ describe('OpenAPI contract', () => {
         'createArtifactVersion',
         'createDataModel',
         'createDataModelVersion',
+        'transitionDataModelVersion',
         'createProject',
         'createProjectContext',
         'createProjectContextVersion',
@@ -279,6 +282,7 @@ describe('OpenAPI contract', () => {
         'transitionMockupVersion',
         'getProjectStaleness',
         'getProjectTraceability',
+        'getProjectReadiness',
       ].sort(),
     );
   });
