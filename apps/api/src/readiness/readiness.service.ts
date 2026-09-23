@@ -465,6 +465,15 @@ export class ReadinessService {
     });
   }
 
+  // Authoritative selection when several artifacts of the same
+  // (project-level-singleton-in-practice) type each have their own exact
+  // APPROVED version: the most recently approved one wins, not lexicographic
+  // code order. This is still deterministic (approvedAt is set once, at the
+  // exact transition, and never changes afterward) and matches the intuitive
+  // "the latest approval decision is the current authoritative one" policy,
+  // without requiring a full Baseline subsystem. Within one artifact, its own
+  // highest-versionNumber APPROVED version is always used — a newer DRAFT
+  // never displaces it.
   private async approvedArtifactVersion(
     projectId: string,
     artifactTypeCode: string,
@@ -478,12 +487,14 @@ export class ReadinessService {
           take: 1,
         },
       },
-      orderBy: { code: 'asc' },
     });
+    let best: { code: string; versionId: string; approvedAt: Date } | null = null;
     for (const artifact of artifacts) {
       const version = artifact.versions[0];
-      if (version) return { code: artifact.code, versionId: version.id };
+      if (!version?.approvedAt) continue;
+      if (!best || version.approvedAt > best.approvedAt)
+        best = { code: artifact.code, versionId: version.id, approvedAt: version.approvedAt };
     }
-    return null;
+    return best ? { code: best.code, versionId: best.versionId } : null;
   }
 }

@@ -71,10 +71,17 @@ export const traceabilityEdgeSchema = z.object({
 });
 export type TraceabilityEdge = z.infer<typeof traceabilityEdgeSchema>;
 
+// Explicit, never-silent bound (spec Phase F closure item A): a project
+// large enough to exceed these limits gets a truncated graph with
+// truncated=true, never a silently-dropped partial result.
+export const TRACEABILITY_MAX_NODES = 500;
+export const TRACEABILITY_MAX_EDGES = 1000;
+
 export const traceabilityGraphResponseSchema = z.object({
   projectId: z.uuid(),
   generatedAt: z.iso.datetime(),
   nodes: z.array(traceabilityNodeSchema),
   edges: z.array(traceabilityEdgeSchema),
+  truncated: z.boolean(),
 });
 export type TraceabilityGraphResponse = z.infer<typeof traceabilityGraphResponseSchema>;

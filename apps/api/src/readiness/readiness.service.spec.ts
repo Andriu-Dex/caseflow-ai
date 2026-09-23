@@ -72,6 +72,7 @@ describe('ReadinessService', () => {
       id: `v-${versionNumber}`,
       status: 'APPROVED',
       versionNumber,
+      approvedAt: new Date(`2026-01-0${versionNumber}`),
     });
     prisma.artifact.findMany.mockImplementation(
       ({ where }: { where: { artifactTypeCode: string } }) => {
@@ -185,5 +186,32 @@ describe('ReadinessService', () => {
     const impactStage = result.stages.find((s) => s.key === 'IMPACT')!;
     expect(impactStage.satisfied).toBe(false);
     expect(result.ready).toBe(false);
+  });
+
+  it('selects the most recently approved artifact when several of the same type exist, not the lexicographically first', async () => {
+    const { prisma, service } = setup();
+    prisma.artifact.findMany.mockImplementation(
+      ({ where }: { where: { artifactTypeCode: string } }) => {
+        if (where.artifactTypeCode === 'DATA_MODEL')
+          return Promise.resolve([
+            {
+              id: 'a',
+              code: 'MD-001',
+              versions: [{ id: 'md1-v1', status: 'APPROVED', approvedAt: new Date('2026-01-01') }],
+            },
+            {
+              id: 'b',
+              code: 'MD-002',
+              versions: [{ id: 'md2-v1', status: 'APPROVED', approvedAt: new Date('2026-06-01') }],
+            },
+          ]);
+        return Promise.resolve([]);
+      },
+    );
+    const result = await service.evaluate('p');
+    expect(result.stages.find((s) => s.key === 'DATA_MODEL')?.evidence).toMatchObject({
+      code: 'MD-002',
+      artifactVersionId: 'md2-v1',
+    });
   });
 });

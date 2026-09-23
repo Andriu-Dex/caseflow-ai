@@ -17,7 +17,7 @@ export class TraceabilityController {
   })
   @ApiZodResponse(200, 'Traceability graph.', traceabilityGraphResponseSchema)
   async get(@Param('projectId', uuidParamPipe) projectId: string) {
-    const { nodes, edges } = await this.service.buildGraph(projectId);
-    return { projectId, generatedAt: new Date().toISOString(), nodes, edges };
+    const { nodes, edges, truncated } = await this.service.buildGraph(projectId);
+    return { projectId, generatedAt: new Date().toISOString(), nodes, edges, truncated };
   }
 }

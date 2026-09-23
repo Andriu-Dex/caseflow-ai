@@ -204,6 +204,54 @@ describe('Traceability graph integration', () => {
       'APPROVED',
     );
 
+    // Closure item B/C: explicit SOFTWARE_ARCHITECTURE and SYSTEM_ARCHITECTURE
+    // SOURCE_FOR_STRUCTURED_ANALYSIS edges, backed by a real persisted
+    // StructuredAnalysisGenerationSource — never inferred from adjacency.
+    const softwareArchitectureService = new StructuredAnalysisService(
+      ctx.prisma,
+      fakeAi(ctx, 'software-architecture.generate', 1, {
+        style: 'Monolito modular',
+        components: [{ localId: 'api', name: 'API' }],
+        dependencies: [],
+      }),
+      new DiagramEngine(),
+      new FakeDiagramProvider({ svg: FAKE_SVG }),
+    );
+    const swGeneration = await softwareArchitectureService.generate(
+      projectId,
+      'SOFTWARE_ARCHITECTURE',
+      [navAccepted.version.id],
+    );
+    const swAccepted = (
+      await softwareArchitectureService.accept(
+        projectId,
+        'SOFTWARE_ARCHITECTURE',
+        swGeneration.id,
+        [swGeneration.candidates[0]!.id],
+      )
+    ).items[0]!;
+
+    const systemArchitectureService = new StructuredAnalysisService(
+      ctx.prisma,
+      fakeAi(ctx, 'system-architecture.generate', 1, {
+        boundary: 'Sistema',
+        nodes: [{ localId: 'server', name: 'Servidor', kind: 'RUNTIME' as const }],
+        links: [],
+      }),
+      new DiagramEngine(),
+      new FakeDiagramProvider({ svg: FAKE_SVG }),
+    );
+    const sysGeneration = await systemArchitectureService.generate(
+      projectId,
+      'SYSTEM_ARCHITECTURE',
+      [navAccepted.version.id],
+    );
+    const sysAccepted = (
+      await systemArchitectureService.accept(projectId, 'SYSTEM_ARCHITECTURE', sysGeneration.id, [
+        sysGeneration.candidates[0]!.id,
+      ])
+    ).items[0]!;
+
     const uiBlueprintService = new StructuredAnalysisService(
       ctx.prisma,
       fakeAi(ctx, 'ui-blueprint.generate', 1, {
@@ -246,6 +294,8 @@ describe('Traceability graph integration', () => {
     const dataModelNode = nodes.find((n) => n.artifactType === 'DATA_MODEL')!;
     const useCaseDiagramNode = nodes.find((n) => n.artifactType === 'USE_CASE_DIAGRAM')!;
     const navNode = nodes.find((n) => n.artifactType === 'NAVIGATION_TREE')!;
+    const softwareArchitectureNode = nodes.find((n) => n.artifactType === 'SOFTWARE_ARCHITECTURE')!;
+    const systemArchitectureNode = nodes.find((n) => n.artifactType === 'SYSTEM_ARCHITECTURE')!;
     const blueprintNode = nodes.find((n) => n.artifactType === 'UI_BLUEPRINT')!;
     const mockupNode = nodes.find((n) => n.artifactType === 'MOCKUP')!;
 
@@ -256,8 +306,21 @@ describe('Traceability graph integration', () => {
     expect(dataModelNode.id).toBe(dmAccepted.version.id);
     expect(useCaseDiagramNode.id).toBe(useCaseDiagram.versionId);
     expect(navNode.id).toBe(navAccepted.version.id);
+    expect(softwareArchitectureNode.id).toBe(swAccepted.version.id);
+    expect(systemArchitectureNode.id).toBe(sysAccepted.version.id);
     expect(blueprintNode.id).toBe(blueprintAccepted.version.id);
     expect(mockupNode.id).toBe(mockup.version.id);
+
+    expect(edges).toContainEqual({
+      type: 'SOURCE_FOR_STRUCTURED_ANALYSIS',
+      fromId: navNode.id,
+      toId: softwareArchitectureNode.id,
+    });
+    expect(edges).toContainEqual({
+      type: 'SOURCE_FOR_STRUCTURED_ANALYSIS',
+      fromId: navNode.id,
+      toId: systemArchitectureNode.id,
+    });
 
     expect(edges).toContainEqual({
       type: 'SOURCE_SUPPORTS_CONTEXT',
@@ -326,6 +389,14 @@ describe('Traceability graph integration', () => {
     const { nodes, edges } = await ctx.traceability.buildGraph(projectId);
     expect(nodes).toEqual([]);
     expect(edges).toEqual([]);
+  });
+
+  it('reports truncated=false for a normal-size project graph', async () => {
+    const workspace = await createWorkspace(ctx.prisma, 'Traceability Untruncated');
+    const projectId = (await ctx.projects.create({ workspaceId: workspace.id, name: 'P' })).id;
+    await approveSource(ctx, projectId, 'Notas');
+    const { truncated } = await ctx.traceability.buildGraph(projectId);
+    expect(truncated).toBe(false);
   });
 
   it('keeps a historical APPROVED version visible and distinct from a newer DRAFT edit', async () => {
