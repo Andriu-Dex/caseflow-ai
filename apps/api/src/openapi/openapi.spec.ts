@@ -159,6 +159,12 @@ describe('OpenAPI contract', () => {
         'POST /projects/{projectId}/ui-blueprint/generations/{generationId}/accept',
         'POST /projects/{projectId}/ui-blueprint/{blueprintId}/versions',
         'POST /projects/{projectId}/ui-blueprint/{blueprintId}/versions/{versionId}/transition',
+        'GET /projects/{projectId}/mockups',
+        'GET /projects/{projectId}/mockups/{mockupId}',
+        'GET /projects/{projectId}/mockups/{mockupId}/preview',
+        'POST /projects/{projectId}/mockups',
+        'POST /projects/{projectId}/mockups/{mockupId}/versions',
+        'POST /projects/{projectId}/mockups/{mockupId}/versions/{versionId}/transition',
       ].sort(),
     );
     expect(Object.keys(document.paths)).not.toContain('/health/ready');
@@ -263,6 +269,12 @@ describe('OpenAPI contract', () => {
         'getUiBlueprint',
         'createUiBlueprintVersion',
         'transitionUiBlueprintVersion',
+        'createMockup',
+        'listMockups',
+        'getMockup',
+        'getMockupPreview',
+        'createMockupVersion',
+        'transitionMockupVersion',
       ].sort(),
     );
   });

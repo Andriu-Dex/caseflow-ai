@@ -23,7 +23,7 @@ Content is intentionally JSONB per kind (genuinely variable structured payload, 
 - `20260924010000_structured_analysis_diagrams`: adds the three new `diagram_kind`/`diagram_source_format` enum values (kept separate — Postgres forbids using a new enum value in the same transaction that added it).
 - `20260924020000_structured_analysis_diagram_rules`: updates the `diagram_details` CHECK constraint and the `diagram_validate_detail()` / `diagram_validate_source()` trigger functions for the three new self-referencing kinds. All three migrations are additive; no historical migration was rewritten.
 
-A bug was found and fixed during integration testing: the first draft of `diagram_validate_detail()`/`diagram_validate_source()` incorrectly compared the new kinds' artifact type the same way as `ER`/`USE_CASE` diagrams, which actually live on a *different* artifact type (`DATA_MODEL`, `USE_CASE_DIAGRAM`) than their own kind name. This broke the pre-existing Data Model / Use Case diagram flow; both local databases were reset and the migration corrected before re-verifying.
+A bug was found and fixed during integration testing: the first draft of `diagram_validate_detail()`/`diagram_validate_source()` incorrectly compared the new kinds' artifact type the same way as `ER`/`USE_CASE` diagrams, which actually live on a _different_ artifact type (`DATA_MODEL`, `USE_CASE_DIAGRAM`) than their own kind name. This broke the pre-existing Data Model / Use Case diagram flow; both local databases were reset and the migration corrected before re-verifying.
 
 ## 4. Manual workflow
 
@@ -31,7 +31,7 @@ A bug was found and fixed during integration testing: the first draft of `diagra
 
 ## 5. AI generation
 
-`generate()` accepts 1..N exact `APPROVED` source versions of an eligible type per kind (Navigation: Requirement/Use Case/Data Model; Software/System Architecture: those plus Navigation Tree; UI Blueprint: Navigation/Use Case/Data Model/Software Architecture/System Architecture), sends them to `AIOrchestrator` against a per-kind versioned prompt (`navigation.generate@1`, `software-architecture.generate@1`, `system-architecture.generate@1`, `ui-blueprint.generate@1`), Zod-validates the structured output, and persists exactly one reviewable candidate — never an official artifact. `accept()` renders required diagrams *before* opening the write transaction (so a render failure aborts the whole batch with nothing written), then creates the artifact as `AI_GENERATED/GENERATED` — still not `APPROVED`; an explicit `transition()` call is required.
+`generate()` accepts 1..N exact `APPROVED` source versions of an eligible type per kind (Navigation: Requirement/Use Case/Data Model; Software/System Architecture: those plus Navigation Tree; UI Blueprint: Navigation/Use Case/Data Model/Software Architecture/System Architecture), sends them to `AIOrchestrator` against a per-kind versioned prompt (`navigation.generate@1`, `software-architecture.generate@1`, `system-architecture.generate@1`, `ui-blueprint.generate@1`), Zod-validates the structured output, and persists exactly one reviewable candidate — never an official artifact. `accept()` renders required diagrams _before_ opening the write transaction (so a render failure aborts the whole batch with nothing written), then creates the artifact as `AI_GENERATED/GENERATED` — still not `APPROVED`; an explicit `transition()` call is required.
 
 ## 6. Diagram generation
 
