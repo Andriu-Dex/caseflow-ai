@@ -12,6 +12,7 @@ import { SourcesModule } from './sources/sources.module';
 import { StructuredAnalysisModule } from './structured-analysis/structured-analysis.module';
 import { MockupsModule } from './mockups/mockups.module';
 import { StalenessModule } from './staleness/staleness.module';
+import { TraceabilityModule } from './traceability/traceability.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { StalenessModule } from './staleness/staleness.module';
     StructuredAnalysisModule,
     MockupsModule,
     StalenessModule,
+    TraceabilityModule,
   ],
 })
 export class AppModule {}
