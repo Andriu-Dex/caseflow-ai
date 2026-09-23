@@ -18,6 +18,19 @@ export type UseCaseDiagramModel = {
   systemName: string;
   useCases: { code: string; name: string; actors: string[] }[];
 };
+export type NavigationDiagramModel = {
+  nodes: { localId: string; label: string; parentLocalId?: string }[];
+};
+export type SoftwareArchitectureDiagramModel = {
+  components: { localId: string; name: string }[];
+  dependencies: { fromLocalId: string; toLocalId: string; description?: string }[];
+};
+export type SystemArchitectureDiagramModel = {
+  nodes: { localId: string; name: string; kind: string }[];
+  links: { fromLocalId: string; toLocalId: string; description?: string }[];
+};
+export type DiagramFormat =
+  'MERMAID_ER' | 'PLANTUML' | 'MERMAID_FLOWCHART' | 'PLANTUML_COMPONENT' | 'PLANTUML_DEPLOYMENT';
 const cardinality: Record<string, string> = {
   ONE: '||',
   ZERO_OR_ONE: 'o|',
@@ -96,18 +109,80 @@ export class DiagramEngine {
     return lines.join('\n');
   }
 
+  // Deterministic Mermaid flowchart from the structured Navigation Tree
+  // (spec §13.4). AI never produces this source directly.
+  generateNavigationFlowchart(model: NavigationDiagramModel): string {
+    const nodes = [...model.nodes].sort((a, b) => compareOrdinal(a.localId, b.localId));
+    const lines = ['flowchart TD'];
+    for (const node of nodes) lines.push(`  ${safeId(node.localId)}["${quote(node.label)}"]`);
+    for (const node of nodes)
+      if (node.parentLocalId)
+        lines.push(`  ${safeId(node.parentLocalId)} --> ${safeId(node.localId)}`);
+    return lines.join('\n');
+  }
+
+  // Deterministic PlantUML component diagram from the structured Software
+  // Architecture (spec §14.3).
+  generateSoftwareComponentDiagram(model: SoftwareArchitectureDiagramModel): string {
+    const components = [...model.components].sort((a, b) => compareOrdinal(a.localId, b.localId));
+    const lines = ['@startuml'];
+    for (const component of components)
+      lines.push(`component "${quote(component.name)}" as ${safeId(component.localId)}`);
+    for (const dependency of model.dependencies)
+      lines.push(
+        `${safeId(dependency.fromLocalId)} --> ${safeId(dependency.toLocalId)}${
+          dependency.description ? ` : "${quote(dependency.description)}"` : ''
+        }`,
+      );
+    lines.push('@enduml');
+    return lines.join('\n');
+  }
+
+  // Deterministic PlantUML deployment representation from the structured
+  // System Architecture (spec §15).
+  generateSystemDeploymentDiagram(model: SystemArchitectureDiagramModel): string {
+    const nodeKeyword: Record<string, string> = {
+      RUNTIME: 'node',
+      DATABASE: 'database',
+      STORAGE: 'storage',
+      EXTERNAL_SERVICE: 'cloud',
+      CLIENT: 'actor',
+      OTHER: 'node',
+    };
+    const nodes = [...model.nodes].sort((a, b) => compareOrdinal(a.localId, b.localId));
+    const lines = ['@startuml'];
+    for (const node of nodes)
+      lines.push(
+        `${nodeKeyword[node.kind] ?? 'node'} "${quote(node.name)}" as ${safeId(node.localId)}`,
+      );
+    for (const link of model.links)
+      lines.push(
+        `${safeId(link.fromLocalId)} --> ${safeId(link.toLocalId)}${
+          link.description ? ` : "${quote(link.description)}"` : ''
+        }`,
+      );
+    lines.push('@enduml');
+    return lines.join('\n');
+  }
+
   // Lightweight local pre-validation only: a cheap, fast-fail structural
   // check before the source ever reaches the real renderer. It is NOT a
   // Mermaid/PlantUML grammar and never establishes compatibility on its own —
   // the renderer (Kroki) is the compatibility authority (see DiagramProvider).
-  validate(format: 'MERMAID_ER' | 'PLANTUML', source: string): void {
+  validate(format: DiagramFormat, source: string): void {
     const valid =
       format === 'MERMAID_ER'
         ? source.startsWith('erDiagram\n') && !/[<>;]/.test(source)
-        : source.startsWith('@startuml\n') &&
-          source.endsWith('\n@enduml') &&
-          !source.includes('!include') &&
-          !source.includes('!pragma');
+        : format === 'MERMAID_FLOWCHART'
+          ? // No '<>;' block here: '>' is required by the flowchart's own
+            // "-->" arrow syntax. As with PLANTUML below, this is a cheap
+            // structural pre-check only — the real renderer + sanitizeDiagramSvg()
+            // are the compatibility/security authority (see class doc comment).
+            source.startsWith('flowchart TD\n')
+          : source.startsWith('@startuml\n') &&
+            source.endsWith('\n@enduml') &&
+            !source.includes('!include') &&
+            !source.includes('!pragma');
     if (!valid || source.length > 250_000)
       throw new UnprocessableEntityException('Fuente de diagrama no válida.');
   }

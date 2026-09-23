@@ -78,9 +78,14 @@ describe('official Prisma migrations on caseflow_test', () => {
   it('seeded the controlled first-deliverable artifact types', async () => {
     const { rows } = await client.query<{ code: string }>('SELECT code FROM artifact_types');
 
-    expect(rows.map((row) => row.code).sort()).toEqual(
-      [...FIRST_DELIVERABLE_ARTIFACT_TYPE_CODES].sort(),
-    );
+    // GENERIC_TEST_TYPE is a shared runtime fixture some integration test
+    // files register (never via a migration) to exercise the generic
+    // Artifact/ArtifactVersion mechanism now that every first-deliverable
+    // type has its own dedicated endpoint; artifact_types is intentionally
+    // left untruncated between test files (see resetTestData), so it is
+    // excluded here rather than asserted away.
+    const seededCodes = rows.map((row) => row.code).filter((code) => code !== 'GENERIC_TEST_TYPE');
+    expect(seededCodes.sort()).toEqual([...FIRST_DELIVERABLE_ARTIFACT_TYPE_CODES].sort());
   });
 
   it('keeps the pgvector migration', async () => {

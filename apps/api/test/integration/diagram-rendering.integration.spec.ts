@@ -46,6 +46,26 @@ const useCaseModel = {
   systemName: 'Sistema',
   useCases: [{ code: 'CU-001', name: 'Sign in', actors: ['Administrator', 'Customer'] }],
 };
+const navigationModel = {
+  nodes: [
+    { localId: 'home', label: 'Home' },
+    { localId: 'orders', label: 'Orders', parentLocalId: 'home' },
+  ],
+};
+const softwareArchitectureModel = {
+  components: [
+    { localId: 'api', name: 'API' },
+    { localId: 'web', name: 'Web' },
+  ],
+  dependencies: [{ fromLocalId: 'web', toLocalId: 'api', description: 'calls' }],
+};
+const systemArchitectureModel = {
+  nodes: [
+    { localId: 'server', name: 'Server', kind: 'RUNTIME' },
+    { localId: 'db', name: 'Database', kind: 'DATABASE' },
+  ],
+  links: [{ fromLocalId: 'server', toLocalId: 'db', description: 'reads/writes' }],
+};
 
 describe('Real diagram rendering (local Kroki)', () => {
   it('renders deterministic Mermaid ER source into a real graphical SVG', async () => {
@@ -79,6 +99,42 @@ describe('Real diagram rendering (local Kroki)', () => {
     expect(svg).toContain('Customer');
     expect(svg).toContain('CU-001');
     expect(svg).not.toMatch(/include|extend/);
+  });
+
+  it('renders a deterministic Mermaid flowchart (Navigation Tree) into a real graphical SVG', async () => {
+    const source = engine.generateNavigationFlowchart(navigationModel);
+    engine.validate('MERMAID_FLOWCHART', source);
+    const rendered = await provider().render({ format: 'MERMAID_FLOWCHART', source });
+    const svg = sanitizeDiagramSvg(rendered.svg);
+
+    expect(svg).toContain('<svg');
+    expect(svg).not.toContain('font-family="monospace"');
+    expect(svg).toContain('Home');
+    expect(svg).toContain('Orders');
+  });
+
+  it('renders a deterministic PlantUML component diagram (Software Architecture) into a real graphical UML SVG', async () => {
+    const source = engine.generateSoftwareComponentDiagram(softwareArchitectureModel);
+    engine.validate('PLANTUML_COMPONENT', source);
+    const rendered = await provider().render({ format: 'PLANTUML_COMPONENT', source });
+    const svg = sanitizeDiagramSvg(rendered.svg);
+
+    expect(svg).toContain('<svg');
+    expect(svg).not.toContain('font-family="monospace"');
+    expect(svg).toContain('API');
+    expect(svg).toContain('Web');
+  });
+
+  it('renders a deterministic PlantUML deployment diagram (System Architecture) into a real graphical UML SVG', async () => {
+    const source = engine.generateSystemDeploymentDiagram(systemArchitectureModel);
+    engine.validate('PLANTUML_DEPLOYMENT', source);
+    const rendered = await provider().render({ format: 'PLANTUML_DEPLOYMENT', source });
+    const svg = sanitizeDiagramSvg(rendered.svg);
+
+    expect(svg).toContain('<svg');
+    expect(svg).not.toContain('font-family="monospace"');
+    expect(svg).toContain('Server');
+    expect(svg).toContain('Database');
   });
 
   it('rejects malformed generated-shaped source explicitly (renderer is the compatibility authority)', async () => {

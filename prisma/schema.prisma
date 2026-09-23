@@ -78,6 +78,20 @@ enum SourceExtractionState {
   @@map("source_extraction_state")
 }
 
+// Shared discriminator for the "structured content + candidate-first AI
+// generation + optional deterministic diagram" family of First Deliverable
+// analysis artifacts. Mirrors DiagramKind's one-shared-table pattern: the
+// physical shape is a single validated JSONB payload (packages/contracts is
+// the schema source of truth per kind), not four bespoke relational schemas.
+enum StructuredAnalysisKind {
+  NAVIGATION_TREE
+  SOFTWARE_ARCHITECTURE
+  SYSTEM_ARCHITECTURE
+  UI_BLUEPRINT
+
+  @@map("structured_analysis_kind")
+}
+
 enum AIRunStatus {
   RUNNING
   SUCCEEDED
@@ -143,6 +157,9 @@ enum DataModelCardinality {
 enum DiagramKind {
   ER
   USE_CASE
+  NAVIGATION_TREE
+  SOFTWARE_ARCHITECTURE
+  SYSTEM_ARCHITECTURE
 
   @@map("diagram_kind")
 }
@@ -150,6 +167,9 @@ enum DiagramKind {
 enum DiagramSourceFormat {
   MERMAID_ER
   PLANTUML
+  MERMAID_FLOWCHART
+  PLANTUML_COMPONENT
+  PLANTUML_DEPLOYMENT
 
   @@map("diagram_source_format")
 }
@@ -182,6 +202,7 @@ model Project {
   aiRuns               AIRun[]
   dataModelGenerations DataModelGeneration[]
   sourceReportCandidates SourceReportCandidate[]
+  structuredAnalysisGenerations StructuredAnalysisGeneration[]
 
   @@index([workspaceId, createdAt, id])
   @@map("projects")
@@ -212,6 +233,7 @@ model Artifact {
   artifactType                ArtifactType         @relation(fields: [artifactTypeCode], references: [code], onDelete: Restrict, onUpdate: Restrict)
   versions                    ArtifactVersion[]
   acceptedDataModelCandidates DataModelCandidate[]
+  acceptedStructuredAnalysisCandidates StructuredAnalysisCandidate[]
 
   // Project-scoped, never-reused codes (spec §31.4).
   @@unique([projectId, code])
@@ -254,6 +276,10 @@ model ArtifactVersion {
   diagramSources             DiagramSourceVersion[]
   sourceDetail               SourceDetail?
   sourceReportCandidates     SourceReportCandidate[]
+  structuredAnalysisDetail   StructuredAnalysisDetail?
+  structuredAnalysisGenerationSources StructuredAnalysisGenerationSource[]
+  mockupDetail               MockupDetail?             @relation("MockupOwnVersion")
+  mockupsSourcedFromHere     MockupDetail[]            @relation("MockupUiBlueprintSource")
 
   @@unique([artifactId, versionNumber])
   @@unique([id, projectId])
@@ -385,6 +411,8 @@ model AIRun {
   dataModelDetails      DataModelDetail[]
   sourceReportCandidate SourceReportCandidate?
   sourceReportDetails   SourceReportDetail[]
+  structuredAnalysisGeneration StructuredAnalysisGeneration?
+  structuredAnalysisDetails    StructuredAnalysisDetail[]
 
   @@index([projectId, startedAt, id])
   @@index([sourceArtifactVersionId])
@@ -855,4 +883,85 @@ model SourceReportDetail {
   aiRun        AIRun?                  @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
 
   @@map("source_report_details")
+}
+
+// One shared candidate-first AI generation batch for Navigation/Software
+// Architecture/System Architecture/UI Blueprint (spec §13/§14/§15/§17). The
+// `kind` discriminator keeps each generation scoped to exactly one artifact
+// type; content shape per kind is validated by packages/contracts, not here.
+model StructuredAnalysisGeneration {
+  id         String                            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId  String                            @map("project_id") @db.Uuid
+  kind       StructuredAnalysisKind
+  aiRunId    String                            @unique @map("ai_run_id") @db.Uuid
+  createdAt  DateTime                          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project    Project                           @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  aiRun      AIRun                             @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+  sources    StructuredAnalysisGenerationSource[]
+  candidates StructuredAnalysisCandidate[]
+  acceptedDetails StructuredAnalysisDetail[]
+
+  @@index([projectId, kind, createdAt])
+  @@map("structured_analysis_generations")
+}
+
+model StructuredAnalysisGenerationSource {
+  generationId      String          @map("generation_id") @db.Uuid
+  artifactVersionId String          @map("artifact_version_id") @db.Uuid
+  sourceId          String          @map("source_id")
+
+  generation      StructuredAnalysisGeneration @relation(fields: [generationId], references: [id], onDelete: Restrict)
+  artifactVersion ArtifactVersion              @relation(fields: [artifactVersionId], references: [id], onDelete: Restrict)
+
+  @@id([generationId, artifactVersionId])
+  @@unique([generationId, sourceId])
+  @@map("structured_analysis_generation_sources")
+}
+
+model StructuredAnalysisCandidate {
+  id                 String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  generationId       String                       @map("generation_id") @db.Uuid
+  candidateId        String                       @map("candidate_id")
+  title              String
+  content            Json
+  acceptedArtifactId String?                      @map("accepted_artifact_id") @db.Uuid
+  generation         StructuredAnalysisGeneration @relation(fields: [generationId], references: [id], onDelete: Restrict)
+  acceptedArtifact   Artifact?                    @relation(fields: [acceptedArtifactId], references: [id], onDelete: Restrict)
+  acceptedDetail     StructuredAnalysisDetail?
+
+  @@unique([generationId, candidateId])
+  @@map("structured_analysis_candidates")
+}
+
+// Official structured snapshot for one ArtifactVersion of kind `kind`.
+// Immutable once created (see migration trigger), like every other Detail.
+model StructuredAnalysisDetail {
+  artifactVersionId     String                       @id @map("artifact_version_id") @db.Uuid
+  kind                  StructuredAnalysisKind
+  content               Json
+  generationId          String?                      @map("generation_id") @db.Uuid
+  generationCandidateId String?                      @unique @map("generation_candidate_id") @db.Uuid
+  aiRunId               String?                      @map("ai_run_id") @db.Uuid
+
+  artifactVersion     ArtifactVersion               @relation(fields: [artifactVersionId], references: [id], onDelete: Restrict)
+  generation          StructuredAnalysisGeneration? @relation(fields: [generationId], references: [id], onDelete: Restrict)
+  generationCandidate StructuredAnalysisCandidate?  @relation(fields: [generationCandidateId], references: [id], onDelete: Restrict)
+  aiRun               AIRun?                        @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+
+  @@map("structured_analysis_details")
+}
+
+// Deterministic mockup/wireframe preview derived from one exact approved
+// UI_BLUEPRINT version (spec §18) — never an AI-generated raster image.
+model MockupDetail {
+  artifactVersionId  String          @id @map("artifact_version_id") @db.Uuid
+  uiBlueprintVersionId String        @map("ui_blueprint_version_id") @db.Uuid
+  generatorVersion   String          @map("generator_version")
+  svg                String
+
+  artifactVersion    ArtifactVersion @relation("MockupOwnVersion", fields: [artifactVersionId], references: [id], onDelete: Restrict)
+  uiBlueprintVersion ArtifactVersion @relation("MockupUiBlueprintSource", fields: [uiBlueprintVersionId], references: [id], onDelete: Restrict)
+
+  @@map("mockup_details")
 }

@@ -31,6 +31,7 @@ export * from './requirements/requirement.contract';
 export * from './use-cases/use-case.contract';
 export * from './data-models/data-model.contract';
 export * from './sources/source.contract';
+export * from './structured-analysis/structured-analysis.contract';
 
 export {
   PROJECT_CONTEXT_COLLECTION_LIMIT,

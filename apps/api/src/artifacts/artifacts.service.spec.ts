@@ -23,7 +23,7 @@ const versionRow = {
 const artifactRow = {
   id: artifactId,
   projectId,
-  artifactTypeCode: 'NAVIGATION_TREE',
+  artifactTypeCode: 'GENERIC_TEST_TYPE',
   code: 'RF-001',
   createdAt: now,
 };
@@ -67,22 +67,35 @@ describe('ArtifactsService (rule branches)', () => {
     await expect(
       service.createArtifact(projectId, { type: 'PROJECT_SOURCE', title: 'Fuente' }),
     ).rejects.toMatchObject({ status: 422 });
+    for (const type of [
+      'NAVIGATION_TREE',
+      'SOFTWARE_ARCHITECTURE',
+      'SYSTEM_ARCHITECTURE',
+      'UI_BLUEPRINT',
+      'MOCKUP',
+    ])
+      await expect(service.createArtifact(projectId, { type, title: type })).rejects.toMatchObject({
+        status: 422,
+      });
   });
 
   it('creates the artifact and version 1 using the type default prefix', async () => {
     tx.project.findUnique.mockResolvedValue({ id: projectId });
     tx.artifactType.findUnique.mockResolvedValue({
-      code: 'NAVIGATION_TREE',
+      code: 'GENERIC_TEST_TYPE',
       defaultCodePrefix: 'NAV',
     });
     tx.$queryRaw.mockResolvedValue([{ last_number: 7 }]);
     tx.artifact.create.mockResolvedValue({ ...artifactRow, code: 'RF-007' });
     tx.artifactVersion.create.mockResolvedValue(versionRow);
 
-    const result = await service.createArtifact(projectId, { type: 'NAVIGATION_TREE', title: 'T' });
+    const result = await service.createArtifact(projectId, {
+      type: 'GENERIC_TEST_TYPE',
+      title: 'T',
+    });
 
     expect(tx.artifact.create).toHaveBeenCalledWith({
-      data: { projectId, artifactTypeCode: 'NAVIGATION_TREE', code: 'NAV-007' },
+      data: { projectId, artifactTypeCode: 'GENERIC_TEST_TYPE', code: 'NAV-007' },
     });
     expect(tx.artifactVersion.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
@@ -99,7 +112,7 @@ describe('ArtifactsService (rule branches)', () => {
   it('uses an explicit code prefix and the GENERATED status for AI_GENERATED', async () => {
     tx.project.findUnique.mockResolvedValue({ id: projectId });
     tx.artifactType.findUnique.mockResolvedValue({
-      code: 'NAVIGATION_TREE',
+      code: 'GENERIC_TEST_TYPE',
       defaultCodePrefix: 'MD',
     });
     tx.$queryRaw.mockResolvedValue([{ last_number: 1 }]);
@@ -107,7 +120,7 @@ describe('ArtifactsService (rule branches)', () => {
     tx.artifactVersion.create.mockResolvedValue(versionRow);
 
     await service.createArtifact(projectId, {
-      type: 'NAVIGATION_TREE',
+      type: 'GENERIC_TEST_TYPE',
       title: 'T',
       codePrefix: 'RNF',
       origin: 'AI_GENERATED',
@@ -125,7 +138,7 @@ describe('ArtifactsService (rule branches)', () => {
     tx.project.findUnique.mockResolvedValue(null);
 
     await expect(
-      service.createArtifact(projectId, { type: 'NAVIGATION_TREE', title: 'T' }),
+      service.createArtifact(projectId, { type: 'GENERIC_TEST_TYPE', title: 'T' }),
     ).rejects.toThrow('Proyecto no encontrado.');
     expect(tx.$queryRaw).not.toHaveBeenCalled();
     expect(tx.artifact.create).not.toHaveBeenCalled();
@@ -144,13 +157,13 @@ describe('ArtifactsService (rule branches)', () => {
   it('fails safely if the counter returns no row', async () => {
     tx.project.findUnique.mockResolvedValue({ id: projectId });
     tx.artifactType.findUnique.mockResolvedValue({
-      code: 'NAVIGATION_TREE',
+      code: 'GENERIC_TEST_TYPE',
       defaultCodePrefix: 'MD',
     });
     tx.$queryRaw.mockResolvedValue([]);
 
     await expect(
-      service.createArtifact(projectId, { type: 'NAVIGATION_TREE', title: 'T' }),
+      service.createArtifact(projectId, { type: 'GENERIC_TEST_TYPE', title: 'T' }),
     ).rejects.toBeInstanceOf(InternalServerErrorException);
   });
 
