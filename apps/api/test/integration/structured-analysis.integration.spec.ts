@@ -268,4 +268,104 @@ describe('Structured Analysis (Navigation/Architecture/UI Blueprint) integration
       ctx.structuredAnalysis.get(otherProjectId, 'NAVIGATION_TREE', navigationArtifact.id),
     ).rejects.toThrow('no encontrado');
   });
+
+  it('generates a UI Blueprint candidate from an exact APPROVED Navigation Tree source', async () => {
+    const nav = await ctx.structuredAnalysis.create(
+      projectId,
+      'NAVIGATION_TREE',
+      'Para Blueprint',
+      navigation,
+    );
+    await ctx.structuredAnalysis.transition(
+      projectId,
+      'NAVIGATION_TREE',
+      nav.id,
+      nav.version.id,
+      'IN_REVIEW',
+    );
+    await ctx.structuredAnalysis.transition(
+      projectId,
+      'NAVIGATION_TREE',
+      nav.id,
+      nav.version.id,
+      'APPROVED',
+    );
+
+    const { ai } = fakeAIOrchestrator(ctx, 'ui-blueprint.generate', uiBlueprint);
+    const service = new StructuredAnalysisService(
+      ctx.prisma,
+      ai,
+      new DiagramEngine(),
+      new FakeDiagramProvider({ svg: FAKE_SVG }),
+    );
+    const generation = await service.generate(projectId, 'UI_BLUEPRINT', [nav.version.id]);
+    expect(generation.candidates).toHaveLength(1);
+    expect(generation.candidates[0]?.content).toMatchObject(uiBlueprint);
+
+    // A DRAFT Navigation Tree (not the one just approved) must not qualify.
+    const draftNav = await ctx.structuredAnalysis.create(
+      projectId,
+      'NAVIGATION_TREE',
+      'Borrador',
+      navigation,
+    );
+    await expect(
+      service.generate(projectId, 'UI_BLUEPRINT', [draftNav.version.id]),
+    ).rejects.toThrow('APPROVED');
+  });
+
+  it('uses the exact APPROVED version explicitly selected, never an implicit "latest": an older approved version stays usable even after a newer DRAFT edit exists', async () => {
+    const created = await ctx.structuredAnalysis.create(
+      projectId,
+      'NAVIGATION_TREE',
+      'Versión estable',
+      navigation,
+    );
+    await ctx.structuredAnalysis.transition(
+      projectId,
+      'NAVIGATION_TREE',
+      created.id,
+      created.version.id,
+      'IN_REVIEW',
+    );
+    const approvedV1 = await ctx.structuredAnalysis.transition(
+      projectId,
+      'NAVIGATION_TREE',
+      created.id,
+      created.version.id,
+      'APPROVED',
+    );
+    // Editing an APPROVED artifact creates version 2 as a new DRAFT, leaving
+    // version 1 untouched and still APPROVED (spec §5.3 immutable history).
+    const v2 = await ctx.structuredAnalysis.version(
+      projectId,
+      'NAVIGATION_TREE',
+      created.id,
+      'Versión en edición',
+      {
+        nodes: [
+          ...navigation.nodes,
+          { localId: 'reports', label: 'Reportes', viewName: 'Reports', kind: 'LIST' as const },
+        ],
+      },
+    );
+    expect(v2.version.versionNumber).toBe(2);
+    expect(v2.version.status).toBe('DRAFT');
+
+    const { ai } = fakeAIOrchestrator(ctx, 'software-architecture.generate', softwareArchitecture);
+    const service = new StructuredAnalysisService(
+      ctx.prisma,
+      ai,
+      new DiagramEngine(),
+      new FakeDiagramProvider({ svg: FAKE_SVG }),
+    );
+    // Explicitly selecting the exact APPROVED v1 id still succeeds...
+    await expect(
+      service.generate(projectId, 'SOFTWARE_ARCHITECTURE', [approvedV1.id]),
+    ).resolves.toMatchObject({ candidates: [{}] });
+    // ...while the newer v2 (DRAFT) is never silently substituted for it.
+    await expect(
+      service.generate(projectId, 'SOFTWARE_ARCHITECTURE', [v2.version.id]),
+    ).rejects.toThrow('APPROVED');
+  });
 });

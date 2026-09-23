@@ -107,6 +107,7 @@ export class RequirementsService {
             constraints: { orderBy: { position: 'asc' } },
             businessRules: { orderBy: { position: 'asc' } },
             scopeItems: { orderBy: { position: 'asc' } },
+            sources: true,
           },
         },
       },
@@ -114,6 +115,15 @@ export class RequirementsService {
     if (!context?.projectContextDetail)
       throw new UnprocessableEntityException(
         'La generación requiere una versión exacta APPROVED del contexto del mismo proyecto.',
+      );
+    // Official First Deliverable workflow gate: an APPROVED context with zero
+    // linked approved Project Source knowledge does not satisfy the required
+    // knowledge-intake process (requirements.md Phase D gate condition). A
+    // manual/preliminary context may still exist without sources; it simply
+    // cannot be used for official Requirements generation.
+    if (context.projectContextDetail.sources.length === 0)
+      throw new UnprocessableEntityException(
+        'La generación oficial requiere un contexto respaldado por al menos una fuente de proyecto APPROVED.',
       );
     try {
       const result = await this.ai.generateStructured({

@@ -63,7 +63,28 @@ describe('Requirements integration', () => {
       }),
     ).rejects.toThrow('Dependencia');
   });
-  it('generates candidates from an exact context and accepts dependencies transactionally', async () => {
+  it('generates candidates from an exact source-backed context and accepts dependencies transactionally', async () => {
+    const source = await ctx.sources.create(
+      projectId,
+      {
+        title: 'Notas de proceso',
+        sourceKind: 'NOTES',
+        purpose: 'Notas del proceso manual actual',
+      },
+      {
+        originalname: 'notas.txt',
+        mimetype: 'text/plain',
+        size: 12,
+        buffer: Buffer.from('Notas reales'),
+      },
+    );
+    await ctx.sources.transition(projectId, source.id, source.version.id, 'IN_REVIEW');
+    const approvedSource = await ctx.sources.transition(
+      projectId,
+      source.id,
+      source.version.id,
+      'APPROVED',
+    );
     const draftContext = await ctx.projectContext.create(projectId, {
       problemStatement: 'Procesos manuales',
       objective: 'Automatizar',
@@ -72,6 +93,7 @@ describe('Requirements integration', () => {
       needs: [],
       constraints: [],
       businessRules: [],
+      sourceVersionIds: [approvedSource.id],
     });
     await ctx.projectContext.transition(projectId, draftContext.version.id, 'IN_REVIEW');
     await ctx.projectContext.transition(projectId, draftContext.version.id, 'APPROVED');
@@ -147,6 +169,24 @@ describe('Requirements integration', () => {
         where: { artifactVersionId: dependent.version.id },
       }),
     ).toBe(1);
+  });
+  it('rejects official generation from an APPROVED context with zero linked approved sources', async () => {
+    const w = await createWorkspace(ctx.prisma, 'No Sources');
+    const noSourceProjectId = (await ctx.projects.create({ workspaceId: w.id, name: 'NS' })).id;
+    const context = await ctx.projectContext.create(noSourceProjectId, {
+      problemStatement: 'Sin fuentes',
+      objective: 'Probar el gate',
+      scopeItems: [],
+      actors: [{ name: 'Usuario' }],
+      needs: [],
+      constraints: [],
+      businessRules: [],
+    });
+    await ctx.projectContext.transition(noSourceProjectId, context.version.id, 'IN_REVIEW');
+    await ctx.projectContext.transition(noSourceProjectId, context.version.id, 'APPROVED');
+    await expect(ctx.requirements.generate(noSourceProjectId, context.version.id)).rejects.toThrow(
+      'fuente de proyecto APPROVED',
+    );
   });
   it('disabled AI returns AI_NOT_CONFIGURED without candidates', async () => {
     const context = await ctx.projectContext.getCurrent(projectId);
