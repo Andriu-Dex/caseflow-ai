@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { TRACEABILITY_MAX_NODES } from '@caseflow-ai/contracts';
 import type { PrismaService } from '../database/prisma.service';
 import { TraceabilityService } from './traceability.service';
 
@@ -25,7 +26,11 @@ describe('TraceabilityService', () => {
   it('returns an empty graph for a project with no traced artifacts', async () => {
     const prisma = emptyPrisma();
     const service = new TraceabilityService(prisma as unknown as PrismaService);
-    await expect(service.buildGraph('p')).resolves.toEqual({ nodes: [], edges: [] });
+    await expect(service.buildGraph('p')).resolves.toEqual({
+      nodes: [],
+      edges: [],
+      truncated: false,
+    });
     // No follow-up queries were issued once there are zero versions to trace.
     expect(prisma.projectContextSource.findMany).not.toHaveBeenCalled();
   });
@@ -94,5 +99,24 @@ describe('TraceabilityService', () => {
     const service = new TraceabilityService(prisma as unknown as PrismaService);
     const { edges } = await service.buildGraph('p');
     expect(edges).toEqual([]);
+  });
+
+  it('bounds the graph and reports truncated=true rather than silently growing unbounded (closure item A)', async () => {
+    const prisma = emptyPrisma();
+    prisma.artifactVersion.findMany.mockResolvedValue(
+      Array.from({ length: TRACEABILITY_MAX_NODES + 1 }, (_, i) => ({
+        id: `v${i}`,
+        artifactId: `a${i}`,
+        versionNumber: 1,
+        status: 'DRAFT',
+        origin: 'MANUAL',
+        title: `T${i}`,
+        artifact: { id: `a${i}`, code: `X-${i}` },
+      })),
+    );
+    const service = new TraceabilityService(prisma as unknown as PrismaService);
+    const { nodes, truncated } = await service.buildGraph('p');
+    expect(nodes).toHaveLength(TRACEABILITY_MAX_NODES);
+    expect(truncated).toBe(true);
   });
 });

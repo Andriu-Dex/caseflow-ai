@@ -5,7 +5,11 @@ import type {
   TraceabilityGenerator,
   TraceabilityNode,
 } from '@caseflow-ai/contracts';
-import { TRACEABILITY_ARTIFACT_TYPES } from '@caseflow-ai/contracts';
+import {
+  TRACEABILITY_ARTIFACT_TYPES,
+  TRACEABILITY_MAX_EDGES,
+  TRACEABILITY_MAX_NODES,
+} from '@caseflow-ai/contracts';
 import { PrismaService } from '../database/prisma.service';
 
 type AIRunRow = {
@@ -45,16 +49,21 @@ export class TraceabilityService {
   // relationships — nothing is inferred from stage adjacency (spec Phase F).
   async buildGraph(
     projectId: string,
-  ): Promise<{ nodes: TraceabilityNode[]; edges: TraceabilityEdge[] }> {
-    const versions = await this.prisma.artifactVersion.findMany({
+  ): Promise<{ nodes: TraceabilityNode[]; edges: TraceabilityEdge[]; truncated: boolean }> {
+    const allVersions = await this.prisma.artifactVersion.findMany({
       where: {
         projectId,
         artifact: { artifactTypeCode: { in: [...TRACEABILITY_ARTIFACT_TYPES] } },
       },
       include: { artifact: true },
       orderBy: [{ artifact: { code: 'asc' } }, { versionNumber: 'asc' }],
+      take: TRACEABILITY_MAX_NODES + 1,
     });
-    if (!versions.length) return { nodes: [], edges: [] };
+    if (!allVersions.length) return { nodes: [], edges: [], truncated: false };
+    // Never silently drop nodes (spec closure item A): an explicit bound with
+    // a visible `truncated` flag, not a complex graph-query engine.
+    let truncated = allVersions.length > TRACEABILITY_MAX_NODES;
+    const versions = truncated ? allVersions.slice(0, TRACEABILITY_MAX_NODES) : allVersions;
 
     const nodeIds = versions.map((v) => v.id);
     const maxVersionByArtifact = new Map<string, number>();
@@ -278,6 +287,10 @@ export class TraceabilityService {
         toId: m.artifactVersionId,
       });
 
-    return { nodes, edges };
+    if (edges.length > TRACEABILITY_MAX_EDGES) {
+      truncated = true;
+      edges.length = TRACEABILITY_MAX_EDGES;
+    }
+    return { nodes, edges, truncated };
   }
 }
