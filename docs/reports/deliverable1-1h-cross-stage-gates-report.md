@@ -18,16 +18,16 @@ Before this increment, `RequirementsService.generate()` only checked that the re
 
 Verified by direct code inspection of every official `generate()`/creation method's Prisma `where` clause:
 
-| Boundary | Gate found | Cross-project rejected | Exact-version (no "latest") |
-|---|---|---|---|
-| Source/Context → Requirements | `status: 'APPROVED'` + **now** ≥1 linked source | yes | yes (exact `sourceContextVersionId`) |
-| Requirements → Use Cases | `validateRequirements(..., approved=true)` requires `status: 'APPROVED'` | yes | yes |
-| Requirements/Use Cases → Data Model | `status: 'APPROVED'` on both source lists | yes | yes |
-| Approved analysis → Navigation | `ELIGIBLE_SOURCE_TYPES.NAVIGATION_TREE` + `status: 'APPROVED'` | yes | yes |
-| Approved analysis/navigation → Software Architecture | same mechanism, `ELIGIBLE_SOURCE_TYPES.SOFTWARE_ARCHITECTURE` | yes | yes |
-| Approved analysis/navigation → System Architecture | same mechanism, `ELIGIBLE_SOURCE_TYPES.SYSTEM_ARCHITECTURE` | yes | yes |
-| Approved Navigation/Use Cases/Data Model/Architecture → UI Blueprint | same mechanism, `ELIGIBLE_SOURCE_TYPES.UI_BLUEPRINT` | yes | yes |
-| Approved UI Blueprint → Mockup | dedicated `status: 'APPROVED', artifactTypeCode: 'UI_BLUEPRINT'` check in `MockupsService` | yes | yes |
+| Boundary                                                             | Gate found                                                                                 | Cross-project rejected | Exact-version (no "latest")          |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------- | ------------------------------------ |
+| Source/Context → Requirements                                        | `status: 'APPROVED'` + **now** ≥1 linked source                                            | yes                    | yes (exact `sourceContextVersionId`) |
+| Requirements → Use Cases                                             | `validateRequirements(..., approved=true)` requires `status: 'APPROVED'`                   | yes                    | yes                                  |
+| Requirements/Use Cases → Data Model                                  | `status: 'APPROVED'` on both source lists                                                  | yes                    | yes                                  |
+| Approved analysis → Navigation                                       | `ELIGIBLE_SOURCE_TYPES.NAVIGATION_TREE` + `status: 'APPROVED'`                             | yes                    | yes                                  |
+| Approved analysis/navigation → Software Architecture                 | same mechanism, `ELIGIBLE_SOURCE_TYPES.SOFTWARE_ARCHITECTURE`                              | yes                    | yes                                  |
+| Approved analysis/navigation → System Architecture                   | same mechanism, `ELIGIBLE_SOURCE_TYPES.SYSTEM_ARCHITECTURE`                                | yes                    | yes                                  |
+| Approved Navigation/Use Cases/Data Model/Architecture → UI Blueprint | same mechanism, `ELIGIBLE_SOURCE_TYPES.UI_BLUEPRINT`                                       | yes                    | yes                                  |
+| Approved UI Blueprint → Mockup                                       | dedicated `status: 'APPROVED', artifactTypeCode: 'UI_BLUEPRINT'` check in `MockupsService` | yes                    | yes                                  |
 
 One reusable mechanism (`ELIGIBLE_SOURCE_TYPES` + exact-APPROVED-version Prisma filtering) already covers Navigation/Architecture/UI Blueprint generation uniformly; Use Cases and Data Model each have their own analogous, independently-audited check. A separate `approved: boolean` parameter in `UseCasesService.validateRequirements` deliberately distinguishes manual authoring (any exact Requirement reference, for drafting) from official AI generation (`APPROVED` only) — confirmed as an intentional design, not a gap.
 
