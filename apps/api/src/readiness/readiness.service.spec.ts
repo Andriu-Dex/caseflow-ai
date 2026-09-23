@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../database/prisma.service';
+import { FirstDeliverableSnapshotService } from '../first-deliverable/first-deliverable-snapshot.service';
 import type { RequirementsService } from '../requirements/requirements.service';
 import type { StalenessService } from '../staleness/staleness.service';
 import type { TraceabilityService } from '../traceability/traceability.service';
@@ -27,6 +28,7 @@ function setup() {
       requirements as unknown as RequirementsService,
       staleness as unknown as StalenessService,
       traceability as unknown as TraceabilityService,
+      new FirstDeliverableSnapshotService(prisma as unknown as PrismaService),
     ),
   };
 }
