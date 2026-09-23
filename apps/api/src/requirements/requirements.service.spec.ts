@@ -54,13 +54,16 @@ describe('RequirementsService', () => {
     expect(prisma.artifactVersion.update).toHaveBeenCalled();
     await expect(s.transition('p', 'a', 'v', 'APPROVED')).rejects.toThrow('Transición');
   });
-  it('normalizes disabled generation and rejects missing context', async () => {
+  it('normalizes disabled generation and rejects missing/source-less context', async () => {
     const prisma = {
       artifactVersion: {
         findFirst: vi
           .fn()
           .mockResolvedValueOnce(null)
-          .mockResolvedValueOnce({ projectContextDetail: { objective: 'x' } }),
+          .mockResolvedValueOnce({ projectContextDetail: { objective: 'x', sources: [] } })
+          .mockResolvedValueOnce({
+            projectContextDetail: { objective: 'x', sources: [{ sourceVersionId: 's' }] },
+          }),
       },
     };
     const ai = {
@@ -71,6 +74,9 @@ describe('RequirementsService', () => {
       ai as unknown as AIOrchestrator,
     );
     await expect(s.generate('p', 'v')).rejects.toThrow('APPROVED');
+    // An APPROVED context with zero linked approved sources does not satisfy
+    // the official First Deliverable knowledge-intake gate.
+    await expect(s.generate('p', 'v')).rejects.toThrow('fuente de proyecto APPROVED');
     await expect(s.generate('p', 'v')).rejects.toMatchObject({
       response: { code: 'AI_NOT_CONFIGURED' },
     });
@@ -81,7 +87,9 @@ describe('RequirementsService', () => {
   it('does not persist candidates when structured output is invalid', async () => {
     const prisma = {
       artifactVersion: {
-        findFirst: vi.fn().mockResolvedValue({ projectContextDetail: { objective: 'x' } }),
+        findFirst: vi.fn().mockResolvedValue({
+          projectContextDetail: { objective: 'x', sources: [{ sourceVersionId: 's' }] },
+        }),
       },
       $transaction: vi.fn(),
     };
