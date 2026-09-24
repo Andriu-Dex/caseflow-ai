@@ -186,6 +186,57 @@ describe('Export (First Deliverable, Phase H)', () => {
     expect(snapshot.mockups[0]?.uiBlueprintVersionId).toBe(blueprint.version.id);
   });
 
+  it('binds the Navigation/Software Architecture/System Architecture diagrams to their exact selected authoritative versions (Phase H closure)', async () => {
+    const workspace = await createWorkspace(ctx.prisma, 'Export Structured Diagram Closure');
+    const projectId = (await ctx.projects.create({ workspaceId: workspace.id, name: 'P' })).id;
+
+    async function approveStructured(
+      kind: 'NAVIGATION_TREE' | 'SOFTWARE_ARCHITECTURE' | 'SYSTEM_ARCHITECTURE',
+      title: string,
+      content: Record<string, unknown>,
+    ) {
+      const artifact = await ctx.structuredAnalysis.create(projectId, kind, title, content);
+      await ctx.structuredAnalysis.transition(
+        projectId,
+        kind,
+        artifact.id,
+        artifact.version.id,
+        'IN_REVIEW',
+      );
+      await ctx.structuredAnalysis.transition(
+        projectId,
+        kind,
+        artifact.id,
+        artifact.version.id,
+        'APPROVED',
+      );
+      return artifact;
+    }
+
+    const navigation = await approveStructured('NAVIGATION_TREE', 'Navegación', {
+      nodes: [{ localId: 'n1', label: 'Inicio', viewName: 'Home', kind: 'HOME' }],
+    });
+    const software = await approveStructured('SOFTWARE_ARCHITECTURE', 'Arquitectura SW', {
+      style: 'Monolito modular',
+      components: [{ localId: 'c1', name: 'API', responsibilities: [] }],
+      dependencies: [],
+      decisions: [],
+    });
+    const system = await approveStructured('SYSTEM_ARCHITECTURE', 'Arquitectura Sistema', {
+      boundary: 'Sistema de pedidos',
+      nodes: [{ localId: 'n1', name: 'API Gateway', kind: 'RUNTIME', responsibilities: [] }],
+      links: [],
+    });
+
+    const snapshot = await ctx.export.buildSnapshot(projectId);
+    expect(snapshot.navigation?.code).toBe(navigation.code);
+    expect(snapshot.navigationDiagram?.versionId).toBe(navigation.version.id);
+    expect(snapshot.softwareArchitecture?.code).toBe(software.code);
+    expect(snapshot.softwareArchitectureDiagram?.versionId).toBe(software.version.id);
+    expect(snapshot.systemArchitecture?.code).toBe(system.code);
+    expect(snapshot.systemArchitectureDiagram?.versionId).toBe(system.version.id);
+  });
+
   it('escapes a malicious project name in the HTML export instead of injecting it raw', async () => {
     const workspace = await createWorkspace(ctx.prisma, 'Export XSS');
     const maliciousName = '<script>alert(1)</script>';
