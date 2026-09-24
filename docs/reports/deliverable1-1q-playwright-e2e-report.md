@@ -17,7 +17,7 @@ publish sequence (push/PR/CI/wait) remain undone.
 ### A — Software Architecture layer association (final decision)
 
 Inspected `softwareArchitectureContentSchema`: there is no separate Layer
-entity anywhere in the contract — `component.layerLocalId` is the *only*
+entity anywhere in the contract — `component.layerLocalId` is the _only_
 Component→Layer mechanism, and it is typed as a generic string (`localId()`,
 not a UUID). Per the instruction, this means it must get a normal UI
 control, not stay omitted. Added a text input backed by a browser-native
@@ -160,8 +160,8 @@ runner (only verified locally in this session).
 ## Notes
 
 - Two commits: `fix(web): never override Content-Type on multipart FormData
-  requests` and `test(e2e): add Playwright professor-demo Scenario A
-  (no-AI flow)`.
+requests` and `test(e2e): add Playwright professor-demo Scenario A
+(no-AI flow)`.
 - The discovered-and-fixed multipart bug is a concrete demonstration of why
   instruction.md kept insisting on real browser verification rather than
   accepting unit/integration coverage alone — worth calling out explicitly

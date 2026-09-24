@@ -105,6 +105,7 @@ function RequirementsContent({ projectId }: { projectId: string }) {
       {showManualForm ? (
         <RequirementManualForm
           projectId={projectId}
+          existingRequirements={items}
           onCreated={() => {
             invalidate();
             setShowManualForm(false);

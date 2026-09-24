@@ -1,7 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import type { RequirementPriority, RequirementType } from '@caseflow-ai/contracts';
+import type {
+  RequirementPriority,
+  RequirementResponse,
+  RequirementType,
+} from '@caseflow-ai/contracts';
 import { REQUIREMENT_PRIORITIES, REQUIREMENT_TYPES } from '@caseflow-ai/contracts';
 import { api, ApiError } from '../lib/api';
 import { csv } from '../lib/use-rows';
@@ -11,10 +15,12 @@ import { csv } from '../lib/use-rows';
 // the first artifact type downstream of an approved Project Context.
 export function RequirementManualForm({
   projectId,
+  existingRequirements,
   onCreated,
   onCancel,
 }: {
   projectId: string;
+  existingRequirements: RequirementResponse[];
   onCreated: () => void;
   onCancel: () => void;
 }) {
@@ -25,6 +31,10 @@ export function RequirementManualForm({
   const [actors, setActors] = useState('');
   const [preconditions, setPreconditions] = useState('');
   const [postconditions, setPostconditions] = useState('');
+  // The backend's dependency check validates against the Requirement
+  // Artifact's stable id (never a version id, and never an ArtifactVersion
+  // UUID the user has to type) and does not filter by lifecycle status.
+  const [dependencyArtifactIds, setDependencyArtifactIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -41,7 +51,7 @@ export function RequirementManualForm({
         actors: csv(actors),
         preconditions: csv(preconditions),
         postconditions: csv(postconditions),
-        dependencyArtifactIds: [],
+        dependencyArtifactIds,
       });
       onCreated();
     } catch (err) {
@@ -132,6 +142,30 @@ export function RequirementManualForm({
           />
         </label>
       </div>
+      {existingRequirements.length > 0 ? (
+        <fieldset className="rounded-md border border-gray-200 p-2">
+          <legend className="px-1 text-sm font-medium text-gray-700">Depende de (opcional)</legend>
+          <ul className="flex flex-col gap-1 text-sm">
+            {existingRequirements.map((r) => (
+              <li key={r.id} className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id={`reqdep-${r.id}`}
+                  checked={dependencyArtifactIds.includes(r.id)}
+                  onChange={() =>
+                    setDependencyArtifactIds((prev) =>
+                      prev.includes(r.id) ? prev.filter((id) => id !== r.id) : [...prev, r.id],
+                    )
+                  }
+                />
+                <label htmlFor={`reqdep-${r.id}`}>
+                  {r.code} — {r.requirement.name}
+                </label>
+              </li>
+            ))}
+          </ul>
+        </fieldset>
+      ) : null}
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
       <div className="flex gap-2">
         <button
