@@ -7481,3 +7481,155 @@ Tras el Incremento 1J se retoma el orden de dependencias de §180: Identity / Wo
 - **Supera.** Únicamente la priorización de calendario de §180 (orden de incrementos inmediatos) y §182 (Identity como siguiente incremento). No modifica ninguna decisión aprobada DEC-001…DEC-114.
 - **Conserva.** Identity, Workspace, RBAC, Knowledge Base, RAG, Construction y Code Generation permanecen en el alcance de V1.
 - **Estado.** Accepted.
+
+# 220. Cierre del Primer Entregable — Frontend, fallback manual, Export completo y E2E
+
+Documenta el comportamiento final implementado tras completar §217–§219
+(Incrementos 1G–1S). Es descriptivo del estado real del código, no
+aspiracional.
+
+## 220.1 Frontend (`apps/web`)
+
+`apps/web` deja de ser el scaffold por defecto de Next.js y pasa a ser la
+aplicación real consumida por el usuario final. Arquitectura de
+información organizada por ciclo de vida del usuario, no por tabla de base
+de datos: Inicio, Conocimiento (Fuentes, Contexto), Análisis (Requisitos,
+Casos de Uso, Modelo de Datos), Diseño (Navegación, Arquitectura de
+Software, Arquitectura de Sistema, UI Blueprint, Mockups), Trazabilidad,
+Preparación/Exportar.
+
+- **Descubrimiento de proyecto/workspace sin UUID fijo.** `GET
+  /workspaces` (endpoint de solo lectura, añadido específicamente para
+  esto — Identity/Workspace completos siguen diferidos por DEC-115) y `GET
+  /projects` alimentan un selector real, con creación de proyecto y estado
+  vacío manejados en la UI.
+- **Capa de API tipada** (`apps/web/lib/api.ts`): un único `fetch`
+  compartido, errores normalizados como `ApiError`, sin URLs ni lógica de
+  negocio del backend duplicadas en componentes individuales.
+- **Sistema de estado.** `StatusBadge`/`CandidateBadge` muestran cada
+  estado de ciclo de vida con ícono + texto, nunca solo color; un
+  candidato de IA se distingue visualmente de un Artifact Version oficial
+  (Aceptar ≠ Aprobar).
+- **Frontera de SVG confiable.** `TrustedDiagram`
+  (`apps/web/components/trusted-svg.tsx`) es el único componente del
+  frontend que usa `dangerouslySetInnerHTML`; solo recibe SVG que ya pasó
+  por `sanitizeDiagramSvg()` del backend, a través de los endpoints de
+  diagrama o de preview de Mockup — nunca contenido de fuente subida,
+  texto de formulario, ni una cadena cruda de candidato de IA. Existe una
+  prueba estática que falla si `dangerouslySetInnerHTML` aparece en
+  cualquier otro archivo del frontend, además de la auditoría manual de
+  cada llamador.
+- **Explicación de bloqueo de etapa.** Cuando una acción requiere un
+  prerequisito no satisfecho, la UI explica la razón en lenguaje natural
+  (p. ej. "Apruebe el Contexto del Proyecto antes de generar
+  Requisitos.") en vez de solo deshabilitar el control; el backend sigue
+  siendo la autoridad — la UI no reproduce la máquina de estados completa.
+
+## 220.2 Fallback manual sin IA (todos los tipos de artefacto downstream)
+
+Todo tipo de artefacto downstream tiene ahora una ruta de creación manual
+estructurada expuesta en el frontend, junto a "Generar con IA" cuando hay
+un proveedor configurado:
+
+- **Requisitos:** tipo, nombre, descripción, prioridad, actores,
+  precondiciones, postcondiciones, y `dependencyArtifactIds` (dependencias
+  hacia otros Requisitos del mismo proyecto, presentadas como tarjetas
+  seleccionables por código + nombre — nunca un ArtifactVersion UUID
+  escrito a mano).
+- **Casos de Uso:** incluye editor de flujos alternativos
+  (nombre/condición/pasos) y selección de Requisitos relacionados por
+  código + nombre.
+- **Modelo de Datos:** editor de entidades/atributos (nombre, tipo
+  conceptual, requerido/PK/único, descripción) y relaciones (entidad
+  origen/destino por nombre, nombre, cardinalidades, descripción) — nunca
+  autoría de Mermaid.
+- **Navegación, Arquitectura de Software, Arquitectura de Sistema, UI
+  Blueprint:** editores de filas estructuradas (nodos/componentes/enlaces/
+  pantallas) — nunca PlantUML, Mermaid ni JSON crudo. La capa Componente →
+  Capa en Arquitectura de Software usa el único mecanismo que el contrato
+  soporta (`layerLocalId`, un string libre, no una capa formal separada),
+  expuesto como un campo de texto con autocompletado nativo del navegador
+  sobre las capas ya usadas en el mismo formulario.
+
+En todos los casos, la creación manual invoca directamente el endpoint
+`create()` oficial del backend (`origin=MANUAL`, `status=DRAFT`), sin
+ningún paso de generación/candidato de por medio. Los diagramas y Mockups
+deterministas se siguen generando igual después de la creación manual —
+el pipeline `DiagramEngine → Kroki → sanitizeDiagramSvg` no distingue
+entre contenido manual y contenido aceptado desde un candidato de IA.
+
+### Dependencias de Requisito y ciclo de vida (semántica confirmada)
+
+`dependencyArtifactIds` en el contrato de creación de Requisito referencia
+la identidad estable del Artifact Requisito (nunca una versión, nunca un
+Requisito de otro proyecto) y **no** exige que el Requisito referenciado
+esté `APPROVED`: la especificación exige la garantía `APPROVED`-only
+explícitamente para la generación de Casos de Uso/Modelo de Datos/
+diagramas a partir de Requisitos/Casos de Uso (§218.5, §218.7), pero nunca
+la exige para dependencias Requisito↔Requisito, y la transición a
+`APPROVED` de un Requisito tampoco revalida el estado de sus dependencias.
+Esto es intencional, no un descuido: se preserva tal cual (sin agregar una
+restricción no solicitada), consistente con el único test de integración
+existente que aprueba explícitamente esta combinación
+(`requirements.integration.spec.ts`).
+
+## 220.3 Export completo (cierre de evidencia)
+
+La suite de integración de Export (`export.integration.spec.ts`) prueba,
+sin duplicar condiciones ya probadas: proyecto vacío/incompleto; un
+proyecto completamente poblado con los 14 tipos de artefacto relevantes
+presentes simultáneamente y sus secciones compuestas juntas (readiness,
+staleness y resumen de trazabilidad incluidos); correspondencia exacta
+Modelo de Datos↔ER, Navegación/Arquitectura de Software/Arquitectura de
+Sistema↔diagrama y UI Blueprint↔Mockup con la versión autoritativa exacta
+seleccionada; la política compartida de selección autoritativa entre
+múltiples artefactos `APPROVED` del mismo tipo; `Content-Type` JSON/HTML;
+`Content-Disposition` seguro y determinístico (derivado únicamente del
+`projectId`, nunca del nombre del proyecto); ausencia de cuerpos binarios,
+`storageKey` o secretos; y escape HTML contra XSS.
+
+## 220.4 Playwright E2E
+
+Herramienta de repositorio (no un script ad-hoc), versión fijada en el
+lockfile (`@playwright/test`), configurada exclusivamente contra
+infraestructura local: una base de datos Postgres de pruebas aislada (la
+misma que usa la suite de integración del backend), sin proveedor de IA
+externo, sin renderizador público.
+
+- **Escenario A (obligatorio, sin IA):** con `AI_PROVIDER=disabled`,
+  recorre en un Chromium real el flujo completo — proyecto, Fuente
+  TEXT/NOTES, interpretación manual, aprobación de la Fuente, Contexto
+  respaldado por esa Fuente a través de la UI, aprobación del Contexto,
+  Requisito manual, aprobación del Requisito, y verificación de que Inicio
+  refleja la progresión real. Prueba que CASEflow funciona sin IA externa
+  de punta a punta, no solo a nivel de unidad.
+- **Escenario B (visual/procedencia):** con `DIAGRAM_RENDERER=kroki`
+  contra el Kroki local propio del repositorio, prepara el estado
+  necesario vía llamadas API directas (aceptable para este escenario
+  acotado) y verifica en el navegador: un SVG real renderizado por Kroki y
+  saneado por el backend dentro de `TrustedSvg`; procedencia real ascendente
+  en Trazabilidad; estado real de Readiness; y descargas de exportación
+  JSON/HTML con el nombre de archivo determinístico exacto.
+
+`pnpm run test:e2e` es el comando canónico (ejecuta ambos escenarios). CI
+instala Chromium de forma determinística con `pnpm exec playwright
+install --with-deps chromium` (resuelve la versión fijada en el lockfile
+ya disponible en `PATH` vía `pnpm/action-setup`, en vez de `npx`) y ejecuta
+`pnpm run test:e2e` dentro del job Integration, después de la suite de
+integración del backend.
+
+## 220.5 CI
+
+El job Quality ejecuta, además de formato/lint/typecheck/build/tests/
+coverage del backend, la suite Vitest propia del frontend
+(`pnpm --filter @caseflow-ai/web run test`) — antes era un comando
+exclusivamente de desarrollador que Quality nunca ejecutaba. El job
+Integration ejecuta la suite de integración del backend contra PostgreSQL
+real y ambos escenarios de Playwright. Ninguno de los dos jobs usa
+`continue-on-error` para verificaciones obligatorias ni debilita el umbral
+de cobertura.
+
+## 220.6 Backlog conservado
+
+Confirmar los tipos exactos de diagrama "second-partial" con el
+profesor permanece como backlog, sin resolver arbitrariamente.

@@ -6,9 +6,13 @@ CASEFlow AI is an integrated, AI-assisted I-CASE (Computer-Aided Software Engine
 
 ## Current status
 
-This repository implements Foundation through **Increment 1F.1 — Diagram Rendering Stabilization**. It supports structured/versioned RF/RNF, Use Cases and conceptual ER models, candidate-first AI generation, exact provenance, and deterministic Mermaid ER/PlantUML Use Case sources rendered into real graphical SVG by a local, self-hosted Kroki deployment (never a public endpoint) behind a `DiagramProvider` abstraction, with renderer output sanitized through an explicit XML allowlist before being persisted or returned.
+This repository implements the complete **First Deliverable MVP**: Project Sources (typed intake, local text/PDF extraction, manual image/audio transcription fallback, structured interpretation/report), Project Context, ISO/IEC/IEEE 29148:2018-aligned Requirements, Use Cases, a conceptual Data Model with a deterministic ER diagram, Navigation/Software Architecture/System Architecture with deterministic diagrams, a UI Blueprint with deterministic Mockups, staleness (potential-impact) analysis, an exact-version Traceability graph, a 13-stage Readiness evaluation, and JSON/HTML Export — all with candidate-first AI generation where a provider is configured **and** a fully manual, non-AI creation path for every artifact type (CASEflow remains usable end to end with `AI_PROVIDER=disabled`). See `docs/FIRST_DELIVERABLE_MVP.md` and `docs/CASEFLOW_AI_SPEC.md` §217–§219.
 
-Delivery is currently prioritized around the **First Deliverable MVP** (requirements, use cases, data model, navigation, architecture, UI blueprint/mockups, review, versioning and basic traceability). See `docs/FIRST_DELIVERABLE_MVP.md` and `docs/CASEFLOW_AI_SPEC.md` §217–§219.
+`apps/web` is the real CASEflow web application (not the Next.js scaffold): project/workspace discovery, all artifact pages, trusted diagram/mockup rendering, and export downloads, organized by user lifecycle rather than by database table.
+
+Diagram/Mermaid/PlantUML sources are rendered into real graphical SVG by a local, self-hosted Kroki deployment (never a public endpoint) behind a `DiagramProvider` abstraction, with renderer output sanitized through an explicit XML allowlist before being persisted or returned, and displayed in the browser only through one trusted-SVG boundary component.
+
+Both a Playwright browser E2E scenario proving the no-AI flow and a second scenario proving real diagram/traceability/readiness/export integration run against local infrastructure only (see `pnpm run test:e2e` below) — no external AI provider, no public renderer.
 
 ## Technology foundation
 
@@ -91,6 +95,10 @@ The OpenAI-compatible adapter specifically requires `POST {AI_BASE_URL}/chat/com
 
 Diagram rendering (Data Model ER / Use Case Diagram) requires local Kroki, started by `pnpm infra:up`. Set `DIAGRAM_RENDERER=kroki` and `KROKI_BASE_URL=http://localhost:8000` (both already in `.env.example`), and optionally `DIAGRAM_RENDER_TIMEOUT_MS`. With `DIAGRAM_RENDERER=disabled` (or unset) the API starts without attempting any outbound call, but an actual diagram creation/generation request then fails with `DIAGRAM_NOT_CONFIGURED`; unit and ordinary integration tests never depend on a live renderer (they use `FakeDiagramProvider`). Kroki is always self-hosted — CASEFlow never calls the public kroki.io service.
 
+The web app (`apps/web`) talks to the API only through `NEXT_PUBLIC_API_URL` (default `http://localhost:3001`; baked in at build time for a production `next build`, read live in `next dev`) — never a hardcoded URL scattered through components. The API allows cross-origin requests only from `WEB_ORIGIN` (default `http://localhost:3000`; never a wildcard), so set it to the web app's real origin in any non-default deployment. Neither variable carries a secret.
+
+`pnpm-workspace.yaml`'s `allowBuilds.esbuild = true` exists solely because esbuild's own postinstall script downloads its prebuilt platform binary (no arbitrary code) — required for `apps/web`'s Vite/Vitest test runner and for Playwright's bundler; no other package's lifecycle script is enabled by it.
+
 ## Local URLs
 
 | Service      | URL                                              |
@@ -105,14 +113,16 @@ Diagram rendering (Data Model ER / Use Case Diagram) requires local Kroki, start
 
 ## Quality commands
 
-| Command                   | Purpose                                                                                                                                                                                                                         |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm verify`             | The full infrastructure-independent quality gate: format check, lint, typecheck, build, unit tests, coverage. Never starts Docker or touches a database.                                                                        |
-| `pnpm test`               | The normal deterministic test suite for everyday use.                                                                                                                                                                           |
-| `pnpm test:unit`          | Tests that require no external infrastructure.                                                                                                                                                                                  |
-| `pnpm test:integration`   | Tests that require infrastructure to already be running (PostgreSQL, and local Kroki for the real-renderer suite) and a migrated `caseflow_test`. Use `pnpm verify:integration` to prepare and migrate the test database first. |
-| `pnpm verify:integration` | `db:test:prepare` → `db:test:migrate` → `test:integration`. Only ever touches `caseflow_test`.                                                                                                                                  |
-| `pnpm test:coverage`      | The unit suite with coverage instrumentation and a report.                                                                                                                                                                      |
+| Command                                   | Purpose                                                                                                                                                                                                                         |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm verify`                             | The full infrastructure-independent quality gate: format check, lint, typecheck, build, unit tests, coverage. Never starts Docker or touches a database.                                                                        |
+| `pnpm test`                               | The normal deterministic test suite for everyday use.                                                                                                                                                                           |
+| `pnpm test:unit`                          | Tests that require no external infrastructure.                                                                                                                                                                                  |
+| `pnpm test:integration`                   | Tests that require infrastructure to already be running (PostgreSQL, and local Kroki for the real-renderer suite) and a migrated `caseflow_test`. Use `pnpm verify:integration` to prepare and migrate the test database first. |
+| `pnpm verify:integration`                 | `db:test:prepare` → `db:test:migrate` → `test:integration`. Only ever touches `caseflow_test`.                                                                                                                                  |
+| `pnpm test:coverage`                      | The unit suite with coverage instrumentation and a report.                                                                                                                                                                      |
+| `pnpm --filter @caseflow-ai/web run test` | The frontend's own jsdom-based Vitest suite (`apps/web`), run separately from the root Node-only suite above.                                                                                                                   |
+| `pnpm run test:e2e`                       | Playwright browser E2E (both the no-AI Scenario A and the visual/provenance Scenario B), against local Postgres/SeaweedFS/Kroki only. Requires `pnpm infra:up`. Installs its own API/web servers via `playwright.config.ts`.    |
 
 ## OpenAPI
 
