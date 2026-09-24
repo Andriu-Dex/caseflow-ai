@@ -19,7 +19,15 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['apps/**/*.spec.ts', 'packages/**/*.spec.ts', 'tests/unit/**/*.spec.ts'],
-    exclude: ['**/*.integration.spec.ts', '**/node_modules/**', '**/dist/**', '**/.next/**'],
+    // apps/web has its own vitest.config.mts (jsdom environment, React
+    // Testing Library) run separately via `pnpm --filter @caseflow-ai/web test`.
+    exclude: [
+      '**/*.integration.spec.ts',
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/.next/**',
+      'apps/web/**',
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov', 'html'],

@@ -15,6 +15,7 @@ import { StalenessModule } from './staleness/staleness.module';
 import { TraceabilityModule } from './traceability/traceability.module';
 import { ReadinessModule } from './readiness/readiness.module';
 import { ExportModule } from './export/export.module';
+import { WorkspacesModule } from './workspaces/workspaces.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { ExportModule } from './export/export.module';
     TraceabilityModule,
     ReadinessModule,
     ExportModule,
+    WorkspacesModule,
   ],
 })
 export class AppModule {}
