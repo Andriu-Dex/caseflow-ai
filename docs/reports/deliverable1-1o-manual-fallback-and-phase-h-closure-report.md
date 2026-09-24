@@ -129,8 +129,8 @@ Added the specific evidence instruction.md called out as missing:
 ## Notes
 
 - Two commits: `fix(web): add manual non-AI creation for Use Cases, Data
-  Model and structured analysis` and `test(export): close Phase H evidence;
-  add TrustedSvg boundary hardening check`.
+Model and structured analysis` and `test(export): close Phase H evidence;
+add TrustedSvg boundary hardening check`.
 - Given the remaining scope (Playwright setup and scenarios, full
   behavior-test coverage, hardening passes, documentation sync, and the
   publish sequence) is substantial, the next increment should continue in

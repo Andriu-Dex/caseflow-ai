@@ -28,8 +28,30 @@ export function UseCaseManualForm({
   const [postconditions, setPostconditions] = useState('');
   const [relatedRequirementVersionIds, setRelatedRequirementVersionIds] = useState<string[]>([]);
   const mainFlow = useRows<{ actor: string; action: string }>([{ actor: '', action: '' }]);
+  const alternativeFlows = useRows<{
+    name: string;
+    condition: string;
+    stepsText: string;
+  }>([]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Each alternative flow's steps are entered as "actor: acción" per line —
+  // a lighter editor than a fully nested step-by-step table, while still
+  // representing every backend-required field (name/condition/steps).
+  function parseSteps(text: string) {
+    return text
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const [actor, ...rest] = line.split(':');
+        return {
+          actor: (actor ?? '').trim(),
+          action: rest.join(':').trim() || (actor ?? '').trim(),
+        };
+      });
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -43,6 +65,9 @@ export function UseCaseManualForm({
       setError('Seleccione al menos un Requisito relacionado.');
       return;
     }
+    const parsedAlternativeFlows = alternativeFlows.rows
+      .filter((f) => f.name.trim() && f.condition.trim() && f.stepsText.trim())
+      .map((f) => ({ name: f.name, condition: f.condition, steps: parseSteps(f.stepsText) }));
     setSubmitting(true);
     try {
       await api.useCases.create(projectId, {
@@ -53,7 +78,7 @@ export function UseCaseManualForm({
         preconditions: csv(preconditions),
         postconditions: csv(postconditions),
         mainFlow: steps,
-        alternativeFlows: [],
+        alternativeFlows: parsedAlternativeFlows,
         relatedRequirementVersionIds,
       });
       onCreated();
@@ -161,6 +186,55 @@ export function UseCaseManualForm({
           className="text-sm text-gray-600 underline"
         >
           + Agregar paso
+        </button>
+      </fieldset>
+
+      <fieldset className="rounded-md border border-gray-200 p-2">
+        <legend className="px-1 text-sm font-medium text-gray-700">
+          Flujos alternativos (opcional)
+        </legend>
+        {alternativeFlows.rows.map((flow, i) => (
+          <div key={i} className="mb-2 flex flex-col gap-1 rounded-md border border-gray-100 p-2">
+            <div className="flex gap-2">
+              <input
+                aria-label={`Nombre del flujo alternativo ${i + 1}`}
+                placeholder="Nombre"
+                className="w-1/3 rounded-md border border-gray-300 px-2 py-1 text-sm"
+                value={flow.name}
+                onChange={(e) => alternativeFlows.update(i, { name: e.target.value })}
+              />
+              <input
+                aria-label={`Condición del flujo alternativo ${i + 1}`}
+                placeholder="Condición"
+                className="flex-1 rounded-md border border-gray-300 px-2 py-1 text-sm"
+                value={flow.condition}
+                onChange={(e) => alternativeFlows.update(i, { condition: e.target.value })}
+              />
+              <button
+                type="button"
+                onClick={() => alternativeFlows.remove(i)}
+                className="text-sm text-red-600"
+                aria-label={`Eliminar flujo alternativo ${i + 1}`}
+              >
+                ✕
+              </button>
+            </div>
+            <textarea
+              aria-label={`Pasos del flujo alternativo ${i + 1}`}
+              placeholder={'Un paso por línea: Actor: acción'}
+              rows={2}
+              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+              value={flow.stepsText}
+              onChange={(e) => alternativeFlows.update(i, { stepsText: e.target.value })}
+            />
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={() => alternativeFlows.add({ name: '', condition: '', stepsText: '' })}
+          className="text-sm text-gray-600 underline"
+        >
+          + Agregar flujo alternativo
         </button>
       </fieldset>
 

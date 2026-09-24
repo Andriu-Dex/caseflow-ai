@@ -20,6 +20,7 @@ interface Attribute {
   required: boolean;
   primaryKey: boolean;
   unique: boolean;
+  description: string;
 }
 interface Entity {
   localId: string;
@@ -33,6 +34,7 @@ interface Relationship {
   name: string;
   sourceCardinality: Cardinality;
   targetCardinality: Cardinality;
+  description: string;
 }
 
 const blankAttribute = (): Attribute => ({
@@ -41,6 +43,7 @@ const blankAttribute = (): Attribute => ({
   required: false,
   primaryKey: false,
   unique: false,
+  description: '',
 });
 const blankEntity = (n: number): Entity => ({
   localId: `e${n}`,
@@ -97,11 +100,15 @@ export function DataModelManualForm({
           description: entity.description || undefined,
           attributes: entity.attributes
             .filter((a) => a.name.trim())
-            .map((a) => ({ ...a, description: undefined })),
+            .map((a) => ({ ...a, description: a.description || undefined })),
         })),
         relationships: relationships
           .filter((r) => r.sourceEntityId && r.targetEntityId)
-          .map((r) => ({ ...r, name: r.name || undefined, description: undefined })),
+          .map((r) => ({
+            ...r,
+            name: r.name || undefined,
+            description: r.description || undefined,
+          })),
       });
       onCreated();
     } catch (err) {
@@ -192,6 +199,12 @@ export function DataModelManualForm({
                   />
                   único
                 </label>
+                <input
+                  placeholder="descripción (opcional)"
+                  className="w-40 rounded-md border border-gray-300 px-2 py-1"
+                  value={attr.description}
+                  onChange={(e) => updateAttribute(ei, ai, { description: e.target.value })}
+                />
                 <button
                   type="button"
                   onClick={() =>
@@ -302,6 +315,26 @@ export function DataModelManualForm({
                 </option>
               ))}
             </select>
+            <input
+              placeholder="nombre (opcional)"
+              className="w-32 rounded-md border border-gray-300 px-2 py-1"
+              value={rel.name}
+              onChange={(e) =>
+                setRelationships((prev) =>
+                  prev.map((r, i) => (i === ri ? { ...r, name: e.target.value } : r)),
+                )
+              }
+            />
+            <input
+              placeholder="descripción (opcional)"
+              className="w-40 rounded-md border border-gray-300 px-2 py-1"
+              value={rel.description}
+              onChange={(e) =>
+                setRelationships((prev) =>
+                  prev.map((r, i) => (i === ri ? { ...r, description: e.target.value } : r)),
+                )
+              }
+            />
             <button
               type="button"
               onClick={() => setRelationships((prev) => prev.filter((_, i) => i !== ri))}
@@ -321,6 +354,7 @@ export function DataModelManualForm({
                 sourceEntityId: '',
                 targetEntityId: '',
                 name: '',
+                description: '',
                 sourceCardinality: 'ONE',
                 targetCardinality: 'ONE_OR_MORE',
               },
