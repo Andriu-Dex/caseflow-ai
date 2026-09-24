@@ -200,6 +200,7 @@ export function DataModelManualForm({
                   único
                 </label>
                 <input
+                  aria-label={`Descripción del atributo ${ai + 1} de la entidad ${ei + 1}`}
                   placeholder="descripción (opcional)"
                   className="w-40 rounded-md border border-gray-300 px-2 py-1"
                   value={attr.description}
@@ -316,6 +317,7 @@ export function DataModelManualForm({
               ))}
             </select>
             <input
+              aria-label={`Nombre de la relación ${ri + 1}`}
               placeholder="nombre (opcional)"
               className="w-32 rounded-md border border-gray-300 px-2 py-1"
               value={rel.name}
@@ -326,6 +328,7 @@ export function DataModelManualForm({
               }
             />
             <input
+              aria-label={`Descripción de la relación ${ri + 1}`}
               placeholder="descripción (opcional)"
               className="w-40 rounded-md border border-gray-300 px-2 py-1"
               value={rel.description}

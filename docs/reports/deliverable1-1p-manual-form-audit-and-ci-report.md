@@ -125,9 +125,9 @@ typecheck/build.
 ## Notes
 
 - Three commits this increment: `fix(web): complete manual forms against
-  canonical contracts`, `test(export): complete authoritative diagram
-  export coverage`, `ci: run frontend test suite in Quality; document
-  esbuild build-script scope`.
+canonical contracts`, `test(export): complete authoritative diagram
+export coverage`, `ci: run frontend test suite in Quality; document
+esbuild build-script scope`.
 - Given the remaining scope (Playwright E2E is explicitly required and
   substantial; G/H audits; K documentation sync; then full verification and
   publish), the next increment should prioritize Playwright E2E next, since

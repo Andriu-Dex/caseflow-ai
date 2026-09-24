@@ -212,7 +212,7 @@ export function NavigationManualForm({ projectId, onCreated, onCancel }: FormPro
 export function SoftwareArchitectureManualForm({ projectId, onCreated, onCancel }: FormProps) {
   const [title, setTitle] = useState('');
   const [style, setStyle] = useState('');
-  const [components, setComponents] = useState([{ name: '', responsibilities: '' }]);
+  const [components, setComponents] = useState([{ name: '', responsibilities: '', layer: '' }]);
   const [dependencies, setDependencies] = useState<
     { fromLocalId: string; toLocalId: string; description: string }[]
   >([]);
@@ -231,6 +231,7 @@ export function SoftwareArchitectureManualForm({ projectId, onCreated, onCancel 
         components: components.map((c, i) => ({
           localId: ids[i],
           name: c.name,
+          layerLocalId: c.layer.trim() || undefined,
           responsibilities: csv(c.responsibilities),
         })),
         dependencies: dependencies
@@ -299,6 +300,17 @@ export function SoftwareArchitectureManualForm({ projectId, onCreated, onCancel 
               )
             }
           />
+          <input
+            list="software-architecture-layers"
+            placeholder="Capa (opcional)"
+            className="w-40 rounded-md border border-gray-300 px-2 py-1"
+            value={c.layer}
+            onChange={(e) =>
+              setComponents((prev) =>
+                prev.map((x, idx) => (idx === i ? { ...x, layer: e.target.value } : x)),
+              )
+            }
+          />
           <button
             type="button"
             onClick={() => setComponents((prev) => prev.filter((_, idx) => idx !== i))}
@@ -311,11 +323,24 @@ export function SoftwareArchitectureManualForm({ projectId, onCreated, onCancel 
       ))}
       <button
         type="button"
-        onClick={() => setComponents((prev) => [...prev, { name: '', responsibilities: '' }])}
+        onClick={() =>
+          setComponents((prev) => [...prev, { name: '', responsibilities: '', layer: '' }])
+        }
         className="self-start text-sm text-gray-600 underline"
       >
         + Agregar componente
       </button>
+      {/* Populated from layers already typed on other components in this
+          form — layerLocalId is the only Component→Layer mechanism in the
+          Software Architecture contract (no separate Layer entity exists),
+          so the layer's own name is used directly as its localId; this
+          datalist lets later components reuse an existing layer by
+          selecting it instead of retyping it. */}
+      <datalist id="software-architecture-layers">
+        {[...new Set(components.map((c) => c.layer.trim()).filter(Boolean))].map((layer) => (
+          <option key={layer} value={layer} />
+        ))}
+      </datalist>
 
       <fieldset className="rounded-md border border-gray-200 p-2">
         <legend className="px-1 text-sm font-medium text-gray-700">
@@ -324,6 +349,7 @@ export function SoftwareArchitectureManualForm({ projectId, onCreated, onCancel 
         {dependencies.map((dep, di) => (
           <div key={di} className="mb-1 flex flex-wrap items-center gap-2 text-sm">
             <select
+              aria-label={`Componente origen de la dependencia ${di + 1}`}
               className="rounded-md border border-gray-300 px-2 py-1"
               value={dep.fromLocalId}
               onChange={(e) =>
@@ -341,6 +367,7 @@ export function SoftwareArchitectureManualForm({ projectId, onCreated, onCancel 
             </select>
             <span>→</span>
             <select
+              aria-label={`Componente destino de la dependencia ${di + 1}`}
               className="rounded-md border border-gray-300 px-2 py-1"
               value={dep.toLocalId}
               onChange={(e) =>
@@ -542,6 +569,7 @@ export function SystemArchitectureManualForm({ projectId, onCreated, onCancel }:
         {links.map((link, li) => (
           <div key={li} className="mb-1 flex flex-wrap items-center gap-2 text-sm">
             <select
+              aria-label={`Nodo origen del enlace ${li + 1}`}
               className="rounded-md border border-gray-300 px-2 py-1"
               value={link.fromLocalId}
               onChange={(e) =>
@@ -559,6 +587,7 @@ export function SystemArchitectureManualForm({ projectId, onCreated, onCancel }:
             </select>
             <span>→</span>
             <select
+              aria-label={`Nodo destino del enlace ${li + 1}`}
               className="rounded-md border border-gray-300 px-2 py-1"
               value={link.toLocalId}
               onChange={(e) =>
