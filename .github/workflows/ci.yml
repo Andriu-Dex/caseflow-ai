@@ -77,6 +77,11 @@ jobs:
       DATABASE_TEST_URL: postgresql://caseflow_ci:caseflow_ci_password@localhost:5432/caseflow_test?schema=public
       DIAGRAM_RENDERER: kroki
       KROKI_BASE_URL: http://localhost:8000
+      S3_ENDPOINT: http://localhost:8333
+      S3_BUCKET: caseflow
+      S3_ACCESS_KEY_ID: caseflow
+      S3_SECRET_ACCESS_KEY: caseflow-local-dev
+      S3_REGION: us-east-1
     steps:
       - uses: actions/checkout@v4
 
@@ -95,9 +100,10 @@ jobs:
       - run: pnpm test:integration
 
       # Professor-demo browser E2E (spec: "Playwright E2E — mandatory").
-      # AI_PROVIDER=disabled and DIAGRAM_RENDERER=disabled are set inside
-      # playwright.config.ts's webServer env — never a real/public AI or
-      # renderer service, even though this job has a real local Kroki above.
+      # Source upload uses the same real local S3-compatible boundary as the
+      # application. AI stays disabled and diagrams use the local Kroki above.
+      - run: docker compose -f infra/docker/compose.yml up -d --wait seaweedfs
+      - run: docker compose -f infra/docker/compose.yml run --rm storage-init
       # `pnpm exec` (not `npx`) so the browser install resolves the exact
       # lockfile-pinned @playwright/test version pnpm/action-setup put on PATH.
       - run: pnpm exec playwright install --with-deps chromium
