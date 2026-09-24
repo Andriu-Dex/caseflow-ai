@@ -36,7 +36,12 @@ describe('manual non-AI creation fallbacks (behavior 22)', () => {
     const user = userEvent.setup();
     render(
       <TestProviders>
-        <RequirementManualForm projectId="p1" onCreated={vi.fn()} onCancel={vi.fn()} />
+        <RequirementManualForm
+          projectId="p1"
+          existingRequirements={[]}
+          onCreated={vi.fn()}
+          onCancel={vi.fn()}
+        />
       </TestProviders>,
     );
     await user.type(screen.getByLabelText(/^nombre$/i), 'Registrar pedido');
@@ -53,7 +58,38 @@ describe('manual non-AI creation fallbacks (behavior 22)', () => {
         requirementType: 'FUNCTIONAL',
         name: 'Registrar pedido',
         description: 'El sistema debe permitir registrar pedidos',
+        dependencyArtifactIds: [],
       }),
+    );
+  });
+
+  it('creates a Requirement with a dependency on an existing Requirement, selected by label (never a typed UUID)', async () => {
+    const user = userEvent.setup();
+    const existing = {
+      id: 'req-existing',
+      code: 'RF-001',
+      requirement: { name: 'Autenticar usuario' },
+    } as unknown as Parameters<typeof RequirementManualForm>[0]['existingRequirements'][number];
+
+    render(
+      <TestProviders>
+        <RequirementManualForm
+          projectId="p1"
+          existingRequirements={[existing]}
+          onCreated={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </TestProviders>,
+    );
+    await user.type(screen.getByLabelText(/^nombre$/i), 'Registrar pedido');
+    await user.type(screen.getByLabelText(/descripción/i), 'Requiere sesión iniciada');
+    await user.click(screen.getByLabelText(/RF-001 — Autenticar usuario/i));
+    await user.click(screen.getByRole('button', { name: /crear requisito/i }));
+
+    await waitFor(() => expect(requirementsCreate).toHaveBeenCalledTimes(1));
+    expect(requirementsCreate).toHaveBeenCalledWith(
+      'p1',
+      expect.objectContaining({ dependencyArtifactIds: ['req-existing'] }),
     );
   });
 
