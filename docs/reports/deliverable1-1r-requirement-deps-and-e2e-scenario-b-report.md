@@ -44,7 +44,7 @@ browser:
 
 - **A. Real visual output** — opens the Data Model page, requests the ER
   diagram, and asserts an actual `<svg>` renders inside `TrustedDiagram`
-  with the entity name present *inside the SVG markup itself*. With
+  with the entity name present _inside the SVG markup itself_. With
   `DIAGRAM_RENDERER=kroki` pointed at the repository's own local Kroki
   (never a public renderer), this proves the full
   `DiagramEngine → Kroki → sanitizeDiagramSvg → API → TrustedSvg → Chromium`
@@ -96,24 +96,24 @@ runs both.
 Inspected the full existing `export.integration.spec.ts` suite (11 tests)
 against the checklist before touching anything:
 
-| Required evidence | Status |
-| --- | --- |
-| Incomplete/empty export | ✅ existing |
-| Readiness / staleness / traceability included | ✅ existing |
-| Data Model ↔ ER correspondence | ✅ existing |
-| Navigation / Software Architecture / System Architecture ↔ Diagram | ✅ existing |
-| UI Blueprint ↔ Mockup correspondence | ✅ existing |
-| Multiple APPROVED same-type authoritative selection | ✅ existing (Data Model case; the underlying policy also has its own dedicated unit tests) |
-| JSON/HTML Content-Type, safe Content-Disposition | ✅ existing |
-| No binary source body / no `storageKey` | ✅ existing |
-| HTML XSS escaping | ✅ existing |
-| **Fully populated First Deliverable export (every artifact type present in one project)** | ❌ genuinely missing |
+| Required evidence                                                                         | Status                                                                                     |
+| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Incomplete/empty export                                                                   | ✅ existing                                                                                |
+| Readiness / staleness / traceability included                                             | ✅ existing                                                                                |
+| Data Model ↔ ER correspondence                                                            | ✅ existing                                                                                |
+| Navigation / Software Architecture / System Architecture ↔ Diagram                        | ✅ existing                                                                                |
+| UI Blueprint ↔ Mockup correspondence                                                      | ✅ existing                                                                                |
+| Multiple APPROVED same-type authoritative selection                                       | ✅ existing (Data Model case; the underlying policy also has its own dedicated unit tests) |
+| JSON/HTML Content-Type, safe Content-Disposition                                          | ✅ existing                                                                                |
+| No binary source body / no `storageKey`                                                   | ✅ existing                                                                                |
+| HTML XSS escaping                                                                         | ✅ existing                                                                                |
+| **Fully populated First Deliverable export (every artifact type present in one project)** | ❌ genuinely missing                                                                       |
 
 No test currently exercises a single project carrying every artifact type
 simultaneously (Source, Context, Requirement, Use Case, Data Model,
 Navigation, Software/System Architecture, UI Blueprint, Mockup all
 APPROVED together). Each type's presence and its exact-version
-correspondence *is* proven independently across the existing tests, so
+correspondence _is_ proven independently across the existing tests, so
 building one further mega-test would mostly duplicate already-proven
 per-type behavior at real cost (fragility, runtime) — per the instruction's
 own "only add missing assertions" and "do not duplicate already-proven
@@ -165,8 +165,8 @@ rather than closed by a rushed comprehensive test this increment.
 ## Notes
 
 - Two commits: `fix(web): expose Requirement dependencies in the manual
-  creation form` and `test(e2e): add Playwright Scenario B
-  (visual/provenance) and CI reproducibility fix`.
+creation form` and `test(e2e): add Playwright Scenario B
+(visual/provenance) and CI reproducibility fix`.
 - Remaining priority order: items 6–9 (the audits), then 2 (remaining test
   gaps), then 10's one documented gap if it turns out to matter, then 11
   (docs sync), then a full from-zero verification pass, then push/PR/wait
