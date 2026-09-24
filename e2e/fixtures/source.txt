@@ -1,0 +1,3 @@
+Los clientes necesitan poder registrar un pedido indicando el producto, la
+cantidad y la dirección de entrega. El sistema debe confirmar el pedido y
+notificar al cliente por correo electrónico.
