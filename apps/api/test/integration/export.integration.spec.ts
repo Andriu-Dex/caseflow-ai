@@ -1,8 +1,40 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
+import { AIOrchestrator, FakeAIProvider, PromptRegistry } from '@caseflow-ai/ai';
+import { FakeDiagramProvider } from '@caseflow-ai/integrations';
 import { firstDeliverableExportSchema } from '@caseflow-ai/contracts';
+import { PrismaAIRunRecorder } from '../../src/ai/ai-run-recorder';
+import { DataModelsService } from '../../src/data-models/data-models.service';
+import { DiagramEngine } from '../../src/data-models/diagram-engine';
 import { renderExportHtml } from '../../src/export/export-html';
+import { StructuredAnalysisService } from '../../src/structured-analysis/structured-analysis.service';
+import { UseCasesService } from '../../src/use-cases/use-cases.service';
 import { createTestContext, createWorkspace, type TestContext } from './support/test-app';
+
+const FAKE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><g></g></svg>';
+
+function fakeAi(ctx: TestContext, promptKey: string, promptVersion: number, payload: unknown) {
+  const provider = new FakeAIProvider({
+    provider: 'fake',
+    model: 'fake-v1',
+    payload,
+    usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
+    latencyMs: 5,
+  });
+  return new AIOrchestrator(
+    provider,
+    new PromptRegistry([
+      {
+        key: promptKey,
+        version: promptVersion,
+        capability: 'STRUCTURED_OUTPUT',
+        purpose: promptKey,
+        systemInstructions: 'policy',
+      },
+    ]),
+    new PrismaAIRunRecorder(ctx.prisma),
+  );
+}
 
 async function approveSource(ctx: TestContext, projectId: string, title = 'Notas') {
   const source = await ctx.sources.create(
@@ -280,5 +312,290 @@ describe('Export (First Deliverable, Phase H)', () => {
     expect(response.headers['content-disposition']).toBe(
       `attachment; filename="first-deliverable-${projectId}.html"`,
     );
+  });
+
+  it('composes every section together for a fully populated First Deliverable (composition completeness)', async () => {
+    const workspace = await createWorkspace(ctx.prisma, 'Export Fully Populated');
+    const projectId = (await ctx.projects.create({ workspaceId: workspace.id, name: 'P' })).id;
+
+    const source = await approveSource(ctx, projectId, 'Notas iniciales');
+    const context = await approveContext(ctx, projectId, [source.id]);
+
+    const requirementsService = new (
+      await import('../../src/requirements/requirements.service')
+    ).RequirementsService(
+      ctx.prisma,
+      fakeAi(ctx, 'requirements.generate', 2, {
+        candidates: [
+          {
+            candidateId: 'rc1',
+            requirementType: 'FUNCTIONAL' as const,
+            name: 'Registrar pedido',
+            description: 'El usuario registra pedidos',
+            priority: 'HIGH' as const,
+            actors: ['Usuario'],
+            preconditions: [],
+            postconditions: [],
+            dependencyCandidateIds: [],
+          },
+        ],
+      }),
+    );
+    const rfGeneration = await requirementsService.generate(projectId, context.id);
+    const rfAccepted = (
+      await requirementsService.accept(projectId, rfGeneration.id, [rfGeneration.candidates[0]!.id])
+    ).items[0]!;
+    await requirementsService.transition(
+      projectId,
+      rfAccepted.id,
+      rfAccepted.version.id,
+      'IN_REVIEW',
+    );
+    await requirementsService.transition(
+      projectId,
+      rfAccepted.id,
+      rfAccepted.version.id,
+      'APPROVED',
+    );
+
+    const useCasesService = new UseCasesService(
+      ctx.prisma,
+      fakeAi(ctx, 'use-cases.generate', 1, {
+        candidates: [
+          {
+            candidateId: 'uc1',
+            name: 'Registrar pedido',
+            objective: 'Registrar',
+            primaryActor: 'Usuario',
+            secondaryActors: [],
+            preconditions: [],
+            postconditions: [],
+            mainFlow: [{ actor: 'Usuario', action: 'Registra' }],
+            alternativeFlows: [],
+            relatedRequirementSourceIds: [rfAccepted.version.id],
+          },
+        ],
+      }),
+    );
+    const ucGeneration = await useCasesService.generate(projectId, [rfAccepted.version.id]);
+    const ucAccepted = (
+      await useCasesService.accept(projectId, ucGeneration.id, [ucGeneration.candidates[0]!.id])
+    ).items[0]!;
+    await useCasesService.transition(projectId, ucAccepted.id, ucAccepted.version.id, 'IN_REVIEW');
+    await useCasesService.transition(projectId, ucAccepted.id, ucAccepted.version.id, 'APPROVED');
+
+    const dataModelsService = new DataModelsService(
+      ctx.prisma,
+      fakeAi(ctx, 'data-model.generate', 1, {
+        candidates: [
+          {
+            candidateId: 'dm1',
+            title: 'Modelo',
+            modelKind: 'ER' as const,
+            entities: [
+              {
+                localId: 'pedido',
+                name: 'Pedido',
+                attributes: [
+                  {
+                    name: 'id',
+                    type: 'UUID' as const,
+                    required: true,
+                    primaryKey: true,
+                    unique: true,
+                  },
+                ],
+              },
+            ],
+            relationships: [],
+          },
+        ],
+      }),
+      new DiagramEngine(),
+      new FakeDiagramProvider({ svg: FAKE_SVG }),
+    );
+    const dmGeneration = await dataModelsService.generate(
+      projectId,
+      [rfAccepted.version.id],
+      [ucAccepted.version.id],
+    );
+    const dmAccepted = (
+      await dataModelsService.accept(projectId, dmGeneration.id, [dmGeneration.candidates[0]!.id])
+    ).items[0]!;
+    await dataModelsService.transition(
+      projectId,
+      dmAccepted.id,
+      dmAccepted.version.id,
+      'IN_REVIEW',
+    );
+    await dataModelsService.transition(projectId, dmAccepted.id, dmAccepted.version.id, 'APPROVED');
+
+    await dataModelsService.generateUseCaseDiagram(projectId, [ucAccepted.version.id]);
+
+    const navigationService = new StructuredAnalysisService(
+      ctx.prisma,
+      fakeAi(ctx, 'navigation.generate', 1, {
+        nodes: [{ localId: 'home', label: 'Home', viewName: 'Home', kind: 'HOME' as const }],
+      }),
+      new DiagramEngine(),
+      new FakeDiagramProvider({ svg: FAKE_SVG }),
+    );
+    const navGeneration = await navigationService.generate(projectId, 'NAVIGATION_TREE', [
+      rfAccepted.version.id,
+    ]);
+    const navAccepted = (
+      await navigationService.accept(projectId, 'NAVIGATION_TREE', navGeneration.id, [
+        navGeneration.candidates[0]!.id,
+      ])
+    ).items[0]!;
+    await navigationService.transition(
+      projectId,
+      'NAVIGATION_TREE',
+      navAccepted.id,
+      navAccepted.version.id,
+      'IN_REVIEW',
+    );
+    await navigationService.transition(
+      projectId,
+      'NAVIGATION_TREE',
+      navAccepted.id,
+      navAccepted.version.id,
+      'APPROVED',
+    );
+
+    const softwareArchitectureService = new StructuredAnalysisService(
+      ctx.prisma,
+      fakeAi(ctx, 'software-architecture.generate', 1, {
+        style: 'Monolito modular',
+        components: [{ localId: 'api', name: 'API' }],
+        dependencies: [],
+      }),
+      new DiagramEngine(),
+      new FakeDiagramProvider({ svg: FAKE_SVG }),
+    );
+    const swGeneration = await softwareArchitectureService.generate(
+      projectId,
+      'SOFTWARE_ARCHITECTURE',
+      [navAccepted.version.id],
+    );
+    const swAccepted = (
+      await softwareArchitectureService.accept(
+        projectId,
+        'SOFTWARE_ARCHITECTURE',
+        swGeneration.id,
+        [swGeneration.candidates[0]!.id],
+      )
+    ).items[0]!;
+    await softwareArchitectureService.transition(
+      projectId,
+      'SOFTWARE_ARCHITECTURE',
+      swAccepted.id,
+      swAccepted.version.id,
+      'IN_REVIEW',
+    );
+    await softwareArchitectureService.transition(
+      projectId,
+      'SOFTWARE_ARCHITECTURE',
+      swAccepted.id,
+      swAccepted.version.id,
+      'APPROVED',
+    );
+
+    const systemArchitectureService = new StructuredAnalysisService(
+      ctx.prisma,
+      fakeAi(ctx, 'system-architecture.generate', 1, {
+        boundary: 'Sistema',
+        nodes: [{ localId: 'server', name: 'Servidor', kind: 'RUNTIME' as const }],
+        links: [],
+      }),
+      new DiagramEngine(),
+      new FakeDiagramProvider({ svg: FAKE_SVG }),
+    );
+    const sysGeneration = await systemArchitectureService.generate(
+      projectId,
+      'SYSTEM_ARCHITECTURE',
+      [navAccepted.version.id],
+    );
+    const sysAccepted = (
+      await systemArchitectureService.accept(projectId, 'SYSTEM_ARCHITECTURE', sysGeneration.id, [
+        sysGeneration.candidates[0]!.id,
+      ])
+    ).items[0]!;
+    await systemArchitectureService.transition(
+      projectId,
+      'SYSTEM_ARCHITECTURE',
+      sysAccepted.id,
+      sysAccepted.version.id,
+      'IN_REVIEW',
+    );
+    await systemArchitectureService.transition(
+      projectId,
+      'SYSTEM_ARCHITECTURE',
+      sysAccepted.id,
+      sysAccepted.version.id,
+      'APPROVED',
+    );
+
+    const uiBlueprintService = new StructuredAnalysisService(
+      ctx.prisma,
+      fakeAi(ctx, 'ui-blueprint.generate', 1, {
+        screens: [{ localId: 'home', name: 'Inicio', purpose: 'Ver panel' }],
+      }),
+      new DiagramEngine(),
+      new FakeDiagramProvider({ svg: FAKE_SVG }),
+    );
+    const blueprintGeneration = await uiBlueprintService.generate(projectId, 'UI_BLUEPRINT', [
+      navAccepted.version.id,
+    ]);
+    const blueprintAccepted = (
+      await uiBlueprintService.accept(projectId, 'UI_BLUEPRINT', blueprintGeneration.id, [
+        blueprintGeneration.candidates[0]!.id,
+      ])
+    ).items[0]!;
+    await uiBlueprintService.transition(
+      projectId,
+      'UI_BLUEPRINT',
+      blueprintAccepted.id,
+      blueprintAccepted.version.id,
+      'IN_REVIEW',
+    );
+    await uiBlueprintService.transition(
+      projectId,
+      'UI_BLUEPRINT',
+      blueprintAccepted.id,
+      blueprintAccepted.version.id,
+      'APPROVED',
+    );
+
+    const mockup = await ctx.mockups.create(projectId, blueprintAccepted.version.id);
+    await ctx.mockups.transition(projectId, mockup.id, mockup.version.id, 'IN_REVIEW');
+    await ctx.mockups.transition(projectId, mockup.id, mockup.version.id, 'APPROVED');
+
+    // --- Composition completeness: every section present together ---
+    const snapshot = await ctx.export.buildSnapshot(projectId);
+
+    expect(snapshot.sources).toHaveLength(1);
+    expect(snapshot.context?.problemStatement).toBe('p');
+    expect(snapshot.requirements).toHaveLength(1);
+    expect(snapshot.useCases).toHaveLength(1);
+    expect(snapshot.useCaseDiagram).not.toBeNull();
+    expect(snapshot.dataModel?.code).toBe(dmAccepted.code);
+    expect(snapshot.erDiagram).not.toBeNull();
+    expect(snapshot.navigation?.code).toBe(navAccepted.code);
+    expect(snapshot.navigationDiagram).not.toBeNull();
+    expect(snapshot.softwareArchitecture?.code).toBe(swAccepted.code);
+    expect(snapshot.softwareArchitectureDiagram).not.toBeNull();
+    expect(snapshot.systemArchitecture?.code).toBe(sysAccepted.code);
+    expect(snapshot.systemArchitectureDiagram).not.toBeNull();
+    expect(snapshot.uiBlueprint?.code).toBe(blueprintAccepted.code);
+    expect(snapshot.mockups).toHaveLength(1);
+
+    expect(snapshot.readiness).toBeTruthy();
+    expect(snapshot.readiness.stages).toHaveLength(13);
+    expect(snapshot.stalenessSummary).toBeTruthy();
+    expect(snapshot.traceabilitySummary.nodeCount).toBeGreaterThan(0);
+
+    // The full export also validates against its own published schema.
+    expect(() => firstDeliverableExportSchema.parse(snapshot)).not.toThrow();
   });
 });
