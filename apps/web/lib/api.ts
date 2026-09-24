@@ -69,10 +69,17 @@ export class ApiError extends Error {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
+  // FormData bodies (multipart file uploads) must never get an explicit
+  // Content-Type here — the browser sets its own multipart boundary, and
+  // overriding it to application/json breaks the backend's multipart parser.
+  const isFormData = typeof FormData !== 'undefined' && init?.body instanceof FormData;
   try {
     response = await fetch(`${BASE_URL}${path}`, {
       ...init,
-      headers: { ...(init?.body ? { 'Content-Type': 'application/json' } : {}), ...init?.headers },
+      headers: {
+        ...(init?.body && !isFormData ? { 'Content-Type': 'application/json' } : {}),
+        ...init?.headers,
+      },
     });
   } catch {
     throw new ApiError('No se pudo conectar con el servidor de CASEFlow AI.', 0);
