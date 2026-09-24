@@ -6,6 +6,7 @@ import { api, ApiError, type GenerationResult } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { StatusBadge } from '../../components/status-badge';
 import { CandidateReview } from '../../components/candidate-review';
+import { RequirementManualForm } from '../../components/requirement-manual-form';
 
 function RequirementsContent({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
@@ -26,6 +27,7 @@ function RequirementsContent({ projectId }: { projectId: string }) {
   const [generation, setGeneration] = useState<GenerationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openDetail, setOpenDetail] = useState<string | null>(null);
+  const [showManualForm, setShowManualForm] = useState(false);
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['requirements', projectId] });
@@ -78,14 +80,38 @@ function RequirementsContent({ projectId }: { projectId: string }) {
         <span className="text-amber-700">
           <strong>{warningCount}</strong> advertencia(s) de calidad (ISO/IEC/IEEE 29148:2018)
         </span>
-        <button
-          type="button"
-          onClick={handleGenerate}
-          className="ml-auto rounded-md border border-gray-300 px-3 py-1.5 hover:bg-gray-50"
-        >
-          Generar Requisitos con IA
-        </button>
+        <div className="ml-auto flex gap-2">
+          <button
+            type="button"
+            onClick={handleGenerate}
+            className="rounded-md border border-gray-300 px-3 py-1.5 hover:bg-gray-50"
+          >
+            Generar con IA
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowManualForm((v) => !v)}
+            className="rounded-md border border-gray-300 px-3 py-1.5 hover:bg-gray-50"
+          >
+            Crear manualmente
+          </button>
+        </div>
       </section>
+      <p className="-mt-4 text-xs text-gray-500">
+        La generación con IA requiere un proveedor configurado. Si no está disponible, use
+        &quot;Crear manualmente&quot;.
+      </p>
+
+      {showManualForm ? (
+        <RequirementManualForm
+          projectId={projectId}
+          onCreated={() => {
+            invalidate();
+            setShowManualForm(false);
+          }}
+          onCancel={() => setShowManualForm(false)}
+        />
+      ) : null}
 
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
