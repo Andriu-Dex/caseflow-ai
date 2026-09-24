@@ -5,9 +5,9 @@
   "description": "CASEFlow AI web application (Next.js foundation)",
   "scripts": {
     "dev": "next dev --port 3000",
-    "build": "next build",
+    "build": "pnpm --filter @caseflow-ai/contracts run build && next build",
     "start": "next start --port 3000",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "pnpm --filter @caseflow-ai/contracts run build && tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
