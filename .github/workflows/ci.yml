@@ -28,6 +28,9 @@ jobs:
       - run: pnpm build
       - run: pnpm test
       - run: pnpm test:coverage
+      # apps/web has its own jsdom-based vitest config, run separately from
+      # the root Node-only suite above (see vitest.config.mts's exclude).
+      - run: pnpm --filter @caseflow-ai/web run test
 
       - uses: actions/upload-artifact@v4
         if: always()
