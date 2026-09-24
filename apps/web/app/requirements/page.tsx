@@ -64,7 +64,14 @@ function RequirementsContent({ projectId }: { projectId: string }) {
   const items = requirements.data?.items ?? [];
   const rf = items.filter((r) => r.requirement.requirementType === 'FUNCTIONAL').length;
   const rnf = items.filter((r) => r.requirement.requirementType === 'NON_FUNCTIONAL').length;
-  const warningCount = quality.data?.issues.length ?? 0;
+  const issues = quality.data?.issues ?? [];
+  const warningCount = issues.length;
+  const issuesByRequirement = new Map<string, typeof issues>();
+  for (const issue of issues) {
+    const existing = issuesByRequirement.get(issue.requirementId) ?? [];
+    existing.push(issue);
+    issuesByRequirement.set(issue.requirementId, existing);
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -160,6 +167,19 @@ function RequirementsContent({ projectId }: { projectId: string }) {
                     </button>
                   </div>
                 </div>
+                {issuesByRequirement.has(r.id) ? (
+                  <ul className="mt-2 flex flex-col gap-1 border-t border-amber-100 pt-2">
+                    {issuesByRequirement.get(r.id)!.map((issue, idx) => (
+                      <li
+                        key={`${issue.code}-${idx}`}
+                        className="text-xs text-amber-700"
+                        title={issue.rule}
+                      >
+                        ⚠ {issue.message}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
                 {openDetail === r.id ? (
                   <div className="mt-2 flex flex-col gap-2 border-t border-gray-100 pt-2 text-sm text-gray-700">
                     <p>{r.requirement.description}</p>

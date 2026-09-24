@@ -228,7 +228,9 @@ function UseCasesContent({ projectId }: { projectId: string }) {
                 >
                   Generar diagrama a partir de los aprobados
                 </button>
-                {diagram ? <TrustedDiagram svg={diagram.svg} /> : null}
+                {diagram ? (
+                  <TrustedDiagram svg={diagram.svg} caption="Diagrama de casos de uso aprobados" />
+                ) : null}
               </section>
             ) : null}
           </>

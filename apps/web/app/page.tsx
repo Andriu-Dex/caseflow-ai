@@ -108,8 +108,8 @@ function HomeContent({ projectId }: { projectId: string }) {
       <QueryState isLoading={staleness.isLoading} error={staleness.error}>
         {staleContext ? (
           <section className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-            ⚠ Newer approved knowledge available: el Contexto del Proyecto vigente no incluye
-            conocimiento de fuentes aprobadas más recientes.{' '}
+            ⚠ Hay conocimiento aprobado más reciente disponible: el Contexto del Proyecto vigente no
+            incluye conocimiento de fuentes aprobadas más recientes.{' '}
             <Link href="/context" className="underline">
               Revisar Contexto
             </Link>

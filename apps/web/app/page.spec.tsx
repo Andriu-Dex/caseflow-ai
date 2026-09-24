@@ -77,7 +77,9 @@ describe('HomePage', () => {
       </TestProviders>,
     );
     await waitFor(() =>
-      expect(screen.getByText(/newer approved knowledge available/i)).toBeInTheDocument(),
+      expect(
+        screen.getByText(/hay conocimiento aprobado más reciente disponible/i),
+      ).toBeInTheDocument(),
     );
     expect(screen.queryByText(/invalid|incorrect|broken/i)).not.toBeInTheDocument();
   });
