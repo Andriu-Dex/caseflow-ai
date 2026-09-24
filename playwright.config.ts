@@ -36,11 +36,16 @@ export default defineConfig({
       env: {
         DATABASE_URL: E2E_DATABASE_URL,
         API_PORT: String(API_PORT),
-        // Scenario A explicitly proves CASEflow works without AI; other
-        // scenarios that need generation use FakeAIProvider, never a real
-        // or public provider (never set here).
+        // Scenario A explicitly proves CASEflow works without AI; Scenario B
+        // uses only manual (non-AI) creation too, so this stays disabled for
+        // both — never a real or public AI provider.
         AI_PROVIDER: 'disabled',
-        DIAGRAM_RENDERER: 'disabled',
+        // Scenario B needs the real local diagram pipeline (structured
+        // artifact → DiagramEngine → Kroki → sanitizeDiagramSvg → API →
+        // TrustedSvg); Scenario A never touches diagrams, so sharing one
+        // server with this enabled is harmless for it.
+        DIAGRAM_RENDERER: 'kroki',
+        KROKI_BASE_URL: 'http://localhost:8000',
         WEB_ORIGIN: `http://localhost:${WEB_PORT}`,
       },
     },

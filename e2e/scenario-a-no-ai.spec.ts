@@ -85,10 +85,11 @@ test('professor can progress a project from zero to an approved Requirement with
   await nav.getByRole('link', { name: 'Inicio' }).click();
   await expect(page.getByText(/etapas completas/)).toBeVisible();
   const main = page.getByRole('main');
-  const sourcesStage = main.getByRole('link', { name: /Fuentes del proyecto/ });
-  const contextStage = main.getByRole('link', { name: /Contexto del proyecto/ });
-  const requirementsStage = main.getByRole('link', { name: /^✓.*Requisitos/ });
-  await expect(sourcesStage).toContainText('✓');
-  await expect(contextStage).toContainText('✓');
-  await expect(requirementsStage).toBeVisible();
+  // Anchored to a leading ✓ so this can never ambiguously match the "Ir a
+  // ..." next-action link or an unsatisfied "· ..." stage cell — it only
+  // resolves once the stage is genuinely satisfied, which is exactly what
+  // this assertion is waiting for.
+  await expect(main.getByRole('link', { name: /^✓.*Fuentes del proyecto/ })).toBeVisible();
+  await expect(main.getByRole('link', { name: /^✓.*Contexto del proyecto/ })).toBeVisible();
+  await expect(main.getByRole('link', { name: /^✓.*Requisitos/ })).toBeVisible();
 });
