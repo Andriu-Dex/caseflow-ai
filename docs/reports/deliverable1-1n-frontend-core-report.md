@@ -71,7 +71,7 @@ claim verification that was not actually performed."
     entity summary with on-demand attribute expansion, ER diagram on demand.
   - Navigation / Software Architecture / System Architecture / UI Blueprint
     — one shared `StructuredKindPage` component (`components/
-    structured-kind-page.tsx`) parameterized by kind, since all four share
+structured-kind-page.tsx`) parameterized by kind, since all four share
     an identical backend shape; avoids four near-duplicate pages.
   - Mockups (`app/design/mockups/page.tsx`) — generate from an approved UI
     Blueprint, preview via the trusted SVG boundary, explicit "generated
@@ -100,7 +100,7 @@ claim verification that was not actually performed."
   text-not-color-only + candidate/artifact distinction, trusted SVG
   rendering, Home consuming backend readiness, staleness warning wording,
   traceability truncation notice, and the Readiness page's stage checklist
-  + JSON/HTML export actions.
+  - JSON/HTML export actions.
 
 ## Known gaps (explicitly not silently dropped)
 
@@ -165,10 +165,10 @@ claim verification that was not actually performed."
 ## Notes
 
 - Two commits this increment: `feat(web): implement CASEFlow
-  first-deliverable workflow` (backend workspaces/CORS + full frontend) and
+first-deliverable workflow` (backend workspaces/CORS + full frontend) and
   `docs(reports): reflow markdown emphasis per prettier` (an incidental
   prettier reformat of the previous report, produced by running `pnpm
-  format`).
+format`).
 - `pnpm-workspace.yaml`'s `allowBuilds.esbuild` was set to `true` (esbuild's
   own postinstall script, which downloads its platform binary — required
   for Vite/Vitest to run at all); no other build-script policy changed.

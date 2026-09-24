@@ -7,6 +7,7 @@ import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { StatusBadge } from '../../components/status-badge';
 import { CandidateReview } from '../../components/candidate-review';
 import { TrustedDiagram } from '../../components/trusted-svg';
+import { UseCaseManualForm } from '../../components/use-case-manual-form';
 
 function UseCasesContent({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
@@ -27,6 +28,7 @@ function UseCasesContent({ projectId }: { projectId: string }) {
   const [generation, setGeneration] = useState<GenerationResult | null>(null);
   const [diagram, setDiagram] = useState<{ svg: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showManualForm, setShowManualForm] = useState(false);
 
   const approvedRequirements = (requirements.data?.items ?? []).filter(
     (r) => r.version.status === 'APPROVED',
@@ -117,14 +119,39 @@ function UseCasesContent({ projectId }: { projectId: string }) {
             ))}
           </ul>
         )}
-        <button
-          type="button"
-          onClick={generate}
-          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
-        >
-          Generar
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={generate}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
+          >
+            Generar con IA
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowManualForm((v) => !v)}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
+          >
+            Crear manualmente
+          </button>
+        </div>
+        <p className="mt-2 text-xs text-gray-500">
+          La generación con IA requiere un proveedor configurado. Si no está disponible, use
+          &quot;Crear manualmente&quot;.
+        </p>
       </section>
+
+      {showManualForm ? (
+        <UseCaseManualForm
+          projectId={projectId}
+          approvedRequirements={approvedRequirements}
+          onCreated={() => {
+            invalidate();
+            setShowManualForm(false);
+          }}
+          onCancel={() => setShowManualForm(false)}
+        />
+      ) : null}
 
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
 

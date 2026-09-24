@@ -282,6 +282,11 @@ export const api = {
       get<{ items: StructuredAnalysisResponse[] }>(
         `/projects/${projectId}/${api.structuredAnalysis.basePath(kind)}`,
       ),
+    create: (projectId: string, kind: StructuredAnalysisKind, title: string, content: unknown) =>
+      post<StructuredAnalysisResponse>(
+        `/projects/${projectId}/${api.structuredAnalysis.basePath(kind)}`,
+        { title, content },
+      ),
     getDiagram: (projectId: string, kind: StructuredAnalysisKind, id: string) =>
       get<{ svg: string; source: string; sourceFormat: string }>(
         `/projects/${projectId}/${api.structuredAnalysis.basePath(kind)}/${id}/diagram`,
