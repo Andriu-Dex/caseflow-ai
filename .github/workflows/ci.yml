@@ -98,7 +98,9 @@ jobs:
       # AI_PROVIDER=disabled and DIAGRAM_RENDERER=disabled are set inside
       # playwright.config.ts's webServer env — never a real/public AI or
       # renderer service, even though this job has a real local Kroki above.
-      - run: npx playwright install --with-deps chromium
+      # `pnpm exec` (not `npx`) so the browser install resolves the exact
+      # lockfile-pinned @playwright/test version pnpm/action-setup put on PATH.
+      - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm run test:e2e
 
       - uses: actions/upload-artifact@v4
