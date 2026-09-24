@@ -59,6 +59,7 @@ export function NavigationManualForm({ projectId, onCreated, onCancel }: FormPro
       kind: 'VIEW' as (typeof NAVIGATION_NODE_KINDS)[number],
       parentLocalId: '',
       route: '',
+      description: '',
       relatedUseCaseCodes: '',
     },
   ]);
@@ -83,6 +84,7 @@ export function NavigationManualForm({ projectId, onCreated, onCancel }: FormPro
           kind: n.kind,
           parentLocalId: n.parentLocalId || undefined,
           route: n.route || undefined,
+          description: n.description || undefined,
           relatedUseCaseCodes: csv(n.relatedUseCaseCodes),
         })),
       });
@@ -161,6 +163,18 @@ export function NavigationManualForm({ projectId, onCreated, onCancel }: FormPro
             value={n.route}
             onChange={(e) => update(i, { route: e.target.value })}
           />
+          <input
+            placeholder="Descripción (opcional)"
+            className="w-40 rounded-md border border-gray-300 px-2 py-1"
+            value={n.description}
+            onChange={(e) => update(i, { description: e.target.value })}
+          />
+          <input
+            placeholder="Casos de uso relacionados (códigos, coma)"
+            className="w-56 rounded-md border border-gray-300 px-2 py-1"
+            value={n.relatedUseCaseCodes}
+            onChange={(e) => update(i, { relatedUseCaseCodes: e.target.value })}
+          />
           <button
             type="button"
             onClick={() => setNodes((prev) => prev.filter((_, idx) => idx !== i))}
@@ -182,6 +196,7 @@ export function NavigationManualForm({ projectId, onCreated, onCancel }: FormPro
               kind: 'VIEW',
               parentLocalId: '',
               route: '',
+              description: '',
               relatedUseCaseCodes: '',
             },
           ])
@@ -198,6 +213,10 @@ export function SoftwareArchitectureManualForm({ projectId, onCreated, onCancel 
   const [title, setTitle] = useState('');
   const [style, setStyle] = useState('');
   const [components, setComponents] = useState([{ name: '', responsibilities: '' }]);
+  const [dependencies, setDependencies] = useState<
+    { fromLocalId: string; toLocalId: string; description: string }[]
+  >([]);
+  const [decisionsText, setDecisionsText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const ids = components.map((_, i) => `c${i + 1}`);
@@ -214,8 +233,13 @@ export function SoftwareArchitectureManualForm({ projectId, onCreated, onCancel 
           name: c.name,
           responsibilities: csv(c.responsibilities),
         })),
-        dependencies: [],
-        decisions: [],
+        dependencies: dependencies
+          .filter((d) => d.fromLocalId && d.toLocalId)
+          .map((d) => ({ ...d, description: d.description || undefined })),
+        decisions: decisionsText
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean),
       });
       onCreated();
     } catch (err) {
@@ -292,6 +316,89 @@ export function SoftwareArchitectureManualForm({ projectId, onCreated, onCancel 
       >
         + Agregar componente
       </button>
+
+      <fieldset className="rounded-md border border-gray-200 p-2">
+        <legend className="px-1 text-sm font-medium text-gray-700">
+          Dependencias entre componentes (opcional)
+        </legend>
+        {dependencies.map((dep, di) => (
+          <div key={di} className="mb-1 flex flex-wrap items-center gap-2 text-sm">
+            <select
+              className="rounded-md border border-gray-300 px-2 py-1"
+              value={dep.fromLocalId}
+              onChange={(e) =>
+                setDependencies((prev) =>
+                  prev.map((d, i) => (i === di ? { ...d, fromLocalId: e.target.value } : d)),
+                )
+              }
+            >
+              <option value="">Componente origen…</option>
+              {components.map((c, i) => (
+                <option key={ids[i]} value={ids[i]}>
+                  {c.name || ids[i]}
+                </option>
+              ))}
+            </select>
+            <span>→</span>
+            <select
+              className="rounded-md border border-gray-300 px-2 py-1"
+              value={dep.toLocalId}
+              onChange={(e) =>
+                setDependencies((prev) =>
+                  prev.map((d, i) => (i === di ? { ...d, toLocalId: e.target.value } : d)),
+                )
+              }
+            >
+              <option value="">Componente destino…</option>
+              {components.map((c, i) => (
+                <option key={ids[i]} value={ids[i]}>
+                  {c.name || ids[i]}
+                </option>
+              ))}
+            </select>
+            <input
+              placeholder="descripción (opcional)"
+              className="flex-1 rounded-md border border-gray-300 px-2 py-1"
+              value={dep.description}
+              onChange={(e) =>
+                setDependencies((prev) =>
+                  prev.map((d, i) => (i === di ? { ...d, description: e.target.value } : d)),
+                )
+              }
+            />
+            <button
+              type="button"
+              onClick={() => setDependencies((prev) => prev.filter((_, i) => i !== di))}
+              className="text-red-600"
+              aria-label={`Eliminar dependencia ${di + 1}`}
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={() =>
+            setDependencies((prev) => [
+              ...prev,
+              { fromLocalId: '', toLocalId: '', description: '' },
+            ])
+          }
+          className="text-sm text-gray-600 underline"
+        >
+          + Agregar dependencia
+        </button>
+      </fieldset>
+
+      <label className="flex flex-col gap-1 text-sm">
+        Decisiones de arquitectura (una por línea, opcional)
+        <textarea
+          rows={2}
+          className="rounded-md border border-gray-300 px-2 py-1"
+          value={decisionsText}
+          onChange={(e) => setDecisionsText(e.target.value)}
+        />
+      </label>
     </ManualFormShell>
   );
 }
@@ -302,6 +409,9 @@ export function SystemArchitectureManualForm({ projectId, onCreated, onCancel }:
   const [nodes, setNodes] = useState([
     { name: '', kind: 'RUNTIME' as (typeof SYSTEM_NODE_KINDS)[number], responsibilities: '' },
   ]);
+  const [links, setLinks] = useState<
+    { fromLocalId: string; toLocalId: string; protocol: string; description: string }[]
+  >([]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const ids = nodes.map((_, i) => `n${i + 1}`);
@@ -319,7 +429,13 @@ export function SystemArchitectureManualForm({ projectId, onCreated, onCancel }:
           kind: n.kind,
           responsibilities: csv(n.responsibilities),
         })),
-        links: [],
+        links: links
+          .filter((l) => l.fromLocalId && l.toLocalId)
+          .map((l) => ({
+            ...l,
+            protocol: l.protocol || undefined,
+            description: l.description || undefined,
+          })),
       });
       onCreated();
     } catch (err) {
@@ -418,6 +534,89 @@ export function SystemArchitectureManualForm({ projectId, onCreated, onCancel }:
       >
         + Agregar nodo
       </button>
+
+      <fieldset className="rounded-md border border-gray-200 p-2">
+        <legend className="px-1 text-sm font-medium text-gray-700">
+          Enlaces de comunicación (opcional)
+        </legend>
+        {links.map((link, li) => (
+          <div key={li} className="mb-1 flex flex-wrap items-center gap-2 text-sm">
+            <select
+              className="rounded-md border border-gray-300 px-2 py-1"
+              value={link.fromLocalId}
+              onChange={(e) =>
+                setLinks((prev) =>
+                  prev.map((l, i) => (i === li ? { ...l, fromLocalId: e.target.value } : l)),
+                )
+              }
+            >
+              <option value="">Nodo origen…</option>
+              {nodes.map((n, i) => (
+                <option key={ids[i]} value={ids[i]}>
+                  {n.name || ids[i]}
+                </option>
+              ))}
+            </select>
+            <span>→</span>
+            <select
+              className="rounded-md border border-gray-300 px-2 py-1"
+              value={link.toLocalId}
+              onChange={(e) =>
+                setLinks((prev) =>
+                  prev.map((l, i) => (i === li ? { ...l, toLocalId: e.target.value } : l)),
+                )
+              }
+            >
+              <option value="">Nodo destino…</option>
+              {nodes.map((n, i) => (
+                <option key={ids[i]} value={ids[i]}>
+                  {n.name || ids[i]}
+                </option>
+              ))}
+            </select>
+            <input
+              placeholder="protocolo (opcional)"
+              className="w-32 rounded-md border border-gray-300 px-2 py-1"
+              value={link.protocol}
+              onChange={(e) =>
+                setLinks((prev) =>
+                  prev.map((l, i) => (i === li ? { ...l, protocol: e.target.value } : l)),
+                )
+              }
+            />
+            <input
+              placeholder="descripción (opcional)"
+              className="flex-1 rounded-md border border-gray-300 px-2 py-1"
+              value={link.description}
+              onChange={(e) =>
+                setLinks((prev) =>
+                  prev.map((l, i) => (i === li ? { ...l, description: e.target.value } : l)),
+                )
+              }
+            />
+            <button
+              type="button"
+              onClick={() => setLinks((prev) => prev.filter((_, i) => i !== li))}
+              className="text-red-600"
+              aria-label={`Eliminar enlace ${li + 1}`}
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={() =>
+            setLinks((prev) => [
+              ...prev,
+              { fromLocalId: '', toLocalId: '', protocol: '', description: '' },
+            ])
+          }
+          className="text-sm text-gray-600 underline"
+        >
+          + Agregar enlace
+        </button>
+      </fieldset>
     </ManualFormShell>
   );
 }
@@ -425,7 +624,19 @@ export function SystemArchitectureManualForm({ projectId, onCreated, onCancel }:
 export function UiBlueprintManualForm({ projectId, onCreated, onCancel }: FormProps) {
   const [title, setTitle] = useState('');
   const [screens, setScreens] = useState([
-    { name: '', purpose: '', targetActors: '', primaryActions: '' },
+    {
+      name: '',
+      purpose: '',
+      targetActors: '',
+      relatedUseCaseCodes: '',
+      navigationNodeLocalId: '',
+      sections: '',
+      primaryActions: '',
+      secondaryActions: '',
+      principalData: '',
+      forms: '',
+      states: '',
+    },
   ]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -442,13 +653,14 @@ export function UiBlueprintManualForm({ projectId, onCreated, onCancel }: FormPr
           name: s.name,
           purpose: s.purpose,
           targetActors: csv(s.targetActors),
-          relatedUseCaseCodes: [],
-          sections: [],
+          relatedUseCaseCodes: csv(s.relatedUseCaseCodes),
+          navigationNodeLocalId: s.navigationNodeLocalId || undefined,
+          sections: csv(s.sections),
           primaryActions: csv(s.primaryActions),
-          secondaryActions: [],
-          principalData: [],
-          forms: [],
-          states: [],
+          secondaryActions: csv(s.secondaryActions),
+          principalData: csv(s.principalData),
+          forms: csv(s.forms),
+          states: csv(s.states),
         })),
       });
       onCreated();
@@ -519,16 +731,98 @@ export function UiBlueprintManualForm({ projectId, onCreated, onCancel }: FormPr
               )
             }
           />
+          <div className="flex flex-wrap gap-2">
+            <input
+              placeholder="Casos de uso relacionados (códigos, coma)"
+              className="flex-1 rounded-md border border-gray-300 px-2 py-1"
+              value={s.relatedUseCaseCodes}
+              onChange={(e) =>
+                setScreens((prev) =>
+                  prev.map((x, idx) =>
+                    idx === i ? { ...x, relatedUseCaseCodes: e.target.value } : x,
+                  ),
+                )
+              }
+            />
+            <input
+              placeholder="Nodo de navegación relacionado (opcional)"
+              className="flex-1 rounded-md border border-gray-300 px-2 py-1"
+              value={s.navigationNodeLocalId}
+              onChange={(e) =>
+                setScreens((prev) =>
+                  prev.map((x, idx) =>
+                    idx === i ? { ...x, navigationNodeLocalId: e.target.value } : x,
+                  ),
+                )
+              }
+            />
+          </div>
           <input
-            placeholder="Acciones principales (coma)"
+            placeholder="Secciones (separadas por coma)"
             className="rounded-md border border-gray-300 px-2 py-1"
-            value={s.primaryActions}
+            value={s.sections}
             onChange={(e) =>
               setScreens((prev) =>
-                prev.map((x, idx) => (idx === i ? { ...x, primaryActions: e.target.value } : x)),
+                prev.map((x, idx) => (idx === i ? { ...x, sections: e.target.value } : x)),
               )
             }
           />
+          <div className="flex flex-wrap gap-2">
+            <input
+              placeholder="Acciones principales (coma)"
+              className="flex-1 rounded-md border border-gray-300 px-2 py-1"
+              value={s.primaryActions}
+              onChange={(e) =>
+                setScreens((prev) =>
+                  prev.map((x, idx) => (idx === i ? { ...x, primaryActions: e.target.value } : x)),
+                )
+              }
+            />
+            <input
+              placeholder="Acciones secundarias (coma)"
+              className="flex-1 rounded-md border border-gray-300 px-2 py-1"
+              value={s.secondaryActions}
+              onChange={(e) =>
+                setScreens((prev) =>
+                  prev.map((x, idx) =>
+                    idx === i ? { ...x, secondaryActions: e.target.value } : x,
+                  ),
+                )
+              }
+            />
+          </div>
+          <input
+            placeholder="Datos mostrados (separados por coma)"
+            className="rounded-md border border-gray-300 px-2 py-1"
+            value={s.principalData}
+            onChange={(e) =>
+              setScreens((prev) =>
+                prev.map((x, idx) => (idx === i ? { ...x, principalData: e.target.value } : x)),
+              )
+            }
+          />
+          <div className="flex flex-wrap gap-2">
+            <input
+              placeholder="Formularios/entradas (coma)"
+              className="flex-1 rounded-md border border-gray-300 px-2 py-1"
+              value={s.forms}
+              onChange={(e) =>
+                setScreens((prev) =>
+                  prev.map((x, idx) => (idx === i ? { ...x, forms: e.target.value } : x)),
+                )
+              }
+            />
+            <input
+              placeholder="Estados relevantes (coma)"
+              className="flex-1 rounded-md border border-gray-300 px-2 py-1"
+              value={s.states}
+              onChange={(e) =>
+                setScreens((prev) =>
+                  prev.map((x, idx) => (idx === i ? { ...x, states: e.target.value } : x)),
+                )
+              }
+            />
+          </div>
         </div>
       ))}
       <button
@@ -536,7 +830,19 @@ export function UiBlueprintManualForm({ projectId, onCreated, onCancel }: FormPr
         onClick={() =>
           setScreens((prev) => [
             ...prev,
-            { name: '', purpose: '', targetActors: '', primaryActions: '' },
+            {
+              name: '',
+              purpose: '',
+              targetActors: '',
+              relatedUseCaseCodes: '',
+              navigationNodeLocalId: '',
+              sections: '',
+              primaryActions: '',
+              secondaryActions: '',
+              principalData: '',
+              forms: '',
+              states: '',
+            },
           ])
         }
         className="self-start text-sm text-gray-600 underline"
