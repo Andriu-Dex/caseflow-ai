@@ -1,6 +1,8 @@
 import { z } from 'zod';
 export const REQUIREMENT_TYPES = ['FUNCTIONAL', 'NON_FUNCTIONAL'] as const;
+export type RequirementType = (typeof REQUIREMENT_TYPES)[number];
 export const REQUIREMENT_PRIORITIES = ['HIGH', 'MEDIUM', 'LOW'] as const;
+export type RequirementPriority = (typeof REQUIREMENT_PRIORITIES)[number];
 const text = (max: number) => z.string().trim().min(1, 'El valor es obligatorio.').max(max);
 const list = z.array(text(500)).max(25).default([]);
 const requirementFieldsSchema = z

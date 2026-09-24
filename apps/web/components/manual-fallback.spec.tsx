@@ -9,14 +9,17 @@ import {
   UiBlueprintManualForm,
 } from './structured-manual-forms';
 import { DataModelManualForm } from './data-model-manual-form';
+import { RequirementManualForm } from './requirement-manual-form';
 import { TestProviders } from '../lib/test-utils';
 
+const requirementsCreate = vi.fn().mockResolvedValue({});
 const useCasesCreate = vi.fn().mockResolvedValue({});
 const dataModelsCreate = vi.fn().mockResolvedValue({});
 const structuredCreate = vi.fn().mockResolvedValue({});
 
 vi.mock('../lib/api', () => ({
   api: {
+    requirements: { create: (...args: unknown[]) => requirementsCreate(...args) },
     useCases: { create: (...args: unknown[]) => useCasesCreate(...args) },
     dataModels: { create: (...args: unknown[]) => dataModelsCreate(...args) },
     structuredAnalysis: { create: (...args: unknown[]) => structuredCreate(...args) },
@@ -29,6 +32,31 @@ vi.mock('../lib/api', () => ({
 // asserts the manual creation path calls the backend's manual create()
 // endpoint directly, with no generation/candidate step involved.
 describe('manual non-AI creation fallbacks (behavior 22)', () => {
+  it('creates a Requirement manually without any AI generation step', async () => {
+    const user = userEvent.setup();
+    render(
+      <TestProviders>
+        <RequirementManualForm projectId="p1" onCreated={vi.fn()} onCancel={vi.fn()} />
+      </TestProviders>,
+    );
+    await user.type(screen.getByLabelText(/^nombre$/i), 'Registrar pedido');
+    await user.type(
+      screen.getByLabelText(/descripción/i),
+      'El sistema debe permitir registrar pedidos',
+    );
+    await user.click(screen.getByRole('button', { name: /crear requisito/i }));
+
+    await waitFor(() => expect(requirementsCreate).toHaveBeenCalledTimes(1));
+    expect(requirementsCreate).toHaveBeenCalledWith(
+      'p1',
+      expect.objectContaining({
+        requirementType: 'FUNCTIONAL',
+        name: 'Registrar pedido',
+        description: 'El sistema debe permitir registrar pedidos',
+      }),
+    );
+  });
+
   it('creates a Use Case manually, including an alternative flow, without any AI generation step', async () => {
     const user = userEvent.setup();
     const requirement = {
