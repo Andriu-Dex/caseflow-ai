@@ -34,7 +34,7 @@
   `getDiagramForVersion`, `getERDiagramForVersion` — to
   `ProjectContextService`, `DataModelsService` and
   `StructuredAnalysisService`, because their existing `get()`/`getDiagram()`
-  always resolve the *latest* version regardless of status. That is
+  always resolve the _latest_ version regardless of status. That is
   correct for editing UIs but wrong for Export, which must never let a
   newer DRAFT displace a previously APPROVED version.
 - Added `listApproved()` (Requirements, Use Cases) and
@@ -104,7 +104,7 @@
 ## Notes
 
 - Two commits: `refactor(readiness): centralize authoritative-version
-  selection with deterministic tie-break` (hardening checks) and
+selection with deterministic tie-break` (hardening checks) and
   `feat(export): add First Deliverable JSON/HTML export (Phase H)`.
 - Remaining scope per instruction.md: Phase I (Frontend), E2E/hardening
   audit, final documentation sync (`CASEFLOW_AI_SPEC.md`,
