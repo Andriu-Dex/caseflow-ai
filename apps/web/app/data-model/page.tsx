@@ -203,7 +203,9 @@ function DataModelContent({ projectId }: { projectId: string }) {
                 </div>
                 {(() => {
                   const svg = diagrams[m.id];
-                  return svg ? <TrustedDiagram svg={svg} /> : null;
+                  return svg ? (
+                    <TrustedDiagram svg={svg} caption={`Diagrama entidad-relación de ${m.code}`} />
+                  ) : null;
                 })()}
               </li>
             ))}

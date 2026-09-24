@@ -212,7 +212,12 @@ export function StructuredKindPage({
                 </div>
                 {(() => {
                   const svg = diagrams[item.id];
-                  return svg ? <TrustedDiagram svg={svg} /> : null;
+                  return svg ? (
+                    <TrustedDiagram
+                      svg={svg}
+                      caption={`Diagrama de ${title.toLowerCase()} — ${item.code}`}
+                    />
+                  ) : null;
                 })()}
               </li>
             ))}
