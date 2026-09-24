@@ -16,7 +16,9 @@ export default defineConfig({
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   workers: 1,
-  reporter: process.env.CI ? 'github' : 'list',
+  // Keep GitHub annotations for failures and a list reporter so successful CI
+  // logs retain explicit evidence for both mandatory scenario files.
+  reporter: process.env.CI ? [['github'], ['list']] : 'list',
   globalSetup: './e2e/global-setup.ts',
   use: {
     baseURL: `http://localhost:${WEB_PORT}`,
