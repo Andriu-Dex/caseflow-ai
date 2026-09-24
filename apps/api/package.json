@@ -5,7 +5,7 @@
   "description": "CASEFlow AI API application (NestJS foundation)",
   "scripts": {
     "dev": "node --env-file-if-exists=../../.env --watch --require ts-node/register src/main.ts",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "pnpm --filter @caseflow-ai/ai run build && pnpm --filter @caseflow-ai/config run build && pnpm --filter @caseflow-ai/contracts run build && pnpm --filter @caseflow-ai/domain run build && pnpm --filter @caseflow-ai/integrations run build && tsc -p tsconfig.build.json",
     "start": "node --env-file-if-exists=../../.env dist/main.js",
     "openapi:generate": "node dist/openapi/generate-openapi.js",
     "typecheck": "pnpm --filter @caseflow-ai/ai run build && pnpm --filter @caseflow-ai/config run build && pnpm --filter @caseflow-ai/integrations run build && tsc --noEmit"
