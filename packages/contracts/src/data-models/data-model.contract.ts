@@ -14,12 +14,14 @@ export const CONCEPTUAL_ATTRIBUTE_TYPES = [
   'DATETIME',
   'UUID',
 ] as const;
+export type ConceptualAttributeType = (typeof CONCEPTUAL_ATTRIBUTE_TYPES)[number];
 export const DATA_MODEL_CARDINALITIES = [
   'ONE',
   'ZERO_OR_ONE',
   'ONE_OR_MORE',
   'ZERO_OR_MORE',
 ] as const;
+export type DataModelCardinality = (typeof DATA_MODEL_CARDINALITIES)[number];
 
 const text = (max: number) => z.string().trim().min(1).max(max);
 const attributeSchema = z

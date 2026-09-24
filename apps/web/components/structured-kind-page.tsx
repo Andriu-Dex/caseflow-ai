@@ -7,7 +7,23 @@ import { api, ApiError, type GenerationResult } from '../lib/api';
 import { QueryState } from './query-state';
 import { StatusBadge } from './status-badge';
 import { CandidateReview } from './candidate-review';
+import {
+  NavigationManualForm,
+  SoftwareArchitectureManualForm,
+  SystemArchitectureManualForm,
+  UiBlueprintManualForm,
+} from './structured-manual-forms';
 import { TrustedDiagram } from './trusted-svg';
+
+const MANUAL_FORMS: Record<
+  StructuredAnalysisKind,
+  (props: { projectId: string; onCreated: () => void; onCancel: () => void }) => React.JSX.Element
+> = {
+  NAVIGATION_TREE: NavigationManualForm,
+  SOFTWARE_ARCHITECTURE: SoftwareArchitectureManualForm,
+  SYSTEM_ARCHITECTURE: SystemArchitectureManualForm,
+  UI_BLUEPRINT: UiBlueprintManualForm,
+};
 
 // Shared list/generate/accept/lifecycle/diagram page for the four
 // StructuredAnalysis kinds (spec Phase I: Navigation, Software Architecture,
@@ -31,6 +47,8 @@ export function StructuredKindPage({
   const [sourceIdsText, setSourceIdsText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [diagrams, setDiagrams] = useState<Record<string, string>>({});
+  const [showManualForm, setShowManualForm] = useState(false);
+  const ManualForm = MANUAL_FORMS[kind];
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['structured-analysis', kind, projectId] });
@@ -95,14 +113,38 @@ export function StructuredKindPage({
           value={sourceIdsText}
           onChange={(e) => setSourceIdsText(e.target.value)}
         />
-        <button
-          type="button"
-          onClick={generate}
-          className="mt-2 rounded-md border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
-        >
-          Generar
-        </button>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={generate}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
+          >
+            Generar
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowManualForm((v) => !v)}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
+          >
+            Crear manualmente
+          </button>
+        </div>
+        <p className="mt-2 text-xs text-gray-500">
+          La generación con IA requiere un proveedor configurado. Si no está disponible, use
+          &quot;Crear manualmente&quot;.
+        </p>
       </section>
+
+      {showManualForm ? (
+        <ManualForm
+          projectId={projectId}
+          onCreated={() => {
+            invalidate();
+            setShowManualForm(false);
+          }}
+          onCancel={() => setShowManualForm(false)}
+        />
+      ) : null}
 
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
 

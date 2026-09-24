@@ -6,6 +6,7 @@ import { api, ApiError, type GenerationResult } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { StatusBadge } from '../../components/status-badge';
 import { CandidateReview } from '../../components/candidate-review';
+import { DataModelManualForm } from '../../components/data-model-manual-form';
 import { TrustedDiagram } from '../../components/trusted-svg';
 
 function DataModelContent({ projectId }: { projectId: string }) {
@@ -27,6 +28,7 @@ function DataModelContent({ projectId }: { projectId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [diagrams, setDiagrams] = useState<Record<string, string>>({});
+  const [showManualForm, setShowManualForm] = useState(false);
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['data-models', projectId] });
@@ -81,14 +83,38 @@ function DataModelContent({ projectId }: { projectId: string }) {
       <h1 className="text-xl font-semibold text-gray-900">Modelo de datos</h1>
 
       <section className="rounded-lg border border-gray-200 bg-white p-4">
-        <button
-          type="button"
-          onClick={generate}
-          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
-        >
-          Generar Modelo de Datos con IA (a partir de Requisitos/Casos de Uso aprobados)
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={generate}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
+          >
+            Generar con IA (a partir de Requisitos/Casos de Uso aprobados)
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowManualForm((v) => !v)}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
+          >
+            Crear manualmente
+          </button>
+        </div>
+        <p className="mt-2 text-xs text-gray-500">
+          La generación con IA requiere un proveedor configurado. Si no está disponible, use
+          &quot;Crear manualmente&quot;.
+        </p>
       </section>
+
+      {showManualForm ? (
+        <DataModelManualForm
+          projectId={projectId}
+          onCreated={() => {
+            invalidate();
+            setShowManualForm(false);
+          }}
+          onCancel={() => setShowManualForm(false)}
+        />
+      ) : null}
 
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
