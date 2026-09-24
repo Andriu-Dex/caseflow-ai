@@ -170,6 +170,7 @@ describe('OpenAPI contract', () => {
         'GET /projects/{projectId}/traceability',
         'GET /projects/{projectId}/readiness',
         'GET /projects/{projectId}/export',
+        'GET /workspaces',
       ].sort(),
     );
     expect(Object.keys(document.paths)).not.toContain('/health/ready');
@@ -285,6 +286,7 @@ describe('OpenAPI contract', () => {
         'getProjectTraceability',
         'getProjectReadiness',
         'getProjectExport',
+        'listWorkspaces',
       ].sort(),
     );
   });

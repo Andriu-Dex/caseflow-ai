@@ -37,6 +37,7 @@ export * from './staleness/staleness.contract';
 export * from './traceability/traceability.contract';
 export * from './readiness/readiness.contract';
 export * from './export/export.contract';
+export * from './workspaces/workspace.contract';
 
 export {
   PROJECT_CONTEXT_COLLECTION_LIMIT,
