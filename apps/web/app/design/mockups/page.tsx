@@ -2,6 +2,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { Button } from '@caseflow-ai/ui';
 import { api, ApiError } from '../../../lib/api';
 import { QueryState, RequireActiveProject } from '../../../components/query-state';
 import { PageHeading } from '../../../components/page-heading';
@@ -35,17 +36,22 @@ function MockupsContent({ projectId }: { projectId: string }) {
     queryFn: () => api.structuredAnalysis.list(projectId, 'UI_BLUEPRINT'),
   });
   const [error, setError] = useState<string | null>(null);
+  const [creatingVersionId, setCreatingVersionId] = useState<string | null>(null);
   const approvedBlueprints = (blueprints.data?.items ?? []).filter(
     (b) => b.version.status === 'APPROVED',
   );
 
   async function createMockup(uiBlueprintVersionId: string) {
     setError(null);
+    setCreatingVersionId(uiBlueprintVersionId);
     try {
       await api.mockups.create(projectId, uiBlueprintVersionId);
       queryClient.invalidateQueries({ queryKey: ['mockups', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo generar el mockup.');
+    } finally {
+      setCreatingVersionId(null);
     }
   }
 
@@ -57,6 +63,7 @@ function MockupsContent({ projectId }: { projectId: string }) {
     try {
       await api.mockups.transition(projectId, id, versionId, status);
       queryClient.invalidateQueries({ queryKey: ['mockups', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo cambiar el estado.');
     }
@@ -64,7 +71,7 @@ function MockupsContent({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeading title="Mockups" />
+      <PageHeading title="Mockups" projectId={projectId} />
       <p className="text-sm text-muted-foreground">
         Un Mockup es una vista previa determinística generada a partir de un UI Blueprint aprobado —
         nunca una captura de pantalla real.
@@ -81,13 +88,15 @@ function MockupsContent({ projectId }: { projectId: string }) {
                 <span>
                   {b.code} — {b.title}
                 </span>
-                <button
+                <Button
                   type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={creatingVersionId === b.version.id}
                   onClick={() => createMockup(b.version.id)}
-                  className="rounded-md border border-input px-3 py-1 text-sm hover:bg-muted/40"
                 >
-                  Generar Mockup
-                </button>
+                  {creatingVersionId === b.version.id ? 'Generando…' : 'Generar Mockup'}
+                </Button>
               </li>
             ))}
           </ul>

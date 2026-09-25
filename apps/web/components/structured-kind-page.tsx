@@ -51,10 +51,12 @@ export function StructuredKindPage({
   const [error, setError] = useState<string | null>(null);
   const [diagrams, setDiagrams] = useState<Record<string, string>>({});
   const [showManualForm, setShowManualForm] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const ManualForm = MANUAL_FORMS[kind];
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['structured-analysis', kind, projectId] });
+    queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
   }
 
   async function generate() {
@@ -67,11 +69,14 @@ export function StructuredKindPage({
       setError('Indique al menos una versión fuente elegible.');
       return;
     }
+    setGenerating(true);
     try {
       const result = await api.structuredAnalysis.generate(projectId, kind, ids);
       setGeneration(result);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo generar (¿IA deshabilitada?).');
+    } finally {
+      setGenerating(false);
     }
   }
 
@@ -101,7 +106,7 @@ export function StructuredKindPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeading title={title} />
+      <PageHeading title={title} projectId={projectId} />
 
       <Card>
         <CardHeader>
@@ -122,9 +127,15 @@ export function StructuredKindPage({
             onChange={(e) => setSourceIdsText(e.target.value)}
           />
           <div className="mt-2 flex flex-wrap gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={generate}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={generating}
+              onClick={generate}
+            >
               <Wand2 className="size-4" aria-hidden="true" />
-              Generar
+              {generating ? 'Generando…' : 'Generar'}
             </Button>
             <Button
               type="button"
