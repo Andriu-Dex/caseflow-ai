@@ -30,7 +30,12 @@ function fakeAi(ctx: TestContext, promptKey: string, promptVersion: number, payl
 async function approveSource(ctx: TestContext, projectId: string, title = 'Notas') {
   const source = await ctx.sources.create(
     projectId,
-    { title, sourceKind: 'NOTES', purpose: 'Conocimiento del proyecto' },
+    {
+      title,
+      sourceKind: 'NOTES',
+      purpose: 'Conocimiento del proyecto',
+      description: 'Contenido de prueba.',
+    },
     { originalname: 'n.txt', mimetype: 'text/plain', size: 4, buffer: Buffer.from('abcd') },
   );
   await ctx.sources.transition(projectId, source.id, source.version.id, 'IN_REVIEW');
@@ -139,7 +144,7 @@ describe('Readiness integration', () => {
     const projectId = await project('Unapproved Source');
     await ctx.sources.create(
       projectId,
-      { title: 'x', sourceKind: 'NOTES', purpose: 'p' },
+      { title: 'x', sourceKind: 'NOTES', purpose: 'p', description: 'Contenido de prueba.' },
       { originalname: 'n.txt', mimetype: 'text/plain', size: 4, buffer: Buffer.from('abcd') },
     );
     const result = await ctx.readiness.evaluate(projectId);

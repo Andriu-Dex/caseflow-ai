@@ -83,4 +83,58 @@ describe('Project persistence', () => {
     const page = await ctx.projects.list(workspaceA.id, 1, 1);
     expect(page.items.map((item) => item.id)).toEqual([second.id]);
   });
+
+  describe('deletion', () => {
+    it('permanently deletes a project that has nothing approved, cascading its artifacts', async () => {
+      const workspace = await createWorkspace(ctx.prisma);
+      const project = await ctx.projects.create({ workspaceId: workspace.id, name: 'Descartable' });
+      const context = await ctx.projectContext.create(project.id, {
+        problemStatement: 'p',
+        objective: 'o',
+        scopeItems: [],
+        actors: [{ name: 'a' }],
+        needs: [],
+        constraints: [],
+        businessRules: [],
+      });
+      await ctx.projectContext.transition(project.id, context.version.id, 'IN_REVIEW');
+      // Never approved — stays IN_REVIEW.
+
+      await ctx.projects.delete(project.id);
+
+      await expect(ctx.projects.get(project.id)).rejects.toThrow('Proyecto no encontrado.');
+      const remainingArtifacts = await ctx.prisma.artifact.count({
+        where: { projectId: project.id },
+      });
+      expect(remainingArtifacts).toBe(0);
+    });
+
+    it('refuses to delete a project that has any approved artifact', async () => {
+      const workspace = await createWorkspace(ctx.prisma);
+      const project = await ctx.projects.create({
+        workspaceId: workspace.id,
+        name: 'Con historial',
+      });
+      const context = await ctx.projectContext.create(project.id, {
+        problemStatement: 'p',
+        objective: 'o',
+        scopeItems: [],
+        actors: [{ name: 'a' }],
+        needs: [],
+        constraints: [],
+        businessRules: [],
+      });
+      await ctx.projectContext.transition(project.id, context.version.id, 'IN_REVIEW');
+      await ctx.projectContext.transition(project.id, context.version.id, 'APPROVED');
+
+      await expect(ctx.projects.delete(project.id)).rejects.toThrow('artefactos aprobados');
+      await expect(ctx.projects.get(project.id)).resolves.toBeDefined();
+    });
+
+    it('rejects deleting a project that does not exist', async () => {
+      await expect(ctx.projects.delete('00000000-0000-4000-8000-000000000000')).rejects.toThrow(
+        'Proyecto no encontrado.',
+      );
+    });
+  });
 });

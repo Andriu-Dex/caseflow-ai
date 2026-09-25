@@ -848,12 +848,15 @@ model SourceDetail {
   // User-defined meaning/purpose (spec 2.2) — never inferred.
   purpose           String
   businessArea      String?               @map("business_area")
-  description       String?
-  originalFilename  String                @map("original_filename")
-  mimeType          String                @map("mime_type")
-  sizeBytes         Int                   @map("size_bytes")
-  contentHash       String                @map("content_hash")
-  storageKey        String                @map("storage_key")
+  // Required user-entered content; also the sole source of extractedText
+  // when no file is uploaded (file upload is optional — spec: a source's
+  // knowledge can come from typed content alone).
+  description       String
+  originalFilename  String?               @map("original_filename")
+  mimeType          String?               @map("mime_type")
+  sizeBytes         Int?                  @map("size_bytes")
+  contentHash       String?               @map("content_hash")
+  storageKey        String?               @map("storage_key")
   language          String?
   extractionState   SourceExtractionState @map("extraction_state")
   extractedText     String?               @map("extracted_text")
