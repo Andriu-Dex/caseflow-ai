@@ -43,11 +43,15 @@ export {
   PROJECT_CONTEXT_COLLECTION_LIMIT,
   PROJECT_CONTEXT_SCOPE_TYPES,
   projectContextActorInputSchema,
+  projectContextCandidateSchema,
+  projectContextGenerationContentSchema,
   projectContextRequestSchema,
   projectContextResponseSchema,
   projectContextScopeItemInputSchema,
 } from './project-context/project-context.contract';
 export type {
+  ProjectContextCandidate,
+  ProjectContextGenerationContent,
   ProjectContextRequest,
   ProjectContextResponse,
 } from './project-context/project-context.contract';

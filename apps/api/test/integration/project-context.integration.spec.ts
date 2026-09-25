@@ -4,9 +4,11 @@ import {
   projectContextResponseSchema,
   type ProjectContextRequest,
 } from '@caseflow-ai/contracts';
+import { AIOrchestrator, FakeAIProvider, PromptRegistry } from '@caseflow-ai/ai';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { ProjectContextService } from '../../src/project-context/project-context.service';
+import { PrismaAIRunRecorder } from '../../src/ai/ai-run-recorder';
+import { ProjectContextService } from '../../src/project-context/project-context.service';
 import { createTestContext, createWorkspace, type TestContext } from './support/test-app';
 
 const contextInput = (suffix = ''): ProjectContextRequest => ({
@@ -279,5 +281,83 @@ describe('Project Context integration', () => {
       .send({ ...contextInput(), unexpected: true });
     expect(extra.status).toBe(400);
     expect(JSON.stringify(extra.body)).not.toMatch(/prisma|project_context_details|stack/i);
+  });
+
+  describe('AI-assisted generation', () => {
+    async function createApprovedSource(ctxParam: TestContext, projectId: string, title: string) {
+      const source = await ctxParam.sources.create(
+        projectId,
+        { title, sourceKind: 'NOTES', purpose: 'Prueba', description: 'Contenido de prueba.' },
+        {
+          originalname: 'n.txt',
+          mimetype: 'text/plain',
+          size: 4,
+          buffer: Buffer.from('abcd'),
+        },
+      );
+      await ctxParam.sources.transition(projectId, source.id, source.version.id, 'IN_REVIEW');
+      return ctxParam.sources.transition(projectId, source.id, source.version.id, 'APPROVED');
+    }
+
+    it('generates a candidate from approved sources and persists it for evidence', async () => {
+      const project = await createProject(ctx, 'AI Generation');
+      const approvedSource = await createApprovedSource(ctx, project.id, 'Entrevista IA');
+
+      const content = {
+        problemStatement: 'Problema generado',
+        objective: 'Objetivo generado',
+        actors: ['Coordinador'],
+        needs: ['Visibilidad en tiempo real'],
+        constraints: [],
+        businessRules: ['Bloquear morosos'],
+      };
+      const ai = new AIOrchestrator(
+        new FakeAIProvider({
+          provider: 'fake',
+          model: 'fake-v1',
+          payload: content,
+          usage: null,
+          latencyMs: 1,
+        }),
+        new PromptRegistry([
+          {
+            key: 'project-context.generate',
+            version: 1,
+            capability: 'STRUCTURED_OUTPUT',
+            purpose: 'project_context_generation',
+            systemInstructions: 'policy',
+          },
+        ]),
+        new PrismaAIRunRecorder(ctx.prisma),
+      );
+      const service = new ProjectContextService(ctx.prisma, ai);
+
+      const candidate = await service.generate(project.id);
+
+      expect(candidate).toMatchObject({
+        projectId: project.id,
+        content,
+        sourceVersionIds: [approvedSource.id],
+      });
+      expect(
+        await ctx.prisma.projectContextCandidate.findUnique({ where: { id: candidate.id } }),
+      ).toMatchObject({ projectId: project.id });
+    });
+
+    it('rejects generation for a project without any usable approved source', async () => {
+      const project = await createProject(ctx, 'AI No Sources');
+      await expect(ctx.projectContext.generate(project.id)).rejects.toMatchObject({ status: 422 });
+    });
+
+    it('disabled AI returns AI_NOT_CONFIGURED without persisting a candidate', async () => {
+      const project = await createProject(ctx, 'AI Disabled');
+      await createApprovedSource(ctx, project.id, 'Entrevista Disabled');
+      const before = await ctx.prisma.projectContextCandidate.count();
+
+      await expect(ctx.projectContext.generate(project.id)).rejects.toMatchObject({
+        response: { code: 'AI_NOT_CONFIGURED' },
+      });
+      expect(await ctx.prisma.projectContextCandidate.count()).toBe(before);
+    });
   });
 });

@@ -206,6 +206,7 @@ model Project {
   dataModelGenerations DataModelGeneration[]
   sourceReportCandidates SourceReportCandidate[]
   structuredAnalysisGenerations StructuredAnalysisGeneration[]
+  projectContextCandidates ProjectContextCandidate[]
 
   @@index([workspaceId, createdAt, id])
   @@map("projects")
@@ -436,6 +437,7 @@ model AIRun {
   sourceReportDetails   SourceReportDetail[]
   structuredAnalysisGeneration StructuredAnalysisGeneration?
   structuredAnalysisDetails    StructuredAnalysisDetail[]
+  projectContextCandidate ProjectContextCandidate?
 
   @@index([projectId, startedAt, id])
   @@index([sourceArtifactVersionId])
@@ -892,6 +894,26 @@ model SourceReportCandidate {
   acceptedDetail SourceReportDetail?
 
   @@map("source_report_candidates")
+}
+
+// AI-proposed pre-fill for the Project Context form (spec §5 human-in-the-loop):
+// never auto-persisted as the canonical context — the reviewer edits it and
+// submits it through the same manual create/createVersion path as any
+// hand-authored context. content mirrors only the fields the Context form
+// actually exposes (no scopeItems yet); sourceVersionIds records which
+// approved Project Source versions were used as input, for evidence (§36.4).
+model ProjectContextCandidate {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId        String   @map("project_id") @db.Uuid
+  aiRunId          String   @unique @map("ai_run_id") @db.Uuid
+  content          Json
+  sourceVersionIds Json     @map("source_version_ids")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  aiRun   AIRun   @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+
+  @@map("project_context_candidates")
 }
 
 // Structured interpretation of a source's extracted content (spec §8):

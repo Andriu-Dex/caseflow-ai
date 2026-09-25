@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AIOrchestrator } from '@caseflow-ai/ai';
 import type { PrismaService } from '../database/prisma.service';
 import { ProjectContextService } from './project-context.service';
 
@@ -82,13 +83,20 @@ describe('ProjectContextService', () => {
   const prisma = {
     $transaction: vi.fn((callback: (client: typeof tx) => unknown) => callback(tx)),
     artifact: { findFirst: vi.fn() },
+    project: { findUnique: vi.fn() },
+    artifactVersion: { findMany: vi.fn() },
+    projectContextCandidate: { create: vi.fn() },
   };
+  const ai = { generateStructured: vi.fn() };
   let service: ProjectContextService;
 
   beforeEach(() => {
     vi.resetAllMocks();
     prisma.$transaction.mockImplementation((callback) => callback(tx));
-    service = new ProjectContextService(prisma as unknown as PrismaService);
+    service = new ProjectContextService(
+      prisma as unknown as PrismaService,
+      ai as unknown as AIOrchestrator,
+    );
   });
 
   it('creates the artifact, code and complete version 1 snapshot', async () => {
@@ -205,6 +213,67 @@ describe('ProjectContextService', () => {
     expect(result.sources).toEqual([
       { id: 'src-artifact', versionId: 'source-version-1', code: 'SRC-001', title: 'Entrevista' },
     ]);
+  });
+
+  it('generates an AI candidate from approved sources with usable knowledge', async () => {
+    prisma.project.findUnique.mockResolvedValue({ id: projectId });
+    prisma.artifactVersion.findMany.mockResolvedValue([
+      {
+        id: 'source-version-1',
+        title: 'Entrevista',
+        artifact: { code: 'SRC-001' },
+        sourceDetail: { extractedText: 'contenido extraído' },
+      },
+    ]);
+    const content = {
+      problemStatement: 'Problema generado',
+      objective: 'Objetivo generado',
+      actors: ['Coordinador'],
+      needs: ['Visibilidad en tiempo real'],
+      constraints: [],
+      businessRules: ['Bloquear morosos'],
+    };
+    ai.generateStructured.mockResolvedValue({
+      data: content,
+      metadata: { runId: 'run-1' },
+    });
+    prisma.projectContextCandidate.create.mockResolvedValue({
+      id: 'candidate-1',
+      projectId,
+      aiRunId: 'run-1',
+      content,
+      sourceVersionIds: ['source-version-1'],
+      createdAt: now,
+    });
+
+    const result = await service.generate(projectId);
+
+    expect(result).toMatchObject({
+      id: 'candidate-1',
+      projectId,
+      aiRunId: 'run-1',
+      content,
+      sourceVersionIds: ['source-version-1'],
+    });
+    expect(prisma.projectContextCandidate.create).toHaveBeenCalledWith({
+      data: {
+        projectId,
+        aiRunId: 'run-1',
+        content,
+        sourceVersionIds: ['source-version-1'],
+      },
+    });
+  });
+
+  it('rejects generation for a missing project or without usable approved sources', async () => {
+    prisma.project.findUnique.mockResolvedValue(null);
+    await expect(service.generate(projectId)).rejects.toMatchObject({ status: 404 });
+
+    prisma.project.findUnique.mockResolvedValue({ id: projectId });
+    prisma.artifactVersion.findMany.mockResolvedValue([
+      { id: 'v1', title: 'Sin texto', artifact: { code: 'SRC-002' }, sourceDetail: null },
+    ]);
+    await expect(service.generate(projectId)).rejects.toMatchObject({ status: 422 });
   });
 
   it('fails safely when the monotonic counter returns no row', async () => {
