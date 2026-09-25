@@ -6,22 +6,7 @@ import Link from 'next/link';
 import { Badge, Card, CardContent, CardHeader } from '@caseflow-ai/ui';
 import { api } from '../lib/api';
 import { QueryState, RequireActiveProject } from '../components/query-state';
-
-const STAGE_LINKS: Record<string, string> = {
-  SOURCES: '/sources',
-  CONTEXT: '/context',
-  REQUIREMENTS: '/requirements',
-  USE_CASES: '/use-cases',
-  USE_CASE_DIAGRAM: '/use-cases',
-  DATA_MODEL: '/data-model',
-  ER_DIAGRAM: '/data-model',
-  NAVIGATION: '/design/navigation',
-  SOFTWARE_ARCHITECTURE: '/design/software-architecture',
-  SYSTEM_ARCHITECTURE: '/design/system-architecture',
-  UI_BLUEPRINT: '/design/ui-blueprint',
-  MOCKUPS: '/design/mockups',
-  IMPACT: '/traceability',
-};
+import { STAGE_LINKS } from '../lib/stage-links';
 
 function HomeContent({ projectId }: { projectId: string }) {
   const project = useQuery({

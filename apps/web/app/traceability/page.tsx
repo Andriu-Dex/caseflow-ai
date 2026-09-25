@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import type { TraceabilityNode } from '@caseflow-ai/contracts';
 import { api } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
+import { PageHeading } from '../../components/page-heading';
 import { StatusBadge } from '../../components/status-badge';
 
 function NodeLabel({ node }: { node: TraceabilityNode }) {
@@ -42,7 +43,7 @@ function TraceabilityContent({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold text-foreground">Trazabilidad</h1>
+      <PageHeading title="Trazabilidad" />
 
       <QueryState isLoading={graph.isLoading} error={graph.error}>
         {graph.data ? (

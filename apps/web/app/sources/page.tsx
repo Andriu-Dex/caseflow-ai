@@ -17,6 +17,7 @@ import {
 } from '@caseflow-ai/ui';
 import { api, ApiError } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
+import { PageHeading } from '../../components/page-heading';
 import { StatusBadge } from '../../components/status-badge';
 
 const SOURCE_KIND_LABELS: Record<ProjectSourceKind, string> = {
@@ -416,7 +417,7 @@ function SourcesContent({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold text-foreground">Fuentes del proyecto</h1>
+      <PageHeading title="Fuentes del proyecto" />
       <CreateSourceForm
         projectId={projectId}
         onCreated={() => queryClient.invalidateQueries({ queryKey: ['sources', projectId] })}

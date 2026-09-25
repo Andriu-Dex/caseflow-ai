@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api, ApiError } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
+import { PageHeading } from '../../components/page-heading';
 import { StatusBadge } from '../../components/status-badge';
 
 const linesToItems = (text: string) =>
@@ -216,7 +217,7 @@ function ContextContent({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold text-foreground">Contexto del proyecto</h1>
+      <PageHeading title="Contexto del proyecto" />
 
       {context.isLoading ? (
         <p className="text-sm text-muted-foreground">Cargando…</p>
