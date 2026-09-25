@@ -1,9 +1,11 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
+  projectContextCandidateSchema,
   projectContextRequestSchema,
   projectContextResponseSchema,
   transitionArtifactVersionRequestSchema,
+  type ProjectContextCandidate,
   type ProjectContextRequest,
   type ProjectContextResponse,
 } from '@caseflow-ai/contracts';
@@ -47,6 +49,20 @@ export class ProjectContextController {
   @ApiErrorResponse(404, 'The project context does not exist.')
   get(@Param('projectId', uuidParamPipe) projectId: string): Promise<ProjectContextResponse> {
     return this.projectContext.getCurrent(projectId);
+  }
+
+  @Post('generate')
+  @ApiOperation({
+    operationId: 'generateProjectContext',
+    summary: 'Generate an AI candidate to pre-fill the project context from approved sources',
+  })
+  @ApiUuidParam('projectId', 'Project identifier.')
+  @ApiZodResponse(201, 'AI-proposed context candidate.', projectContextCandidateSchema)
+  @ApiErrorResponse(404, 'The project does not exist.')
+  @ApiErrorResponse(422, 'No approved project source has usable knowledge yet.')
+  @ApiErrorResponse(503, 'The AI provider is unavailable or rejected the request.')
+  generate(@Param('projectId', uuidParamPipe) projectId: string): Promise<ProjectContextCandidate> {
+    return this.projectContext.generate(projectId);
   }
 
   @Post('versions')

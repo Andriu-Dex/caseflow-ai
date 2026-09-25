@@ -51,6 +51,36 @@ const projectContextVersionMetadataSchema = z.object({
   createdAt: z.iso.datetime(),
 });
 
+// AI-proposed pre-fill (spec §5 human-in-the-loop): mirrors only the fields
+// the Context form actually exposes for editing before submission — never a
+// separate "accept" path, the reviewer edits and submits it through the same
+// projectContextRequestSchema create/createVersion endpoints as any
+// hand-authored context.
+export const projectContextGenerationContentSchema = z
+  .object({
+    problemStatement: narrative(10_000),
+    objective: narrative(5_000),
+    additionalContext: narrative(10_000).optional(),
+    actors: z.array(narrative(200)).max(PROJECT_CONTEXT_COLLECTION_LIMIT).default([]),
+    needs: z.array(narrative(2_000)).max(PROJECT_CONTEXT_COLLECTION_LIMIT).default([]),
+    constraints: z.array(narrative(2_000)).max(PROJECT_CONTEXT_COLLECTION_LIMIT).default([]),
+    businessRules: z.array(narrative(2_000)).max(PROJECT_CONTEXT_COLLECTION_LIMIT).default([]),
+  })
+  .strict();
+export type ProjectContextGenerationContent = z.output<
+  typeof projectContextGenerationContentSchema
+>;
+
+export const projectContextCandidateSchema = z.object({
+  id: z.uuid(),
+  projectId: z.uuid(),
+  aiRunId: z.uuid(),
+  content: projectContextGenerationContentSchema,
+  sourceVersionIds: z.array(z.uuid()),
+  createdAt: z.iso.datetime(),
+});
+export type ProjectContextCandidate = z.infer<typeof projectContextCandidateSchema>;
+
 export const projectContextResponseSchema = z.object({
   artifactId: z.uuid(),
   projectId: z.uuid(),

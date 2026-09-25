@@ -222,6 +222,7 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
   const [generatingReport, setGeneratingReport] = useState(false);
   const [reportCandidate, setReportCandidate] = useState<SourceReportCandidate | null>(null);
   const [acceptingReport, setAcceptingReport] = useState(false);
+  const [approving, setApproving] = useState(false);
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
@@ -244,6 +245,20 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
       invalidate();
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : 'No se pudo cambiar el estado.');
+    }
+  }
+
+  async function approveDirectly() {
+    setActionError(null);
+    setApproving(true);
+    try {
+      await api.sources.transition(projectId, source.id, source.version.id, 'IN_REVIEW');
+      await api.sources.transition(projectId, source.id, source.version.id, 'APPROVED');
+      invalidate();
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : 'No se pudo aprobar la fuente.');
+    } finally {
+      setApproving(false);
     }
   }
 
@@ -541,19 +556,34 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
 
           <div className="flex flex-wrap gap-2 border-t border-border pt-2">
             {source.version.status === 'DRAFT' || source.version.status === 'GENERATED' ? (
-              <button
-                type="button"
-                onClick={() => transition('IN_REVIEW')}
-                disabled={!source.source.hasExtractedText}
-                title={
-                  !source.source.hasExtractedText
-                    ? 'Se requiere conocimiento utilizable (texto extraído o transcripción manual).'
-                    : undefined
-                }
-                className="rounded-md border border-input px-3 py-1 text-sm hover:bg-muted/40 disabled:opacity-50"
-              >
-                Enviar a revisión
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => transition('IN_REVIEW')}
+                  disabled={!source.source.hasExtractedText}
+                  title={
+                    !source.source.hasExtractedText
+                      ? 'Se requiere conocimiento utilizable (texto extraído o transcripción manual).'
+                      : undefined
+                  }
+                  className="rounded-md border border-input px-3 py-1 text-sm hover:bg-muted/40 disabled:opacity-50"
+                >
+                  Enviar a revisión
+                </button>
+                <button
+                  type="button"
+                  onClick={approveDirectly}
+                  disabled={!source.source.hasExtractedText || approving}
+                  title={
+                    !source.source.hasExtractedText
+                      ? 'Se requiere conocimiento utilizable (texto extraído o transcripción manual).'
+                      : undefined
+                  }
+                  className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {approving ? 'Aprobando…' : 'Aprobar directamente'}
+                </button>
+              </>
             ) : null}
             {source.version.status === 'IN_REVIEW' ? (
               <>

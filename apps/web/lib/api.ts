@@ -3,6 +3,7 @@ import type {
   FirstDeliverableExport,
   MockupPreviewResponse,
   MockupResponse,
+  ProjectContextCandidate,
   ProjectContextRequest,
   ProjectContextResponse,
   ProjectListResponse,
@@ -197,6 +198,8 @@ export const api = {
       post<ProjectContextResponse>(`/projects/${projectId}/context`, input),
     createVersion: (projectId: string, input: ProjectContextRequest) =>
       post<ProjectContextResponse>(`/projects/${projectId}/context/versions`, input),
+    generate: (projectId: string) =>
+      post<ProjectContextCandidate>(`/projects/${projectId}/context/generate`),
     transition: (projectId: string, versionId: string, status: ArtifactVersionStatus) =>
       post(`/projects/${projectId}/context/versions/${versionId}/transition`, { status }),
   },
