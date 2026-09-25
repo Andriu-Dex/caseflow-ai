@@ -71,6 +71,11 @@ export const sourceResponseSchema = z.object({
   projectId: z.uuid(),
   code: z.string(),
   createdAt: z.iso.datetime(),
+  archivedAt: z.iso.datetime().nullable(),
+  // Whether any version of this Source ever reached APPROVED — determines
+  // whether it can still be hard-deleted or must be archived instead
+  // (spec §87: "fuentes utilizadas → archivar antes que borrar").
+  hasApprovedHistory: z.boolean(),
   version: versionSchema,
   source: z.object({
     title: z.string(),

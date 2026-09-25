@@ -27,7 +27,7 @@ export class ProjectsService {
         description: input.description ?? null,
       },
     });
-    return toProjectResponse(project);
+    return toProjectResponse(project, false);
   }
 
   async list(workspaceId: string, limit: number, offset: number): Promise<ProjectListResponse> {
@@ -37,7 +37,14 @@ export class ProjectsService {
       take: limit,
       skip: offset,
     });
-    return { items: projects.map(toProjectResponse), limit, offset };
+    const approvedProjectIds = await this.projectIdsWithApprovedArtifacts(
+      projects.map((p) => p.id),
+    );
+    return {
+      items: projects.map((p) => toProjectResponse(p, approvedProjectIds.has(p.id))),
+      limit,
+      offset,
+    };
   }
 
   async get(projectId: string): Promise<ProjectResponse> {
@@ -45,7 +52,41 @@ export class ProjectsService {
     if (!project) {
       throw new NotFoundException('Proyecto no encontrado.');
     }
-    return toProjectResponse(project);
+    return toProjectResponse(project, await this.hasApprovedArtifacts(projectId));
+  }
+
+  private async hasApprovedArtifacts(projectId: string): Promise<boolean> {
+    const count = await this.prisma.artifactVersion.count({
+      where: { projectId, status: 'APPROVED' },
+    });
+    return count > 0;
+  }
+
+  private async projectIdsWithApprovedArtifacts(projectIds: string[]): Promise<Set<string>> {
+    if (projectIds.length === 0) return new Set();
+    const rows = await this.prisma.artifactVersion.findMany({
+      where: { projectId: { in: projectIds }, status: 'APPROVED' },
+      select: { projectId: true },
+      distinct: ['projectId'],
+    });
+    return new Set(rows.map((r) => r.projectId));
+  }
+
+  // Archival is the alternative to deletion once a project has approved
+  // history (spec §87: "fuentes utilizadas → archivar antes que borrar").
+  // Purely additive on the Project row — never touches any ArtifactVersion,
+  // so it needs no immutability exception.
+  async archive(projectId: string): Promise<ProjectResponse> {
+    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) throw new NotFoundException('Proyecto no encontrado.');
+    if (project.archivedAt)
+      throw new UnprocessableEntityException('El proyecto ya está archivado.');
+
+    const updated = await this.prisma.project.update({
+      where: { id: projectId },
+      data: { archivedAt: new Date() },
+    });
+    return toProjectResponse(updated, await this.hasApprovedArtifacts(projectId));
   }
 
   // Hard delete — only permitted while the project has never had anything
@@ -59,12 +100,9 @@ export class ProjectsService {
     const project = await this.prisma.project.findUnique({ where: { id: projectId } });
     if (!project) throw new NotFoundException('Proyecto no encontrado.');
 
-    const approvedCount = await this.prisma.artifactVersion.count({
-      where: { projectId, status: 'APPROVED' },
-    });
-    if (approvedCount > 0) {
+    if (await this.hasApprovedArtifacts(projectId)) {
       throw new UnprocessableEntityException(
-        'No se puede eliminar un proyecto con artefactos aprobados; el historial aprobado no puede borrarse.',
+        'No se puede eliminar un proyecto con artefactos aprobados; el historial aprobado no puede borrarse. Archive el proyecto en su lugar.',
       );
     }
 

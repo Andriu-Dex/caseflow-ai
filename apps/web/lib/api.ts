@@ -121,6 +121,7 @@ export const api = {
       post<ProjectResponse>('/projects', input),
     get: (projectId: string) => get<ProjectResponse>(`/projects/${projectId}`),
     delete: (projectId: string) => del<void>(`/projects/${projectId}`),
+    archive: (projectId: string) => post<ProjectResponse>(`/projects/${projectId}/archive`),
   },
   readiness: {
     get: (projectId: string) => get<ReadinessResponse>(`/projects/${projectId}/readiness`),
@@ -154,6 +155,8 @@ export const api = {
       post<SourceResponse>(`/projects/${projectId}/sources/${sourceId}/edit`, metadata),
     delete: (projectId: string, sourceId: string) =>
       del<void>(`/projects/${projectId}/sources/${sourceId}`),
+    archive: (projectId: string, sourceId: string) =>
+      post<SourceResponse>(`/projects/${projectId}/sources/${sourceId}/archive`),
     submitManualTranscript: (projectId: string, sourceId: string, transcript: string) =>
       post<SourceResponse>(`/projects/${projectId}/sources/${sourceId}/manual-transcript`, {
         transcript,

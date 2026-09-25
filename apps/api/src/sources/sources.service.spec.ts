@@ -58,6 +58,7 @@ function setup() {
     artifactVersion: {
       create: vi.fn().mockResolvedValue(version),
       findUniqueOrThrow: vi.fn().mockResolvedValue(version),
+      count: vi.fn().mockResolvedValue(0),
     },
     sourceDetail: { create: vi.fn() },
     $queryRaw: vi.fn().mockResolvedValue([{ last_number: 1 }]),

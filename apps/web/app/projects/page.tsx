@@ -1,10 +1,11 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { FolderKanban, Trash2 } from 'lucide-react';
+import { Archive, FolderKanban, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import type { ProjectResponse } from '@caseflow-ai/contracts';
 import {
+  Badge,
   Button,
   Card,
   CardContent,
@@ -93,10 +94,61 @@ function DeleteProjectDialog({
   );
 }
 
+function ArchiveProjectDialog({
+  project,
+  onOpenChange,
+  onArchived,
+}: {
+  project: ProjectResponse;
+  onOpenChange: (open: boolean) => void;
+  onArchived: () => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [archiving, setArchiving] = useState(false);
+
+  async function handleArchive() {
+    setArchiving(true);
+    setError(null);
+    try {
+      await api.projects.archive(project.id);
+      onArchived();
+      onOpenChange(false);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo archivar el proyecto.');
+    } finally {
+      setArchiving(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Archivar proyecto</DialogTitle>
+          <DialogDescription>
+            Este proyecto tiene artefactos aprobados, así que no puede eliminarse. Archivarlo lo
+            marca como inactivo sin borrar su historial.
+          </DialogDescription>
+        </DialogHeader>
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button type="button" disabled={archiving} onClick={handleArchive}>
+            {archiving ? 'Archivando…' : 'Archivar'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function ProjectCard({ project, onDeleted }: { project: ProjectResponse; onDeleted: () => void }) {
   const [confirming, setConfirming] = useState(false);
   const { projectId, setProjectId } = useActiveProject();
   const active = projectId === project.id;
+  const archived = project.archivedAt !== null;
 
   return (
     <Card className={active ? 'border-primary' : undefined}>
@@ -104,6 +156,7 @@ function ProjectCard({ project, onDeleted }: { project: ProjectResponse; onDelet
         <CardTitle className="flex items-center gap-2 text-base">
           <FolderKanban className="size-4 shrink-0 text-primary" aria-hidden="true" />
           {project.name}
+          {archived ? <Badge variant="secondary">Archivado</Badge> : null}
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
@@ -122,20 +175,41 @@ function ProjectCard({ project, onDeleted }: { project: ProjectResponse; onDelet
           >
             {active ? 'Proyecto activo' : 'Usar este proyecto'}
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="border-destructive/40 text-destructive hover:bg-destructive/5"
-            onClick={() => setConfirming(true)}
-          >
-            <Trash2 className="size-3.5" aria-hidden="true" />
-            Eliminar
-          </Button>
+          {project.hasApprovedArtifacts ? (
+            archived ? null : (
+              <Button type="button" variant="outline" size="sm" onClick={() => setConfirming(true)}>
+                <Archive className="size-3.5" aria-hidden="true" />
+                Archivar
+              </Button>
+            )
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="border-destructive/40 text-destructive hover:bg-destructive/5"
+              onClick={() => setConfirming(true)}
+            >
+              <Trash2 className="size-3.5" aria-hidden="true" />
+              Eliminar
+            </Button>
+          )}
         </div>
       </CardContent>
       {confirming ? (
-        <DeleteProjectDialog project={project} onOpenChange={setConfirming} onDeleted={onDeleted} />
+        project.hasApprovedArtifacts ? (
+          <ArchiveProjectDialog
+            project={project}
+            onOpenChange={setConfirming}
+            onArchived={onDeleted}
+          />
+        ) : (
+          <DeleteProjectDialog
+            project={project}
+            onOpenChange={setConfirming}
+            onDeleted={onDeleted}
+          />
+        )
       ) : null}
     </Card>
   );
