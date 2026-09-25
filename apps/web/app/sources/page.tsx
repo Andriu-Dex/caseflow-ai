@@ -94,10 +94,7 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5 text-sm">
           <Label htmlFor="source-kind">Tipo de fuente</Label>
-          <Select
-            value={sourceKind}
-            onValueChange={(v) => setSourceKind(v as ProjectSourceKind)}
-          >
+          <Select value={sourceKind} onValueChange={(v) => setSourceKind(v as ProjectSourceKind)}>
             <SelectTrigger id="source-kind" className="w-full">
               <SelectValue />
             </SelectTrigger>

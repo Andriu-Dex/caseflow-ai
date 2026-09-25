@@ -66,7 +66,9 @@ function TraceabilityContent({ projectId }: { projectId: string }) {
                         type="button"
                         onClick={() => setSelectedId(n.id)}
                         className={`block w-full rounded px-2 py-1 text-left ${
-                          selectedId === n.id ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
+                          selectedId === n.id
+                            ? 'bg-primary text-primary-foreground'
+                            : 'hover:bg-muted'
                         }`}
                       >
                         {n.code} — {n.title}
