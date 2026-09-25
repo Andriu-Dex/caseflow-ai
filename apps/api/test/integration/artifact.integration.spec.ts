@@ -13,6 +13,15 @@ describe('Artifact + ArtifactVersion foundation', () => {
     projectId = (await ctx.projects.create({ workspaceId: workspace.id, name: 'Proyecto A' })).id;
     otherProjectId = (await ctx.projects.create({ workspaceId: workspace.id, name: 'Proyecto B' }))
       .id;
+    // Every current first-deliverable artifact type now has a dedicated
+    // endpoint; this test-only type exercises the generic Artifact/
+    // ArtifactVersion mechanism in isolation, exactly as a genuinely new
+    // future type would.
+    await ctx.prisma.artifactType.upsert({
+      where: { code: 'GENERIC_TEST_TYPE' },
+      create: { code: 'GENERIC_TEST_TYPE', defaultCodePrefix: 'GEN' },
+      update: {},
+    });
   });
 
   afterAll(async () => {
@@ -22,14 +31,14 @@ describe('Artifact + ArtifactVersion foundation', () => {
   describe('creation', () => {
     it('creates an artifact with a MANUAL DRAFT first version inside one project', async () => {
       const artifact = await ctx.artifacts.createArtifact(projectId, {
-        type: 'DATA_MODEL',
+        type: 'GENERIC_TEST_TYPE',
         title: 'Registrar pedido',
         metadataAuxiliary: { note: 'inicial' },
       });
 
       expect(artifact.projectId).toBe(projectId);
-      expect(artifact.type).toBe('DATA_MODEL');
-      expect(artifact.code).toBe('MD-001');
+      expect(artifact.type).toBe('GENERIC_TEST_TYPE');
+      expect(artifact.code).toBe('GEN-001');
       expect(artifact.currentVersion).toMatchObject({
         artifactId: artifact.id,
         versionNumber: 1,
@@ -58,7 +67,7 @@ describe('Artifact + ArtifactVersion foundation', () => {
 
       for (const [origin, status] of expectations) {
         const artifact = await ctx.artifacts.createArtifact(projectId, {
-          type: 'DATA_MODEL',
+          type: 'GENERIC_TEST_TYPE',
           title: `CU ${origin}`,
           origin,
         });
@@ -73,12 +82,11 @@ describe('Artifact + ArtifactVersion foundation', () => {
       }
     });
 
-    it('accepts generic first-deliverable artifact types', async () => {
-      for (const type of FIRST_DELIVERABLE_ARTIFACT_TYPE_CODES.filter(
-        (code) => !['PROJECT_CONTEXT', 'REQUIREMENT', 'USE_CASE'].includes(code),
-      )) {
-        const artifact = await ctx.artifacts.createArtifact(projectId, { type, title: type });
-        expect(artifact.type).toBe(type);
+    it('rejects every first-deliverable artifact type through the generic workflow (all have dedicated endpoints)', async () => {
+      for (const type of FIRST_DELIVERABLE_ARTIFACT_TYPE_CODES) {
+        await expect(
+          ctx.artifacts.createArtifact(projectId, { type, title: type }),
+        ).rejects.toMatchObject({ status: 422 });
       }
     });
 
@@ -91,7 +99,7 @@ describe('Artifact + ArtifactVersion foundation', () => {
     it('rejects a missing project', async () => {
       await expect(
         ctx.artifacts.createArtifact('00000000-0000-4000-8000-000000000000', {
-          type: 'DATA_MODEL',
+          type: 'GENERIC_TEST_TYPE',
           title: 'x',
         }),
       ).rejects.toThrow('Proyecto no encontrado.');
@@ -106,10 +114,10 @@ describe('Artifact + ArtifactVersion foundation', () => {
 
       const codes: string[] = [];
       for (const [type, codePrefix] of [
-        ['DATA_MODEL', undefined],
-        ['DATA_MODEL', 'ALT'],
-        ['DATA_MODEL', undefined],
-        ['DATA_MODEL', undefined],
+        ['GENERIC_TEST_TYPE', undefined],
+        ['GENERIC_TEST_TYPE', 'ALT'],
+        ['GENERIC_TEST_TYPE', undefined],
+        ['GENERIC_TEST_TYPE', undefined],
       ] as const) {
         const artifact = await ctx.artifacts.createArtifact(project.id, {
           type,
@@ -119,12 +127,12 @@ describe('Artifact + ArtifactVersion foundation', () => {
         codes.push(artifact.code);
       }
       const inOther = await ctx.artifacts.createArtifact(other.id, {
-        type: 'DATA_MODEL',
+        type: 'GENERIC_TEST_TYPE',
         title: 't',
       });
 
-      expect(codes).toEqual(['MD-001', 'ALT-001', 'MD-002', 'MD-003']);
-      expect(inOther.code).toBe('MD-001');
+      expect(codes).toEqual(['GEN-001', 'ALT-001', 'GEN-002', 'GEN-003']);
+      expect(inOther.code).toBe('GEN-001');
     });
 
     it('never reuses a code, even when many artifacts are created concurrently', async () => {
@@ -133,13 +141,16 @@ describe('Artifact + ArtifactVersion foundation', () => {
 
       const created = await Promise.all(
         Array.from({ length: 8 }, (_, index) =>
-          ctx.artifacts.createArtifact(project.id, { type: 'DATA_MODEL', title: `r${index}` }),
+          ctx.artifacts.createArtifact(project.id, {
+            type: 'GENERIC_TEST_TYPE',
+            title: `r${index}`,
+          }),
         ),
       );
 
       const codes = created.map((artifact) => artifact.code).sort();
       expect(codes).toEqual(
-        Array.from({ length: 8 }, (_, index) => `MD-${String(index + 1).padStart(3, '0')}`),
+        Array.from({ length: 8 }, (_, index) => `GEN-${String(index + 1).padStart(3, '0')}`),
       );
     });
   });
@@ -147,7 +158,7 @@ describe('Artifact + ArtifactVersion foundation', () => {
   describe('versioning', () => {
     it('keeps artifact identity, appends sequential versions and preserves earlier ones', async () => {
       const artifact = await ctx.artifacts.createArtifact(projectId, {
-        type: 'DATA_MODEL',
+        type: 'GENERIC_TEST_TYPE',
         title: 'Modelo v1',
         metadataAuxiliary: { revision: 1 },
       });
@@ -185,7 +196,7 @@ describe('Artifact + ArtifactVersion foundation', () => {
 
     it('assigns unique sequential numbers under concurrent version creation', async () => {
       const artifact = await ctx.artifacts.createArtifact(projectId, {
-        type: 'NAVIGATION_TREE',
+        type: 'GENERIC_TEST_TYPE',
         title: 'Navegación',
       });
 
@@ -207,7 +218,7 @@ describe('Artifact + ArtifactVersion foundation', () => {
 
     it('never rewrites an APPROVED version: editing creates a new version', async () => {
       const artifact = await ctx.artifacts.createArtifact(projectId, {
-        type: 'SOFTWARE_ARCHITECTURE',
+        type: 'GENERIC_TEST_TYPE',
         title: 'Arquitectura aprobada',
       });
       await ctx.sql.query(
@@ -237,7 +248,7 @@ describe('Artifact + ArtifactVersion foundation', () => {
   describe('project isolation', () => {
     it('never resolves or versions an artifact through another project', async () => {
       const artifact = await ctx.artifacts.createArtifact(projectId, {
-        type: 'UI_BLUEPRINT',
+        type: 'GENERIC_TEST_TYPE',
         title: 'Privado',
       });
 

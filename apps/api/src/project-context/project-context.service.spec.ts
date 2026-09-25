@@ -44,6 +44,10 @@ const detail = {
       description: 'Alcance',
     },
   ],
+  sources: [] as {
+    sourceVersionId: string;
+    sourceVersion: { title: string; artifact: { id: string; code: string } };
+  }[],
 };
 const version = {
   id: 'version-1',
@@ -72,7 +76,7 @@ describe('ProjectContextService', () => {
     project: { findUnique: vi.fn() },
     artifactType: { findUnique: vi.fn() },
     artifact: { findFirst: vi.fn(), create: vi.fn() },
-    artifactVersion: { create: vi.fn(), aggregate: vi.fn() },
+    artifactVersion: { create: vi.fn(), aggregate: vi.fn(), findMany: vi.fn() },
     $queryRaw: vi.fn(),
   };
   const prisma = {
@@ -144,6 +148,63 @@ describe('ProjectContextService', () => {
   it('returns 404 when versioning a project without context', async () => {
     tx.$queryRaw.mockResolvedValue([]);
     await expect(service.createVersion(projectId, input)).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('links exact APPROVED PROJECT_SOURCE versions and rejects a mismatch', async () => {
+    tx.project.findUnique.mockResolvedValue({ id: projectId });
+    tx.artifact.findFirst.mockResolvedValue(null);
+    tx.artifactType.findUnique.mockResolvedValue({
+      code: 'PROJECT_CONTEXT',
+      defaultCodePrefix: 'CTX',
+    });
+    tx.$queryRaw.mockResolvedValue([{ last_number: 1 }]);
+    tx.artifact.create.mockResolvedValue(artifact);
+    tx.artifactVersion.create.mockResolvedValue(version);
+    tx.artifactVersion.findMany.mockResolvedValue([{ id: 'source-version-1' }]);
+
+    await service.create(projectId, { ...input, sourceVersionIds: ['source-version-1'] });
+    expect(tx.artifactVersion.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: { in: ['source-version-1'] },
+          projectId,
+          status: 'APPROVED',
+          artifact: { artifactTypeCode: 'PROJECT_SOURCE' },
+        }),
+      }),
+    );
+
+    tx.artifactVersion.findMany.mockResolvedValue([]);
+    await expect(
+      service.create(projectId, { ...input, sourceVersionIds: ['missing'] }),
+    ).rejects.toMatchObject({ status: 422 });
+  });
+
+  it('answers which approved source versions support a context', async () => {
+    prisma.artifact.findFirst.mockResolvedValue({
+      ...artifact,
+      versions: [
+        {
+          ...version,
+          projectContextDetail: {
+            ...detail,
+            sources: [
+              {
+                sourceVersionId: 'source-version-1',
+                sourceVersion: {
+                  title: 'Entrevista',
+                  artifact: { id: 'src-artifact', code: 'SRC-001' },
+                },
+              },
+            ],
+          },
+        },
+      ],
+    });
+    const result = await service.getCurrent(projectId);
+    expect(result.sources).toEqual([
+      { id: 'src-artifact', versionId: 'source-version-1', code: 'SRC-001', title: 'Entrevista' },
+    ]);
   });
 
   it('fails safely when the monotonic counter returns no row', async () => {

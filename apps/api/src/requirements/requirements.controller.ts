@@ -5,6 +5,7 @@ import {
   generateRequirementsRequestSchema,
   requirementInputSchema,
   requirementListResponseSchema,
+  requirementQualityReportResponseSchema,
   requirementResponseSchema,
   transitionArtifactVersionRequestSchema,
 } from '@caseflow-ai/contracts';
@@ -33,6 +34,15 @@ export class RequirementsController {
   @ApiZodResponse(200, 'Requirements.', requirementListResponseSchema)
   list(@Param('projectId', uuidParamPipe) p: string) {
     return this.service.list(p);
+  }
+  @Get('quality-report')
+  @ApiOperation({
+    operationId: 'getRequirementQualityReport',
+    summary: 'Informe determinístico de calidad ISO/IEC/IEEE 29148:2018-aligned',
+  })
+  @ApiZodResponse(200, 'Requirement quality report.', requirementQualityReportResponseSchema)
+  qualityReport(@Param('projectId', uuidParamPipe) p: string) {
+    return this.service.qualityReport(p);
   }
   @Get(':requirementId')
   @ApiOperation({ operationId: 'getRequirement', summary: 'Consultar requisito' })

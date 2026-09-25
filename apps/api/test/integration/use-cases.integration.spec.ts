@@ -46,6 +46,14 @@ describe('Use Cases integration', () => {
     await ctx.requirements.transition(projectId, r.id, r.version.id, 'IN_REVIEW');
     await ctx.requirements.transition(projectId, r.id, r.version.id, 'APPROVED');
     approvedVersionId = r.version.id;
+    // Every current first-deliverable artifact type now has a dedicated
+    // endpoint; this test-only type stands in for "some unrelated artifact
+    // type" below.
+    await ctx.prisma.artifactType.upsert({
+      where: { code: 'GENERIC_TEST_TYPE' },
+      create: { code: 'GENERIC_TEST_TYPE', defaultCodePrefix: 'GEN' },
+      update: {},
+    });
   });
   afterAll(async () => ctx.close());
   it('creates CU snapshots, versions and immutable ordered flows', async () => {
@@ -85,7 +93,7 @@ describe('Use Cases integration', () => {
       'Referencia',
     );
     const generic = await ctx.artifacts.createArtifact(projectId, {
-      type: 'DATA_MODEL',
+      type: 'GENERIC_TEST_TYPE',
       title: 'Modelo',
     });
     await expect(

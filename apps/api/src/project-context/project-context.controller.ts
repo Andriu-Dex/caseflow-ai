@@ -3,9 +3,11 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   projectContextRequestSchema,
   projectContextResponseSchema,
+  transitionArtifactVersionRequestSchema,
   type ProjectContextRequest,
   type ProjectContextResponse,
 } from '@caseflow-ai/contracts';
+import type { z } from 'zod';
 import { uuidParamPipe } from '../common/uuid-param.pipe';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ApiErrorResponse, ApiUuidParam, ApiZodBody, ApiZodResponse } from '../openapi/zod-openapi';
@@ -62,5 +64,20 @@ export class ProjectContextController {
     @Body(new ZodValidationPipe(projectContextRequestSchema)) body: ProjectContextRequest,
   ): Promise<ProjectContextResponse> {
     return this.projectContext.createVersion(projectId, body);
+  }
+
+  @Post('versions/:versionId/transition')
+  @ApiOperation({
+    operationId: 'transitionProjectContextVersion',
+    summary: 'Change the review/approval status of a context version',
+  })
+  @ApiZodBody(transitionArtifactVersionRequestSchema)
+  transition(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('versionId', uuidParamPipe) versionId: string,
+    @Body(new ZodValidationPipe(transitionArtifactVersionRequestSchema))
+    body: z.output<typeof transitionArtifactVersionRequestSchema>,
+  ) {
+    return this.projectContext.transition(projectId, versionId, body.status);
   }
 }

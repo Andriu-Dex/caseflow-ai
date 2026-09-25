@@ -5,9 +5,13 @@ allowBuilds:
   '@prisma/engines': true
   '@scarf/scarf': false
   '@swc/core': true
+  # esbuild's own postinstall only downloads its prebuilt platform binary
+  # (no arbitrary script) — required for apps/web's Vite/Vitest test runner.
+  esbuild: true
   prisma: true
 minimumReleaseAgeExclude:
   - '@vitest/coverage-v8@5.0.1'
   - '@vitest/mocker@5.0.1'
   - '@vitest/spy@5.0.1'
   - vitest@5.0.1
+  - '@aws-sdk/client-s3@3.1137.0'

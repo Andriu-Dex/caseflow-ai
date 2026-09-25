@@ -6,6 +6,32 @@ import {
   type AIUsage,
 } from '@caseflow-ai/ai';
 
+export {
+  DIAGRAM_PROVIDER_ERROR_CODES,
+  DiagramProviderError,
+  DisabledDiagramProvider,
+  FakeDiagramProvider,
+} from './diagram-provider';
+export type {
+  DiagramFormat,
+  DiagramProvider,
+  DiagramProviderErrorCode,
+  DiagramProviderRequest,
+  DiagramProviderResponse,
+} from './diagram-provider';
+export { KrokiDiagramProvider, KROKI_ENGINE_VERSION } from './kroki-diagram-provider';
+export type { KrokiDiagramProviderConfig } from './kroki-diagram-provider';
+
+export {
+  STORAGE_PROVIDER_ERROR_CODES,
+  StorageProviderError,
+  DisabledStorageProvider,
+  FakeStorageProvider,
+} from './storage-provider';
+export type { PutObjectInput, StorageProvider, StorageProviderErrorCode } from './storage-provider';
+export { S3StorageProvider } from './s3-storage-provider';
+export type { S3StorageProviderConfig } from './s3-storage-provider';
+
 export interface OpenAICompatibleProviderConfig {
   baseUrl: string;
   apiKey: string;

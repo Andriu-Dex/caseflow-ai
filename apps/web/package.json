@@ -5,20 +5,29 @@
   "description": "CASEFlow AI web application (Next.js foundation)",
   "scripts": {
     "dev": "next dev --port 3000",
-    "build": "next build",
+    "build": "pnpm --filter @caseflow-ai/contracts run build && next build",
     "start": "next start --port 3000",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "pnpm --filter @caseflow-ai/contracts run build && tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "next": "16.3.5",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "@caseflow-ai/contracts": "workspace:*",
+    "@tanstack/react-query": "5.62.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.3.3",
+    "@vitejs/plugin-react": "4.3.4",
+    "@testing-library/jest-dom": "6.6.3",
+    "@testing-library/react": "16.1.0",
+    "@testing-library/user-event": "14.5.2",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
+    "jsdom": "25.0.1",
     "tailwindcss": "4.3.3",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vitest": "5.0.1"
   }
 }

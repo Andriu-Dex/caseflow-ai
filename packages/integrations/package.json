@@ -18,6 +18,7 @@
     "typecheck": "pnpm --filter @caseflow-ai/ai run build && tsc --noEmit --pretty"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1137.0",
     "@caseflow-ai/ai": "workspace:*"
   }
 }
