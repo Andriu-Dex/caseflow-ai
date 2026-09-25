@@ -41,11 +41,36 @@ function ContextForm({
   const [sourceVersionIds, setSourceVersionIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [generating, setGenerating] = useState(false);
 
   function toggleSource(versionId: string) {
     setSourceVersionIds((prev) =>
       prev.includes(versionId) ? prev.filter((id) => id !== versionId) : [...prev, versionId],
     );
+  }
+
+  async function handleGenerate() {
+    setGenerating(true);
+    setError(null);
+    try {
+      const candidate = await api.context.generate(projectId);
+      setProblemStatement(candidate.content.problemStatement);
+      setObjective(candidate.content.objective);
+      setAdditionalContext(candidate.content.additionalContext ?? '');
+      setActorsText(candidate.content.actors.join('\n'));
+      setNeedsText(candidate.content.needs.join('\n'));
+      setConstraintsText(candidate.content.constraints.join('\n'));
+      setBusinessRulesText(candidate.content.businessRules.join('\n'));
+      setSourceVersionIds(candidate.sourceVersionIds);
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : 'No se pudo generar el contexto con IA (¿IA deshabilitada?).',
+      );
+    } finally {
+      setGenerating(false);
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -79,9 +104,24 @@ function ContextForm({
       onSubmit={handleSubmit}
       className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4"
     >
-      <h2 className="text-sm font-semibold text-foreground">
-        {hasExisting ? 'Nueva versión del Contexto' : 'Definir Contexto del Proyecto'}
-      </h2>
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-foreground">
+          {hasExisting ? 'Nueva versión del Contexto' : 'Definir Contexto del Proyecto'}
+        </h2>
+        <button
+          type="button"
+          onClick={handleGenerate}
+          disabled={generating || approvedSources.length === 0}
+          title={
+            approvedSources.length === 0
+              ? 'Se requiere al menos una fuente APPROVED.'
+              : 'Rellena los campos a partir de las fuentes aprobadas. Revise y edite antes de guardar.'
+          }
+          className="rounded-md border border-input px-3 py-1 text-sm hover:bg-muted/40 disabled:opacity-50"
+        >
+          {generating ? 'Generando…' : 'Generar con IA'}
+        </button>
+      </div>
       <label className="flex flex-col gap-1 text-sm">
         Planteamiento del problema
         <textarea

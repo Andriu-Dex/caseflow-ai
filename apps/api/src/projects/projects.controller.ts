@@ -73,4 +73,17 @@ export class ProjectsController {
   delete(@Param('projectId', uuidParamPipe) projectId: string): Promise<void> {
     return this.projects.delete(projectId);
   }
+
+  @Post(':projectId/archive')
+  @ApiOperation({
+    operationId: 'archiveProject',
+    summary: 'Archive a project that has approved history (alternative to deletion)',
+  })
+  @ApiUuidParam('projectId', 'Project identifier.')
+  @ApiZodResponse(200, 'The archived project.', projectResponseSchema)
+  @ApiErrorResponse(404, 'The project does not exist.')
+  @ApiErrorResponse(422, 'The project is already archived.')
+  archive(@Param('projectId', uuidParamPipe) projectId: string): Promise<ProjectResponse> {
+    return this.projects.archive(projectId);
+  }
 }

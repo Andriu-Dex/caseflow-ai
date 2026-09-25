@@ -102,4 +102,49 @@ describe('Sources: edit (new version) and delete', () => {
       ctx.sources.delete(projectId, '00000000-0000-4000-8000-000000000000'),
     ).rejects.toThrow('Fuente no encontrada.');
   });
+
+  it('archives a source that has an approved version instead of deleting it', async () => {
+    const created = await ctx.sources.create(
+      projectId,
+      {
+        title: 'Archivable',
+        sourceKind: 'NOTES',
+        purpose: 'Se archiva en vez de borrar',
+        description: 'Contenido.',
+      },
+      undefined,
+    );
+    await ctx.sources.transition(projectId, created.id, created.version.id, 'IN_REVIEW');
+    await ctx.sources.transition(projectId, created.id, created.version.id, 'APPROVED');
+
+    const archived = await ctx.sources.archive(projectId, created.id);
+
+    expect(archived.archivedAt).not.toBeNull();
+    expect(archived.hasApprovedHistory).toBe(true);
+    const fetched = await ctx.sources.get(projectId, created.id);
+    expect(fetched.archivedAt).not.toBeNull();
+  });
+
+  it('refuses to archive a source twice', async () => {
+    const created = await ctx.sources.create(
+      projectId,
+      {
+        title: 'Doble archivo',
+        sourceKind: 'NOTES',
+        purpose: 'Se archiva una sola vez',
+        description: 'Contenido.',
+      },
+      undefined,
+    );
+
+    await ctx.sources.archive(projectId, created.id);
+
+    await expect(ctx.sources.archive(projectId, created.id)).rejects.toThrow('ya está archivada');
+  });
+
+  it('rejects archiving a source that does not exist', async () => {
+    await expect(
+      ctx.sources.archive(projectId, '00000000-0000-4000-8000-000000000000'),
+    ).rejects.toThrow('Fuente no encontrada.');
+  });
 });

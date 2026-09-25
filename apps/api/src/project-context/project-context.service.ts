@@ -3,9 +3,16 @@ import {
   Injectable,
   InternalServerErrorException,
   NotFoundException,
+  ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import type { ProjectContextRequest, ProjectContextResponse } from '@caseflow-ai/contracts';
+import { AIError, AIOrchestrator } from '@caseflow-ai/ai';
+import {
+  projectContextGenerationContentSchema,
+  type ProjectContextCandidate,
+  type ProjectContextRequest,
+  type ProjectContextResponse,
+} from '@caseflow-ai/contracts';
 import { canTransitionArtifactVersionStatus, formatArtifactCode } from '@caseflow-ai/domain';
 import { PrismaService } from '../database/prisma.service';
 import type { Prisma } from '../generated/prisma/client';
@@ -33,7 +40,10 @@ type Transaction = Prisma.TransactionClient;
 
 @Injectable()
 export class ProjectContextService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ai: AIOrchestrator,
+  ) {}
 
   async create(projectId: string, input: ProjectContextRequest): Promise<ProjectContextResponse> {
     try {
@@ -156,6 +166,73 @@ export class ProjectContextService {
         approvedAt: status === 'APPROVED' ? new Date() : version.approvedAt,
       },
     });
+  }
+
+  // AI-assisted pre-fill (spec §5): drafts a Context candidate from this
+  // project's approved Source knowledge, for the reviewer to edit and submit
+  // through the ordinary create/createVersion path — never persisted as the
+  // canonical context by itself.
+  async generate(projectId: string): Promise<ProjectContextCandidate> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true },
+    });
+    if (!project) throw new NotFoundException('Proyecto no encontrado.');
+
+    const approvedSources = await this.prisma.artifactVersion.findMany({
+      where: { projectId, status: 'APPROVED', artifact: { artifactTypeCode: 'PROJECT_SOURCE' } },
+      include: { artifact: true, sourceDetail: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    const usable = approvedSources.filter((v) => v.sourceDetail?.extractedText);
+    if (usable.length === 0)
+      throw new UnprocessableEntityException(
+        'Se requiere al menos una fuente de proyecto APPROVED con conocimiento utilizable.',
+      );
+
+    try {
+      const result = await this.ai.generateStructured({
+        projectId,
+        promptKey: 'project-context.generate',
+        promptVersion: 1,
+        messages: [
+          {
+            role: 'user',
+            content: JSON.stringify(
+              usable.map((v) => ({
+                code: v.artifact.code,
+                title: v.title,
+                extractedText: v.sourceDetail!.extractedText,
+              })),
+            ),
+          },
+        ],
+        outputSchema: projectContextGenerationContentSchema,
+        schemaName: 'project_context_generation',
+        maxOutputTokens: 4096,
+      });
+      const sourceVersionIds = usable.map((v) => v.id);
+      const candidate = await this.prisma.projectContextCandidate.create({
+        data: {
+          projectId,
+          aiRunId: result.metadata.runId,
+          content: result.data,
+          sourceVersionIds,
+        },
+      });
+      return {
+        id: candidate.id,
+        projectId: candidate.projectId,
+        aiRunId: candidate.aiRunId,
+        content: result.data,
+        sourceVersionIds,
+        createdAt: candidate.createdAt.toISOString(),
+      };
+    } catch (error) {
+      if (error instanceof AIError)
+        throw new ServiceUnavailableException({ message: error.message, code: error.code });
+      throw error;
+    }
   }
 
   private async insertSnapshot(
