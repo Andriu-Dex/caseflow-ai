@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   createProjectRequestSchema,
@@ -58,5 +58,19 @@ export class ProjectsController {
   @ApiErrorResponse(404, 'The project does not exist.')
   get(@Param('projectId', uuidParamPipe) projectId: string): Promise<ProjectResponse> {
     return this.projects.get(projectId);
+  }
+
+  @Delete(':projectId')
+  @HttpCode(204)
+  @ApiOperation({
+    operationId: 'deleteProject',
+    summary: 'Permanently delete a project that has never had anything approved',
+  })
+  @ApiUuidParam('projectId', 'Project identifier.')
+  @ApiErrorResponse(400, 'The project identifier is invalid.')
+  @ApiErrorResponse(404, 'The project does not exist.')
+  @ApiErrorResponse(422, 'The project has approved history and cannot be deleted.')
+  delete(@Param('projectId', uuidParamPipe) projectId: string): Promise<void> {
+    return this.projects.delete(projectId);
   }
 }

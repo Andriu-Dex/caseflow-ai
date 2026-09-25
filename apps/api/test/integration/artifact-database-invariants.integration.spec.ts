@@ -114,8 +114,24 @@ describe('Artifact database invariants', () => {
   });
 
   describe('immutability', () => {
-    it('never deletes a version', async () => {
+    // Deliberate, explicit relaxation (never silent): a version that has
+    // never been APPROVED may be deleted — this is what lets a user
+    // hard-delete a never-approved Source/Project. An APPROVED version, or
+    // anything that ever reached APPROVED, remains permanently undeletable.
+    it('allows deleting a version that was never approved', async () => {
       const { versionId } = await newArtifact();
+
+      await expect(
+        ctx.sql.query('DELETE FROM artifact_versions WHERE id = $1', [versionId]),
+      ).resolves.toMatchObject({ rowCount: 1 });
+    });
+
+    it('never deletes an approved version', async () => {
+      const { versionId } = await newArtifact();
+      await ctx.sql.query(
+        "UPDATE artifact_versions SET status = 'APPROVED', approved_at = now() WHERE id = $1",
+        [versionId],
+      );
 
       await expect(
         ctx.sql.query('DELETE FROM artifact_versions WHERE id = $1', [versionId]),

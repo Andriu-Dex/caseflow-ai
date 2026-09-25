@@ -4,7 +4,12 @@ import { createTestContext, createWorkspace, type TestContext } from './support/
 async function approveSource(ctx: TestContext, projectId: string, title: string, text: string) {
   const source = await ctx.sources.create(
     projectId,
-    { title, sourceKind: 'NOTES', purpose: 'Conocimiento del proyecto' },
+    {
+      title,
+      sourceKind: 'NOTES',
+      purpose: 'Conocimiento del proyecto',
+      description: 'Contenido de prueba.',
+    },
     { originalname: 'n.txt', mimetype: 'text/plain', size: text.length, buffer: Buffer.from(text) },
   );
   await ctx.sources.transition(projectId, source.id, source.version.id, 'IN_REVIEW');
