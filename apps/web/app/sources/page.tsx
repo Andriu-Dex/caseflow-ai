@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Trash2, Upload, X } from 'lucide-react';
+import { Archive, Pencil, Trash2, Upload, X } from 'lucide-react';
 import { useRef, useState } from 'react';
 import type {
   ProjectSourceKind,
@@ -9,6 +9,7 @@ import type {
   SourceResponse,
 } from '@caseflow-ai/contracts';
 import {
+  Badge,
   Button,
   Dialog,
   DialogContent,
@@ -320,6 +321,7 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
           <span className="font-medium text-foreground">{source.source.title}</span>
         </div>
         <div className="flex items-center gap-2">
+          {source.archivedAt ? <Badge variant="secondary">Archivada</Badge> : null}
           <StatusBadge status={source.version.status} />
           <button
             type="button"
@@ -362,16 +364,30 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
               <Pencil className="size-3.5" aria-hidden="true" />
               Editar
             </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="border-destructive/40 text-destructive hover:bg-destructive/5"
-              onClick={() => setConfirmingDelete(true)}
-            >
-              <Trash2 className="size-3.5" aria-hidden="true" />
-              Eliminar
-            </Button>
+            {source.hasApprovedHistory ? (
+              source.archivedAt ? null : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setConfirmingDelete(true)}
+                >
+                  <Archive className="size-3.5" aria-hidden="true" />
+                  Archivar
+                </Button>
+              )
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="border-destructive/40 text-destructive hover:bg-destructive/5"
+                onClick={() => setConfirmingDelete(true)}
+              >
+                <Trash2 className="size-3.5" aria-hidden="true" />
+                Eliminar
+              </Button>
+            )}
           </div>
 
           {editing ? (
@@ -387,15 +403,27 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
           ) : null}
 
           {confirmingDelete ? (
-            <DeleteSourceDialog
-              projectId={projectId}
-              source={source}
-              onOpenChange={setConfirmingDelete}
-              onDeleted={() => {
-                queryClient.invalidateQueries({ queryKey: ['sources', projectId] });
-                queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
-              }}
-            />
+            source.hasApprovedHistory ? (
+              <ArchiveSourceDialog
+                projectId={projectId}
+                source={source}
+                onOpenChange={setConfirmingDelete}
+                onArchived={() => {
+                  queryClient.invalidateQueries({ queryKey: ['sources', projectId] });
+                  queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
+                }}
+              />
+            ) : (
+              <DeleteSourceDialog
+                projectId={projectId}
+                source={source}
+                onOpenChange={setConfirmingDelete}
+                onDeleted={() => {
+                  queryClient.invalidateQueries({ queryKey: ['sources', projectId] });
+                  queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
+                }}
+              />
+            )
           ) : null}
 
           {canSubmitTranscript ? (
@@ -723,6 +751,65 @@ function DeleteSourceDialog({
           </Button>
           <Button type="button" variant="destructive" disabled={deleting} onClick={handleDelete}>
             {deleting ? 'Eliminando…' : 'Eliminar definitivamente'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ArchiveSourceDialog({
+  projectId,
+  source,
+  onOpenChange,
+  onArchived,
+}: {
+  projectId: string;
+  source: SourceResponse;
+  onOpenChange: (open: boolean) => void;
+  onArchived: () => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [archiving, setArchiving] = useState(false);
+
+  async function handleArchive() {
+    setArchiving(true);
+    setError(null);
+    try {
+      await api.sources.archive(projectId, source.id);
+      onArchived();
+      onOpenChange(false);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo archivar la fuente.');
+    } finally {
+      setArchiving(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Archivar fuente</DialogTitle>
+          <DialogDescription>
+            Esta fuente tiene versiones aprobadas, así que no puede eliminarse. Archivarla la marca
+            como inactiva sin borrar su historial.
+          </DialogDescription>
+        </DialogHeader>
+        <p className="text-sm text-foreground">
+          Va a archivar{' '}
+          <strong>
+            {source.code} — {source.source.title}
+          </strong>
+          .
+        </p>
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button type="button" disabled={archiving} onClick={handleArchive}>
+            {archiving ? 'Archivando…' : 'Archivar'}
           </Button>
         </DialogFooter>
       </DialogContent>

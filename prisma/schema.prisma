@@ -195,6 +195,9 @@ model Project {
   description String?
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  // Archival (spec §87): hides the project from active use once it has
+  // approved history and therefore can no longer be hard-deleted.
+  archivedAt  DateTime? @map("archived_at") @db.Timestamptz(6)
 
   workspace            Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   artifacts            Artifact[]
@@ -223,11 +226,16 @@ model ArtifactType {
 // Stable logical identity of an artifact (spec §6.2, §31.1).
 // The "current state" is derived from the latest ArtifactVersion.
 model Artifact {
-  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  projectId        String   @map("project_id") @db.Uuid
-  artifactTypeCode String   @map("artifact_type_code")
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId        String    @map("project_id") @db.Uuid
+  artifactTypeCode String    @map("artifact_type_code")
   code             String
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  // Archival (spec §87: "fuentes utilizadas → archivar antes que borrar"):
+  // hides the artifact from active use without touching any ArtifactVersion
+  // row, so it needs no immutability-trigger exception. The code stays
+  // reserved forever (spec §31.4), unlike a hard delete.
+  archivedAt       DateTime? @map("archived_at") @db.Timestamptz(6)
 
   project                     Project              @relation(fields: [projectId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   artifactType                ArtifactType         @relation(fields: [artifactTypeCode], references: [code], onDelete: Restrict, onUpdate: Restrict)

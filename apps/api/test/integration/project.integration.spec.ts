@@ -137,4 +137,47 @@ describe('Project persistence', () => {
       );
     });
   });
+
+  describe('archival', () => {
+    it('archives a project that has approved history instead of deleting it', async () => {
+      const workspace = await createWorkspace(ctx.prisma);
+      const project = await ctx.projects.create({
+        workspaceId: workspace.id,
+        name: 'Con historial',
+      });
+      const context = await ctx.projectContext.create(project.id, {
+        problemStatement: 'p',
+        objective: 'o',
+        scopeItems: [],
+        actors: [{ name: 'a' }],
+        needs: [],
+        constraints: [],
+        businessRules: [],
+      });
+      await ctx.projectContext.transition(project.id, context.version.id, 'IN_REVIEW');
+      await ctx.projectContext.transition(project.id, context.version.id, 'APPROVED');
+
+      const archived = await ctx.projects.archive(project.id);
+
+      expect(archived.archivedAt).not.toBeNull();
+      expect(archived.hasApprovedArtifacts).toBe(true);
+      const fetched = await ctx.projects.get(project.id);
+      expect(fetched.archivedAt).not.toBeNull();
+    });
+
+    it('refuses to archive a project twice', async () => {
+      const workspace = await createWorkspace(ctx.prisma);
+      const project = await ctx.projects.create({ workspaceId: workspace.id, name: 'Doble' });
+
+      await ctx.projects.archive(project.id);
+
+      await expect(ctx.projects.archive(project.id)).rejects.toThrow('ya está archivado');
+    });
+
+    it('rejects archiving a project that does not exist', async () => {
+      await expect(ctx.projects.archive('00000000-0000-4000-8000-000000000000')).rejects.toThrow(
+        'Proyecto no encontrado.',
+      );
+    });
+  });
 });
