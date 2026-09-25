@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Upload } from 'lucide-react';
+import { Pencil, Trash2, Upload, X } from 'lucide-react';
 import { useRef, useState } from 'react';
 import type {
   ProjectSourceKind,
@@ -10,6 +10,12 @@ import type {
 } from '@caseflow-ai/contracts';
 import {
   Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
   Input,
   Label,
   Select,
@@ -67,10 +73,6 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!file) {
-      setError('Seleccione un archivo.');
-      return;
-    }
     setSubmitting(true);
     setError(null);
     try {
@@ -81,7 +83,7 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
           sourceKind,
           purpose,
           businessArea: businessArea || undefined,
-          description: description || undefined,
+          description,
         },
         file,
       );
@@ -152,32 +154,52 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
           />
         </div>
         <div className="flex flex-col gap-1.5 text-sm">
-          <Label htmlFor="source-file">Archivo</Label>
+          <Label htmlFor="source-file">Archivo (opcional)</Label>
           <input
             ref={fileInputRef}
             id="source-file"
-            required
             type="file"
             accept={SOURCE_KIND_ACCEPT[sourceKind]}
             className="sr-only"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           />
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full justify-start overflow-hidden font-normal"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <Upload className="size-4 shrink-0" aria-hidden="true" />
-            <span className="truncate">{file ? file.name : 'Seleccionar archivo…'}</span>
-          </Button>
+          <div className="flex gap-1">
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full justify-start overflow-hidden font-normal"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className="size-4 shrink-0" aria-hidden="true" />
+              <span className="truncate">{file ? file.name : 'Seleccionar archivo…'}</span>
+            </Button>
+            {file ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Quitar archivo"
+                onClick={() => {
+                  setFile(null);
+                  if (fileInputRef.current) fileInputRef.current.value = '';
+                }}
+              >
+                <X className="size-4" aria-hidden="true" />
+              </Button>
+            ) : null}
+          </div>
         </div>
       </div>
       <div className="flex flex-col gap-1.5 text-sm">
-        <Label htmlFor="source-description">Descripción (opcional)</Label>
+        <Label htmlFor="source-description">Contenido</Label>
+        <p className="text-xs text-muted-foreground">
+          Escriba aquí el contenido de la fuente. Si no sube un archivo, este texto es el único
+          conocimiento que se guarda.
+        </p>
         <Textarea
           id="source-description"
-          rows={2}
+          required
+          rows={3}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
@@ -199,6 +221,8 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
   const [generatingReport, setGeneratingReport] = useState(false);
   const [reportCandidate, setReportCandidate] = useState<SourceReportCandidate | null>(null);
   const [acceptingReport, setAcceptingReport] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const report = useQuery({
     queryKey: ['source-report', projectId, source.id],
@@ -323,12 +347,56 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
             ) : null}
             <dt className="font-medium">Archivo original</dt>
             <dd>
-              {source.source.originalFilename} ({source.source.mimeType},{' '}
-              {Math.ceil(source.source.sizeBytes / 1024)} KB)
+              {source.source.originalFilename && source.source.sizeBytes != null
+                ? `${source.source.originalFilename} (${source.source.mimeType}, ${Math.ceil(source.source.sizeBytes / 1024)} KB)`
+                : 'Sin archivo — solo contenido escrito'}
             </dd>
+            <dt className="font-medium">Contenido</dt>
+            <dd>{source.source.description}</dd>
             <dt className="font-medium">Versión</dt>
             <dd>v{source.version.versionNumber}</dd>
           </dl>
+
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => setEditing(true)}>
+              <Pencil className="size-3.5" aria-hidden="true" />
+              Editar
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="border-destructive/40 text-destructive hover:bg-destructive/5"
+              onClick={() => setConfirmingDelete(true)}
+            >
+              <Trash2 className="size-3.5" aria-hidden="true" />
+              Eliminar
+            </Button>
+          </div>
+
+          {editing ? (
+            <EditSourceForm
+              projectId={projectId}
+              source={source}
+              onSaved={() => {
+                invalidate();
+                setEditing(false);
+              }}
+              onCancel={() => setEditing(false)}
+            />
+          ) : null}
+
+          {confirmingDelete ? (
+            <DeleteSourceDialog
+              projectId={projectId}
+              source={source}
+              onOpenChange={setConfirmingDelete}
+              onDeleted={() => {
+                queryClient.invalidateQueries({ queryKey: ['sources', projectId] });
+                queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
+              }}
+            />
+          ) : null}
 
           {canSubmitTranscript ? (
             <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
@@ -482,6 +550,183 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
         </div>
       ) : null}
     </li>
+  );
+}
+
+// Editing never mutates the current row (the backend creates the next
+// ArtifactVersion instead — see sources.service.ts). Only metadata is
+// editable here; the original file (if any) carries over unchanged.
+function EditSourceForm({
+  projectId,
+  source,
+  onSaved,
+  onCancel,
+}: {
+  projectId: string;
+  source: SourceResponse;
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
+  const [title, setTitle] = useState(source.source.title);
+  const [sourceKind, setSourceKind] = useState<ProjectSourceKind>(source.source.sourceKind);
+  const [purpose, setPurpose] = useState(source.source.purpose);
+  const [businessArea, setBusinessArea] = useState(source.source.businessArea ?? '');
+  const [description, setDescription] = useState(source.source.description);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      await api.sources.edit(projectId, source.id, {
+        title,
+        sourceKind,
+        purpose,
+        businessArea: businessArea || undefined,
+        description,
+      });
+      onSaved();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo guardar la edición.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      className="flex flex-col gap-3 rounded-md border border-border bg-muted/30 p-3"
+    >
+      <p className="text-xs text-muted-foreground">
+        Editar guarda una nueva versión (v{source.version.versionNumber + 1}); la actual no se
+        modifica.
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="flex flex-col gap-1.5 text-sm">
+          <Label htmlFor="edit-source-kind">Tipo de fuente</Label>
+          <Select value={sourceKind} onValueChange={(v) => setSourceKind(v as ProjectSourceKind)}>
+            <SelectTrigger id="edit-source-kind" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SOURCE_KINDS.map((k) => (
+                <SelectItem key={k} value={k}>
+                  {SOURCE_KIND_LABELS[k]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex flex-col gap-1.5 text-sm">
+          <Label htmlFor="edit-source-title">Título</Label>
+          <Input
+            id="edit-source-title"
+            required
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+        </div>
+      </div>
+      <div className="flex flex-col gap-1.5 text-sm">
+        <Label htmlFor="edit-source-purpose">¿Qué representa esta fuente?</Label>
+        <Textarea
+          id="edit-source-purpose"
+          required
+          rows={2}
+          value={purpose}
+          onChange={(e) => setPurpose(e.target.value)}
+        />
+      </div>
+      <div className="flex flex-col gap-1.5 text-sm">
+        <Label htmlFor="edit-source-business-area">Área / dominio de negocio (opcional)</Label>
+        <Input
+          id="edit-source-business-area"
+          value={businessArea}
+          onChange={(e) => setBusinessArea(e.target.value)}
+        />
+      </div>
+      <div className="flex flex-col gap-1.5 text-sm">
+        <Label htmlFor="edit-source-description">Contenido</Label>
+        <Textarea
+          id="edit-source-description"
+          required
+          rows={3}
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+        />
+      </div>
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      <div className="flex gap-2">
+        <Button type="submit" size="sm" disabled={saving}>
+          {saving ? 'Guardando…' : 'Guardar nueva versión'}
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+          Cancelar
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function DeleteSourceDialog({
+  projectId,
+  source,
+  onOpenChange,
+  onDeleted,
+}: {
+  projectId: string;
+  source: SourceResponse;
+  onOpenChange: (open: boolean) => void;
+  onDeleted: () => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDelete() {
+    setDeleting(true);
+    setError(null);
+    try {
+      await api.sources.delete(projectId, source.id);
+      onDeleted();
+      onOpenChange(false);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo eliminar la fuente.');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Eliminar fuente</DialogTitle>
+          <DialogDescription>
+            Esta acción es permanente y no se puede deshacer. Solo es posible mientras la fuente
+            nunca haya sido aprobada.
+          </DialogDescription>
+        </DialogHeader>
+        <p className="text-sm text-foreground">
+          Va a eliminar{' '}
+          <strong>
+            {source.code} — {source.source.title}
+          </strong>
+          .
+        </p>
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button type="button" variant="destructive" disabled={deleting} onClick={handleDelete}>
+            {deleting ? 'Eliminando…' : 'Eliminar definitivamente'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
