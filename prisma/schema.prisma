@@ -31,11 +31,14 @@ enum ArtifactVersionStatus {
   @@map("artifact_version_status")
 }
 
-// Where an ArtifactVersion came from (spec §6.3).
+// Where an ArtifactVersion came from (spec §6.3). SYSTEM_GENERATED is
+// deterministically derived by CASEFlow from already approved/structured CASE
+// data (e.g. a Use Case Diagram) — no manual authoring and no AI involvement.
 enum ArtifactOrigin {
   MANUAL
   AI_GENERATED
   AI_ASSISTED
+  SYSTEM_GENERATED
   IMPORTED
 
   @@map("artifact_origin")
@@ -46,6 +49,47 @@ enum ProjectContextScopeType {
   OUT_OF_SCOPE
 
   @@map("project_context_scope_type")
+}
+
+// What kind of real-world material a Project Source is (spec: First
+// Deliverable source intake). Semantic, user-declared — never inferred
+// solely from MIME type/extension.
+enum ProjectSourceKind {
+  PDF
+  AUDIO
+  IMAGE
+  FORM
+  INVOICE
+  TEXT
+  NOTES
+  OTHER
+
+  @@map("project_source_kind")
+}
+
+// Whether usable textual knowledge exists for a source version yet.
+enum SourceExtractionState {
+  PENDING
+  EXTRACTED
+  MANUAL
+  UNSUPPORTED
+  FAILED
+
+  @@map("source_extraction_state")
+}
+
+// Shared discriminator for the "structured content + candidate-first AI
+// generation + optional deterministic diagram" family of First Deliverable
+// analysis artifacts. Mirrors DiagramKind's one-shared-table pattern: the
+// physical shape is a single validated JSONB payload (packages/contracts is
+// the schema source of truth per kind), not four bespoke relational schemas.
+enum StructuredAnalysisKind {
+  NAVIGATION_TREE
+  SOFTWARE_ARCHITECTURE
+  SYSTEM_ARCHITECTURE
+  UI_BLUEPRINT
+
+  @@map("structured_analysis_kind")
 }
 
 enum AIRunStatus {
@@ -66,16 +110,68 @@ enum AIErrorCode {
 
   @@map("ai_error_code")
 }
+
 enum RequirementType {
   FUNCTIONAL
   NON_FUNCTIONAL
+
   @@map("requirement_type")
 }
+
 enum RequirementPriority {
   HIGH
   MEDIUM
   LOW
+
   @@map("requirement_priority")
+}
+
+enum DataModelKind {
+  ER
+
+  @@map("data_model_kind")
+}
+
+enum ConceptualAttributeType {
+  STRING
+  TEXT
+  INTEGER
+  DECIMAL
+  BOOLEAN
+  DATE
+  DATETIME
+  UUID
+
+  @@map("conceptual_attribute_type")
+}
+
+enum DataModelCardinality {
+  ONE
+  ZERO_OR_ONE
+  ONE_OR_MORE
+  ZERO_OR_MORE
+
+  @@map("data_model_cardinality")
+}
+
+enum DiagramKind {
+  ER
+  USE_CASE
+  NAVIGATION_TREE
+  SOFTWARE_ARCHITECTURE
+  SYSTEM_ARCHITECTURE
+
+  @@map("diagram_kind")
+}
+
+enum DiagramSourceFormat {
+  MERMAID_ER
+  PLANTUML
+  MERMAID_FLOWCHART
+  PLANTUML_COMPONENT
+  PLANTUML_DEPLOYMENT
+
+  @@map("diagram_source_format")
 }
 
 // Logical team/organization that groups projects (spec §3.1).
@@ -100,10 +196,13 @@ model Project {
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  workspace    Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  artifacts    Artifact[]
-  codeCounters ProjectCodeCounter[]
-  aiRuns       AIRun[]
+  workspace            Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  artifacts            Artifact[]
+  codeCounters         ProjectCodeCounter[]
+  aiRuns               AIRun[]
+  dataModelGenerations DataModelGeneration[]
+  sourceReportCandidates SourceReportCandidate[]
+  structuredAnalysisGenerations StructuredAnalysisGeneration[]
 
   @@index([workspaceId, createdAt, id])
   @@map("projects")
@@ -130,9 +229,11 @@ model Artifact {
   code             String
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  project      Project           @relation(fields: [projectId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  artifactType ArtifactType      @relation(fields: [artifactTypeCode], references: [code], onDelete: Restrict, onUpdate: Restrict)
-  versions     ArtifactVersion[]
+  project                     Project              @relation(fields: [projectId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  artifactType                ArtifactType         @relation(fields: [artifactTypeCode], references: [code], onDelete: Restrict, onUpdate: Restrict)
+  versions                    ArtifactVersion[]
+  acceptedDataModelCandidates DataModelCandidate[]
+  acceptedStructuredAnalysisCandidates StructuredAnalysisCandidate[]
 
   // Project-scoped, never-reused codes (spec §31.4).
   @@unique([projectId, code])
@@ -161,14 +262,25 @@ model ArtifactVersion {
   submittedAt       DateTime?             @map("submitted_at") @db.Timestamptz(6)
   approvedAt        DateTime?             @map("approved_at") @db.Timestamptz(6)
 
-  artifact Artifact @relation(fields: [artifactId, projectId], references: [id, projectId], onDelete: Restrict, onUpdate: Restrict)
-  projectContextDetail ProjectContextDetail?
-  sourceForAIRuns       AIRun[]
-  requirementDetail     RequirementDetail?
-  sourcedRequirements   RequirementDetail[] @relation("RequirementSourceContext")
-  useCaseDetail         UseCaseDetail?
-  useCaseRequirementLinks UseCaseRequirementLink[] @relation("UseCaseRequirementVersion")
-  useCaseGenerationSources UseCaseGenerationSource[]
+  artifact                   Artifact                    @relation(fields: [artifactId, projectId], references: [id, projectId], onDelete: Restrict, onUpdate: Restrict)
+  projectContextDetail       ProjectContextDetail?
+  sourceForAIRuns            AIRun[]
+  requirementDetail          RequirementDetail?
+  sourcedRequirements        RequirementDetail[]         @relation("RequirementSourceContext")
+  useCaseDetail              UseCaseDetail?
+  useCaseRequirementLinks    UseCaseRequirementLink[]    @relation("UseCaseRequirementVersion")
+  useCaseGenerationSources   UseCaseGenerationSource[]
+  dataModelDetail            DataModelDetail?
+  dataModelGenerationSources DataModelGenerationSource[]
+  diagramDetail              DiagramDetail?
+  diagramSources             DiagramSourceVersion[]
+  sourceDetail               SourceDetail?
+  sourceReportCandidates     SourceReportCandidate[]
+  structuredAnalysisDetail   StructuredAnalysisDetail?
+  structuredAnalysisGenerationSources StructuredAnalysisGenerationSource[]
+  mockupDetail               MockupDetail?             @relation("MockupOwnVersion")
+  mockupsSourcedFromHere     MockupDetail[]            @relation("MockupUiBlueprintSource")
+  projectContextSourceLinks  ProjectContextSource[]
 
   @@unique([artifactId, versionNumber])
   @@unique([id, projectId])
@@ -183,7 +295,8 @@ model ProjectContextDetail {
   objective         String
   additionalContext String? @map("additional_context")
 
-  artifactVersion ArtifactVersion             @relation(fields: [artifactVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  artifactVersion ArtifactVersion              @relation(fields: [artifactVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sources         ProjectContextSource[]
   actors          ProjectContextActor[]
   needs           ProjectContextNeed[]
   constraints     ProjectContextConstraint[]
@@ -255,6 +368,19 @@ model ProjectContextScopeItem {
   @@map("project_context_scope_items")
 }
 
+// Exact provenance: which approved PROJECT_SOURCE versions support this
+// Project Context version (requirements.md Phase B). Insert-only, validated
+// by trigger (same project, exact APPROVED PROJECT_SOURCE).
+model ProjectContextSource {
+  projectContextVersionId String          @map("project_context_version_id") @db.Uuid
+  sourceVersionId         String          @map("source_version_id") @db.Uuid
+  context                 ProjectContextDetail @relation(fields: [projectContextVersionId], references: [artifactVersionId], onDelete: Restrict, onUpdate: Restrict)
+  sourceVersion           ArtifactVersion @relation(fields: [sourceVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@id([projectContextVersionId, sourceVersionId])
+  @@map("project_context_sources")
+}
+
 // Monotonic per-(project, prefix) counter used to allocate artifact codes.
 // Counters only increase, so an archived artifact's code is never reused.
 model ProjectCodeCounter {
@@ -291,241 +417,566 @@ model AIRun {
   inputHash               String       @map("input_hash") @db.Char(64)
   outputHash              String?      @map("output_hash") @db.Char(64)
 
-  project               Project?         @relation(fields: [projectId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  sourceArtifactVersion ArtifactVersion? @relation(fields: [sourceArtifactVersionId, projectId], references: [id, projectId], onDelete: Restrict, onUpdate: Restrict)
-  requirementDetails RequirementDetail[]
+  project               Project?               @relation(fields: [projectId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sourceArtifactVersion ArtifactVersion?       @relation(fields: [sourceArtifactVersionId, projectId], references: [id, projectId], onDelete: Restrict, onUpdate: Restrict)
+  requirementDetails    RequirementDetail[]
   requirementGeneration RequirementGeneration?
-  useCaseGeneration UseCaseGeneration?
+  useCaseGeneration     UseCaseGeneration?
+  dataModelGeneration   DataModelGeneration?
+  dataModelDetails      DataModelDetail[]
+  sourceReportCandidate SourceReportCandidate?
+  sourceReportDetails   SourceReportDetail[]
+  structuredAnalysisGeneration StructuredAnalysisGeneration?
+  structuredAnalysisDetails    StructuredAnalysisDetail[]
 
   @@index([projectId, startedAt, id])
   @@index([sourceArtifactVersionId])
   @@map("ai_runs")
 }
 
+model DataModelDetail {
+  artifactVersionId     String                  @id @map("artifact_version_id") @db.Uuid
+  modelKind             DataModelKind           @map("model_kind")
+  generationId          String?                 @map("generation_id") @db.Uuid
+  generationCandidateId String?                 @unique @map("generation_candidate_id") @db.Uuid
+  aiRunId               String?                 @map("ai_run_id") @db.Uuid
+  artifactVersion       ArtifactVersion         @relation(fields: [artifactVersionId], references: [id], onDelete: Restrict)
+  generation            DataModelGeneration?    @relation(fields: [generationId], references: [id], onDelete: Restrict)
+  generationCandidate   DataModelCandidate?     @relation(fields: [generationCandidateId], references: [id], onDelete: Restrict)
+  aiRun                 AIRun?                  @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+  entities              DataModelEntity[]
+  relationships         DataModelRelationship[]
+
+  @@map("data_model_details")
+}
+
+model DataModelEntity {
+  id                    String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  artifactVersionId     String                  @map("artifact_version_id") @db.Uuid
+  localId               String                  @map("local_id")
+  position              Int
+  name                  String
+  description           String?
+  dataModel             DataModelDetail         @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict)
+  attributes            DataModelAttribute[]
+  outgoingRelationships DataModelRelationship[] @relation("DataModelRelationshipSource")
+  incomingRelationships DataModelRelationship[] @relation("DataModelRelationshipTarget")
+
+  @@unique([artifactVersionId, localId])
+  @@unique([artifactVersionId, name])
+  @@unique([artifactVersionId, position])
+  @@unique([id, artifactVersionId])
+  @@map("data_model_entities")
+}
+
+model DataModelAttribute {
+  id          String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entityId    String                  @map("entity_id") @db.Uuid
+  position    Int
+  name        String
+  type        ConceptualAttributeType
+  required    Boolean
+  primaryKey  Boolean                 @map("primary_key")
+  unique      Boolean
+  description String?
+  entity      DataModelEntity         @relation(fields: [entityId], references: [id], onDelete: Restrict)
+
+  @@unique([entityId, name])
+  @@unique([entityId, position])
+  @@map("data_model_attributes")
+}
+
+model DataModelRelationship {
+  id                String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  artifactVersionId String               @map("artifact_version_id") @db.Uuid
+  position          Int
+  sourceEntityId    String               @map("source_entity_id") @db.Uuid
+  targetEntityId    String               @map("target_entity_id") @db.Uuid
+  name              String?
+  sourceCardinality DataModelCardinality @map("source_cardinality")
+  targetCardinality DataModelCardinality @map("target_cardinality")
+  description       String?
+  dataModel         DataModelDetail      @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict)
+  sourceEntity      DataModelEntity      @relation("DataModelRelationshipSource", fields: [sourceEntityId, artifactVersionId], references: [id, artifactVersionId], onDelete: Restrict)
+  targetEntity      DataModelEntity      @relation("DataModelRelationshipTarget", fields: [targetEntityId, artifactVersionId], references: [id, artifactVersionId], onDelete: Restrict)
+
+  @@unique([artifactVersionId, position])
+  @@map("data_model_relationships")
+}
+
+model DataModelGeneration {
+  id              String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId       String                      @map("project_id") @db.Uuid
+  aiRunId         String                      @unique @map("ai_run_id") @db.Uuid
+  createdAt       DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  project         Project                     @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  aiRun           AIRun                       @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+  sources         DataModelGenerationSource[]
+  candidates      DataModelCandidate[]
+  acceptedDetails DataModelDetail[]
+
+  @@index([projectId, createdAt])
+  @@map("data_model_generations")
+}
+
+model DataModelGenerationSource {
+  generationId      String              @map("generation_id") @db.Uuid
+  artifactVersionId String              @map("artifact_version_id") @db.Uuid
+  sourceId          String              @map("source_id")
+  generation        DataModelGeneration @relation(fields: [generationId], references: [id], onDelete: Restrict)
+  artifactVersion   ArtifactVersion     @relation(fields: [artifactVersionId], references: [id], onDelete: Restrict)
+
+  @@id([generationId, artifactVersionId])
+  @@unique([generationId, sourceId])
+  @@map("data_model_generation_sources")
+}
+
+model DataModelCandidate {
+  id                 String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  generationId       String              @map("generation_id") @db.Uuid
+  candidateId        String              @map("candidate_id")
+  title              String
+  modelKind          DataModelKind       @map("model_kind")
+  entities           Json
+  relationships      Json
+  acceptedArtifactId String?             @map("accepted_artifact_id") @db.Uuid
+  generation         DataModelGeneration @relation(fields: [generationId], references: [id], onDelete: Restrict)
+  acceptedArtifact   Artifact?           @relation(fields: [acceptedArtifactId], references: [id], onDelete: Restrict)
+  acceptedDetail     DataModelDetail?
+
+  @@unique([generationId, candidateId])
+  @@map("data_model_candidates")
+}
+
+model DiagramDetail {
+  artifactVersionId String                 @id @map("artifact_version_id") @db.Uuid
+  kind              DiagramKind
+  sourceFormat      DiagramSourceFormat    @map("source_format")
+  generatorVersion  String                 @map("generator_version")
+  source            String
+  svg               String
+  artifactVersion   ArtifactVersion        @relation(fields: [artifactVersionId], references: [id], onDelete: Restrict)
+  sources           DiagramSourceVersion[]
+
+  @@map("diagram_details")
+}
+
+model DiagramSourceVersion {
+  diagramVersionId        String          @map("diagram_version_id") @db.Uuid
+  sourceArtifactVersionId String          @map("source_artifact_version_id") @db.Uuid
+  diagram                 DiagramDetail   @relation(fields: [diagramVersionId], references: [artifactVersionId], onDelete: Restrict)
+  sourceArtifactVersion   ArtifactVersion @relation(fields: [sourceArtifactVersionId], references: [id], onDelete: Restrict)
+
+  @@id([diagramVersionId, sourceArtifactVersionId])
+  @@map("diagram_source_versions")
+}
+
 model RequirementDetail {
-  artifactVersionId String @id @map("artifact_version_id") @db.Uuid
-  requirementType RequirementType @map("requirement_type")
-  name String
-  description String
-  priority RequirementPriority
-  generationCandidateId String? @unique @map("generation_candidate_id") @db.Uuid
-  sourceContextVersionId String? @map("source_context_version_id") @db.Uuid
-  aiRunId String? @map("ai_run_id") @db.Uuid
-  artifactVersion ArtifactVersion @relation(fields:[artifactVersionId], references:[id], onDelete:Restrict)
-  sourceContextVersion ArtifactVersion? @relation("RequirementSourceContext", fields:[sourceContextVersionId], references:[id], onDelete:Restrict)
-  aiRun AIRun? @relation(fields:[aiRunId], references:[id], onDelete:Restrict)
-  actors RequirementActor[]
-  preconditions RequirementPrecondition[]
-  postconditions RequirementPostcondition[]
-  dependencies RequirementDependency[]
+  artifactVersionId      String                     @id @map("artifact_version_id") @db.Uuid
+  requirementType        RequirementType            @map("requirement_type")
+  name                   String
+  description            String
+  priority               RequirementPriority
+  generationCandidateId  String?                    @unique @map("generation_candidate_id") @db.Uuid
+  sourceContextVersionId String?                    @map("source_context_version_id") @db.Uuid
+  aiRunId                String?                    @map("ai_run_id") @db.Uuid
+  artifactVersion        ArtifactVersion            @relation(fields: [artifactVersionId], references: [id], onDelete: Restrict)
+  sourceContextVersion   ArtifactVersion?           @relation("RequirementSourceContext", fields: [sourceContextVersionId], references: [id], onDelete: Restrict)
+  aiRun                  AIRun?                     @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+  actors                 RequirementActor[]
+  preconditions          RequirementPrecondition[]
+  postconditions         RequirementPostcondition[]
+  dependencies           RequirementDependency[]
+
   @@map("requirement_details")
 }
+
 model RequirementActor {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  artifactVersionId String @map("artifact_version_id") @db.Uuid
-  position Int
-  name String
-  requirement RequirementDetail @relation(fields:[artifactVersionId], references:[artifactVersionId], onDelete:Restrict)
-  @@unique([artifactVersionId,position])
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  artifactVersionId String            @map("artifact_version_id") @db.Uuid
+  position          Int
+  name              String
+  requirement       RequirementDetail @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict)
+
+  @@unique([artifactVersionId, position])
   @@map("requirement_actors")
 }
+
 model RequirementPrecondition {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  artifactVersionId String @map("artifact_version_id") @db.Uuid
-  position Int
-  description String
-  requirement RequirementDetail @relation(fields:[artifactVersionId], references:[artifactVersionId], onDelete:Restrict)
-  @@unique([artifactVersionId,position])
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  artifactVersionId String            @map("artifact_version_id") @db.Uuid
+  position          Int
+  description       String
+  requirement       RequirementDetail @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict)
+
+  @@unique([artifactVersionId, position])
   @@map("requirement_preconditions")
 }
+
 model RequirementPostcondition {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  artifactVersionId String @map("artifact_version_id") @db.Uuid
-  position Int
-  description String
-  requirement RequirementDetail @relation(fields:[artifactVersionId], references:[artifactVersionId], onDelete:Restrict)
-  @@unique([artifactVersionId,position])
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  artifactVersionId String            @map("artifact_version_id") @db.Uuid
+  position          Int
+  description       String
+  requirement       RequirementDetail @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict)
+
+  @@unique([artifactVersionId, position])
   @@map("requirement_postconditions")
 }
+
 model RequirementDependency {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  artifactVersionId String @map("artifact_version_id") @db.Uuid
-  dependsOnArtifactId String @map("depends_on_artifact_id") @db.Uuid
-  requirement RequirementDetail @relation(fields:[artifactVersionId], references:[artifactVersionId], onDelete:Restrict)
-  @@unique([artifactVersionId,dependsOnArtifactId])
+  id                  String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  artifactVersionId   String            @map("artifact_version_id") @db.Uuid
+  dependsOnArtifactId String            @map("depends_on_artifact_id") @db.Uuid
+  requirement         RequirementDetail @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict)
+
+  @@unique([artifactVersionId, dependsOnArtifactId])
   @@map("requirement_dependencies")
 }
+
 model RequirementGeneration {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  projectId String @map("project_id") @db.Uuid
-  sourceContextVersionId String @map("source_context_version_id") @db.Uuid
-  aiRunId String @unique @map("ai_run_id") @db.Uuid
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  aiRun AIRun @relation(fields:[aiRunId],references:[id],onDelete:Restrict)
-  candidates RequirementCandidate[]
-  @@index([projectId,createdAt])
+  id                     String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId              String                 @map("project_id") @db.Uuid
+  sourceContextVersionId String                 @map("source_context_version_id") @db.Uuid
+  aiRunId                String                 @unique @map("ai_run_id") @db.Uuid
+  createdAt              DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  aiRun                  AIRun                  @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+  candidates             RequirementCandidate[]
+
+  @@index([projectId, createdAt])
   @@map("requirement_generations")
 }
+
 model RequirementCandidate {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  generationId String @map("generation_id") @db.Uuid
-  candidateId String @map("candidate_id")
-  requirementType RequirementType @map("requirement_type")
-  name String
-  description String
-  priority RequirementPriority
-  actors Json
-  preconditions Json
-  postconditions Json
-  acceptedArtifactId String? @map("accepted_artifact_id") @db.Uuid
-  generation RequirementGeneration @relation(fields:[generationId], references:[id], onDelete:Restrict)
+  id                   String                           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  generationId         String                           @map("generation_id") @db.Uuid
+  candidateId          String                           @map("candidate_id")
+  requirementType      RequirementType                  @map("requirement_type")
+  name                 String
+  description          String
+  priority             RequirementPriority
+  actors               Json
+  preconditions        Json
+  postconditions       Json
+  acceptedArtifactId   String?                          @map("accepted_artifact_id") @db.Uuid
+  generation           RequirementGeneration            @relation(fields: [generationId], references: [id], onDelete: Restrict)
   outgoingDependencies RequirementCandidateDependency[] @relation("CandidateFrom")
   incomingDependencies RequirementCandidateDependency[] @relation("CandidateTo")
-  @@unique([generationId,candidateId])
+
+  @@unique([generationId, candidateId])
   @@map("requirement_candidates")
 }
+
 model RequirementCandidateDependency {
-  candidateId String @map("candidate_id") @db.Uuid
-  dependsOnCandidateId String @map("depends_on_candidate_id") @db.Uuid
-  candidate RequirementCandidate @relation("CandidateFrom",fields:[candidateId],references:[id],onDelete:Restrict)
-  dependsOn RequirementCandidate @relation("CandidateTo",fields:[dependsOnCandidateId],references:[id],onDelete:Restrict)
-  @@id([candidateId,dependsOnCandidateId])
+  candidateId          String               @map("candidate_id") @db.Uuid
+  dependsOnCandidateId String               @map("depends_on_candidate_id") @db.Uuid
+  candidate            RequirementCandidate @relation("CandidateFrom", fields: [candidateId], references: [id], onDelete: Restrict)
+  dependsOn            RequirementCandidate @relation("CandidateTo", fields: [dependsOnCandidateId], references: [id], onDelete: Restrict)
+
+  @@id([candidateId, dependsOnCandidateId])
   @@map("requirement_candidate_dependencies")
 }
 
 model UseCaseDetail {
-  artifactVersionId String @id @map("artifact_version_id") @db.Uuid
-  name String
-  objective String
-  primaryActor String @map("primary_actor")
-  generationId String? @map("generation_id") @db.Uuid
-  generationCandidateId String? @unique @map("generation_candidate_id") @db.Uuid
-  aiRunId String? @map("ai_run_id") @db.Uuid
-  artifactVersion ArtifactVersion @relation(fields:[artifactVersionId], references:[id], onDelete:Restrict)
-  generation UseCaseGeneration? @relation(fields:[generationId], references:[id], onDelete:Restrict)
-  generationCandidate UseCaseCandidate? @relation(fields:[generationCandidateId], references:[id], onDelete:Restrict)
-  secondaryActors UseCaseSecondaryActor[]
-  preconditions UseCasePrecondition[]
-  postconditions UseCasePostcondition[]
-  mainFlowSteps UseCaseMainFlowStep[]
-  alternativeFlows UseCaseAlternativeFlow[]
-  requirementLinks UseCaseRequirementLink[]
+  artifactVersionId     String                   @id @map("artifact_version_id") @db.Uuid
+  name                  String
+  objective             String
+  primaryActor          String                   @map("primary_actor")
+  generationId          String?                  @map("generation_id") @db.Uuid
+  generationCandidateId String?                  @unique @map("generation_candidate_id") @db.Uuid
+  aiRunId               String?                  @map("ai_run_id") @db.Uuid
+  artifactVersion       ArtifactVersion          @relation(fields: [artifactVersionId], references: [id], onDelete: Restrict)
+  generation            UseCaseGeneration?       @relation(fields: [generationId], references: [id], onDelete: Restrict)
+  generationCandidate   UseCaseCandidate?        @relation(fields: [generationCandidateId], references: [id], onDelete: Restrict)
+  secondaryActors       UseCaseSecondaryActor[]
+  preconditions         UseCasePrecondition[]
+  postconditions        UseCasePostcondition[]
+  mainFlowSteps         UseCaseMainFlowStep[]
+  alternativeFlows      UseCaseAlternativeFlow[]
+  requirementLinks      UseCaseRequirementLink[]
+
   @@map("use_case_details")
 }
+
 model UseCaseSecondaryActor {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  artifactVersionId String @map("artifact_version_id") @db.Uuid
-  position Int
-  name String
-  useCase UseCaseDetail @relation(fields:[artifactVersionId], references:[artifactVersionId], onDelete:Restrict)
-  @@unique([artifactVersionId,position])
+  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  artifactVersionId String        @map("artifact_version_id") @db.Uuid
+  position          Int
+  name              String
+  useCase           UseCaseDetail @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict)
+
+  @@unique([artifactVersionId, position])
   @@map("use_case_secondary_actors")
 }
+
 model UseCasePrecondition {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  artifactVersionId String @map("artifact_version_id") @db.Uuid
-  position Int
-  description String
-  useCase UseCaseDetail @relation(fields:[artifactVersionId], references:[artifactVersionId], onDelete:Restrict)
-  @@unique([artifactVersionId,position])
+  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  artifactVersionId String        @map("artifact_version_id") @db.Uuid
+  position          Int
+  description       String
+  useCase           UseCaseDetail @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict)
+
+  @@unique([artifactVersionId, position])
   @@map("use_case_preconditions")
 }
+
 model UseCasePostcondition {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  artifactVersionId String @map("artifact_version_id") @db.Uuid
-  position Int
-  description String
-  useCase UseCaseDetail @relation(fields:[artifactVersionId], references:[artifactVersionId], onDelete:Restrict)
-  @@unique([artifactVersionId,position])
+  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  artifactVersionId String        @map("artifact_version_id") @db.Uuid
+  position          Int
+  description       String
+  useCase           UseCaseDetail @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict)
+
+  @@unique([artifactVersionId, position])
   @@map("use_case_postconditions")
 }
+
 model UseCaseMainFlowStep {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  artifactVersionId String @map("artifact_version_id") @db.Uuid
-  position Int
-  actor String
-  action String
-  useCase UseCaseDetail @relation(fields:[artifactVersionId], references:[artifactVersionId], onDelete:Restrict)
-  @@unique([artifactVersionId,position])
+  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  artifactVersionId String        @map("artifact_version_id") @db.Uuid
+  position          Int
+  actor             String
+  action            String
+  useCase           UseCaseDetail @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict)
+
+  @@unique([artifactVersionId, position])
   @@map("use_case_main_flow_steps")
 }
+
 model UseCaseAlternativeFlow {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  artifactVersionId String @map("artifact_version_id") @db.Uuid
-  position Int
-  name String
-  condition String
-  useCase UseCaseDetail @relation(fields:[artifactVersionId], references:[artifactVersionId], onDelete:Restrict)
-  steps UseCaseAlternativeFlowStep[]
-  @@unique([artifactVersionId,position])
+  id                String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  artifactVersionId String                       @map("artifact_version_id") @db.Uuid
+  position          Int
+  name              String
+  condition         String
+  useCase           UseCaseDetail                @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict)
+  steps             UseCaseAlternativeFlowStep[]
+
+  @@unique([artifactVersionId, position])
   @@map("use_case_alternative_flows")
 }
+
 model UseCaseAlternativeFlowStep {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  alternativeFlowId String @map("alternative_flow_id") @db.Uuid
-  position Int
-  actor String
-  action String
-  alternativeFlow UseCaseAlternativeFlow @relation(fields:[alternativeFlowId], references:[id], onDelete:Restrict)
-  @@unique([alternativeFlowId,position])
+  id                String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  alternativeFlowId String                 @map("alternative_flow_id") @db.Uuid
+  position          Int
+  actor             String
+  action            String
+  alternativeFlow   UseCaseAlternativeFlow @relation(fields: [alternativeFlowId], references: [id], onDelete: Restrict)
+
+  @@unique([alternativeFlowId, position])
   @@map("use_case_alternative_flow_steps")
 }
+
 model UseCaseRequirementLink {
-  artifactVersionId String @map("artifact_version_id") @db.Uuid
-  requirementVersionId String @map("requirement_version_id") @db.Uuid
-  useCase UseCaseDetail @relation(fields:[artifactVersionId], references:[artifactVersionId], onDelete:Restrict)
-  requirementVersion ArtifactVersion @relation("UseCaseRequirementVersion", fields:[requirementVersionId], references:[id], onDelete:Restrict)
-  @@id([artifactVersionId,requirementVersionId])
+  artifactVersionId    String          @map("artifact_version_id") @db.Uuid
+  requirementVersionId String          @map("requirement_version_id") @db.Uuid
+  useCase              UseCaseDetail   @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict)
+  requirementVersion   ArtifactVersion @relation("UseCaseRequirementVersion", fields: [requirementVersionId], references: [id], onDelete: Restrict)
+
+  @@id([artifactVersionId, requirementVersionId])
   @@map("use_case_requirement_links")
 }
+
 model UseCaseGeneration {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  projectId String @map("project_id") @db.Uuid
-  aiRunId String @unique @map("ai_run_id") @db.Uuid
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  aiRun AIRun @relation(fields:[aiRunId],references:[id],onDelete:Restrict)
-  sources UseCaseGenerationSource[]
-  candidates UseCaseCandidate[]
+  id              String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId       String                    @map("project_id") @db.Uuid
+  aiRunId         String                    @unique @map("ai_run_id") @db.Uuid
+  createdAt       DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  aiRun           AIRun                     @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+  sources         UseCaseGenerationSource[]
+  candidates      UseCaseCandidate[]
   acceptedDetails UseCaseDetail[]
-  @@index([projectId,createdAt])
+
+  @@index([projectId, createdAt])
   @@map("use_case_generations")
 }
+
 model UseCaseGenerationSource {
-  generationId String @map("generation_id") @db.Uuid
-  requirementVersionId String @map("requirement_version_id") @db.Uuid
-  sourceId String @map("source_id")
-  generation UseCaseGeneration @relation(fields:[generationId],references:[id],onDelete:Restrict)
-  requirementVersion ArtifactVersion @relation(fields:[requirementVersionId],references:[id],onDelete:Restrict)
-  candidateSources UseCaseCandidateSource[]
-  @@id([generationId,requirementVersionId])
-  @@unique([generationId,sourceId])
+  generationId         String                   @map("generation_id") @db.Uuid
+  requirementVersionId String                   @map("requirement_version_id") @db.Uuid
+  sourceId             String                   @map("source_id")
+  generation           UseCaseGeneration        @relation(fields: [generationId], references: [id], onDelete: Restrict)
+  requirementVersion   ArtifactVersion          @relation(fields: [requirementVersionId], references: [id], onDelete: Restrict)
+  candidateSources     UseCaseCandidateSource[]
+
+  @@id([generationId, requirementVersionId])
+  @@unique([generationId, sourceId])
   @@map("use_case_generation_sources")
 }
+
 model UseCaseCandidate {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  generationId String @map("generation_id") @db.Uuid
-  candidateId String @map("candidate_id")
-  name String
-  objective String
-  primaryActor String @map("primary_actor")
-  secondaryActors Json @map("secondary_actors")
-  preconditions Json
-  postconditions Json
-  mainFlow Json @map("main_flow")
-  alternativeFlows Json @map("alternative_flows")
-  acceptedArtifactId String? @map("accepted_artifact_id") @db.Uuid
-  generation UseCaseGeneration @relation(fields:[generationId],references:[id],onDelete:Restrict)
-  sources UseCaseCandidateSource[]
-  acceptedDetail UseCaseDetail?
-  @@unique([generationId,candidateId])
+  id                 String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  generationId       String                   @map("generation_id") @db.Uuid
+  candidateId        String                   @map("candidate_id")
+  name               String
+  objective          String
+  primaryActor       String                   @map("primary_actor")
+  secondaryActors    Json                     @map("secondary_actors")
+  preconditions      Json
+  postconditions     Json
+  mainFlow           Json                     @map("main_flow")
+  alternativeFlows   Json                     @map("alternative_flows")
+  acceptedArtifactId String?                  @map("accepted_artifact_id") @db.Uuid
+  generation         UseCaseGeneration        @relation(fields: [generationId], references: [id], onDelete: Restrict)
+  sources            UseCaseCandidateSource[]
+  acceptedDetail     UseCaseDetail?
+
+  @@unique([generationId, candidateId])
   @@map("use_case_candidates")
 }
+
 model UseCaseCandidateSource {
-  candidateId String @map("candidate_id") @db.Uuid
-  generationId String @map("generation_id") @db.Uuid
-  requirementVersionId String @map("requirement_version_id") @db.Uuid
-  candidate UseCaseCandidate @relation(fields:[candidateId],references:[id],onDelete:Restrict)
-  source UseCaseGenerationSource @relation(fields:[generationId,requirementVersionId],references:[generationId,requirementVersionId],onDelete:Restrict)
-  @@id([candidateId,requirementVersionId])
+  candidateId          String                  @map("candidate_id") @db.Uuid
+  generationId         String                  @map("generation_id") @db.Uuid
+  requirementVersionId String                  @map("requirement_version_id") @db.Uuid
+  candidate            UseCaseCandidate        @relation(fields: [candidateId], references: [id], onDelete: Restrict)
+  source               UseCaseGenerationSource @relation(fields: [generationId, requirementVersionId], references: [generationId, requirementVersionId], onDelete: Restrict)
+
+  @@id([candidateId, requirementVersionId])
   @@map("use_case_candidate_sources")
+}
+
+// Increment: Project Source intake. The original uploaded file is immutable
+// evidence, stored in S3-compatible object storage (StorageProvider); only
+// metadata/hash/reference and, when locally extractable, the extracted text
+// live here. Never replaced by a cleaned AI interpretation — that is the
+// separate, optional SourceReportDetail.
+model SourceDetail {
+  artifactVersionId String                @id @map("artifact_version_id") @db.Uuid
+  sourceKind        ProjectSourceKind     @map("source_kind")
+  // User-defined meaning/purpose (spec 2.2) — never inferred.
+  purpose           String
+  businessArea      String?               @map("business_area")
+  description       String?
+  originalFilename  String                @map("original_filename")
+  mimeType          String                @map("mime_type")
+  sizeBytes         Int                   @map("size_bytes")
+  contentHash       String                @map("content_hash")
+  storageKey        String                @map("storage_key")
+  language          String?
+  extractionState   SourceExtractionState @map("extraction_state")
+  extractedText     String?               @map("extracted_text")
+
+  artifactVersion ArtifactVersion     @relation(fields: [artifactVersionId], references: [id], onDelete: Restrict)
+  report          SourceReportDetail?
+
+  @@map("source_details")
+}
+
+// One candidate-first AI interpretation attempt for one exact source version.
+// Deliberately one candidate per generation call (an interpretation is not a
+// menu of alternatives); acceptance is still a distinct explicit action.
+model SourceReportCandidate {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId       String   @map("project_id") @db.Uuid
+  sourceVersionId String   @map("source_version_id") @db.Uuid
+  aiRunId         String   @unique @map("ai_run_id") @db.Uuid
+  content         Json
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project        Project             @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  sourceVersion  ArtifactVersion     @relation(fields: [sourceVersionId], references: [id], onDelete: Restrict)
+  aiRun          AIRun               @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+  acceptedDetail SourceReportDetail?
+
+  @@map("source_report_candidates")
+}
+
+// Structured interpretation of a source's extracted content (spec §8):
+// summary, actors, business concepts, candidate rules/constraints, needs,
+// facts, ambiguities, provenance. Immutable once created; attached to the
+// same ArtifactVersion as its SourceDetail. Never an official Requirement.
+model SourceReportDetail {
+  artifactVersionId     String  @id @map("artifact_version_id") @db.Uuid
+  content               Json
+  generationCandidateId String? @unique @map("generation_candidate_id") @db.Uuid
+  aiRunId               String? @map("ai_run_id") @db.Uuid
+
+  sourceDetail SourceDetail            @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict)
+  candidate    SourceReportCandidate?  @relation(fields: [generationCandidateId], references: [id], onDelete: Restrict)
+  aiRun        AIRun?                  @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+
+  @@map("source_report_details")
+}
+
+// One shared candidate-first AI generation batch for Navigation/Software
+// Architecture/System Architecture/UI Blueprint (spec §13/§14/§15/§17). The
+// `kind` discriminator keeps each generation scoped to exactly one artifact
+// type; content shape per kind is validated by packages/contracts, not here.
+model StructuredAnalysisGeneration {
+  id         String                            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId  String                            @map("project_id") @db.Uuid
+  kind       StructuredAnalysisKind
+  aiRunId    String                            @unique @map("ai_run_id") @db.Uuid
+  createdAt  DateTime                          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project    Project                           @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  aiRun      AIRun                             @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+  sources    StructuredAnalysisGenerationSource[]
+  candidates StructuredAnalysisCandidate[]
+  acceptedDetails StructuredAnalysisDetail[]
+
+  @@index([projectId, kind, createdAt])
+  @@map("structured_analysis_generations")
+}
+
+model StructuredAnalysisGenerationSource {
+  generationId      String          @map("generation_id") @db.Uuid
+  artifactVersionId String          @map("artifact_version_id") @db.Uuid
+  sourceId          String          @map("source_id")
+
+  generation      StructuredAnalysisGeneration @relation(fields: [generationId], references: [id], onDelete: Restrict)
+  artifactVersion ArtifactVersion              @relation(fields: [artifactVersionId], references: [id], onDelete: Restrict)
+
+  @@id([generationId, artifactVersionId])
+  @@unique([generationId, sourceId])
+  @@map("structured_analysis_generation_sources")
+}
+
+model StructuredAnalysisCandidate {
+  id                 String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  generationId       String                       @map("generation_id") @db.Uuid
+  candidateId        String                       @map("candidate_id")
+  title              String
+  content            Json
+  acceptedArtifactId String?                      @map("accepted_artifact_id") @db.Uuid
+  generation         StructuredAnalysisGeneration @relation(fields: [generationId], references: [id], onDelete: Restrict)
+  acceptedArtifact   Artifact?                    @relation(fields: [acceptedArtifactId], references: [id], onDelete: Restrict)
+  acceptedDetail     StructuredAnalysisDetail?
+
+  @@unique([generationId, candidateId])
+  @@map("structured_analysis_candidates")
+}
+
+// Official structured snapshot for one ArtifactVersion of kind `kind`.
+// Immutable once created (see migration trigger), like every other Detail.
+model StructuredAnalysisDetail {
+  artifactVersionId     String                       @id @map("artifact_version_id") @db.Uuid
+  kind                  StructuredAnalysisKind
+  content               Json
+  generationId          String?                      @map("generation_id") @db.Uuid
+  generationCandidateId String?                      @unique @map("generation_candidate_id") @db.Uuid
+  aiRunId               String?                      @map("ai_run_id") @db.Uuid
+
+  artifactVersion     ArtifactVersion               @relation(fields: [artifactVersionId], references: [id], onDelete: Restrict)
+  generation          StructuredAnalysisGeneration? @relation(fields: [generationId], references: [id], onDelete: Restrict)
+  generationCandidate StructuredAnalysisCandidate?  @relation(fields: [generationCandidateId], references: [id], onDelete: Restrict)
+  aiRun               AIRun?                        @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+
+  @@map("structured_analysis_details")
+}
+
+// Deterministic mockup/wireframe preview derived from one exact approved
+// UI_BLUEPRINT version (spec §18) — never an AI-generated raster image.
+model MockupDetail {
+  artifactVersionId  String          @id @map("artifact_version_id") @db.Uuid
+  uiBlueprintVersionId String        @map("ui_blueprint_version_id") @db.Uuid
+  generatorVersion   String          @map("generator_version")
+  svg                String
+
+  artifactVersion    ArtifactVersion @relation("MockupOwnVersion", fields: [artifactVersionId], references: [id], onDelete: Restrict)
+  uiBlueprintVersion ArtifactVersion @relation("MockupUiBlueprintSource", fields: [uiBlueprintVersionId], references: [id], onDelete: Restrict)
+
+  @@map("mockup_details")
 }

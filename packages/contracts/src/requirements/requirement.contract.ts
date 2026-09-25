@@ -1,6 +1,8 @@
 import { z } from 'zod';
 export const REQUIREMENT_TYPES = ['FUNCTIONAL', 'NON_FUNCTIONAL'] as const;
+export type RequirementType = (typeof REQUIREMENT_TYPES)[number];
 export const REQUIREMENT_PRIORITIES = ['HIGH', 'MEDIUM', 'LOW'] as const;
+export type RequirementPriority = (typeof REQUIREMENT_PRIORITIES)[number];
 const text = (max: number) => z.string().trim().min(1, 'El valor es obligatorio.').max(max);
 const list = z.array(text(500)).max(25).default([]);
 const requirementFieldsSchema = z
@@ -112,3 +114,27 @@ export const acceptRequirementsRequestSchema = z
 export const transitionArtifactVersionRequestSchema = z
   .object({ status: z.enum(['DRAFT', 'IN_REVIEW', 'APPROVED', 'CHANGES_REQUESTED']) })
   .strict();
+
+export const REQUIREMENT_QUALITY_RULES = [
+  'BLANK_DESCRIPTION',
+  'PLACEHOLDER_TEXT',
+  'DUPLICATE_DEPENDENCY',
+  'SELF_DEPENDENCY',
+  'UNRESOLVED_DEPENDENCY',
+  'MISSING_PROVENANCE',
+  'POSSIBLE_MULTI_OBLIGATION',
+  'DUPLICATE_NAME',
+] as const;
+// Deterministic checks only, never a standards-certification claim (spec §4.3).
+export const requirementQualityReportResponseSchema = z.object({
+  standard: z.literal('ISO/IEC/IEEE 29148:2018-aligned'),
+  totalRequirements: z.number().int().nonnegative(),
+  issues: z.array(
+    z.object({
+      requirementId: z.uuid(),
+      code: z.string(),
+      rule: z.enum(REQUIREMENT_QUALITY_RULES),
+      message: z.string(),
+    }),
+  ),
+});

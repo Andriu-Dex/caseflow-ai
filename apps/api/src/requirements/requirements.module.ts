@@ -6,5 +6,6 @@ import { RequirementsService } from './requirements.service';
   imports: [AIModule],
   controllers: [RequirementsController],
   providers: [RequirementsService],
+  exports: [RequirementsService],
 })
 export class RequirementsModule {}

@@ -3,9 +3,10 @@ import {
   Injectable,
   InternalServerErrorException,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import type { ProjectContextRequest, ProjectContextResponse } from '@caseflow-ai/contracts';
-import { formatArtifactCode } from '@caseflow-ai/domain';
+import { canTransitionArtifactVersionStatus, formatArtifactCode } from '@caseflow-ai/domain';
 import { PrismaService } from '../database/prisma.service';
 import type { Prisma } from '../generated/prisma/client';
 
@@ -20,6 +21,9 @@ const contextInclude = {
       constraints: { orderBy: { position: 'asc' as const } },
       businessRules: { orderBy: { position: 'asc' as const } },
       scopeItems: { orderBy: { position: 'asc' as const } },
+      sources: {
+        include: { sourceVersion: { include: { artifact: true } } },
+      },
     },
   },
 } satisfies Prisma.ArtifactVersionInclude;
@@ -84,6 +88,21 @@ export class ProjectContextService {
     return this.toResponse(artifact.id, artifact.projectId, artifact.code, version);
   }
 
+  // Exact-version lookup, used by Export (spec Phase H) which selects its own
+  // authoritative version via FirstDeliverableSnapshotService rather than
+  // always taking the latest version regardless of status (getCurrent above).
+  async getVersion(projectId: string, artifactId: string, versionId: string) {
+    const artifact = await this.prisma.artifact.findFirst({
+      where: { id: artifactId, projectId, artifactTypeCode: PROJECT_CONTEXT_TYPE },
+      include: { versions: { where: { id: versionId }, take: 1, include: contextInclude } },
+    });
+    const version = artifact?.versions[0];
+    if (!artifact || !version?.projectContextDetail) {
+      throw new NotFoundException('Contexto del proyecto no encontrado.');
+    }
+    return this.toResponse(artifact.id, artifact.projectId, artifact.code, version);
+  }
+
   async createVersion(
     projectId: string,
     input: ProjectContextRequest,
@@ -112,13 +131,56 @@ export class ProjectContextService {
     });
   }
 
-  private insertSnapshot(
+  // Explicit human approval gate (spec §5): official downstream generation
+  // (Requirements) requires an APPROVED context version. AI never approves.
+  async transition(
+    projectId: string,
+    versionId: string,
+    status: 'DRAFT' | 'IN_REVIEW' | 'APPROVED' | 'CHANGES_REQUESTED',
+  ) {
+    const version = await this.prisma.artifactVersion.findFirst({
+      where: {
+        id: versionId,
+        projectId,
+        artifact: { artifactTypeCode: PROJECT_CONTEXT_TYPE },
+      },
+    });
+    if (!version) throw new NotFoundException('Versión no encontrada.');
+    if (!canTransitionArtifactVersionStatus(version.status, status))
+      throw new UnprocessableEntityException('Transición de estado no permitida.');
+    return this.prisma.artifactVersion.update({
+      where: { id: versionId },
+      data: {
+        status,
+        submittedAt: status === 'IN_REVIEW' ? new Date() : version.submittedAt,
+        approvedAt: status === 'APPROVED' ? new Date() : version.approvedAt,
+      },
+    });
+  }
+
+  private async insertSnapshot(
     tx: Transaction,
     artifactId: string,
     projectId: string,
     versionNumber: number,
     input: ProjectContextRequest,
   ): Promise<ContextVersion> {
+    const sourceVersionIds = [...new Set(input.sourceVersionIds ?? [])];
+    if (sourceVersionIds.length) {
+      const sources = await tx.artifactVersion.findMany({
+        where: {
+          id: { in: sourceVersionIds },
+          projectId,
+          status: 'APPROVED',
+          artifact: { artifactTypeCode: 'PROJECT_SOURCE' },
+        },
+        select: { id: true },
+      });
+      if (sources.length !== sourceVersionIds.length)
+        throw new UnprocessableEntityException(
+          'Las fuentes referenciadas deben ser versiones exactas APPROVED de Project Source del mismo proyecto.',
+        );
+    }
     return tx.artifactVersion.create({
       data: {
         artifactId,
@@ -144,6 +206,7 @@ export class ProjectContextService {
             scopeItems: {
               create: input.scopeItems.map((item, position) => ({ ...item, position })),
             },
+            sources: { create: sourceVersionIds.map((sourceVersionId) => ({ sourceVersionId })) },
           },
         },
       },
@@ -213,6 +276,12 @@ export class ProjectContextService {
         position,
         type,
         description,
+      })),
+      sources: detail.sources.map((link) => ({
+        id: link.sourceVersion.artifact.id,
+        versionId: link.sourceVersionId,
+        code: link.sourceVersion.artifact.code,
+        title: link.sourceVersion.title,
       })),
     };
   }

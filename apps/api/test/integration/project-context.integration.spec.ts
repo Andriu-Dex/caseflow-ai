@@ -147,6 +147,18 @@ describe('Project Context integration', () => {
     ).toBe(404);
   });
 
+  it('enforces the explicit human approval gate lifecycle', async () => {
+    const project = await createProject(ctx, 'Approval Gate');
+    const draft = await service.create(project.id, contextInput());
+    expect(draft.version.status).toBe('DRAFT');
+    await expect(service.transition(project.id, draft.version.id, 'APPROVED')).rejects.toThrow(
+      'Transición',
+    );
+    await service.transition(project.id, draft.version.id, 'IN_REVIEW');
+    const approved = await service.transition(project.id, draft.version.id, 'APPROVED');
+    expect(approved.status).toBe('APPROVED');
+  });
+
   it('enforces the canonical uniqueness invariant in PostgreSQL', async () => {
     const project = await createProject(ctx, 'Database Unique');
     await service.create(project.id, contextInput());
@@ -157,6 +169,76 @@ describe('Project Context integration', () => {
         [project.id],
       ),
     ).rejects.toMatchObject({ code: '23505' });
+  });
+
+  it('links exact APPROVED PROJECT_SOURCE versions and answers which sources support this context', async () => {
+    const project = await createProject(ctx, 'Sources');
+    const source = await ctx.sources.create(
+      project.id,
+      { title: 'Entrevista', sourceKind: 'NOTES', purpose: 'Notas de la entrevista con finanzas' },
+      {
+        originalname: 'notas.txt',
+        mimetype: 'text/plain',
+        size: 12,
+        buffer: Buffer.from('Notas reales'),
+      },
+    );
+    await ctx.sources.transition(project.id, source.id, source.version.id, 'IN_REVIEW');
+    const approvedSource = await ctx.sources.transition(
+      project.id,
+      source.id,
+      source.version.id,
+      'APPROVED',
+    );
+
+    const result = await service.create(project.id, {
+      ...contextInput(' con fuentes'),
+      sourceVersionIds: [approvedSource.id],
+    });
+    expect(projectContextResponseSchema.parse(result)).toEqual(result);
+    expect(result.sources).toEqual([
+      { id: source.id, versionId: approvedSource.id, code: source.code, title: 'Entrevista' },
+    ]);
+  });
+
+  it('rejects a draft (unapproved) or cross-project source as Project Context provenance', async () => {
+    const project = await createProject(ctx, 'Sources Reject');
+    const draft = await ctx.sources.create(
+      project.id,
+      { title: 'Borrador', sourceKind: 'NOTES', purpose: 'p' },
+      { originalname: 'n.txt', mimetype: 'text/plain', size: 4, buffer: Buffer.from('abcd') },
+    );
+    await expect(
+      service.create(project.id, {
+        ...contextInput(' borrador'),
+        sourceVersionIds: [draft.version.id],
+      }),
+    ).rejects.toMatchObject({ status: 422 });
+
+    const otherProject = await createProject(ctx, 'Sources Other');
+    const otherSource = await ctx.sources.create(
+      otherProject.id,
+      { title: 'Otro', sourceKind: 'NOTES', purpose: 'p' },
+      { originalname: 'n.txt', mimetype: 'text/plain', size: 4, buffer: Buffer.from('abcd') },
+    );
+    await ctx.sources.transition(
+      otherProject.id,
+      otherSource.id,
+      otherSource.version.id,
+      'IN_REVIEW',
+    );
+    const otherApproved = await ctx.sources.transition(
+      otherProject.id,
+      otherSource.id,
+      otherSource.version.id,
+      'APPROVED',
+    );
+    await expect(
+      service.create(project.id, {
+        ...contextInput(' cruzado'),
+        sourceVersionIds: [otherApproved.id],
+      }),
+    ).rejects.toMatchObject({ status: 422 });
   });
 
   it('validates HTTP requests and returns contract-safe success and error bodies', async () => {

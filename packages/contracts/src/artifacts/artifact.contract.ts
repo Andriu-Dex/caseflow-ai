@@ -10,7 +10,16 @@ export const ARTIFACT_VERSION_STATUSES = [
 
 export type ArtifactVersionStatus = (typeof ARTIFACT_VERSION_STATUSES)[number];
 
-export const ARTIFACT_ORIGINS = ['MANUAL', 'AI_GENERATED', 'AI_ASSISTED', 'IMPORTED'] as const;
+// SYSTEM_GENERATED: deterministically derived by CASEFlow from already
+// approved/structured CASE data (e.g. a Use Case Diagram) — no manual
+// authoring and no AI involvement (spec §6.3).
+export const ARTIFACT_ORIGINS = [
+  'MANUAL',
+  'AI_GENERATED',
+  'AI_ASSISTED',
+  'SYSTEM_GENERATED',
+  'IMPORTED',
+] as const;
 
 export type ArtifactOrigin = (typeof ARTIFACT_ORIGINS)[number];
 

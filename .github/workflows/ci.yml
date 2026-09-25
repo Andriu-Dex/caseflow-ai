@@ -28,6 +28,9 @@ jobs:
       - run: pnpm build
       - run: pnpm test
       - run: pnpm test:coverage
+      # apps/web has its own jsdom-based vitest config, run separately from
+      # the root Node-only suite above (see vitest.config.mts's exclude).
+      - run: pnpm --filter @caseflow-ai/web run test
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -53,9 +56,32 @@ jobs:
           --health-interval=5s
           --health-timeout=5s
           --health-retries=10
+      # Local, self-hosted diagram rendering for the real-renderer integration
+      # path (never a public kroki.io endpoint). Pinned to the same tag as
+      # infra/docker/compose.yml.
+      kroki-mermaid:
+        image: yuzutech/kroki-mermaid:0.32.1
+      kroki:
+        image: yuzutech/kroki:0.32.1
+        env:
+          KROKI_MERMAID_HOST: kroki-mermaid
+        ports:
+          - 8000:8000
+        options: >-
+          --health-cmd="wget -q -O /dev/null http://localhost:8000/health"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
     env:
       DATABASE_URL: postgresql://caseflow_ci:caseflow_ci_password@localhost:5432/caseflow_ci?schema=public
       DATABASE_TEST_URL: postgresql://caseflow_ci:caseflow_ci_password@localhost:5432/caseflow_test?schema=public
+      DIAGRAM_RENDERER: kroki
+      KROKI_BASE_URL: http://localhost:8000
+      S3_ENDPOINT: http://localhost:8333
+      S3_BUCKET: caseflow
+      S3_ACCESS_KEY_ID: caseflow
+      S3_SECRET_ACCESS_KEY: caseflow-local-dev
+      S3_REGION: us-east-1
     steps:
       - uses: actions/checkout@v4
 
@@ -72,3 +98,20 @@ jobs:
       - run: pnpm db:test:prepare
       - run: pnpm db:test:migrate
       - run: pnpm test:integration
+
+      # Professor-demo browser E2E (spec: "Playwright E2E — mandatory").
+      # Source upload uses the same real local S3-compatible boundary as the
+      # application. AI stays disabled and diagrams use the local Kroki above.
+      - run: docker compose -f infra/docker/compose.yml up -d --wait seaweedfs
+      - run: docker compose -f infra/docker/compose.yml run --rm storage-init
+      # `pnpm exec` (not `npx`) so the browser install resolves the exact
+      # lockfile-pinned @playwright/test version pnpm/action-setup put on PATH.
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm run test:e2e
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14

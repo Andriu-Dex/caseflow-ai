@@ -13,6 +13,7 @@ import {
 } from '@caseflow-ai/contracts';
 import { PrismaService } from '../database/prisma.service';
 import type { Prisma } from '../generated/prisma/client';
+import { analyzeRequirementQuality } from './requirement-quality';
 
 type Tx = Prisma.TransactionClient;
 const detailInclude = {
@@ -35,6 +36,28 @@ export class RequirementsService {
       where: { projectId, artifactTypeCode: 'REQUIREMENT' },
       include: {
         versions: {
+          orderBy: { versionNumber: 'desc' },
+          take: 1,
+          include: { requirementDetail: { include: detailInclude } },
+        },
+      },
+      orderBy: { code: 'asc' },
+    });
+    return { items: rows.map((r) => this.map(r, r.versions[0]!)) };
+  }
+  // Authoritative collection for Export (spec Phase H): each artifact's own
+  // highest APPROVED version, never a newer DRAFT on top of it — unlike
+  // list() above, which always takes the latest version regardless of status.
+  async listApproved(projectId: string) {
+    const rows = await this.prisma.artifact.findMany({
+      where: {
+        projectId,
+        artifactTypeCode: 'REQUIREMENT',
+        versions: { some: { status: 'APPROVED' } },
+      },
+      include: {
+        versions: {
+          where: { status: 'APPROVED' },
           orderBy: { versionNumber: 'desc' },
           take: 1,
           include: { requirementDetail: { include: detailInclude } },
@@ -95,6 +118,7 @@ export class RequirementsService {
       where: {
         id: sourceContextVersionId,
         projectId,
+        status: 'APPROVED',
         artifact: { artifactTypeCode: 'PROJECT_CONTEXT' },
       },
       include: {
@@ -105,18 +129,31 @@ export class RequirementsService {
             constraints: { orderBy: { position: 'asc' } },
             businessRules: { orderBy: { position: 'asc' } },
             scopeItems: { orderBy: { position: 'asc' } },
+            sources: true,
           },
         },
       },
     });
     if (!context?.projectContextDetail)
-      throw new NotFoundException('Versión de contexto no encontrada.');
+      throw new UnprocessableEntityException(
+        'La generación requiere una versión exacta APPROVED del contexto del mismo proyecto.',
+      );
+    // Official First Deliverable workflow gate: an APPROVED context with zero
+    // linked approved Project Source knowledge does not satisfy the required
+    // knowledge-intake process (requirements.md Phase D gate condition). A
+    // manual/preliminary context may still exist without sources; it simply
+    // cannot be used for official Requirements generation.
+    if (context.projectContextDetail.sources.length === 0)
+      throw new UnprocessableEntityException(
+        'La generación oficial requiere un contexto respaldado por al menos una fuente de proyecto APPROVED.',
+      );
     try {
       const result = await this.ai.generateStructured({
         projectId,
         sourceArtifactVersionId: sourceContextVersionId,
         promptKey: 'requirements.generate',
-        promptVersion: 1,
+        // ISO/IEC/IEEE 29148:2018-aligned quality principles (spec §4.4).
+        promptVersion: 2,
         messages: [{ role: 'user', content: JSON.stringify(context.projectContextDetail) }],
         outputSchema: requirementGenerationOutputSchema,
         schemaName: 'requirements_generation',
@@ -225,6 +262,24 @@ export class RequirementsService {
       }
       return { items: [...created.values()] };
     });
+  }
+  // Deterministic ISO/IEC/IEEE 29148:2018-aligned quality check over every
+  // current Requirement in the project (spec §4.3). Not a certification
+  // claim; human review remains authoritative.
+  async qualityReport(projectId: string) {
+    const { items } = await this.list(projectId);
+    return analyzeRequirementQuality(
+      items.map((item) => ({
+        id: item.id,
+        code: item.code,
+        name: item.requirement.name,
+        description: item.requirement.description,
+        origin: item.version.origin,
+        dependencyArtifactIds: item.requirement.dependencyArtifactIds,
+        sourceContextVersionId: item.requirement.sourceContextVersionId,
+        aiRunId: item.requirement.aiRunId,
+      })),
+    );
   }
   async transition(
     projectId: string,

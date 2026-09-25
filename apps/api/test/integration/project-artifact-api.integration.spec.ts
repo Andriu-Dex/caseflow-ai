@@ -17,6 +17,14 @@ describe('Project + Artifact HTTP API', () => {
   beforeAll(async () => {
     ctx = await createTestContext();
     workspaceId = (await createWorkspace(ctx.prisma)).id;
+    // Every current first-deliverable artifact type now has a dedicated
+    // endpoint; this test-only type exercises the generic HTTP Artifact/
+    // ArtifactVersion API in isolation.
+    await ctx.prisma.artifactType.upsert({
+      where: { code: 'GENERIC_TEST_TYPE' },
+      create: { code: 'GENERIC_TEST_TYPE', defaultCodePrefix: 'GEN' },
+      update: {},
+    });
   });
 
   afterAll(async () => {
@@ -40,12 +48,12 @@ describe('Project + Artifact HTTP API', () => {
 
     const artifactRes = await http()
       .post(`/projects/${projectId}/artifacts`)
-      .send({ type: 'DATA_MODEL', title: 'Modelo inicial', metadataAuxiliary: { k: 'v' } });
+      .send({ type: 'GENERIC_TEST_TYPE', title: 'Modelo inicial', metadataAuxiliary: { k: 'v' } });
     expect(artifactRes.status).toBe(201);
     expect(artifactRes.body).toMatchObject({
       projectId,
-      type: 'DATA_MODEL',
-      code: 'MD-001',
+      type: 'GENERIC_TEST_TYPE',
+      code: 'GEN-001',
       currentVersion: { versionNumber: 1, status: 'DRAFT', origin: 'MANUAL' },
     });
     const artifactId = artifactRes.body.id as string;
@@ -67,7 +75,7 @@ describe('Project + Artifact HTTP API', () => {
     const b = (await http().post('/projects').send({ workspaceId, name: 'B' })).body.id as string;
     const artifact = await http()
       .post(`/projects/${a}/artifacts`)
-      .send({ type: 'DATA_MODEL', title: 'Modelo' });
+      .send({ type: 'GENERIC_TEST_TYPE', title: 'Modelo' });
 
     const read = await http().get(`/projects/${b}/artifacts/${artifact.body.id}`);
     const write = await http()
@@ -91,7 +99,7 @@ describe('Project + Artifact HTTP API', () => {
 
     const smuggledOrigin = await http()
       .post(`/projects/${project}/artifacts`)
-      .send({ type: 'DATA_MODEL', title: 't', origin: 'AI_GENERATED', status: 'APPROVED' });
+      .send({ type: 'GENERIC_TEST_TYPE', title: 't', origin: 'AI_GENERATED', status: 'APPROVED' });
     expect(smuggledOrigin.status).toBe(400);
 
     const missing = await http().get('/projects/00000000-0000-4000-8000-000000000000');
@@ -106,7 +114,7 @@ describe('Project + Artifact HTTP API', () => {
     const projectId = project.body.id as string;
     const artifact = await http()
       .post(`/projects/${projectId}/artifacts`)
-      .send({ type: 'DATA_MODEL', title: 'Modelo' });
+      .send({ type: 'GENERIC_TEST_TYPE', title: 'Modelo' });
     const version = await http()
       .post(`/projects/${projectId}/artifacts/${artifact.body.id}/versions`)
       .send({ title: 'Modelo v2' });
@@ -137,7 +145,7 @@ describe('Project + Artifact HTTP API', () => {
 
     const response = await http()
       .post(`/projects/${project}/artifacts`)
-      .send({ type: 'DATA_MODEL', title: 'prefijo falso', codePrefix: 'ALT' });
+      .send({ type: 'GENERIC_TEST_TYPE', title: 'prefijo falso', codePrefix: 'ALT' });
 
     expect(response.status).toBe(400);
   });
