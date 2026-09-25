@@ -8,6 +8,7 @@ import { StatusBadge } from '../../components/status-badge';
 import { CandidateReview } from '../../components/candidate-review';
 import { DataModelManualForm } from '../../components/data-model-manual-form';
 import { TrustedDiagram } from '../../components/trusted-svg';
+import { PageHeading } from '../../components/page-heading';
 
 function DataModelContent({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
@@ -80,7 +81,7 @@ function DataModelContent({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold text-foreground">Modelo de datos</h1>
+      <PageHeading title="Modelo de datos" />
 
       <section className="rounded-lg border border-border bg-card p-4">
         <div className="flex flex-wrap gap-2">
