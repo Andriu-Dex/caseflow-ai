@@ -2,6 +2,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { Button } from '@caseflow-ai/ui';
 import { api, ApiError, type GenerationResult } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { StatusBadge } from '../../components/status-badge';
@@ -29,10 +30,12 @@ function RequirementsContent({ projectId }: { projectId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [openDetail, setOpenDetail] = useState<string | null>(null);
   const [showManualForm, setShowManualForm] = useState(false);
+  const [generating, setGenerating] = useState(false);
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['requirements', projectId] });
     queryClient.invalidateQueries({ queryKey: ['requirements-quality', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
   }
 
   async function handleGenerate() {
@@ -41,11 +44,14 @@ function RequirementsContent({ projectId }: { projectId: string }) {
       setError('Apruebe el Contexto del Proyecto antes de generar Requisitos.');
       return;
     }
+    setGenerating(true);
     try {
       const result = await api.requirements.generate(projectId, context.data.version.id);
       setGeneration(result);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo generar (¿IA deshabilitada?).');
+    } finally {
+      setGenerating(false);
     }
   }
 
@@ -76,7 +82,7 @@ function RequirementsContent({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeading title="Requisitos" />
+      <PageHeading title="Requisitos" projectId={projectId} />
 
       <section className="flex flex-wrap items-center gap-4 rounded-lg border border-border bg-card p-4 text-sm">
         <span>
@@ -89,20 +95,12 @@ function RequirementsContent({ projectId }: { projectId: string }) {
           <strong>{warningCount}</strong> advertencia(s) de calidad (ISO/IEC/IEEE 29148:2018)
         </span>
         <div className="ml-auto flex gap-2">
-          <button
-            type="button"
-            onClick={handleGenerate}
-            className="rounded-md border border-input px-3 py-1.5 hover:bg-muted/40"
-          >
-            Generar con IA
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowManualForm((v) => !v)}
-            className="rounded-md border border-input px-3 py-1.5 hover:bg-muted/40"
-          >
+          <Button type="button" variant="outline" disabled={generating} onClick={handleGenerate}>
+            {generating ? 'Generando…' : 'Generar con IA'}
+          </Button>
+          <Button type="button" variant="outline" onClick={() => setShowManualForm((v) => !v)}>
             Crear manualmente
-          </button>
+          </Button>
         </div>
       </section>
       <p className="-mt-4 text-xs text-muted-foreground">

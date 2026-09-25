@@ -113,10 +113,12 @@ test('displays a real Kroki-rendered ER diagram, provenance, readiness and expor
   await expect(page.getByRole('heading', { name: projectName })).toBeVisible();
 
   // --- A. Real visual output: an actual backend-rendered, sanitized SVG ---
-  await page
-    .getByRole('navigation', { name: 'Navegación principal' })
-    .getByRole('link', { name: 'Modelo de datos' })
-    .click();
+  // Navigates directly (not via the sidebar) because this scenario's setup
+  // deliberately seeds Source/Context/Data Model through the API only,
+  // skipping Requirements/Use Cases — the sidebar's sequential stepper
+  // would otherwise treat Data Model as not yet reachable. Scenario A
+  // already covers real sequential sidebar navigation end to end.
+  await page.goto('/data-model');
   const modelRow = page.locator('li').filter({ hasText: dataModelCode });
   await modelRow.getByRole('button', { name: 'Ver diagrama ER' }).click();
   // Scoped to the TrustedDiagram <figure>, not the row, so this never matches
@@ -130,10 +132,8 @@ test('displays a real Kroki-rendered ER diagram, provenance, readiness and expor
   await expect(diagramSvg.getByText('Pedido')).toBeVisible();
 
   // --- B. Traceability: a known ArtifactVersion shows real upstream provenance ---
-  await page
-    .getByRole('navigation', { name: 'Navegación principal' })
-    .getByRole('link', { name: 'Trazabilidad' })
-    .click();
+  // Same reasoning as above: direct navigation, not a sidebar click.
+  await page.goto('/traceability');
   await page.getByRole('button', { name: /CTX-001/ }).click();
   const upstreamSection = page.getByText('Aguas arriba').locator('..');
   await expect(upstreamSection).toBeVisible();

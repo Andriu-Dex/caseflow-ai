@@ -3,12 +3,13 @@
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ClipboardCheck, Check, Home, Sparkles } from 'lucide-react';
-import type { ReactNode } from 'react';
-import { Separator } from '@caseflow-ai/ui';
+import { ClipboardCheck, Check, Home, Lock, Sparkles } from 'lucide-react';
+import type { MouseEvent, ReactNode } from 'react';
+import { useEffect, useState } from 'react';
+import { Alert, AlertDescription, Separator } from '@caseflow-ai/ui';
 import { api } from '../lib/api';
 import { useActiveProject } from '../lib/active-project';
-import { ROUTE_STAGE_KEYS, ROUTE_STEP_NUMBER } from '../lib/stage-links';
+import { computeStepState, PIPELINE_STEPS, ROUTE_STEP_NUMBER } from '../lib/stage-links';
 import { ProjectSwitcher } from './project-switcher';
 
 type NavItem = { href: string; label: string };
@@ -61,19 +62,32 @@ export function AppShell({ children }: { children: ReactNode }) {
     queryFn: () => api.readiness.get(projectId!),
     enabled: Boolean(projectId),
   });
+  const [lockedMessage, setLockedMessage] = useState<string | null>(null);
 
-  // A route is satisfied only when every readiness stage it maps to is
-  // satisfied (some routes, like /use-cases, cover two stages).
-  function stepState(href: string): 'satisfied' | 'next' | 'pending' | 'unknown' {
-    const stages = readiness.data?.stages;
-    if (!stages) return 'unknown';
-    const keys = ROUTE_STAGE_KEYS[href];
-    if (!keys) return 'unknown';
-    const relevant = stages.filter((s) => keys.includes(s.key));
-    if (relevant.length && relevant.every((s) => s.satisfied)) return 'satisfied';
-    const nextStage = stages.find((s) => !s.satisfied);
-    if (nextStage && keys.includes(nextStage.key)) return 'next';
-    return 'pending';
+  useEffect(() => setLockedMessage(null), [pathname]);
+
+  const stages = readiness.data?.stages;
+
+  // A step is reachable only once every earlier step in the pipeline is
+  // satisfied — this is a navigation affordance, not a validation rule: the
+  // backend independently enforces every real precondition regardless of
+  // whether the UI lets a user click through in sequence.
+  function firstBlockingStep(href: string): { label: string } | null {
+    const target = ROUTE_STEP_NUMBER[href];
+    if (!target || !stages) return null;
+    for (const s of PIPELINE_STEPS) {
+      if (s.step >= target) break;
+      if (computeStepState(s.href, stages) !== 'satisfied') return { label: s.label };
+    }
+    return null;
+  }
+
+  function handleNavClick(e: MouseEvent<HTMLAnchorElement>, href: string) {
+    const blocker = firstBlockingStep(href);
+    if (blocker) {
+      e.preventDefault();
+      setLockedMessage(`Complete primero "${blocker.label}" antes de continuar con este paso.`);
+    }
   }
 
   return (
@@ -94,6 +108,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           </span>
           <span className="text-lg font-semibold tracking-tight text-white">CASEFlow AI</span>
         </div>
+        {lockedMessage ? (
+          <Alert className="mb-4 border-amber-400/40 bg-amber-500/10 text-amber-200 [&_svg]:text-amber-300">
+            <Lock className="size-4" aria-hidden="true" />
+            <AlertDescription className="text-amber-100">{lockedMessage}</AlertDescription>
+          </Alert>
+        ) : null}
         <div className="flex flex-col gap-5">
           {NAV_GROUPS.map((group, i) => (
             <div key={i}>
@@ -106,23 +126,27 @@ export function AppShell({ children }: { children: ReactNode }) {
                 {group.items.map((item) => {
                   const active = pathname === item.href;
                   const step = ROUTE_STEP_NUMBER[item.href];
-                  const state = step ? stepState(item.href) : 'unknown';
+                  const state = step ? computeStepState(item.href, stages) : 'unknown';
+                  const locked = Boolean(firstBlockingStep(item.href));
                   return (
                     <li key={item.href}>
                       <Link
                         href={item.href}
                         aria-current={active ? 'page' : undefined}
+                        onClick={(e) => handleNavClick(e, item.href)}
                         title={
-                          state === 'next'
-                            ? 'Siguiente paso recomendado'
-                            : state === 'pending'
-                              ? 'Etapa posterior en el flujo — puede requerir pasos previos'
+                          locked
+                            ? 'Bloqueado — complete los pasos anteriores primero'
+                            : state === 'next'
+                              ? 'Siguiente paso recomendado'
                               : undefined
                         }
                         className={`flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors ${
                           active
                             ? 'bg-sidebar-active text-white shadow-sm'
-                            : 'text-sidebar-foreground/75 hover:bg-white/5 hover:text-white'
+                            : locked
+                              ? 'text-sidebar-foreground/40'
+                              : 'text-sidebar-foreground/75 hover:bg-white/5 hover:text-white'
                         }`}
                       >
                         {step ? (
@@ -137,6 +161,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                           >
                             {state === 'satisfied' ? (
                               <Check className="size-3" aria-hidden="true" />
+                            ) : locked ? (
+                              <Lock className="size-2.5" aria-hidden="true" />
                             ) : (
                               step
                             )}
