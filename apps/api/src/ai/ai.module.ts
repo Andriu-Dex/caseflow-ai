@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import {
   AIOrchestrator,
   DisabledAIProvider,
+  FallbackAIProvider,
   PromptRegistry,
   type AIProvider,
 } from '@caseflow-ai/ai';
@@ -18,9 +19,12 @@ export const AI_PROVIDER = Symbol('AI_PROVIDER');
       provide: AI_PROVIDER,
       useFactory: (): AIProvider => {
         const config = loadAIConfig(process.env);
-        return config.provider === 'disabled'
-          ? new DisabledAIProvider()
-          : new OpenAICompatibleProvider(config);
+        if (config.provider === 'disabled') return new DisabledAIProvider();
+        if (config.provider === 'fallback')
+          return new FallbackAIProvider(
+            config.chain.map((slot) => new OpenAICompatibleProvider(slot)),
+          );
+        return new OpenAICompatibleProvider(config);
       },
     },
     {
