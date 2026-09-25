@@ -1,22 +1,36 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { Upload } from 'lucide-react';
+import { useRef, useState } from 'react';
 import type { ProjectSourceKind, SourceResponse } from '@caseflow-ai/contracts';
+import {
+  Button,
+  Input,
+  Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Textarea,
+} from '@caseflow-ai/ui';
 import { api, ApiError } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { StatusBadge } from '../../components/status-badge';
 
-const SOURCE_KINDS: ProjectSourceKind[] = [
-  'PDF',
-  'AUDIO',
-  'IMAGE',
-  'FORM',
-  'INVOICE',
-  'TEXT',
-  'NOTES',
-  'OTHER',
-];
+const SOURCE_KIND_LABELS: Record<ProjectSourceKind, string> = {
+  PDF: 'Documento PDF',
+  AUDIO: 'Audio',
+  IMAGE: 'Imagen',
+  FORM: 'Formulario',
+  INVOICE: 'Factura',
+  TEXT: 'Texto',
+  NOTES: 'Notas',
+  OTHER: 'Otro',
+};
+
+const SOURCE_KINDS = Object.keys(SOURCE_KIND_LABELS) as ProjectSourceKind[];
 
 const EXTRACTION_LABEL: Record<string, string> = {
   EXTRACTED: 'Extracción automática',
@@ -69,6 +83,8 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
     }
   }
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   return (
     <form
       onSubmit={handleSubmit}
@@ -76,76 +92,87 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
     >
       <h2 className="text-sm font-semibold text-foreground">Agregar fuente de conocimiento</h2>
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="flex flex-col gap-1 text-sm">
-          Tipo de fuente
-          <select
-            className="rounded-md border border-input px-2 py-1"
+        <div className="flex flex-col gap-1.5 text-sm">
+          <Label htmlFor="source-kind">Tipo de fuente</Label>
+          <Select
             value={sourceKind}
-            onChange={(e) => setSourceKind(e.target.value as ProjectSourceKind)}
+            onValueChange={(v) => setSourceKind(v as ProjectSourceKind)}
           >
-            {SOURCE_KINDS.map((k) => (
-              <option key={k} value={k}>
-                {k}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          Título
-          <input
+            <SelectTrigger id="source-kind" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SOURCE_KINDS.map((k) => (
+                <SelectItem key={k} value={k}>
+                  {SOURCE_KIND_LABELS[k]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex flex-col gap-1.5 text-sm">
+          <Label htmlFor="source-title">Título</Label>
+          <Input
+            id="source-title"
             required
-            className="rounded-md border border-input px-2 py-1"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
           />
-        </label>
+        </div>
       </div>
-      <label className="flex flex-col gap-1 text-sm">
-        ¿Qué representa esta fuente?
-        <textarea
+      <div className="flex flex-col gap-1.5 text-sm">
+        <Label htmlFor="source-purpose">¿Qué representa esta fuente?</Label>
+        <Textarea
+          id="source-purpose"
           required
-          className="rounded-md border border-input px-2 py-1"
           rows={2}
           value={purpose}
           onChange={(e) => setPurpose(e.target.value)}
         />
-      </label>
+      </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="flex flex-col gap-1 text-sm">
-          Área / dominio de negocio (opcional)
-          <input
-            className="rounded-md border border-input px-2 py-1"
+        <div className="flex flex-col gap-1.5 text-sm">
+          <Label htmlFor="source-business-area">Área / dominio de negocio (opcional)</Label>
+          <Input
+            id="source-business-area"
             value={businessArea}
             onChange={(e) => setBusinessArea(e.target.value)}
           />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          Archivo
+        </div>
+        <div className="flex flex-col gap-1.5 text-sm">
+          <Label htmlFor="source-file">Archivo</Label>
           <input
+            ref={fileInputRef}
+            id="source-file"
             required
             type="file"
-            className="text-sm"
+            className="sr-only"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           />
-        </label>
+          <Button
+            type="button"
+            variant="outline"
+            className="justify-start font-normal"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Upload className="size-4" aria-hidden="true" />
+            {file ? file.name : 'Seleccionar archivo…'}
+          </Button>
+        </div>
       </div>
-      <label className="flex flex-col gap-1 text-sm">
-        Descripción (opcional)
-        <textarea
-          className="rounded-md border border-input px-2 py-1"
+      <div className="flex flex-col gap-1.5 text-sm">
+        <Label htmlFor="source-description">Descripción (opcional)</Label>
+        <Textarea
+          id="source-description"
           rows={2}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
-      </label>
+      </div>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      <button
-        type="submit"
-        disabled={submitting}
-        className="self-start rounded-md bg-gray-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-      >
+      <Button type="submit" disabled={submitting} className="self-start">
         {submitting ? 'Guardando…' : 'Agregar fuente'}
-      </button>
+      </Button>
     </form>
   );
 }
@@ -248,7 +275,7 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
       </p>
 
       {open ? (
-        <div className="mt-3 flex flex-col gap-3 border-t border-gray-100 pt-3 text-sm">
+        <div className="mt-3 flex flex-col gap-3 border-t border-border pt-3 text-sm">
           <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground">
             <dt className="font-medium">Propósito</dt>
             <dd>{source.source.purpose}</dd>
@@ -283,7 +310,7 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
               <button
                 type="button"
                 onClick={submitTranscript}
-                className="mt-2 rounded-md bg-gray-900 px-3 py-1 text-sm text-white"
+                className="mt-2 rounded-md bg-primary px-3 py-1 text-sm text-white"
               >
                 Guardar transcripción
               </button>
@@ -331,7 +358,7 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
                   type="button"
                   onClick={submitManualReport}
                   disabled={!manualSummary.trim()}
-                  className="self-start rounded-md bg-gray-900 px-3 py-1 text-sm text-white disabled:opacity-50"
+                  className="self-start rounded-md bg-primary px-3 py-1 text-sm text-white disabled:opacity-50"
                 >
                   Guardar reporte manual
                 </button>
@@ -341,7 +368,7 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
             )}
           </div>
 
-          <div className="flex flex-wrap gap-2 border-t border-gray-100 pt-2">
+          <div className="flex flex-wrap gap-2 border-t border-border pt-2">
             {source.version.status === 'DRAFT' || source.version.status === 'GENERATED' ? (
               <button
                 type="button"
