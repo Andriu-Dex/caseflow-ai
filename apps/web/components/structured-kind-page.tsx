@@ -2,7 +2,9 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { StructuredAnalysisKind } from '@caseflow-ai/contracts';
+import { AlertCircle, Eye, Sparkles, Wand2 } from 'lucide-react';
 import { useState } from 'react';
+import { Button, Card, CardContent, CardHeader, CardTitle, Textarea } from '@caseflow-ai/ui';
 import { api, ApiError, type GenerationResult } from '../lib/api';
 import { QueryState } from './query-state';
 import { StatusBadge } from './status-badge';
@@ -98,42 +100,46 @@ export function StructuredKindPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold text-gray-900">{title}</h1>
+      <h1 className="text-xl font-semibold text-foreground">{title}</h1>
 
-      <section className="rounded-lg border border-gray-200 bg-white p-4">
-        <h2 className="mb-2 text-sm font-semibold text-gray-900">Generar con IA</h2>
-        <p className="mb-2 text-xs text-gray-500">
-          Use la sección de Trazabilidad para identificar las versiones APPROVED elegibles como
-          fuente.
-        </p>
-        <textarea
-          className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
-          rows={2}
-          placeholder="IDs de versión fuente APPROVED, separados por coma o espacio"
-          value={sourceIdsText}
-          onChange={(e) => setSourceIdsText(e.target.value)}
-        />
-        <div className="mt-2 flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={generate}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
-          >
-            Generar
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowManualForm((v) => !v)}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
-          >
-            Crear manualmente
-          </button>
-        </div>
-        <p className="mt-2 text-xs text-gray-500">
-          La generación con IA requiere un proveedor configurado. Si no está disponible, use
-          &quot;Crear manualmente&quot;.
-        </p>
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <Sparkles className="size-4 text-primary" aria-hidden="true" />
+            Generar con IA
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="mb-2 text-xs text-muted-foreground">
+            Use la sección de Trazabilidad para identificar las versiones APPROVED elegibles como
+            fuente.
+          </p>
+          <Textarea
+            rows={2}
+            placeholder="IDs de versión fuente APPROVED, separados por coma o espacio"
+            value={sourceIdsText}
+            onChange={(e) => setSourceIdsText(e.target.value)}
+          />
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={generate}>
+              <Wand2 className="size-4" aria-hidden="true" />
+              Generar
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowManualForm((v) => !v)}
+            >
+              Crear manualmente
+            </Button>
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            La generación con IA requiere un proveedor configurado. Si no está disponible, use
+            &quot;Crear manualmente&quot;.
+          </p>
+        </CardContent>
+      </Card>
 
       {showManualForm ? (
         <ManualForm
@@ -146,7 +152,12 @@ export function StructuredKindPage({
         />
       ) : null}
 
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? (
+        <div className="flex items-center gap-2 text-sm text-destructive">
+          <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
+          {error}
+        </div>
+      ) : null}
 
       {generation ? (
         <CandidateReview
@@ -162,63 +173,75 @@ export function StructuredKindPage({
 
       <QueryState isLoading={list.isLoading} error={list.error}>
         {items.length === 0 ? (
-          <p className="text-sm text-gray-500">No hay artefactos de este tipo todavía.</p>
+          <p className="text-sm text-muted-foreground">No hay artefactos de este tipo todavía.</p>
         ) : (
           <ul className="flex flex-col gap-3">
             {items.map((item) => (
-              <li key={item.id} className="rounded-lg border border-gray-200 bg-white p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-sm">
-                    <span className="font-mono text-xs text-gray-500">{item.code}</span>{' '}
-                    <span className="font-medium text-gray-900">{item.title}</span>
-                  </div>
-                  <StatusBadge status={item.version.status} />
-                </div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {item.version.status === 'DRAFT' || item.version.status === 'GENERATED' ? (
-                    <button
-                      type="button"
-                      onClick={() => transition(item.id, item.version.id, 'IN_REVIEW')}
-                      className="rounded-md border border-gray-300 px-3 py-1 text-sm hover:bg-gray-50"
-                    >
-                      Enviar a revisión
-                    </button>
-                  ) : null}
-                  {item.version.status === 'IN_REVIEW' ? (
-                    <>
-                      <button
+              <li key={item.id}>
+                <Card>
+                  <CardContent>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-sm">
+                        <span className="font-mono text-xs text-muted-foreground">{item.code}</span>{' '}
+                        <span className="font-medium text-foreground">{item.title}</span>
+                      </div>
+                      <StatusBadge status={item.version.status} />
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {item.version.status === 'DRAFT' || item.version.status === 'GENERATED' ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => transition(item.id, item.version.id, 'IN_REVIEW')}
+                        >
+                          Enviar a revisión
+                        </Button>
+                      ) : null}
+                      {item.version.status === 'IN_REVIEW' ? (
+                        <>
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="bg-emerald-600 text-white hover:bg-emerald-700"
+                            onClick={() => transition(item.id, item.version.id, 'APPROVED')}
+                          >
+                            Aprobar
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="border-destructive/40 text-destructive hover:bg-destructive/5"
+                            onClick={() =>
+                              transition(item.id, item.version.id, 'CHANGES_REQUESTED')
+                            }
+                          >
+                            Solicitar cambios
+                          </Button>
+                        </>
+                      ) : null}
+                      <Button
                         type="button"
-                        onClick={() => transition(item.id, item.version.id, 'APPROVED')}
-                        className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => loadDiagram(item.id)}
                       >
-                        Aprobar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => transition(item.id, item.version.id, 'CHANGES_REQUESTED')}
-                        className="rounded-md border border-red-300 px-3 py-1 text-sm text-red-700 hover:bg-red-50"
-                      >
-                        Solicitar cambios
-                      </button>
-                    </>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => loadDiagram(item.id)}
-                    className="text-sm text-gray-600 underline"
-                  >
-                    Ver diagrama
-                  </button>
-                </div>
-                {(() => {
-                  const svg = diagrams[item.id];
-                  return svg ? (
-                    <TrustedDiagram
-                      svg={svg}
-                      caption={`Diagrama de ${title.toLowerCase()} — ${item.code}`}
-                    />
-                  ) : null;
-                })()}
+                        <Eye className="size-4" aria-hidden="true" />
+                        Ver diagrama
+                      </Button>
+                    </div>
+                    {(() => {
+                      const svg = diagrams[item.id];
+                      return svg ? (
+                        <TrustedDiagram
+                          svg={svg}
+                          caption={`Diagrama de ${title.toLowerCase()} — ${item.code}`}
+                        />
+                      ) : null;
+                    })()}
+                  </CardContent>
+                </Card>
               </li>
             ))}
           </ul>

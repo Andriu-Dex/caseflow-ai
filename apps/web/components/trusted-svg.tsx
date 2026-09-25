@@ -10,10 +10,12 @@
 // a Source's raw content, or any other untrusted string here.
 export function TrustedDiagram({ svg, caption }: { svg: string; caption?: string }) {
   return (
-    <figure className="overflow-auto rounded-lg border border-gray-200 bg-white p-4">
+    <figure className="overflow-auto rounded-lg border border-border bg-card p-4">
       {/* Trusted backend-sanitized SVG only — see module doc above. */}
       <div dangerouslySetInnerHTML={{ __html: svg }} />
-      {caption ? <figcaption className="mt-2 text-xs text-gray-500">{caption}</figcaption> : null}
+      {caption ? (
+        <figcaption className="mt-2 text-xs text-muted-foreground">{caption}</figcaption>
+      ) : null}
     </figure>
   );
 }

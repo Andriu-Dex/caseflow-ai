@@ -1,7 +1,9 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { ArrowRight, CheckCircle2, Clock, Info } from 'lucide-react';
 import Link from 'next/link';
+import { Badge, Card, CardContent, CardHeader } from '@caseflow-ai/ui';
 import { api } from '../lib/api';
 import { QueryState, RequireActiveProject } from '../components/query-state';
 
@@ -44,85 +46,111 @@ function HomeContent({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <section className="rounded-lg border border-gray-200 bg-white p-4">
-        <QueryState isLoading={project.isLoading} error={project.error}>
-          <h1 className="text-2xl font-semibold text-gray-900">{project.data?.name}</h1>
-          {project.data?.description ? (
-            <p className="mt-1 text-sm text-gray-600">{project.data.description}</p>
-          ) : null}
-        </QueryState>
-      </section>
+      <Card>
+        <CardContent>
+          <QueryState isLoading={project.isLoading} error={project.error}>
+            <h1 className="text-2xl font-semibold text-foreground">{project.data?.name}</h1>
+            {project.data?.description ? (
+              <p className="mt-1 text-sm text-muted-foreground">{project.data.description}</p>
+            ) : null}
+          </QueryState>
+        </CardContent>
+      </Card>
 
       <QueryState isLoading={readiness.isLoading} error={readiness.error}>
         {readiness.data ? (
-          <section className="rounded-lg border border-gray-200 bg-white p-4">
-            <div className="flex items-center gap-3">
-              <span
-                className={`rounded-full px-3 py-1 text-sm font-semibold ${
+          <Card>
+            <CardHeader className="flex-row items-center gap-3 space-y-0">
+              <Badge
+                variant={readiness.data.ready ? 'default' : 'secondary'}
+                className={
                   readiness.data.ready
-                    ? 'bg-emerald-100 text-emerald-800'
-                    : 'bg-amber-100 text-amber-800'
-                }`}
+                    ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100'
+                    : 'bg-amber-100 text-amber-800 hover:bg-amber-100'
+                }
               >
-                {readiness.data.ready ? '✓ LISTO' : '⏳ NO LISTO TODAVÍA'}
-              </span>
-              <span className="text-sm text-gray-500">
+                {readiness.data.ready ? (
+                  <CheckCircle2 className="size-3.5" aria-hidden="true" />
+                ) : (
+                  <Clock className="size-3.5" aria-hidden="true" />
+                )}
+                {readiness.data.ready ? 'LISTO' : 'NO LISTO TODAVÍA'}
+              </Badge>
+              <span className="text-sm text-muted-foreground">
                 {readiness.data.stages.filter((s) => s.satisfied).length} /{' '}
                 {readiness.data.stages.length} etapas completas
               </span>
-            </div>
-
-            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-6">
-              {readiness.data.stages.map((stage) => (
-                <Link
-                  key={stage.key}
-                  href={STAGE_LINKS[stage.key] ?? '/readiness'}
-                  title={stage.summary}
-                  className={`rounded-md border px-2 py-2 text-center text-xs font-medium ${
-                    stage.satisfied
-                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                      : 'border-gray-200 bg-gray-50 text-gray-600'
-                  }`}
-                >
-                  {stage.satisfied ? '✓' : '·'} {stage.label}
-                </Link>
-              ))}
-            </div>
-
-            {nextStage ? (
-              <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                <strong>Siguiente paso:</strong> {nextStage.nextAction ?? nextStage.summary}{' '}
-                <Link href={STAGE_LINKS[nextStage.key] ?? '/readiness'} className="underline">
-                  Ir a {nextStage.label}
-                </Link>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-6">
+                {readiness.data.stages.map((stage) => (
+                  <Link
+                    key={stage.key}
+                    href={STAGE_LINKS[stage.key] ?? '/readiness'}
+                    title={stage.summary}
+                    className={`rounded-md border px-2 py-2 text-center text-xs font-medium transition-colors ${
+                      stage.satisfied
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                        : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted'
+                    }`}
+                  >
+                    {stage.satisfied ? '✓' : '·'} {stage.label}
+                  </Link>
+                ))}
               </div>
-            ) : null}
 
-            <Link href="/readiness" className="mt-3 inline-block text-sm text-gray-600 underline">
-              Ver detalle completo de preparación →
-            </Link>
-          </section>
+              {nextStage ? (
+                <div className="mt-4 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                  <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                  <span>
+                    <strong>Siguiente paso:</strong> {nextStage.nextAction ?? nextStage.summary}{' '}
+                    <Link
+                      href={STAGE_LINKS[nextStage.key] ?? '/readiness'}
+                      className="inline-flex items-center gap-0.5 underline"
+                    >
+                      Ir a {nextStage.label}
+                      <ArrowRight className="size-3.5" aria-hidden="true" />
+                    </Link>
+                  </span>
+                </div>
+              ) : null}
+
+              <Link
+                href="/readiness"
+                className="mt-3 inline-flex items-center gap-1 text-sm text-muted-foreground underline"
+              >
+                Ver detalle completo de preparación
+                <ArrowRight className="size-3.5" aria-hidden="true" />
+              </Link>
+            </CardContent>
+          </Card>
         ) : null}
       </QueryState>
 
       <QueryState isLoading={staleness.isLoading} error={staleness.error}>
         {staleContext ? (
-          <section className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-            ⚠ Hay conocimiento aprobado más reciente disponible: el Contexto del Proyecto vigente no
-            incluye conocimiento de fuentes aprobadas más recientes.{' '}
-            <Link href="/context" className="underline">
-              Revisar Contexto
-            </Link>
-          </section>
+          <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <span>
+              Hay conocimiento aprobado más reciente disponible: el Contexto del Proyecto vigente no
+              incluye conocimiento de fuentes aprobadas más recientes.{' '}
+              <Link href="/context" className="underline">
+                Revisar Contexto
+              </Link>
+            </span>
+          </div>
         ) : staleness.data &&
           staleness.data.entries.some((e) => e.impactState === 'POTENTIALLY_AFFECTED') ? (
-          <section className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
-            Hay artefactos potencialmente afectados por conocimiento más reciente. Revisión
-            recomendada.{' '}
-            <Link href="/traceability" className="underline">
-              Ver trazabilidad
-            </Link>
-          </section>
+          <div className="flex items-start gap-2 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+            <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <span>
+              Hay artefactos potencialmente afectados por conocimiento más reciente. Revisión
+              recomendada.{' '}
+              <Link href="/traceability" className="underline">
+                Ver trazabilidad
+              </Link>
+            </span>
+          </div>
         ) : null}
       </QueryState>
     </div>

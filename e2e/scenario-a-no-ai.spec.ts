@@ -16,7 +16,7 @@ test('professor can progress a project from zero to an approved Requirement with
   await expect(page.getByText('Seleccione o cree un proyecto para continuar.')).toBeVisible();
 
   // --- Create the project through the UI (no fixed/hardcoded project id) ---
-  await page.getByRole('button', { name: '+ Nuevo proyecto' }).click();
+  await page.getByRole('button', { name: 'Nuevo proyecto' }).click();
   await page.getByLabel('Nombre del nuevo proyecto').fill(projectName);
   await page.getByRole('button', { name: 'Crear', exact: true }).click();
   await expect(page.getByRole('combobox', { name: 'Proyecto activo' })).toHaveValue(/.+/);

@@ -83,19 +83,19 @@ function UseCasesContent({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold text-gray-900">Casos de uso</h1>
+      <h1 className="text-xl font-semibold text-foreground">Casos de uso</h1>
 
       {validation.data ? (
-        <section className="rounded-lg border border-gray-200 bg-white p-4 text-sm">
+        <section className="rounded-lg border border-border bg-card p-4 text-sm">
           <strong>{validation.data.approvedCount}</strong> / {validation.data.minimumRequired} casos
           de uso aprobados (mínimo académico para este entregable — no es un máximo del producto).
         </section>
       ) : null}
 
-      <section className="rounded-lg border border-gray-200 bg-white p-4">
-        <h2 className="mb-2 text-sm font-semibold text-gray-900">Generar Casos de Uso con IA</h2>
+      <section className="rounded-lg border border-border bg-card p-4">
+        <h2 className="mb-2 text-sm font-semibold text-foreground">Generar Casos de Uso con IA</h2>
         {approvedRequirements.length === 0 ? (
-          <p className="text-sm text-gray-500">Se requieren Requisitos APPROVED.</p>
+          <p className="text-sm text-muted-foreground">Se requieren Requisitos APPROVED.</p>
         ) : (
           <ul className="mb-2 flex flex-col gap-1 text-sm">
             {approvedRequirements.map((r) => (
@@ -123,19 +123,19 @@ function UseCasesContent({ projectId }: { projectId: string }) {
           <button
             type="button"
             onClick={generate}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
+            className="rounded-md border border-input px-3 py-1.5 text-sm hover:bg-muted/40"
           >
             Generar con IA
           </button>
           <button
             type="button"
             onClick={() => setShowManualForm((v) => !v)}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
+            className="rounded-md border border-input px-3 py-1.5 text-sm hover:bg-muted/40"
           >
             Crear manualmente
           </button>
         </div>
-        <p className="mt-2 text-xs text-gray-500">
+        <p className="mt-2 text-xs text-muted-foreground">
           La generación con IA requiere un proveedor configurado. Si no está disponible, use
           &quot;Crear manualmente&quot;.
         </p>
@@ -153,7 +153,7 @@ function UseCasesContent({ projectId }: { projectId: string }) {
         />
       ) : null}
 
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
       {generation ? (
         <CandidateReview
@@ -169,17 +169,19 @@ function UseCasesContent({ projectId }: { projectId: string }) {
 
       <QueryState isLoading={useCases.isLoading} error={useCases.error}>
         {items.length === 0 ? (
-          <p className="text-sm text-gray-500">No hay casos de uso todavía.</p>
+          <p className="text-sm text-muted-foreground">No hay casos de uso todavía.</p>
         ) : (
           <>
             <ul className="flex flex-col gap-2">
               {items.map((u) => (
-                <li key={u.id} className="rounded-lg border border-gray-200 bg-white p-3">
+                <li key={u.id} className="rounded-lg border border-border bg-card p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="text-sm">
-                      <span className="font-mono text-xs text-gray-500">{u.code}</span>{' '}
-                      <span className="font-medium text-gray-900">{u.useCase.name}</span>{' '}
-                      <span className="text-xs text-gray-500">({u.useCase.primaryActor})</span>
+                      <span className="font-mono text-xs text-muted-foreground">{u.code}</span>{' '}
+                      <span className="font-medium text-foreground">{u.useCase.name}</span>{' '}
+                      <span className="text-xs text-muted-foreground">
+                        ({u.useCase.primaryActor})
+                      </span>
                     </div>
                     <StatusBadge status={u.version.status} />
                   </div>
@@ -188,7 +190,7 @@ function UseCasesContent({ projectId }: { projectId: string }) {
                       <button
                         type="button"
                         onClick={() => transition(u.id, u.version.id, 'IN_REVIEW')}
-                        className="rounded-md border border-gray-300 px-3 py-1 text-sm hover:bg-gray-50"
+                        className="rounded-md border border-input px-3 py-1 text-sm hover:bg-muted/40"
                       >
                         Enviar a revisión
                       </button>
@@ -205,7 +207,7 @@ function UseCasesContent({ projectId }: { projectId: string }) {
                         <button
                           type="button"
                           onClick={() => transition(u.id, u.version.id, 'CHANGES_REQUESTED')}
-                          className="rounded-md border border-red-300 px-3 py-1 text-sm text-red-700 hover:bg-red-50"
+                          className="rounded-md border border-destructive/40 px-3 py-1 text-sm text-destructive hover:bg-destructive/5"
                         >
                           Solicitar cambios
                         </button>
@@ -217,14 +219,14 @@ function UseCasesContent({ projectId }: { projectId: string }) {
             </ul>
 
             {approvedVersionIds.length > 0 ? (
-              <section className="rounded-lg border border-gray-200 bg-white p-4">
-                <h2 className="mb-2 text-sm font-semibold text-gray-900">
+              <section className="rounded-lg border border-border bg-card p-4">
+                <h2 className="mb-2 text-sm font-semibold text-foreground">
                   Diagrama de casos de uso
                 </h2>
                 <button
                   type="button"
                   onClick={generateDiagram}
-                  className="mb-2 rounded-md border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
+                  className="mb-2 rounded-md border border-input px-3 py-1.5 text-sm hover:bg-muted/40"
                 >
                   Generar diagrama a partir de los aprobados
                 </button>

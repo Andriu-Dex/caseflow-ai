@@ -72,14 +72,14 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4"
+      className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4"
     >
-      <h2 className="text-sm font-semibold text-gray-900">Agregar fuente de conocimiento</h2>
+      <h2 className="text-sm font-semibold text-foreground">Agregar fuente de conocimiento</h2>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-sm">
           Tipo de fuente
           <select
-            className="rounded-md border border-gray-300 px-2 py-1"
+            className="rounded-md border border-input px-2 py-1"
             value={sourceKind}
             onChange={(e) => setSourceKind(e.target.value as ProjectSourceKind)}
           >
@@ -94,7 +94,7 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
           Título
           <input
             required
-            className="rounded-md border border-gray-300 px-2 py-1"
+            className="rounded-md border border-input px-2 py-1"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
           />
@@ -104,7 +104,7 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
         ¿Qué representa esta fuente?
         <textarea
           required
-          className="rounded-md border border-gray-300 px-2 py-1"
+          className="rounded-md border border-input px-2 py-1"
           rows={2}
           value={purpose}
           onChange={(e) => setPurpose(e.target.value)}
@@ -114,7 +114,7 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
         <label className="flex flex-col gap-1 text-sm">
           Área / dominio de negocio (opcional)
           <input
-            className="rounded-md border border-gray-300 px-2 py-1"
+            className="rounded-md border border-input px-2 py-1"
             value={businessArea}
             onChange={(e) => setBusinessArea(e.target.value)}
           />
@@ -132,13 +132,13 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
       <label className="flex flex-col gap-1 text-sm">
         Descripción (opcional)
         <textarea
-          className="rounded-md border border-gray-300 px-2 py-1"
+          className="rounded-md border border-input px-2 py-1"
           rows={2}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
       </label>
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <button
         type="submit"
         disabled={submitting}
@@ -226,30 +226,30 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
   const canSubmitTranscript = needsExtraction && !source.source.hasExtractedText;
 
   return (
-    <li className="rounded-lg border border-gray-200 bg-white p-4">
+    <li className="rounded-lg border border-border bg-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <span className="font-mono text-xs text-gray-500">{source.code}</span>{' '}
-          <span className="font-medium text-gray-900">{source.source.title}</span>
+          <span className="font-mono text-xs text-muted-foreground">{source.code}</span>{' '}
+          <span className="font-medium text-foreground">{source.source.title}</span>
         </div>
         <div className="flex items-center gap-2">
           <StatusBadge status={source.version.status} />
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
-            className="text-sm text-gray-600 underline"
+            className="text-sm text-muted-foreground underline"
           >
             {open ? 'Ocultar detalle' : 'Ver detalle'}
           </button>
         </div>
       </div>
-      <p className="mt-1 text-sm text-gray-500">
+      <p className="mt-1 text-sm text-muted-foreground">
         {source.source.sourceKind} · {EXTRACTION_LABEL[source.source.extractionState]}
       </p>
 
       {open ? (
         <div className="mt-3 flex flex-col gap-3 border-t border-gray-100 pt-3 text-sm">
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-gray-600">
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground">
             <dt className="font-medium">Propósito</dt>
             <dd>{source.source.purpose}</dd>
             {source.source.businessArea ? (
@@ -274,7 +274,7 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
                 transcripción manual para que el conocimiento sea utilizable.
               </p>
               <textarea
-                className="w-full rounded-md border border-gray-300 px-2 py-1"
+                className="w-full rounded-md border border-input px-2 py-1"
                 rows={3}
                 value={transcript}
                 onChange={(e) => setTranscript(e.target.value)}
@@ -291,11 +291,11 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
           ) : null}
 
           <div>
-            <h3 className="mb-1 font-medium text-gray-900">Reporte de la fuente</h3>
+            <h3 className="mb-1 font-medium text-foreground">Reporte de la fuente</h3>
             {source.source.hasReport ? (
               <QueryState isLoading={report.isLoading} error={null}>
                 {report.data ? (
-                  <div className="flex flex-col gap-2 text-gray-700">
+                  <div className="flex flex-col gap-2 text-foreground/80">
                     <p>{report.data.content.summary}</p>
                     {report.data.content.actors.length ? (
                       <p>
@@ -312,16 +312,16 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
               </QueryState>
             ) : source.source.hasExtractedText || !canSubmitTranscript ? (
               <div className="flex flex-col gap-2">
-                <p className="text-gray-500">Sin reporte todavía.</p>
+                <p className="text-muted-foreground">Sin reporte todavía.</p>
                 <button
                   type="button"
                   onClick={generateReport}
-                  className="self-start rounded-md border border-gray-300 px-3 py-1 text-sm hover:bg-gray-50"
+                  className="self-start rounded-md border border-input px-3 py-1 text-sm hover:bg-muted/40"
                 >
                   Generar reporte con IA
                 </button>
                 <textarea
-                  className="w-full rounded-md border border-gray-300 px-2 py-1"
+                  className="w-full rounded-md border border-input px-2 py-1"
                   rows={2}
                   placeholder="O escriba un resumen manual del contenido…"
                   value={manualSummary}
@@ -337,7 +337,7 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
                 </button>
               </div>
             ) : (
-              <p className="text-gray-500">Guarde primero la transcripción manual.</p>
+              <p className="text-muted-foreground">Guarde primero la transcripción manual.</p>
             )}
           </div>
 
@@ -352,7 +352,7 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
                     ? 'Se requiere conocimiento utilizable (texto extraído o transcripción manual).'
                     : undefined
                 }
-                className="rounded-md border border-gray-300 px-3 py-1 text-sm hover:bg-gray-50 disabled:opacity-50"
+                className="rounded-md border border-input px-3 py-1 text-sm hover:bg-muted/40 disabled:opacity-50"
               >
                 Enviar a revisión
               </button>
@@ -369,14 +369,14 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
                 <button
                   type="button"
                   onClick={() => transition('CHANGES_REQUESTED')}
-                  className="rounded-md border border-red-300 px-3 py-1 text-sm text-red-700 hover:bg-red-50"
+                  className="rounded-md border border-destructive/40 px-3 py-1 text-sm text-destructive hover:bg-destructive/5"
                 >
                   Solicitar cambios
                 </button>
               </>
             ) : null}
           </div>
-          {actionError ? <p className="text-sm text-red-600">{actionError}</p> : null}
+          {actionError ? <p className="text-sm text-destructive">{actionError}</p> : null}
         </div>
       ) : null}
     </li>
@@ -392,14 +392,14 @@ function SourcesContent({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold text-gray-900">Fuentes del proyecto</h1>
+      <h1 className="text-xl font-semibold text-foreground">Fuentes del proyecto</h1>
       <CreateSourceForm
         projectId={projectId}
         onCreated={() => queryClient.invalidateQueries({ queryKey: ['sources', projectId] })}
       />
       <QueryState isLoading={sources.isLoading} error={sources.error}>
         {sources.data && sources.data.items.length === 0 ? (
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-muted-foreground">
             No hay fuentes todavía. Agregue la primera arriba.
           </p>
         ) : (

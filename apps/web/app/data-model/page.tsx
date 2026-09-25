@@ -80,26 +80,26 @@ function DataModelContent({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold text-gray-900">Modelo de datos</h1>
+      <h1 className="text-xl font-semibold text-foreground">Modelo de datos</h1>
 
-      <section className="rounded-lg border border-gray-200 bg-white p-4">
+      <section className="rounded-lg border border-border bg-card p-4">
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
             onClick={generate}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
+            className="rounded-md border border-input px-3 py-1.5 text-sm hover:bg-muted/40"
           >
             Generar con IA (a partir de Requisitos/Casos de Uso aprobados)
           </button>
           <button
             type="button"
             onClick={() => setShowManualForm((v) => !v)}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
+            className="rounded-md border border-input px-3 py-1.5 text-sm hover:bg-muted/40"
           >
             Crear manualmente
           </button>
         </div>
-        <p className="mt-2 text-xs text-gray-500">
+        <p className="mt-2 text-xs text-muted-foreground">
           La generación con IA requiere un proveedor configurado. Si no está disponible, use
           &quot;Crear manualmente&quot;.
         </p>
@@ -116,7 +116,7 @@ function DataModelContent({ projectId }: { projectId: string }) {
         />
       ) : null}
 
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
       {generation ? (
         <CandidateReview
@@ -132,26 +132,26 @@ function DataModelContent({ projectId }: { projectId: string }) {
 
       <QueryState isLoading={dataModels.isLoading} error={dataModels.error}>
         {items.length === 0 ? (
-          <p className="text-sm text-gray-500">No hay Modelo de Datos todavía.</p>
+          <p className="text-sm text-muted-foreground">No hay Modelo de Datos todavía.</p>
         ) : (
           <ul className="flex flex-col gap-3">
             {items.map((m) => (
-              <li key={m.id} className="rounded-lg border border-gray-200 bg-white p-4">
+              <li key={m.id} className="rounded-lg border border-border bg-card p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-sm">
-                    <span className="font-mono text-xs text-gray-500">{m.code}</span>{' '}
-                    <span className="font-medium text-gray-900">{m.dataModel.title}</span>
+                    <span className="font-mono text-xs text-muted-foreground">{m.code}</span>{' '}
+                    <span className="font-medium text-foreground">{m.dataModel.title}</span>
                   </div>
                   <StatusBadge status={m.version.status} />
                 </div>
-                <p className="mt-1 text-sm text-gray-500">
+                <p className="mt-1 text-sm text-muted-foreground">
                   {m.dataModel.entities.length} entidad(es), {m.dataModel.relationships.length}{' '}
                   relación(es)
                 </p>
                 <button
                   type="button"
                   onClick={() => setExpandedId(expandedId === m.id ? null : m.id)}
-                  className="mt-1 text-sm text-gray-600 underline"
+                  className="mt-1 text-sm text-muted-foreground underline"
                 >
                   {expandedId === m.id ? 'Ocultar entidades' : 'Ver entidades'}
                 </button>
@@ -170,7 +170,7 @@ function DataModelContent({ projectId }: { projectId: string }) {
                     <button
                       type="button"
                       onClick={() => transition(m.id, m.version.id, 'IN_REVIEW')}
-                      className="rounded-md border border-gray-300 px-3 py-1 text-sm hover:bg-gray-50"
+                      className="rounded-md border border-input px-3 py-1 text-sm hover:bg-muted/40"
                     >
                       Enviar a revisión
                     </button>
@@ -187,7 +187,7 @@ function DataModelContent({ projectId }: { projectId: string }) {
                       <button
                         type="button"
                         onClick={() => transition(m.id, m.version.id, 'CHANGES_REQUESTED')}
-                        className="rounded-md border border-red-300 px-3 py-1 text-sm text-red-700 hover:bg-red-50"
+                        className="rounded-md border border-destructive/40 px-3 py-1 text-sm text-destructive hover:bg-destructive/5"
                       >
                         Solicitar cambios
                       </button>
@@ -196,7 +196,7 @@ function DataModelContent({ projectId }: { projectId: string }) {
                   <button
                     type="button"
                     onClick={() => loadDiagram(m.id)}
-                    className="text-sm text-gray-600 underline"
+                    className="text-sm text-muted-foreground underline"
                   >
                     Ver diagrama ER
                   </button>

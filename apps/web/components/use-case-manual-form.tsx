@@ -92,15 +92,15 @@ export function UseCaseManualForm({
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4"
+      className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4"
     >
-      <h2 className="text-sm font-semibold text-gray-900">Crear Caso de Uso manualmente</h2>
+      <h2 className="text-sm font-semibold text-foreground">Crear Caso de Uso manualmente</h2>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-sm">
           Nombre
           <input
             required
-            className="rounded-md border border-gray-300 px-2 py-1"
+            className="rounded-md border border-input px-2 py-1"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
@@ -109,7 +109,7 @@ export function UseCaseManualForm({
           Actor primario
           <input
             required
-            className="rounded-md border border-gray-300 px-2 py-1"
+            className="rounded-md border border-input px-2 py-1"
             value={primaryActor}
             onChange={(e) => setPrimaryActor(e.target.value)}
           />
@@ -120,7 +120,7 @@ export function UseCaseManualForm({
         <textarea
           required
           rows={2}
-          className="rounded-md border border-gray-300 px-2 py-1"
+          className="rounded-md border border-input px-2 py-1"
           value={objective}
           onChange={(e) => setObjective(e.target.value)}
         />
@@ -129,7 +129,7 @@ export function UseCaseManualForm({
         <label className="flex flex-col gap-1 text-sm">
           Actores secundarios (separados por coma)
           <input
-            className="rounded-md border border-gray-300 px-2 py-1"
+            className="rounded-md border border-input px-2 py-1"
             value={secondaryActors}
             onChange={(e) => setSecondaryActors(e.target.value)}
           />
@@ -137,7 +137,7 @@ export function UseCaseManualForm({
         <label className="flex flex-col gap-1 text-sm">
           Precondiciones (separadas por coma)
           <input
-            className="rounded-md border border-gray-300 px-2 py-1"
+            className="rounded-md border border-input px-2 py-1"
             value={preconditions}
             onChange={(e) => setPreconditions(e.target.value)}
           />
@@ -145,35 +145,35 @@ export function UseCaseManualForm({
         <label className="flex flex-col gap-1 text-sm">
           Postcondiciones (separadas por coma)
           <input
-            className="rounded-md border border-gray-300 px-2 py-1"
+            className="rounded-md border border-input px-2 py-1"
             value={postconditions}
             onChange={(e) => setPostconditions(e.target.value)}
           />
         </label>
       </div>
 
-      <fieldset className="rounded-md border border-gray-200 p-2">
-        <legend className="px-1 text-sm font-medium text-gray-700">Flujo principal</legend>
+      <fieldset className="rounded-md border border-border p-2">
+        <legend className="px-1 text-sm font-medium text-foreground/80">Flujo principal</legend>
         {mainFlow.rows.map((step, i) => (
           <div key={i} className="mb-1 flex gap-2">
             <input
               aria-label={`Actor del paso ${i + 1}`}
               placeholder="Actor"
-              className="w-1/3 rounded-md border border-gray-300 px-2 py-1 text-sm"
+              className="w-1/3 rounded-md border border-input px-2 py-1 text-sm"
               value={step.actor}
               onChange={(e) => mainFlow.update(i, { actor: e.target.value })}
             />
             <input
               aria-label={`Acción del paso ${i + 1}`}
               placeholder="Acción"
-              className="flex-1 rounded-md border border-gray-300 px-2 py-1 text-sm"
+              className="flex-1 rounded-md border border-input px-2 py-1 text-sm"
               value={step.action}
               onChange={(e) => mainFlow.update(i, { action: e.target.value })}
             />
             <button
               type="button"
               onClick={() => mainFlow.remove(i)}
-              className="text-sm text-red-600"
+              className="text-sm text-destructive"
               aria-label={`Eliminar paso ${i + 1}`}
             >
               ✕
@@ -183,14 +183,14 @@ export function UseCaseManualForm({
         <button
           type="button"
           onClick={() => mainFlow.add({ actor: '', action: '' })}
-          className="text-sm text-gray-600 underline"
+          className="text-sm text-muted-foreground underline"
         >
           + Agregar paso
         </button>
       </fieldset>
 
-      <fieldset className="rounded-md border border-gray-200 p-2">
-        <legend className="px-1 text-sm font-medium text-gray-700">
+      <fieldset className="rounded-md border border-border p-2">
+        <legend className="px-1 text-sm font-medium text-foreground/80">
           Flujos alternativos (opcional)
         </legend>
         {alternativeFlows.rows.map((flow, i) => (
@@ -199,21 +199,21 @@ export function UseCaseManualForm({
               <input
                 aria-label={`Nombre del flujo alternativo ${i + 1}`}
                 placeholder="Nombre"
-                className="w-1/3 rounded-md border border-gray-300 px-2 py-1 text-sm"
+                className="w-1/3 rounded-md border border-input px-2 py-1 text-sm"
                 value={flow.name}
                 onChange={(e) => alternativeFlows.update(i, { name: e.target.value })}
               />
               <input
                 aria-label={`Condición del flujo alternativo ${i + 1}`}
                 placeholder="Condición"
-                className="flex-1 rounded-md border border-gray-300 px-2 py-1 text-sm"
+                className="flex-1 rounded-md border border-input px-2 py-1 text-sm"
                 value={flow.condition}
                 onChange={(e) => alternativeFlows.update(i, { condition: e.target.value })}
               />
               <button
                 type="button"
                 onClick={() => alternativeFlows.remove(i)}
-                className="text-sm text-red-600"
+                className="text-sm text-destructive"
                 aria-label={`Eliminar flujo alternativo ${i + 1}`}
               >
                 ✕
@@ -223,7 +223,7 @@ export function UseCaseManualForm({
               aria-label={`Pasos del flujo alternativo ${i + 1}`}
               placeholder={'Un paso por línea: Actor: acción'}
               rows={2}
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+              className="rounded-md border border-input px-2 py-1 text-sm"
               value={flow.stepsText}
               onChange={(e) => alternativeFlows.update(i, { stepsText: e.target.value })}
             />
@@ -232,16 +232,18 @@ export function UseCaseManualForm({
         <button
           type="button"
           onClick={() => alternativeFlows.add({ name: '', condition: '', stepsText: '' })}
-          className="text-sm text-gray-600 underline"
+          className="text-sm text-muted-foreground underline"
         >
           + Agregar flujo alternativo
         </button>
       </fieldset>
 
-      <fieldset className="rounded-md border border-gray-200 p-2">
-        <legend className="px-1 text-sm font-medium text-gray-700">Requisitos relacionados</legend>
+      <fieldset className="rounded-md border border-border p-2">
+        <legend className="px-1 text-sm font-medium text-foreground/80">
+          Requisitos relacionados
+        </legend>
         {approvedRequirements.length === 0 ? (
-          <p className="text-sm text-gray-500">No hay Requisitos APPROVED todavía.</p>
+          <p className="text-sm text-muted-foreground">No hay Requisitos APPROVED todavía.</p>
         ) : (
           <ul className="flex flex-col gap-1 text-sm">
             {approvedRequirements.map((r) => (
@@ -267,7 +269,7 @@ export function UseCaseManualForm({
         )}
       </fieldset>
 
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <div className="flex gap-2">
         <button
           type="submit"
@@ -276,7 +278,11 @@ export function UseCaseManualForm({
         >
           {submitting ? 'Creando…' : 'Crear Caso de Uso'}
         </button>
-        <button type="button" onClick={onCancel} className="text-sm text-gray-600 underline">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="text-sm text-muted-foreground underline"
+        >
           Cancelar
         </button>
       </div>

@@ -23,11 +23,11 @@ function ManualFormShell({
   return (
     <form
       onSubmit={onSubmit}
-      className="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-4"
+      className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4"
     >
-      <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
+      <h2 className="text-sm font-semibold text-foreground">{title}</h2>
       {children}
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <div className="flex gap-2">
         <button
           type="submit"
@@ -36,7 +36,11 @@ function ManualFormShell({
         >
           {submitting ? 'Creando…' : 'Crear'}
         </button>
-        <button type="button" onClick={onCancel} className="text-sm text-gray-600 underline">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="text-sm text-muted-foreground underline"
+        >
           Cancelar
         </button>
       </div>
@@ -107,7 +111,7 @@ export function NavigationManualForm({ projectId, onCreated, onCancel }: FormPro
       <input
         required
         placeholder="Título"
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="rounded-md border border-input px-2 py-1 text-sm"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
       />
@@ -119,19 +123,19 @@ export function NavigationManualForm({ projectId, onCreated, onCancel }: FormPro
           <input
             required
             placeholder="Etiqueta"
-            className="w-32 rounded-md border border-gray-300 px-2 py-1"
+            className="w-32 rounded-md border border-input px-2 py-1"
             value={n.label}
             onChange={(e) => update(i, { label: e.target.value })}
           />
           <input
             required
             placeholder="Nombre de pantalla"
-            className="w-40 rounded-md border border-gray-300 px-2 py-1"
+            className="w-40 rounded-md border border-input px-2 py-1"
             value={n.viewName}
             onChange={(e) => update(i, { viewName: e.target.value })}
           />
           <select
-            className="rounded-md border border-gray-300 px-2 py-1"
+            className="rounded-md border border-input px-2 py-1"
             value={n.kind}
             onChange={(e) =>
               update(i, { kind: e.target.value as (typeof NAVIGATION_NODE_KINDS)[number] })
@@ -144,7 +148,7 @@ export function NavigationManualForm({ projectId, onCreated, onCancel }: FormPro
             ))}
           </select>
           <select
-            className="rounded-md border border-gray-300 px-2 py-1"
+            className="rounded-md border border-input px-2 py-1"
             value={n.parentLocalId}
             onChange={(e) => update(i, { parentLocalId: e.target.value })}
           >
@@ -159,26 +163,26 @@ export function NavigationManualForm({ projectId, onCreated, onCancel }: FormPro
           </select>
           <input
             placeholder="Ruta (opcional)"
-            className="w-28 rounded-md border border-gray-300 px-2 py-1"
+            className="w-28 rounded-md border border-input px-2 py-1"
             value={n.route}
             onChange={(e) => update(i, { route: e.target.value })}
           />
           <input
             placeholder="Descripción (opcional)"
-            className="w-40 rounded-md border border-gray-300 px-2 py-1"
+            className="w-40 rounded-md border border-input px-2 py-1"
             value={n.description}
             onChange={(e) => update(i, { description: e.target.value })}
           />
           <input
             placeholder="Casos de uso relacionados (códigos, coma)"
-            className="w-56 rounded-md border border-gray-300 px-2 py-1"
+            className="w-56 rounded-md border border-input px-2 py-1"
             value={n.relatedUseCaseCodes}
             onChange={(e) => update(i, { relatedUseCaseCodes: e.target.value })}
           />
           <button
             type="button"
             onClick={() => setNodes((prev) => prev.filter((_, idx) => idx !== i))}
-            className="text-red-600"
+            className="text-destructive"
             aria-label={`Eliminar nodo ${i + 1}`}
           >
             ✕
@@ -201,7 +205,7 @@ export function NavigationManualForm({ projectId, onCreated, onCancel }: FormPro
             },
           ])
         }
-        className="self-start text-sm text-gray-600 underline"
+        className="self-start text-sm text-muted-foreground underline"
       >
         + Agregar nodo
       </button>
@@ -263,14 +267,14 @@ export function SoftwareArchitectureManualForm({ projectId, onCreated, onCancel 
       <input
         required
         placeholder="Título"
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="rounded-md border border-input px-2 py-1 text-sm"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
       />
       <input
         required
         placeholder="Estilo/patrón arquitectónico"
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="rounded-md border border-input px-2 py-1 text-sm"
         value={style}
         onChange={(e) => setStyle(e.target.value)}
       />
@@ -282,7 +286,7 @@ export function SoftwareArchitectureManualForm({ projectId, onCreated, onCancel 
           <input
             required
             placeholder="Nombre del componente"
-            className="w-40 rounded-md border border-gray-300 px-2 py-1"
+            className="w-40 rounded-md border border-input px-2 py-1"
             value={c.name}
             onChange={(e) =>
               setComponents((prev) =>
@@ -292,7 +296,7 @@ export function SoftwareArchitectureManualForm({ projectId, onCreated, onCancel 
           />
           <input
             placeholder="Responsabilidades (separadas por coma)"
-            className="flex-1 rounded-md border border-gray-300 px-2 py-1"
+            className="flex-1 rounded-md border border-input px-2 py-1"
             value={c.responsibilities}
             onChange={(e) =>
               setComponents((prev) =>
@@ -303,7 +307,7 @@ export function SoftwareArchitectureManualForm({ projectId, onCreated, onCancel 
           <input
             list="software-architecture-layers"
             placeholder="Capa (opcional)"
-            className="w-40 rounded-md border border-gray-300 px-2 py-1"
+            className="w-40 rounded-md border border-input px-2 py-1"
             value={c.layer}
             onChange={(e) =>
               setComponents((prev) =>
@@ -314,7 +318,7 @@ export function SoftwareArchitectureManualForm({ projectId, onCreated, onCancel 
           <button
             type="button"
             onClick={() => setComponents((prev) => prev.filter((_, idx) => idx !== i))}
-            className="text-red-600"
+            className="text-destructive"
             aria-label={`Eliminar componente ${i + 1}`}
           >
             ✕
@@ -326,7 +330,7 @@ export function SoftwareArchitectureManualForm({ projectId, onCreated, onCancel 
         onClick={() =>
           setComponents((prev) => [...prev, { name: '', responsibilities: '', layer: '' }])
         }
-        className="self-start text-sm text-gray-600 underline"
+        className="self-start text-sm text-muted-foreground underline"
       >
         + Agregar componente
       </button>
@@ -342,15 +346,15 @@ export function SoftwareArchitectureManualForm({ projectId, onCreated, onCancel 
         ))}
       </datalist>
 
-      <fieldset className="rounded-md border border-gray-200 p-2">
-        <legend className="px-1 text-sm font-medium text-gray-700">
+      <fieldset className="rounded-md border border-border p-2">
+        <legend className="px-1 text-sm font-medium text-foreground/80">
           Dependencias entre componentes (opcional)
         </legend>
         {dependencies.map((dep, di) => (
           <div key={di} className="mb-1 flex flex-wrap items-center gap-2 text-sm">
             <select
               aria-label={`Componente origen de la dependencia ${di + 1}`}
-              className="rounded-md border border-gray-300 px-2 py-1"
+              className="rounded-md border border-input px-2 py-1"
               value={dep.fromLocalId}
               onChange={(e) =>
                 setDependencies((prev) =>
@@ -368,7 +372,7 @@ export function SoftwareArchitectureManualForm({ projectId, onCreated, onCancel 
             <span>→</span>
             <select
               aria-label={`Componente destino de la dependencia ${di + 1}`}
-              className="rounded-md border border-gray-300 px-2 py-1"
+              className="rounded-md border border-input px-2 py-1"
               value={dep.toLocalId}
               onChange={(e) =>
                 setDependencies((prev) =>
@@ -385,7 +389,7 @@ export function SoftwareArchitectureManualForm({ projectId, onCreated, onCancel 
             </select>
             <input
               placeholder="descripción (opcional)"
-              className="flex-1 rounded-md border border-gray-300 px-2 py-1"
+              className="flex-1 rounded-md border border-input px-2 py-1"
               value={dep.description}
               onChange={(e) =>
                 setDependencies((prev) =>
@@ -396,7 +400,7 @@ export function SoftwareArchitectureManualForm({ projectId, onCreated, onCancel 
             <button
               type="button"
               onClick={() => setDependencies((prev) => prev.filter((_, i) => i !== di))}
-              className="text-red-600"
+              className="text-destructive"
               aria-label={`Eliminar dependencia ${di + 1}`}
             >
               ✕
@@ -411,7 +415,7 @@ export function SoftwareArchitectureManualForm({ projectId, onCreated, onCancel 
               { fromLocalId: '', toLocalId: '', description: '' },
             ])
           }
-          className="text-sm text-gray-600 underline"
+          className="text-sm text-muted-foreground underline"
         >
           + Agregar dependencia
         </button>
@@ -421,7 +425,7 @@ export function SoftwareArchitectureManualForm({ projectId, onCreated, onCancel 
         Decisiones de arquitectura (una por línea, opcional)
         <textarea
           rows={2}
-          className="rounded-md border border-gray-300 px-2 py-1"
+          className="rounded-md border border-input px-2 py-1"
           value={decisionsText}
           onChange={(e) => setDecisionsText(e.target.value)}
         />
@@ -485,7 +489,7 @@ export function SystemArchitectureManualForm({ projectId, onCreated, onCancel }:
       <input
         required
         placeholder="Título"
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="rounded-md border border-input px-2 py-1 text-sm"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
       />
@@ -493,7 +497,7 @@ export function SystemArchitectureManualForm({ projectId, onCreated, onCancel }:
         required
         placeholder="Límite del sistema (boundary)"
         rows={2}
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="rounded-md border border-input px-2 py-1 text-sm"
         value={boundary}
         onChange={(e) => setBoundary(e.target.value)}
       />
@@ -505,7 +509,7 @@ export function SystemArchitectureManualForm({ projectId, onCreated, onCancel }:
           <input
             required
             placeholder="Nombre"
-            className="w-40 rounded-md border border-gray-300 px-2 py-1"
+            className="w-40 rounded-md border border-input px-2 py-1"
             value={n.name}
             onChange={(e) =>
               setNodes((prev) =>
@@ -514,7 +518,7 @@ export function SystemArchitectureManualForm({ projectId, onCreated, onCancel }:
             }
           />
           <select
-            className="rounded-md border border-gray-300 px-2 py-1"
+            className="rounded-md border border-input px-2 py-1"
             value={n.kind}
             onChange={(e) =>
               setNodes((prev) =>
@@ -534,7 +538,7 @@ export function SystemArchitectureManualForm({ projectId, onCreated, onCancel }:
           </select>
           <input
             placeholder="Responsabilidades (coma)"
-            className="flex-1 rounded-md border border-gray-300 px-2 py-1"
+            className="flex-1 rounded-md border border-input px-2 py-1"
             value={n.responsibilities}
             onChange={(e) =>
               setNodes((prev) =>
@@ -545,7 +549,7 @@ export function SystemArchitectureManualForm({ projectId, onCreated, onCancel }:
           <button
             type="button"
             onClick={() => setNodes((prev) => prev.filter((_, idx) => idx !== i))}
-            className="text-red-600"
+            className="text-destructive"
             aria-label={`Eliminar nodo ${i + 1}`}
           >
             ✕
@@ -557,20 +561,20 @@ export function SystemArchitectureManualForm({ projectId, onCreated, onCancel }:
         onClick={() =>
           setNodes((prev) => [...prev, { name: '', kind: 'RUNTIME', responsibilities: '' }])
         }
-        className="self-start text-sm text-gray-600 underline"
+        className="self-start text-sm text-muted-foreground underline"
       >
         + Agregar nodo
       </button>
 
-      <fieldset className="rounded-md border border-gray-200 p-2">
-        <legend className="px-1 text-sm font-medium text-gray-700">
+      <fieldset className="rounded-md border border-border p-2">
+        <legend className="px-1 text-sm font-medium text-foreground/80">
           Enlaces de comunicación (opcional)
         </legend>
         {links.map((link, li) => (
           <div key={li} className="mb-1 flex flex-wrap items-center gap-2 text-sm">
             <select
               aria-label={`Nodo origen del enlace ${li + 1}`}
-              className="rounded-md border border-gray-300 px-2 py-1"
+              className="rounded-md border border-input px-2 py-1"
               value={link.fromLocalId}
               onChange={(e) =>
                 setLinks((prev) =>
@@ -588,7 +592,7 @@ export function SystemArchitectureManualForm({ projectId, onCreated, onCancel }:
             <span>→</span>
             <select
               aria-label={`Nodo destino del enlace ${li + 1}`}
-              className="rounded-md border border-gray-300 px-2 py-1"
+              className="rounded-md border border-input px-2 py-1"
               value={link.toLocalId}
               onChange={(e) =>
                 setLinks((prev) =>
@@ -605,7 +609,7 @@ export function SystemArchitectureManualForm({ projectId, onCreated, onCancel }:
             </select>
             <input
               placeholder="protocolo (opcional)"
-              className="w-32 rounded-md border border-gray-300 px-2 py-1"
+              className="w-32 rounded-md border border-input px-2 py-1"
               value={link.protocol}
               onChange={(e) =>
                 setLinks((prev) =>
@@ -615,7 +619,7 @@ export function SystemArchitectureManualForm({ projectId, onCreated, onCancel }:
             />
             <input
               placeholder="descripción (opcional)"
-              className="flex-1 rounded-md border border-gray-300 px-2 py-1"
+              className="flex-1 rounded-md border border-input px-2 py-1"
               value={link.description}
               onChange={(e) =>
                 setLinks((prev) =>
@@ -626,7 +630,7 @@ export function SystemArchitectureManualForm({ projectId, onCreated, onCancel }:
             <button
               type="button"
               onClick={() => setLinks((prev) => prev.filter((_, i) => i !== li))}
-              className="text-red-600"
+              className="text-destructive"
               aria-label={`Eliminar enlace ${li + 1}`}
             >
               ✕
@@ -641,7 +645,7 @@ export function SystemArchitectureManualForm({ projectId, onCreated, onCancel }:
               { fromLocalId: '', toLocalId: '', protocol: '', description: '' },
             ])
           }
-          className="text-sm text-gray-600 underline"
+          className="text-sm text-muted-foreground underline"
         >
           + Agregar enlace
         </button>
@@ -711,7 +715,7 @@ export function UiBlueprintManualForm({ projectId, onCreated, onCancel }: FormPr
       <input
         required
         placeholder="Título"
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="rounded-md border border-input px-2 py-1 text-sm"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
       />
@@ -721,7 +725,7 @@ export function UiBlueprintManualForm({ projectId, onCreated, onCancel }: FormPr
             <input
               required
               placeholder="Nombre de pantalla"
-              className="w-40 rounded-md border border-gray-300 px-2 py-1"
+              className="w-40 rounded-md border border-input px-2 py-1"
               value={s.name}
               onChange={(e) =>
                 setScreens((prev) =>
@@ -731,7 +735,7 @@ export function UiBlueprintManualForm({ projectId, onCreated, onCancel }: FormPr
             />
             <input
               placeholder="Actores objetivo (coma)"
-              className="w-48 rounded-md border border-gray-300 px-2 py-1"
+              className="w-48 rounded-md border border-input px-2 py-1"
               value={s.targetActors}
               onChange={(e) =>
                 setScreens((prev) =>
@@ -742,7 +746,7 @@ export function UiBlueprintManualForm({ projectId, onCreated, onCancel }: FormPr
             <button
               type="button"
               onClick={() => setScreens((prev) => prev.filter((_, idx) => idx !== i))}
-              className="text-red-600"
+              className="text-destructive"
               aria-label={`Eliminar pantalla ${i + 1}`}
             >
               ✕
@@ -752,7 +756,7 @@ export function UiBlueprintManualForm({ projectId, onCreated, onCancel }: FormPr
             required
             placeholder="Propósito de la pantalla"
             rows={2}
-            className="rounded-md border border-gray-300 px-2 py-1"
+            className="rounded-md border border-input px-2 py-1"
             value={s.purpose}
             onChange={(e) =>
               setScreens((prev) =>
@@ -763,7 +767,7 @@ export function UiBlueprintManualForm({ projectId, onCreated, onCancel }: FormPr
           <div className="flex flex-wrap gap-2">
             <input
               placeholder="Casos de uso relacionados (códigos, coma)"
-              className="flex-1 rounded-md border border-gray-300 px-2 py-1"
+              className="flex-1 rounded-md border border-input px-2 py-1"
               value={s.relatedUseCaseCodes}
               onChange={(e) =>
                 setScreens((prev) =>
@@ -775,7 +779,7 @@ export function UiBlueprintManualForm({ projectId, onCreated, onCancel }: FormPr
             />
             <input
               placeholder="Nodo de navegación relacionado (opcional)"
-              className="flex-1 rounded-md border border-gray-300 px-2 py-1"
+              className="flex-1 rounded-md border border-input px-2 py-1"
               value={s.navigationNodeLocalId}
               onChange={(e) =>
                 setScreens((prev) =>
@@ -788,7 +792,7 @@ export function UiBlueprintManualForm({ projectId, onCreated, onCancel }: FormPr
           </div>
           <input
             placeholder="Secciones (separadas por coma)"
-            className="rounded-md border border-gray-300 px-2 py-1"
+            className="rounded-md border border-input px-2 py-1"
             value={s.sections}
             onChange={(e) =>
               setScreens((prev) =>
@@ -799,7 +803,7 @@ export function UiBlueprintManualForm({ projectId, onCreated, onCancel }: FormPr
           <div className="flex flex-wrap gap-2">
             <input
               placeholder="Acciones principales (coma)"
-              className="flex-1 rounded-md border border-gray-300 px-2 py-1"
+              className="flex-1 rounded-md border border-input px-2 py-1"
               value={s.primaryActions}
               onChange={(e) =>
                 setScreens((prev) =>
@@ -809,7 +813,7 @@ export function UiBlueprintManualForm({ projectId, onCreated, onCancel }: FormPr
             />
             <input
               placeholder="Acciones secundarias (coma)"
-              className="flex-1 rounded-md border border-gray-300 px-2 py-1"
+              className="flex-1 rounded-md border border-input px-2 py-1"
               value={s.secondaryActions}
               onChange={(e) =>
                 setScreens((prev) =>
@@ -822,7 +826,7 @@ export function UiBlueprintManualForm({ projectId, onCreated, onCancel }: FormPr
           </div>
           <input
             placeholder="Datos mostrados (separados por coma)"
-            className="rounded-md border border-gray-300 px-2 py-1"
+            className="rounded-md border border-input px-2 py-1"
             value={s.principalData}
             onChange={(e) =>
               setScreens((prev) =>
@@ -833,7 +837,7 @@ export function UiBlueprintManualForm({ projectId, onCreated, onCancel }: FormPr
           <div className="flex flex-wrap gap-2">
             <input
               placeholder="Formularios/entradas (coma)"
-              className="flex-1 rounded-md border border-gray-300 px-2 py-1"
+              className="flex-1 rounded-md border border-input px-2 py-1"
               value={s.forms}
               onChange={(e) =>
                 setScreens((prev) =>
@@ -843,7 +847,7 @@ export function UiBlueprintManualForm({ projectId, onCreated, onCancel }: FormPr
             />
             <input
               placeholder="Estados relevantes (coma)"
-              className="flex-1 rounded-md border border-gray-300 px-2 py-1"
+              className="flex-1 rounded-md border border-input px-2 py-1"
               value={s.states}
               onChange={(e) =>
                 setScreens((prev) =>
@@ -874,7 +878,7 @@ export function UiBlueprintManualForm({ projectId, onCreated, onCancel }: FormPr
             },
           ])
         }
-        className="self-start text-sm text-gray-600 underline"
+        className="self-start text-sm text-muted-foreground underline"
       >
         + Agregar pantalla
       </button>

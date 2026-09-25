@@ -1,7 +1,9 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Plus } from 'lucide-react';
 import { useState } from 'react';
+import { Button, Input } from '@caseflow-ai/ui';
 import { api, ApiError } from '../lib/api';
 import { useActiveProject } from '../lib/active-project';
 
@@ -25,13 +27,13 @@ export function ProjectSwitcher() {
   });
 
   if (workspaces.isLoading || projects.isLoading) {
-    return <div className="text-sm text-gray-500">Cargando proyectos…</div>;
+    return <div className="text-sm text-muted-foreground">Cargando proyectos…</div>;
   }
   if (workspaces.isError || !workspaceId) {
     return (
-      <div className="text-sm text-red-600">
+      <div className="text-sm text-destructive">
         No hay un workspace de desarrollo configurado. Ejecute{' '}
-        <code className="rounded bg-gray-100 px-1">pnpm db:seed:dev</code>.
+        <code className="rounded bg-muted px-1">pnpm db:seed:dev</code>.
       </div>
     );
   }
@@ -59,7 +61,7 @@ export function ProjectSwitcher() {
       </label>
       <select
         id="project-select"
-        className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm"
+        className="h-9 rounded-md border border-input bg-background px-2 text-sm shadow-xs"
         value={projectId ?? ''}
         onChange={(e) => setProjectId(e.target.value || null)}
       >
@@ -74,39 +76,28 @@ export function ProjectSwitcher() {
       </select>
       {creating ? (
         <span className="flex items-center gap-1">
-          <input
+          <Input
             autoFocus
             aria-label="Nombre del nuevo proyecto"
-            className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+            className="h-9 w-48"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Nombre del proyecto"
           />
-          <button
-            type="button"
-            onClick={handleCreate}
-            className="rounded-md bg-gray-900 px-2 py-1 text-sm text-white"
-          >
+          <Button type="button" size="sm" onClick={handleCreate}>
             Crear
-          </button>
-          <button
-            type="button"
-            onClick={() => setCreating(false)}
-            className="text-sm text-gray-500"
-          >
+          </Button>
+          <Button type="button" size="sm" variant="ghost" onClick={() => setCreating(false)}>
             Cancelar
-          </button>
+          </Button>
         </span>
       ) : (
-        <button
-          type="button"
-          onClick={() => setCreating(true)}
-          className="rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-700 hover:bg-gray-50"
-        >
-          + Nuevo proyecto
-        </button>
+        <Button type="button" size="sm" variant="outline" onClick={() => setCreating(true)}>
+          <Plus className="size-4" aria-hidden="true" />
+          Nuevo proyecto
+        </Button>
       )}
-      {error ? <span className="text-sm text-red-600">{error}</span> : null}
+      {error ? <span className="text-sm text-destructive">{error}</span> : null}
     </div>
   );
 }

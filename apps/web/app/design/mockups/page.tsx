@@ -12,7 +12,8 @@ function MockupCard({ mockupId, projectId }: { mockupId: string; projectId: stri
     queryKey: ['mockup-preview', projectId, mockupId],
     queryFn: () => api.mockups.getPreview(projectId, mockupId),
   });
-  if (preview.isLoading) return <p className="text-sm text-gray-500">Cargando vista previa…</p>;
+  if (preview.isLoading)
+    return <p className="text-sm text-muted-foreground">Cargando vista previa…</p>;
   if (!preview.data) return null;
   return (
     <TrustedDiagram
@@ -62,16 +63,16 @@ function MockupsContent({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold text-gray-900">Mockups</h1>
-      <p className="text-sm text-gray-500">
+      <h1 className="text-xl font-semibold text-foreground">Mockups</h1>
+      <p className="text-sm text-muted-foreground">
         Un Mockup es una vista previa determinística generada a partir de un UI Blueprint aprobado —
         nunca una captura de pantalla real.
       </p>
 
-      <section className="rounded-lg border border-gray-200 bg-white p-4">
-        <h2 className="mb-2 text-sm font-semibold text-gray-900">Generar Mockup</h2>
+      <section className="rounded-lg border border-border bg-card p-4">
+        <h2 className="mb-2 text-sm font-semibold text-foreground">Generar Mockup</h2>
         {approvedBlueprints.length === 0 ? (
-          <p className="text-sm text-gray-500">Se requiere un UI Blueprint APPROVED.</p>
+          <p className="text-sm text-muted-foreground">Se requiere un UI Blueprint APPROVED.</p>
         ) : (
           <ul className="flex flex-col gap-1 text-sm">
             {approvedBlueprints.map((b) => (
@@ -82,7 +83,7 @@ function MockupsContent({ projectId }: { projectId: string }) {
                 <button
                   type="button"
                   onClick={() => createMockup(b.version.id)}
-                  className="rounded-md border border-gray-300 px-3 py-1 text-sm hover:bg-gray-50"
+                  className="rounded-md border border-input px-3 py-1 text-sm hover:bg-muted/40"
                 >
                   Generar Mockup
                 </button>
@@ -92,17 +93,17 @@ function MockupsContent({ projectId }: { projectId: string }) {
         )}
       </section>
 
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
       <QueryState isLoading={mockups.isLoading} error={mockups.error}>
         {mockups.data && mockups.data.items.length === 0 ? (
-          <p className="text-sm text-gray-500">No hay Mockups todavía.</p>
+          <p className="text-sm text-muted-foreground">No hay Mockups todavía.</p>
         ) : (
           <ul className="flex flex-col gap-4">
             {mockups.data?.items.map((m) => (
-              <li key={m.id} className="rounded-lg border border-gray-200 bg-white p-4">
+              <li key={m.id} className="rounded-lg border border-border bg-card p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-mono text-xs text-gray-500">{m.code}</span>
+                  <span className="font-mono text-xs text-muted-foreground">{m.code}</span>
                   <StatusBadge status={m.version.status} />
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
@@ -110,7 +111,7 @@ function MockupsContent({ projectId }: { projectId: string }) {
                     <button
                       type="button"
                       onClick={() => transition(m.id, m.version.id, 'IN_REVIEW')}
-                      className="rounded-md border border-gray-300 px-3 py-1 text-sm hover:bg-gray-50"
+                      className="rounded-md border border-input px-3 py-1 text-sm hover:bg-muted/40"
                     >
                       Enviar a revisión
                     </button>
@@ -127,7 +128,7 @@ function MockupsContent({ projectId }: { projectId: string }) {
                       <button
                         type="button"
                         onClick={() => transition(m.id, m.version.id, 'CHANGES_REQUESTED')}
-                        className="rounded-md border border-red-300 px-3 py-1 text-sm text-red-700 hover:bg-red-50"
+                        className="rounded-md border border-destructive/40 px-3 py-1 text-sm text-destructive hover:bg-destructive/5"
                       >
                         Solicitar cambios
                       </button>
