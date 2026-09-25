@@ -23,6 +23,19 @@ function provider(fetchMock: typeof fetch) {
 }
 
 describe('OpenAICompatibleProvider', () => {
+  it('defaults its id but accepts an override to identify the underlying provider', () => {
+    expect(provider(vi.fn()).id).toBe('openai_compatible');
+    expect(
+      new OpenAICompatibleProvider({
+        id: 'groq',
+        baseUrl: 'https://provider.test/v1/',
+        apiKey: 'top-secret',
+        model: 'configured-model',
+        timeoutMs: 100,
+      }).id,
+    ).toBe('groq');
+  });
+
   it('uses configured URL/model/auth and keeps system and user roles separate', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
