@@ -75,9 +75,9 @@ function RequirementsContent({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold text-gray-900">Requisitos</h1>
+      <h1 className="text-xl font-semibold text-foreground">Requisitos</h1>
 
-      <section className="flex flex-wrap items-center gap-4 rounded-lg border border-gray-200 bg-white p-4 text-sm">
+      <section className="flex flex-wrap items-center gap-4 rounded-lg border border-border bg-card p-4 text-sm">
         <span>
           <strong>{rf}</strong> RF
         </span>
@@ -91,20 +91,20 @@ function RequirementsContent({ projectId }: { projectId: string }) {
           <button
             type="button"
             onClick={handleGenerate}
-            className="rounded-md border border-gray-300 px-3 py-1.5 hover:bg-gray-50"
+            className="rounded-md border border-input px-3 py-1.5 hover:bg-muted/40"
           >
             Generar con IA
           </button>
           <button
             type="button"
             onClick={() => setShowManualForm((v) => !v)}
-            className="rounded-md border border-gray-300 px-3 py-1.5 hover:bg-gray-50"
+            className="rounded-md border border-input px-3 py-1.5 hover:bg-muted/40"
           >
             Crear manualmente
           </button>
         </div>
       </section>
-      <p className="-mt-4 text-xs text-gray-500">
+      <p className="-mt-4 text-xs text-muted-foreground">
         La generación con IA requiere un proveedor configurado. Si no está disponible, use
         &quot;Crear manualmente&quot;.
       </p>
@@ -121,7 +121,7 @@ function RequirementsContent({ projectId }: { projectId: string }) {
         />
       ) : null}
 
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
       {generation ? (
         <CandidateReview
@@ -139,29 +139,31 @@ function RequirementsContent({ projectId }: { projectId: string }) {
 
       <QueryState isLoading={requirements.isLoading} error={requirements.error}>
         {items.length === 0 ? (
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-muted-foreground">
             No hay requisitos todavía. Genérelos con IA (requiere Contexto APPROVED) o continúe con
             el flujo manual una vez disponible.
           </p>
         ) : (
           <ul className="flex flex-col gap-2">
             {items.map((r) => (
-              <li key={r.id} className="rounded-lg border border-gray-200 bg-white p-3">
+              <li key={r.id} className="rounded-lg border border-border bg-card p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-sm">
-                    <span className="font-mono text-xs text-gray-500">{r.code}</span>{' '}
-                    <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium">
+                    <span className="font-mono text-xs text-muted-foreground">{r.code}</span>{' '}
+                    <span className="rounded bg-muted px-1.5 py-0.5 text-xs font-medium">
                       {r.requirement.requirementType === 'FUNCTIONAL' ? 'RF' : 'RNF'}
                     </span>{' '}
-                    <span className="font-medium text-gray-900">{r.requirement.name}</span>{' '}
-                    <span className="text-xs text-gray-500">({r.requirement.priority})</span>
+                    <span className="font-medium text-foreground">{r.requirement.name}</span>{' '}
+                    <span className="text-xs text-muted-foreground">
+                      ({r.requirement.priority})
+                    </span>
                   </div>
                   <div className="flex items-center gap-2">
                     <StatusBadge status={r.version.status} />
                     <button
                       type="button"
                       onClick={() => setOpenDetail(openDetail === r.id ? null : r.id)}
-                      className="text-sm text-gray-600 underline"
+                      className="text-sm text-muted-foreground underline"
                     >
                       {openDetail === r.id ? 'Ocultar' : 'Detalle'}
                     </button>
@@ -181,7 +183,7 @@ function RequirementsContent({ projectId }: { projectId: string }) {
                   </ul>
                 ) : null}
                 {openDetail === r.id ? (
-                  <div className="mt-2 flex flex-col gap-2 border-t border-gray-100 pt-2 text-sm text-gray-700">
+                  <div className="mt-2 flex flex-col gap-2 border-t border-gray-100 pt-2 text-sm text-foreground/80">
                     <p>{r.requirement.description}</p>
                     {r.requirement.actors.length ? (
                       <p>
@@ -203,7 +205,7 @@ function RequirementsContent({ projectId }: { projectId: string }) {
                         <button
                           type="button"
                           onClick={() => transition(r.id, r.version.id, 'IN_REVIEW')}
-                          className="rounded-md border border-gray-300 px-3 py-1 text-sm hover:bg-gray-50"
+                          className="rounded-md border border-input px-3 py-1 text-sm hover:bg-muted/40"
                         >
                           Enviar a revisión
                         </button>
@@ -220,7 +222,7 @@ function RequirementsContent({ projectId }: { projectId: string }) {
                           <button
                             type="button"
                             onClick={() => transition(r.id, r.version.id, 'CHANGES_REQUESTED')}
-                            className="rounded-md border border-red-300 px-3 py-1 text-sm text-red-700 hover:bg-red-50"
+                            className="rounded-md border border-destructive/40 px-3 py-1 text-sm text-destructive hover:bg-destructive/5"
                           >
                             Solicitar cambios
                           </button>

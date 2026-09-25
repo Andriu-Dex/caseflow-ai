@@ -119,7 +119,10 @@ test('displays a real Kroki-rendered ER diagram, provenance, readiness and expor
     .click();
   const modelRow = page.locator('li').filter({ hasText: dataModelCode });
   await modelRow.getByRole('button', { name: 'Ver diagrama ER' }).click();
-  const diagramSvg = modelRow.locator('svg');
+  // Scoped to the TrustedDiagram <figure>, not the row, so this never matches
+  // an unrelated icon svg (e.g. the StatusBadge's Lucide icon) rendered
+  // elsewhere in the same row.
+  const diagramSvg = modelRow.locator('figure svg');
   await expect(diagramSvg).toBeVisible();
   // A real Kroki-rendered ER diagram contains the entity name inside the SVG
   // markup itself, not just elsewhere on the page — proving Kroki actually
