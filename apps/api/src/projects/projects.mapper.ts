@@ -1,7 +1,10 @@
 import type { ProjectResponse } from '@caseflow-ai/contracts';
 import type { Project } from '../generated/prisma/client';
 
-export function toProjectResponse(project: Project): ProjectResponse {
+export function toProjectResponse(
+  project: Project,
+  hasApprovedArtifacts: boolean,
+): ProjectResponse {
   return {
     id: project.id,
     workspaceId: project.workspaceId,
@@ -9,5 +12,7 @@ export function toProjectResponse(project: Project): ProjectResponse {
     description: project.description,
     createdAt: project.createdAt.toISOString(),
     updatedAt: project.updatedAt.toISOString(),
+    archivedAt: project.archivedAt ? project.archivedAt.toISOString() : null,
+    hasApprovedArtifacts,
   };
 }

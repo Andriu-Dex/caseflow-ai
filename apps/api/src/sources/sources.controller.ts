@@ -140,6 +140,21 @@ export class SourcesController {
     return this.service.delete(projectId, sourceId);
   }
 
+  @Post(':sourceId/archive')
+  @ApiOperation({
+    operationId: 'archiveSource',
+    summary: 'Archivar una fuente con historial aprobado (alternativa a eliminar)',
+  })
+  @ApiZodResponse(200, 'Project Source.', sourceResponseSchema)
+  @ApiErrorResponse(404, 'La fuente no existe.')
+  @ApiErrorResponse(422, 'La fuente ya está archivada.')
+  archive(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('sourceId', uuidParamPipe) sourceId: string,
+  ) {
+    return this.service.archive(projectId, sourceId);
+  }
+
   @Post(':sourceId/versions/:versionId/transition')
   @ApiOperation({ operationId: 'transitionSourceVersion', summary: 'Transicionar el estado' })
   transition(

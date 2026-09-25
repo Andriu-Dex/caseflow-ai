@@ -16,7 +16,8 @@ const projectRow = {
 describe('ProjectsService (rule branches)', () => {
   const prisma = {
     workspace: { findUnique: vi.fn() },
-    project: { create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn() },
+    project: { create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
+    artifactVersion: { count: vi.fn(), findMany: vi.fn() },
   };
   let service: ProjectsService;
 
@@ -48,6 +49,7 @@ describe('ProjectsService (rule branches)', () => {
 
   it('lists only the given workspace with a stable order and bounded page', async () => {
     prisma.project.findMany.mockResolvedValue([projectRow]);
+    prisma.artifactVersion.findMany.mockResolvedValue([]);
 
     const result = await service.list(workspaceId, 10, 20);
 

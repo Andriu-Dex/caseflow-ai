@@ -159,12 +159,20 @@ export class SourcesService {
       },
       orderBy: { code: 'asc' },
     });
-    return { items: rows.map((row) => this.map(row, row.versions[0]!)) };
+    const approvedRows = await this.prisma.artifactVersion.findMany({
+      where: { artifactId: { in: rows.map((r) => r.id) }, status: 'APPROVED' },
+      select: { artifactId: true },
+      distinct: ['artifactId'],
+    });
+    const approvedArtifactIds = new Set(approvedRows.map((r) => r.artifactId));
+    return {
+      items: rows.map((row) => this.map(row, row.versions[0]!, approvedArtifactIds.has(row.id))),
+    };
   }
 
   async get(projectId: string, id: string) {
     const row = await this.findLatest(projectId, id);
-    return this.map(row, row.versions[0]!);
+    return this.map(row, row.versions[0]!, await this.hasApprovedHistory(id));
   }
 
   async submitManualTranscript(projectId: string, id: string, transcript: string) {
@@ -242,6 +250,30 @@ export class SourcesService {
     });
   }
 
+  private async hasApprovedHistory(artifactId: string): Promise<boolean> {
+    const count = await this.prisma.artifactVersion.count({
+      where: { artifactId, status: 'APPROVED' },
+    });
+    return count > 0;
+  }
+
+  // Archival is the alternative to deletion once a Source has approved
+  // history (spec §87: "fuentes utilizadas → archivar antes que borrar").
+  // Purely additive on the Artifact row — never touches any ArtifactVersion,
+  // so it needs no immutability exception.
+  async archive(projectId: string, id: string) {
+    const artifact = await this.prisma.artifact.findFirst({
+      where: { id, projectId, artifactTypeCode: 'PROJECT_SOURCE' },
+    });
+    if (!artifact) throw new NotFoundException('Fuente no encontrada.');
+    if (artifact.archivedAt)
+      throw new UnprocessableEntityException('Esta fuente ya está archivada.');
+
+    await this.prisma.artifact.update({ where: { id }, data: { archivedAt: new Date() } });
+    const row = await this.findLatest(projectId, id);
+    return this.map(row, row.versions[0]!, await this.hasApprovedHistory(id));
+  }
+
   // Hard delete — only while no version of this Source has ever been
   // APPROVED (enforced again at the database level by the immutability
   // trigger, not just here). Mirrors ProjectsService.delete's reasoning.
@@ -251,12 +283,9 @@ export class SourcesService {
     });
     if (!artifact) throw new NotFoundException('Fuente no encontrada.');
 
-    const approvedCount = await this.prisma.artifactVersion.count({
-      where: { artifactId: id, status: 'APPROVED' },
-    });
-    if (approvedCount > 0)
+    if (await this.hasApprovedHistory(id))
       throw new UnprocessableEntityException(
-        'No se puede eliminar una fuente con versiones aprobadas; el historial aprobado no puede borrarse.',
+        'No se puede eliminar una fuente con versiones aprobadas; el historial aprobado no puede borrarse. Archive la fuente en su lugar.',
       );
 
     await this.prisma.$transaction(async (tx) => {
@@ -418,10 +447,19 @@ export class SourcesService {
       where: { id: versionId },
       include: { sourceDetail: { include: { report: true } } },
     });
-    return this.map(artifact, version);
+    const approvedCount = await tx.artifactVersion.count({
+      where: { artifactId, status: 'APPROVED' },
+    });
+    return this.map(artifact, version, approvedCount > 0);
   }
   private map(
-    artifact: { id: string; projectId: string; code: string; createdAt: Date },
+    artifact: {
+      id: string;
+      projectId: string;
+      code: string;
+      createdAt: Date;
+      archivedAt: Date | null;
+    },
     version: {
       id: string;
       versionNumber: number;
@@ -444,6 +482,7 @@ export class SourcesService {
         report: unknown;
       } | null;
     },
+    hasApprovedHistory: boolean,
   ) {
     const detail = version.sourceDetail!;
     return {
@@ -451,6 +490,8 @@ export class SourcesService {
       projectId: artifact.projectId,
       code: artifact.code,
       createdAt: artifact.createdAt.toISOString(),
+      archivedAt: artifact.archivedAt ? artifact.archivedAt.toISOString() : null,
+      hasApprovedHistory,
       version: {
         id: version.id,
         versionNumber: version.versionNumber,
