@@ -21,21 +21,21 @@ function ReadinessContent({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold text-gray-900">Preparación del First Deliverable</h1>
+      <h1 className="text-xl font-semibold text-foreground">Preparación del First Deliverable</h1>
 
-      <section className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white p-4">
-        <span className="text-sm font-medium text-gray-700">Exportar:</span>
+      <section className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card p-4">
+        <span className="text-sm font-medium text-foreground/80">Exportar:</span>
         <button
           type="button"
           onClick={() => downloadExport(projectId, 'json')}
-          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
+          className="rounded-md border border-input px-3 py-1.5 text-sm hover:bg-muted/40"
         >
           Exportar JSON
         </button>
         <button
           type="button"
           onClick={() => downloadExport(projectId, 'html')}
-          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
+          className="rounded-md border border-input px-3 py-1.5 text-sm hover:bg-muted/40"
         >
           Exportar reporte HTML
         </button>
@@ -59,26 +59,24 @@ function ReadinessContent({ projectId }: { projectId: string }) {
                 <li
                   key={stage.key}
                   className={`rounded-lg border p-3 ${
-                    stage.satisfied
-                      ? 'border-emerald-200 bg-emerald-50'
-                      : 'border-gray-200 bg-white'
+                    stage.satisfied ? 'border-emerald-200 bg-emerald-50' : 'border-border bg-card'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium text-gray-900">
+                    <span className="font-medium text-foreground">
                       {stage.satisfied ? '✓' : '○'} {stage.label}
                     </span>
                     {stage.counts ? (
-                      <span className="text-xs text-gray-500">
+                      <span className="text-xs text-muted-foreground">
                         {Object.entries(stage.counts)
                           .map(([k, v]) => `${k}: ${v}`)
                           .join(' · ')}
                       </span>
                     ) : null}
                   </div>
-                  <p className="mt-1 text-sm text-gray-600">{stage.summary}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{stage.summary}</p>
                   {stage.blockers.length ? (
-                    <ul className="mt-1 list-inside list-disc text-sm text-red-700">
+                    <ul className="mt-1 list-inside list-disc text-sm text-destructive">
                       {stage.blockers.map((b, i) => (
                         <li key={i}>{b}</li>
                       ))}

@@ -121,49 +121,49 @@ export function DataModelManualForm({
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-4"
+      className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4"
     >
-      <h2 className="text-sm font-semibold text-gray-900">Crear Modelo de Datos manualmente</h2>
+      <h2 className="text-sm font-semibold text-foreground">Crear Modelo de Datos manualmente</h2>
       <label className="flex flex-col gap-1 text-sm">
         Título
         <input
           required
-          className="rounded-md border border-gray-300 px-2 py-1"
+          className="rounded-md border border-input px-2 py-1"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
         />
       </label>
 
       {entities.map((entity, ei) => (
-        <fieldset key={entity.localId} className="rounded-md border border-gray-200 p-3">
-          <legend className="px-1 text-sm font-medium text-gray-700">Entidad {ei + 1}</legend>
+        <fieldset key={entity.localId} className="rounded-md border border-border p-3">
+          <legend className="px-1 text-sm font-medium text-foreground/80">Entidad {ei + 1}</legend>
           <div className="grid gap-2 sm:grid-cols-2">
             <input
               required
               placeholder="Nombre de la entidad"
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+              className="rounded-md border border-input px-2 py-1 text-sm"
               value={entity.name}
               onChange={(e) => updateEntity(ei, { name: e.target.value })}
             />
             <input
               placeholder="Descripción (opcional)"
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+              className="rounded-md border border-input px-2 py-1 text-sm"
               value={entity.description}
               onChange={(e) => updateEntity(ei, { description: e.target.value })}
             />
           </div>
           <div className="mt-2 flex flex-col gap-1">
-            <span className="text-xs font-medium text-gray-500">Atributos</span>
+            <span className="text-xs font-medium text-muted-foreground">Atributos</span>
             {entity.attributes.map((attr, ai) => (
               <div key={ai} className="flex flex-wrap items-center gap-2 text-sm">
                 <input
                   placeholder="nombre"
-                  className="w-32 rounded-md border border-gray-300 px-2 py-1"
+                  className="w-32 rounded-md border border-input px-2 py-1"
                   value={attr.name}
                   onChange={(e) => updateAttribute(ei, ai, { name: e.target.value })}
                 />
                 <select
-                  className="rounded-md border border-gray-300 px-2 py-1"
+                  className="rounded-md border border-input px-2 py-1"
                   value={attr.type}
                   onChange={(e) =>
                     updateAttribute(ei, ai, { type: e.target.value as AttributeType })
@@ -202,7 +202,7 @@ export function DataModelManualForm({
                 <input
                   aria-label={`Descripción del atributo ${ai + 1} de la entidad ${ei + 1}`}
                   placeholder="descripción (opcional)"
-                  className="w-40 rounded-md border border-gray-300 px-2 py-1"
+                  className="w-40 rounded-md border border-input px-2 py-1"
                   value={attr.description}
                   onChange={(e) => updateAttribute(ei, ai, { description: e.target.value })}
                 />
@@ -211,7 +211,7 @@ export function DataModelManualForm({
                   onClick={() =>
                     updateEntity(ei, { attributes: entity.attributes.filter((_, j) => j !== ai) })
                   }
-                  className="text-red-600"
+                  className="text-destructive"
                   aria-label={`Eliminar atributo ${ai + 1} de la entidad ${ei + 1}`}
                 >
                   ✕
@@ -223,7 +223,7 @@ export function DataModelManualForm({
               onClick={() =>
                 updateEntity(ei, { attributes: [...entity.attributes, blankAttribute()] })
               }
-              className="self-start text-sm text-gray-600 underline"
+              className="self-start text-sm text-muted-foreground underline"
             >
               + Agregar atributo
             </button>
@@ -231,7 +231,7 @@ export function DataModelManualForm({
           <button
             type="button"
             onClick={() => setEntities((prev) => prev.filter((_, i) => i !== ei))}
-            className="mt-2 text-sm text-red-600"
+            className="mt-2 text-sm text-destructive"
           >
             Eliminar entidad
           </button>
@@ -240,17 +240,19 @@ export function DataModelManualForm({
       <button
         type="button"
         onClick={() => setEntities((prev) => [...prev, blankEntity(prev.length + 1)])}
-        className="self-start rounded-md border border-gray-300 px-3 py-1 text-sm hover:bg-gray-50"
+        className="self-start rounded-md border border-input px-3 py-1 text-sm hover:bg-muted/40"
       >
         + Agregar entidad
       </button>
 
-      <fieldset className="rounded-md border border-gray-200 p-3">
-        <legend className="px-1 text-sm font-medium text-gray-700">Relaciones (opcional)</legend>
+      <fieldset className="rounded-md border border-border p-3">
+        <legend className="px-1 text-sm font-medium text-foreground/80">
+          Relaciones (opcional)
+        </legend>
         {relationships.map((rel, ri) => (
           <div key={ri} className="mb-1 flex flex-wrap items-center gap-2 text-sm">
             <select
-              className="rounded-md border border-gray-300 px-2 py-1"
+              className="rounded-md border border-input px-2 py-1"
               value={rel.sourceEntityId}
               onChange={(e) =>
                 setRelationships((prev) =>
@@ -266,7 +268,7 @@ export function DataModelManualForm({
               ))}
             </select>
             <select
-              className="rounded-md border border-gray-300 px-2 py-1"
+              className="rounded-md border border-input px-2 py-1"
               value={rel.sourceCardinality}
               onChange={(e) =>
                 setRelationships((prev) =>
@@ -284,7 +286,7 @@ export function DataModelManualForm({
             </select>
             <span>→</span>
             <select
-              className="rounded-md border border-gray-300 px-2 py-1"
+              className="rounded-md border border-input px-2 py-1"
               value={rel.targetEntityId}
               onChange={(e) =>
                 setRelationships((prev) =>
@@ -300,7 +302,7 @@ export function DataModelManualForm({
               ))}
             </select>
             <select
-              className="rounded-md border border-gray-300 px-2 py-1"
+              className="rounded-md border border-input px-2 py-1"
               value={rel.targetCardinality}
               onChange={(e) =>
                 setRelationships((prev) =>
@@ -319,7 +321,7 @@ export function DataModelManualForm({
             <input
               aria-label={`Nombre de la relación ${ri + 1}`}
               placeholder="nombre (opcional)"
-              className="w-32 rounded-md border border-gray-300 px-2 py-1"
+              className="w-32 rounded-md border border-input px-2 py-1"
               value={rel.name}
               onChange={(e) =>
                 setRelationships((prev) =>
@@ -330,7 +332,7 @@ export function DataModelManualForm({
             <input
               aria-label={`Descripción de la relación ${ri + 1}`}
               placeholder="descripción (opcional)"
-              className="w-40 rounded-md border border-gray-300 px-2 py-1"
+              className="w-40 rounded-md border border-input px-2 py-1"
               value={rel.description}
               onChange={(e) =>
                 setRelationships((prev) =>
@@ -341,7 +343,7 @@ export function DataModelManualForm({
             <button
               type="button"
               onClick={() => setRelationships((prev) => prev.filter((_, i) => i !== ri))}
-              className="text-red-600"
+              className="text-destructive"
               aria-label={`Eliminar relación ${ri + 1}`}
             >
               ✕
@@ -363,13 +365,13 @@ export function DataModelManualForm({
               },
             ])
           }
-          className="text-sm text-gray-600 underline"
+          className="text-sm text-muted-foreground underline"
         >
           + Agregar relación
         </button>
       </fieldset>
 
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <div className="flex gap-2">
         <button
           type="submit"
@@ -378,7 +380,11 @@ export function DataModelManualForm({
         >
           {submitting ? 'Creando…' : 'Crear Modelo de Datos'}
         </button>
-        <button type="button" onClick={onCancel} className="text-sm text-gray-600 underline">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="text-sm text-muted-foreground underline"
+        >
           Cancelar
         </button>
       </div>

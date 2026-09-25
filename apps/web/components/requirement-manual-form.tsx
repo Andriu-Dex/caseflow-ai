@@ -64,14 +64,14 @@ export function RequirementManualForm({
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4"
+      className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4"
     >
-      <h2 className="text-sm font-semibold text-gray-900">Crear Requisito manualmente</h2>
+      <h2 className="text-sm font-semibold text-foreground">Crear Requisito manualmente</h2>
       <div className="grid gap-3 sm:grid-cols-3">
         <label className="flex flex-col gap-1 text-sm">
           Tipo
           <select
-            className="rounded-md border border-gray-300 px-2 py-1"
+            className="rounded-md border border-input px-2 py-1"
             value={requirementType}
             onChange={(e) => setRequirementType(e.target.value as RequirementType)}
           >
@@ -86,7 +86,7 @@ export function RequirementManualForm({
           Nombre
           <input
             required
-            className="rounded-md border border-gray-300 px-2 py-1"
+            className="rounded-md border border-input px-2 py-1"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
@@ -94,7 +94,7 @@ export function RequirementManualForm({
         <label className="flex flex-col gap-1 text-sm">
           Prioridad
           <select
-            className="rounded-md border border-gray-300 px-2 py-1"
+            className="rounded-md border border-input px-2 py-1"
             value={priority}
             onChange={(e) => setPriority(e.target.value as RequirementPriority)}
           >
@@ -111,7 +111,7 @@ export function RequirementManualForm({
         <textarea
           required
           rows={2}
-          className="rounded-md border border-gray-300 px-2 py-1"
+          className="rounded-md border border-input px-2 py-1"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
@@ -120,7 +120,7 @@ export function RequirementManualForm({
         <label className="flex flex-col gap-1 text-sm">
           Actores (separados por coma)
           <input
-            className="rounded-md border border-gray-300 px-2 py-1"
+            className="rounded-md border border-input px-2 py-1"
             value={actors}
             onChange={(e) => setActors(e.target.value)}
           />
@@ -128,7 +128,7 @@ export function RequirementManualForm({
         <label className="flex flex-col gap-1 text-sm">
           Precondiciones (separadas por coma)
           <input
-            className="rounded-md border border-gray-300 px-2 py-1"
+            className="rounded-md border border-input px-2 py-1"
             value={preconditions}
             onChange={(e) => setPreconditions(e.target.value)}
           />
@@ -136,15 +136,17 @@ export function RequirementManualForm({
         <label className="flex flex-col gap-1 text-sm">
           Postcondiciones (separadas por coma)
           <input
-            className="rounded-md border border-gray-300 px-2 py-1"
+            className="rounded-md border border-input px-2 py-1"
             value={postconditions}
             onChange={(e) => setPostconditions(e.target.value)}
           />
         </label>
       </div>
       {existingRequirements.length > 0 ? (
-        <fieldset className="rounded-md border border-gray-200 p-2">
-          <legend className="px-1 text-sm font-medium text-gray-700">Depende de (opcional)</legend>
+        <fieldset className="rounded-md border border-border p-2">
+          <legend className="px-1 text-sm font-medium text-foreground/80">
+            Depende de (opcional)
+          </legend>
           <ul className="flex flex-col gap-1 text-sm">
             {existingRequirements.map((r) => (
               <li key={r.id} className="flex items-center gap-2">
@@ -166,7 +168,7 @@ export function RequirementManualForm({
           </ul>
         </fieldset>
       ) : null}
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <div className="flex gap-2">
         <button
           type="submit"
@@ -175,7 +177,11 @@ export function RequirementManualForm({
         >
           {submitting ? 'Creando…' : 'Crear Requisito'}
         </button>
-        <button type="button" onClick={onCancel} className="text-sm text-gray-600 underline">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="text-sm text-muted-foreground underline"
+        >
           Cancelar
         </button>
       </div>

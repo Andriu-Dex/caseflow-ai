@@ -76,9 +76,9 @@ function ContextForm({
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4"
+      className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4"
     >
-      <h2 className="text-sm font-semibold text-gray-900">
+      <h2 className="text-sm font-semibold text-foreground">
         {hasExisting ? 'Nueva versión del Contexto' : 'Definir Contexto del Proyecto'}
       </h2>
       <label className="flex flex-col gap-1 text-sm">
@@ -86,7 +86,7 @@ function ContextForm({
         <textarea
           required
           rows={2}
-          className="rounded-md border border-gray-300 px-2 py-1"
+          className="rounded-md border border-input px-2 py-1"
           value={problemStatement}
           onChange={(e) => setProblemStatement(e.target.value)}
         />
@@ -96,7 +96,7 @@ function ContextForm({
         <textarea
           required
           rows={2}
-          className="rounded-md border border-gray-300 px-2 py-1"
+          className="rounded-md border border-input px-2 py-1"
           value={objective}
           onChange={(e) => setObjective(e.target.value)}
         />
@@ -106,7 +106,7 @@ function ContextForm({
           Actores (uno por línea)
           <textarea
             rows={3}
-            className="rounded-md border border-gray-300 px-2 py-1"
+            className="rounded-md border border-input px-2 py-1"
             value={actorsText}
             onChange={(e) => setActorsText(e.target.value)}
           />
@@ -115,7 +115,7 @@ function ContextForm({
           Necesidades (una por línea)
           <textarea
             rows={3}
-            className="rounded-md border border-gray-300 px-2 py-1"
+            className="rounded-md border border-input px-2 py-1"
             value={needsText}
             onChange={(e) => setNeedsText(e.target.value)}
           />
@@ -124,7 +124,7 @@ function ContextForm({
           Restricciones (una por línea)
           <textarea
             rows={3}
-            className="rounded-md border border-gray-300 px-2 py-1"
+            className="rounded-md border border-input px-2 py-1"
             value={constraintsText}
             onChange={(e) => setConstraintsText(e.target.value)}
           />
@@ -133,7 +133,7 @@ function ContextForm({
           Reglas de negocio (una por línea)
           <textarea
             rows={3}
-            className="rounded-md border border-gray-300 px-2 py-1"
+            className="rounded-md border border-input px-2 py-1"
             value={businessRulesText}
             onChange={(e) => setBusinessRulesText(e.target.value)}
           />
@@ -143,18 +143,18 @@ function ContextForm({
         Contexto adicional (opcional)
         <textarea
           rows={2}
-          className="rounded-md border border-gray-300 px-2 py-1"
+          className="rounded-md border border-input px-2 py-1"
           value={additionalContext}
           onChange={(e) => setAdditionalContext(e.target.value)}
         />
       </label>
 
-      <fieldset className="rounded-md border border-gray-200 p-2">
-        <legend className="px-1 text-sm font-medium text-gray-700">
+      <fieldset className="rounded-md border border-border p-2">
+        <legend className="px-1 text-sm font-medium text-foreground/80">
           Fuentes que respaldan este contexto
         </legend>
         {approvedSources.length === 0 ? (
-          <p className="text-sm text-gray-500">No hay fuentes APPROVED todavía.</p>
+          <p className="text-sm text-muted-foreground">No hay fuentes APPROVED todavía.</p>
         ) : (
           <ul className="flex flex-col gap-1">
             {approvedSources.map((s) => (
@@ -174,7 +174,7 @@ function ContextForm({
         )}
       </fieldset>
 
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <button
         type="submit"
         disabled={submitting}
@@ -216,12 +216,12 @@ function ContextContent({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold text-gray-900">Contexto del proyecto</h1>
+      <h1 className="text-xl font-semibold text-foreground">Contexto del proyecto</h1>
 
       {context.isLoading ? (
-        <p className="text-sm text-gray-500">Cargando…</p>
+        <p className="text-sm text-muted-foreground">Cargando…</p>
       ) : notFound ? (
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-muted-foreground">
           Todavía no hay un Contexto definido para este proyecto.
         </p>
       ) : context.error ? (
@@ -229,13 +229,15 @@ function ContextContent({ projectId }: { projectId: string }) {
           {null}
         </QueryState>
       ) : context.data ? (
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <div className="rounded-lg border border-border bg-card p-4">
           <div className="mb-2 flex items-center gap-2">
-            <span className="font-mono text-xs text-gray-500">{context.data.code}</span>
+            <span className="font-mono text-xs text-muted-foreground">{context.data.code}</span>
             <StatusBadge status={context.data.version.status} />
-            <span className="text-xs text-gray-400">v{context.data.version.versionNumber}</span>
+            <span className="text-xs text-muted-foreground">
+              v{context.data.version.versionNumber}
+            </span>
           </div>
-          <dl className="flex flex-col gap-2 text-sm text-gray-700">
+          <dl className="flex flex-col gap-2 text-sm text-foreground/80">
             <div>
               <dt className="font-medium">Planteamiento del problema</dt>
               <dd>{context.data.problemStatement}</dd>
@@ -265,7 +267,7 @@ function ContextContent({ projectId }: { projectId: string }) {
               <button
                 type="button"
                 onClick={() => transition('IN_REVIEW')}
-                className="rounded-md border border-gray-300 px-3 py-1 text-sm hover:bg-gray-50"
+                className="rounded-md border border-input px-3 py-1 text-sm hover:bg-muted/40"
               >
                 Enviar a revisión
               </button>
@@ -282,7 +284,7 @@ function ContextContent({ projectId }: { projectId: string }) {
                 <button
                   type="button"
                   onClick={() => transition('CHANGES_REQUESTED')}
-                  className="rounded-md border border-red-300 px-3 py-1 text-sm text-red-700 hover:bg-red-50"
+                  className="rounded-md border border-destructive/40 px-3 py-1 text-sm text-destructive hover:bg-destructive/5"
                 >
                   Solicitar cambios
                 </button>
@@ -291,12 +293,12 @@ function ContextContent({ projectId }: { projectId: string }) {
             <button
               type="button"
               onClick={() => setShowForm((v) => !v)}
-              className="text-sm text-gray-600 underline"
+              className="text-sm text-muted-foreground underline"
             >
               {showForm ? 'Cancelar' : 'Crear nueva versión'}
             </button>
           </div>
-          {actionError ? <p className="mt-2 text-sm text-red-600">{actionError}</p> : null}
+          {actionError ? <p className="mt-2 text-sm text-destructive">{actionError}</p> : null}
         </div>
       ) : null}
 

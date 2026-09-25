@@ -51,7 +51,7 @@ export function CandidateReview({
       </div>
       <ul className="flex flex-col gap-2">
         {generation.candidates.map((c) => (
-          <li key={c.id} className="flex items-start gap-2 rounded-md bg-white p-2 text-sm">
+          <li key={c.id} className="flex items-start gap-2 rounded-md bg-card p-2 text-sm">
             <input
               type="checkbox"
               className="mt-1"
@@ -62,7 +62,7 @@ export function CandidateReview({
           </li>
         ))}
       </ul>
-      {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="mt-2 text-sm text-destructive">{error}</p> : null}
       <div className="mt-3 flex gap-2">
         <button
           type="button"
@@ -72,7 +72,11 @@ export function CandidateReview({
         >
           {busy ? 'Aceptando…' : `Aceptar seleccionados (${selected.length})`}
         </button>
-        <button type="button" onClick={onDismiss} className="text-sm text-gray-600 underline">
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="text-sm text-muted-foreground underline"
+        >
           Descartar
         </button>
       </div>

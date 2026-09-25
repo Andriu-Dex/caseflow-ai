@@ -10,8 +10,8 @@ import { StatusBadge } from '../../components/status-badge';
 function NodeLabel({ node }: { node: TraceabilityNode }) {
   return (
     <span>
-      <span className="font-mono text-xs text-gray-500">{node.code}</span>{' '}
-      <span className="font-medium text-gray-900">{node.title}</span>{' '}
+      <span className="font-mono text-xs text-muted-foreground">{node.code}</span>{' '}
+      <span className="font-medium text-foreground">{node.title}</span>{' '}
       <StatusBadge status={node.status} />
     </span>
   );
@@ -42,7 +42,7 @@ function TraceabilityContent({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold text-gray-900">Trazabilidad</h1>
+      <h1 className="text-xl font-semibold text-foreground">Trazabilidad</h1>
 
       <QueryState isLoading={graph.isLoading} error={graph.error}>
         {graph.data ? (
@@ -55,8 +55,8 @@ function TraceabilityContent({ projectId }: { projectId: string }) {
             ) : null}
 
             <div className="grid gap-4 md:grid-cols-[1fr_2fr]">
-              <section className="rounded-lg border border-gray-200 bg-white p-3">
-                <h2 className="mb-2 text-sm font-semibold text-gray-900">
+              <section className="rounded-lg border border-border bg-card p-3">
+                <h2 className="mb-2 text-sm font-semibold text-foreground">
                   Artefactos ({graph.data.nodes.length})
                 </h2>
                 <ul className="max-h-[28rem] overflow-auto text-sm">
@@ -66,7 +66,7 @@ function TraceabilityContent({ projectId }: { projectId: string }) {
                         type="button"
                         onClick={() => setSelectedId(n.id)}
                         className={`block w-full rounded px-2 py-1 text-left ${
-                          selectedId === n.id ? 'bg-gray-900 text-white' : 'hover:bg-gray-100'
+                          selectedId === n.id ? 'bg-gray-900 text-white' : 'hover:bg-muted'
                         }`}
                       >
                         {n.code} — {n.title}
@@ -76,19 +76,19 @@ function TraceabilityContent({ projectId }: { projectId: string }) {
                 </ul>
               </section>
 
-              <section className="rounded-lg border border-gray-200 bg-white p-4">
+              <section className="rounded-lg border border-border bg-card p-4">
                 {!selected ? (
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-muted-foreground">
                     Seleccione un artefacto para ver su linaje.
                   </p>
                 ) : (
                   <div className="flex flex-col gap-4 text-sm">
                     <div>
-                      <h3 className="mb-1 text-xs font-semibold uppercase text-gray-400">
+                      <h3 className="mb-1 text-xs font-semibold uppercase text-muted-foreground">
                         Aguas arriba
                       </h3>
                       {upstream.length === 0 ? (
-                        <p className="text-gray-500">
+                        <p className="text-muted-foreground">
                           Sin conocimiento/artefacto de origen registrado.
                         </p>
                       ) : (
@@ -101,11 +101,13 @@ function TraceabilityContent({ projectId }: { projectId: string }) {
                         </ul>
                       )}
                     </div>
-                    <div className="rounded-md border border-gray-900 bg-gray-50 p-2">
-                      <h3 className="mb-1 text-xs font-semibold uppercase text-gray-400">Actual</h3>
+                    <div className="rounded-md border border-gray-900 bg-muted/40 p-2">
+                      <h3 className="mb-1 text-xs font-semibold uppercase text-muted-foreground">
+                        Actual
+                      </h3>
                       <NodeLabel node={selected} />
                       {selected.generation ? (
-                        <p className="mt-1 text-xs text-gray-500">
+                        <p className="mt-1 text-xs text-muted-foreground">
                           IA: {selected.generation.provider ?? '—'} /{' '}
                           {selected.generation.model ?? '—'}
                           {selected.generation.promptKey
@@ -113,17 +115,17 @@ function TraceabilityContent({ projectId }: { projectId: string }) {
                             : ''}
                         </p>
                       ) : selected.generator ? (
-                        <p className="mt-1 text-xs text-gray-500">
+                        <p className="mt-1 text-xs text-muted-foreground">
                           Generador determinístico v{selected.generator.generatorVersion}
                         </p>
                       ) : null}
                     </div>
                     <div>
-                      <h3 className="mb-1 text-xs font-semibold uppercase text-gray-400">
+                      <h3 className="mb-1 text-xs font-semibold uppercase text-muted-foreground">
                         Aguas abajo
                       </h3>
                       {downstream.length === 0 ? (
-                        <p className="text-gray-500">
+                        <p className="text-muted-foreground">
                           Ningún artefacto conocido depende de este todavía.
                         </p>
                       ) : (
