@@ -3,7 +3,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Upload } from 'lucide-react';
 import { useRef, useState } from 'react';
-import type { ProjectSourceKind, SourceResponse } from '@caseflow-ai/contracts';
+import type {
+  ProjectSourceKind,
+  SourceReportCandidate,
+  SourceResponse,
+} from '@caseflow-ai/contracts';
 import {
   Button,
   Input,
@@ -193,6 +197,8 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
   const [manualSummary, setManualSummary] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [generatingReport, setGeneratingReport] = useState(false);
+  const [reportCandidate, setReportCandidate] = useState<SourceReportCandidate | null>(null);
+  const [acceptingReport, setAcceptingReport] = useState(false);
 
   const report = useQuery({
     queryKey: ['source-report', projectId, source.id],
@@ -233,8 +239,8 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
     setActionError(null);
     setGeneratingReport(true);
     try {
-      await api.sources.generateReport(projectId, source.id);
-      invalidate();
+      const candidate = await api.sources.generateReport(projectId, source.id);
+      setReportCandidate(candidate);
     } catch (err) {
       setActionError(
         err instanceof ApiError
@@ -243,6 +249,22 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
       );
     } finally {
       setGeneratingReport(false);
+    }
+  }
+
+  async function acceptReportCandidate() {
+    if (!reportCandidate) return;
+    setActionError(null);
+    setAcceptingReport(true);
+    try {
+      await api.sources.acceptReport(projectId, source.id, reportCandidate.id);
+      setReportCandidate(null);
+      queryClient.invalidateQueries({ queryKey: ['source-report', projectId, source.id] });
+      invalidate();
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : 'No se pudo aceptar el reporte.');
+    } finally {
+      setAcceptingReport(false);
     }
   }
 
@@ -364,6 +386,42 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
                 >
                   {generatingReport ? 'Generando…' : 'Generar reporte con IA'}
                 </Button>
+                {reportCandidate ? (
+                  <div className="rounded-md border border-dashed border-purple-300 bg-purple-50 p-3 text-foreground/80">
+                    <p className="mb-2 text-xs font-medium text-purple-700">
+                      Candidato de IA (sin persistir) — revise antes de aceptar
+                    </p>
+                    <p>{reportCandidate.content.summary}</p>
+                    {reportCandidate.content.actors.length ? (
+                      <p className="mt-1">
+                        <strong>Actores:</strong> {reportCandidate.content.actors.join(', ')}
+                      </p>
+                    ) : null}
+                    {reportCandidate.content.needs.length ? (
+                      <p className="mt-1">
+                        <strong>Necesidades:</strong> {reportCandidate.content.needs.join(', ')}
+                      </p>
+                    ) : null}
+                    <div className="mt-2 flex gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={acceptingReport}
+                        onClick={acceptReportCandidate}
+                      >
+                        {acceptingReport ? 'Aceptando…' : 'Aceptar como reporte oficial'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setReportCandidate(null)}
+                      >
+                        Descartar
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
                 <textarea
                   className="w-full rounded-md border border-input px-2 py-1"
                   rows={2}
