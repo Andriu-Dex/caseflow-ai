@@ -32,7 +32,7 @@ function ManualFormShell({
         <button
           type="submit"
           disabled={submitting}
-          className="rounded-md bg-gray-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+          className="rounded-md bg-primary px-3 py-1.5 text-sm text-white disabled:opacity-50"
         >
           {submitting ? 'Creando…' : 'Crear'}
         </button>
@@ -118,7 +118,7 @@ export function NavigationManualForm({ projectId, onCreated, onCancel }: FormPro
       {nodes.map((n, i) => (
         <div
           key={i}
-          className="flex flex-wrap items-center gap-2 rounded-md border border-gray-100 p-2 text-sm"
+          className="flex flex-wrap items-center gap-2 rounded-md border border-border p-2 text-sm"
         >
           <input
             required
@@ -281,7 +281,7 @@ export function SoftwareArchitectureManualForm({ projectId, onCreated, onCancel 
       {components.map((c, i) => (
         <div
           key={i}
-          className="flex flex-wrap items-center gap-2 rounded-md border border-gray-100 p-2 text-sm"
+          className="flex flex-wrap items-center gap-2 rounded-md border border-border p-2 text-sm"
         >
           <input
             required
@@ -504,7 +504,7 @@ export function SystemArchitectureManualForm({ projectId, onCreated, onCancel }:
       {nodes.map((n, i) => (
         <div
           key={i}
-          className="flex flex-wrap items-center gap-2 rounded-md border border-gray-100 p-2 text-sm"
+          className="flex flex-wrap items-center gap-2 rounded-md border border-border p-2 text-sm"
         >
           <input
             required
@@ -720,7 +720,7 @@ export function UiBlueprintManualForm({ projectId, onCreated, onCancel }: FormPr
         onChange={(e) => setTitle(e.target.value)}
       />
       {screens.map((s, i) => (
-        <div key={i} className="flex flex-col gap-2 rounded-md border border-gray-100 p-2 text-sm">
+        <div key={i} className="flex flex-col gap-2 rounded-md border border-border p-2 text-sm">
           <div className="flex flex-wrap gap-2">
             <input
               required

@@ -194,7 +194,7 @@ export function UseCaseManualForm({
           Flujos alternativos (opcional)
         </legend>
         {alternativeFlows.rows.map((flow, i) => (
-          <div key={i} className="mb-2 flex flex-col gap-1 rounded-md border border-gray-100 p-2">
+          <div key={i} className="mb-2 flex flex-col gap-1 rounded-md border border-border p-2">
             <div className="flex gap-2">
               <input
                 aria-label={`Nombre del flujo alternativo ${i + 1}`}
@@ -274,7 +274,7 @@ export function UseCaseManualForm({
         <button
           type="submit"
           disabled={submitting}
-          className="rounded-md bg-gray-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+          className="rounded-md bg-primary px-3 py-1.5 text-sm text-white disabled:opacity-50"
         >
           {submitting ? 'Creando…' : 'Crear Caso de Uso'}
         </button>

@@ -376,7 +376,7 @@ export function DataModelManualForm({
         <button
           type="submit"
           disabled={submitting}
-          className="rounded-md bg-gray-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+          className="rounded-md bg-primary px-3 py-1.5 text-sm text-white disabled:opacity-50"
         >
           {submitting ? 'Creando…' : 'Crear Modelo de Datos'}
         </button>
