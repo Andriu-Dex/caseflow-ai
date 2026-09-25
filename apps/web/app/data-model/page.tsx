@@ -2,6 +2,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { Button } from '@caseflow-ai/ui';
 import { api, ApiError, type GenerationResult } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { StatusBadge } from '../../components/status-badge';
@@ -30,9 +31,11 @@ function DataModelContent({ projectId }: { projectId: string }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [diagrams, setDiagrams] = useState<Record<string, string>>({});
   const [showManualForm, setShowManualForm] = useState(false);
+  const [generating, setGenerating] = useState(false);
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['data-models', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
   }
 
   async function generate() {
@@ -43,6 +46,7 @@ function DataModelContent({ projectId }: { projectId: string }) {
     const approvedUseCaseIds = (useCases.data?.items ?? [])
       .filter((u) => u.version.status === 'APPROVED')
       .map((u) => u.version.id);
+    setGenerating(true);
     try {
       const result = await api.dataModels.generate(
         projectId,
@@ -52,6 +56,8 @@ function DataModelContent({ projectId }: { projectId: string }) {
       setGeneration(result);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo generar (¿IA deshabilitada?).');
+    } finally {
+      setGenerating(false);
     }
   }
 
@@ -81,24 +87,18 @@ function DataModelContent({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeading title="Modelo de datos" />
+      <PageHeading title="Modelo de datos" projectId={projectId} />
 
       <section className="rounded-lg border border-border bg-card p-4">
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={generate}
-            className="rounded-md border border-input px-3 py-1.5 text-sm hover:bg-muted/40"
-          >
-            Generar con IA (a partir de Requisitos/Casos de Uso aprobados)
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowManualForm((v) => !v)}
-            className="rounded-md border border-input px-3 py-1.5 text-sm hover:bg-muted/40"
-          >
+          <Button type="button" variant="outline" disabled={generating} onClick={generate}>
+            {generating
+              ? 'Generando…'
+              : 'Generar con IA (a partir de Requisitos/Casos de Uso aprobados)'}
+          </Button>
+          <Button type="button" variant="outline" onClick={() => setShowManualForm((v) => !v)}>
             Crear manualmente
-          </button>
+          </Button>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
           La generación con IA requiere un proveedor configurado. Si no está disponible, use

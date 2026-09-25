@@ -2,6 +2,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { Button } from '@caseflow-ai/ui';
 import { api, ApiError, type GenerationResult } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { StatusBadge } from '../../components/status-badge';
@@ -30,6 +31,8 @@ function UseCasesContent({ projectId }: { projectId: string }) {
   const [diagram, setDiagram] = useState<{ svg: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showManualForm, setShowManualForm] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [generatingDiagram, setGeneratingDiagram] = useState(false);
 
   const approvedRequirements = (requirements.data?.items ?? []).filter(
     (r) => r.version.status === 'APPROVED',
@@ -38,6 +41,7 @@ function UseCasesContent({ projectId }: { projectId: string }) {
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['use-cases', projectId] });
     queryClient.invalidateQueries({ queryKey: ['use-cases-academic', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
   }
 
   async function generate() {
@@ -46,11 +50,14 @@ function UseCasesContent({ projectId }: { projectId: string }) {
       setError('Seleccione al menos un Requisito APPROVED.');
       return;
     }
+    setGenerating(true);
     try {
       const result = await api.useCases.generate(projectId, selectedRequirements);
       setGeneration(result);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo generar (¿IA deshabilitada?).');
+    } finally {
+      setGenerating(false);
     }
   }
 
@@ -74,17 +81,20 @@ function UseCasesContent({ projectId }: { projectId: string }) {
 
   async function generateDiagram() {
     setError(null);
+    setGeneratingDiagram(true);
     try {
       const result = await api.useCaseDiagrams.generate(projectId, approvedVersionIds);
       setDiagram(result);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo generar el diagrama.');
+    } finally {
+      setGeneratingDiagram(false);
     }
   }
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeading title="Casos de uso" />
+      <PageHeading title="Casos de uso" projectId={projectId} />
 
       {validation.data ? (
         <section className="rounded-lg border border-border bg-card p-4 text-sm">
@@ -121,20 +131,12 @@ function UseCasesContent({ projectId }: { projectId: string }) {
           </ul>
         )}
         <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={generate}
-            className="rounded-md border border-input px-3 py-1.5 text-sm hover:bg-muted/40"
-          >
-            Generar con IA
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowManualForm((v) => !v)}
-            className="rounded-md border border-input px-3 py-1.5 text-sm hover:bg-muted/40"
-          >
+          <Button type="button" variant="outline" disabled={generating} onClick={generate}>
+            {generating ? 'Generando…' : 'Generar con IA'}
+          </Button>
+          <Button type="button" variant="outline" onClick={() => setShowManualForm((v) => !v)}>
             Crear manualmente
-          </button>
+          </Button>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
           La generación con IA requiere un proveedor configurado. Si no está disponible, use
@@ -224,13 +226,15 @@ function UseCasesContent({ projectId }: { projectId: string }) {
                 <h2 className="mb-2 text-sm font-semibold text-foreground">
                   Diagrama de casos de uso
                 </h2>
-                <button
+                <Button
                   type="button"
+                  variant="outline"
+                  className="mb-2"
+                  disabled={generatingDiagram}
                   onClick={generateDiagram}
-                  className="mb-2 rounded-md border border-input px-3 py-1.5 text-sm hover:bg-muted/40"
                 >
-                  Generar diagrama a partir de los aprobados
-                </button>
+                  {generatingDiagram ? 'Generando…' : 'Generar diagrama a partir de los aprobados'}
+                </Button>
                 {diagram ? (
                   <TrustedDiagram svg={diagram.svg} caption="Diagrama de casos de uso aprobados" />
                 ) : null}

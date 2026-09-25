@@ -199,6 +199,7 @@ function ContextContent({ projectId }: { projectId: string }) {
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['context', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
     setShowForm(false);
   }
 
@@ -217,7 +218,7 @@ function ContextContent({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeading title="Contexto del proyecto" />
+      <PageHeading title="Contexto del proyecto" projectId={projectId} />
 
       {context.isLoading ? (
         <p className="text-sm text-muted-foreground">Cargando…</p>

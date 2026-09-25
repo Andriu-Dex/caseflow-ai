@@ -33,6 +33,16 @@ const SOURCE_KIND_LABELS: Record<ProjectSourceKind, string> = {
 
 const SOURCE_KINDS = Object.keys(SOURCE_KIND_LABELS) as ProjectSourceKind[];
 
+// Narrows the file picker to plausible extensions for the selected kind.
+// Advisory only (the backend is the real authority on what it accepts) —
+// TEXT/NOTES/FORM/OTHER stay open-ended since their real-world formats vary.
+const SOURCE_KIND_ACCEPT: Partial<Record<ProjectSourceKind, string>> = {
+  PDF: 'application/pdf,.pdf',
+  AUDIO: 'audio/*',
+  IMAGE: 'image/*',
+  INVOICE: 'application/pdf,.pdf,image/*',
+};
+
 const EXTRACTION_LABEL: Record<string, string> = {
   EXTRACTED: 'Extracción automática',
   MANUAL: 'Transcripción manual',
@@ -144,17 +154,18 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
             id="source-file"
             required
             type="file"
+            accept={SOURCE_KIND_ACCEPT[sourceKind]}
             className="sr-only"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           />
           <Button
             type="button"
             variant="outline"
-            className="justify-start font-normal"
+            className="w-full justify-start overflow-hidden font-normal"
             onClick={() => fileInputRef.current?.click()}
           >
-            <Upload className="size-4" aria-hidden="true" />
-            {file ? file.name : 'Seleccionar archivo…'}
+            <Upload className="size-4 shrink-0" aria-hidden="true" />
+            <span className="truncate">{file ? file.name : 'Seleccionar archivo…'}</span>
           </Button>
         </div>
       </div>
@@ -181,6 +192,7 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
   const [transcript, setTranscript] = useState('');
   const [manualSummary, setManualSummary] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
+  const [generatingReport, setGeneratingReport] = useState(false);
 
   const report = useQuery({
     queryKey: ['source-report', projectId, source.id],
@@ -191,6 +203,7 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['sources', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
   }
 
   async function transition(status: 'IN_REVIEW' | 'APPROVED' | 'CHANGES_REQUESTED') {
@@ -218,6 +231,7 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
 
   async function generateReport() {
     setActionError(null);
+    setGeneratingReport(true);
     try {
       await api.sources.generateReport(projectId, source.id);
       invalidate();
@@ -227,6 +241,8 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
           ? err.message
           : 'No se pudo generar el reporte (¿IA deshabilitada?).',
       );
+    } finally {
+      setGeneratingReport(false);
     }
   }
 
@@ -338,13 +354,16 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
             ) : source.source.hasExtractedText || !canSubmitTranscript ? (
               <div className="flex flex-col gap-2">
                 <p className="text-muted-foreground">Sin reporte todavía.</p>
-                <button
+                <Button
                   type="button"
+                  variant="outline"
+                  size="sm"
+                  className="self-start"
+                  disabled={generatingReport}
                   onClick={generateReport}
-                  className="self-start rounded-md border border-input px-3 py-1 text-sm hover:bg-muted/40"
                 >
-                  Generar reporte con IA
-                </button>
+                  {generatingReport ? 'Generando…' : 'Generar reporte con IA'}
+                </Button>
                 <textarea
                   className="w-full rounded-md border border-input px-2 py-1"
                   rows={2}
@@ -417,10 +436,13 @@ function SourcesContent({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeading title="Fuentes del proyecto" />
+      <PageHeading title="Fuentes del proyecto" projectId={projectId} />
       <CreateSourceForm
         projectId={projectId}
-        onCreated={() => queryClient.invalidateQueries({ queryKey: ['sources', projectId] })}
+        onCreated={() => {
+          queryClient.invalidateQueries({ queryKey: ['sources', projectId] });
+          queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
+        }}
       />
       <QueryState isLoading={sources.isLoading} error={sources.error}>
         {sources.data && sources.data.items.length === 0 ? (

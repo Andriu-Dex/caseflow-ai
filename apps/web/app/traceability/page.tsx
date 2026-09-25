@@ -43,7 +43,7 @@ function TraceabilityContent({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeading title="Trazabilidad" />
+      <PageHeading title="Trazabilidad" projectId={projectId} />
 
       <QueryState isLoading={graph.isLoading} error={graph.error}>
         {graph.data ? (
