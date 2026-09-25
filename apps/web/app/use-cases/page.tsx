@@ -8,6 +8,7 @@ import { StatusBadge } from '../../components/status-badge';
 import { CandidateReview } from '../../components/candidate-review';
 import { TrustedDiagram } from '../../components/trusted-svg';
 import { UseCaseManualForm } from '../../components/use-case-manual-form';
+import { PageHeading } from '../../components/page-heading';
 
 function UseCasesContent({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
@@ -83,7 +84,7 @@ function UseCasesContent({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold text-foreground">Casos de uso</h1>
+      <PageHeading title="Casos de uso" />
 
       {validation.data ? (
         <section className="rounded-lg border border-border bg-card p-4 text-sm">

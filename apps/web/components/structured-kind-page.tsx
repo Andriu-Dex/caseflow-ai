@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { Button, Card, CardContent, CardHeader, CardTitle, Textarea } from '@caseflow-ai/ui';
 import { api, ApiError, type GenerationResult } from '../lib/api';
 import { QueryState } from './query-state';
+import { PageHeading } from './page-heading';
 import { StatusBadge } from './status-badge';
 import { CandidateReview } from './candidate-review';
 import {
@@ -100,7 +101,7 @@ export function StructuredKindPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold text-foreground">{title}</h1>
+      <PageHeading title={title} />
 
       <Card>
         <CardHeader>

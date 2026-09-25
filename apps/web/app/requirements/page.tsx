@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { api, ApiError, type GenerationResult } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { StatusBadge } from '../../components/status-badge';
+import { PageHeading } from '../../components/page-heading';
 import { CandidateReview } from '../../components/candidate-review';
 import { RequirementManualForm } from '../../components/requirement-manual-form';
 
@@ -75,7 +76,7 @@ function RequirementsContent({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold text-foreground">Requisitos</h1>
+      <PageHeading title="Requisitos" />
 
       <section className="flex flex-wrap items-center gap-4 rounded-lg border border-border bg-card p-4 text-sm">
         <span>
