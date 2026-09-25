@@ -33,6 +33,7 @@ export { S3StorageProvider } from './s3-storage-provider';
 export type { S3StorageProviderConfig } from './s3-storage-provider';
 
 export interface OpenAICompatibleProviderConfig {
+  id?: string;
   baseUrl: string;
   apiKey: string;
   model: string;
@@ -41,9 +42,10 @@ export interface OpenAICompatibleProviderConfig {
 }
 
 export class OpenAICompatibleProvider implements AIProvider {
-  readonly id = 'openai_compatible';
+  readonly id: string;
   private readonly fetchImplementation: typeof fetch;
   constructor(private readonly config: OpenAICompatibleProviderConfig) {
+    this.id = config.id ?? 'openai_compatible';
     this.fetchImplementation = config.fetch ?? fetch;
   }
 
