@@ -47,7 +47,9 @@ export const sourceMetadataInputSchema = z
     sourceKind: z.enum(PROJECT_SOURCE_KINDS),
     purpose: text(2000),
     businessArea: text(200).optional(),
-    description: text(4000).optional(),
+    // Required: the source's typed content. When no file is uploaded, this
+    // becomes the source's sole extractedText (manual-transcript mechanism).
+    description: text(4000),
     language: text(20).optional(),
   })
   .strict();
@@ -75,11 +77,11 @@ export const sourceResponseSchema = z.object({
     sourceKind: z.enum(PROJECT_SOURCE_KINDS),
     purpose: z.string(),
     businessArea: z.string().nullable(),
-    description: z.string().nullable(),
-    originalFilename: z.string(),
-    mimeType: z.string(),
-    sizeBytes: z.number().int(),
-    contentHash: z.string(),
+    description: z.string(),
+    originalFilename: z.string().nullable(),
+    mimeType: z.string().nullable(),
+    sizeBytes: z.number().int().nullable(),
+    contentHash: z.string().nullable(),
     language: z.string().nullable(),
     extractionState: z.enum(SOURCE_EXTRACTION_STATES),
     hasExtractedText: z.boolean(),

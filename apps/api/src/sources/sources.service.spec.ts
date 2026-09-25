@@ -41,7 +41,12 @@ function file(overrides: Partial<UploadedSourceFile> = {}): UploadedSourceFile {
     ...overrides,
   };
 }
-const metadata = { title: 'Notas', sourceKind: 'NOTES' as const, purpose: 'Notas de reunión' };
+const metadata = {
+  title: 'Notas',
+  sourceKind: 'NOTES' as const,
+  purpose: 'Notas de reunión',
+  description: 'Contenido de prueba.',
+};
 
 function setup() {
   const tx = {

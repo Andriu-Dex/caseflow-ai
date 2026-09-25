@@ -43,6 +43,7 @@ describe('Project Source intake integration', () => {
         title: 'Acta de reunión',
         sourceKind: 'PDF',
         purpose: 'Notas de la reunión de operaciones',
+        description: 'Contenido de prueba.',
       },
       {
         originalname: 'acta.pdf',
@@ -66,7 +67,12 @@ describe('Project Source intake integration', () => {
   it('never fabricates OCR/transcription for images/audio: uploads, then honors an explicit manual fallback', async () => {
     const source = await ctx.sources.create(
       projectId,
-      { title: 'Foto de pizarra', sourceKind: 'NOTES', purpose: 'Lluvia de ideas del equipo' },
+      {
+        title: 'Foto de pizarra',
+        sourceKind: 'NOTES',
+        purpose: 'Lluvia de ideas del equipo',
+        description: 'Contenido de prueba.',
+      },
       { originalname: 'pizarra.png', mimetype: 'image/png', size: 4, buffer: Buffer.from('abcd') },
     );
     expect(source.source).toMatchObject({
@@ -99,7 +105,12 @@ describe('Project Source intake integration', () => {
   it('generates a candidate-first interpretation, requires explicit acceptance, and keeps exact provenance', async () => {
     const source = await ctx.sources.create(
       projectId,
-      { title: 'Notas de entrevista', sourceKind: 'NOTES', purpose: 'Entrevista con finanzas' },
+      {
+        title: 'Notas de entrevista',
+        sourceKind: 'NOTES',
+        purpose: 'Entrevista con finanzas',
+        description: 'Contenido de prueba.',
+      },
       {
         originalname: 'notas.txt',
         mimetype: 'text/plain',
@@ -155,7 +166,12 @@ describe('Project Source intake integration', () => {
   it('enforces project isolation: another project cannot see or reference this project’s sources', async () => {
     const source = await ctx.sources.create(
       projectId,
-      { title: 'Fuente privada', sourceKind: 'NOTES', purpose: 'Interna' },
+      {
+        title: 'Fuente privada',
+        sourceKind: 'NOTES',
+        purpose: 'Interna',
+        description: 'Contenido de prueba.',
+      },
       { originalname: 'nota.txt', mimetype: 'text/plain', size: 4, buffer: Buffer.from('hola') },
     );
     const otherWorkspace = await createWorkspace(ctx.prisma, 'Other Sources');

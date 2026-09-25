@@ -1,7 +1,9 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
   Param,
   Post,
   Res,
@@ -26,7 +28,7 @@ import {
 import type { z } from 'zod';
 import { uuidParamPipe } from '../common/uuid-param.pipe';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
-import { ApiZodBody, ApiZodResponse } from '../openapi/zod-openapi';
+import { ApiErrorResponse, ApiZodBody, ApiZodResponse } from '../openapi/zod-openapi';
 import { SourcesService } from './sources.service';
 
 @ApiTags('sources')
@@ -40,7 +42,7 @@ export class SourcesController {
   @ApiBody({
     schema: {
       type: 'object',
-      required: ['file', 'title', 'sourceKind', 'purpose'],
+      required: ['title', 'sourceKind', 'purpose', 'description'],
       properties: {
         file: { type: 'string', format: 'binary' },
         title: { type: 'string' },
@@ -56,7 +58,7 @@ export class SourcesController {
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: SOURCE_MAX_FILE_SIZE_BYTES } }))
   create(
     @Param('projectId', uuidParamPipe) projectId: string,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile() file: Express.Multer.File | undefined,
     @Body(new ZodValidationPipe(sourceMetadataInputSchema)) metadata: SourceMetadataInput,
   ) {
     return this.service.create(projectId, metadata, file);
@@ -106,6 +108,36 @@ export class SourcesController {
     body: z.output<typeof manualTranscriptInputSchema>,
   ) {
     return this.service.submitManualTranscript(projectId, sourceId, body.transcript);
+  }
+
+  @Post(':sourceId/edit')
+  @ApiOperation({
+    operationId: 'editSourceMetadata',
+    summary: 'Editar metadatos (crea una nueva versión)',
+  })
+  @ApiZodBody(sourceMetadataInputSchema)
+  @ApiZodResponse(201, 'Project Source.', sourceResponseSchema)
+  edit(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('sourceId', uuidParamPipe) sourceId: string,
+    @Body(new ZodValidationPipe(sourceMetadataInputSchema)) metadata: SourceMetadataInput,
+  ) {
+    return this.service.editMetadata(projectId, sourceId, metadata);
+  }
+
+  @Delete(':sourceId')
+  @HttpCode(204)
+  @ApiOperation({
+    operationId: 'deleteSource',
+    summary: 'Eliminar una fuente que nunca fue aprobada',
+  })
+  @ApiErrorResponse(404, 'La fuente no existe.')
+  @ApiErrorResponse(422, 'La fuente tiene versiones aprobadas y no puede eliminarse.')
+  delete(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('sourceId', uuidParamPipe) sourceId: string,
+  ) {
+    return this.service.delete(projectId, sourceId);
   }
 
   @Post(':sourceId/versions/:versionId/transition')

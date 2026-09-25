@@ -116,8 +116,22 @@ describe('Project Context integration', () => {
         data: { objective: 'Mutación prohibida' },
       }),
     ).rejects.toThrow();
+
+    // Content is still never editable in place, on any version regardless
+    // of status. Deletion, however, is deliberately allowed for a version
+    // that was never approved (here `first`/v1 stayed DRAFT — superseded
+    // by v2, but never approved) — this is what lets a user hard-delete a
+    // never-approved artifact. An APPROVED version remains undeletable.
+    await ctx.prisma.projectContextActor.delete({ where: { id: before.actors[0]!.id } });
+
+    await service.transition(project.id, second.version.id, 'IN_REVIEW');
+    const approved = await service.transition(project.id, second.version.id, 'APPROVED');
+    const approvedDetail = await ctx.prisma.projectContextDetail.findUniqueOrThrow({
+      where: { artifactVersionId: approved.id },
+      include: { actors: true },
+    });
     await expect(
-      ctx.prisma.projectContextActor.delete({ where: { id: before.actors[0]!.id } }),
+      ctx.prisma.projectContextActor.delete({ where: { id: approvedDetail.actors[0]!.id } }),
     ).rejects.toThrow();
   });
 
@@ -175,7 +189,12 @@ describe('Project Context integration', () => {
     const project = await createProject(ctx, 'Sources');
     const source = await ctx.sources.create(
       project.id,
-      { title: 'Entrevista', sourceKind: 'NOTES', purpose: 'Notas de la entrevista con finanzas' },
+      {
+        title: 'Entrevista',
+        sourceKind: 'NOTES',
+        purpose: 'Notas de la entrevista con finanzas',
+        description: 'Contenido de prueba.',
+      },
       {
         originalname: 'notas.txt',
         mimetype: 'text/plain',
@@ -205,7 +224,7 @@ describe('Project Context integration', () => {
     const project = await createProject(ctx, 'Sources Reject');
     const draft = await ctx.sources.create(
       project.id,
-      { title: 'Borrador', sourceKind: 'NOTES', purpose: 'p' },
+      { title: 'Borrador', sourceKind: 'NOTES', purpose: 'p', description: 'Contenido de prueba.' },
       { originalname: 'n.txt', mimetype: 'text/plain', size: 4, buffer: Buffer.from('abcd') },
     );
     await expect(
@@ -218,7 +237,7 @@ describe('Project Context integration', () => {
     const otherProject = await createProject(ctx, 'Sources Other');
     const otherSource = await ctx.sources.create(
       otherProject.id,
-      { title: 'Otro', sourceKind: 'NOTES', purpose: 'p' },
+      { title: 'Otro', sourceKind: 'NOTES', purpose: 'p', description: 'Contenido de prueba.' },
       { originalname: 'n.txt', mimetype: 'text/plain', size: 4, buffer: Buffer.from('abcd') },
     );
     await ctx.sources.transition(

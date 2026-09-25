@@ -109,6 +109,7 @@ async function extractErrorMessage(response: Response): Promise<string> {
 const get = <T>(path: string) => request<T>(path);
 const post = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
+const del = <T>(path: string) => request<T>(path, { method: 'DELETE' });
 
 export const api = {
   workspaces: {
@@ -119,6 +120,7 @@ export const api = {
     create: (input: { workspaceId: string; name: string; description?: string }) =>
       post<ProjectResponse>('/projects', input),
     get: (projectId: string) => get<ProjectResponse>(`/projects/${projectId}`),
+    delete: (projectId: string) => del<void>(`/projects/${projectId}`),
   },
   readiness: {
     get: (projectId: string) => get<ReadinessResponse>(`/projects/${projectId}/readiness`),
@@ -134,20 +136,24 @@ export const api = {
     list: (projectId: string) => get<{ items: SourceResponse[] }>(`/projects/${projectId}/sources`),
     get: (projectId: string, sourceId: string) =>
       get<SourceResponse>(`/projects/${projectId}/sources/${sourceId}`),
-    create: (projectId: string, metadata: SourceMetadataInput, file: File) => {
+    create: (projectId: string, metadata: SourceMetadataInput, file: File | null) => {
       const form = new FormData();
       form.set('title', metadata.title);
       form.set('sourceKind', metadata.sourceKind);
       form.set('purpose', metadata.purpose);
       if (metadata.businessArea) form.set('businessArea', metadata.businessArea);
-      if (metadata.description) form.set('description', metadata.description);
+      form.set('description', metadata.description);
       if (metadata.language) form.set('language', metadata.language);
-      form.set('file', file);
+      if (file) form.set('file', file);
       return request<SourceResponse>(`/projects/${projectId}/sources`, {
         method: 'POST',
         body: form,
       });
     },
+    edit: (projectId: string, sourceId: string, metadata: SourceMetadataInput) =>
+      post<SourceResponse>(`/projects/${projectId}/sources/${sourceId}/edit`, metadata),
+    delete: (projectId: string, sourceId: string) =>
+      del<void>(`/projects/${projectId}/sources/${sourceId}`),
     submitManualTranscript: (projectId: string, sourceId: string, transcript: string) =>
       post<SourceResponse>(`/projects/${projectId}/sources/${sourceId}/manual-transcript`, {
         transcript,

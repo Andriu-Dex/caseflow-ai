@@ -27,6 +27,7 @@ async function setupProjectWithDiagramAndProvenance(api: APIRequestContext) {
         title: 'Notas de la entrevista',
         sourceKind: 'NOTES',
         purpose: 'Conocimiento del proyecto',
+        description: 'El cliente necesita registrar pedidos.',
         file: {
           name: 'source.txt',
           mimeType: 'text/plain',

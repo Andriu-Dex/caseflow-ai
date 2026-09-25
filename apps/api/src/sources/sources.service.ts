@@ -50,28 +50,65 @@ export class SourcesService {
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
 
-  async create(projectId: string, metadata: SourceMetadataInput, file: UploadedSourceFile) {
-    if (
-      !ALLOWED_SOURCE_MIME_TYPES.includes(
-        file.mimetype as (typeof ALLOWED_SOURCE_MIME_TYPES)[number],
-      )
-    )
-      throw new UnprocessableEntityException('Tipo de archivo no permitido.');
-    if (file.size <= 0) throw new UnprocessableEntityException('El archivo está vacío.');
+  async create(
+    projectId: string,
+    metadata: SourceMetadataInput,
+    file: UploadedSourceFile | undefined,
+  ) {
+    let fileFields: {
+      originalFilename: string;
+      mimeType: string;
+      sizeBytes: number;
+      contentHash: string;
+      storageKey: string;
+      extractionState: 'EXTRACTED' | 'MANUAL' | 'UNSUPPORTED' | 'FAILED' | 'PENDING';
+      extractedText: string | null;
+    };
 
-    const contentHash = createHash('sha256').update(file.buffer).digest('hex');
-    const storageKey = safeStorageKey(projectId, file.mimetype);
-    const extraction = await this.extractor.extract(file.mimetype, file.buffer);
-    try {
-      await this.storage.putObject({
-        key: storageKey,
-        body: file.buffer,
-        contentType: file.mimetype,
-      });
-    } catch (error) {
-      if (error instanceof StorageProviderError)
-        throw new ServiceUnavailableException({ message: error.message, code: error.code });
-      throw error;
+    if (file) {
+      if (
+        !ALLOWED_SOURCE_MIME_TYPES.includes(
+          file.mimetype as (typeof ALLOWED_SOURCE_MIME_TYPES)[number],
+        )
+      )
+        throw new UnprocessableEntityException('Tipo de archivo no permitido.');
+      if (file.size <= 0) throw new UnprocessableEntityException('El archivo está vacío.');
+
+      const contentHash = createHash('sha256').update(file.buffer).digest('hex');
+      const storageKey = safeStorageKey(projectId, file.mimetype);
+      const extraction = await this.extractor.extract(file.mimetype, file.buffer);
+      try {
+        await this.storage.putObject({
+          key: storageKey,
+          body: file.buffer,
+          contentType: file.mimetype,
+        });
+      } catch (error) {
+        if (error instanceof StorageProviderError)
+          throw new ServiceUnavailableException({ message: error.message, code: error.code });
+        throw error;
+      }
+      fileFields = {
+        originalFilename: sanitizeFilenameForDisplay(file.originalname),
+        mimeType: file.mimetype,
+        sizeBytes: file.size,
+        contentHash,
+        storageKey,
+        extractionState: extraction.state === 'EXTRACTED' ? 'EXTRACTED' : extraction.state,
+        extractedText: extraction.state === 'EXTRACTED' ? extraction.text : null,
+      };
+    } else {
+      // No file: the typed content itself is the source's knowledge,
+      // exactly like the existing manual-transcript mechanism.
+      fileFields = {
+        originalFilename: null as unknown as string,
+        mimeType: null as unknown as string,
+        sizeBytes: null as unknown as number,
+        contentHash: null as unknown as string,
+        storageKey: null as unknown as string,
+        extractionState: 'MANUAL',
+        extractedText: metadata.description,
+      };
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -102,14 +139,8 @@ export class SourcesService {
           purpose: metadata.purpose,
           businessArea: metadata.businessArea,
           description: metadata.description,
-          originalFilename: sanitizeFilenameForDisplay(file.originalname),
-          mimeType: file.mimetype,
-          sizeBytes: file.size,
-          contentHash,
-          storageKey,
           language: metadata.language,
-          extractionState: extraction.state === 'EXTRACTED' ? 'EXTRACTED' : extraction.state,
-          extractedText: extraction.state === 'EXTRACTED' ? extraction.text : null,
+          ...fileFields,
         },
       });
       return this.loadAndMap(tx, artifact.id, version.id);
@@ -172,12 +203,80 @@ export class SourcesService {
     });
   }
 
+  // "Editing" a Source never mutates the current row (ArtifactVersion
+  // content is immutable by design — spec §15.2/§5.3); it creates the next
+  // version carrying the corrected metadata, exactly like submitManualTranscript.
+  async editMetadata(projectId: string, id: string, metadata: SourceMetadataInput) {
+    const row = await this.findLatest(projectId, id);
+    const latest = row.versions[0]!;
+    const detail = latest.sourceDetail!;
+    return this.prisma.$transaction(async (tx) => {
+      const version = await tx.artifactVersion.create({
+        data: {
+          artifactId: id,
+          projectId,
+          versionNumber: latest.versionNumber + 1,
+          title: metadata.title,
+          status: 'DRAFT',
+          origin: 'MANUAL',
+        },
+      });
+      await tx.sourceDetail.create({
+        data: {
+          artifactVersionId: version.id,
+          sourceKind: metadata.sourceKind,
+          purpose: metadata.purpose,
+          businessArea: metadata.businessArea,
+          description: metadata.description,
+          originalFilename: detail.originalFilename,
+          mimeType: detail.mimeType,
+          sizeBytes: detail.sizeBytes,
+          contentHash: detail.contentHash,
+          storageKey: detail.storageKey,
+          language: metadata.language,
+          extractionState: detail.extractionState,
+          extractedText: detail.storageKey ? detail.extractedText : metadata.description,
+        },
+      });
+      return this.loadAndMap(tx, id, version.id);
+    });
+  }
+
+  // Hard delete — only while no version of this Source has ever been
+  // APPROVED (enforced again at the database level by the immutability
+  // trigger, not just here). Mirrors ProjectsService.delete's reasoning.
+  async delete(projectId: string, id: string): Promise<void> {
+    const artifact = await this.prisma.artifact.findFirst({
+      where: { id, projectId, artifactTypeCode: 'PROJECT_SOURCE' },
+    });
+    if (!artifact) throw new NotFoundException('Fuente no encontrada.');
+
+    const approvedCount = await this.prisma.artifactVersion.count({
+      where: { artifactId: id, status: 'APPROVED' },
+    });
+    if (approvedCount > 0)
+      throw new UnprocessableEntityException(
+        'No se puede eliminar una fuente con versiones aprobadas; el historial aprobado no puede borrarse.',
+      );
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`DELETE FROM source_report_details WHERE artifact_version_id IN (SELECT id FROM artifact_versions WHERE artifact_id = ${id})`;
+      await tx.$executeRaw`DELETE FROM source_report_candidates WHERE source_version_id IN (SELECT id FROM artifact_versions WHERE artifact_id = ${id})`;
+      await tx.$executeRaw`DELETE FROM source_details WHERE artifact_version_id IN (SELECT id FROM artifact_versions WHERE artifact_id = ${id})`;
+      await tx.$executeRaw`DELETE FROM ai_runs WHERE source_artifact_version_id IN (SELECT id FROM artifact_versions WHERE artifact_id = ${id})`;
+      await tx.$executeRaw`DELETE FROM artifact_versions WHERE artifact_id = ${id}`;
+      await tx.$executeRaw`DELETE FROM artifacts WHERE id = ${id}`;
+    });
+  }
+
   async download(projectId: string, id: string) {
     const row = await this.findLatest(projectId, id);
     const detail = row.versions[0]!.sourceDetail!;
+    if (!detail.storageKey)
+      throw new UnprocessableEntityException('Esta fuente no tiene un archivo; solo contenido.');
     try {
       const body = await this.storage.getObject(detail.storageKey);
-      return { body, mimeType: detail.mimeType, filename: detail.originalFilename };
+      return { body, mimeType: detail.mimeType!, filename: detail.originalFilename! };
     } catch (error) {
       if (error instanceof StorageProviderError)
         throw new ServiceUnavailableException({ message: error.message, code: error.code });
@@ -334,11 +433,11 @@ export class SourcesService {
         sourceKind: string;
         purpose: string;
         businessArea: string | null;
-        description: string | null;
-        originalFilename: string;
-        mimeType: string;
-        sizeBytes: number;
-        contentHash: string;
+        description: string;
+        originalFilename: string | null;
+        mimeType: string | null;
+        sizeBytes: number | null;
+        contentHash: string | null;
         extractionState: string;
         extractedText: string | null;
         language: string | null;

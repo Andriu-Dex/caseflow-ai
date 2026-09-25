@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, CheckCircle2, Clock, Info } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Clock, FolderKanban, Info } from 'lucide-react';
 import Link from 'next/link';
 import { Badge, Card, CardContent, CardHeader } from '@caseflow-ai/ui';
 import { api } from '../lib/api';
@@ -146,8 +146,17 @@ function HomeContent({ projectId }: { projectId: string }) {
 
 export default function HomePage() {
   return (
-    <RequireActiveProject>
-      {(projectId) => <HomeContent projectId={projectId} />}
-    </RequireActiveProject>
+    <div className="flex flex-col gap-4">
+      <Link
+        href="/projects"
+        className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground underline"
+      >
+        <FolderKanban className="size-4" aria-hidden="true" />
+        Ver Proyectos
+      </Link>
+      <RequireActiveProject>
+        {(projectId) => <HomeContent projectId={projectId} />}
+      </RequireActiveProject>
+    </div>
   );
 }

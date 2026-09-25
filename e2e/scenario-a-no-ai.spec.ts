@@ -28,6 +28,7 @@ test('professor can progress a project from zero to an approved Requirement with
   await page
     .getByLabel('¿Qué representa esta fuente?')
     .fill('Notas manuscritas de la entrevista con el cliente.');
+  await page.getByLabel('Contenido').fill('Notas manuscritas de la entrevista con el cliente.');
   await page.getByLabel('Archivo').setInputFiles(path.join(__dirname, 'fixtures/source.txt'));
   await page.getByRole('button', { name: 'Agregar fuente' }).click();
 
