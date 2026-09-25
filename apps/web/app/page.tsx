@@ -46,10 +46,12 @@ function HomeContent({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <Card>
+      <Card className="border-t-4 border-t-primary">
         <CardContent>
           <QueryState isLoading={project.isLoading} error={project.error}>
-            <h1 className="text-2xl font-semibold text-foreground">{project.data?.name}</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-foreground">
+              {project.data?.name}
+            </h1>
             {project.data?.description ? (
               <p className="mt-1 text-sm text-muted-foreground">{project.data.description}</p>
             ) : null}

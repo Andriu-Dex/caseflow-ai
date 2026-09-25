@@ -71,17 +71,19 @@ export function AppShell({ children }: { children: ReactNode }) {
       </a>
       <nav
         aria-label="Navegación principal"
-        className="w-full shrink-0 border-b bg-card p-4 md:w-64 md:border-b-0 md:border-r"
+        className="w-full shrink-0 bg-sidebar p-4 text-sidebar-foreground shadow-lg md:w-64"
       >
-        <div className="mb-4 flex items-center gap-2 px-1 text-lg font-semibold text-foreground">
-          <Sparkles className="size-5 text-primary" aria-hidden="true" />
-          CASEFlow AI
+        <div className="mb-6 flex items-center gap-2 px-1">
+          <span className="flex size-8 items-center justify-center rounded-lg bg-sidebar-active shadow-sm shadow-sidebar-active/50">
+            <Sparkles className="size-4.5 text-white" aria-hidden="true" />
+          </span>
+          <span className="text-lg font-semibold tracking-tight text-white">CASEFlow AI</span>
         </div>
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-5">
           {NAV_GROUPS.map((group, i) => (
             <div key={i}>
               {group.label ? (
-                <div className="mb-1 px-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                <div className="mb-1.5 px-2 text-[11px] font-semibold tracking-widest text-sidebar-foreground/50 uppercase">
                   {group.label}
                 </div>
               ) : null}
@@ -94,10 +96,10 @@ export function AppShell({ children }: { children: ReactNode }) {
                       <Link
                         href={item.href}
                         aria-current={active ? 'page' : undefined}
-                        className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${
+                        className={`flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors ${
                           active
-                            ? 'bg-primary text-primary-foreground'
-                            : 'text-foreground/80 hover:bg-accent hover:text-accent-foreground'
+                            ? 'bg-sidebar-active text-white shadow-sm'
+                            : 'text-sidebar-foreground/75 hover:bg-white/5 hover:text-white'
                         }`}
                       >
                         <Icon className="size-4 shrink-0" aria-hidden="true" />
@@ -107,16 +109,16 @@ export function AppShell({ children }: { children: ReactNode }) {
                   );
                 })}
               </ul>
-              {i < NAV_GROUPS.length - 1 ? <Separator className="mt-4" /> : null}
+              {i < NAV_GROUPS.length - 1 ? <Separator className="mt-5 bg-sidebar-border" /> : null}
             </div>
           ))}
         </div>
       </nav>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex flex-wrap items-center justify-between gap-2 border-b bg-card px-4 py-3">
+        <header className="flex flex-wrap items-center justify-between gap-2 border-b bg-card px-4 py-3 shadow-sm">
           <ProjectSwitcher />
         </header>
-        <main id="main-content" className="min-w-0 flex-1 bg-muted/40 p-4 md:p-6">
+        <main id="main-content" className="min-w-0 flex-1 bg-background p-4 md:p-6">
           {children}
         </main>
       </div>
