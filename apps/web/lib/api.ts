@@ -11,6 +11,7 @@ import type {
   RequirementInput,
   RequirementResponse,
   SourceMetadataInput,
+  SourceReportCandidate,
   SourceReportResponse,
   SourceResponse,
   StalenessAnalysisResponse,
@@ -163,7 +164,7 @@ export const api = {
     getReport: (projectId: string, sourceId: string) =>
       get<SourceReportResponse>(`/projects/${projectId}/sources/${sourceId}/report`),
     generateReport: (projectId: string, sourceId: string) =>
-      post(`/projects/${projectId}/sources/${sourceId}/report/generate`),
+      post<SourceReportCandidate>(`/projects/${projectId}/sources/${sourceId}/report/generate`),
     acceptReport: (projectId: string, sourceId: string, candidateId: string) =>
       post(`/projects/${projectId}/sources/${sourceId}/report/accept`, { candidateId }),
     submitManualReport: (projectId: string, sourceId: string, summary: string) =>

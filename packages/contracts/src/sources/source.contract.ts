@@ -112,6 +112,18 @@ export const sourceReportResponseSchema = z.object({
 });
 export type SourceReportResponse = z.infer<typeof sourceReportResponseSchema>;
 
+// The AI-proposed candidate returned by report/generate — distinct from
+// SourceReportResponse (the official, human-accepted report). Never
+// auto-persisted; must go through report/accept.
+export const sourceReportCandidateSchema = z.object({
+  id: z.uuid(),
+  sourceVersionId: z.uuid(),
+  aiRunId: z.uuid(),
+  content: reportContentSchema,
+  createdAt: z.string(),
+});
+export type SourceReportCandidate = z.infer<typeof sourceReportCandidateSchema>;
+
 export const manualSourceReportInputSchema = z.object({ content: reportContentSchema }).strict();
 
 export const sourceReportCandidateResponseSchema = z.object({

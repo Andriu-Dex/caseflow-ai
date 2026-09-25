@@ -17,6 +17,7 @@ import {
   manualTranscriptInputSchema,
   sourceListResponseSchema,
   sourceMetadataInputSchema,
+  sourceReportCandidateSchema,
   sourceReportResponseSchema,
   sourceResponseSchema,
   SOURCE_MAX_FILE_SIZE_BYTES,
@@ -120,6 +121,7 @@ export class SourcesController {
 
   @Post(':sourceId/report/generate')
   @ApiOperation({ operationId: 'generateSourceReport', summary: 'Generar informe/interpretación' })
+  @ApiZodResponse(201, 'Source Report Candidate.', sourceReportCandidateSchema)
   generateReport(
     @Param('projectId', uuidParamPipe) projectId: string,
     @Param('sourceId', uuidParamPipe) sourceId: string,
