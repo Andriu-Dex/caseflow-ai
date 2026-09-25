@@ -72,6 +72,10 @@ export class NavigationController extends BaseStructuredAnalysisController {
   protected readonly kind = 'NAVIGATION_TREE' as const;
   protected readonly contentSchema = navigationTreeContentSchema;
 
+  constructor(service: StructuredAnalysisService) {
+    super(service);
+  }
+
   @Post()
   @ApiOperation({ operationId: 'createNavigation', summary: 'Crear árbol de navegación manual' })
   @ApiZodBody(inputSchema(navigationTreeContentSchema))
@@ -166,6 +170,10 @@ export class NavigationController extends BaseStructuredAnalysisController {
 @ApiTags('software-architecture')
 @Controller('projects/:projectId/software-architecture')
 export class SoftwareArchitectureController extends BaseStructuredAnalysisController {
+  constructor(service: StructuredAnalysisService) {
+    super(service);
+  }
+
   protected readonly kind = 'SOFTWARE_ARCHITECTURE' as const;
   protected readonly contentSchema = softwareArchitectureContentSchema;
 
@@ -285,6 +293,10 @@ export class SoftwareArchitectureController extends BaseStructuredAnalysisContro
 @ApiTags('system-architecture')
 @Controller('projects/:projectId/system-architecture')
 export class SystemArchitectureController extends BaseStructuredAnalysisController {
+  constructor(service: StructuredAnalysisService) {
+    super(service);
+  }
+
   protected readonly kind = 'SYSTEM_ARCHITECTURE' as const;
   protected readonly contentSchema = systemArchitectureContentSchema;
 
@@ -401,6 +413,10 @@ export class SystemArchitectureController extends BaseStructuredAnalysisControll
 @ApiTags('ui-blueprint')
 @Controller('projects/:projectId/ui-blueprint')
 export class UiBlueprintController extends BaseStructuredAnalysisController {
+  constructor(service: StructuredAnalysisService) {
+    super(service);
+  }
+
   protected readonly kind = 'UI_BLUEPRINT' as const;
   protected readonly contentSchema = uiBlueprintContentSchema;
 
