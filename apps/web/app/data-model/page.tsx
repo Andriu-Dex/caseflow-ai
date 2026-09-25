@@ -156,7 +156,7 @@ function DataModelContent({ projectId }: { projectId: string }) {
                   {expandedId === m.id ? 'Ocultar entidades' : 'Ver entidades'}
                 </button>
                 {expandedId === m.id ? (
-                  <ul className="mt-2 flex flex-col gap-1 border-t border-gray-100 pt-2 text-sm">
+                  <ul className="mt-2 flex flex-col gap-1 border-t border-border pt-2 text-sm">
                     {m.dataModel.entities.map((e) => (
                       <li key={e.localId}>
                         <strong>{e.name}</strong>

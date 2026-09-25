@@ -178,7 +178,7 @@ function ContextForm({
       <button
         type="submit"
         disabled={submitting}
-        className="self-start rounded-md bg-gray-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+        className="self-start rounded-md bg-primary px-3 py-1.5 text-sm text-white disabled:opacity-50"
       >
         {submitting ? 'Guardando…' : hasExisting ? 'Guardar nueva versión' : 'Crear Contexto'}
       </button>
@@ -261,7 +261,7 @@ function ContextContent({ projectId }: { projectId: string }) {
               </dd>
             </div>
           </dl>
-          <div className="mt-3 flex flex-wrap gap-2 border-t border-gray-100 pt-2">
+          <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-2">
             {context.data.version.status === 'DRAFT' ||
             context.data.version.status === 'GENERATED' ? (
               <button

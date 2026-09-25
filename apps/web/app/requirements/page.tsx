@@ -183,7 +183,7 @@ function RequirementsContent({ projectId }: { projectId: string }) {
                   </ul>
                 ) : null}
                 {openDetail === r.id ? (
-                  <div className="mt-2 flex flex-col gap-2 border-t border-gray-100 pt-2 text-sm text-foreground/80">
+                  <div className="mt-2 flex flex-col gap-2 border-t border-border pt-2 text-sm text-foreground/80">
                     <p>{r.requirement.description}</p>
                     {r.requirement.actors.length ? (
                       <p>
