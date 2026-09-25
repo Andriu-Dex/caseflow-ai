@@ -5,6 +5,7 @@ import {
   AIOrchestrator,
   DisabledAIProvider,
   FakeAIProvider,
+  FallbackAIProvider,
   PromptRegistry,
   type AIRunRecorder,
 } from './index';
@@ -134,5 +135,53 @@ describe('AIOrchestrator', () => {
     expect(
       JSON.stringify(new AIError('AI_PROVIDER_ERROR', 'safe', { cause: new Error('secret-key') })),
     ).toBe('{"code":"AI_PROVIDER_ERROR","message":"safe"}');
+  });
+});
+
+const providerRequest = {
+  capability: 'STRUCTURED_OUTPUT' as const,
+  purpose: 'foundation_probe',
+  systemInstructions: prompt.systemInstructions,
+  messages: [{ role: 'user' as const, content: 'UNTRUSTED PROJECT CONTENT' }],
+  outputSchema: { type: 'object' },
+  schemaName: 'probe',
+  modelProfile: 'BALANCED' as const,
+  timeoutMs: 1_000,
+};
+
+describe('FallbackAIProvider', () => {
+  it('rejects an empty chain', () => {
+    expect(() => new FallbackAIProvider([])).toThrow();
+  });
+
+  it('returns the first provider that succeeds', async () => {
+    const groq = new FakeAIProvider(new AIError('AI_RATE_LIMITED', 'groq exhausted'));
+    const gemini = new FakeAIProvider(response);
+    const result = await new FallbackAIProvider([groq, gemini]).generateStructured(providerRequest);
+    expect(result).toEqual(response);
+  });
+
+  it('throws the last error when every provider in the chain fails', async () => {
+    const groq = new FakeAIProvider(new AIError('AI_RATE_LIMITED', 'groq exhausted'));
+    const gemini = new FakeAIProvider(new AIError('AI_PROVIDER_UNAVAILABLE', 'gemini down'));
+    await expect(
+      new FallbackAIProvider([groq, gemini]).generateStructured(providerRequest),
+    ).rejects.toMatchObject({ code: 'AI_PROVIDER_UNAVAILABLE' });
+  });
+
+  it('reports the actually-serving provider through AIOrchestrator, not "fallback"', async () => {
+    const groq = new FakeAIProvider(new AIError('AI_TIMEOUT', 'groq timed out'));
+    const gemini = new FakeAIProvider(response);
+    const audit = recorder();
+    const result = await new AIOrchestrator(
+      new FallbackAIProvider([groq, gemini]),
+      new PromptRegistry([prompt]),
+      audit,
+    ).generateStructured(input());
+    expect(result.metadata.provider).toBe('fake');
+    expect(audit.succeed).toHaveBeenCalledWith(
+      'run-1',
+      expect.objectContaining({ provider: 'fake' }),
+    );
   });
 });

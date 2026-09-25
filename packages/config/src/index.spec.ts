@@ -15,6 +15,53 @@ describe('loadAIConfig', () => {
     ).toMatchObject({ provider: 'openai_compatible', timeoutMs: 30000 }));
   it('rejects incomplete provider configuration', () =>
     expect(() => loadAIConfig({ AI_PROVIDER: 'openai_compatible' })).toThrow());
+
+  it('reads an ordered free-tier fallback chain from numbered provider slots', () =>
+    expect(
+      loadAIConfig({
+        AI_PROVIDER: 'fallback',
+        AI_PROVIDER_1_ID: 'groq',
+        AI_PROVIDER_1_BASE_URL: 'https://api.groq.com/openai/v1',
+        AI_PROVIDER_1_API_KEY: 'groq-secret',
+        AI_PROVIDER_1_MODEL: 'llama-3.3-70b-versatile',
+        AI_PROVIDER_2_ID: 'gemini',
+        AI_PROVIDER_2_BASE_URL: 'https://generativelanguage.googleapis.com/v1beta/openai',
+        AI_PROVIDER_2_API_KEY: 'gemini-secret',
+        AI_PROVIDER_2_MODEL: 'gemini-2.0-flash',
+      }),
+    ).toEqual({
+      provider: 'fallback',
+      chain: [
+        {
+          id: 'groq',
+          baseUrl: 'https://api.groq.com/openai/v1',
+          apiKey: 'groq-secret',
+          model: 'llama-3.3-70b-versatile',
+          timeoutMs: 30_000,
+        },
+        {
+          id: 'gemini',
+          baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+          apiKey: 'gemini-secret',
+          model: 'gemini-2.0-flash',
+          timeoutMs: 30_000,
+        },
+      ],
+    }));
+
+  it('stops the fallback chain at the first slot missing a base URL', () =>
+    expect(
+      loadAIConfig({
+        AI_PROVIDER: 'fallback',
+        AI_PROVIDER_1_BASE_URL: 'https://api.groq.com/openai/v1',
+        AI_PROVIDER_1_API_KEY: 'groq-secret',
+        AI_PROVIDER_1_MODEL: 'llama-3.3-70b-versatile',
+        AI_PROVIDER_3_BASE_URL: 'https://unreachable.test/v1',
+      }),
+    ).toMatchObject({ chain: [{ id: 'provider_1' }] }));
+
+  it('rejects an empty fallback chain', () =>
+    expect(() => loadAIConfig({ AI_PROVIDER: 'fallback' })).toThrow());
 });
 
 describe('loadDiagramRendererConfig', () => {

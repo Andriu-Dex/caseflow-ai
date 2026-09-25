@@ -222,6 +222,28 @@ export class DisabledAIProvider implements AIProvider {
     throw new AIError('AI_NOT_CONFIGURED', 'La generación con IA no está configurada.');
   }
 }
+// Tries each free-tier provider in order (e.g. Groq, then Gemini) and falls
+// through to the next on any failure — including rate limits, since free
+// tiers are the whole point. The actually-serving provider's own id is what
+// ends up on the recorded AIRun (via response.provider), not this one's.
+export class FallbackAIProvider implements AIProvider {
+  readonly id = 'fallback';
+  constructor(private readonly providers: readonly AIProvider[]) {
+    if (providers.length === 0)
+      throw new Error('FallbackAIProvider requires at least one provider.');
+  }
+  async generateStructured(request: AIProviderRequest): Promise<AIProviderResponse> {
+    let lastError: unknown;
+    for (const provider of this.providers) {
+      try {
+        return await provider.generateStructured(request);
+      } catch (cause) {
+        lastError = cause;
+      }
+    }
+    throw normalizeAIError(lastError);
+  }
+}
 export class FakeAIProvider implements AIProvider {
   readonly id = 'fake';
   lastRequest?: AIProviderRequest;
