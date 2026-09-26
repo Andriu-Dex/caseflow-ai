@@ -24,6 +24,16 @@ describe('sanitizeDiagramSvg', () => {
     expect(output).toContain('marker-end="url(#m)"');
   });
 
+  it('decodes numeric character references PlantUML/Kroki emit for accented text', () => {
+    // fast-xml-parser only decodes the five predefined XML entities, never
+    // &#243;/&#xF3; — left alone, the rebuild step re-escapes their "&" and
+    // "&#243;" would show up as literal visible text instead of "ó".
+    const input = svg('<text>Visualizaci&#243;n en tiempo real, a&#241;o y &#8364;</text>');
+    const output = sanitizeDiagramSvg(input);
+    expect(output).toContain('Visualización en tiempo real, año y €');
+    expect(output).not.toMatch(/&#/);
+  });
+
   it('preserves foreignObject text-flow content required by Mermaid ER labels', () => {
     const input = svg(
       '<foreignObject width="20" height="20"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="text-align:center"><span class="nodeLabel"><p>Order</p></span></div></foreignObject>',

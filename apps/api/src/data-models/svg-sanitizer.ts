@@ -159,11 +159,29 @@ export function sanitizeDiagramSvg(rawSvg: string): string {
   return output;
 }
 
+// fast-xml-parser's `processEntities` only decodes the five predefined XML
+// entities (&amp; &lt; &gt; &quot; &apos;) — it leaves numeric character
+// references (&#243; / &#xF3;), which PlantUML/Kroki emit for any non-ASCII
+// text (accents, ñ, etc.), completely untouched. Left alone, XMLBuilder then
+// re-escapes their literal "&" on rebuild, turning "&#243;" into visible
+// text "&amp;#243;" in the output instead of the intended accented letter.
+// Decoded only on already-parsed text-node strings (never on the raw SVG
+// before parsing), so a pathological "&#60;" cannot inject unescaped
+// structural XML — it stays inert text content either way.
+function decodeNumericEntities(value: string): string {
+  return value
+    .replace(/&#x([0-9A-Fa-f]+);/g, (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec: string) => String.fromCodePoint(parseInt(dec, 10)));
+}
+
 function sanitizeNodes(nodes: XmlNode[]): XmlNode[] {
   const result: XmlNode[] = [];
   for (const node of nodes) {
     if (TEXT_NODE_NAME in node) {
-      result.push(node);
+      const text = node[TEXT_NODE_NAME];
+      result.push(
+        typeof text === 'string' ? { [TEXT_NODE_NAME]: decodeNumericEntities(text) } : node,
+      );
       continue;
     }
     const tagName = Object.keys(node).find((key) => key !== ':@');
@@ -189,7 +207,7 @@ function sanitizeAttributes(attributes: Record<string, unknown>): Record<string,
     const stringValue = typeof value === 'string' ? value : String(value);
     if (/javascript:/i.test(stringValue)) continue;
     if (name === 'style' && UNSAFE_STYLE_PATTERN.test(stringValue)) continue;
-    safe[prefixedName] = value;
+    safe[prefixedName] = typeof value === 'string' ? decodeNumericEntities(value) : value;
   }
   return safe;
 }
