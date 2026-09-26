@@ -258,6 +258,8 @@ export const api = {
   useCaseDiagrams: {
     generate: (projectId: string, sourceVersionIds: string[]) =>
       post<DiagramResponse>(`/projects/${projectId}/diagrams/use-cases`, { sourceVersionIds }),
+    list: (projectId: string) =>
+      get<{ items: DiagramResponse[] }>(`/projects/${projectId}/diagrams/use-cases`),
     get: (projectId: string, id: string) =>
       get<DiagramResponse>(`/projects/${projectId}/diagrams/use-cases/${id}`),
     createManualVersion: (projectId: string, id: string, source: string) =>
