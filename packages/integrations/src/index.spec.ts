@@ -65,6 +65,7 @@ describe('OpenAICompatibleProvider', () => {
 
   it.each([
     [429, 'AI_RATE_LIMITED'],
+    [413, 'AI_RATE_LIMITED'],
     [503, 'AI_PROVIDER_UNAVAILABLE'],
     [400, 'AI_PROVIDER_ERROR'],
   ])('normalizes HTTP %s', async (status, code) => {
