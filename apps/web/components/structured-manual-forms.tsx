@@ -14,6 +14,7 @@ import {
 } from '@caseflow-ai/contracts';
 import { api, ApiError } from '../lib/api';
 import { csv } from '../lib/use-rows';
+import { TagInput } from './tag-input';
 
 // Creating, or editing (`initial` given): an edit submits a complete new
 // version that starts again as a draft; the previous version stays intact.
@@ -227,11 +228,11 @@ export function NavigationManualForm({ projectId, initial, onCreated, onCancel }
             value={n.description}
             onChange={(e) => update(i, { description: e.target.value })}
           />
-          <input
+          <TagInput
             placeholder="Casos de uso relacionados (códigos, coma)"
-            className="w-56 rounded-md border border-input px-2 py-1"
+            className="w-56"
             value={n.relatedUseCaseCodes}
-            onChange={(e) => update(i, { relatedUseCaseCodes: e.target.value })}
+            onChange={(val) => update(i, { relatedUseCaseCodes: val })}
           />
           <button
             type="button"
@@ -361,13 +362,13 @@ export function SoftwareArchitectureManualForm({
               )
             }
           />
-          <input
+          <TagInput
             placeholder="Responsabilidades (separadas por coma)"
-            className="flex-1 rounded-md border border-input px-2 py-1"
+            className="flex-1"
             value={c.responsibilities}
-            onChange={(e) =>
+            onChange={(val) =>
               setComponents((prev) =>
-                prev.map((x, idx) => (idx === i ? { ...x, responsibilities: e.target.value } : x)),
+                prev.map((x, idx) => (idx === i ? { ...x, responsibilities: val } : x)),
               )
             }
           />
@@ -626,13 +627,13 @@ export function SystemArchitectureManualForm({
               </option>
             ))}
           </select>
-          <input
+          <TagInput
             placeholder="Responsabilidades (coma)"
-            className="flex-1 rounded-md border border-input px-2 py-1"
+            className="flex-1"
             value={n.responsibilities}
-            onChange={(e) =>
+            onChange={(val) =>
               setNodes((prev) =>
-                prev.map((x, idx) => (idx === i ? { ...x, responsibilities: e.target.value } : x)),
+                prev.map((x, idx) => (idx === i ? { ...x, responsibilities: val } : x)),
               )
             }
           />
@@ -852,13 +853,13 @@ export function UiBlueprintManualForm({ projectId, initial, onCreated, onCancel 
                 )
               }
             />
-            <input
+            <TagInput
               placeholder="Actores objetivo (coma)"
-              className="w-48 rounded-md border border-input px-2 py-1"
+              className="w-48"
               value={s.targetActors}
-              onChange={(e) =>
+              onChange={(val) =>
                 setScreens((prev) =>
-                  prev.map((x, idx) => (idx === i ? { ...x, targetActors: e.target.value } : x)),
+                  prev.map((x, idx) => (idx === i ? { ...x, targetActors: val } : x)),
                 )
               }
             />
@@ -884,15 +885,13 @@ export function UiBlueprintManualForm({ projectId, initial, onCreated, onCancel 
             }
           />
           <div className="flex flex-wrap gap-2">
-            <input
+            <TagInput
               placeholder="Casos de uso relacionados (códigos, coma)"
-              className="flex-1 rounded-md border border-input px-2 py-1"
+              className="flex-1"
               value={s.relatedUseCaseCodes}
-              onChange={(e) =>
+              onChange={(val) =>
                 setScreens((prev) =>
-                  prev.map((x, idx) =>
-                    idx === i ? { ...x, relatedUseCaseCodes: e.target.value } : x,
-                  ),
+                  prev.map((x, idx) => (idx === i ? { ...x, relatedUseCaseCodes: val } : x)),
                 )
               }
             />
@@ -909,69 +908,59 @@ export function UiBlueprintManualForm({ projectId, initial, onCreated, onCancel 
               }
             />
           </div>
-          <input
+          <TagInput
             placeholder="Secciones (separadas por coma)"
-            className="rounded-md border border-input px-2 py-1"
             value={s.sections}
-            onChange={(e) =>
-              setScreens((prev) =>
-                prev.map((x, idx) => (idx === i ? { ...x, sections: e.target.value } : x)),
-              )
+            onChange={(val) =>
+              setScreens((prev) => prev.map((x, idx) => (idx === i ? { ...x, sections: val } : x)))
             }
           />
           <div className="flex flex-wrap gap-2">
-            <input
+            <TagInput
               placeholder="Acciones principales (coma)"
-              className="flex-1 rounded-md border border-input px-2 py-1"
+              className="flex-1"
               value={s.primaryActions}
-              onChange={(e) =>
+              onChange={(val) =>
                 setScreens((prev) =>
-                  prev.map((x, idx) => (idx === i ? { ...x, primaryActions: e.target.value } : x)),
+                  prev.map((x, idx) => (idx === i ? { ...x, primaryActions: val } : x)),
                 )
               }
             />
-            <input
+            <TagInput
               placeholder="Acciones secundarias (coma)"
-              className="flex-1 rounded-md border border-input px-2 py-1"
+              className="flex-1"
               value={s.secondaryActions}
-              onChange={(e) =>
+              onChange={(val) =>
                 setScreens((prev) =>
-                  prev.map((x, idx) =>
-                    idx === i ? { ...x, secondaryActions: e.target.value } : x,
-                  ),
+                  prev.map((x, idx) => (idx === i ? { ...x, secondaryActions: val } : x)),
                 )
               }
             />
           </div>
-          <input
+          <TagInput
             placeholder="Datos mostrados (separados por coma)"
-            className="rounded-md border border-input px-2 py-1"
             value={s.principalData}
-            onChange={(e) =>
+            onChange={(val) =>
               setScreens((prev) =>
-                prev.map((x, idx) => (idx === i ? { ...x, principalData: e.target.value } : x)),
+                prev.map((x, idx) => (idx === i ? { ...x, principalData: val } : x)),
               )
             }
           />
           <div className="flex flex-wrap gap-2">
-            <input
+            <TagInput
               placeholder="Formularios/entradas (coma)"
-              className="flex-1 rounded-md border border-input px-2 py-1"
+              className="flex-1"
               value={s.forms}
-              onChange={(e) =>
-                setScreens((prev) =>
-                  prev.map((x, idx) => (idx === i ? { ...x, forms: e.target.value } : x)),
-                )
+              onChange={(val) =>
+                setScreens((prev) => prev.map((x, idx) => (idx === i ? { ...x, forms: val } : x)))
               }
             />
-            <input
+            <TagInput
               placeholder="Estados relevantes (coma)"
-              className="flex-1 rounded-md border border-input px-2 py-1"
+              className="flex-1"
               value={s.states}
-              onChange={(e) =>
-                setScreens((prev) =>
-                  prev.map((x, idx) => (idx === i ? { ...x, states: e.target.value } : x)),
-                )
+              onChange={(val) =>
+                setScreens((prev) => prev.map((x, idx) => (idx === i ? { ...x, states: val } : x)))
               }
             />
           </div>

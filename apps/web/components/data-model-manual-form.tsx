@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { Button } from '@caseflow-ai/ui';
+import { Trash2, Plus } from 'lucide-react';
 import {
   CONCEPTUAL_ATTRIBUTE_TYPES,
   DATA_MODEL_CARDINALITIES,
@@ -233,44 +235,52 @@ export function DataModelManualForm({
                   value={attr.description}
                   onChange={(e) => updateAttribute(ei, ai, { description: e.target.value })}
                 />
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon-xs"
                   onClick={() =>
                     updateEntity(ei, { attributes: entity.attributes.filter((_, j) => j !== ai) })
                   }
-                  className="text-destructive"
+                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                   aria-label={`Eliminar atributo ${ai + 1} de la entidad ${ei + 1}`}
                 >
-                  ✕
-                </button>
+                  <Trash2 className="size-3.5" />
+                </Button>
               </div>
             ))}
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={() =>
                 updateEntity(ei, { attributes: [...entity.attributes, blankAttribute()] })
               }
-              className="self-start text-sm text-muted-foreground underline"
+              className="self-start text-muted-foreground"
             >
-              + Agregar atributo
-            </button>
+              <Plus className="mr-1 size-4" /> Agregar atributo
+            </Button>
           </div>
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             onClick={() => setEntities((prev) => prev.filter((_, i) => i !== ei))}
-            className="mt-2 text-sm text-destructive"
+            className="mt-2 self-start text-destructive hover:bg-destructive/10 hover:text-destructive"
           >
-            Eliminar entidad
-          </button>
+            <Trash2 className="mr-2 size-4" /> Eliminar entidad
+          </Button>
         </fieldset>
       ))}
-      <button
+      <Button
         type="button"
+        variant="outline"
+        size="sm"
         onClick={() => setEntities((prev) => [...prev, blankEntity(prev.length + 1)])}
-        className="self-start rounded-md border border-input px-3 py-1 text-sm hover:bg-muted/40"
+        className="self-start"
       >
-        + Agregar entidad
-      </button>
+        <Plus className="mr-2 size-4" /> Agregar entidad
+      </Button>
 
       <fieldset className="rounded-md border border-border p-3">
         <legend className="px-1 text-sm font-medium text-foreground/80">
@@ -367,18 +377,22 @@ export function DataModelManualForm({
                 )
               }
             />
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-xs"
               onClick={() => setRelationships((prev) => prev.filter((_, i) => i !== ri))}
-              className="text-destructive"
+              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
               aria-label={`Eliminar relación ${ri + 1}`}
             >
-              ✕
-            </button>
+              <Trash2 className="size-3.5" />
+            </Button>
           </div>
         ))}
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="sm"
           onClick={() =>
             setRelationships((prev) => [
               ...prev,
@@ -392,27 +406,19 @@ export function DataModelManualForm({
               },
             ])
           }
-          className="text-sm text-muted-foreground underline"
+          className="self-start text-muted-foreground"
         >
-          + Agregar relación
-        </button>
+          <Plus className="mr-1 size-4" /> Agregar relación
+        </Button>
       </fieldset>
 
       <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={submitting}
-          className="rounded-md bg-primary px-3 py-1.5 text-sm text-white disabled:opacity-50"
-        >
+        <Button type="submit" disabled={submitting}>
           {submitting ? 'Guardando…' : initial ? 'Guardar cambios' : 'Crear modelo de datos'}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="text-sm text-muted-foreground underline"
-        >
+        </Button>
+        <Button type="button" variant="ghost" onClick={onCancel}>
           Cancelar
-        </button>
+        </Button>
       </div>
     </form>
   );
