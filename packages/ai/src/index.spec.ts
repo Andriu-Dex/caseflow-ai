@@ -78,6 +78,35 @@ describe('AIOrchestrator', () => {
     expect(audit.succeed).toHaveBeenCalledOnce();
   });
 
+  it('sends every property as required (nullable when originally optional) for strict json_schema providers', async () => {
+    const provider = new FakeAIProvider(response);
+    const audit = recorder();
+    await new AIOrchestrator(provider, new PromptRegistry([prompt]), audit).generateStructured({
+      ...input(),
+      outputSchema: z.object({ value: z.string(), extra: z.string().optional() }),
+    });
+    const sent = provider.lastRequest?.outputSchema as {
+      required: string[];
+      properties: Record<string, { type: unknown }>;
+    };
+    expect(sent.required.sort()).toEqual(['extra', 'value']);
+    expect(sent.properties.extra?.type).toEqual(['string', 'null']);
+    expect(sent.properties.value?.type).toBe('string');
+  });
+
+  it('treats an explicit null from a strict provider as an absent optional field', async () => {
+    const audit = recorder();
+    const result = await new AIOrchestrator(
+      new FakeAIProvider({ ...response, payload: { value: 'ok', extra: null } }),
+      new PromptRegistry([prompt]),
+      audit,
+    ).generateStructured({
+      ...input(),
+      outputSchema: z.object({ value: z.string(), extra: z.string().optional() }),
+    });
+    expect(result.data).toEqual({ value: 'ok' });
+  });
+
   it('rejects schema-invalid output and records a normalized failure', async () => {
     const audit = recorder();
     const operation = new AIOrchestrator(
