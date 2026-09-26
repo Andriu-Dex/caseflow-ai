@@ -425,6 +425,53 @@ export class DataModelsService {
       return this.mapDiagram(artifact, version, detail);
     });
   }
+
+  // Manual override of an existing Use Case Diagram: the user edits the raw
+  // PlantUML text directly. Rendered/sanitized through the exact same
+  // untrusted-input boundary as every other diagram (never trusted as SVG
+  // directly) and stored as a new version — the auto-generated version it
+  // followed is never mutated in place (spec §4.4 immutability). Kept to
+  // USE_CASE_DIAGRAM specifically: unlike ER/Navigation/Architecture, whose
+  // diagram is embedded 1:1 in the content ArtifactVersion it was derived
+  // from, this is the one diagram type with its own independent version
+  // lifecycle, so an edit here never has to touch or fork unrelated
+  // structured content.
+  async createManualUseCaseDiagramVersion(projectId: string, id: string, source: string) {
+    const diagram = await this.renderDiagram('PLANTUML', source);
+    return this.prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM artifacts
+        WHERE id=${id}::uuid AND project_id=${projectId}::uuid AND artifact_type_code='USE_CASE_DIAGRAM'
+        FOR NO KEY UPDATE`;
+      if (!locked.length) throw new NotFoundException('Diagrama no encontrado.');
+      const latest = await tx.artifactVersion.findFirstOrThrow({
+        where: { artifactId: id },
+        orderBy: { versionNumber: 'desc' },
+        include: { diagramDetail: { include: { sources: true } } },
+      });
+      const version = await tx.artifactVersion.create({
+        data: {
+          artifactId: id,
+          projectId,
+          versionNumber: latest.versionNumber + 1,
+          title: 'Diagrama de casos de uso',
+          status: initialStatusForOrigin('MANUAL'),
+          origin: 'MANUAL',
+        },
+      });
+      const detail = await this.insertDiagramDetail(
+        tx,
+        version.id,
+        'USE_CASE',
+        'PLANTUML',
+        diagram,
+        latest.diagramDetail?.sources.map((s) => s.sourceArtifactVersionId) ?? [],
+      );
+      const artifact = await tx.artifact.findUniqueOrThrow({ where: { id } });
+      return this.mapDiagram(artifact, version, detail);
+    });
+  }
+
   async getUseCaseDiagram(projectId: string, id: string) {
     const row = await this.prisma.artifact.findFirst({
       where: { id, projectId, artifactTypeCode: 'USE_CASE_DIAGRAM' },

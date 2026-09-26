@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { DataModelResponse } from '@caseflow-ai/contracts';
+import type { DataModelResponse, DiagramResponse } from '@caseflow-ai/contracts';
 import { Eye, EyeOff, Pencil, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -11,7 +11,7 @@ import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { StatusBadge } from '../../components/status-badge';
 import { CandidateReview } from '../../components/candidate-review';
 import { DataModelManualForm } from '../../components/data-model-manual-form';
-import { TrustedDiagram } from '../../components/trusted-svg';
+import { DiagramViewer } from '../../components/diagram-viewer';
 import { PageHeading } from '../../components/page-heading';
 import {
   AI_UNAVAILABLE_HINT,
@@ -39,7 +39,7 @@ function DataModelContent({ projectId }: { projectId: string }) {
 
   const [generation, setGeneration] = useState<GenerationResult | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [diagrams, setDiagrams] = useState<Record<string, string>>({});
+  const [diagrams, setDiagrams] = useState<Record<string, DiagramResponse>>({});
   const [showManualForm, setShowManualForm] = useState(false);
   const [editing, setEditing] = useState<DataModelResponse | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -113,7 +113,7 @@ function DataModelContent({ projectId }: { projectId: string }) {
     }
     try {
       const diagram = await api.dataModels.getDiagram(projectId, id);
-      setDiagrams((prev) => ({ ...prev, [id]: diagram.svg }));
+      setDiagrams((prev) => ({ ...prev, [id]: diagram }));
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'No se pudo mostrar el diagrama.');
     }
@@ -290,8 +290,11 @@ function DataModelContent({ projectId }: { projectId: string }) {
                   </ul>
                 ) : null}
                 {diagrams[m.id] ? (
-                  <TrustedDiagram
-                    svg={diagrams[m.id]!}
+                  <DiagramViewer
+                    svg={diagrams[m.id]!.svg}
+                    source={diagrams[m.id]!.source}
+                    sourceFormat={diagrams[m.id]!.sourceFormat}
+                    code={m.code}
                     caption={`Diagrama entidad-relación de ${m.code}`}
                   />
                 ) : null}

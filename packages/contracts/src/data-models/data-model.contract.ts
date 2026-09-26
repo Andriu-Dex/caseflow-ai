@@ -194,6 +194,8 @@ export const diagramResponseSchema = z.object({
   sourceArtifactVersionIds: z.array(z.uuid()),
   createdAt: z.iso.datetime(),
 });
+export type DiagramResponse = z.infer<typeof diagramResponseSchema>;
+export const manualDiagramVersionRequestSchema = z.object({ source: text(50_000) }).strict();
 export const generateDiagramRequestSchema = z
   .object({ sourceVersionIds: z.array(z.uuid()).min(1).max(100) })
   .strict();
