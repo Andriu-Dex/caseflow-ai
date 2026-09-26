@@ -76,7 +76,12 @@ export class OpenAICompatibleProvider implements AIProvider {
             ],
             response_format: {
               type: 'json_schema',
-              json_schema: { name: request.schemaName, strict: true, schema: request.outputSchema },
+              json_schema: {
+                name: request.schemaName,
+                ...(this.id.toLowerCase() === 'gemini'
+                  ? { schema: toGeminiCompatibleSchema(request.outputSchema) }
+                  : { strict: true, schema: request.outputSchema }),
+              },
             },
             ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
             ...(request.maxOutputTokens === undefined
@@ -114,16 +119,38 @@ export class OpenAICompatibleProvider implements AIProvider {
 }
 
 function statusError(status: number): AIError {
-  if (status === 429)
+  if (status === 429 || status === 413)
     return new AIError(
       'AI_RATE_LIMITED',
-      'El proveedor de IA limitó temporalmente las solicitudes.',
+      status === 413
+        ? 'La solicitud superó el límite de tokens del proveedor de IA.'
+        : 'El proveedor de IA limitó temporalmente las solicitudes.',
     );
   if (status === 408 || status === 504)
     return new AIError('AI_TIMEOUT', 'El proveedor de IA excedió el tiempo límite.');
   if (status >= 500)
     return new AIError('AI_PROVIDER_UNAVAILABLE', 'El proveedor de IA no está disponible.');
   return new AIError('AI_PROVIDER_ERROR', 'El proveedor de IA rechazó la solicitud.');
+}
+
+// Gemini accepts an OpenAI-compatible chat endpoint but supports a narrower
+// JSON Schema dialect. Keep domain validation in the orchestrator and remove
+// schema keywords that Gemini does not document/support at its provider
+// boundary; this leaves the canonical Zod schema untouched for validation.
+function toGeminiCompatibleSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(toGeminiCompatibleSchema);
+  if (value === null || typeof value !== 'object') return value;
+  const schema = value as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(schema)) {
+    if (['$schema', '$id', 'default', 'minLength', 'maxLength', 'title'].includes(key)) continue;
+    if (key === 'const') {
+      result.enum = [item];
+      continue;
+    }
+    result[key] = toGeminiCompatibleSchema(item);
+  }
+  return result;
 }
 
 function parseResponse(value: unknown): {
