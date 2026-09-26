@@ -24,6 +24,44 @@ function download(filename: string, content: string, mime: string) {
   URL.revokeObjectURL(url);
 }
 
+async function downloadPng(filename: string, svg: string): Promise<void> {
+  const svgUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
+  try {
+    const image = new Image();
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error('No se pudo rasterizar el diagrama.'));
+      image.src = svgUrl;
+    });
+    const viewBox = svg.match(/\bviewBox=["']\s*[-\d.]+\s+[-\d.]+\s+([\d.]+)\s+([\d.]+)["']/i);
+    const width = image.naturalWidth || Number(viewBox?.[1]) || 1200;
+    const height = image.naturalHeight || Number(viewBox?.[2]) || 800;
+    const scale = Math.min(2, 4096 / Math.max(width, height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('El navegador no pudo preparar la imagen.');
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const png = await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob(
+        (blob) => (blob ? resolve(blob) : reject(new Error('No se pudo crear el archivo PNG.'))),
+        'image/png',
+      ),
+    );
+    const pngUrl = URL.createObjectURL(png);
+    const anchor = document.createElement('a');
+    anchor.href = pngUrl;
+    anchor.download = filename;
+    anchor.click();
+    URL.revokeObjectURL(pngUrl);
+  } finally {
+    URL.revokeObjectURL(svgUrl);
+  }
+}
+
 // Shows a backend-rendered/sanitized diagram (TrustedDiagram) alongside its
 // canonical text source, with downloads for both. `onSaveEdit`, when given,
 // lets the user override the source directly — always re-rendered/sanitized
@@ -86,6 +124,18 @@ export function DiagramViewer({
         >
           <Download className="size-3.5" aria-hidden="true" />
           Descargar SVG
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            void downloadPng(`${code}.png`, svg).catch(() =>
+              toast.error('No se pudo exportar el diagrama como PNG.'),
+            );
+          }}
+          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-muted-foreground hover:bg-muted/40"
+        >
+          <Download className="size-3.5" aria-hidden="true" />
+          Descargar PNG
         </button>
         <button
           type="button"

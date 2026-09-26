@@ -2,7 +2,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { RequirementResponse } from '@caseflow-ai/contracts';
-import { Pencil, Sparkles } from 'lucide-react';
+import { Download, Pencil, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@caseflow-ai/ui';
@@ -24,6 +24,15 @@ import {
 } from '../../components/artifact-actions';
 
 const PRIORITY_LABELS: Record<string, string> = { HIGH: 'Alta', MEDIUM: 'Media', LOW: 'Baja' };
+
+function downloadRequirements(projectId: string, format: 'pdf' | 'docx') {
+  const anchor = document.createElement('a');
+  anchor.href = api.requirements.exportUrl(projectId, format);
+  anchor.download = `requisitos-${projectId}.${format}`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
 
 function RequirementsContent({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
@@ -150,6 +159,24 @@ function RequirementsContent({ projectId }: { projectId: string }) {
               }}
             >
               Crear manualmente
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={items.length === 0}
+              onClick={() => downloadRequirements(projectId, 'pdf')}
+            >
+              <Download className="size-4" aria-hidden="true" />
+              Requisitos aprobados (PDF)
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={items.length === 0}
+              onClick={() => downloadRequirements(projectId, 'docx')}
+            >
+              <Download className="size-4" aria-hidden="true" />
+              Requisitos aprobados (Word)
             </Button>
           </div>
         </div>

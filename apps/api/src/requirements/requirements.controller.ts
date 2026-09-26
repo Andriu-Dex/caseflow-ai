@@ -1,5 +1,16 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  Res,
+  StreamableFile,
+} from '@nestjs/common';
+import type { Response } from 'express';
+import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import {
   acceptRequirementsRequestSchema,
   generateRequirementsRequestSchema,
@@ -14,10 +25,17 @@ import { uuidParamPipe } from '../common/uuid-param.pipe';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ApiUuidParam, ApiZodBody, ApiZodResponse } from '../openapi/zod-openapi';
 import { RequirementsService } from './requirements.service';
+import {
+  RequirementDocumentExportService,
+  type RequirementDocumentFormat,
+} from './requirement-document-export.service';
 @ApiTags('requirements')
 @Controller('projects/:projectId/requirements')
 export class RequirementsController {
-  constructor(private readonly service: RequirementsService) {}
+  constructor(
+    private readonly service: RequirementsService,
+    private readonly documents: RequirementDocumentExportService,
+  ) {}
   @Post()
   @ApiOperation({ operationId: 'createRequirement', summary: 'Crear requisito manual' })
   @ApiUuidParam('projectId', 'Project identifier.')
@@ -43,6 +61,32 @@ export class RequirementsController {
   @ApiZodResponse(200, 'Requirement quality report.', requirementQualityReportResponseSchema)
   qualityReport(@Param('projectId', uuidParamPipe) p: string) {
     return this.service.qualityReport(p);
+  }
+  @Get('export')
+  @ApiOperation({
+    operationId: 'exportRequirementsDocument',
+    summary: 'Exportar requisitos aprobados como PDF o Word',
+  })
+  @ApiUuidParam('projectId', 'Project identifier.')
+  @ApiQuery({ name: 'format', enum: ['pdf', 'docx'], required: true })
+  async exportDocument(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Query('format') format: string | undefined,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<StreamableFile> {
+    if (format !== 'pdf' && format !== 'docx')
+      throw new BadRequestException('El formato debe ser "pdf" o "docx".');
+    const documentFormat: RequirementDocumentFormat = format;
+    const content = await this.documents.generate(projectId, documentFormat);
+    const filename = `requisitos-${projectId}.${documentFormat}`;
+    response.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    response.setHeader(
+      'Content-Type',
+      documentFormat === 'pdf'
+        ? 'application/pdf'
+        : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    );
+    return new StreamableFile(content);
   }
   @Get(':requirementId')
   @ApiOperation({ operationId: 'getRequirement', summary: 'Consultar requisito' })
