@@ -204,10 +204,13 @@ function sanitizeAttributes(attributes: Record<string, unknown>): Record<string,
     const name = prefixedName.slice(ATTRIBUTE_PREFIX.length);
     if (!isAttributeNameAllowed(name)) continue;
     if (/^on/i.test(name)) continue; // defense in depth; never allowlisted anyway
-    const stringValue = typeof value === 'string' ? value : String(value);
+    // Decode before checking: otherwise "javascript:" or "url(" smuggled in
+    // as numeric character references (e.g. "&#106;avascript:") would slip
+    // past these regexes undetected and only become literal afterward.
+    const stringValue = typeof value === 'string' ? decodeNumericEntities(value) : String(value);
     if (/javascript:/i.test(stringValue)) continue;
     if (name === 'style' && UNSAFE_STYLE_PATTERN.test(stringValue)) continue;
-    safe[prefixedName] = typeof value === 'string' ? decodeNumericEntities(value) : value;
+    safe[prefixedName] = typeof value === 'string' ? stringValue : value;
   }
   return safe;
 }

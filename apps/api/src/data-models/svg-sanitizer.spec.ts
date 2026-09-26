@@ -34,6 +34,14 @@ describe('sanitizeDiagramSvg', () => {
     expect(output).not.toMatch(/&#/);
   });
 
+  it('rejects a style attribute smuggling url()/javascript: via numeric character references', () => {
+    // "&#117;rl(" / "&#106;avascript:" decode to "url(" / "javascript:" —
+    // checks must run on the decoded value, not the raw encoded one.
+    const encodedUrl = '&#117;&#114;&#108;&#40;evil.com&#41;';
+    const input = svg(`<rect style="background:${encodedUrl}"></rect>`);
+    expect(sanitizeDiagramSvg(input)).not.toContain('style');
+  });
+
   it('preserves foreignObject text-flow content required by Mermaid ER labels', () => {
     const input = svg(
       '<foreignObject width="20" height="20"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="text-align:center"><span class="nodeLabel"><p>Order</p></span></div></foreignObject>',
