@@ -97,7 +97,7 @@ export class DiagramEngine {
     actors.forEach((actor, index) => lines.push(`actor "${quote(actor)}" as A${index + 1}`));
     lines.push(`rectangle "${quote(model.systemName)}" {`);
     sortedUseCases.forEach((useCase, index) =>
-      lines.push(`  usecase "${quote(`${useCase.code} ${useCase.name}`)}" as U${index + 1}`),
+      lines.push(`  usecase "${quote(useCase.name)}" as U${index + 1}`),
     );
     lines.push('}');
     sortedUseCases.forEach((useCase, useCaseIndex) =>
