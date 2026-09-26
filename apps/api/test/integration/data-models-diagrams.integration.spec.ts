@@ -218,6 +218,41 @@ describe('Data Model + Diagram Engine integration', () => {
     ).rejects.toThrow('no válida');
   });
 
+  it('lists every regenerated Use Case Diagram, oldest first, scoped to its own project', async () => {
+    const workspace = await createWorkspace(ctx.prisma, 'Use Case Diagram List');
+    const scoped = (await ctx.projects.create({ workspaceId: workspace.id, name: 'Scoped' })).id;
+    const req = await ctx.requirements.create(scoped, requirement);
+    await ctx.requirements.transition(scoped, req.id, req.version.id, 'IN_REVIEW');
+    await ctx.requirements.transition(scoped, req.id, req.version.id, 'APPROVED');
+    const useCase = await ctx.useCases.create(scoped, {
+      name: 'Registrar pedido',
+      objective: 'Registrar',
+      primaryActor: 'Usuario',
+      secondaryActors: [],
+      preconditions: [],
+      postconditions: [],
+      mainFlow: [{ actor: 'Usuario', action: 'Registra' }],
+      alternativeFlows: [],
+      relatedRequirementVersionIds: [req.version.id],
+    });
+    await ctx.useCases.transition(scoped, useCase.id, useCase.version.id, 'IN_REVIEW');
+    await ctx.useCases.transition(scoped, useCase.id, useCase.version.id, 'APPROVED');
+
+    expect((await ctx.dataModels.listUseCaseDiagrams(scoped)).items).toEqual([]);
+
+    const first = await ctx.dataModels.generateUseCaseDiagram(scoped, [useCase.version.id]);
+    const second = await ctx.dataModels.generateUseCaseDiagram(scoped, [useCase.version.id]);
+    const listed = await ctx.dataModels.listUseCaseDiagrams(scoped);
+    expect(listed.items.map((item) => item.id)).toEqual([first.id, second.id]);
+    // The "current" one a caller picks (the last item) reflects the most
+    // recently generated artifact, not just the highest version of one.
+    expect(listed.items.at(-1)!.id).toBe(second.id);
+
+    expect((await ctx.dataModels.listUseCaseDiagrams(projectId)).items).not.toContainEqual(
+      expect.objectContaining({ id: first.id }),
+    );
+  });
+
   it('protects DataModelsService.version under concurrent version creation', async () => {
     const created = await ctx.dataModels.create(projectId, model('Concurrente'));
 

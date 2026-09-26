@@ -6,6 +6,7 @@ import {
   dataModelInputSchema,
   dataModelListResponseSchema,
   dataModelResponseSchema,
+  diagramListResponseSchema,
   diagramResponseSchema,
   generateDataModelRequestSchema,
   generateDiagramRequestSchema,
@@ -146,6 +147,16 @@ export class UseCaseDiagramsController {
     body: z.output<typeof generateDiagramRequestSchema>,
   ) {
     return this.service.generateUseCaseDiagram(projectId, body.sourceVersionIds);
+  }
+  @Get()
+  @ApiOperation({
+    operationId: 'listUseCaseDiagrams',
+    summary: 'Listar diagramas UML generados para el proyecto',
+  })
+  @ApiUuidParam('projectId', 'Project identifier.')
+  @ApiZodResponse(200, 'Use Case Diagrams.', diagramListResponseSchema)
+  list(@Param('projectId', uuidParamPipe) projectId: string) {
+    return this.service.listUseCaseDiagrams(projectId);
   }
   @Get(':diagramId')
   @ApiOperation({ operationId: 'getUseCaseDiagram', summary: 'Consultar diagrama UML' })
