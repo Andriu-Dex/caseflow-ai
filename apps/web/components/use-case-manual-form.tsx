@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import type { RequirementResponse } from '@caseflow-ai/contracts';
+import { toast } from 'sonner';
+import type { RequirementResponse, UseCaseResponse } from '@caseflow-ai/contracts';
 import { api, ApiError } from '../lib/api';
 import { csv, useRows } from '../lib/use-rows';
 
@@ -12,28 +13,40 @@ import { csv, useRows } from '../lib/use-rows';
 export function UseCaseManualForm({
   projectId,
   approvedRequirements,
+  initial,
   onCreated,
   onCancel,
 }: {
   projectId: string;
   approvedRequirements: RequirementResponse[];
+  initial?: UseCaseResponse;
   onCreated: () => void;
   onCancel: () => void;
 }) {
-  const [name, setName] = useState('');
-  const [objective, setObjective] = useState('');
-  const [primaryActor, setPrimaryActor] = useState('');
-  const [secondaryActors, setSecondaryActors] = useState('');
-  const [preconditions, setPreconditions] = useState('');
-  const [postconditions, setPostconditions] = useState('');
-  const [relatedRequirementVersionIds, setRelatedRequirementVersionIds] = useState<string[]>([]);
-  const mainFlow = useRows<{ actor: string; action: string }>([{ actor: '', action: '' }]);
+  const u0 = initial?.useCase;
+  const [name, setName] = useState(u0?.name ?? '');
+  const [objective, setObjective] = useState(u0?.objective ?? '');
+  const [primaryActor, setPrimaryActor] = useState(u0?.primaryActor ?? '');
+  const [secondaryActors, setSecondaryActors] = useState(u0?.secondaryActors.join(', ') ?? '');
+  const [preconditions, setPreconditions] = useState(u0?.preconditions.join(', ') ?? '');
+  const [postconditions, setPostconditions] = useState(u0?.postconditions.join(', ') ?? '');
+  const [relatedRequirementVersionIds, setRelatedRequirementVersionIds] = useState<string[]>(
+    u0?.relatedRequirementVersionIds ?? [],
+  );
+  const mainFlow = useRows<{ actor: string; action: string }>(
+    u0?.mainFlow.map((s) => ({ actor: s.actor, action: s.action })) ?? [{ actor: '', action: '' }],
+  );
   const alternativeFlows = useRows<{
     name: string;
     condition: string;
     stepsText: string;
-  }>([]);
-  const [error, setError] = useState<string | null>(null);
+  }>(
+    u0?.alternativeFlows.map((f) => ({
+      name: f.name,
+      condition: f.condition,
+      stepsText: f.steps.map((s) => `${s.actor}: ${s.action}`).join('\n'),
+    })) ?? [],
+  );
   const [submitting, setSubmitting] = useState(false);
 
   // Each alternative flow's steps are entered as "actor: acción" per line —
@@ -55,14 +68,13 @@ export function UseCaseManualForm({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
     const steps = mainFlow.rows.filter((s) => s.actor.trim() && s.action.trim());
     if (!steps.length) {
-      setError('Agregue al menos un paso del flujo principal.');
+      toast.error('Agregue al menos un paso del flujo principal.');
       return;
     }
     if (!relatedRequirementVersionIds.length) {
-      setError('Seleccione al menos un Requisito relacionado.');
+      toast.error('Seleccione al menos un requisito relacionado.');
       return;
     }
     const parsedAlternativeFlows = alternativeFlows.rows
@@ -70,7 +82,7 @@ export function UseCaseManualForm({
       .map((f) => ({ name: f.name, condition: f.condition, steps: parseSteps(f.stepsText) }));
     setSubmitting(true);
     try {
-      await api.useCases.create(projectId, {
+      const input = {
         name,
         objective,
         primaryActor,
@@ -80,10 +92,19 @@ export function UseCaseManualForm({
         mainFlow: steps,
         alternativeFlows: parsedAlternativeFlows,
         relatedRequirementVersionIds,
-      });
+      };
+      if (initial) {
+        await api.useCases.createVersion(projectId, initial.id, input);
+        toast.success(
+          `${initial.code} actualizado. La nueva versión queda pendiente de aprobación.`,
+        );
+      } else {
+        await api.useCases.create(projectId, input);
+        toast.success('Caso de uso creado.');
+      }
       onCreated();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo crear el Caso de Uso.');
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo guardar el caso de uso.');
     } finally {
       setSubmitting(false);
     }
@@ -94,7 +115,9 @@ export function UseCaseManualForm({
       onSubmit={handleSubmit}
       className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4"
     >
-      <h2 className="text-sm font-semibold text-foreground">Crear Caso de Uso manualmente</h2>
+      <h2 className="text-sm font-semibold text-foreground">
+        {initial ? `Editar ${initial.code}` : 'Nuevo caso de uso'}
+      </h2>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-sm">
           Nombre
@@ -243,7 +266,7 @@ export function UseCaseManualForm({
           Requisitos relacionados
         </legend>
         {approvedRequirements.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No hay Requisitos APPROVED todavía.</p>
+          <p className="text-sm text-muted-foreground">Aún no hay requisitos aprobados.</p>
         ) : (
           <ul className="flex flex-col gap-1 text-sm">
             {approvedRequirements.map((r) => (
@@ -269,14 +292,13 @@ export function UseCaseManualForm({
         )}
       </fieldset>
 
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <div className="flex gap-2">
         <button
           type="submit"
           disabled={submitting}
           className="rounded-md bg-primary px-3 py-1.5 text-sm text-white disabled:opacity-50"
         >
-          {submitting ? 'Creando…' : 'Crear Caso de Uso'}
+          {submitting ? 'Guardando…' : initial ? 'Guardar cambios' : 'Crear caso de uso'}
         </button>
         <button
           type="button"

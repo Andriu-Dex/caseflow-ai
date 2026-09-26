@@ -56,7 +56,7 @@ export function CandidateBadge() {
   return (
     <span className="inline-flex items-center gap-1 rounded-full border border-dashed border-purple-300 bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">
       <Sparkles aria-hidden="true" className="size-3.5" />
-      Candidato de IA (sin persistir)
+      Propuesta de IA
     </span>
   );
 }

@@ -1,11 +1,13 @@
 'use client';
 
 import { useState } from 'react';
+import { toast } from 'sonner';
 import {
   CONCEPTUAL_ATTRIBUTE_TYPES,
   DATA_MODEL_CARDINALITIES,
   type ConceptualAttributeType,
   type DataModelCardinality,
+  type DataModelResponse,
 } from '@caseflow-ai/contracts';
 import { api, ApiError } from '../lib/api';
 
@@ -57,17 +59,32 @@ const blankEntity = (n: number): Entity => ({
 // derives the ER diagram from it after creation, same as the AI path).
 export function DataModelManualForm({
   projectId,
+  initial,
   onCreated,
   onCancel,
 }: {
   projectId: string;
+  initial?: DataModelResponse;
   onCreated: () => void;
   onCancel: () => void;
 }) {
-  const [title, setTitle] = useState('');
-  const [entities, setEntities] = useState<Entity[]>([blankEntity(1)]);
-  const [relationships, setRelationships] = useState<Relationship[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const m0 = initial?.dataModel;
+  const [title, setTitle] = useState(m0?.title ?? '');
+  const [entities, setEntities] = useState<Entity[]>(
+    m0?.entities.map((e) => ({
+      localId: e.localId,
+      name: e.name,
+      description: e.description ?? '',
+      attributes: e.attributes.map((a) => ({ ...a, description: a.description ?? '' })),
+    })) ?? [blankEntity(1)],
+  );
+  const [relationships, setRelationships] = useState<Relationship[]>(
+    m0?.relationships.map((r) => ({
+      ...r,
+      name: r.name ?? '',
+      description: r.description ?? '',
+    })) ?? [],
+  );
   const [submitting, setSubmitting] = useState(false);
 
   function updateEntity(index: number, patch: Partial<Entity>) {
@@ -88,10 +105,9 @@ export function DataModelManualForm({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
     setSubmitting(true);
     try {
-      await api.dataModels.create(projectId, {
+      const input = {
         title,
         modelKind: 'ER',
         entities: entities.map((entity) => ({
@@ -109,10 +125,19 @@ export function DataModelManualForm({
             name: r.name || undefined,
             description: r.description || undefined,
           })),
-      });
+      } as const;
+      if (initial) {
+        await api.dataModels.createVersion(projectId, initial.id, input);
+        toast.success(
+          `${initial.code} actualizado. La nueva versión queda pendiente de aprobación.`,
+        );
+      } else {
+        await api.dataModels.create(projectId, input);
+        toast.success('Modelo de datos creado.');
+      }
       onCreated();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo crear el Modelo de Datos.');
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo guardar el modelo de datos.');
     } finally {
       setSubmitting(false);
     }
@@ -123,7 +148,9 @@ export function DataModelManualForm({
       onSubmit={handleSubmit}
       className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4"
     >
-      <h2 className="text-sm font-semibold text-foreground">Crear Modelo de Datos manualmente</h2>
+      <h2 className="text-sm font-semibold text-foreground">
+        {initial ? `Editar ${initial.code}` : 'Nuevo modelo de datos'}
+      </h2>
       <label className="flex flex-col gap-1 text-sm">
         Título
         <input
@@ -371,14 +398,13 @@ export function DataModelManualForm({
         </button>
       </fieldset>
 
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <div className="flex gap-2">
         <button
           type="submit"
           disabled={submitting}
           className="rounded-md bg-primary px-3 py-1.5 text-sm text-white disabled:opacity-50"
         >
-          {submitting ? 'Creando…' : 'Crear Modelo de Datos'}
+          {submitting ? 'Guardando…' : initial ? 'Guardar cambios' : 'Crear modelo de datos'}
         </button>
         <button
           type="button"

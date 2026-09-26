@@ -25,7 +25,7 @@ export class MockupsService {
 
   async list(projectId: string) {
     const rows = await this.prisma.artifact.findMany({
-      where: { projectId, artifactTypeCode: 'MOCKUP' },
+      where: { projectId, artifactTypeCode: 'MOCKUP', archivedAt: null },
       include: {
         versions: {
           orderBy: { versionNumber: 'desc' },

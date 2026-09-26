@@ -61,7 +61,7 @@ function HomeContent({ projectId }: { projectId: string }) {
                 ) : (
                   <Clock className="size-3.5" aria-hidden="true" />
                 )}
-                {readiness.data.ready ? 'LISTO' : 'NO LISTO TODAVÍA'}
+                {readiness.data.ready ? 'Proyecto completo' : 'En progreso'}
               </Badge>
               <span className="text-sm text-muted-foreground">
                 {readiness.data.stages.filter((s) => s.satisfied).length} /{' '}
@@ -131,8 +131,8 @@ function HomeContent({ projectId }: { projectId: string }) {
           <div className="flex items-start gap-2 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
             <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
             <span>
-              Hay artefactos potencialmente afectados por conocimiento más reciente. Revisión
-              recomendada.{' '}
+              Algunos elementos podrían estar desactualizados porque cambió la información de la que
+              dependen. Los verá señalados en cada paso.{' '}
               <Link href="/traceability" className="underline">
                 Ver trazabilidad
               </Link>
