@@ -39,6 +39,12 @@ export interface OpenAICompatibleProviderConfig {
   model: string;
   timeoutMs: number;
   fetch?: typeof fetch;
+  // Explicit capability flag, set from this provider slot's own config
+  // (never inferred from `id`, which is a free-form label a user could set
+  // to anything — see AGENTS.md §36.2 provider-agnostic). 'narrow' selects
+  // the reduced JSON Schema dialect a slot's own endpoint is documented to
+  // require; 'strict' (default) is standard OpenAI strict json_schema mode.
+  schemaDialect?: 'strict' | 'narrow';
 }
 
 export class OpenAICompatibleProvider implements AIProvider {
@@ -78,8 +84,8 @@ export class OpenAICompatibleProvider implements AIProvider {
               type: 'json_schema',
               json_schema: {
                 name: request.schemaName,
-                ...(this.id.toLowerCase() === 'gemini'
-                  ? { schema: toGeminiCompatibleSchema(request.outputSchema) }
+                ...(this.config.schemaDialect === 'narrow'
+                  ? { schema: toNarrowJsonSchema(request.outputSchema) }
                   : { strict: true, schema: request.outputSchema }),
               },
             },
@@ -133,22 +139,34 @@ function statusError(status: number): AIError {
   return new AIError('AI_PROVIDER_ERROR', 'El proveedor de IA rechazó la solicitud.');
 }
 
-// Gemini accepts an OpenAI-compatible chat endpoint but supports a narrower
-// JSON Schema dialect. Keep domain validation in the orchestrator and remove
-// schema keywords that Gemini does not document/support at its provider
-// boundary; this leaves the canonical Zod schema untouched for validation.
-function toGeminiCompatibleSchema(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(toGeminiCompatibleSchema);
+// Some OpenAI-compatible endpoints (confirmed: Gemini's) accept the chat
+// endpoint but support a narrower JSON Schema dialect than full OpenAI
+// strict json_schema mode. Keep domain validation in the orchestrator and
+// remove schema keywords that provider is confirmed to reject; this leaves
+// the canonical Zod schema untouched for validation.
+//
+// Verified by bisection against the real failing endpoint (not guessed):
+// minLength/maxLength/minItems/maxItems/const are rejected, $schema/default
+// are accepted but stripped anyway for size. `title` is deliberately NOT
+// stripped: z.toJSONSchema() never emits it as schema-level metadata for
+// our schemas, so stripping it by key name only ever deleted a real domain
+// property that happened to be named "title" (e.g. Data Model's own
+// `title` field) — the exact bug this fixes.
+function toNarrowJsonSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(toNarrowJsonSchema);
   if (value === null || typeof value !== 'object') return value;
   const schema = value as Record<string, unknown>;
   const result: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(schema)) {
-    if (['$schema', '$id', 'default', 'minLength', 'maxLength', 'title'].includes(key)) continue;
+    if (
+      ['$schema', '$id', 'default', 'minLength', 'maxLength', 'minItems', 'maxItems'].includes(key)
+    )
+      continue;
     if (key === 'const') {
       result.enum = [item];
       continue;
     }
-    result[key] = toGeminiCompatibleSchema(item);
+    result[key] = toNarrowJsonSchema(item);
   }
   return result;
 }
