@@ -7633,3 +7633,33 @@ de cobertura.
 
 Confirmar los tipos exactos de diagrama "second-partial" con el
 profesor permanece como backlog, sin resolver arbitrariamente.
+
+## 220.7 Pulido de experiencia del Primer Entregable
+
+Descriptivo del comportamiento implementado:
+
+- **Edición en cualquier estado.** Requisitos, Casos de Uso, Modelo de Datos,
+  Navegación, Arquitecturas y UI Blueprint pueden editarse aunque su versión
+  vigente esté `APPROVED`: la edición crea una versión nueva `DRAFT` y la
+  versión aprobada permanece intacta (§4.4). Requisitos y Casos de Uso
+  dejan de rechazar esta operación, alineándose con Contexto, Modelo de
+  Datos y artefactos de diseño.
+- **Archivado genérico.** `POST /projects/{projectId}/artifacts/{artifactId}/archive`
+  retira de listas, Readiness y Export a Requisitos, Casos de Uso, Modelos
+  de Datos, diagramas, artefactos de diseño y Mockups sin borrar historial.
+  Fuentes y Proyectos conservan su endpoint propio; el Contexto canónico no
+  se archiva (se versiona).
+- **Revisión de un solo miembro.** Mientras exista un único miembro, la UI
+  oculta "Enviar a revisión" y aprueba en un clic (atravesando `IN_REVIEW`
+  internamente); existe además "Aprobar todos los pendientes" por paso.
+- **Sin reinicio de pasos.** La barra lateral mantiene la guía secuencial
+  la primera vez, pero nunca vuelve a bloquear un paso al que el proyecto
+  ya llegó cuando se edita un paso anterior; los artefactos potencialmente
+  desactualizados (StalenessService) se señalan en su propia página.
+- **Notificaciones y lenguaje.** Errores y confirmaciones usan
+  notificaciones flotantes (`sonner`); la interfaz y los mensajes de
+  Readiness no muestran códigos de estado en inglés ni textos académicos.
+- **Export.** El documento HTML es una especificación completa y con estilo
+  (contexto, requisitos, casos de uso con flujos, modelo de datos,
+  arquitecturas, UI Blueprint, bocetos y diagramas), con todo el contenido
+  escapado salvo los SVG ya saneados.

@@ -34,7 +34,7 @@ export class ExportController {
     // Deterministic filename derived only from the projectId, never from the
     // project's own (untrusted) display name — never a filesystem path
     // segment from user-controlled content.
-    const filename = `first-deliverable-${projectId}.${resolved}`;
+    const filename = `proyecto-${projectId}.${resolved}`;
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     if (resolved === 'html') {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');

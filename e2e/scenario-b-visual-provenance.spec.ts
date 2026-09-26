@@ -121,7 +121,7 @@ test('displays a real Kroki-rendered ER diagram, provenance, readiness and expor
   // already covers real sequential sidebar navigation end to end.
   await page.goto('/data-model');
   const modelRow = page.locator('li').filter({ hasText: dataModelCode });
-  await modelRow.getByRole('button', { name: 'Ver diagrama ER' }).click();
+  await modelRow.getByRole('button', { name: 'Ver diagrama entidad-relación' }).click();
   // Scoped to the TrustedDiagram <figure>, not the row, so this never matches
   // an unrelated icon svg (e.g. the StatusBadge's Lucide icon) rendered
   // elsewhere in the same row.
@@ -146,18 +146,18 @@ test('displays a real Kroki-rendered ER diagram, provenance, readiness and expor
     .getByRole('link', { name: 'Preparación / Exportar' })
     .click();
   await expect(page.getByText('Fuentes del proyecto')).toBeVisible();
-  await expect(page.getByText(/no listo todavía/i)).toBeVisible();
+  await expect(page.getByText('En progreso', { exact: true })).toBeVisible();
 
   // --- D. Export: JSON and HTML downloads succeed with a reasonable name ---
   const [jsonDownload] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: 'Exportar JSON' }).click(),
+    page.getByRole('button', { name: 'Datos estructurados (JSON)' }).click(),
   ]);
-  expect(jsonDownload.suggestedFilename()).toBe(`first-deliverable-${projectId}.json`);
+  expect(jsonDownload.suggestedFilename()).toBe(`proyecto-${projectId}.json`);
 
   const [htmlDownload] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: 'Exportar reporte HTML' }).click(),
+    page.getByRole('button', { name: 'Documento del proyecto (HTML)' }).click(),
   ]);
-  expect(htmlDownload.suggestedFilename()).toBe(`first-deliverable-${projectId}.html`);
+  expect(htmlDownload.suggestedFilename()).toBe(`proyecto-${projectId}.html`);
 });

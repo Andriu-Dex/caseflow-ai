@@ -2,6 +2,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { api, ApiError } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { PageHeading } from '../../components/page-heading';
@@ -86,7 +87,6 @@ function ContextForm({
   const [sourceVersionIds, setSourceVersionIds] = useState<string[]>(
     () => readDraft(projectId)?.sourceVersionIds ?? [],
   );
-  const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [generating, setGenerating] = useState(false);
 
@@ -121,7 +121,6 @@ function ContextForm({
 
   async function handleGenerate() {
     setGenerating(true);
-    setError(null);
     try {
       const candidate = await api.context.generate(projectId);
       setProblemStatement(candidate.content.problemStatement);
@@ -133,10 +132,10 @@ function ContextForm({
       setBusinessRulesText(candidate.content.businessRules.join('\n'));
       setSourceVersionIds(candidate.sourceVersionIds);
     } catch (err) {
-      setError(
+      toast.error(
         err instanceof ApiError
           ? err.message
-          : 'No se pudo generar el contexto con IA (¿IA deshabilitada?).',
+          : 'No se pudo generar el contexto con IA en este momento. Puede completarlo manualmente.',
       );
     } finally {
       setGenerating(false);
@@ -146,7 +145,6 @@ function ContextForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
-    setError(null);
     const input = {
       problemStatement,
       objective,
@@ -164,7 +162,7 @@ function ContextForm({
       clearDraft(projectId);
       onSaved();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo guardar el contexto.');
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo guardar el contexto.');
     } finally {
       setSubmitting(false);
     }
@@ -185,8 +183,8 @@ function ContextForm({
           disabled={generating || approvedSources.length === 0}
           title={
             approvedSources.length === 0
-              ? 'Se requiere al menos una fuente APPROVED.'
-              : 'Rellena los campos a partir de las fuentes aprobadas. Revise y edite antes de guardar.'
+              ? 'Primero apruebe al menos una fuente del proyecto.'
+              : 'Completa los campos a partir de las fuentes aprobadas. Revíselos y edítelos antes de guardar.'
           }
           className="rounded-md border border-input px-3 py-1 text-sm hover:bg-muted/40 disabled:opacity-50"
         >
@@ -266,7 +264,7 @@ function ContextForm({
           Fuentes que respaldan este contexto
         </legend>
         {approvedSources.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No hay fuentes APPROVED todavía.</p>
+          <p className="text-sm text-muted-foreground">Aún no hay fuentes aprobadas.</p>
         ) : (
           <ul className="flex flex-col gap-1">
             {approvedSources.map((s) => (
@@ -278,7 +276,7 @@ function ContextForm({
                   onChange={() => toggleSource(s.version.id)}
                 />
                 <label htmlFor={`src-${s.id}`}>
-                  {s.code} — {s.source.title} (v{s.version.versionNumber}, APPROVED)
+                  {s.code} — {s.source.title} (versión {s.version.versionNumber})
                 </label>
               </li>
             ))}
@@ -286,7 +284,6 @@ function ContextForm({
         )}
       </fieldset>
 
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <button
         type="submit"
         disabled={submitting}
@@ -305,7 +302,6 @@ function ContextContent({ projectId }: { projectId: string }) {
     queryFn: () => api.context.getCurrent(projectId),
     retry: false,
   });
-  const [actionError, setActionError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [approving, setApproving] = useState(false);
 
@@ -317,25 +313,23 @@ function ContextContent({ projectId }: { projectId: string }) {
 
   async function transition(status: 'IN_REVIEW' | 'APPROVED' | 'CHANGES_REQUESTED') {
     if (!context.data) return;
-    setActionError(null);
     try {
       await api.context.transition(projectId, context.data.version.id, status);
       invalidate();
     } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : 'No se pudo cambiar el estado.');
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo cambiar el estado.');
     }
   }
 
   async function approveDirectly() {
     if (!context.data) return;
-    setActionError(null);
     setApproving(true);
     try {
       await api.context.transition(projectId, context.data.version.id, 'IN_REVIEW');
       await api.context.transition(projectId, context.data.version.id, 'APPROVED');
       invalidate();
     } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : 'No se pudo aprobar el contexto.');
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo aprobar el contexto.');
     } finally {
       setApproving(false);
     }
@@ -351,7 +345,8 @@ function ContextContent({ projectId }: { projectId: string }) {
         <p className="text-sm text-muted-foreground">Cargando…</p>
       ) : notFound ? (
         <p className="text-sm text-muted-foreground">
-          Todavía no hay un Contexto definido para este proyecto.
+          Aún no ha definido el contexto del proyecto. Complete el formulario o genérelo con IA a
+          partir de las fuentes aprobadas.
         </p>
       ) : context.error ? (
         <QueryState isLoading={false} error={context.error}>
@@ -430,7 +425,6 @@ function ContextContent({ projectId }: { projectId: string }) {
               {showForm ? 'Cancelar' : 'Crear nueva versión'}
             </button>
           </div>
-          {actionError ? <p className="mt-2 text-sm text-destructive">{actionError}</p> : null}
         </div>
       ) : null}
 

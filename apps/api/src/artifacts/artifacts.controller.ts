@@ -79,4 +79,20 @@ export class ArtifactsController {
   ): Promise<ArtifactVersionResponse> {
     return this.artifacts.createVersion(projectId, artifactId, body);
   }
+
+  @Post(':artifactId/archive')
+  @ApiOperation({
+    operationId: 'archiveArtifact',
+    summary: 'Archive an artifact, retiring it from active work without deleting history',
+  })
+  @ApiUuidParam('projectId', 'Project identifier.')
+  @ApiUuidParam('artifactId', 'Artifact identifier.')
+  @ApiErrorResponse(404, 'The artifact does not exist in the given project.')
+  @ApiErrorResponse(422, 'The artifact type cannot be archived here, or is already archived.')
+  archive(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('artifactId', uuidParamPipe) artifactId: string,
+  ): Promise<{ archivedAt: string }> {
+    return this.artifacts.archive(projectId, artifactId);
+  }
 }

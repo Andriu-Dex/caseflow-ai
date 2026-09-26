@@ -62,7 +62,7 @@ export class DataModelsService {
   }
   async list(projectId: string) {
     const rows = await this.prisma.artifact.findMany({
-      where: { projectId, artifactTypeCode: 'DATA_MODEL' },
+      where: { projectId, artifactTypeCode: 'DATA_MODEL', archivedAt: null },
       include: {
         versions: {
           orderBy: { versionNumber: 'desc' },

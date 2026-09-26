@@ -3,6 +3,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Archive, FolderKanban, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { toast } from 'sonner';
 import type { ProjectResponse } from '@caseflow-ai/contracts';
 import {
   Badge,
@@ -34,20 +35,18 @@ function DeleteProjectDialog({
   onDeleted: () => void;
 }) {
   const [confirmText, setConfirmText] = useState('');
-  const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const matches = confirmText.trim() === project.name;
 
   async function handleDelete() {
     if (!matches) return;
     setDeleting(true);
-    setError(null);
     try {
       await api.projects.delete(project.id);
       onDeleted();
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo eliminar el proyecto.');
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo eliminar el proyecto.');
     } finally {
       setDeleting(false);
     }
@@ -75,7 +74,6 @@ function DeleteProjectDialog({
             onChange={(e) => setConfirmText(e.target.value)}
           />
         </div>
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
             Cancelar
@@ -103,18 +101,16 @@ function ArchiveProjectDialog({
   onOpenChange: (open: boolean) => void;
   onArchived: () => void;
 }) {
-  const [error, setError] = useState<string | null>(null);
   const [archiving, setArchiving] = useState(false);
 
   async function handleArchive() {
     setArchiving(true);
-    setError(null);
     try {
       await api.projects.archive(project.id);
       onArchived();
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo archivar el proyecto.');
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo archivar el proyecto.');
     } finally {
       setArchiving(false);
     }
@@ -130,7 +126,6 @@ function ArchiveProjectDialog({
             marca como inactivo sin borrar su historial.
           </DialogDescription>
         </DialogHeader>
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
             Cancelar

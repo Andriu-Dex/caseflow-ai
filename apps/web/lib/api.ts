@@ -1,5 +1,6 @@
 import type {
   DataModelInput,
+  DataModelResponse,
   FirstDeliverableExport,
   MockupPreviewResponse,
   MockupResponse,
@@ -42,18 +43,6 @@ export interface GenerationCandidate {
 export interface GenerationResult {
   id: string;
   candidates: GenerationCandidate[];
-}
-
-export interface DataModelResponse {
-  id: string;
-  projectId: string;
-  code: string;
-  version: { id: string; versionNumber: number; status: ArtifactVersionStatus };
-  dataModel: {
-    title: string;
-    entities: { localId: string; name: string; description?: string; attributes: unknown[] }[];
-    relationships: unknown[];
-  };
 }
 
 // Normalized error shape for the whole app: every non-2xx response, and
@@ -123,6 +112,10 @@ export const api = {
     get: (projectId: string) => get<ProjectResponse>(`/projects/${projectId}`),
     delete: (projectId: string) => del<void>(`/projects/${projectId}`),
     archive: (projectId: string) => post<ProjectResponse>(`/projects/${projectId}/archive`),
+  },
+  artifacts: {
+    archive: (projectId: string, artifactId: string) =>
+      post<{ archivedAt: string }>(`/projects/${projectId}/artifacts/${artifactId}/archive`),
   },
   readiness: {
     get: (projectId: string) => get<ReadinessResponse>(`/projects/${projectId}/readiness`),
@@ -212,6 +205,11 @@ export const api = {
       ),
     create: (projectId: string, input: RequirementInput) =>
       post<RequirementResponse>(`/projects/${projectId}/requirements`, input),
+    createVersion: (projectId: string, requirementId: string, input: RequirementInput) =>
+      post<RequirementResponse>(
+        `/projects/${projectId}/requirements/${requirementId}/versions`,
+        input,
+      ),
     generate: (projectId: string, sourceContextVersionId: string) =>
       post<GenerationResult>(`/projects/${projectId}/requirements/generate`, {
         sourceContextVersionId,
@@ -234,12 +232,10 @@ export const api = {
   useCases: {
     list: (projectId: string) =>
       get<{ items: UseCaseResponse[] }>(`/projects/${projectId}/use-cases`),
-    academicValidation: (projectId: string) =>
-      get<{ approvedCount: number; minimumRequired: number; satisfied: boolean }>(
-        `/projects/${projectId}/use-cases/academic-validation`,
-      ),
     create: (projectId: string, input: UseCaseInput) =>
       post<UseCaseResponse>(`/projects/${projectId}/use-cases`, input),
+    createVersion: (projectId: string, useCaseId: string, input: UseCaseInput) =>
+      post<UseCaseResponse>(`/projects/${projectId}/use-cases/${useCaseId}/versions`, input),
     generate: (projectId: string, requirementVersionIds: string[]) =>
       post<GenerationResult>(`/projects/${projectId}/use-cases/generate`, {
         requirementVersionIds,
@@ -272,6 +268,8 @@ export const api = {
       get<DataModelResponse>(`/projects/${projectId}/data-models/${id}`),
     create: (projectId: string, input: DataModelInput) =>
       post(`/projects/${projectId}/data-models`, input),
+    createVersion: (projectId: string, id: string, input: DataModelInput) =>
+      post(`/projects/${projectId}/data-models/${id}/versions`, input),
     getDiagram: (projectId: string, id: string) =>
       get<{ svg: string; source: string; sourceFormat: string }>(
         `/projects/${projectId}/data-models/${id}/diagram`,
@@ -305,6 +303,17 @@ export const api = {
     create: (projectId: string, kind: StructuredAnalysisKind, title: string, content: unknown) =>
       post<StructuredAnalysisResponse>(
         `/projects/${projectId}/${api.structuredAnalysis.basePath(kind)}`,
+        { title, content },
+      ),
+    createVersion: (
+      projectId: string,
+      kind: StructuredAnalysisKind,
+      id: string,
+      title: string,
+      content: unknown,
+    ) =>
+      post<StructuredAnalysisResponse>(
+        `/projects/${projectId}/${api.structuredAnalysis.basePath(kind)}/${id}/versions`,
         { title, content },
       ),
     getDiagram: (projectId: string, kind: StructuredAnalysisKind, id: string) =>
