@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, ApiError } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { PageHeading } from '../../components/page-heading';
@@ -13,6 +13,43 @@ const linesToItems = (text: string) =>
     .map((l) => l.trim())
     .filter(Boolean)
     .map((description) => ({ description }));
+
+// Per-tab unsent-draft convenience (not backend state): recovers an
+// in-progress Context form after the browser discards/reloads a
+// backgrounded tab. Never a substitute for actually saving the form.
+interface ContextDraft {
+  problemStatement: string;
+  objective: string;
+  additionalContext: string;
+  actorsText: string;
+  needsText: string;
+  constraintsText: string;
+  businessRulesText: string;
+  sourceVersionIds: string[];
+}
+const draftKey = (projectId: string) => `caseflow.context-draft.${projectId}`;
+function readDraft(projectId: string): ContextDraft | null {
+  try {
+    const raw = window.sessionStorage.getItem(draftKey(projectId));
+    return raw ? (JSON.parse(raw) as ContextDraft) : null;
+  } catch {
+    return null;
+  }
+}
+function writeDraft(projectId: string, draft: ContextDraft) {
+  try {
+    window.sessionStorage.setItem(draftKey(projectId), JSON.stringify(draft));
+  } catch {
+    // Private browsing / blocked storage: draft just won't survive a reload.
+  }
+}
+function clearDraft(projectId: string) {
+  try {
+    window.sessionStorage.removeItem(draftKey(projectId));
+  } catch {
+    // Ignore.
+  }
+}
 
 function ContextForm({
   projectId,
@@ -31,17 +68,50 @@ function ContextForm({
     (s) => s.version.status === 'APPROVED',
   );
 
-  const [problemStatement, setProblemStatement] = useState('');
-  const [objective, setObjective] = useState('');
-  const [additionalContext, setAdditionalContext] = useState('');
-  const [actorsText, setActorsText] = useState('');
-  const [needsText, setNeedsText] = useState('');
-  const [constraintsText, setConstraintsText] = useState('');
-  const [businessRulesText, setBusinessRulesText] = useState('');
-  const [sourceVersionIds, setSourceVersionIds] = useState<string[]>([]);
+  const [problemStatement, setProblemStatement] = useState(
+    () => readDraft(projectId)?.problemStatement ?? '',
+  );
+  const [objective, setObjective] = useState(() => readDraft(projectId)?.objective ?? '');
+  const [additionalContext, setAdditionalContext] = useState(
+    () => readDraft(projectId)?.additionalContext ?? '',
+  );
+  const [actorsText, setActorsText] = useState(() => readDraft(projectId)?.actorsText ?? '');
+  const [needsText, setNeedsText] = useState(() => readDraft(projectId)?.needsText ?? '');
+  const [constraintsText, setConstraintsText] = useState(
+    () => readDraft(projectId)?.constraintsText ?? '',
+  );
+  const [businessRulesText, setBusinessRulesText] = useState(
+    () => readDraft(projectId)?.businessRulesText ?? '',
+  );
+  const [sourceVersionIds, setSourceVersionIds] = useState<string[]>(
+    () => readDraft(projectId)?.sourceVersionIds ?? [],
+  );
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [generating, setGenerating] = useState(false);
+
+  useEffect(() => {
+    writeDraft(projectId, {
+      problemStatement,
+      objective,
+      additionalContext,
+      actorsText,
+      needsText,
+      constraintsText,
+      businessRulesText,
+      sourceVersionIds,
+    });
+  }, [
+    projectId,
+    problemStatement,
+    objective,
+    additionalContext,
+    actorsText,
+    needsText,
+    constraintsText,
+    businessRulesText,
+    sourceVersionIds,
+  ]);
 
   function toggleSource(versionId: string) {
     setSourceVersionIds((prev) =>
@@ -91,6 +161,7 @@ function ContextForm({
     try {
       if (hasExisting) await api.context.createVersion(projectId, input);
       else await api.context.create(projectId, input);
+      clearDraft(projectId);
       onSaved();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo guardar el contexto.');
@@ -236,6 +307,7 @@ function ContextContent({ projectId }: { projectId: string }) {
   });
   const [actionError, setActionError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [approving, setApproving] = useState(false);
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['context', projectId] });
@@ -251,6 +323,21 @@ function ContextContent({ projectId }: { projectId: string }) {
       invalidate();
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : 'No se pudo cambiar el estado.');
+    }
+  }
+
+  async function approveDirectly() {
+    if (!context.data) return;
+    setActionError(null);
+    setApproving(true);
+    try {
+      await api.context.transition(projectId, context.data.version.id, 'IN_REVIEW');
+      await api.context.transition(projectId, context.data.version.id, 'APPROVED');
+      invalidate();
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : 'No se pudo aprobar el contexto.');
+    } finally {
+      setApproving(false);
     }
   }
 
@@ -306,12 +393,15 @@ function ContextContent({ projectId }: { projectId: string }) {
           <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-2">
             {context.data.version.status === 'DRAFT' ||
             context.data.version.status === 'GENERATED' ? (
+              // "Enviar a revisión" stays hidden until multi-user review ships
+              // (see sources/page.tsx); approveDirectly still drives IN_REVIEW.
               <button
                 type="button"
-                onClick={() => transition('IN_REVIEW')}
-                className="rounded-md border border-input px-3 py-1 text-sm hover:bg-muted/40"
+                onClick={approveDirectly}
+                disabled={approving}
+                className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
               >
-                Enviar a revisión
+                {approving ? 'Aprobando…' : 'Aprobar'}
               </button>
             ) : null}
             {context.data.version.status === 'IN_REVIEW' ? (

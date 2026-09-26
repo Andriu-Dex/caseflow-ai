@@ -30,28 +30,28 @@
 }
 
 .dark {
-  --background: oklch(0.15 0.02 268);
-  --foreground: oklch(0.98 0.005 265);
-  --card: oklch(0.18 0.025 268);
-  --card-foreground: oklch(0.98 0.005 265);
-  --popover: oklch(0.18 0.025 268);
-  --popover-foreground: oklch(0.98 0.005 265);
-  --primary: oklch(0.65 0.2 273);
+  --background: oklch(0.12 0.01 265);
+  --foreground: oklch(0.95 0.005 265);
+  --card: oklch(0.16 0.015 265);
+  --card-foreground: oklch(0.95 0.005 265);
+  --popover: oklch(0.16 0.015 265);
+  --popover-foreground: oklch(0.95 0.005 265);
+  --primary: oklch(0.65 0.2 265);
   --primary-foreground: oklch(0.98 0.005 265);
-  --secondary: oklch(0.25 0.03 268);
+  --secondary: oklch(0.26 0.02 265);
   --secondary-foreground: oklch(0.98 0.005 265);
-  --muted: oklch(0.22 0.03 268);
-  --muted-foreground: oklch(0.7 0.015 265);
-  --accent: oklch(0.25 0.04 273);
+  --muted: oklch(0.2 0.02 265);
+  --muted-foreground: oklch(0.7 0.02 265);
+  --accent: oklch(0.26 0.02 265);
   --accent-foreground: oklch(0.98 0.005 265);
-  --destructive: oklch(0.4 0.15 27);
-  --border: oklch(0.25 0.03 268);
-  --input: oklch(0.25 0.03 268);
-  --ring: oklch(0.65 0.2 273);
-  --sidebar: oklch(0.12 0.02 268);
+  --destructive: oklch(0.55 0.2 27);
+  --border: oklch(0.35 0.02 265);
+  --input: oklch(0.35 0.02 265);
+  --ring: oklch(0.65 0.2 265);
+  --sidebar: oklch(0.22 0.02 265);
   --sidebar-foreground: oklch(0.98 0.005 265);
-  --sidebar-active: oklch(0.65 0.2 273);
-  --sidebar-border: oklch(0.22 0.03 268);
+  --sidebar-active: oklch(0.65 0.2 265);
+  --sidebar-border: oklch(0.35 0.02 265);
 }
 
 @theme inline {
@@ -89,5 +89,11 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+  /* Fix native inputs blending into cards in dark mode by default */
+  input:not([type='checkbox']):not([type='radio']):not([type='submit']):not([type='button']),
+  textarea,
+  select {
+    @apply bg-transparent dark:bg-input/30;
   }
 }

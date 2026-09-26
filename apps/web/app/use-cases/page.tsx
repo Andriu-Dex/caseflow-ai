@@ -33,6 +33,7 @@ function UseCasesContent({ projectId }: { projectId: string }) {
   const [showManualForm, setShowManualForm] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [generatingDiagram, setGeneratingDiagram] = useState(false);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
 
   const approvedRequirements = (requirements.data?.items ?? []).filter(
     (r) => r.version.status === 'APPROVED',
@@ -71,6 +72,20 @@ function UseCasesContent({ projectId }: { projectId: string }) {
       invalidate();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo cambiar el estado.');
+    }
+  }
+
+  async function approveDirectly(id: string, versionId: string) {
+    setError(null);
+    setApprovingId(id);
+    try {
+      await api.useCases.transition(projectId, id, versionId, 'IN_REVIEW');
+      await api.useCases.transition(projectId, id, versionId, 'APPROVED');
+      invalidate();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo aprobar el caso de uso.');
+    } finally {
+      setApprovingId(null);
     }
   }
 
@@ -190,12 +205,16 @@ function UseCasesContent({ projectId }: { projectId: string }) {
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {u.version.status === 'DRAFT' || u.version.status === 'GENERATED' ? (
+                      // "Enviar a revisión" stays hidden until multi-user
+                      // review ships (see sources/page.tsx); approveDirectly
+                      // still drives IN_REVIEW.
                       <button
                         type="button"
-                        onClick={() => transition(u.id, u.version.id, 'IN_REVIEW')}
-                        className="rounded-md border border-input px-3 py-1 text-sm hover:bg-muted/40"
+                        onClick={() => approveDirectly(u.id, u.version.id)}
+                        disabled={approvingId === u.id}
+                        className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
                       >
-                        Enviar a revisión
+                        {approvingId === u.id ? 'Aprobando…' : 'Aprobar'}
                       </button>
                     ) : null}
                     {u.version.status === 'IN_REVIEW' ? (

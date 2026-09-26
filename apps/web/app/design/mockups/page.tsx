@@ -37,6 +37,7 @@ function MockupsContent({ projectId }: { projectId: string }) {
   });
   const [error, setError] = useState<string | null>(null);
   const [creatingVersionId, setCreatingVersionId] = useState<string | null>(null);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
   const approvedBlueprints = (blueprints.data?.items ?? []).filter(
     (b) => b.version.status === 'APPROVED',
   );
@@ -66,6 +67,21 @@ function MockupsContent({ projectId }: { projectId: string }) {
       queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo cambiar el estado.');
+    }
+  }
+
+  async function approveDirectly(id: string, versionId: string) {
+    setError(null);
+    setApprovingId(id);
+    try {
+      await api.mockups.transition(projectId, id, versionId, 'IN_REVIEW');
+      await api.mockups.transition(projectId, id, versionId, 'APPROVED');
+      queryClient.invalidateQueries({ queryKey: ['mockups', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo aprobar el mockup.');
+    } finally {
+      setApprovingId(null);
     }
   }
 
@@ -118,12 +134,16 @@ function MockupsContent({ projectId }: { projectId: string }) {
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {m.version.status === 'DRAFT' || m.version.status === 'GENERATED' ? (
+                    // "Enviar a revisión" stays hidden until multi-user review
+                    // ships (see sources/page.tsx); approveDirectly still
+                    // drives IN_REVIEW.
                     <button
                       type="button"
-                      onClick={() => transition(m.id, m.version.id, 'IN_REVIEW')}
-                      className="rounded-md border border-input px-3 py-1 text-sm hover:bg-muted/40"
+                      onClick={() => approveDirectly(m.id, m.version.id)}
+                      disabled={approvingId === m.id}
+                      className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
                     >
-                      Enviar a revisión
+                      {approvingId === m.id ? 'Aprobando…' : 'Aprobar'}
                     </button>
                   ) : null}
                   {m.version.status === 'IN_REVIEW' ? (

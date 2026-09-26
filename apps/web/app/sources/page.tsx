@@ -556,34 +556,25 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
 
           <div className="flex flex-wrap gap-2 border-t border-border pt-2">
             {source.version.status === 'DRAFT' || source.version.status === 'GENERATED' ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => transition('IN_REVIEW')}
-                  disabled={!source.source.hasExtractedText}
-                  title={
-                    !source.source.hasExtractedText
-                      ? 'Se requiere conocimiento utilizable (texto extraído o transcripción manual).'
-                      : undefined
-                  }
-                  className="rounded-md border border-input px-3 py-1 text-sm hover:bg-muted/40 disabled:opacity-50"
-                >
-                  Enviar a revisión
-                </button>
-                <button
-                  type="button"
-                  onClick={approveDirectly}
-                  disabled={!source.source.hasExtractedText || approving}
-                  title={
-                    !source.source.hasExtractedText
-                      ? 'Se requiere conocimiento utilizable (texto extraído o transcripción manual).'
-                      : undefined
-                  }
-                  className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
-                >
-                  {approving ? 'Aprobando…' : 'Aprobar directamente'}
-                </button>
-              </>
+              // "Enviar a revisión" (transition to IN_REVIEW) stays hidden while
+              // there is only one workspace member: nobody exists yet to review
+              // someone else's submission. The transition itself, and the
+              // IN_REVIEW status it targets, remain fully implemented for when
+              // multi-user review ships — approveDirectly still drives through
+              // IN_REVIEW on the way to APPROVED.
+              <button
+                type="button"
+                onClick={approveDirectly}
+                disabled={!source.source.hasExtractedText || approving}
+                title={
+                  !source.source.hasExtractedText
+                    ? 'Se requiere conocimiento utilizable (texto extraído o transcripción manual).'
+                    : undefined
+                }
+                className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {approving ? 'Aprobando…' : 'Aprobar'}
+              </button>
             ) : null}
             {source.version.status === 'IN_REVIEW' ? (
               <>

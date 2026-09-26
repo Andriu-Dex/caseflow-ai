@@ -31,6 +31,7 @@ function RequirementsContent({ projectId }: { projectId: string }) {
   const [openDetail, setOpenDetail] = useState<string | null>(null);
   const [showManualForm, setShowManualForm] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['requirements', projectId] });
@@ -65,6 +66,20 @@ function RequirementsContent({ projectId }: { projectId: string }) {
       invalidate();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo cambiar el estado.');
+    }
+  }
+
+  async function approveDirectly(requirementId: string, versionId: string) {
+    setError(null);
+    setApprovingId(requirementId);
+    try {
+      await api.requirements.transition(projectId, requirementId, versionId, 'IN_REVIEW');
+      await api.requirements.transition(projectId, requirementId, versionId, 'APPROVED');
+      invalidate();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo aprobar el requisito.');
+    } finally {
+      setApprovingId(null);
     }
   }
 
@@ -201,12 +216,16 @@ function RequirementsContent({ projectId }: { projectId: string }) {
                     ) : null}
                     <div className="flex flex-wrap gap-2">
                       {r.version.status === 'DRAFT' || r.version.status === 'GENERATED' ? (
+                        // "Enviar a revisión" stays hidden until multi-user
+                        // review ships (see sources/page.tsx); approveDirectly
+                        // still drives IN_REVIEW.
                         <button
                           type="button"
-                          onClick={() => transition(r.id, r.version.id, 'IN_REVIEW')}
-                          className="rounded-md border border-input px-3 py-1 text-sm hover:bg-muted/40"
+                          onClick={() => approveDirectly(r.id, r.version.id)}
+                          disabled={approvingId === r.id}
+                          className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
                         >
-                          Enviar a revisión
+                          {approvingId === r.id ? 'Aprobando…' : 'Aprobar'}
                         </button>
                       ) : null}
                       {r.version.status === 'IN_REVIEW' ? (
