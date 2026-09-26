@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { DiagramResponse, UseCaseResponse } from '@caseflow-ai/contracts';
+import type { UseCaseResponse } from '@caseflow-ai/contracts';
 import { Network, Pencil, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -34,6 +34,14 @@ function UseCasesContent({ projectId }: { projectId: string }) {
     queryKey: ['requirements', projectId],
     queryFn: () => api.requirements.list(projectId),
   });
+  const diagrams = useQuery({
+    queryKey: ['use-case-diagrams', projectId],
+    queryFn: () => api.useCaseDiagrams.list(projectId),
+  });
+  // The list is append-only (every regeneration adds a new DIA-NNN rather
+  // than replacing one — spec §218.7), ordered oldest-first: the last item
+  // is the current one to show.
+  const diagram = diagrams.data?.items.at(-1) ?? null;
   const stale = useStaleArtifactIds(projectId);
 
   // null = "no manual selection yet", so every approved requirement is
@@ -42,7 +50,6 @@ function UseCasesContent({ projectId }: { projectId: string }) {
   // the user toggles anything, so their choice is never silently overridden.
   const [selected, setSelected] = useState<string[] | null>(null);
   const [generation, setGeneration] = useState<GenerationResult | null>(null);
-  const [diagram, setDiagram] = useState<DiagramResponse | null>(null);
   const [showManualForm, setShowManualForm] = useState(false);
   const [editing, setEditing] = useState<UseCaseResponse | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -112,7 +119,8 @@ function UseCasesContent({ projectId }: { projectId: string }) {
   async function generateDiagram() {
     setGeneratingDiagram(true);
     try {
-      setDiagram(await api.useCaseDiagrams.generate(projectId, approvedVersionIds));
+      await api.useCaseDiagrams.generate(projectId, approvedVersionIds);
+      queryClient.invalidateQueries({ queryKey: ['use-case-diagrams', projectId] });
       queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
       toast.success('Diagrama de casos de uso generado.');
     } catch (err) {
@@ -338,9 +346,8 @@ function UseCasesContent({ projectId }: { projectId: string }) {
                   code={diagram.code}
                   caption="Diagrama de casos de uso aprobados"
                   onSaveEdit={async (source) => {
-                    setDiagram(
-                      await api.useCaseDiagrams.createManualVersion(projectId, diagram.id, source),
-                    );
+                    await api.useCaseDiagrams.createManualVersion(projectId, diagram.id, source);
+                    queryClient.invalidateQueries({ queryKey: ['use-case-diagrams', projectId] });
                     queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
                   }}
                 />

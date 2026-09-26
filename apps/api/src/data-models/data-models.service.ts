@@ -472,6 +472,33 @@ export class DataModelsService {
     });
   }
 
+  // Every regeneration creates a new DIA-NNN artifact rather than replacing
+  // one (spec §218.7: "regenerar... puede crear diagramas duplicados").
+  // Without a listing, the frontend had no way to rediscover a previously
+  // generated diagram after navigating away and back — it only ever learned
+  // an id existed from the response of the action that just created it, kept
+  // in transient component state. Ordered by creation so the caller can
+  // treat the last item as the current one, same convention as everywhere
+  // else artifact history is exposed.
+  async listUseCaseDiagrams(projectId: string) {
+    const rows = await this.prisma.artifact.findMany({
+      where: { projectId, artifactTypeCode: 'USE_CASE_DIAGRAM', archivedAt: null },
+      include: {
+        versions: {
+          orderBy: { versionNumber: 'desc' },
+          take: 1,
+          include: { diagramDetail: { include: { sources: true } } },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    return {
+      items: rows
+        .filter((row) => row.versions[0]?.diagramDetail)
+        .map((row) => this.mapDiagram(row, row.versions[0]!, row.versions[0]!.diagramDetail!)),
+    };
+  }
+
   async getUseCaseDiagram(projectId: string, id: string) {
     const row = await this.prisma.artifact.findFirst({
       where: { id, projectId, artifactTypeCode: 'USE_CASE_DIAGRAM' },
