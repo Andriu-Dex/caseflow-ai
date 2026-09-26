@@ -100,7 +100,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </a>
       <nav
         aria-label="Navegación principal"
-        className="w-full shrink-0 bg-sidebar p-4 text-sidebar-foreground shadow-lg md:w-64"
+        className="w-full shrink-0 border-b border-sidebar-border bg-sidebar p-4 text-sidebar-foreground shadow-lg md:w-64 md:border-b-0 md:border-r"
       >
         <div className="mb-6 flex items-center gap-2 px-1">
           <span className="flex size-8 items-center justify-center rounded-lg bg-sidebar-active shadow-sm shadow-sidebar-active/50">
