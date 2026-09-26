@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { UseCaseResponse } from '@caseflow-ai/contracts';
+import type { DiagramResponse, UseCaseResponse } from '@caseflow-ai/contracts';
 import { Network, Pencil, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -10,7 +10,7 @@ import { api, ApiError, type ArtifactVersionStatus, type GenerationResult } from
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { StatusBadge } from '../../components/status-badge';
 import { CandidateReview } from '../../components/candidate-review';
-import { TrustedDiagram } from '../../components/trusted-svg';
+import { DiagramViewer } from '../../components/diagram-viewer';
 import { UseCaseManualForm } from '../../components/use-case-manual-form';
 import { PageHeading } from '../../components/page-heading';
 import {
@@ -36,9 +36,13 @@ function UseCasesContent({ projectId }: { projectId: string }) {
   });
   const stale = useStaleArtifactIds(projectId);
 
-  const [selectedRequirements, setSelectedRequirements] = useState<string[]>([]);
+  // null = "no manual selection yet", so every approved requirement is
+  // selected by default — avoids re-checking boxes for requirements the user
+  // already approved one screen ago. Becomes an explicit array the moment
+  // the user toggles anything, so their choice is never silently overridden.
+  const [selected, setSelected] = useState<string[] | null>(null);
   const [generation, setGeneration] = useState<GenerationResult | null>(null);
-  const [diagram, setDiagram] = useState<{ svg: string } | null>(null);
+  const [diagram, setDiagram] = useState<DiagramResponse | null>(null);
   const [showManualForm, setShowManualForm] = useState(false);
   const [editing, setEditing] = useState<UseCaseResponse | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -48,6 +52,8 @@ function UseCasesContent({ projectId }: { projectId: string }) {
   const approvedRequirements = (requirements.data?.items ?? []).filter(
     (r) => r.version.status === 'APPROVED',
   );
+  const allRequirementIds = approvedRequirements.map((r) => r.version.id);
+  const selectedRequirements = selected ?? allRequirementIds;
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['use-cases', projectId] });
@@ -141,14 +147,14 @@ function UseCasesContent({ projectId }: { projectId: string }) {
                 type="button"
                 className="text-xs font-medium text-primary hover:underline"
                 onClick={() =>
-                  setSelectedRequirements(
-                    selectedRequirements.length === approvedRequirements.length
+                  setSelected(
+                    selectedRequirements.length === allRequirementIds.length
                       ? []
-                      : approvedRequirements.map((r) => r.version.id),
+                      : allRequirementIds,
                   )
                 }
               >
-                {selectedRequirements.length === approvedRequirements.length
+                {selectedRequirements.length === allRequirementIds.length
                   ? 'Quitar selección'
                   : 'Seleccionar todos'}
               </button>
@@ -161,10 +167,10 @@ function UseCasesContent({ projectId }: { projectId: string }) {
                     id={`req-${r.id}`}
                     checked={selectedRequirements.includes(r.version.id)}
                     onChange={() =>
-                      setSelectedRequirements((prev) =>
-                        prev.includes(r.version.id)
-                          ? prev.filter((id) => id !== r.version.id)
-                          : [...prev, r.version.id],
+                      setSelected(
+                        selectedRequirements.includes(r.version.id)
+                          ? selectedRequirements.filter((id) => id !== r.version.id)
+                          : [...selectedRequirements, r.version.id],
                       )
                     }
                   />
@@ -325,7 +331,19 @@ function UseCasesContent({ projectId }: { projectId: string }) {
                 </Button>
               )}
               {diagram ? (
-                <TrustedDiagram svg={diagram.svg} caption="Diagrama de casos de uso aprobados" />
+                <DiagramViewer
+                  svg={diagram.svg}
+                  source={diagram.source}
+                  sourceFormat={diagram.sourceFormat}
+                  code={diagram.code}
+                  caption="Diagrama de casos de uso aprobados"
+                  onSaveEdit={async (source) => {
+                    setDiagram(
+                      await api.useCaseDiagrams.createManualVersion(projectId, diagram.id, source),
+                    );
+                    queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
+                  }}
+                />
               ) : null}
             </section>
           </>

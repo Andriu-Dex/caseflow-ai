@@ -9,6 +9,7 @@ import {
   diagramResponseSchema,
   generateDataModelRequestSchema,
   generateDiagramRequestSchema,
+  manualDiagramVersionRequestSchema,
   transitionArtifactVersionRequestSchema,
 } from '@caseflow-ai/contracts';
 import type { z } from 'zod';
@@ -154,5 +155,21 @@ export class UseCaseDiagramsController {
     @Param('diagramId', uuidParamPipe) diagramId: string,
   ) {
     return this.service.getUseCaseDiagram(projectId, diagramId);
+  }
+  @Post(':diagramId/versions')
+  @ApiOperation({
+    operationId: 'createManualUseCaseDiagramVersion',
+    summary: 'Editar manualmente el código UML del diagrama y volver a renderizarlo',
+  })
+  @ApiUuidParam('projectId', 'Project identifier.')
+  @ApiZodBody(manualDiagramVersionRequestSchema)
+  @ApiZodResponse(201, 'Use Case Diagram.', diagramResponseSchema)
+  createManualVersion(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('diagramId', uuidParamPipe) diagramId: string,
+    @Body(new ZodValidationPipe(manualDiagramVersionRequestSchema))
+    body: z.output<typeof manualDiagramVersionRequestSchema>,
+  ) {
+    return this.service.createManualUseCaseDiagramVersion(projectId, diagramId, body.source);
   }
 }
