@@ -102,6 +102,48 @@ describe('OpenAICompatibleProvider', () => {
     await expect(operation).rejects.not.toThrow(/top-secret/);
   });
 
+  it('strips only the schema keywords a narrow-dialect provider rejects, keeping a "title" property', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          model: 'configured-model',
+          choices: [{ message: { content: '{"ok":true}' } }],
+        }),
+        { status: 200 },
+      ),
+    );
+    const narrowProvider = new OpenAICompatibleProvider({
+      baseUrl: 'https://provider.test/v1/',
+      apiKey: 'top-secret',
+      model: 'configured-model',
+      timeoutMs: 100,
+      schemaDialect: 'narrow',
+      fetch: fetchMock,
+    });
+    await narrowProvider.generateStructured({
+      ...request,
+      outputSchema: {
+        $schema: 'https://json-schema.org/draft/2020-12/schema',
+        type: 'object',
+        properties: {
+          title: { type: 'string', minLength: 1, maxLength: 200 },
+          items: { type: 'array', minItems: 1, maxItems: 5 },
+          kind: { const: 'ER' },
+        },
+      },
+    });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const schema = JSON.parse(String(init.body)).response_format.json_schema.schema;
+    expect(schema).toEqual({
+      type: 'object',
+      properties: {
+        title: { type: 'string' },
+        items: { type: 'array' },
+        kind: { enum: ['ER'] },
+      },
+    });
+  });
+
   it('normalizes timeout without retries', async () => {
     const fetchMock = vi.fn(
       (_url, init) =>
