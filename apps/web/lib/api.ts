@@ -1,6 +1,7 @@
 import type {
   DataModelInput,
   DataModelResponse,
+  DiagramResponse,
   FirstDeliverableExport,
   MockupPreviewResponse,
   MockupResponse,
@@ -256,10 +257,13 @@ export const api = {
   },
   useCaseDiagrams: {
     generate: (projectId: string, sourceVersionIds: string[]) =>
-      post<{ id: string; code: string; versionId: string; svg: string }>(
-        `/projects/${projectId}/diagrams/use-cases`,
-        { sourceVersionIds },
-      ),
+      post<DiagramResponse>(`/projects/${projectId}/diagrams/use-cases`, { sourceVersionIds }),
+    get: (projectId: string, id: string) =>
+      get<DiagramResponse>(`/projects/${projectId}/diagrams/use-cases/${id}`),
+    createManualVersion: (projectId: string, id: string, source: string) =>
+      post<DiagramResponse>(`/projects/${projectId}/diagrams/use-cases/${id}/versions`, {
+        source,
+      }),
   },
   dataModels: {
     list: (projectId: string) =>
@@ -271,9 +275,7 @@ export const api = {
     createVersion: (projectId: string, id: string, input: DataModelInput) =>
       post(`/projects/${projectId}/data-models/${id}/versions`, input),
     getDiagram: (projectId: string, id: string) =>
-      get<{ svg: string; source: string; sourceFormat: string }>(
-        `/projects/${projectId}/data-models/${id}/diagram`,
-      ),
+      get<DiagramResponse>(`/projects/${projectId}/data-models/${id}/diagram`),
     generate: (projectId: string, requirementVersionIds: string[], useCaseVersionIds: string[]) =>
       post<GenerationResult>(`/projects/${projectId}/data-models/generate`, {
         requirementVersionIds,
@@ -317,7 +319,7 @@ export const api = {
         { title, content },
       ),
     getDiagram: (projectId: string, kind: StructuredAnalysisKind, id: string) =>
-      get<{ svg: string; source: string; sourceFormat: string }>(
+      get<DiagramResponse>(
         `/projects/${projectId}/${api.structuredAnalysis.basePath(kind)}/${id}/diagram`,
       ),
     generate: (projectId: string, kind: StructuredAnalysisKind, sourceVersionIds: string[]) =>

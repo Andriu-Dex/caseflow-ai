@@ -183,6 +183,41 @@ describe('Data Model + Diagram Engine integration', () => {
     ).rejects.toThrow('APPROVED');
   });
 
+  it('creates a MANUAL diagram version from hand-edited PlantUML, keeping the SYSTEM_GENERATED version 1 intact', async () => {
+    const diagram = await ctx.dataModels.generateUseCaseDiagram(projectId, [approvedUseCaseId]);
+    const manualSource =
+      '@startuml\nactor "Editado a mano" as A1\nusecase "Manual" as U1\nA1 -- U1\n@enduml';
+    const edited = await ctx.dataModels.createManualUseCaseDiagramVersion(
+      projectId,
+      diagram.id,
+      manualSource,
+    );
+    expect(edited).toMatchObject({
+      id: diagram.id,
+      versionNumber: 2,
+      sourceArtifactVersionIds: [approvedUseCaseId],
+    });
+    expect(edited.source).toContain('Editado a mano');
+    const editedVersion = await ctx.prisma.artifactVersion.findUniqueOrThrow({
+      where: { id: edited.versionId },
+    });
+    expect(editedVersion).toMatchObject({ origin: 'MANUAL', status: 'DRAFT' });
+    const originalVersion = await ctx.prisma.artifactVersion.findUniqueOrThrow({
+      where: { id: diagram.versionId },
+      include: { diagramDetail: true },
+    });
+    expect(originalVersion).toMatchObject({ origin: 'SYSTEM_GENERATED', status: 'GENERATED' });
+    expect(originalVersion.diagramDetail?.source).toBe(diagram.source);
+
+    await expect(
+      ctx.dataModels.createManualUseCaseDiagramVersion(
+        projectId,
+        diagram.id,
+        '@startuml\n!include evil\n@enduml',
+      ),
+    ).rejects.toThrow('no válida');
+  });
+
   it('protects DataModelsService.version under concurrent version creation', async () => {
     const created = await ctx.dataModels.create(projectId, model('Concurrente'));
 
