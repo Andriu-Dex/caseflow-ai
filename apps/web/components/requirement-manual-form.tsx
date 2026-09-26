@@ -10,6 +10,7 @@ import type {
 import { REQUIREMENT_PRIORITIES, REQUIREMENT_TYPES } from '@caseflow-ai/contracts';
 import { api, ApiError } from '../lib/api';
 import { csv } from '../lib/use-rows';
+import { TagInput } from './tag-input';
 
 const PRIORITY_LABELS: Record<RequirementPriority, string> = {
   HIGH: 'Alta',
@@ -142,27 +143,15 @@ export function RequirementManualForm({
       <div className="grid gap-3 sm:grid-cols-3">
         <label className="flex flex-col gap-1 text-sm">
           Actores (separados por coma)
-          <input
-            className="rounded-md border border-input px-2 py-1"
-            value={actors}
-            onChange={(e) => setActors(e.target.value)}
-          />
+          <TagInput value={actors} onChange={setActors} />
         </label>
         <label className="flex flex-col gap-1 text-sm">
           Precondiciones (separadas por coma)
-          <input
-            className="rounded-md border border-input px-2 py-1"
-            value={preconditions}
-            onChange={(e) => setPreconditions(e.target.value)}
-          />
+          <TagInput value={preconditions} onChange={setPreconditions} />
         </label>
         <label className="flex flex-col gap-1 text-sm">
           Postcondiciones (separadas por coma)
-          <input
-            className="rounded-md border border-input px-2 py-1"
-            value={postconditions}
-            onChange={(e) => setPostconditions(e.target.value)}
-          />
+          <TagInput value={postconditions} onChange={setPostconditions} />
         </label>
       </div>
       {existingRequirements.length > 0 ? (

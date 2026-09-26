@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import type { RequirementResponse, UseCaseResponse } from '@caseflow-ai/contracts';
 import { api, ApiError } from '../lib/api';
 import { csv, useRows } from '../lib/use-rows';
+import { TagInput } from './tag-input';
 
 // Manual (non-AI) Use Case creation (spec: "CASEflow remains functional
 // without an AI provider"). Mirrors the AI candidate's field set exactly,
@@ -151,27 +152,15 @@ export function UseCaseManualForm({
       <div className="grid gap-3 sm:grid-cols-3">
         <label className="flex flex-col gap-1 text-sm">
           Actores secundarios (separados por coma)
-          <input
-            className="rounded-md border border-input px-2 py-1"
-            value={secondaryActors}
-            onChange={(e) => setSecondaryActors(e.target.value)}
-          />
+          <TagInput value={secondaryActors} onChange={setSecondaryActors} />
         </label>
         <label className="flex flex-col gap-1 text-sm">
           Precondiciones (separadas por coma)
-          <input
-            className="rounded-md border border-input px-2 py-1"
-            value={preconditions}
-            onChange={(e) => setPreconditions(e.target.value)}
-          />
+          <TagInput value={preconditions} onChange={setPreconditions} />
         </label>
         <label className="flex flex-col gap-1 text-sm">
           Postcondiciones (separadas por coma)
-          <input
-            className="rounded-md border border-input px-2 py-1"
-            value={postconditions}
-            onChange={(e) => setPostconditions(e.target.value)}
-          />
+          <TagInput value={postconditions} onChange={setPostconditions} />
         </label>
       </div>
 
