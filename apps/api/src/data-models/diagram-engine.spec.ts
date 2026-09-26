@@ -42,7 +42,7 @@ describe('DiagramEngine', () => {
     });
     expect(source.match(/actor "Cliente"/g)).toHaveLength(1);
     expect(source).not.toMatch(/include|extend/);
-    expect(source.indexOf('CU-001')).toBeLessThan(source.indexOf('CU-002'));
+    expect(source.indexOf('Ingresar')).toBeLessThan(source.indexOf('Comprar'));
   });
   it('deduplicates duplicate actor entries within the same use case', () => {
     // Historical/malformed data: the primary actor repeated in secondaryActors.

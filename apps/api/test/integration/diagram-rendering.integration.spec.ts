@@ -97,7 +97,7 @@ describe('Real diagram rendering (local Kroki)', () => {
     expect(svg).not.toContain('font-family="monospace"');
     expect(svg).toContain('Administrator');
     expect(svg).toContain('Customer');
-    expect(svg).toContain('CU-001');
+    expect(svg).toContain('Sign in');
     expect(svg).not.toMatch(/include|extend/);
   });
 
