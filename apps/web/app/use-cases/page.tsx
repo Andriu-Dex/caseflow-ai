@@ -2,7 +2,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UseCaseResponse } from '@caseflow-ai/contracts';
-import { Network, Pencil, Sparkles } from 'lucide-react';
+import { ChevronDown, ChevronRight, Network, Pencil, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@caseflow-ai/ui';
@@ -49,6 +49,12 @@ function UseCasesContent({ projectId }: { projectId: string }) {
   // already approved one screen ago. Becomes an explicit array the moment
   // the user toggles anything, so their choice is never silently overridden.
   const [selected, setSelected] = useState<string[] | null>(null);
+  // null = "no explicit preference yet": collapsed once there is already at
+  // least one use case (the generation panel already did its job — the
+  // diagram/list below is what gets revisited), expanded on a brand-new
+  // project where it's the only thing to do. Becomes explicit the moment the
+  // user toggles it, so it never snaps shut again on them mid-session.
+  const [generatorOpen, setGeneratorOpen] = useState<boolean | null>(null);
   const [generation, setGeneration] = useState<GenerationResult | null>(null);
   const [showManualForm, setShowManualForm] = useState(false);
   const [editing, setEditing] = useState<UseCaseResponse | null>(null);
@@ -111,6 +117,7 @@ function UseCasesContent({ projectId }: { projectId: string }) {
   }
 
   const items = useCases.data?.items ?? [];
+  const isGeneratorOpen = generatorOpen ?? items.length === 0;
   const pending = items.filter((u) => isPendingApproval(u.version.status));
   const approvedVersionIds = items
     .filter((u) => u.version.status === 'APPROVED')
@@ -135,83 +142,103 @@ function UseCasesContent({ projectId }: { projectId: string }) {
       <PageHeading title="Casos de uso" projectId={projectId} />
 
       <section className="rounded-lg border border-border bg-card p-4">
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-foreground">Generar casos de uso con IA</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => setGeneratorOpen(!isGeneratorOpen)}
+            className="flex items-center gap-1.5 text-sm font-semibold text-foreground"
+          >
+            {isGeneratorOpen ? (
+              <ChevronDown className="size-4 text-muted-foreground" aria-hidden="true" />
+            ) : (
+              <ChevronRight className="size-4 text-muted-foreground" aria-hidden="true" />
+            )}
+            Generar casos de uso con IA
+            {!isGeneratorOpen ? (
+              <span className="font-normal text-muted-foreground">
+                ({items.length} {items.length === 1 ? 'caso de uso' : 'casos de uso'})
+              </span>
+            ) : null}
+          </button>
           <ApproveAllButton
             pending={pending}
             approve={(id) => approveDirectly(transitionFor(items.find((u) => u.id === id)!))}
             onDone={invalidate}
           />
         </div>
-        {approvedRequirements.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Cuando haya requisitos aprobados podrá elegirlos aquí como base para generar casos de
-            uso.
-          </p>
-        ) : (
-          <>
-            <div className="mb-1 flex justify-end">
-              <button
-                type="button"
-                className="text-xs font-medium text-primary hover:underline"
-                onClick={() =>
-                  setSelected(
-                    selectedRequirements.length === allRequirementIds.length
-                      ? []
-                      : allRequirementIds,
-                  )
-                }
-              >
-                {selectedRequirements.length === allRequirementIds.length
-                  ? 'Quitar selección'
-                  : 'Seleccionar todos'}
-              </button>
-            </div>
-            <ul className="mb-2 flex max-h-64 flex-col gap-1 overflow-y-auto text-sm">
-              {approvedRequirements.map((r) => (
-                <li key={r.id} className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id={`req-${r.id}`}
-                    checked={selectedRequirements.includes(r.version.id)}
-                    onChange={() =>
+        {isGeneratorOpen ? (
+          <div className="mt-2">
+            {approvedRequirements.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Cuando haya requisitos aprobados podrá elegirlos aquí como base para generar casos
+                de uso.
+              </p>
+            ) : (
+              <>
+                <div className="mb-1 flex justify-end">
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-primary hover:underline"
+                    onClick={() =>
                       setSelected(
-                        selectedRequirements.includes(r.version.id)
-                          ? selectedRequirements.filter((id) => id !== r.version.id)
-                          : [...selectedRequirements, r.version.id],
+                        selectedRequirements.length === allRequirementIds.length
+                          ? []
+                          : allRequirementIds,
                       )
                     }
-                  />
-                  <label htmlFor={`req-${r.id}`}>
-                    {r.code} — {r.requirement.name}
-                  </label>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            disabled={generating || approvedRequirements.length === 0}
-            onClick={generate}
-          >
-            <Sparkles className="size-4" aria-hidden="true" />
-            {generating ? 'Generando…' : 'Generar con IA'}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              setEditing(null);
-              setShowManualForm((v) => !v);
-            }}
-          >
-            Crear manualmente
-          </Button>
-        </div>
-        <p className="mt-2 text-xs text-muted-foreground">{AI_UNAVAILABLE_HINT}</p>
+                  >
+                    {selectedRequirements.length === allRequirementIds.length
+                      ? 'Quitar selección'
+                      : 'Seleccionar todos'}
+                  </button>
+                </div>
+                <ul className="mb-2 flex max-h-64 flex-col gap-1 overflow-y-auto text-sm">
+                  {approvedRequirements.map((r) => (
+                    <li key={r.id} className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id={`req-${r.id}`}
+                        checked={selectedRequirements.includes(r.version.id)}
+                        onChange={() =>
+                          setSelected(
+                            selectedRequirements.includes(r.version.id)
+                              ? selectedRequirements.filter((id) => id !== r.version.id)
+                              : [...selectedRequirements, r.version.id],
+                          )
+                        }
+                      />
+                      <label htmlFor={`req-${r.id}`}>
+                        {r.code} — {r.requirement.name}
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={generating || approvedRequirements.length === 0}
+                onClick={generate}
+              >
+                <Sparkles className="size-4" aria-hidden="true" />
+                {generating ? 'Generando…' : 'Generar con IA'}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setEditing(null);
+                  setShowManualForm((v) => !v);
+                }}
+              >
+                Crear manualmente
+              </Button>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">{AI_UNAVAILABLE_HINT}</p>
+          </div>
+        ) : null}
       </section>
 
       {showManualForm || editing ? (
