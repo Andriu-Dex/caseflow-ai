@@ -1,7 +1,11 @@
 'use client';
 
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { StructuredAnalysisKind, StructuredAnalysisResponse } from '@caseflow-ai/contracts';
+import type {
+  DiagramResponse,
+  StructuredAnalysisKind,
+  StructuredAnalysisResponse,
+} from '@caseflow-ai/contracts';
 import { Eye, EyeOff, Pencil, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -17,7 +21,7 @@ import {
   SystemArchitectureManualForm,
   UiBlueprintManualForm,
 } from './structured-manual-forms';
-import { TrustedDiagram } from './trusted-svg';
+import { DiagramViewer } from './diagram-viewer';
 import {
   AI_UNAVAILABLE_HINT,
   ApproveAllButton,
@@ -142,7 +146,7 @@ export function StructuredKindPage({
   const [selected, setSelected] = useState<string[] | null>(null);
   const selectedIds = selected ?? allSourceIds;
   const [generation, setGeneration] = useState<GenerationResult | null>(null);
-  const [diagrams, setDiagrams] = useState<Record<string, string>>({});
+  const [diagrams, setDiagrams] = useState<Record<string, DiagramResponse>>({});
   const [showManualForm, setShowManualForm] = useState(false);
   const [editing, setEditing] = useState<StructuredAnalysisResponse | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -213,7 +217,7 @@ export function StructuredKindPage({
     }
     try {
       const diagram = await api.structuredAnalysis.getDiagram(projectId, kind, id);
-      setDiagrams((prev) => ({ ...prev, [id]: diagram.svg }));
+      setDiagrams((prev) => ({ ...prev, [id]: diagram }));
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'No se pudo mostrar el diagrama.');
     }
@@ -439,8 +443,11 @@ export function StructuredKindPage({
                       </button>
                     ) : null}
                     {diagrams[item.id] ? (
-                      <TrustedDiagram
-                        svg={diagrams[item.id]!}
+                      <DiagramViewer
+                        svg={diagrams[item.id]!.svg}
+                        source={diagrams[item.id]!.source}
+                        sourceFormat={diagrams[item.id]!.sourceFormat}
+                        code={item.code}
                         caption={`${title} — ${item.code}`}
                       />
                     ) : null}
