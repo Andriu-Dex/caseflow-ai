@@ -115,7 +115,7 @@ export class ReadinessService {
 
   private async sourcesStage(projectId: string): Promise<ReadinessStage> {
     const artifacts = await this.prisma.artifact.findMany({
-      where: { projectId, artifactTypeCode: 'PROJECT_SOURCE' },
+      where: { projectId, artifactTypeCode: 'PROJECT_SOURCE', archivedAt: null },
       include: { versions: { orderBy: { versionNumber: 'desc' }, take: 1 } },
     });
     const total = artifacts.length;
@@ -127,11 +127,11 @@ export class ReadinessService {
       label: 'Fuentes del proyecto',
       satisfied,
       summary: satisfied
-        ? `${approved} fuente(s) aprobada(s) de ${total}.`
-        : 'No hay fuentes de proyecto aprobadas.',
+        ? `${approved} de ${total} ${total === 1 ? 'fuente aprobada' : 'fuentes aprobadas'}.`
+        : 'Aún no hay fuentes aprobadas.',
       counts: { total, approved, pending },
-      blockers: satisfied ? [] : ['Se requiere al menos una fuente de proyecto APPROVED.'],
-      nextAction: satisfied ? null : 'Aprobar al menos una fuente de conocimiento del proyecto.',
+      blockers: satisfied ? [] : ['Apruebe al menos una fuente del proyecto.'],
+      nextAction: satisfied ? null : 'Aprobar al menos una fuente del proyecto.',
     });
   }
 
@@ -151,29 +151,31 @@ export class ReadinessService {
     const sourceBacked = (version?.projectContextDetail?.sources.length ?? 0) > 0;
     const satisfied = Boolean(version) && sourceBacked;
     const blockers: string[] = [];
-    if (!version) blockers.push('Se requiere un Contexto de Proyecto APPROVED.');
+    if (!version) blockers.push('Falta aprobar el contexto del proyecto.');
     else if (!sourceBacked)
-      blockers.push(
-        'El Contexto de Proyecto APPROVED no está respaldado por ninguna fuente APPROVED.',
-      );
+      blockers.push('El contexto aprobado no está respaldado por ninguna fuente aprobada.');
     return stage({
       key: 'CONTEXT',
       label: 'Contexto del proyecto',
       satisfied,
       summary: satisfied
-        ? `Contexto ${artifact!.code} v${version!.versionNumber} respaldado por fuentes aprobadas.`
-        : 'No hay un Contexto de Proyecto oficial (aprobado y respaldado por fuentes).',
+        ? `Contexto ${artifact!.code} (versión ${version!.versionNumber}) aprobado y respaldado por fuentes.`
+        : 'El contexto del proyecto aún no está aprobado ni respaldado por fuentes.',
       evidence: version ? { artifactVersionId: version.id, code: artifact!.code } : undefined,
       blockers,
       nextAction: satisfied
         ? null
-        : 'Aprobar el Contexto del Proyecto respaldado por fuentes APPROVED.',
+        : 'Aprobar el contexto del proyecto vinculándolo a fuentes aprobadas.',
     });
   }
 
   private async requirementsStage(projectId: string): Promise<ReadinessStage> {
     const approved = await this.prisma.artifactVersion.findMany({
-      where: { projectId, status: 'APPROVED', artifact: { artifactTypeCode: 'REQUIREMENT' } },
+      where: {
+        projectId,
+        status: 'APPROVED',
+        artifact: { artifactTypeCode: 'REQUIREMENT', archivedAt: null },
+      },
       include: { requirementDetail: true },
     });
     const rf = approved.filter((v) => v.requirementDetail?.requirementType === 'FUNCTIONAL').length;
@@ -187,13 +189,13 @@ export class ReadinessService {
       label: 'Requisitos',
       satisfied,
       summary: satisfied
-        ? `${approved.length} requisito(s) aprobado(s) (RF ${rf}, RNF ${rnf}).`
-        : 'No hay requisitos aprobados.',
+        ? `${approved.length} ${approved.length === 1 ? 'requisito aprobado' : 'requisitos aprobados'} (${rf} funcionales, ${rnf} no funcionales).`
+        : 'Aún no hay requisitos aprobados.',
       counts: { approved: approved.length, functional: rf, nonFunctional: rnf },
-      blockers: satisfied ? [] : ['Se requiere al menos un Requisito APPROVED.'],
+      blockers: satisfied ? [] : ['Apruebe al menos un requisito.'],
       // Quality findings are advisory (spec §4.3): they never block readiness.
       warnings: quality?.issues.map((i) => `${i.code}: ${i.message}`) ?? [],
-      nextAction: satisfied ? null : 'Aprobar al menos un Requisito.',
+      nextAction: satisfied ? null : 'Aprobar al menos un requisito.',
     });
   }
 
@@ -201,7 +203,11 @@ export class ReadinessService {
     projectId: string,
   ): Promise<{ stage: ReadinessStage; approvedVersionIds: string[] }> {
     const approved = await this.prisma.artifactVersion.findMany({
-      where: { projectId, status: 'APPROVED', artifact: { artifactTypeCode: 'USE_CASE' } },
+      where: {
+        projectId,
+        status: 'APPROVED',
+        artifact: { artifactTypeCode: 'USE_CASE', archivedAt: null },
+      },
     });
     const satisfied = approved.length >= USE_CASE_MINIMUM;
     return {
@@ -210,16 +216,14 @@ export class ReadinessService {
         key: 'USE_CASES',
         label: 'Casos de uso',
         satisfied,
-        summary: `${approved.length} caso(s) de uso aprobado(s) (mínimo académico ${USE_CASE_MINIMUM}).`,
+        summary: `${approved.length} ${approved.length === 1 ? 'caso de uso aprobado' : 'casos de uso aprobados'}.`,
         counts: { approved: approved.length, minimumRequired: USE_CASE_MINIMUM },
         blockers: satisfied
           ? []
           : [
-              `Se requieren al menos ${USE_CASE_MINIMUM} Casos de Uso APPROVED (hay ${approved.length}).`,
+              `Se necesitan al menos ${USE_CASE_MINIMUM} casos de uso aprobados (hay ${approved.length}).`,
             ],
-        nextAction: satisfied
-          ? null
-          : 'Aprobar más Casos de Uso hasta alcanzar el mínimo académico.',
+        nextAction: satisfied ? null : `Aprobar casos de uso hasta llegar a ${USE_CASE_MINIMUM}.`,
       }),
     };
   }
@@ -238,12 +242,12 @@ export class ReadinessService {
         key: 'USE_CASE_DIAGRAM',
         label: 'Diagrama de casos de uso',
         satisfied: false,
-        summary: 'No hay Casos de Uso aprobados para representar en un diagrama.',
-        blockers: ['El diagrama de casos de uso requiere Casos de Uso APPROVED.'],
-        nextAction: 'Aprobar Casos de Uso antes de generar el diagrama.',
+        summary: 'Aún no hay casos de uso aprobados para representar en el diagrama.',
+        blockers: ['Apruebe casos de uso para poder generar su diagrama.'],
+        nextAction: 'Aprobar casos de uso antes de generar el diagrama.',
       });
     const diagrams = await this.prisma.artifact.findMany({
-      where: { projectId, artifactTypeCode: 'USE_CASE_DIAGRAM' },
+      where: { projectId, artifactTypeCode: 'USE_CASE_DIAGRAM', archivedAt: null },
       include: {
         versions: {
           orderBy: { versionNumber: 'desc' },
@@ -264,14 +268,12 @@ export class ReadinessService {
       label: 'Diagrama de casos de uso',
       satisfied,
       summary: satisfied
-        ? `Diagrama ${match!.code} generado a partir de Casos de Uso aprobados.`
-        : 'No existe un diagrama de casos de uso generado a partir de Casos de Uso aprobados vigentes.',
+        ? `Diagrama ${match!.code} generado a partir de los casos de uso aprobados.`
+        : 'Aún no se ha generado el diagrama con los casos de uso aprobados actuales.',
       evidence: match ? { artifactVersionId: match.versions[0]!.id, code: match.code } : undefined,
       blockers: satisfied
         ? []
-        : [
-            'Se requiere un diagrama de casos de uso derivado de los Casos de Uso APPROVED vigentes.',
-          ],
+        : ['Genere el diagrama de casos de uso desde la página de Casos de uso.'],
       nextAction: satisfied ? null : 'Generar el diagrama de casos de uso.',
     });
   }
@@ -286,10 +288,12 @@ export class ReadinessService {
       key,
       label,
       satisfied,
-      summary: satisfied ? `${result!.code} está APPROVED.` : `No hay ${label} APPROVED.`,
+      summary: satisfied
+        ? `${result!.code} está aprobado.`
+        : `Aún no hay ${label.toLowerCase()} aprobado.`,
       evidence: result ? { artifactVersionId: result.versionId, code: result.code } : undefined,
-      blockers: satisfied ? [] : [`Se requiere un ${label} APPROVED.`],
-      nextAction: satisfied ? null : `Aprobar un ${label}.`,
+      blockers: satisfied ? [] : [`Falta aprobar: ${label.toLowerCase()}.`],
+      nextAction: satisfied ? null : `Aprobar ${label.toLowerCase()}.`,
     });
   }
 
@@ -301,9 +305,10 @@ export class ReadinessService {
         key: 'ER_DIAGRAM',
         label: 'Diagrama ER',
         satisfied: false,
-        summary: 'No hay Modelo de Datos aprobado del cual derivar el diagrama ER.',
-        blockers: ['El diagrama ER requiere un Modelo de Datos APPROVED.'],
-        nextAction: 'Aprobar un Modelo de Datos.',
+        summary:
+          'Aún no hay un modelo de datos aprobado para generar el diagrama entidad-relación.',
+        blockers: ['Apruebe un modelo de datos para obtener su diagrama entidad-relación.'],
+        nextAction: 'Aprobar un modelo de datos.',
       });
     const detail = await this.prisma.diagramDetail.findUnique({
       where: { artifactVersionId: dataModel.versionId },
@@ -314,15 +319,17 @@ export class ReadinessService {
       label: 'Diagrama ER',
       satisfied,
       summary: satisfied
-        ? `Diagrama ER disponible para ${dataModel.code}.`
-        : `${dataModel.code} (APPROVED) no tiene diagrama ER generado.`,
+        ? `Diagrama entidad-relación disponible para ${dataModel.code}.`
+        : `${dataModel.code} está aprobado pero aún no tiene diagrama entidad-relación.`,
       evidence: satisfied
         ? { artifactVersionId: dataModel.versionId, code: dataModel.code }
         : undefined,
       blockers: satisfied
         ? []
-        : ['El Modelo de Datos APPROVED seleccionado no tiene una representación ER generada.'],
-      nextAction: satisfied ? null : 'Generar el diagrama ER del Modelo de Datos aprobado.',
+        : ['El modelo de datos aprobado aún no tiene diagrama entidad-relación.'],
+      nextAction: satisfied
+        ? null
+        : 'Generar el diagrama entidad-relación del modelo de datos aprobado.',
     });
   }
 
@@ -336,9 +343,9 @@ export class ReadinessService {
         key,
         label,
         satisfied: false,
-        summary: `No hay ${label} APPROVED.`,
-        blockers: [`Se requiere un ${label} APPROVED.`],
-        nextAction: `Aprobar ${label}.`,
+        summary: `Aún no hay ${label.toLowerCase()} aprobada.`,
+        blockers: [`Falta aprobar: ${label.toLowerCase()}.`],
+        nextAction: `Aprobar ${label.toLowerCase()}.`,
       });
     const detail = await this.prisma.diagramDetail.findUnique({
       where: { artifactVersionId: result.versionId },
@@ -349,13 +356,11 @@ export class ReadinessService {
       label,
       satisfied,
       summary: satisfied
-        ? `${result.code} está APPROVED con diagrama generado.`
-        : `${result.code} está APPROVED pero no tiene diagrama generado.`,
+        ? `${result.code} está aprobado y tiene su diagrama.`
+        : `${result.code} está aprobado pero aún no tiene diagrama.`,
       evidence: { artifactVersionId: result.versionId, code: result.code },
-      blockers: satisfied
-        ? []
-        : [`${label} APPROVED no tiene una representación de diagrama generada.`],
-      nextAction: satisfied ? null : `Generar el diagrama de ${label}.`,
+      blockers: satisfied ? [] : [`${label} aprobada aún no tiene diagrama.`],
+      nextAction: satisfied ? null : `Generar el diagrama de ${label.toLowerCase()}.`,
     });
   }
 
@@ -368,12 +373,12 @@ export class ReadinessService {
         key: 'MOCKUPS',
         label: 'Mockups',
         satisfied: false,
-        summary: 'No hay UI Blueprint aprobado del cual derivar Mockups.',
-        blockers: ['Los Mockups requieren un UI Blueprint APPROVED.'],
+        summary: 'Aún no hay un UI Blueprint aprobado para generar bocetos.',
+        blockers: ['Apruebe un UI Blueprint para poder generar sus bocetos.'],
         nextAction: 'Aprobar un UI Blueprint.',
       });
     const mockups = await this.prisma.artifact.findMany({
-      where: { projectId, artifactTypeCode: 'MOCKUP' },
+      where: { projectId, artifactTypeCode: 'MOCKUP', archivedAt: null },
       include: {
         versions: {
           where: { status: 'APPROVED' },
@@ -393,13 +398,11 @@ export class ReadinessService {
       satisfied,
       summary: satisfied
         ? `${match!.code} aprobado, derivado exactamente de ${blueprint.code}.`
-        : `No hay un Mockup APPROVED derivado exactamente del UI Blueprint ${blueprint.code} vigente.`,
+        : `Falta aprobar un boceto generado a partir del UI Blueprint ${blueprint.code} vigente.`,
       evidence: match ? { artifactVersionId: match.versions[0]!.id, code: match.code } : undefined,
       blockers: satisfied
         ? []
-        : [
-            'Se requiere un Mockup APPROVED derivado exactamente del UI Blueprint APPROVED vigente.',
-          ],
+        : ['Apruebe un boceto generado a partir del UI Blueprint aprobado vigente.'],
       nextAction: satisfied ? null : 'Generar y aprobar el Mockup del UI Blueprint aprobado.',
     });
   }
@@ -447,15 +450,13 @@ export class ReadinessService {
       label: 'Impacto potencial',
       satisfied,
       summary: directlyStale
-        ? 'El Contexto del Proyecto vigente excluye conocimiento de fuente APPROVED más reciente.'
+        ? 'Hay fuentes aprobadas más recientes que el contexto del proyecto todavía no incluye.'
         : affected.length
           ? 'Sin bloqueo directo; existen artefactos potencialmente afectados que requieren revisión.'
           : 'Sin advertencias de impacto potencial pendientes.',
       counts: { potentiallyAffected: affected.length },
       blockers: directlyStale
-        ? [
-            'El Contexto del Proyecto APPROVED no incluye conocimiento de fuente APPROVED más reciente (staleness sin resolver).',
-          ]
+        ? ['Actualice el contexto del proyecto para incluir las fuentes aprobadas más recientes.']
         : [],
       warnings,
       nextAction: directlyStale

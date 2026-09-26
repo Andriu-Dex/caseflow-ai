@@ -26,12 +26,12 @@ vi.mock('../lib/api', () => ({
             label: 'Contexto del proyecto',
             satisfied: false,
             summary: 'Falta aprobar el contexto.',
-            blockers: ['Se requiere un Contexto APPROVED.'],
+            blockers: ['Falta aprobar el contexto del proyecto.'],
             warnings: [],
             nextAction: 'Aprobar el Contexto.',
           },
         ],
-        blockers: ['Se requiere un Contexto APPROVED.'],
+        blockers: ['Falta aprobar el contexto del proyecto.'],
         warnings: [],
       }),
     },
@@ -67,7 +67,7 @@ describe('HomePage', () => {
         <HomePage />
       </TestProviders>,
     );
-    await waitFor(() => expect(screen.getByText(/no listo todavía/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/en progreso/i)).toBeInTheDocument());
   });
 
   it('surfaces the staleness/potential-impact warning with careful wording (behaviors 5, 18)', async () => {

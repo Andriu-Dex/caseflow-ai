@@ -45,11 +45,9 @@ test('professor can progress a project from zero to an approved Requirement with
   await sourceCard.getByRole('button', { name: 'Guardar reporte manual' }).click();
   await expect(sourceCard.getByText('El cliente necesita registrar pedidos')).toBeVisible();
 
-  // --- Submit / review / approve the Source ---
-  await sourceCard.getByRole('button', { name: 'Enviar a revisión' }).click();
-  await expect(sourceCard.getByText('Aprobado')).toHaveCount(0);
-  await sourceCard.getByRole('button', { name: 'Aprobar' }).click();
-  await expect(sourceCard.getByText('Aprobado')).toBeVisible();
+  // --- Approve the Source (single-member workspace: one-click approval) ---
+  await sourceCard.getByRole('button', { name: 'Aprobar', exact: true }).click();
+  await expect(sourceCard.getByText('Aprobado', { exact: true })).toBeVisible();
 
   // --- Create the Project Context, selecting the Source through the UI ---
   await nav.getByRole('link', { name: 'Contexto del proyecto' }).click();
@@ -62,10 +60,9 @@ test('professor can progress a project from zero to an approved Requirement with
   await page.getByLabel(/Notas de la entrevista/).check();
   await page.getByRole('button', { name: 'Crear Contexto' }).click();
 
-  // --- Submit / approve the Context ---
-  await page.getByRole('button', { name: 'Enviar a revisión' }).click();
-  await page.getByRole('button', { name: 'Aprobar' }).click();
-  await expect(page.getByText('Aprobado')).toBeVisible();
+  // --- Approve the Context ---
+  await page.getByRole('button', { name: 'Aprobar', exact: true }).click();
+  await expect(page.getByText('Aprobado', { exact: true })).toBeVisible();
 
   // --- Manually create a downstream Requirement (no AI) ---
   await nav.getByRole('link', { name: 'Requisitos' }).click();
@@ -74,13 +71,11 @@ test('professor can progress a project from zero to an approved Requirement with
   await page
     .getByLabel('Descripción', { exact: true })
     .fill('El sistema debe permitir registrar un pedido con sus datos básicos.');
-  await page.getByRole('button', { name: 'Crear Requisito' }).click();
+  await page.getByRole('button', { name: 'Crear requisito' }).click();
 
   const requirementRow = page.locator('li').filter({ hasText: 'Registrar pedido' });
-  await requirementRow.getByRole('button', { name: 'Detalle' }).click();
-  await requirementRow.getByRole('button', { name: 'Enviar a revisión' }).click();
-  await requirementRow.getByRole('button', { name: 'Aprobar' }).click();
-  await expect(requirementRow.getByText('Aprobado')).toBeVisible();
+  await requirementRow.getByRole('button', { name: 'Aprobar', exact: true }).click();
+  await expect(requirementRow.getByText('Aprobado', { exact: true })).toBeVisible();
 
   // --- Return to Home/Readiness and verify visible progression ---
   await nav.getByRole('link', { name: 'Inicio' }).click();

@@ -44,9 +44,14 @@ describe('Requirements integration', () => {
     const r = await ctx.requirements.create(projectId, input('FUNCTIONAL', 'Aprobar'));
     await ctx.requirements.transition(projectId, r.id, r.version.id, 'IN_REVIEW');
     await ctx.requirements.transition(projectId, r.id, r.version.id, 'APPROVED');
-    await expect(
-      ctx.requirements.version(projectId, r.id, input('FUNCTIONAL', 'Cambio')),
-    ).rejects.toThrow('aprobado');
+    const edited = await ctx.requirements.version(projectId, r.id, input('FUNCTIONAL', 'Cambio'));
+    expect(edited.version).toMatchObject({ versionNumber: 2, status: 'DRAFT' });
+    const approvedV1 = await ctx.prisma.artifactVersion.findUniqueOrThrow({
+      where: { id: r.version.id },
+      include: { requirementDetail: true },
+    });
+    expect(approvedV1.status).toBe('APPROVED');
+    expect(approvedV1.requirementDetail?.name).toBe('Aprobar');
     await expect(
       ctx.requirements.transition(projectId, r.id, r.version.id, 'DRAFT'),
     ).rejects.toThrow('Transición');

@@ -19,6 +19,6 @@ describe('StatusBadge', () => {
 describe('CandidateBadge', () => {
   it('is visibly distinct from an official artifact version status (behavior 9)', () => {
     render(<CandidateBadge />);
-    expect(screen.getByText(/candidato de ia/i)).toBeInTheDocument();
+    expect(screen.getByText(/propuesta de ia/i)).toBeInTheDocument();
   });
 });

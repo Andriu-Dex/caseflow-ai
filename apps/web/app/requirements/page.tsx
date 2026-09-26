@@ -1,14 +1,29 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { RequirementResponse } from '@caseflow-ai/contracts';
+import { Pencil, Sparkles } from 'lucide-react';
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { Button } from '@caseflow-ai/ui';
-import { api, ApiError, type GenerationResult } from '../../lib/api';
+import { api, ApiError, type ArtifactVersionStatus, type GenerationResult } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { StatusBadge } from '../../components/status-badge';
 import { PageHeading } from '../../components/page-heading';
 import { CandidateReview } from '../../components/candidate-review';
 import { RequirementManualForm } from '../../components/requirement-manual-form';
+import {
+  AI_UNAVAILABLE_HINT,
+  ApproveAllButton,
+  ArchiveButton,
+  EmptyState,
+  StaleNotice,
+  approveDirectly,
+  isPendingApproval,
+  useStaleArtifactIds,
+} from '../../components/artifact-actions';
+
+const PRIORITY_LABELS: Record<string, string> = { HIGH: 'Alta', MEDIUM: 'Media', LOW: 'Baja' };
 
 function RequirementsContent({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
@@ -25,123 +40,145 @@ function RequirementsContent({ projectId }: { projectId: string }) {
     queryFn: () => api.context.getCurrent(projectId),
     retry: false,
   });
+  const stale = useStaleArtifactIds(projectId);
 
   const [generation, setGeneration] = useState<GenerationResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [openDetail, setOpenDetail] = useState<string | null>(null);
   const [showManualForm, setShowManualForm] = useState(false);
+  const [editing, setEditing] = useState<RequirementResponse | null>(null);
   const [generating, setGenerating] = useState(false);
   const [approvingId, setApprovingId] = useState<string | null>(null);
+
+  const contextApproved = context.data?.version.status === 'APPROVED';
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['requirements', projectId] });
     queryClient.invalidateQueries({ queryKey: ['requirements-quality', projectId] });
     queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['staleness', projectId] });
   }
 
   async function handleGenerate() {
-    setError(null);
-    if (!context.data || context.data.version.status !== 'APPROVED') {
-      setError('Apruebe el Contexto del Proyecto antes de generar Requisitos.');
+    if (!context.data || !contextApproved) {
+      toast.info(
+        'Primero apruebe el Contexto del proyecto; los requisitos se generan a partir de él.',
+      );
       return;
     }
     setGenerating(true);
     try {
-      const result = await api.requirements.generate(projectId, context.data.version.id);
-      setGeneration(result);
+      setGeneration(await api.requirements.generate(projectId, context.data.version.id));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo generar (¿IA deshabilitada?).');
+      toast.error(err instanceof ApiError ? err.message : 'No se pudieron generar los requisitos.');
     } finally {
       setGenerating(false);
     }
   }
 
-  async function transition(
-    requirementId: string,
-    versionId: string,
-    status: 'IN_REVIEW' | 'APPROVED' | 'CHANGES_REQUESTED',
-  ) {
-    try {
-      await api.requirements.transition(projectId, requirementId, versionId, status);
-      invalidate();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo cambiar el estado.');
-    }
-  }
+  const transitionFor = (r: RequirementResponse) => (status: ArtifactVersionStatus) =>
+    api.requirements.transition(projectId, r.id, r.version.id, status);
 
-  async function approveDirectly(requirementId: string, versionId: string) {
-    setError(null);
-    setApprovingId(requirementId);
+  async function approveOne(r: RequirementResponse) {
+    setApprovingId(r.id);
     try {
-      await api.requirements.transition(projectId, requirementId, versionId, 'IN_REVIEW');
-      await api.requirements.transition(projectId, requirementId, versionId, 'APPROVED');
+      await approveDirectly(transitionFor(r));
+      toast.success(`${r.code} aprobado.`);
       invalidate();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo aprobar el requisito.');
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo aprobar el requisito.');
     } finally {
       setApprovingId(null);
     }
   }
 
+  async function transition(r: RequirementResponse, status: ArtifactVersionStatus) {
+    try {
+      await transitionFor(r)(status);
+      invalidate();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo cambiar el estado.');
+    }
+  }
+
   const items = requirements.data?.items ?? [];
+  const pending = items.filter((r) => isPendingApproval(r.version.status));
   const rf = items.filter((r) => r.requirement.requirementType === 'FUNCTIONAL').length;
-  const rnf = items.filter((r) => r.requirement.requirementType === 'NON_FUNCTIONAL').length;
+  const rnf = items.length - rf;
   const issues = quality.data?.issues ?? [];
-  const warningCount = issues.length;
   const issuesByRequirement = new Map<string, typeof issues>();
   for (const issue of issues) {
-    const existing = issuesByRequirement.get(issue.requirementId) ?? [];
-    existing.push(issue);
-    issuesByRequirement.set(issue.requirementId, existing);
+    issuesByRequirement.set(issue.requirementId, [
+      ...(issuesByRequirement.get(issue.requirementId) ?? []),
+      issue,
+    ]);
   }
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeading title="Requisitos" projectId={projectId} />
 
-      <section className="flex flex-wrap items-center gap-4 rounded-lg border border-border bg-card p-4 text-sm">
-        <span>
-          <strong>{rf}</strong> RF
-        </span>
-        <span>
-          <strong>{rnf}</strong> RNF
-        </span>
-        <span className="text-amber-700">
-          <strong>{warningCount}</strong> advertencia(s) de calidad (ISO/IEC/IEEE 29148:2018)
-        </span>
-        <div className="ml-auto flex gap-2">
-          <Button type="button" variant="outline" disabled={generating} onClick={handleGenerate}>
-            {generating ? 'Generando…' : 'Generar con IA'}
-          </Button>
-          <Button type="button" variant="outline" onClick={() => setShowManualForm((v) => !v)}>
-            Crear manualmente
-          </Button>
+      <section className="flex flex-col gap-2 rounded-lg border border-border bg-card p-4 text-sm">
+        <div className="flex flex-wrap items-center gap-4">
+          <span>
+            <strong>{rf}</strong> funcionales
+          </span>
+          <span>
+            <strong>{rnf}</strong> no funcionales
+          </span>
+          {issues.length ? (
+            <span className="text-amber-700 dark:text-amber-400">
+              <strong>{issues.length}</strong>{' '}
+              {issues.length === 1 ? 'sugerencia de calidad' : 'sugerencias de calidad'}
+            </span>
+          ) : null}
+          <div className="ml-auto flex flex-wrap gap-2">
+            <ApproveAllButton
+              pending={pending}
+              approve={(id) => approveDirectly(transitionFor(items.find((r) => r.id === id)!))}
+              onDone={invalidate}
+            />
+            <Button type="button" variant="outline" disabled={generating} onClick={handleGenerate}>
+              <Sparkles className="size-4" aria-hidden="true" />
+              {generating ? 'Generando…' : 'Generar con IA'}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setEditing(null);
+                setShowManualForm((v) => !v);
+              }}
+            >
+              Crear manualmente
+            </Button>
+          </div>
         </div>
+        <p className="text-xs text-muted-foreground">{AI_UNAVAILABLE_HINT}</p>
       </section>
-      <p className="-mt-4 text-xs text-muted-foreground">
-        La generación con IA requiere un proveedor configurado. Si no está disponible, use
-        &quot;Crear manualmente&quot;.
-      </p>
 
-      {showManualForm ? (
+      {showManualForm || editing ? (
         <RequirementManualForm
+          key={editing?.id ?? 'new'}
           projectId={projectId}
           existingRequirements={items}
+          initial={editing ?? undefined}
           onCreated={() => {
             invalidate();
             setShowManualForm(false);
+            setEditing(null);
           }}
-          onCancel={() => setShowManualForm(false)}
+          onCancel={() => {
+            setShowManualForm(false);
+            setEditing(null);
+          }}
         />
       ) : null}
-
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
       {generation ? (
         <CandidateReview
           generation={generation}
           describe={(c) =>
-            `${c.requirementType === 'FUNCTIONAL' ? 'RF' : 'RNF'} — ${c.name}: ${String(c.description ?? '').slice(0, 140)}`
+            `${c.requirementType === 'FUNCTIONAL' ? 'Funcional' : 'No funcional'} — ${c.name}: ${String(c.description ?? '').slice(0, 160)}`
           }
           onAccept={async (ids) => {
             await api.requirements.accept(projectId, generation.id, ids);
@@ -153,45 +190,85 @@ function RequirementsContent({ projectId }: { projectId: string }) {
 
       <QueryState isLoading={requirements.isLoading} error={requirements.error}>
         {items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No hay requisitos todavía. Genérelos con IA (requiere Contexto APPROVED) o continúe con
-            el flujo manual una vez disponible.
-          </p>
+          <EmptyState title="Aún no hay requisitos">
+            {contextApproved
+              ? 'Genérelos con IA a partir del Contexto del proyecto, o créelos manualmente.'
+              : 'Cuando el Contexto del proyecto esté aprobado podrá generarlos con IA. Mientras tanto, puede crearlos manualmente.'}
+          </EmptyState>
         ) : (
           <ul className="flex flex-col gap-2">
             {items.map((r) => (
               <li key={r.id} className="rounded-lg border border-border bg-card p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-sm">
+                  <button
+                    type="button"
+                    onClick={() => setOpenDetail(openDetail === r.id ? null : r.id)}
+                    className="text-left text-sm"
+                  >
                     <span className="font-mono text-xs text-muted-foreground">{r.code}</span>{' '}
-                    <span className="rounded bg-muted px-1.5 py-0.5 text-xs font-medium">
-                      {r.requirement.requirementType === 'FUNCTIONAL' ? 'RF' : 'RNF'}
-                    </span>{' '}
                     <span className="font-medium text-foreground">{r.requirement.name}</span>{' '}
                     <span className="text-xs text-muted-foreground">
-                      ({r.requirement.priority})
+                      · Prioridad {PRIORITY_LABELS[r.requirement.priority]?.toLowerCase()}
                     </span>
-                  </div>
-                  <div className="flex items-center gap-2">
+                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
                     <StatusBadge status={r.version.status} />
+                    {isPendingApproval(r.version.status) ? (
+                      <button
+                        type="button"
+                        onClick={() => approveOne(r)}
+                        disabled={approvingId === r.id}
+                        className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
+                      >
+                        {approvingId === r.id ? 'Aprobando…' : 'Aprobar'}
+                      </button>
+                    ) : null}
+                    {r.version.status === 'IN_REVIEW' ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => transition(r, 'APPROVED')}
+                          className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700"
+                        >
+                          Aprobar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => transition(r, 'CHANGES_REQUESTED')}
+                          className="rounded-md border border-destructive/40 px-3 py-1 text-sm text-destructive hover:bg-destructive/5"
+                        >
+                          Solicitar cambios
+                        </button>
+                      </>
+                    ) : null}
                     <button
                       type="button"
-                      onClick={() => setOpenDetail(openDetail === r.id ? null : r.id)}
-                      className="text-sm text-muted-foreground underline"
+                      onClick={() => {
+                        setShowManualForm(false);
+                        setEditing(r);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-muted/40"
                     >
-                      {openDetail === r.id ? 'Ocultar' : 'Detalle'}
+                      <Pencil className="size-3.5" aria-hidden="true" />
+                      Editar
                     </button>
+                    <ArchiveButton
+                      projectId={projectId}
+                      artifactId={r.id}
+                      code={r.code}
+                      onDone={invalidate}
+                    />
                   </div>
                 </div>
+                {stale.has(r.id) ? <StaleNotice /> : null}
                 {issuesByRequirement.has(r.id) ? (
-                  <ul className="mt-2 flex flex-col gap-1 border-t border-amber-100 pt-2">
+                  <ul className="mt-2 flex flex-col gap-1 border-t border-border pt-2">
                     {issuesByRequirement.get(r.id)!.map((issue, idx) => (
                       <li
                         key={`${issue.code}-${idx}`}
-                        className="text-xs text-amber-700"
-                        title={issue.rule}
+                        className="text-xs text-amber-700 dark:text-amber-400"
                       >
-                        ⚠ {issue.message}
+                        Sugerencia: {issue.message}
                       </li>
                     ))}
                   </ul>
@@ -214,39 +291,6 @@ function RequirementsContent({ projectId }: { projectId: string }) {
                         <strong>Postcondiciones:</strong> {r.requirement.postconditions.join('; ')}
                       </p>
                     ) : null}
-                    <div className="flex flex-wrap gap-2">
-                      {r.version.status === 'DRAFT' || r.version.status === 'GENERATED' ? (
-                        // "Enviar a revisión" stays hidden until multi-user
-                        // review ships (see sources/page.tsx); approveDirectly
-                        // still drives IN_REVIEW.
-                        <button
-                          type="button"
-                          onClick={() => approveDirectly(r.id, r.version.id)}
-                          disabled={approvingId === r.id}
-                          className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
-                        >
-                          {approvingId === r.id ? 'Aprobando…' : 'Aprobar'}
-                        </button>
-                      ) : null}
-                      {r.version.status === 'IN_REVIEW' ? (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => transition(r.id, r.version.id, 'APPROVED')}
-                            className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700"
-                          >
-                            Aprobar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => transition(r.id, r.version.id, 'CHANGES_REQUESTED')}
-                            className="rounded-md border border-destructive/40 px-3 py-1 text-sm text-destructive hover:bg-destructive/5"
-                          >
-                            Solicitar cambios
-                          </button>
-                        </>
-                      ) : null}
-                    </div>
                   </div>
                 ) : null}
               </li>

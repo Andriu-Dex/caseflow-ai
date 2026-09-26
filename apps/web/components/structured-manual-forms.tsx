@@ -1,22 +1,55 @@
 'use client';
 
 import { useState } from 'react';
-import { NAVIGATION_NODE_KINDS, SYSTEM_NODE_KINDS } from '@caseflow-ai/contracts';
+import { toast } from 'sonner';
+import {
+  NAVIGATION_NODE_KINDS,
+  SYSTEM_NODE_KINDS,
+  type NavigationTreeContent,
+  type SoftwareArchitectureContent,
+  type StructuredAnalysisKind,
+  type StructuredAnalysisResponse,
+  type SystemArchitectureContent,
+  type UiBlueprintContent,
+} from '@caseflow-ai/contracts';
 import { api, ApiError } from '../lib/api';
 import { csv } from '../lib/use-rows';
+
+// Creating, or editing (`initial` given): an edit submits a complete new
+// version that starts again as a draft; the previous version stays intact.
+async function save(
+  projectId: string,
+  kind: StructuredAnalysisKind,
+  initial: StructuredAnalysisResponse | undefined,
+  title: string,
+  content: unknown,
+) {
+  if (initial) {
+    await api.structuredAnalysis.createVersion(projectId, kind, initial.id, title, content);
+    toast.success(`${initial.code} actualizado. La nueva versión queda pendiente de aprobación.`);
+  } else {
+    await api.structuredAnalysis.create(projectId, kind, title, content);
+    toast.success('Creado correctamente.');
+  }
+}
+
+// Existing rows keep their original localId so references between them
+// (parent node, dependency, link) stay valid; new rows get a fresh one.
+const rowId = (row: { localId?: string }, prefix: string, i: number) =>
+  row.localId ?? `${prefix}${i + 1}`;
 
 function ManualFormShell({
   title,
   onSubmit,
   submitting,
-  error,
+  editing,
   onCancel,
   children,
 }: {
   title: string;
   onSubmit: (e: React.FormEvent) => void;
   submitting: boolean;
-  error: string | null;
+  editing: boolean;
   onCancel: () => void;
   children: React.ReactNode;
 }) {
@@ -27,14 +60,13 @@ function ManualFormShell({
     >
       <h2 className="text-sm font-semibold text-foreground">{title}</h2>
       {children}
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <div className="flex gap-2">
         <button
           type="submit"
           disabled={submitting}
           className="rounded-md bg-primary px-3 py-1.5 text-sm text-white disabled:opacity-50"
         >
-          {submitting ? 'Creando…' : 'Crear'}
+          {submitting ? 'Guardando…' : editing ? 'Guardar cambios' : 'Crear'}
         </button>
         <button
           type="button"
@@ -50,26 +82,49 @@ function ManualFormShell({
 
 interface FormProps {
   projectId: string;
+  initial?: StructuredAnalysisResponse;
   onCreated: () => void;
   onCancel: () => void;
 }
 
-export function NavigationManualForm({ projectId, onCreated, onCancel }: FormProps) {
-  const [title, setTitle] = useState('');
-  const [nodes, setNodes] = useState([
+export function NavigationManualForm({ projectId, initial, onCreated, onCancel }: FormProps) {
+  const c0 = initial?.content as NavigationTreeContent | undefined;
+  const [title, setTitle] = useState(initial?.title ?? '');
+  const [nodes, setNodes] = useState<
     {
-      label: '',
-      viewName: '',
-      kind: 'VIEW' as (typeof NAVIGATION_NODE_KINDS)[number],
-      parentLocalId: '',
-      route: '',
-      description: '',
-      relatedUseCaseCodes: '',
-    },
-  ]);
-  const [error, setError] = useState<string | null>(null);
+      localId?: string;
+      label: string;
+      viewName: string;
+      kind: (typeof NAVIGATION_NODE_KINDS)[number];
+      parentLocalId: string;
+      route: string;
+      description: string;
+      relatedUseCaseCodes: string;
+    }[]
+  >(
+    c0?.nodes.map((n) => ({
+      localId: n.localId,
+      label: n.label,
+      viewName: n.viewName,
+      kind: n.kind,
+      parentLocalId: n.parentLocalId ?? '',
+      route: n.route ?? '',
+      description: n.description ?? '',
+      relatedUseCaseCodes: n.relatedUseCaseCodes.join(', '),
+    })) ?? [
+      {
+        label: '',
+        viewName: '',
+        kind: 'VIEW' as (typeof NAVIGATION_NODE_KINDS)[number],
+        parentLocalId: '',
+        route: '',
+        description: '',
+        relatedUseCaseCodes: '',
+      },
+    ],
+  );
   const [submitting, setSubmitting] = useState(false);
-  const ids = nodes.map((_, i) => `n${i + 1}`);
+  const ids = nodes.map((n, i) => rowId(n, 'n', i));
 
   function update(i: number, patch: Partial<(typeof nodes)[number]>) {
     setNodes((prev) => prev.map((n, idx) => (idx === i ? { ...n, ...patch } : n)));
@@ -77,10 +132,9 @@ export function NavigationManualForm({ projectId, onCreated, onCancel }: FormPro
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
     setSubmitting(true);
     try {
-      await api.structuredAnalysis.create(projectId, 'NAVIGATION_TREE', title, {
+      await save(projectId, 'NAVIGATION_TREE', initial, title, {
         nodes: nodes.map((n, i) => ({
           localId: ids[i],
           label: n.label,
@@ -94,7 +148,7 @@ export function NavigationManualForm({ projectId, onCreated, onCancel }: FormPro
       });
       onCreated();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo crear la Navegación.');
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo guardar la navegación.');
     } finally {
       setSubmitting(false);
     }
@@ -102,10 +156,10 @@ export function NavigationManualForm({ projectId, onCreated, onCancel }: FormPro
 
   return (
     <ManualFormShell
-      title="Crear Navegación manualmente"
+      title={initial ? `Editar ${initial.code}` : 'Nueva navegación'}
       onSubmit={handleSubmit}
       submitting={submitting}
-      error={error}
+      editing={Boolean(initial)}
       onCancel={onCancel}
     >
       <input
@@ -213,24 +267,37 @@ export function NavigationManualForm({ projectId, onCreated, onCancel }: FormPro
   );
 }
 
-export function SoftwareArchitectureManualForm({ projectId, onCreated, onCancel }: FormProps) {
-  const [title, setTitle] = useState('');
-  const [style, setStyle] = useState('');
-  const [components, setComponents] = useState([{ name: '', responsibilities: '', layer: '' }]);
+export function SoftwareArchitectureManualForm({
+  projectId,
+  initial,
+  onCreated,
+  onCancel,
+}: FormProps) {
+  const c0 = initial?.content as SoftwareArchitectureContent | undefined;
+  const [title, setTitle] = useState(initial?.title ?? '');
+  const [style, setStyle] = useState(c0?.style ?? '');
+  const [components, setComponents] = useState<
+    { localId?: string; name: string; responsibilities: string; layer: string }[]
+  >(
+    c0?.components.map((c) => ({
+      localId: c.localId,
+      name: c.name,
+      responsibilities: c.responsibilities.join(', '),
+      layer: c.layerLocalId ?? '',
+    })) ?? [{ name: '', responsibilities: '', layer: '' }],
+  );
   const [dependencies, setDependencies] = useState<
     { fromLocalId: string; toLocalId: string; description: string }[]
-  >([]);
-  const [decisionsText, setDecisionsText] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  >(c0?.dependencies.map((d) => ({ ...d, description: d.description ?? '' })) ?? []);
+  const [decisionsText, setDecisionsText] = useState(c0?.decisions.join('\n') ?? '');
   const [submitting, setSubmitting] = useState(false);
-  const ids = components.map((_, i) => `c${i + 1}`);
+  const ids = components.map((c, i) => rowId(c, 'c', i));
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
     setSubmitting(true);
     try {
-      await api.structuredAnalysis.create(projectId, 'SOFTWARE_ARCHITECTURE', title, {
+      await save(projectId, 'SOFTWARE_ARCHITECTURE', initial, title, {
         style,
         components: components.map((c, i) => ({
           localId: ids[i],
@@ -248,8 +315,8 @@ export function SoftwareArchitectureManualForm({ projectId, onCreated, onCancel 
       });
       onCreated();
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : 'No se pudo crear la Arquitectura de Software.',
+      toast.error(
+        err instanceof ApiError ? err.message : 'No se pudo guardar la arquitectura de software.',
       );
     } finally {
       setSubmitting(false);
@@ -258,10 +325,10 @@ export function SoftwareArchitectureManualForm({ projectId, onCreated, onCancel 
 
   return (
     <ManualFormShell
-      title="Crear Arquitectura de Software manualmente"
+      title={initial ? `Editar ${initial.code}` : 'Nueva arquitectura de software'}
       onSubmit={handleSubmit}
       submitting={submitting}
-      error={error}
+      editing={Boolean(initial)}
       onCancel={onCancel}
     >
       <input
@@ -434,25 +501,48 @@ export function SoftwareArchitectureManualForm({ projectId, onCreated, onCancel 
   );
 }
 
-export function SystemArchitectureManualForm({ projectId, onCreated, onCancel }: FormProps) {
-  const [title, setTitle] = useState('');
-  const [boundary, setBoundary] = useState('');
-  const [nodes, setNodes] = useState([
-    { name: '', kind: 'RUNTIME' as (typeof SYSTEM_NODE_KINDS)[number], responsibilities: '' },
-  ]);
+export function SystemArchitectureManualForm({
+  projectId,
+  initial,
+  onCreated,
+  onCancel,
+}: FormProps) {
+  const c0 = initial?.content as SystemArchitectureContent | undefined;
+  const [title, setTitle] = useState(initial?.title ?? '');
+  const [boundary, setBoundary] = useState(c0?.boundary ?? '');
+  const [nodes, setNodes] = useState<
+    {
+      localId?: string;
+      name: string;
+      kind: (typeof SYSTEM_NODE_KINDS)[number];
+      responsibilities: string;
+    }[]
+  >(
+    c0?.nodes.map((n) => ({
+      localId: n.localId,
+      name: n.name,
+      kind: n.kind,
+      responsibilities: n.responsibilities.join(', '),
+    })) ?? [{ name: '', kind: 'RUNTIME', responsibilities: '' }],
+  );
   const [links, setLinks] = useState<
     { fromLocalId: string; toLocalId: string; protocol: string; description: string }[]
-  >([]);
-  const [error, setError] = useState<string | null>(null);
+  >(
+    c0?.links.map((l) => ({
+      fromLocalId: l.fromLocalId,
+      toLocalId: l.toLocalId,
+      protocol: l.protocol ?? '',
+      description: l.description ?? '',
+    })) ?? [],
+  );
   const [submitting, setSubmitting] = useState(false);
-  const ids = nodes.map((_, i) => `n${i + 1}`);
+  const ids = nodes.map((n, i) => rowId(n, 'n', i));
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
     setSubmitting(true);
     try {
-      await api.structuredAnalysis.create(projectId, 'SYSTEM_ARCHITECTURE', title, {
+      await save(projectId, 'SYSTEM_ARCHITECTURE', initial, title, {
         boundary,
         nodes: nodes.map((n, i) => ({
           localId: ids[i],
@@ -470,8 +560,8 @@ export function SystemArchitectureManualForm({ projectId, onCreated, onCancel }:
       });
       onCreated();
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : 'No se pudo crear la Arquitectura de Sistema.',
+      toast.error(
+        err instanceof ApiError ? err.message : 'No se pudo guardar la arquitectura de sistema.',
       );
     } finally {
       setSubmitting(false);
@@ -480,10 +570,10 @@ export function SystemArchitectureManualForm({ projectId, onCreated, onCancel }:
 
   return (
     <ManualFormShell
-      title="Crear Arquitectura de Sistema manualmente"
+      title={initial ? `Editar ${initial.code}` : 'Nueva arquitectura de sistema'}
       onSubmit={handleSubmit}
       submitting={submitting}
-      error={error}
+      editing={Boolean(initial)}
       onCancel={onCancel}
     >
       <input
@@ -654,33 +744,62 @@ export function SystemArchitectureManualForm({ projectId, onCreated, onCancel }:
   );
 }
 
-export function UiBlueprintManualForm({ projectId, onCreated, onCancel }: FormProps) {
-  const [title, setTitle] = useState('');
-  const [screens, setScreens] = useState([
+export function UiBlueprintManualForm({ projectId, initial, onCreated, onCancel }: FormProps) {
+  const c0 = initial?.content as UiBlueprintContent | undefined;
+  const [title, setTitle] = useState(initial?.title ?? '');
+  const [screens, setScreens] = useState<
     {
-      name: '',
-      purpose: '',
-      targetActors: '',
-      relatedUseCaseCodes: '',
-      navigationNodeLocalId: '',
-      sections: '',
-      primaryActions: '',
-      secondaryActions: '',
-      principalData: '',
-      forms: '',
-      states: '',
-    },
-  ]);
-  const [error, setError] = useState<string | null>(null);
+      localId?: string;
+      name: string;
+      purpose: string;
+      targetActors: string;
+      relatedUseCaseCodes: string;
+      navigationNodeLocalId: string;
+      sections: string;
+      primaryActions: string;
+      secondaryActions: string;
+      principalData: string;
+      forms: string;
+      states: string;
+    }[]
+  >(
+    c0?.screens.map((s) => ({
+      localId: s.localId,
+      name: s.name,
+      purpose: s.purpose,
+      targetActors: s.targetActors.join(', '),
+      relatedUseCaseCodes: s.relatedUseCaseCodes.join(', '),
+      navigationNodeLocalId: s.navigationNodeLocalId ?? '',
+      sections: s.sections.join(', '),
+      primaryActions: s.primaryActions.join(', '),
+      secondaryActions: s.secondaryActions.join(', '),
+      principalData: s.principalData.join(', '),
+      forms: s.forms.join(', '),
+      states: s.states.join(', '),
+    })) ?? [
+      {
+        name: '',
+        purpose: '',
+        targetActors: '',
+        relatedUseCaseCodes: '',
+        navigationNodeLocalId: '',
+        sections: '',
+        primaryActions: '',
+        secondaryActions: '',
+        principalData: '',
+        forms: '',
+        states: '',
+      },
+    ],
+  );
   const [submitting, setSubmitting] = useState(false);
-  const ids = screens.map((_, i) => `s${i + 1}`);
+  const ids = screens.map((s, i) => rowId(s, 's', i));
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
     setSubmitting(true);
     try {
-      await api.structuredAnalysis.create(projectId, 'UI_BLUEPRINT', title, {
+      await save(projectId, 'UI_BLUEPRINT', initial, title, {
         screens: screens.map((s, i) => ({
           localId: ids[i],
           name: s.name,
@@ -698,7 +817,7 @@ export function UiBlueprintManualForm({ projectId, onCreated, onCancel }: FormPr
       });
       onCreated();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo crear el UI Blueprint.');
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo guardar el UI Blueprint.');
     } finally {
       setSubmitting(false);
     }
@@ -706,10 +825,10 @@ export function UiBlueprintManualForm({ projectId, onCreated, onCancel }: FormPr
 
   return (
     <ManualFormShell
-      title="Crear UI Blueprint manualmente"
+      title={initial ? `Editar ${initial.code}` : 'Nuevo UI Blueprint'}
       onSubmit={handleSubmit}
       submitting={submitting}
-      error={error}
+      editing={Boolean(initial)}
       onCancel={onCancel}
     >
       <input

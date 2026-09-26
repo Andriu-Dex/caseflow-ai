@@ -39,7 +39,7 @@ export class UseCasesService {
   }
   async list(projectId: string) {
     const rows = await this.prisma.artifact.findMany({
-      where: { projectId, artifactTypeCode: 'USE_CASE' },
+      where: { projectId, artifactTypeCode: 'USE_CASE', archivedAt: null },
       include: {
         versions: {
           orderBy: { versionNumber: 'desc' },
@@ -97,8 +97,9 @@ export class UseCasesService {
         where: { artifactId: id },
         orderBy: { versionNumber: 'desc' },
       });
-      if (latest.status === 'APPROVED')
-        throw new UnprocessableEntityException('Un caso de uso aprobado no puede modificarse.');
+      // Editing an approved artifact never touches the approved version: it
+      // opens a new DRAFT version that needs its own approval, exactly like
+      // Project Context, Data Model and the design artifacts.
       await this.validateRequirements(tx, projectId, input.relatedRequirementVersionIds, false);
       const version = await tx.artifactVersion.create({
         data: {
@@ -272,7 +273,7 @@ export class UseCasesService {
     if (!(await this.prisma.project.findUnique({ where: { id: projectId } })))
       throw new NotFoundException('Proyecto no encontrado.');
     const acceptedCount = await this.prisma.artifact.count({
-      where: { projectId, artifactTypeCode: 'USE_CASE' },
+      where: { projectId, artifactTypeCode: 'USE_CASE', archivedAt: null },
     });
     return { acceptedCount, minimumRequired: 4 as const, satisfied: acceptedCount >= 4 };
   }
