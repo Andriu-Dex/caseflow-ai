@@ -176,7 +176,10 @@ export class AIOrchestrator {
         purpose: prompt.purpose,
         systemInstructions: prompt.systemInstructions,
         messages: input.messages,
-        outputSchema: z.toJSONSchema(input.outputSchema) as Record<string, unknown>,
+        outputSchema: toStrictJsonSchema(z.toJSONSchema(input.outputSchema)) as Record<
+          string,
+          unknown
+        >,
         schemaName: input.schemaName,
         modelProfile: input.modelProfile ?? 'BALANCED',
         model: input.model,
@@ -184,7 +187,7 @@ export class AIOrchestrator {
         maxOutputTokens: input.maxOutputTokens,
         timeoutMs: input.timeoutMs ?? this.defaultTimeoutMs,
       });
-      const candidate = input.outputSchema.safeParse(response.payload);
+      const candidate = input.outputSchema.safeParse(stripNulls(response.payload));
       if (!candidate.success)
         throw new AIError('AI_INVALID_OUTPUT', 'La salida de IA no cumple el esquema requerido.');
       await this.recorder.succeed(runId, {
@@ -254,6 +257,66 @@ export class FakeAIProvider implements AIProvider {
     return this.result;
   }
 }
+// OpenAI/Groq strict json_schema mode rejects any object schema whose
+// `required` doesn't list every key in `properties` — but z.toJSONSchema()
+// only lists keys that aren't `.optional()`. Without this, every strict
+// provider (Groq confirmed; others likely) rejects every structured-output
+// request with a 400, silently forcing every generation prompt onto
+// whichever fallback provider tolerates a non-conformant schema. Fields that
+// were optional become nullable instead of absent, since strict mode has no
+// other way to represent "not provided".
+function toStrictJsonSchema(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(toStrictJsonSchema);
+  if (node === null || typeof node !== 'object') return node;
+  const schema = { ...(node as Record<string, unknown>) };
+  if (schema.type === 'object' && schema.properties && typeof schema.properties === 'object') {
+    const properties = schema.properties as Record<string, unknown>;
+    const required = new Set(Array.isArray(schema.required) ? (schema.required as string[]) : []);
+    const nextProperties: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(properties)) {
+      const converted = toStrictJsonSchema(value);
+      nextProperties[key] = required.has(key) ? converted : asNullable(converted);
+    }
+    schema.properties = nextProperties;
+    schema.required = Object.keys(properties);
+  }
+  if (schema.items !== undefined) schema.items = toStrictJsonSchema(schema.items);
+  for (const key of ['anyOf', 'oneOf', 'allOf'] as const) {
+    if (Array.isArray(schema[key]))
+      schema[key] = (schema[key] as unknown[]).map(toStrictJsonSchema);
+  }
+  if (schema.$defs && typeof schema.$defs === 'object') {
+    const defs: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(schema.$defs as Record<string, unknown>))
+      defs[key] = toStrictJsonSchema(value);
+    schema.$defs = defs;
+  }
+  return schema;
+}
+function asNullable(schema: unknown): unknown {
+  if (schema && typeof schema === 'object' && !Array.isArray(schema)) {
+    const node = schema as Record<string, unknown>;
+    if (typeof node.type === 'string') return { ...node, type: [node.type, 'null'] };
+  }
+  return { anyOf: [schema, { type: 'null' }] };
+}
+// Reverses asNullable's effect on the parsed response before zod validation,
+// so every existing `.optional()` contract keeps meaning "absent", not
+// "explicit null" — the provider now returns null for fields it chose to
+// skip, since strict mode has no other way to omit a required key.
+function stripNulls(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripNulls);
+  if (value !== null && typeof value === 'object') {
+    const result: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      if (entry === null) continue;
+      result[key] = stripNulls(entry);
+    }
+    return result;
+  }
+  return value;
+}
+
 export function normalizeAIError(cause: unknown): AIError {
   return cause instanceof AIError
     ? cause
