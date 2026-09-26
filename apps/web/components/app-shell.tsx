@@ -75,6 +75,16 @@ export function AppShell({ children }: { children: ReactNode }) {
   function firstBlockingStep(href: string): { label: string } | null {
     const target = ROUTE_STEP_NUMBER[href];
     if (!target || !stages) return null;
+    // Once the project has already progressed to this step (or past it), an
+    // upstream edit must never re-lock it: the user fixes the earlier step
+    // and keeps working where they were, seeing what may need review.
+    const alreadyReached = PIPELINE_STEPS.some(
+      (s) =>
+        s.step >= target &&
+        s.href !== '/traceability' &&
+        computeStepState(s.href, stages) === 'satisfied',
+    );
+    if (alreadyReached) return null;
     for (const s of PIPELINE_STEPS) {
       if (s.step >= target) break;
       if (computeStepState(s.href, stages) !== 'satisfied') return { label: s.label };

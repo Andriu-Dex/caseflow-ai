@@ -296,7 +296,7 @@ describe('Export (First Deliverable, Phase H)', () => {
       .expect(200);
     expect(response.headers['content-type']).toMatch(/application\/json/);
     expect(response.headers['content-disposition']).toBe(
-      `attachment; filename="first-deliverable-${projectId}.json"`,
+      `attachment; filename="proyecto-${projectId}.json"`,
     );
   });
 
@@ -315,7 +315,7 @@ describe('Export (First Deliverable, Phase H)', () => {
     // only from the projectId — so a malicious project name cannot inject
     // extra Content-Disposition directives or path segments.
     expect(response.headers['content-disposition']).toBe(
-      `attachment; filename="first-deliverable-${projectId}.html"`,
+      `attachment; filename="proyecto-${projectId}.html"`,
     );
   });
 

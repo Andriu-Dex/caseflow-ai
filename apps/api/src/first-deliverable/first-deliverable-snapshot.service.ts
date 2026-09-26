@@ -25,7 +25,7 @@ export class FirstDeliverableSnapshotService {
     artifactTypeCode: string,
   ): Promise<AuthoritativeArtifactVersion | null> {
     const artifacts = await this.prisma.artifact.findMany({
-      where: { projectId, artifactTypeCode },
+      where: { projectId, artifactTypeCode, archivedAt: null },
       include: {
         versions: {
           where: { status: 'APPROVED' },

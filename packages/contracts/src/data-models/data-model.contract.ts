@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ARTIFACT_VERSION_STATUSES } from '../artifacts/artifact.contract';
 
 export const DATA_MODEL_ENTITY_LIMIT = 60;
 export const DATA_MODEL_ATTRIBUTE_LIMIT = 50;
@@ -113,7 +114,7 @@ export type DataModelInput = z.output<typeof dataModelInputSchema>;
 const versionSchema = z.object({
   id: z.uuid(),
   versionNumber: z.number().int(),
-  status: z.string(),
+  status: z.enum(ARTIFACT_VERSION_STATUSES),
   origin: z.string(),
   createdAt: z.iso.datetime(),
 });
@@ -129,6 +130,7 @@ export const dataModelResponseSchema = z.object({
     aiRunId: z.uuid().nullable(),
   }),
 });
+export type DataModelResponse = z.infer<typeof dataModelResponseSchema>;
 export const dataModelListResponseSchema = z.object({ items: z.array(dataModelResponseSchema) });
 
 const generationCandidateFieldsSchema = dataModelFieldsSchema.extend({ candidateId: text(80) });

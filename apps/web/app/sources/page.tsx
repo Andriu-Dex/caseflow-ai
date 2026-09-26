@@ -3,6 +3,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Archive, Pencil, Trash2, Upload, X } from 'lucide-react';
 import { useRef, useState } from 'react';
+import { toast } from 'sonner';
 import type {
   ProjectSourceKind,
   SourceReportCandidate,
@@ -69,13 +70,11 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
   const [businessArea, setBusinessArea] = useState('');
   const [description, setDescription] = useState('');
   const [file, setFile] = useState<File | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
-    setError(null);
     try {
       await api.sources.create(
         projectId,
@@ -95,7 +94,7 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
       setFile(null);
       onCreated();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo crear la fuente.');
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo crear la fuente.');
     } finally {
       setSubmitting(false);
     }
@@ -205,7 +204,6 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
           onChange={(e) => setDescription(e.target.value)}
         />
       </div>
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <Button type="submit" disabled={submitting} className="self-start">
         {submitting ? 'Guardando…' : 'Agregar fuente'}
       </Button>
@@ -218,7 +216,6 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
   const queryClient = useQueryClient();
   const [transcript, setTranscript] = useState('');
   const [manualSummary, setManualSummary] = useState('');
-  const [actionError, setActionError] = useState<string | null>(null);
   const [generatingReport, setGeneratingReport] = useState(false);
   const [reportCandidate, setReportCandidate] = useState<SourceReportCandidate | null>(null);
   const [acceptingReport, setAcceptingReport] = useState(false);
@@ -239,53 +236,47 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
   }
 
   async function transition(status: 'IN_REVIEW' | 'APPROVED' | 'CHANGES_REQUESTED') {
-    setActionError(null);
     try {
       await api.sources.transition(projectId, source.id, source.version.id, status);
       invalidate();
     } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : 'No se pudo cambiar el estado.');
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo cambiar el estado.');
     }
   }
 
   async function approveDirectly() {
-    setActionError(null);
     setApproving(true);
     try {
       await api.sources.transition(projectId, source.id, source.version.id, 'IN_REVIEW');
       await api.sources.transition(projectId, source.id, source.version.id, 'APPROVED');
       invalidate();
     } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : 'No se pudo aprobar la fuente.');
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo aprobar la fuente.');
     } finally {
       setApproving(false);
     }
   }
 
   async function submitTranscript() {
-    setActionError(null);
     try {
       await api.sources.submitManualTranscript(projectId, source.id, transcript);
       setTranscript('');
       invalidate();
     } catch (err) {
-      setActionError(
-        err instanceof ApiError ? err.message : 'No se pudo guardar la transcripción.',
-      );
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo guardar la transcripción.');
     }
   }
 
   async function generateReport() {
-    setActionError(null);
     setGeneratingReport(true);
     try {
       const candidate = await api.sources.generateReport(projectId, source.id);
       setReportCandidate(candidate);
     } catch (err) {
-      setActionError(
+      toast.error(
         err instanceof ApiError
           ? err.message
-          : 'No se pudo generar el reporte (¿IA deshabilitada?).',
+          : 'No se pudo generar el reporte con IA en este momento. Puede redactar el resumen manualmente.',
       );
     } finally {
       setGeneratingReport(false);
@@ -294,7 +285,6 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
 
   async function acceptReportCandidate() {
     if (!reportCandidate) return;
-    setActionError(null);
     setAcceptingReport(true);
     try {
       await api.sources.acceptReport(projectId, source.id, reportCandidate.id);
@@ -302,22 +292,19 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
       queryClient.invalidateQueries({ queryKey: ['source-report', projectId, source.id] });
       invalidate();
     } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : 'No se pudo aceptar el reporte.');
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo aceptar el reporte.');
     } finally {
       setAcceptingReport(false);
     }
   }
 
   async function submitManualReport() {
-    setActionError(null);
     try {
       await api.sources.submitManualReport(projectId, source.id, manualSummary);
       setManualSummary('');
       invalidate();
     } catch (err) {
-      setActionError(
-        err instanceof ApiError ? err.message : 'No se pudo guardar el reporte manual.',
-      );
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo guardar el reporte manual.');
     }
   }
 
@@ -500,7 +487,7 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
                 {reportCandidate ? (
                   <div className="rounded-md border border-dashed border-purple-300 bg-purple-50 p-3 text-foreground/80">
                     <p className="mb-2 text-xs font-medium text-purple-700">
-                      Candidato de IA (sin persistir) — revise antes de aceptar
+                      Propuesta de IA — revísela antes de incorporarla
                     </p>
                     <p>{reportCandidate.content.summary}</p>
                     {reportCandidate.content.actors.length ? (
@@ -595,7 +582,6 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
               </>
             ) : null}
           </div>
-          {actionError ? <p className="text-sm text-destructive">{actionError}</p> : null}
         </div>
       ) : null}
     </li>
@@ -621,13 +607,11 @@ function EditSourceForm({
   const [purpose, setPurpose] = useState(source.source.purpose);
   const [businessArea, setBusinessArea] = useState(source.source.businessArea ?? '');
   const [description, setDescription] = useState(source.source.description);
-  const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-    setError(null);
     try {
       await api.sources.edit(projectId, source.id, {
         title,
@@ -638,7 +622,7 @@ function EditSourceForm({
       });
       onSaved();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo guardar la edición.');
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo guardar la edición.');
     } finally {
       setSaving(false);
     }
@@ -707,7 +691,6 @@ function EditSourceForm({
           onChange={(e) => setDescription(e.target.value)}
         />
       </div>
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <div className="flex gap-2">
         <Button type="submit" size="sm" disabled={saving}>
           {saving ? 'Guardando…' : 'Guardar nueva versión'}
@@ -731,18 +714,16 @@ function DeleteSourceDialog({
   onOpenChange: (open: boolean) => void;
   onDeleted: () => void;
 }) {
-  const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   async function handleDelete() {
     setDeleting(true);
-    setError(null);
     try {
       await api.sources.delete(projectId, source.id);
       onDeleted();
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo eliminar la fuente.');
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo eliminar la fuente.');
     } finally {
       setDeleting(false);
     }
@@ -765,7 +746,6 @@ function DeleteSourceDialog({
           </strong>
           .
         </p>
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
             Cancelar
@@ -790,18 +770,16 @@ function ArchiveSourceDialog({
   onOpenChange: (open: boolean) => void;
   onArchived: () => void;
 }) {
-  const [error, setError] = useState<string | null>(null);
   const [archiving, setArchiving] = useState(false);
 
   async function handleArchive() {
     setArchiving(true);
-    setError(null);
     try {
       await api.sources.archive(projectId, source.id);
       onArchived();
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo archivar la fuente.');
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo archivar la fuente.');
     } finally {
       setArchiving(false);
     }
@@ -824,7 +802,6 @@ function ArchiveSourceDialog({
           </strong>
           .
         </p>
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
             Cancelar

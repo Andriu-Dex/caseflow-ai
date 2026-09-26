@@ -82,9 +82,11 @@ describe('Use Cases integration', () => {
     ).toBe(2);
     await ctx.useCases.transition(projectId, created.id, v2.version.id, 'IN_REVIEW');
     await ctx.useCases.transition(projectId, created.id, v2.version.id, 'APPROVED');
-    await expect(
-      ctx.useCases.version(projectId, created.id, useCase(approvedVersionId)),
-    ).rejects.toThrow('aprobado');
+    const v3 = await ctx.useCases.version(projectId, created.id, useCase(approvedVersionId));
+    expect(v3.version).toMatchObject({ versionNumber: 3, status: 'DRAFT' });
+    expect(
+      (await ctx.prisma.artifactVersion.findUniqueOrThrow({ where: { id: v2.version.id } })).status,
+    ).toBe('APPROVED');
   });
   it('rejects cross-project, non-requirement and non-approved generation sources', async () => {
     const w = await createWorkspace(ctx.prisma, 'Other UC');

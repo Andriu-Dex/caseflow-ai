@@ -122,7 +122,7 @@ export class StructuredAnalysisService {
 
   async list(projectId: string, kind: StructuredAnalysisKind) {
     const rows = await this.prisma.artifact.findMany({
-      where: { projectId, artifactTypeCode: kind },
+      where: { projectId, artifactTypeCode: kind, archivedAt: null },
       include: {
         versions: {
           orderBy: { versionNumber: 'desc' },

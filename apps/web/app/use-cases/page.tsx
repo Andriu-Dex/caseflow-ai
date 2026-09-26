@@ -1,15 +1,28 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { UseCaseResponse } from '@caseflow-ai/contracts';
+import { Network, Pencil, Sparkles } from 'lucide-react';
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { Button } from '@caseflow-ai/ui';
-import { api, ApiError, type GenerationResult } from '../../lib/api';
+import { api, ApiError, type ArtifactVersionStatus, type GenerationResult } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { StatusBadge } from '../../components/status-badge';
 import { CandidateReview } from '../../components/candidate-review';
 import { TrustedDiagram } from '../../components/trusted-svg';
 import { UseCaseManualForm } from '../../components/use-case-manual-form';
 import { PageHeading } from '../../components/page-heading';
+import {
+  AI_UNAVAILABLE_HINT,
+  ApproveAllButton,
+  ArchiveButton,
+  EmptyState,
+  StaleNotice,
+  approveDirectly,
+  isPendingApproval,
+  useStaleArtifactIds,
+} from '../../components/artifact-actions';
 
 function UseCasesContent({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
@@ -17,20 +30,17 @@ function UseCasesContent({ projectId }: { projectId: string }) {
     queryKey: ['use-cases', projectId],
     queryFn: () => api.useCases.list(projectId),
   });
-  const validation = useQuery({
-    queryKey: ['use-cases-academic', projectId],
-    queryFn: () => api.useCases.academicValidation(projectId),
-  });
   const requirements = useQuery({
     queryKey: ['requirements', projectId],
     queryFn: () => api.requirements.list(projectId),
   });
+  const stale = useStaleArtifactIds(projectId);
 
   const [selectedRequirements, setSelectedRequirements] = useState<string[]>([]);
   const [generation, setGeneration] = useState<GenerationResult | null>(null);
   const [diagram, setDiagram] = useState<{ svg: string } | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [showManualForm, setShowManualForm] = useState(false);
+  const [editing, setEditing] = useState<UseCaseResponse | null>(null);
   const [generating, setGenerating] = useState(false);
   const [generatingDiagram, setGeneratingDiagram] = useState(false);
   const [approvingId, setApprovingId] = useState<string | null>(null);
@@ -41,67 +51,66 @@ function UseCasesContent({ projectId }: { projectId: string }) {
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['use-cases', projectId] });
-    queryClient.invalidateQueries({ queryKey: ['use-cases-academic', projectId] });
     queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['staleness', projectId] });
   }
 
   async function generate() {
-    setError(null);
     if (!selectedRequirements.length) {
-      setError('Seleccione al menos un Requisito APPROVED.');
+      toast.info('Seleccione al menos un requisito aprobado para generar casos de uso.');
       return;
     }
     setGenerating(true);
     try {
-      const result = await api.useCases.generate(projectId, selectedRequirements);
-      setGeneration(result);
+      setGeneration(await api.useCases.generate(projectId, selectedRequirements));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo generar (¿IA deshabilitada?).');
+      toast.error(
+        err instanceof ApiError ? err.message : 'No se pudieron generar los casos de uso.',
+      );
     } finally {
       setGenerating(false);
     }
   }
 
-  async function transition(
-    id: string,
-    versionId: string,
-    status: 'IN_REVIEW' | 'APPROVED' | 'CHANGES_REQUESTED',
-  ) {
-    try {
-      await api.useCases.transition(projectId, id, versionId, status);
-      invalidate();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo cambiar el estado.');
-    }
-  }
+  const transitionFor = (u: UseCaseResponse) => (status: ArtifactVersionStatus) =>
+    api.useCases.transition(projectId, u.id, u.version.id, status);
 
-  async function approveDirectly(id: string, versionId: string) {
-    setError(null);
-    setApprovingId(id);
+  async function approveOne(u: UseCaseResponse) {
+    setApprovingId(u.id);
     try {
-      await api.useCases.transition(projectId, id, versionId, 'IN_REVIEW');
-      await api.useCases.transition(projectId, id, versionId, 'APPROVED');
+      await approveDirectly(transitionFor(u));
+      toast.success(`${u.code} aprobado.`);
       invalidate();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo aprobar el caso de uso.');
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo aprobar el caso de uso.');
     } finally {
       setApprovingId(null);
     }
   }
 
+  async function transition(u: UseCaseResponse, status: ArtifactVersionStatus) {
+    try {
+      await transitionFor(u)(status);
+      invalidate();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo cambiar el estado.');
+    }
+  }
+
   const items = useCases.data?.items ?? [];
+  const pending = items.filter((u) => isPendingApproval(u.version.status));
   const approvedVersionIds = items
     .filter((u) => u.version.status === 'APPROVED')
     .map((u) => u.version.id);
 
   async function generateDiagram() {
-    setError(null);
     setGeneratingDiagram(true);
     try {
-      const result = await api.useCaseDiagrams.generate(projectId, approvedVersionIds);
-      setDiagram(result);
+      setDiagram(await api.useCaseDiagrams.generate(projectId, approvedVersionIds));
+      queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
+      toast.success('Diagrama de casos de uso generado.');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo generar el diagrama.');
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo generar el diagrama.');
     } finally {
       setGeneratingDiagram(false);
     }
@@ -111,72 +120,108 @@ function UseCasesContent({ projectId }: { projectId: string }) {
     <div className="flex flex-col gap-6">
       <PageHeading title="Casos de uso" projectId={projectId} />
 
-      {validation.data ? (
-        <section className="rounded-lg border border-border bg-card p-4 text-sm">
-          <strong>{validation.data.approvedCount}</strong> / {validation.data.minimumRequired} casos
-          de uso aprobados (mínimo académico para este entregable — no es un máximo del producto).
-        </section>
-      ) : null}
-
       <section className="rounded-lg border border-border bg-card p-4">
-        <h2 className="mb-2 text-sm font-semibold text-foreground">Generar Casos de Uso con IA</h2>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-foreground">Generar casos de uso con IA</h2>
+          <ApproveAllButton
+            pending={pending}
+            approve={(id) => approveDirectly(transitionFor(items.find((u) => u.id === id)!))}
+            onDone={invalidate}
+          />
+        </div>
         {approvedRequirements.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Se requieren Requisitos APPROVED.</p>
+          <p className="text-sm text-muted-foreground">
+            Cuando haya requisitos aprobados podrá elegirlos aquí como base para generar casos de
+            uso.
+          </p>
         ) : (
-          <ul className="mb-2 flex flex-col gap-1 text-sm">
-            {approvedRequirements.map((r) => (
-              <li key={r.id} className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id={`req-${r.id}`}
-                  checked={selectedRequirements.includes(r.version.id)}
-                  onChange={() =>
-                    setSelectedRequirements((prev) =>
-                      prev.includes(r.version.id)
-                        ? prev.filter((id) => id !== r.version.id)
-                        : [...prev, r.version.id],
-                    )
-                  }
-                />
-                <label htmlFor={`req-${r.id}`}>
-                  {r.code} — {r.requirement.name}
-                </label>
-              </li>
-            ))}
-          </ul>
+          <>
+            <div className="mb-1 flex justify-end">
+              <button
+                type="button"
+                className="text-xs font-medium text-primary hover:underline"
+                onClick={() =>
+                  setSelectedRequirements(
+                    selectedRequirements.length === approvedRequirements.length
+                      ? []
+                      : approvedRequirements.map((r) => r.version.id),
+                  )
+                }
+              >
+                {selectedRequirements.length === approvedRequirements.length
+                  ? 'Quitar selección'
+                  : 'Seleccionar todos'}
+              </button>
+            </div>
+            <ul className="mb-2 flex max-h-64 flex-col gap-1 overflow-y-auto text-sm">
+              {approvedRequirements.map((r) => (
+                <li key={r.id} className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id={`req-${r.id}`}
+                    checked={selectedRequirements.includes(r.version.id)}
+                    onChange={() =>
+                      setSelectedRequirements((prev) =>
+                        prev.includes(r.version.id)
+                          ? prev.filter((id) => id !== r.version.id)
+                          : [...prev, r.version.id],
+                      )
+                    }
+                  />
+                  <label htmlFor={`req-${r.id}`}>
+                    {r.code} — {r.requirement.name}
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </>
         )}
-        <div className="flex gap-2">
-          <Button type="button" variant="outline" disabled={generating} onClick={generate}>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={generating || approvedRequirements.length === 0}
+            onClick={generate}
+          >
+            <Sparkles className="size-4" aria-hidden="true" />
             {generating ? 'Generando…' : 'Generar con IA'}
           </Button>
-          <Button type="button" variant="outline" onClick={() => setShowManualForm((v) => !v)}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setEditing(null);
+              setShowManualForm((v) => !v);
+            }}
+          >
             Crear manualmente
           </Button>
         </div>
-        <p className="mt-2 text-xs text-muted-foreground">
-          La generación con IA requiere un proveedor configurado. Si no está disponible, use
-          &quot;Crear manualmente&quot;.
-        </p>
+        <p className="mt-2 text-xs text-muted-foreground">{AI_UNAVAILABLE_HINT}</p>
       </section>
 
-      {showManualForm ? (
+      {showManualForm || editing ? (
         <UseCaseManualForm
+          key={editing?.id ?? 'new'}
           projectId={projectId}
           approvedRequirements={approvedRequirements}
+          initial={editing ?? undefined}
           onCreated={() => {
             invalidate();
             setShowManualForm(false);
+            setEditing(null);
           }}
-          onCancel={() => setShowManualForm(false)}
+          onCancel={() => {
+            setShowManualForm(false);
+            setEditing(null);
+          }}
         />
       ) : null}
-
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
       {generation ? (
         <CandidateReview
           generation={generation}
-          describe={(c) => `${c.name}: ${String(c.objective ?? '').slice(0, 140)}`}
+          describe={(c) => `${c.name}: ${String(c.objective ?? '').slice(0, 160)}`}
           onAccept={async (ids) => {
             await api.useCases.accept(projectId, generation.id, ids);
             invalidate();
@@ -187,7 +232,9 @@ function UseCasesContent({ projectId }: { projectId: string }) {
 
       <QueryState isLoading={useCases.isLoading} error={useCases.error}>
         {items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No hay casos de uso todavía.</p>
+          <EmptyState title="Aún no hay casos de uso">
+            Genérelos con IA a partir de los requisitos aprobados, o créelos manualmente.
+          </EmptyState>
         ) : (
           <>
             <ul className="flex flex-col gap-2">
@@ -198,53 +245,73 @@ function UseCasesContent({ projectId }: { projectId: string }) {
                       <span className="font-mono text-xs text-muted-foreground">{u.code}</span>{' '}
                       <span className="font-medium text-foreground">{u.useCase.name}</span>{' '}
                       <span className="text-xs text-muted-foreground">
-                        ({u.useCase.primaryActor})
+                        · {u.useCase.primaryActor}
                       </span>
                     </div>
-                    <StatusBadge status={u.version.status} />
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {u.version.status === 'DRAFT' || u.version.status === 'GENERATED' ? (
-                      // "Enviar a revisión" stays hidden until multi-user
-                      // review ships (see sources/page.tsx); approveDirectly
-                      // still drives IN_REVIEW.
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusBadge status={u.version.status} />
+                      {isPendingApproval(u.version.status) ? (
+                        <button
+                          type="button"
+                          onClick={() => approveOne(u)}
+                          disabled={approvingId === u.id}
+                          className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          {approvingId === u.id ? 'Aprobando…' : 'Aprobar'}
+                        </button>
+                      ) : null}
+                      {u.version.status === 'IN_REVIEW' ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => transition(u, 'APPROVED')}
+                            className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700"
+                          >
+                            Aprobar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => transition(u, 'CHANGES_REQUESTED')}
+                            className="rounded-md border border-destructive/40 px-3 py-1 text-sm text-destructive hover:bg-destructive/5"
+                          >
+                            Solicitar cambios
+                          </button>
+                        </>
+                      ) : null}
                       <button
                         type="button"
-                        onClick={() => approveDirectly(u.id, u.version.id)}
-                        disabled={approvingId === u.id}
-                        className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
+                        onClick={() => {
+                          setShowManualForm(false);
+                          setEditing(u);
+                        }}
+                        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-muted/40"
                       >
-                        {approvingId === u.id ? 'Aprobando…' : 'Aprobar'}
+                        <Pencil className="size-3.5" aria-hidden="true" />
+                        Editar
                       </button>
-                    ) : null}
-                    {u.version.status === 'IN_REVIEW' ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => transition(u.id, u.version.id, 'APPROVED')}
-                          className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700"
-                        >
-                          Aprobar
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => transition(u.id, u.version.id, 'CHANGES_REQUESTED')}
-                          className="rounded-md border border-destructive/40 px-3 py-1 text-sm text-destructive hover:bg-destructive/5"
-                        >
-                          Solicitar cambios
-                        </button>
-                      </>
-                    ) : null}
+                      <ArchiveButton
+                        projectId={projectId}
+                        artifactId={u.id}
+                        code={u.code}
+                        onDone={invalidate}
+                      />
+                    </div>
                   </div>
+                  {stale.has(u.id) ? <StaleNotice /> : null}
                 </li>
               ))}
             </ul>
 
-            {approvedVersionIds.length > 0 ? (
-              <section className="rounded-lg border border-border bg-card p-4">
-                <h2 className="mb-2 text-sm font-semibold text-foreground">
-                  Diagrama de casos de uso
-                </h2>
+            <section className="rounded-lg border border-border bg-card p-4">
+              <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
+                <Network className="size-4 text-primary" aria-hidden="true" />
+                Diagrama de casos de uso
+              </h2>
+              {approvedVersionIds.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  El diagrama se genera a partir de los casos de uso aprobados.
+                </p>
+              ) : (
                 <Button
                   type="button"
                   variant="outline"
@@ -252,13 +319,15 @@ function UseCasesContent({ projectId }: { projectId: string }) {
                   disabled={generatingDiagram}
                   onClick={generateDiagram}
                 >
-                  {generatingDiagram ? 'Generando…' : 'Generar diagrama a partir de los aprobados'}
+                  {generatingDiagram
+                    ? 'Generando…'
+                    : `Generar diagrama (${approvedVersionIds.length} aprobados)`}
                 </Button>
-                {diagram ? (
-                  <TrustedDiagram svg={diagram.svg} caption="Diagrama de casos de uso aprobados" />
-                ) : null}
-              </section>
-            ) : null}
+              )}
+              {diagram ? (
+                <TrustedDiagram svg={diagram.svg} caption="Diagrama de casos de uso aprobados" />
+              ) : null}
+            </section>
           </>
         )}
       </QueryState>

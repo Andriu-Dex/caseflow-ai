@@ -14,6 +14,18 @@ import { PrismaService } from '../database/prisma.service';
 import type { Prisma } from '../generated/prisma/client';
 import { toArtifactResponse, toArtifactVersionResponse } from './artifacts.mapper';
 
+const ARCHIVABLE_TYPES = new Set([
+  'REQUIREMENT',
+  'USE_CASE',
+  'DATA_MODEL',
+  'USE_CASE_DIAGRAM',
+  'NAVIGATION_TREE',
+  'SOFTWARE_ARCHITECTURE',
+  'SYSTEM_ARCHITECTURE',
+  'UI_BLUEPRINT',
+  'MOCKUP',
+]);
+
 export interface CreateArtifactInput {
   type: string;
   title: string;
@@ -84,6 +96,24 @@ export class ArtifactsService {
       const version = await this.insertVersion(tx, artifact.id, projectId, 1, input);
       return toArtifactResponse(artifact, version);
     });
+  }
+
+  // Retires an artifact from active work (lists, readiness, export) without
+  // touching any version — history stays intact and auditable. Sources and
+  // the canonical Project Context have their own semantics and are excluded.
+  async archive(projectId: string, artifactId: string): Promise<{ archivedAt: string }> {
+    const artifact = await this.prisma.artifact.findFirst({
+      where: { id: artifactId, projectId },
+      select: { artifactTypeCode: true, archivedAt: true },
+    });
+    if (!artifact) throw new NotFoundException('Artefacto no encontrado.');
+    if (!ARCHIVABLE_TYPES.has(artifact.artifactTypeCode))
+      throw new UnprocessableEntityException('Este tipo de artefacto no se puede archivar aquí.');
+    if (artifact.archivedAt)
+      throw new UnprocessableEntityException('Este artefacto ya está archivado.');
+    const archivedAt = new Date();
+    await this.prisma.artifact.update({ where: { id: artifactId }, data: { archivedAt } });
+    return { archivedAt: archivedAt.toISOString() };
   }
 
   async getArtifact(projectId: string, artifactId: string): Promise<ArtifactResponse> {

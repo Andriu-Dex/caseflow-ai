@@ -33,7 +33,7 @@ export class RequirementsService {
   }
   async list(projectId: string) {
     const rows = await this.prisma.artifact.findMany({
-      where: { projectId, artifactTypeCode: 'REQUIREMENT' },
+      where: { projectId, artifactTypeCode: 'REQUIREMENT', archivedAt: null },
       include: {
         versions: {
           orderBy: { versionNumber: 'desc' },
@@ -91,8 +91,9 @@ export class RequirementsService {
         where: { artifactId: id },
         orderBy: { versionNumber: 'desc' },
       });
-      if (latest.status === 'APPROVED')
-        throw new UnprocessableEntityException('Un requisito aprobado no puede modificarse.');
+      // Editing an approved artifact never touches the approved version: it
+      // opens a new DRAFT version that needs its own approval, exactly like
+      // Project Context, Data Model and the design artifacts.
       await this.validateDependencies(tx, projectId, id, input.dependencyArtifactIds);
       const v = await tx.artifactVersion.create({
         data: {
