@@ -162,7 +162,7 @@ export class MockupsService {
     });
     if (!source?.structuredAnalysisDetail)
       throw new UnprocessableEntityException(
-        'Se requiere una versión exacta APPROVED de UI Blueprint del mismo proyecto.',
+        'Se requiere una versión exacta APPROVED de plano de interfaz del mismo proyecto.',
       );
     const content = uiBlueprintContentSchema.parse(source.structuredAnalysisDetail.content);
     return sanitizeDiagramSvg(this.renderer.render(content));
@@ -186,7 +186,7 @@ export class MockupsService {
         artifactId: artifact.id,
         projectId,
         versionNumber: 1,
-        title: 'Mockup',
+        title: 'Boceto',
         status: initialStatusForOrigin('SYSTEM_GENERATED'),
         origin: 'SYSTEM_GENERATED',
       },
