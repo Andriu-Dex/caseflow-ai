@@ -442,7 +442,7 @@ describe('Export (First Deliverable, Phase H)', () => {
 
     const navigationService = new StructuredAnalysisService(
       ctx.prisma,
-      fakeAi(ctx, 'navigation.generate', 1, {
+      fakeAi(ctx, 'navigation.generate', 3, {
         nodes: [{ localId: 'home', label: 'Home', viewName: 'Home', kind: 'HOME' as const }],
       }),
       new DiagramEngine(),
