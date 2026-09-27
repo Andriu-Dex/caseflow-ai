@@ -69,7 +69,10 @@ export class StitchMockupProvider implements MockupProvider {
         const generated = await project.generate(this.buildPrompt(screen, deviceType), deviceType);
         const [imageUrl, htmlUrl] = await Promise.all([generated.getImage(), generated.getHtml()]);
         const [image, html] = await Promise.all([
-          this.download(imageUrl, 'image'),
+          this.download(
+            this.fullResolutionImageUrl(imageUrl, generated.data?.width, deviceType),
+            'image',
+          ),
           this.download(htmlUrl, 'html'),
         ]);
         return {
@@ -82,6 +85,24 @@ export class StitchMockupProvider implements MockupProvider {
     );
     if (screens.length === 0) throw new Error('Stitch returned no screens.');
     return { kind: 'STITCH', screens };
+  }
+
+  private fullResolutionImageUrl(
+    imageUrl: string,
+    screenWidth: unknown,
+    deviceType: MockupDeviceType,
+  ): string {
+    const parsed = new URL(imageUrl);
+    const width = Number(screenWidth);
+    const minimumWidth = deviceType === 'MOBILE' ? 780 : 1600;
+    const requestedWidth = Math.min(
+      1920,
+      Math.max(minimumWidth, Number.isSafeInteger(width) && width > 0 ? width : 0),
+    );
+    // Stitch screenshot URLs use Google's FIFE image sizing suffix. The bare URL
+    // can return a small thumbnail even when the generated screen is full size.
+    parsed.pathname = `${parsed.pathname.replace(/=w\d+(?:-h\d+)?$/, '')}=w${requestedWidth}`;
+    return parsed.toString();
   }
 
   private async download(url: string, kind: 'image' | 'html') {
