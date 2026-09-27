@@ -8,6 +8,7 @@ const base = {
   code: 'MCK-001',
   versionId: id,
   uiBlueprintVersionId: id,
+  deviceType: 'DESKTOP' as const,
   createdAt: '2026-01-01T00:00:00.000Z',
 };
 

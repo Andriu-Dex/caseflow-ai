@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { MockupJobResponse, MockupResponse } from '@caseflow-ai/contracts';
+import type { MockupDeviceType, MockupJobResponse, MockupResponse } from '@caseflow-ai/contracts';
 import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -67,6 +67,7 @@ function MockupsContent({ projectId }: { projectId: string }) {
   });
   const [creatingVersionId, setCreatingVersionId] = useState<string | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [deviceTypes, setDeviceTypes] = useState<Record<string, MockupDeviceType>>({});
   const approvedBlueprints = (blueprints.data?.items ?? []).filter(
     (b) => b.version.status === 'APPROVED',
   );
@@ -89,7 +90,8 @@ function MockupsContent({ projectId }: { projectId: string }) {
   async function createMockup(uiBlueprintVersionId: string) {
     setCreatingVersionId(uiBlueprintVersionId);
     try {
-      const job = await api.mockups.create(projectId, uiBlueprintVersionId);
+      const deviceType = deviceTypes[uiBlueprintVersionId] ?? 'DESKTOP';
+      const job = await api.mockups.create(projectId, uiBlueprintVersionId, deviceType);
       const finished = await pollJob(job.id);
       if (finished.status === 'FAILED') {
         toast.error(finished.errorMessage ?? 'No se pudo generar el boceto.');
@@ -161,21 +163,38 @@ function MockupsContent({ projectId }: { projectId: string }) {
                   <span className="font-mono text-xs text-muted-foreground">{b.code}</span>{' '}
                   {b.title}
                 </span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={creatingVersionId === b.version.id}
-                  onClick={() => createMockup(b.version.id)}
-                >
-                  {creatingVersionId === b.version.id ? (
-                    <>
-                      <Loader2 aria-hidden="true" className="size-4 animate-spin" /> Generando…
-                    </>
-                  ) : (
-                    'Generar boceto'
-                  )}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <select
+                    aria-label="Formato del boceto"
+                    className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+                    value={deviceTypes[b.version.id] ?? 'DESKTOP'}
+                    disabled={creatingVersionId === b.version.id}
+                    onChange={(e) =>
+                      setDeviceTypes((prev) => ({
+                        ...prev,
+                        [b.version.id]: e.target.value as MockupDeviceType,
+                      }))
+                    }
+                  >
+                    <option value="DESKTOP">Escritorio</option>
+                    <option value="MOBILE">Móvil</option>
+                  </select>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={creatingVersionId === b.version.id}
+                    onClick={() => createMockup(b.version.id)}
+                  >
+                    {creatingVersionId === b.version.id ? (
+                      <>
+                        <Loader2 aria-hidden="true" className="size-4 animate-spin" /> Generando…
+                      </>
+                    ) : (
+                      'Generar boceto'
+                    )}
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>
@@ -202,7 +221,12 @@ function MockupsContent({ projectId }: { projectId: string }) {
             {items.map((m) => (
               <li key={m.id} className="rounded-lg border border-border bg-card p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-mono text-xs text-muted-foreground">{m.code}</span>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {m.code}{' '}
+                    <span className="text-muted-foreground/70">
+                      · {m.deviceType === 'MOBILE' ? 'Móvil' : 'Escritorio'}
+                    </span>
+                  </span>
                   <div className="flex flex-wrap items-center gap-2">
                     <StatusBadge status={m.version.status} />
                     {isPendingApproval(m.version.status) ? (

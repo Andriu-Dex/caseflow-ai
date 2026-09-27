@@ -44,7 +44,7 @@ export class MockupsController {
     @Body(new ZodValidationPipe(createMockupRequestSchema))
     body: z.output<typeof createMockupRequestSchema>,
   ) {
-    return this.service.create(projectId, body.uiBlueprintVersionId);
+    return this.service.create(projectId, body.uiBlueprintVersionId, body.deviceType);
   }
 
   @Get('jobs/:jobId')
@@ -151,7 +151,7 @@ export class MockupsController {
     @Body(new ZodValidationPipe(createMockupRequestSchema))
     body: z.output<typeof createMockupRequestSchema>,
   ) {
-    return this.service.version(projectId, mockupId, body.uiBlueprintVersionId);
+    return this.service.version(projectId, mockupId, body.uiBlueprintVersionId, body.deviceType);
   }
 
   @Post(':mockupId/versions/:versionId/transition')

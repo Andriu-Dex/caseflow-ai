@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { UiBlueprintContent } from '@caseflow-ai/contracts';
+import type { MockupDeviceType, UiBlueprintContent } from '@caseflow-ai/contracts';
 import type { MockupGenerationResult, MockupProvider } from '@caseflow-ai/integrations';
 
 // Carried in every stored MockupDetail so a future format change is
@@ -28,9 +28,9 @@ function compareOrdinal(a: string, b: string): number {
 // runs the result through sanitizeDiagramSvg() as the real safety boundary.
 @Injectable()
 export class MockupRenderer {
-  render(content: UiBlueprintContent): string {
+  render(content: UiBlueprintContent, deviceType: MockupDeviceType = 'DESKTOP'): string {
     const screens = [...content.screens].sort((a, b) => compareOrdinal(a.localId, b.localId));
-    const columns = Math.min(3, Math.max(1, screens.length));
+    const columns = deviceType === 'MOBILE' ? 1 : Math.min(3, Math.max(1, screens.length));
     const columnHeights = new Array<number>(columns).fill(PADDING);
     const parts: string[] = [];
     screens.forEach((screen, index) => {
@@ -118,7 +118,10 @@ export class MockupRenderer {
 export class InternalWireframeMockupProvider implements MockupProvider {
   readonly id = 'internal-wireframe';
   constructor(private readonly renderer: MockupRenderer) {}
-  async generate(content: UiBlueprintContent): Promise<MockupGenerationResult> {
-    return { kind: 'INTERNAL_WIREFRAME', svg: this.renderer.render(content) };
+  async generate(
+    content: UiBlueprintContent,
+    deviceType?: MockupDeviceType,
+  ): Promise<MockupGenerationResult> {
+    return { kind: 'INTERNAL_WIREFRAME', svg: this.renderer.render(content, deviceType) };
   }
 }

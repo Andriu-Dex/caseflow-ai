@@ -96,13 +96,17 @@ function setup(provider: MockupProvider = new FakeMockupProvider()) {
   // Mirrors what apps/worker does after popping the job off the queue: read
   // it back and run it. Kept here so every test can exercise the full
   // enqueue -> run round trip without a real Redis/worker.
-  async function createAndRun(uiBlueprintVersionId: string) {
-    const job = await service.create('project', uiBlueprintVersionId);
+  async function createAndRun(
+    uiBlueprintVersionId: string,
+    deviceType: 'DESKTOP' | 'MOBILE' = 'DESKTOP',
+  ) {
+    const job = await service.create('project', uiBlueprintVersionId, deviceType);
     prisma.mockupGenerationJob.findUniqueOrThrow.mockResolvedValue({
       id: job.id,
       projectId: 'project',
       uiBlueprintVersionId,
       existingMockupId: null,
+      deviceType,
     });
     await service.runJob(job.id);
     return job.id;
@@ -120,6 +124,7 @@ describe('MockupsService', () => {
         projectId: 'project',
         uiBlueprintVersionId: 'blueprint-version',
         existingMockupId: null,
+        deviceType: 'DESKTOP',
       },
     });
     expect(queue.add).toHaveBeenCalledWith('mockup-generation', {
@@ -158,6 +163,17 @@ describe('MockupsService', () => {
       where: { id: jobId },
       data: { status: 'COMPLETED', resultArtifactId: artifact.id },
     });
+  });
+
+  it('forwards the requested deviceType to the provider and stores it on the mockup', async () => {
+    const generate = vi.fn().mockResolvedValue({ kind: 'INTERNAL_WIREFRAME', svg: '<svg/>' });
+    const provider: MockupProvider = { id: 'spy', generate };
+    const { tx, createAndRun } = setup(provider);
+    await createAndRun('blueprint-version', 'MOBILE');
+    expect(generate).toHaveBeenCalledWith(blueprintContent, 'MOBILE');
+    expect(tx.mockupDetail.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ deviceType: 'MOBILE' }) }),
+    );
   });
 
   it('marks the job FAILED instead of throwing when generation fails', async () => {
@@ -395,6 +411,7 @@ describe('MockupsService', () => {
         projectId: 'project',
         uiBlueprintVersionId: 'blueprint-version',
         existingMockupId: 'artifact',
+        deviceType: 'DESKTOP',
       },
     });
     expect(job.status).toBe('QUEUED');
