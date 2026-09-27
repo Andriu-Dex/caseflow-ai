@@ -3,8 +3,12 @@
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   DiagramResponse,
+  NavigationTreeContent,
+  SoftwareArchitectureContent,
   StructuredAnalysisKind,
   StructuredAnalysisResponse,
+  SystemArchitectureContent,
+  UiBlueprintContent,
 } from '@caseflow-ai/contracts';
 import { Eye, EyeOff, Pencil, Sparkles } from 'lucide-react';
 import { useState } from 'react';
@@ -115,6 +119,151 @@ async function loadApprovedSources(projectId: string, type: SourceType): Promise
   }
 }
 
+function renderContentDetail(kind: StructuredAnalysisKind, content: unknown) {
+  switch (kind) {
+    case 'NAVIGATION_TREE': {
+      const { nodes } = content as NavigationTreeContent;
+      return (
+        <ul className="mt-2 flex flex-col gap-1 border-t border-border pt-2 text-sm">
+          {nodes.map((node) => (
+            <li key={node.localId}>
+              <strong>{node.label}</strong>{' '}
+              <span className="text-muted-foreground">
+                ({node.kind} · {node.viewName}
+                {node.route ? ` · ${node.route}` : ''})
+              </span>
+              {node.description ? ` — ${node.description}` : ''}
+              {node.relatedUseCaseCodes.length > 0 ? (
+                <span className="text-muted-foreground">
+                  {' '}
+                  · Casos de uso: {node.relatedUseCaseCodes.join(', ')}
+                </span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      );
+    }
+    case 'SOFTWARE_ARCHITECTURE': {
+      const { style, components, dependencies, decisions } = content as SoftwareArchitectureContent;
+      return (
+        <div className="mt-2 flex flex-col gap-2 border-t border-border pt-2 text-sm">
+          <p>
+            <strong>Estilo:</strong> {style}
+          </p>
+          <ul className="flex flex-col gap-1">
+            {components.map((component) => (
+              <li key={component.localId}>
+                <strong>{component.name}</strong>
+                {component.layerLocalId ? ` (capa: ${component.layerLocalId})` : ''}
+                {component.responsibilities.length > 0 ? (
+                  <span className="text-muted-foreground">
+                    {' '}
+                    — {component.responsibilities.join('; ')}
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+          {dependencies.length > 0 ? (
+            <ul className="flex flex-col gap-1 text-muted-foreground">
+              {dependencies.map((dependency, i) => (
+                <li key={i}>
+                  {dependency.fromLocalId} → {dependency.toLocalId}
+                  {dependency.description ? `: ${dependency.description}` : ''}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {decisions.length > 0 ? (
+            <ul className="flex flex-col gap-1 text-muted-foreground">
+              {decisions.map((decision, i) => (
+                <li key={i}>{decision}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      );
+    }
+    case 'SYSTEM_ARCHITECTURE': {
+      const { boundary, nodes, links } = content as SystemArchitectureContent;
+      return (
+        <div className="mt-2 flex flex-col gap-2 border-t border-border pt-2 text-sm">
+          <p>
+            <strong>Límite del sistema:</strong> {boundary}
+          </p>
+          <ul className="flex flex-col gap-1">
+            {nodes.map((node) => (
+              <li key={node.localId}>
+                <strong>{node.name}</strong>{' '}
+                <span className="text-muted-foreground">({node.kind})</span>
+                {node.responsibilities.length > 0 ? (
+                  <span className="text-muted-foreground">
+                    {' '}
+                    — {node.responsibilities.join('; ')}
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+          {links.length > 0 ? (
+            <ul className="flex flex-col gap-1 text-muted-foreground">
+              {links.map((link, i) => (
+                <li key={i}>
+                  {link.fromLocalId} → {link.toLocalId}
+                  {link.protocol ? ` (${link.protocol})` : ''}
+                  {link.description ? `: ${link.description}` : ''}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      );
+    }
+    case 'UI_BLUEPRINT': {
+      const { screens } = content as UiBlueprintContent;
+      return (
+        <ul className="mt-2 flex flex-col gap-2 border-t border-border pt-2 text-sm">
+          {screens.map((screen) => (
+            <li key={screen.localId}>
+              <strong>{screen.name}</strong> — {screen.purpose}
+              {screen.targetActors.length > 0 ? (
+                <div className="text-muted-foreground">
+                  Actores: {screen.targetActors.join(', ')}
+                </div>
+              ) : null}
+              {screen.sections.length > 0 ? (
+                <div className="text-muted-foreground">Secciones: {screen.sections.join(', ')}</div>
+              ) : null}
+              {screen.primaryActions.length > 0 ? (
+                <div className="text-muted-foreground">
+                  Acciones principales: {screen.primaryActions.join(', ')}
+                </div>
+              ) : null}
+              {screen.secondaryActions.length > 0 ? (
+                <div className="text-muted-foreground">
+                  Acciones secundarias: {screen.secondaryActions.join(', ')}
+                </div>
+              ) : null}
+              {screen.principalData.length > 0 ? (
+                <div className="text-muted-foreground">
+                  Datos principales: {screen.principalData.join(', ')}
+                </div>
+              ) : null}
+              {screen.forms.length > 0 ? (
+                <div className="text-muted-foreground">Formularios: {screen.forms.join(', ')}</div>
+              ) : null}
+              {screen.states.length > 0 ? (
+                <div className="text-muted-foreground">Estados: {screen.states.join(', ')}</div>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      );
+    }
+  }
+}
+
 // Shared page for the four StructuredAnalysis kinds (Navegación,
 // Arquitectura de software, Arquitectura de sistema, UI Blueprint).
 export function StructuredKindPage({
@@ -147,6 +296,7 @@ export function StructuredKindPage({
   const selectedIds = selected ?? allSourceIds;
   const [generation, setGeneration] = useState<GenerationResult | null>(null);
   const [diagrams, setDiagrams] = useState<Record<string, DiagramResponse>>({});
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showManualForm, setShowManualForm] = useState(false);
   const [editing, setEditing] = useState<StructuredAnalysisResponse | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -158,6 +308,7 @@ export function StructuredKindPage({
     queryClient.invalidateQueries({ queryKey: ['eligible-sources'] });
     queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
     setDiagrams({});
+    setExpandedId(null);
   }
 
   function toggleSource(id: string) {
@@ -431,6 +582,16 @@ export function StructuredKindPage({
                         />
                       </div>
                     </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      type="button"
+                      onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
+                      aria-expanded={expandedId === item.id}
+                      className="mt-2 text-muted-foreground underline"
+                    >
+                      {expandedId === item.id ? 'Ocultar detalle' : 'Ver detalle'}
+                    </Button>
                     {/* UI Blueprint has no diagram: its visual form is the Mockup step. */}
                     {kind !== 'UI_BLUEPRINT' ? (
                       <Button
@@ -448,6 +609,7 @@ export function StructuredKindPage({
                         {diagrams[item.id] ? 'Ocultar diagrama' : 'Ver diagrama'}
                       </Button>
                     ) : null}
+                    {expandedId === item.id ? renderContentDetail(kind, item.content) : null}
                     {diagrams[item.id] ? (
                       <DiagramViewer
                         svg={diagrams[item.id]!.svg}
