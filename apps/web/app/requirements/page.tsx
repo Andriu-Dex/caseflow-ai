@@ -227,48 +227,58 @@ function RequirementsContent({ projectId }: { projectId: string }) {
             {items.map((r) => (
               <li key={r.id} className="rounded-lg border border-border bg-card p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     type="button"
                     onClick={() => setOpenDetail(openDetail === r.id ? null : r.id)}
-                    className="text-left text-sm"
+                    className="justify-start text-left text-sm"
                   >
                     <span className="font-mono text-xs text-muted-foreground">{r.code}</span>{' '}
                     <span className="font-medium text-foreground">{r.requirement.name}</span>{' '}
                     <span className="text-xs text-muted-foreground">
                       · Prioridad {PRIORITY_LABELS[r.requirement.priority]?.toLowerCase()}
                     </span>
-                  </button>
+                  </Button>
                   <div className="flex flex-wrap items-center gap-2">
                     <StatusBadge status={r.version.status} />
                     {isPendingApproval(r.version.status) ? (
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         type="button"
                         onClick={() => approveOne(r)}
                         disabled={approvingId === r.id}
                         className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
                       >
                         {approvingId === r.id ? 'Aprobando…' : 'Aprobar'}
-                      </button>
+                      </Button>
                     ) : null}
                     {r.version.status === 'IN_REVIEW' ? (
                       <>
-                        <button
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           type="button"
                           onClick={() => transition(r, 'APPROVED')}
                           className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700"
                         >
                           Aprobar
-                        </button>
-                        <button
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           type="button"
                           onClick={() => transition(r, 'CHANGES_REQUESTED')}
                           className="rounded-md border border-destructive/40 px-3 py-1 text-sm text-destructive hover:bg-destructive/5"
                         >
                           Solicitar cambios
-                        </button>
+                        </Button>
                       </>
                     ) : null}
-                    <button
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       type="button"
                       onClick={() => {
                         setShowManualForm(false);
@@ -278,7 +288,7 @@ function RequirementsContent({ projectId }: { projectId: string }) {
                     >
                       <Pencil className="size-3.5" aria-hidden="true" />
                       Editar
-                    </button>
+                    </Button>
                     <ArchiveButton
                       projectId={projectId}
                       artifactId={r.id}

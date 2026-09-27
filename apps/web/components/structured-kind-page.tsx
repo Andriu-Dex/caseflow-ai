@@ -260,9 +260,11 @@ export function StructuredKindPage({
                 <p className="text-xs text-muted-foreground">
                   Elija qué información aprobada usar como base:
                 </p>
-                <button
+                <Button
+                  variant="link"
+                  size="sm"
                   type="button"
-                  className="text-xs font-medium text-primary hover:underline"
+                  className="text-xs font-medium"
                   onClick={() =>
                     setSelected(selectedIds.length === allSourceIds.length ? [] : allSourceIds)
                   }
@@ -270,7 +272,7 @@ export function StructuredKindPage({
                   {selectedIds.length === allSourceIds.length
                     ? 'Quitar selección'
                     : 'Seleccionar todo'}
-                </button>
+                </Button>
               </div>
               <div className="flex max-h-72 flex-col gap-3 overflow-y-auto rounded-md border border-border p-2">
                 {sourceGroups.map((group) => (
@@ -408,7 +410,9 @@ export function StructuredKindPage({
                             </Button>
                           </>
                         ) : null}
-                        <button
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           type="button"
                           onClick={() => {
                             setShowManualForm(false);
@@ -418,7 +422,7 @@ export function StructuredKindPage({
                         >
                           <Pencil className="size-3.5" aria-hidden="true" />
                           Editar
-                        </button>
+                        </Button>
                         <ArchiveButton
                           projectId={projectId}
                           artifactId={item.id}
@@ -429,7 +433,9 @@ export function StructuredKindPage({
                     </div>
                     {/* UI Blueprint has no diagram: its visual form is the Mockup step. */}
                     {kind !== 'UI_BLUEPRINT' ? (
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         type="button"
                         onClick={() => toggleDiagram(item.id)}
                         className="mt-2 inline-flex items-center gap-1 text-sm text-primary hover:underline"
@@ -440,7 +446,7 @@ export function StructuredKindPage({
                           <Eye className="size-4" aria-hidden="true" />
                         )}
                         {diagrams[item.id] ? 'Ocultar diagrama' : 'Ver diagrama'}
-                      </button>
+                      </Button>
                     ) : null}
                     {diagrams[item.id] ? (
                       <DiagramViewer
