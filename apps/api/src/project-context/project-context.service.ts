@@ -175,7 +175,7 @@ export class ProjectContextService {
   async generate(projectId: string): Promise<ProjectContextCandidate> {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      select: { id: true },
+      select: { id: true, language: true },
     });
     if (!project) throw new NotFoundException('Proyecto no encontrado.');
 
@@ -193,6 +193,7 @@ export class ProjectContextService {
     try {
       const result = await this.ai.generateStructured({
         projectId,
+        language: project.language,
         promptKey: 'project-context.generate',
         promptVersion: 1,
         messages: [

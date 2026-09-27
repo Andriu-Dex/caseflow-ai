@@ -216,7 +216,7 @@ describe('ProjectContextService', () => {
   });
 
   it('generates an AI candidate from approved sources with usable knowledge', async () => {
-    prisma.project.findUnique.mockResolvedValue({ id: projectId });
+    prisma.project.findUnique.mockResolvedValue({ id: projectId, language: 'EN' });
     prisma.artifactVersion.findMany.mockResolvedValue([
       {
         id: 'source-version-1',
@@ -247,6 +247,8 @@ describe('ProjectContextService', () => {
     });
 
     const result = await service.generate(projectId);
+
+    expect(ai.generateStructured).toHaveBeenCalledWith(expect.objectContaining({ language: 'EN' }));
 
     expect(result).toMatchObject({
       id: 'candidate-1',

@@ -78,6 +78,23 @@ describe('AIOrchestrator', () => {
     expect(audit.succeed).toHaveBeenCalledOnce();
   });
 
+  it('adds the project language to provider instructions without changing the registered prompt', async () => {
+    const provider = new FakeAIProvider(response);
+    const audit = recorder();
+    const orchestrator = new AIOrchestrator(provider, new PromptRegistry([prompt]), audit);
+
+    await orchestrator.generateStructured(input());
+    expect(provider.lastRequest?.systemInstructions).toBe(prompt.systemInstructions);
+
+    await orchestrator.generateStructured({ ...input(), language: 'EN' });
+    expect(provider.lastRequest?.systemInstructions).toContain('English');
+    expect(provider.lastRequest?.systemInstructions).toContain(prompt.systemInstructions);
+    expect(prompt.systemInstructions).toBe('Return only valid structured data.');
+    expect(audit.start.mock.calls[0]?.[0].inputHash).not.toBe(
+      audit.start.mock.calls[1]?.[0].inputHash,
+    );
+  });
+
   it('sends every property as required (nullable when originally optional) for strict json_schema providers', async () => {
     const provider = new FakeAIProvider(response);
     const audit = recorder();

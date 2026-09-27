@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+export const PROJECT_LANGUAGES = ['ES', 'EN'] as const;
+export type ProjectLanguage = (typeof PROJECT_LANGUAGES)[number];
+
 export const createProjectRequestSchema = z
   .object({
     workspaceId: z.uuid({ error: 'El identificador del workspace no es válido.' }),
@@ -33,6 +36,7 @@ export const projectResponseSchema = z.object({
   workspaceId: z.uuid(),
   name: z.string(),
   description: z.string().nullable(),
+  language: z.enum(PROJECT_LANGUAGES),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
   archivedAt: z.iso.datetime().nullable(),
@@ -51,3 +55,9 @@ export const projectListResponseSchema = z.object({
 });
 
 export type ProjectListResponse = z.infer<typeof projectListResponseSchema>;
+
+export const updateProjectLanguageRequestSchema = z
+  .object({ language: z.enum(PROJECT_LANGUAGES) })
+  .strict();
+
+export type UpdateProjectLanguageRequest = z.input<typeof updateProjectLanguageRequestSchema>;
