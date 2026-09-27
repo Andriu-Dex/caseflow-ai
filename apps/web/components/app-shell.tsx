@@ -41,8 +41,8 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
       { href: '/design/navigation', label: 'Navegación' },
       { href: '/design/software-architecture', label: 'Arquitectura de software' },
       { href: '/design/system-architecture', label: 'Arquitectura de sistema' },
-      { href: '/design/ui-blueprint', label: 'UI Blueprint' },
-      { href: '/design/mockups', label: 'Mockups' },
+      { href: '/design/ui-blueprint', label: 'Plano de interfaz' },
+      { href: '/design/mockups', label: 'Bocetos' },
     ],
   },
   {

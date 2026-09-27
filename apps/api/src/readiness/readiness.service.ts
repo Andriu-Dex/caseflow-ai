@@ -84,7 +84,7 @@ export class ReadinessService {
     );
     const uiBlueprintStage = this.singleArtifactStage(
       'UI_BLUEPRINT',
-      'UI Blueprint',
+      'Plano de interfaz',
       blueprintResult,
     );
     const mockupsStage = await this.mockupsStage(projectId, blueprintResult);
@@ -371,11 +371,11 @@ export class ReadinessService {
     if (!blueprint)
       return stage({
         key: 'MOCKUPS',
-        label: 'Mockups',
+        label: 'Bocetos',
         satisfied: false,
-        summary: 'Aún no hay un UI Blueprint aprobado para generar bocetos.',
-        blockers: ['Apruebe un UI Blueprint para poder generar sus bocetos.'],
-        nextAction: 'Aprobar un UI Blueprint.',
+        summary: 'Aún no hay un plano de interfaz aprobado para generar bocetos.',
+        blockers: ['Apruebe un plano de interfaz para poder generar sus bocetos.'],
+        nextAction: 'Aprobar un plano de interfaz.',
       });
     const mockups = await this.prisma.artifact.findMany({
       where: { projectId, artifactTypeCode: 'MOCKUP', archivedAt: null },
@@ -394,16 +394,16 @@ export class ReadinessService {
     const satisfied = Boolean(match);
     return stage({
       key: 'MOCKUPS',
-      label: 'Mockups',
+      label: 'Bocetos',
       satisfied,
       summary: satisfied
         ? `${match!.code} aprobado, derivado exactamente de ${blueprint.code}.`
-        : `Falta aprobar un boceto generado a partir del UI Blueprint ${blueprint.code} vigente.`,
+        : `Falta aprobar un boceto generado a partir del plano de interfaz ${blueprint.code} vigente.`,
       evidence: match ? { artifactVersionId: match.versions[0]!.id, code: match.code } : undefined,
       blockers: satisfied
         ? []
-        : ['Apruebe un boceto generado a partir del UI Blueprint aprobado vigente.'],
-      nextAction: satisfied ? null : 'Generar y aprobar el Mockup del UI Blueprint aprobado.',
+        : ['Apruebe un boceto generado a partir del plano de interfaz aprobado vigente.'],
+      nextAction: satisfied ? null : 'Generar y aprobar el boceto del plano de interfaz aprobado.',
     });
   }
 
