@@ -1,4 +1,4 @@
-import type { INestApplication } from '@nestjs/common';
+import { NotFoundException, type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -10,7 +10,7 @@ const projectId = '7b1d3c4e-5f60-4a71-8b92-a3b4c5d6e7f8';
 
 describe('ProjectsController (validation and routing)', () => {
   let app: INestApplication;
-  const service = { create: vi.fn(), list: vi.fn(), get: vi.fn() };
+  const service = { create: vi.fn(), list: vi.fn(), get: vi.fn(), updateLanguage: vi.fn() };
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -65,5 +65,30 @@ describe('ProjectsController (validation and routing)', () => {
     expect(ok.status).toBe(200);
     expect(service.get).toHaveBeenCalledTimes(1);
     expect(service.get).toHaveBeenCalledWith(projectId);
+  });
+
+  it('POST /projects/:projectId/language validates and delegates the selected language', async () => {
+    service.updateLanguage.mockResolvedValue({ id: projectId, language: 'EN' });
+
+    const ok = await request(app.getHttpServer())
+      .post(`/projects/${projectId}/language`)
+      .send({ language: 'EN' });
+    const invalid = await request(app.getHttpServer())
+      .post(`/projects/${projectId}/language`)
+      .send({ language: 'FR' });
+
+    expect(ok.status).toBe(200);
+    expect(service.updateLanguage).toHaveBeenCalledWith(projectId, 'EN');
+    expect(invalid.status).toBe(400);
+  });
+
+  it('POST /projects/:projectId/language returns 404 for an unknown project', async () => {
+    service.updateLanguage.mockRejectedValue(new NotFoundException('Proyecto no encontrado.'));
+
+    const response = await request(app.getHttpServer())
+      .post(`/projects/${projectId}/language`)
+      .send({ language: 'ES' });
+
+    expect(response.status).toBe(404);
   });
 });

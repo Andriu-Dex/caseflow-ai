@@ -91,6 +91,8 @@ pnpm dev
 
 AI is optional. The default `AI_PROVIDER=disabled` starts the API without a key and preserves all manual functionality. To enable the adapter, set `AI_PROVIDER=openai_compatible` together with `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`, and optionally `AI_TIMEOUT_MS`. Requirements and Use Cases expose optional candidate-generation routes; with the disabled provider they return `AI_NOT_CONFIGURED`.
 
+Each project has an AI generation language: `ES` by default or `EN`. The selector beside the active project updates it through `POST /projects/{projectId}/language` with `{ "language": "ES" | "EN" }`. The chosen language applies to AI-generated source reports, project context, requirements, use cases, data models, navigation, software/system architecture, and UI blueprints. Diagram labels inherit the generated content's language. CASEFlow's interface and fixed export headings remain in Spanish.
+
 The OpenAI-compatible adapter specifically requires `POST {AI_BASE_URL}/chat/completions` with strict `json_schema` response support; compatibility with every OpenAI-like provider is not implied. Normal tests never call a live provider.
 
 Diagram rendering (Data Model ER / Use Case Diagram) requires local Kroki, started by `pnpm infra:up`. Set `DIAGRAM_RENDERER=kroki` and `KROKI_BASE_URL=http://localhost:8000` (both already in `.env.example`), and optionally `DIAGRAM_RENDER_TIMEOUT_MS`. With `DIAGRAM_RENDERER=disabled` (or unset) the API starts without attempting any outbound call, but an actual diagram creation/generation request then fails with `DIAGRAM_NOT_CONFIGURED`; unit and ordinary integration tests never depend on a live renderer (they use `FakeDiagramProvider`). Kroki is always self-hosted — CASEFlow never calls the public kroki.io service.

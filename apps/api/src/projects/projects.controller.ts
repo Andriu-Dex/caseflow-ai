@@ -5,6 +5,7 @@ import {
   listProjectsQuerySchema,
   projectListResponseSchema,
   projectResponseSchema,
+  updateProjectLanguageRequestSchema,
   type ProjectListResponse,
   type ProjectResponse,
 } from '@caseflow-ai/contracts';
@@ -85,5 +86,23 @@ export class ProjectsController {
   @ApiErrorResponse(422, 'The project is already archived.')
   archive(@Param('projectId', uuidParamPipe) projectId: string): Promise<ProjectResponse> {
     return this.projects.archive(projectId);
+  }
+
+  @Post(':projectId/language')
+  @HttpCode(200)
+  @ApiOperation({
+    operationId: 'updateProjectLanguage',
+    summary: 'Set the AI generation language for a project',
+  })
+  @ApiUuidParam('projectId', 'Project identifier.')
+  @ApiZodBody(updateProjectLanguageRequestSchema)
+  @ApiZodResponse(200, 'The updated project.', projectResponseSchema)
+  @ApiErrorResponse(404, 'The project does not exist.')
+  updateLanguage(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Body(new ZodValidationPipe(updateProjectLanguageRequestSchema))
+    body: z.output<typeof updateProjectLanguageRequestSchema>,
+  ): Promise<ProjectResponse> {
+    return this.projects.updateLanguage(projectId, body.language);
   }
 }

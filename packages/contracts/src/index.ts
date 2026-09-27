@@ -11,12 +11,16 @@ export {
   listProjectsQuerySchema,
   projectListResponseSchema,
   projectResponseSchema,
+  PROJECT_LANGUAGES,
+  updateProjectLanguageRequestSchema,
 } from './projects/project.contract';
 export type {
   CreateProjectRequest,
   ListProjectsQuery,
   ProjectListResponse,
   ProjectResponse,
+  ProjectLanguage,
+  UpdateProjectLanguageRequest,
 } from './projects/project.contract';
 
 export {

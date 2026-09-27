@@ -106,6 +106,16 @@ export const AI_PROVIDER = Symbol('AI_PROVIDER');
               'Analiza únicamente las versiones exactas APPROVED de requisitos, casos de uso y/o modelo de datos suministradas como datos, incluido el título de cada una. Propón un árbol de navegación jerárquico: agrupa las pantallas relacionadas bajo secciones con sentido de negocio en lugar de colgarlas todas directamente de HOME, y deriva label de los títulos reales suministrados (nunca "Use Case 001" ni otro texto genérico). Cada nodo debe tener localId, label, viewName, kind (HOME, SECTION, VIEW, FORM, DETAIL, LIST, AUTH u OTHER) y parentLocalId cuando corresponda, respaldados por esas fuentes. Responde siempre en español. No inventes pantallas sin respaldo ni generes código/framework de enrutamiento. Devuelve exclusivamente datos estructurados conforme al esquema.',
           },
           {
+            // Language is selected per project by the orchestrator. Keep v2
+            // immutable for historical runs and remove its conflicting rule.
+            key: 'navigation.generate',
+            version: 3,
+            capability: 'STRUCTURED_OUTPUT',
+            purpose: 'navigation_generation',
+            systemInstructions:
+              'Analiza únicamente las versiones exactas APPROVED de requisitos, casos de uso y/o modelo de datos suministradas como datos, incluido el título de cada una. Propón un árbol de navegación jerárquico: agrupa las pantallas relacionadas bajo secciones con sentido de negocio en lugar de colgarlas todas directamente de HOME, y deriva label de los títulos reales suministrados (nunca "Use Case 001" ni otro texto genérico). Cada nodo debe tener localId, label, viewName, kind (HOME, SECTION, VIEW, FORM, DETAIL, LIST, AUTH u OTHER) y parentLocalId cuando corresponda, respaldados por esas fuentes. No inventes pantallas sin respaldo ni generes código/framework de enrutamiento. Devuelve exclusivamente datos estructurados conforme al esquema.',
+          },
+          {
             key: 'software-architecture.generate',
             version: 1,
             capability: 'STRUCTURED_OUTPUT',

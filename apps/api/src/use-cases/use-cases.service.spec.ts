@@ -123,6 +123,7 @@ describe('UseCasesService', () => {
     };
     const generation = { id: 'g', projectId: 'p', sources: [], candidates: [] };
     const prisma = {
+      project: { findUnique: vi.fn().mockResolvedValue({ language: 'EN' }) },
       artifactVersion: { findMany: vi.fn().mockResolvedValue([requirementVersion]) },
       useCaseGeneration: { findFirst: vi.fn().mockResolvedValue(generation) },
       $transaction: vi.fn((callback) => callback(tx)),
@@ -138,7 +139,7 @@ describe('UseCasesService', () => {
     );
     await expect(service.generate('p', ['r'])).resolves.toEqual(generation);
     expect(ai.generateStructured).toHaveBeenCalledWith(
-      expect.objectContaining({ maxOutputTokens: 8192 }),
+      expect.objectContaining({ maxOutputTokens: 8192, language: 'EN' }),
     );
     ai.generateStructured.mockResolvedValueOnce({
       data: { candidates: [{ ...candidate, relatedRequirementSourceIds: ['invented'] }] },
@@ -150,6 +151,7 @@ describe('UseCasesService', () => {
   });
   it('does not persist candidates when structured output is invalid', async () => {
     const prisma = {
+      project: { findUnique: vi.fn().mockResolvedValue({ language: 'ES' }) },
       artifactVersion: { findMany: vi.fn().mockResolvedValue([requirementVersion]) },
       $transaction: vi.fn(),
     };

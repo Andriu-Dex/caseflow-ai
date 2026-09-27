@@ -2,7 +2,9 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { ProjectLanguage } from '@caseflow-ai/contracts';
+import { toast } from 'sonner';
 import { Button, Input } from '@caseflow-ai/ui';
 import { api, ApiError } from '../lib/api';
 import { useActiveProject } from '../lib/active-project';
@@ -74,6 +76,14 @@ export function ProjectSwitcher() {
           </option>
         ))}
       </select>
+      {projectId ? (
+        <ProjectLanguageSelect
+          key={projectId}
+          projectId={projectId}
+          language={items.find((project) => project.id === projectId)?.language ?? 'ES'}
+          onChanged={() => queryClient.invalidateQueries({ queryKey: ['projects', workspaceId] })}
+        />
+      ) : null}
       {creating ? (
         <span className="flex items-center gap-1">
           <Input
@@ -99,5 +109,54 @@ export function ProjectSwitcher() {
       )}
       {error ? <span className="text-sm text-destructive">{error}</span> : null}
     </div>
+  );
+}
+
+function ProjectLanguageSelect({
+  projectId,
+  language,
+  onChanged,
+}: {
+  projectId: string;
+  language: ProjectLanguage;
+  onChanged: () => Promise<unknown>;
+}) {
+  const [selected, setSelected] = useState<ProjectLanguage>(language);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => setSelected(language), [language]);
+
+  async function handleChange(next: ProjectLanguage) {
+    setSelected(next);
+    setSaving(true);
+    try {
+      await api.projects.updateLanguage(projectId, next);
+      await onChanged();
+      toast.success('Idioma de generación actualizado.');
+    } catch {
+      setSelected(language);
+      toast.error('No se pudo actualizar el idioma de generación.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <>
+      <label htmlFor="project-language" className="sr-only">
+        Idioma de generación con IA
+      </label>
+      <select
+        id="project-language"
+        aria-label="Idioma de generación con IA"
+        className="h-9 rounded-md border border-input bg-background px-2 text-sm shadow-xs"
+        value={selected}
+        disabled={saving}
+        onChange={(event) => void handleChange(event.target.value as ProjectLanguage)}
+      >
+        <option value="ES">Español</option>
+        <option value="EN">English</option>
+      </select>
+    </>
   );
 }

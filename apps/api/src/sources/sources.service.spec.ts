@@ -64,6 +64,7 @@ function setup() {
     $queryRaw: vi.fn().mockResolvedValue([{ last_number: 1 }]),
   };
   const prisma = {
+    project: { findUnique: vi.fn().mockResolvedValue({ language: 'ES' }) },
     $transaction: vi.fn((callback) => callback(tx)),
     artifact: { findFirst: vi.fn(), findMany: vi.fn() },
     artifactVersion: { findFirst: vi.fn(), update: vi.fn() },
@@ -197,6 +198,7 @@ describe('SourcesService', () => {
 
   it('generates and accepts a candidate-first report, never auto-approving it', async () => {
     const { service, prisma, ai } = setup();
+    prisma.project.findUnique.mockResolvedValue({ language: 'EN' });
     prisma.artifact.findFirst.mockResolvedValue({ ...artifact, versions: [version] });
     ai.generateStructured.mockResolvedValue({
       data: {
@@ -228,6 +230,7 @@ describe('SourcesService', () => {
       createdAt: now,
     });
     const candidate = await service.generateReport('project', 'artifact');
+    expect(ai.generateStructured).toHaveBeenCalledWith(expect.objectContaining({ language: 'EN' }));
     expect(candidate).toMatchObject({ id: 'candidate', content: { summary: 'resumen' } });
     expect(prisma.sourceReportDetail.create).not.toHaveBeenCalled();
 
