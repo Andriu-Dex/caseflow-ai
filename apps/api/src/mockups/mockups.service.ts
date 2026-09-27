@@ -17,6 +17,7 @@ import {
 import {
   uiBlueprintContentSchema,
   type ArtifactVersionStatus,
+  type MockupDeviceType,
   type MockupJobResponse,
 } from '@caseflow-ai/contracts';
 import { PrismaService } from '../database/prisma.service';
@@ -61,15 +62,20 @@ export class MockupsService {
   // Creation/regeneration only enqueue the real generation (spec §40): the
   // HTTP request never blocks on Stitch's real latency. The client polls
   // getJob() until it reaches COMPLETED/FAILED.
-  async create(projectId: string, uiBlueprintVersionId: string): Promise<MockupJobResponse> {
+  async create(
+    projectId: string,
+    uiBlueprintVersionId: string,
+    deviceType: MockupDeviceType = 'DESKTOP',
+  ): Promise<MockupJobResponse> {
     await this.assertApprovedBlueprint(projectId, uiBlueprintVersionId);
-    return this.enqueueJob(projectId, uiBlueprintVersionId, null);
+    return this.enqueueJob(projectId, uiBlueprintVersionId, null, deviceType);
   }
 
   async version(
     projectId: string,
     mockupId: string,
     uiBlueprintVersionId: string,
+    deviceType: MockupDeviceType = 'DESKTOP',
   ): Promise<MockupJobResponse> {
     await this.assertApprovedBlueprint(projectId, uiBlueprintVersionId);
     const exists = await this.prisma.artifact.findFirst({
@@ -77,16 +83,17 @@ export class MockupsService {
       select: { id: true },
     });
     if (!exists) throw new NotFoundException('Artefacto no encontrado.');
-    return this.enqueueJob(projectId, uiBlueprintVersionId, mockupId);
+    return this.enqueueJob(projectId, uiBlueprintVersionId, mockupId, deviceType);
   }
 
   private async enqueueJob(
     projectId: string,
     uiBlueprintVersionId: string,
     existingMockupId: string | null,
+    deviceType: MockupDeviceType,
   ): Promise<MockupJobResponse> {
     const job = await this.prisma.mockupGenerationJob.create({
-      data: { projectId, uiBlueprintVersionId, existingMockupId },
+      data: { projectId, uiBlueprintVersionId, existingMockupId, deviceType },
     });
     await this.queue.add(MOCKUP_GENERATION_QUEUE, { jobId: job.id, projectId });
     return this.mapJob(job);
@@ -114,6 +121,7 @@ export class MockupsService {
       const generated = await this.generateFromApprovedBlueprint(
         job.projectId,
         job.uiBlueprintVersionId,
+        job.deviceType,
       );
       const result = await this.prisma.$transaction((tx) =>
         job.existingMockupId
@@ -122,9 +130,10 @@ export class MockupsService {
               job.projectId,
               job.existingMockupId!,
               job.uiBlueprintVersionId,
+              job.deviceType,
               generated,
             )
-          : this.createInTx(tx, job.projectId, job.uiBlueprintVersionId, generated),
+          : this.createInTx(tx, job.projectId, job.uiBlueprintVersionId, job.deviceType, generated),
       );
       await this.prisma.mockupGenerationJob.update({
         where: { id: jobId },
@@ -233,6 +242,7 @@ export class MockupsService {
           code: row.code,
           versionId: version.id,
           uiBlueprintVersionId: detail.uiBlueprintVersionId,
+          deviceType: detail.deviceType,
           svg: detail.svg,
           generatorKind: detail.generatorKind,
           screens:
@@ -254,6 +264,7 @@ export class MockupsService {
       code: row.code,
       versionId: version.id,
       uiBlueprintVersionId: detail.uiBlueprintVersionId,
+      deviceType: detail.deviceType,
       generatorKind: detail.generatorKind,
       svg: detail.svg,
       screens:
@@ -269,6 +280,7 @@ export class MockupsService {
     projectId: string,
     mockupId: string,
     uiBlueprintVersionId: string,
+    deviceType: MockupDeviceType,
     generated: StoredGeneration,
   ) {
     const locked = await tx.$queryRaw<{ id: string }[]>`
@@ -288,7 +300,7 @@ export class MockupsService {
         origin: 'SYSTEM_GENERATED',
       },
     });
-    await this.saveDetail(tx, version.id, uiBlueprintVersionId, generated);
+    await this.saveDetail(tx, version.id, uiBlueprintVersionId, deviceType, generated);
     return this.loadAndMap(tx, mockupId, version.id);
   }
 
@@ -319,6 +331,7 @@ export class MockupsService {
   private async generateFromApprovedBlueprint(
     projectId: string,
     uiBlueprintVersionId: string,
+    deviceType: MockupDeviceType,
   ): Promise<StoredGeneration> {
     const source = await this.prisma.artifactVersion.findFirst({
       where: {
@@ -336,7 +349,7 @@ export class MockupsService {
     const content = uiBlueprintContentSchema.parse(source.structuredAnalysisDetail.content);
     let generated: MockupGenerationResult;
     try {
-      generated = await this.mockupProvider.generate(content);
+      generated = await this.mockupProvider.generate(content, deviceType);
     } catch (error) {
       if (error instanceof MockupProviderError)
         throw new ServiceUnavailableException({ message: error.message, code: error.code });
@@ -393,6 +406,7 @@ export class MockupsService {
     tx: Tx,
     projectId: string,
     uiBlueprintVersionId: string,
+    deviceType: MockupDeviceType,
     generated: StoredGeneration,
   ) {
     if (!(await tx.project.findUnique({ where: { id: projectId } })))
@@ -417,7 +431,7 @@ export class MockupsService {
         origin: 'SYSTEM_GENERATED',
       },
     });
-    await this.saveDetail(tx, version.id, uiBlueprintVersionId, generated);
+    await this.saveDetail(tx, version.id, uiBlueprintVersionId, deviceType, generated);
     return this.loadAndMap(tx, artifact.id, version.id);
   }
 
@@ -447,12 +461,14 @@ export class MockupsService {
     tx: Tx,
     versionId: string,
     uiBlueprintVersionId: string,
+    deviceType: MockupDeviceType,
     generated: StoredGeneration,
   ) {
     await tx.mockupDetail.create({
       data: {
         artifactVersionId: versionId,
         uiBlueprintVersionId,
+        deviceType,
         generatorKind: generated.kind,
         generatorVersion:
           generated.kind === 'STITCH' ? 'stitch-sdk-0.3.5' : MOCKUP_GENERATOR_VERSION,
@@ -523,7 +539,7 @@ export class MockupsService {
       status: string;
       origin: string;
       createdAt: Date;
-      mockupDetail: { uiBlueprintVersionId: string } | null;
+      mockupDetail: { uiBlueprintVersionId: string; deviceType: MockupDeviceType } | null;
     },
   ) {
     return {
@@ -531,6 +547,7 @@ export class MockupsService {
       projectId: artifact.projectId,
       code: artifact.code,
       uiBlueprintVersionId: version.mockupDetail!.uiBlueprintVersionId,
+      deviceType: version.mockupDetail!.deviceType,
       version: {
         id: version.id,
         versionNumber: version.versionNumber,

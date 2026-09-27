@@ -1,9 +1,17 @@
 import { z } from 'zod';
 import { ARTIFACT_ORIGINS, ARTIFACT_VERSION_STATUSES } from '../artifacts/artifact.contract';
 
+export const MOCKUP_DEVICE_TYPES = ['DESKTOP', 'MOBILE'] as const;
+export type MockupDeviceType = (typeof MOCKUP_DEVICE_TYPES)[number];
+
 // A Mockup derives from an exact APPROVED UI_BLUEPRINT version. Stitch can
 // generate screen assets; the internal deterministic wireframe is the fallback.
-export const createMockupRequestSchema = z.object({ uiBlueprintVersionId: z.uuid() }).strict();
+export const createMockupRequestSchema = z
+  .object({
+    uiBlueprintVersionId: z.uuid(),
+    deviceType: z.enum(MOCKUP_DEVICE_TYPES).default('DESKTOP'),
+  })
+  .strict();
 export type CreateMockupRequest = z.output<typeof createMockupRequestSchema>;
 
 export const MOCKUP_GENERATOR_KINDS = ['INTERNAL_WIREFRAME', 'STITCH'] as const;
@@ -30,6 +38,7 @@ export const mockupResponseSchema = z.object({
   projectId: z.uuid(),
   code: z.string(),
   uiBlueprintVersionId: z.uuid(),
+  deviceType: z.enum(MOCKUP_DEVICE_TYPES),
   version: mockupVersionSchema,
   createdAt: z.iso.datetime(),
 });
@@ -60,6 +69,7 @@ export const mockupPreviewResponseSchema = z.object({
   code: z.string(),
   versionId: z.uuid(),
   uiBlueprintVersionId: z.uuid(),
+  deviceType: z.enum(MOCKUP_DEVICE_TYPES),
   generatorKind: z.enum(MOCKUP_GENERATOR_KINDS),
   svg: z.string().nullable(),
   screens: z.array(mockupScreenSchema).nullable(),

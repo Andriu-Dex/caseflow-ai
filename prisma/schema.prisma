@@ -1016,6 +1016,13 @@ enum MockupGeneratorKind {
   @@map("mockup_generator_kind")
 }
 
+enum MockupDeviceType {
+  DESKTOP
+  MOBILE
+
+  @@map("mockup_device_type")
+}
+
 // A mockup derives from one exact approved UI_BLUEPRINT version. The internal
 // renderer stores SVG; Stitch stores separately downloadable screen assets.
 model MockupDetail {
@@ -1023,10 +1030,11 @@ model MockupDetail {
   uiBlueprintVersionId String              @map("ui_blueprint_version_id") @db.Uuid
   generatorVersion     String              @map("generator_version")
   generatorKind        MockupGeneratorKind @default(INTERNAL_WIREFRAME) @map("generator_kind")
+  deviceType           MockupDeviceType    @default(DESKTOP) @map("device_type")
   svg                  String?
 
-  artifactVersion    ArtifactVersion     @relation("MockupOwnVersion", fields: [artifactVersionId], references: [id], onDelete: Restrict)
-  uiBlueprintVersion ArtifactVersion     @relation("MockupUiBlueprintSource", fields: [uiBlueprintVersionId], references: [id], onDelete: Restrict)
+  artifactVersion    ArtifactVersion      @relation("MockupOwnVersion", fields: [artifactVersionId], references: [id], onDelete: Restrict)
+  uiBlueprintVersion ArtifactVersion      @relation("MockupUiBlueprintSource", fields: [uiBlueprintVersionId], references: [id], onDelete: Restrict)
   screens            MockupScreenDetail[]
 
   @@map("mockup_details")
@@ -1061,15 +1069,16 @@ enum MockupJobStatus {
 // existingMockupId is set only when the job regenerates a version of an
 // already-approved mockup artifact; null means a brand-new one.
 model MockupGenerationJob {
-  id                   String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  projectId            String          @map("project_id") @db.Uuid
-  uiBlueprintVersionId String          @map("ui_blueprint_version_id") @db.Uuid
-  existingMockupId     String?         @map("existing_mockup_id") @db.Uuid
-  status               MockupJobStatus @default(QUEUED)
-  resultArtifactId     String?         @map("result_artifact_id") @db.Uuid
-  errorMessage         String?         @map("error_message")
-  createdAt            DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt            DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                   String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId            String           @map("project_id") @db.Uuid
+  uiBlueprintVersionId String           @map("ui_blueprint_version_id") @db.Uuid
+  existingMockupId     String?          @map("existing_mockup_id") @db.Uuid
+  deviceType           MockupDeviceType @default(DESKTOP) @map("device_type")
+  status               MockupJobStatus  @default(QUEUED)
+  resultArtifactId     String?          @map("result_artifact_id") @db.Uuid
+  errorMessage         String?          @map("error_message")
+  createdAt            DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
 

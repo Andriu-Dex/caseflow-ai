@@ -3,6 +3,7 @@ import type {
   DataModelResponse,
   DiagramResponse,
   FirstDeliverableExport,
+  MockupDeviceType,
   MockupJobResponse,
   MockupPreviewResponse,
   MockupResponse,
@@ -370,8 +371,11 @@ export const api = {
     list: (projectId: string) => get<{ items: MockupResponse[] }>(`/projects/${projectId}/mockups`),
     getPreview: (projectId: string, id: string) =>
       get<MockupPreviewResponse>(`/projects/${projectId}/mockups/${id}/preview`),
-    create: (projectId: string, uiBlueprintVersionId: string) =>
-      post<MockupJobResponse>(`/projects/${projectId}/mockups`, { uiBlueprintVersionId }),
+    create: (projectId: string, uiBlueprintVersionId: string, deviceType: MockupDeviceType) =>
+      post<MockupJobResponse>(`/projects/${projectId}/mockups`, {
+        uiBlueprintVersionId,
+        deviceType,
+      }),
     getJob: (projectId: string, jobId: string) =>
       get<MockupJobResponse>(`/projects/${projectId}/mockups/jobs/${jobId}`),
     transition: (projectId: string, id: string, versionId: string, status: ArtifactVersionStatus) =>

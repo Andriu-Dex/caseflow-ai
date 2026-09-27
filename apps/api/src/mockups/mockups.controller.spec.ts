@@ -21,23 +21,23 @@ describe('MockupsController', () => {
     };
     const controller = new MockupsController(service as unknown as MockupsService);
 
-    await controller.create('p', { uiBlueprintVersionId: 'b' });
+    await controller.create('p', { uiBlueprintVersionId: 'b', deviceType: 'DESKTOP' });
     await controller.list('p');
     await controller.get('p', 'm');
     await controller.getJob('p', 'j');
     await controller.preview('p', 'm');
-    await controller.version('p', 'm', { uiBlueprintVersionId: 'b2' });
+    await controller.version('p', 'm', { uiBlueprintVersionId: 'b2', deviceType: 'MOBILE' });
     await controller.transition('p', 'm', 'v', { status: 'IN_REVIEW' });
     const response = { setHeader: vi.fn(), send: vi.fn() } as unknown as Response;
     await controller.screenImage('p', 'm', 's', response);
     await controller.screenHtml('p', 'm', 's', response);
 
-    expect(service.create).toHaveBeenCalledWith('p', 'b');
+    expect(service.create).toHaveBeenCalledWith('p', 'b', 'DESKTOP');
     expect(service.list).toHaveBeenCalledWith('p');
     expect(service.get).toHaveBeenCalledWith('p', 'm');
     expect(service.getJob).toHaveBeenCalledWith('p', 'j');
     expect(service.getPreview).toHaveBeenCalledWith('p', 'm');
-    expect(service.version).toHaveBeenCalledWith('p', 'm', 'b2');
+    expect(service.version).toHaveBeenCalledWith('p', 'm', 'b2', 'MOBILE');
     expect(service.transition).toHaveBeenCalledWith('p', 'm', 'v', 'IN_REVIEW');
     expect(service.downloadScreenImage).toHaveBeenCalledWith('p', 'm', 's');
     expect(service.downloadScreenHtml).toHaveBeenCalledWith('p', 'm', 's');

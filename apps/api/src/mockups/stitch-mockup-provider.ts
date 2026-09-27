@@ -1,4 +1,4 @@
-import type { UiBlueprintContent } from '@caseflow-ai/contracts';
+import type { MockupDeviceType, UiBlueprintContent } from '@caseflow-ai/contracts';
 import {
   MockupProviderError,
   type GeneratedScreen,
@@ -22,11 +22,14 @@ export class StitchMockupProvider implements MockupProvider {
   readonly id = 'stitch';
   constructor(private readonly config: StitchMockupProviderConfig) {}
 
-  async generate(content: UiBlueprintContent): Promise<MockupGenerationResult> {
+  async generate(
+    content: UiBlueprintContent,
+    deviceType: MockupDeviceType = 'DESKTOP',
+  ): Promise<MockupGenerationResult> {
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
       return await Promise.race([
-        this.generateWithSdk(content),
+        this.generateWithSdk(content, deviceType),
         new Promise<never>((_, reject) => {
           timeout = setTimeout(
             () =>
@@ -52,7 +55,10 @@ export class StitchMockupProvider implements MockupProvider {
     }
   }
 
-  private async generateWithSdk(content: UiBlueprintContent): Promise<MockupGenerationResult> {
+  private async generateWithSdk(
+    content: UiBlueprintContent,
+    deviceType: MockupDeviceType,
+  ): Promise<MockupGenerationResult> {
     const { Stitch, StitchToolClient } = await importSdk();
     const sdk = new Stitch(
       new StitchToolClient({ apiKey: this.config.apiKey, timeout: this.config.timeoutMs }),
@@ -60,7 +66,7 @@ export class StitchMockupProvider implements MockupProvider {
     const project = await sdk.createProject(`CASEFlow ${Date.now()}`);
     const screens = await Promise.all(
       content.screens.map(async (screen): Promise<GeneratedScreen> => {
-        const generated = await project.generate(this.buildPrompt(screen), 'DESKTOP');
+        const generated = await project.generate(this.buildPrompt(screen, deviceType), deviceType);
         const [imageUrl, htmlUrl] = await Promise.all([generated.getImage(), generated.getHtml()]);
         const [image, html] = await Promise.all([
           this.download(imageUrl, 'image'),
@@ -115,9 +121,14 @@ export class StitchMockupProvider implements MockupProvider {
     return { body, contentType };
   }
 
-  private buildPrompt(screen: UiBlueprintContent['screens'][number]): string {
+  private buildPrompt(
+    screen: UiBlueprintContent['screens'][number],
+    deviceType: MockupDeviceType,
+  ): string {
     return [
-      'Diseña una pantalla de aplicación web de escritorio, limpia y profesional,',
+      deviceType === 'MOBILE'
+        ? 'Diseña una pantalla de aplicación móvil (una sola columna, orientación vertical), limpia y profesional,'
+        : 'Diseña una pantalla de aplicación web de escritorio, limpia y profesional,',
       'con buen espaciado entre elementos, jerarquía visual clara y sin superponer componentes.',
       `Pantalla: ${screen.name}. Propósito: ${screen.purpose}.`,
       screen.targetActors.length ? `Usuarios objetivo: ${screen.targetActors.join(', ')}.` : '',
