@@ -1008,16 +1008,40 @@ model StructuredAnalysisDetail {
   @@map("structured_analysis_details")
 }
 
-// Deterministic mockup/wireframe preview derived from one exact approved
-// UI_BLUEPRINT version (spec §18) — never an AI-generated raster image.
-model MockupDetail {
-  artifactVersionId    String @id @map("artifact_version_id") @db.Uuid
-  uiBlueprintVersionId String @map("ui_blueprint_version_id") @db.Uuid
-  generatorVersion     String @map("generator_version")
-  svg                  String
+enum MockupGeneratorKind {
+  INTERNAL_WIREFRAME
+  STITCH
 
-  artifactVersion    ArtifactVersion @relation("MockupOwnVersion", fields: [artifactVersionId], references: [id], onDelete: Restrict)
-  uiBlueprintVersion ArtifactVersion @relation("MockupUiBlueprintSource", fields: [uiBlueprintVersionId], references: [id], onDelete: Restrict)
+  @@map("mockup_generator_kind")
+}
+
+// A mockup derives from one exact approved UI_BLUEPRINT version. The internal
+// renderer stores SVG; Stitch stores separately downloadable screen assets.
+model MockupDetail {
+  artifactVersionId    String              @id @map("artifact_version_id") @db.Uuid
+  uiBlueprintVersionId String              @map("ui_blueprint_version_id") @db.Uuid
+  generatorVersion     String              @map("generator_version")
+  generatorKind        MockupGeneratorKind @default(INTERNAL_WIREFRAME) @map("generator_kind")
+  svg                  String?
+
+  artifactVersion    ArtifactVersion     @relation("MockupOwnVersion", fields: [artifactVersionId], references: [id], onDelete: Restrict)
+  uiBlueprintVersion ArtifactVersion     @relation("MockupUiBlueprintSource", fields: [uiBlueprintVersionId], references: [id], onDelete: Restrict)
+  screens            MockupScreenDetail[]
 
   @@map("mockup_details")
+}
+
+model MockupScreenDetail {
+  id               String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mockupVersionId  String @map("mockup_version_id") @db.Uuid
+  screenLocalId    String @map("screen_local_id")
+  screenName       String @map("screen_name")
+  imageStorageKey  String @map("image_storage_key")
+  imageContentType String @map("image_content_type")
+  htmlStorageKey   String @map("html_storage_key")
+
+  mockup MockupDetail @relation(fields: [mockupVersionId], references: [artifactVersionId], onDelete: Restrict)
+
+  @@unique([mockupVersionId, screenLocalId])
+  @@map("mockup_screen_details")
 }

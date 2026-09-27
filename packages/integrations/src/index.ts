@@ -32,6 +32,19 @@ export type { PutObjectInput, StorageProvider, StorageProviderErrorCode } from '
 export { S3StorageProvider } from './s3-storage-provider';
 export type { S3StorageProviderConfig } from './s3-storage-provider';
 
+export {
+  FallbackMockupProvider,
+  FakeMockupProvider,
+  MockupProviderError,
+  MOCKUP_PROVIDER_ERROR_CODES,
+} from './mockup-provider';
+export type {
+  GeneratedScreen,
+  MockupGenerationResult,
+  MockupProvider,
+  MockupProviderErrorCode,
+} from './mockup-provider';
+
 export interface OpenAICompatibleProviderConfig {
   id?: string;
   baseUrl: string;

@@ -51,6 +51,30 @@ describe('escapeHtml', () => {
 });
 
 describe('renderExportHtml', () => {
+  it('embeds trusted Stitch screenshot bytes without embedding provider HTML', () => {
+    const data = baseExport('Proyecto seguro');
+    const screenId = '11111111-1111-4111-8111-111111111111';
+    data.mockups = [
+      {
+        code: 'MCK-001',
+        generatorKind: 'STITCH',
+        svg: null,
+        screens: [
+          {
+            id: screenId,
+            screenName: 'Inicio',
+            screenLocalId: 'home',
+            imageUrl: '/image',
+            htmlUrl: '/html',
+          },
+        ],
+      },
+    ] as unknown as typeof data.mockups;
+    const html = renderExportHtml(data, new Map([[screenId, 'data:image/png;base64,cG5n']]));
+    expect(html).toContain('data:image/png;base64,cG5n');
+    expect(html).toContain('Inicio');
+    expect(html).not.toContain('href="/html"');
+  });
   for (const payload of XSS_PAYLOADS) {
     it(`never emits the raw payload unescaped: ${payload}`, () => {
       const html = renderExportHtml(baseExport(payload));
@@ -172,7 +196,9 @@ describe('renderExportHtml', () => {
         ],
       },
     } as unknown as typeof data.uiBlueprint;
-    data.mockups = [{ code: 'UI-001', svg: '<svg></svg>' }] as unknown as typeof data.mockups;
+    data.mockups = [
+      { code: 'UI-001', generatorKind: 'INTERNAL_WIREFRAME', svg: '<svg></svg>', screens: null },
+    ] as unknown as typeof data.mockups;
     data.readiness.ready = true;
     data.readiness.stages = [
       { satisfied: true, label: 'Design', summary: 'Approved' },
