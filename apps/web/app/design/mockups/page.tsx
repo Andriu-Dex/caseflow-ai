@@ -93,10 +93,10 @@ function MockupsContent({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeading title="Mockups" projectId={projectId} />
+      <PageHeading title="Bocetos" projectId={projectId} />
       <p className="text-sm text-muted-foreground">
-        Cada boceto se genera a partir de un UI Blueprint aprobado y muestra cómo se organizarán las
-        pantallas. Si cambia el blueprint, genere un boceto nuevo.
+        Cada boceto se genera a partir de un Plano de interfaz aprobado y muestra cómo se
+        organizarán las pantallas. Si cambia el plano de interfaz, genere un boceto nuevo.
       </p>
 
       <section className="rounded-lg border border-border bg-card p-4">
@@ -110,7 +110,7 @@ function MockupsContent({ projectId }: { projectId: string }) {
         </div>
         {approvedBlueprints.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Cuando tenga un UI Blueprint aprobado podrá generar aquí su boceto.
+            Cuando tenga un Plano de interfaz aprobado podrá generar aquí su boceto.
           </p>
         ) : (
           <ul className="flex flex-col gap-1 text-sm">
@@ -138,7 +138,7 @@ function MockupsContent({ projectId }: { projectId: string }) {
       <QueryState isLoading={mockups.isLoading} error={mockups.error}>
         {items.length === 0 ? (
           <EmptyState title="Aún no hay bocetos">
-            Genere un boceto a partir de un UI Blueprint aprobado.
+            Genere un boceto a partir de un Plano de interfaz aprobado.
           </EmptyState>
         ) : (
           <ul className="flex flex-col gap-4">
