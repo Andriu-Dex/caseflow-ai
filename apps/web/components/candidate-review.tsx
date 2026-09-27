@@ -1,6 +1,7 @@
 'use client';
 
 import { Check, Sparkles, X } from 'lucide-react';
+import { Button } from '@caseflow-ai/ui';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { ApiError, type GenerationCandidate, type GenerationResult } from '../lib/api';
@@ -63,13 +64,15 @@ export function CandidateReview({
             </p>
           </div>
         </div>
-        <button
+        <Button
+          variant="link"
+          size="sm"
           type="button"
           onClick={() => setSelected(allSelected ? [] : generation.candidates.map((c) => c.id))}
-          className="text-xs font-medium text-primary hover:underline"
+          className="text-xs font-medium"
         >
           {allSelected ? 'Quitar selección' : 'Seleccionar todas'}
-        </button>
+        </Button>
       </header>
 
       <ul className="flex max-h-96 flex-col divide-y divide-border overflow-y-auto">
@@ -96,23 +99,26 @@ export function CandidateReview({
       </ul>
 
       <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-border px-4 py-3">
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           type="button"
           onClick={onDismiss}
-          className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted/40"
+          className="text-muted-foreground h-8 px-2"
         >
           <X className="size-4" aria-hidden="true" />
           Descartar
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="default"
+          size="sm"
           type="button"
           onClick={accept}
           disabled={busy || selected.length === 0}
-          className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground disabled:opacity-50"
         >
           <Check className="size-4" aria-hidden="true" />
           {busy ? 'Incorporando…' : `Incorporar ${selected.length} de ${total}`}
-        </button>
+        </Button>
       </footer>
     </section>
   );

@@ -208,34 +208,42 @@ function DataModelContent({ projectId }: { projectId: string }) {
                   <div className="flex flex-wrap items-center gap-2">
                     <StatusBadge status={m.version.status} />
                     {isPendingApproval(m.version.status) ? (
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         type="button"
                         onClick={() => approveOne(m)}
                         disabled={approvingId === m.id}
                         className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
                       >
                         {approvingId === m.id ? 'Aprobando…' : 'Aprobar'}
-                      </button>
+                      </Button>
                     ) : null}
                     {m.version.status === 'IN_REVIEW' ? (
                       <>
-                        <button
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           type="button"
                           onClick={() => transition(m, 'APPROVED')}
                           className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700"
                         >
                           Aprobar
-                        </button>
-                        <button
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           type="button"
                           onClick={() => transition(m, 'CHANGES_REQUESTED')}
                           className="rounded-md border border-destructive/40 px-3 py-1 text-sm text-destructive hover:bg-destructive/5"
                         >
                           Solicitar cambios
-                        </button>
+                        </Button>
                       </>
                     ) : null}
-                    <button
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       type="button"
                       onClick={() => {
                         setShowManualForm(false);
@@ -245,7 +253,7 @@ function DataModelContent({ projectId }: { projectId: string }) {
                     >
                       <Pencil className="size-3.5" aria-hidden="true" />
                       Editar
-                    </button>
+                    </Button>
                     <ArchiveButton
                       projectId={projectId}
                       artifactId={m.id}
@@ -255,14 +263,18 @@ function DataModelContent({ projectId }: { projectId: string }) {
                   </div>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-3 text-sm">
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     type="button"
                     onClick={() => setExpandedId(expandedId === m.id ? null : m.id)}
                     className="text-muted-foreground underline"
                   >
                     {expandedId === m.id ? 'Ocultar entidades' : 'Ver entidades'}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     type="button"
                     onClick={() => toggleDiagram(m.id)}
                     className="inline-flex items-center gap-1 text-primary hover:underline"
@@ -273,7 +285,7 @@ function DataModelContent({ projectId }: { projectId: string }) {
                       <Eye className="size-4" aria-hidden="true" />
                     )}
                     {diagrams[m.id] ? 'Ocultar diagrama' : 'Ver diagrama entidad-relación'}
-                  </button>
+                  </Button>
                 </div>
                 {expandedId === m.id ? (
                   <ul className="mt-2 flex flex-col gap-1 border-t border-border pt-2 text-sm">

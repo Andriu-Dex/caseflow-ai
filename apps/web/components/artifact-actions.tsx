@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { Archive, CheckCheck, Inbox, RefreshCw } from 'lucide-react';
+import { Button } from '@caseflow-ai/ui';
 import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { api, ApiError, type ArtifactVersionStatus } from '../lib/api';
@@ -45,15 +46,17 @@ export function ApproveAllButton({
   }
 
   return (
-    <button
+    <Button
+      variant="default"
+      size="sm"
       type="button"
       onClick={run}
       disabled={busy}
-      className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+      className="bg-emerald-600 hover:bg-emerald-700 text-white"
     >
       <CheckCheck className="size-4" aria-hidden="true" />
       {busy ? 'Aprobando…' : `Aprobar todos los pendientes (${pending.length})`}
-    </button>
+    </Button>
   );
 }
 
@@ -87,33 +90,39 @@ export function ArchiveButton({
 
   if (!confirming)
     return (
-      <button
+      <Button
+        variant="ghost"
+        size="sm"
         type="button"
         onClick={() => setConfirming(true)}
         className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-muted/40"
       >
         <Archive className="size-3.5" aria-hidden="true" />
         Archivar
-      </button>
+      </Button>
     );
   return (
     <span className="inline-flex items-center gap-2 text-sm">
       ¿Archivar {code}?
-      <button
+      <Button
+        variant="ghost"
+        size="sm"
         type="button"
         onClick={archive}
         disabled={busy}
-        className="rounded-md bg-amber-600 px-2 py-1 text-white hover:bg-amber-700 disabled:opacity-50"
+        className="bg-amber-600 hover:bg-amber-700 text-white"
       >
         {busy ? 'Archivando…' : 'Sí, archivar'}
-      </button>
-      <button
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
         type="button"
         onClick={() => setConfirming(false)}
         className="text-muted-foreground underline"
       >
         Cancelar
-      </button>
+      </Button>
     </span>
   );
 }

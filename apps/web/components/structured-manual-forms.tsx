@@ -15,6 +15,8 @@ import {
 import { api, ApiError } from '../lib/api';
 import { csv } from '../lib/use-rows';
 import { TagInput } from './tag-input';
+import { Button } from '@caseflow-ai/ui';
+import { Trash2, Plus } from 'lucide-react';
 
 // Creating, or editing (`initial` given): an edit submits a complete new
 // version that starts again as a draft; the previous version stays intact.
@@ -62,20 +64,17 @@ function ManualFormShell({
       <h2 className="text-sm font-semibold text-foreground">{title}</h2>
       {children}
       <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={submitting}
-          className="rounded-md bg-primary px-3 py-1.5 text-sm text-white disabled:opacity-50"
-        >
+        <Button type="submit" disabled={submitting}>
           {submitting ? 'Guardando…' : editing ? 'Guardar cambios' : 'Crear'}
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="ghost"
           type="button"
           onClick={onCancel}
-          className="text-sm text-muted-foreground underline"
+          className="text-muted-foreground underline"
         >
           Cancelar
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -234,17 +233,21 @@ export function NavigationManualForm({ projectId, initial, onCreated, onCancel }
             value={n.relatedUseCaseCodes}
             onChange={(val) => update(i, { relatedUseCaseCodes: val })}
           />
-          <button
+          <Button
+            variant="ghost"
+            size="icon-xs"
             type="button"
             onClick={() => setNodes((prev) => prev.filter((_, idx) => idx !== i))}
-            className="text-destructive"
+            className="mt-1 text-destructive hover:bg-destructive/10 hover:text-destructive"
             aria-label={`Eliminar nodo ${i + 1}`}
           >
-            ✕
-          </button>
+            <Trash2 className="size-3.5" />
+          </Button>
         </div>
       ))}
-      <button
+      <Button
+        variant="outline"
+        size="sm"
         type="button"
         onClick={() =>
           setNodes((prev) => [
@@ -260,10 +263,10 @@ export function NavigationManualForm({ projectId, initial, onCreated, onCancel }
             },
           ])
         }
-        className="self-start text-sm text-muted-foreground underline"
+        className="self-start text-muted-foreground"
       >
-        + Agregar nodo
-      </button>
+        <Plus className="mr-2 size-4" /> Agregar nodo
+      </Button>
     </ManualFormShell>
   );
 }
@@ -383,25 +386,29 @@ export function SoftwareArchitectureManualForm({
               )
             }
           />
-          <button
+          <Button
+            variant="ghost"
+            size="icon-xs"
             type="button"
             onClick={() => setComponents((prev) => prev.filter((_, idx) => idx !== i))}
-            className="text-destructive"
+            className="mt-1 text-destructive hover:bg-destructive/10 hover:text-destructive"
             aria-label={`Eliminar componente ${i + 1}`}
           >
-            ✕
-          </button>
+            <Trash2 className="size-3.5" />
+          </Button>
         </div>
       ))}
-      <button
+      <Button
+        variant="outline"
+        size="sm"
         type="button"
         onClick={() =>
           setComponents((prev) => [...prev, { name: '', responsibilities: '', layer: '' }])
         }
-        className="self-start text-sm text-muted-foreground underline"
+        className="self-start text-muted-foreground"
       >
-        + Agregar componente
-      </button>
+        <Plus className="mr-2 size-4" /> Agregar componente
+      </Button>
       {/* Populated from layers already typed on other components in this
           form — layerLocalId is the only Component→Layer mechanism in the
           Software Architecture contract (no separate Layer entity exists),
@@ -465,17 +472,21 @@ export function SoftwareArchitectureManualForm({
                 )
               }
             />
-            <button
+            <Button
+              variant="ghost"
+              size="icon-xs"
               type="button"
               onClick={() => setDependencies((prev) => prev.filter((_, i) => i !== di))}
-              className="text-destructive"
+              className="mt-1 text-destructive hover:bg-destructive/10 hover:text-destructive"
               aria-label={`Eliminar dependencia ${di + 1}`}
             >
-              ✕
-            </button>
+              <Trash2 className="size-3.5" />
+            </Button>
           </div>
         ))}
-        <button
+        <Button
+          variant="outline"
+          size="sm"
           type="button"
           onClick={() =>
             setDependencies((prev) => [
@@ -483,10 +494,10 @@ export function SoftwareArchitectureManualForm({
               { fromLocalId: '', toLocalId: '', description: '' },
             ])
           }
-          className="text-sm text-muted-foreground underline"
+          className="self-start text-muted-foreground"
         >
-          + Agregar dependencia
-        </button>
+          <Plus className="mr-2 size-4" /> Agregar dependencia
+        </Button>
       </fieldset>
 
       <label className="flex flex-col gap-1 text-sm">
@@ -637,25 +648,29 @@ export function SystemArchitectureManualForm({
               )
             }
           />
-          <button
+          <Button
+            variant="ghost"
+            size="icon-xs"
             type="button"
             onClick={() => setNodes((prev) => prev.filter((_, idx) => idx !== i))}
-            className="text-destructive"
+            className="mt-1 text-destructive hover:bg-destructive/10 hover:text-destructive"
             aria-label={`Eliminar nodo ${i + 1}`}
           >
-            ✕
-          </button>
+            <Trash2 className="size-3.5" />
+          </Button>
         </div>
       ))}
-      <button
+      <Button
+        variant="outline"
+        size="sm"
         type="button"
         onClick={() =>
           setNodes((prev) => [...prev, { name: '', kind: 'RUNTIME', responsibilities: '' }])
         }
-        className="self-start text-sm text-muted-foreground underline"
+        className="self-start text-muted-foreground"
       >
-        + Agregar nodo
-      </button>
+        <Plus className="mr-2 size-4" /> Agregar nodo
+      </Button>
 
       <fieldset className="rounded-md border border-border p-2">
         <legend className="px-1 text-sm font-medium text-foreground/80">
@@ -718,17 +733,21 @@ export function SystemArchitectureManualForm({
                 )
               }
             />
-            <button
+            <Button
+              variant="ghost"
+              size="icon-xs"
               type="button"
               onClick={() => setLinks((prev) => prev.filter((_, i) => i !== li))}
-              className="text-destructive"
+              className="mt-1 text-destructive hover:bg-destructive/10 hover:text-destructive"
               aria-label={`Eliminar enlace ${li + 1}`}
             >
-              ✕
-            </button>
+              <Trash2 className="size-3.5" />
+            </Button>
           </div>
         ))}
-        <button
+        <Button
+          variant="outline"
+          size="sm"
           type="button"
           onClick={() =>
             setLinks((prev) => [
@@ -736,10 +755,10 @@ export function SystemArchitectureManualForm({
               { fromLocalId: '', toLocalId: '', protocol: '', description: '' },
             ])
           }
-          className="text-sm text-muted-foreground underline"
+          className="self-start text-muted-foreground"
         >
-          + Agregar enlace
-        </button>
+          <Plus className="mr-2 size-4" /> Agregar enlace
+        </Button>
       </fieldset>
     </ManualFormShell>
   );
@@ -863,14 +882,16 @@ export function UiBlueprintManualForm({ projectId, initial, onCreated, onCancel 
                 )
               }
             />
-            <button
+            <Button
+              variant="ghost"
+              size="icon-xs"
               type="button"
               onClick={() => setScreens((prev) => prev.filter((_, idx) => idx !== i))}
-              className="text-destructive"
+              className="mt-1 text-destructive hover:bg-destructive/10 hover:text-destructive"
               aria-label={`Eliminar pantalla ${i + 1}`}
             >
-              ✕
-            </button>
+              <Trash2 className="size-3.5" />
+            </Button>
           </div>
           <textarea
             required
@@ -966,7 +987,9 @@ export function UiBlueprintManualForm({ projectId, initial, onCreated, onCancel 
           </div>
         </div>
       ))}
-      <button
+      <Button
+        variant="outline"
+        size="sm"
         type="button"
         onClick={() =>
           setScreens((prev) => [
@@ -986,10 +1009,10 @@ export function UiBlueprintManualForm({ projectId, initial, onCreated, onCancel 
             },
           ])
         }
-        className="self-start text-sm text-muted-foreground underline"
+        className="self-start text-muted-foreground"
       >
-        + Agregar pantalla
-      </button>
+        <Plus className="mr-2 size-4" /> Agregar pantalla
+      </Button>
     </ManualFormShell>
   );
 }

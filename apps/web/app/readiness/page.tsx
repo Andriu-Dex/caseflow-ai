@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { AlertCircle, CheckCircle2, Circle, Download, FileText } from 'lucide-react';
+import { Button } from '@caseflow-ai/ui';
 import Link from 'next/link';
 import { api } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
@@ -36,22 +37,26 @@ function ReadinessContent({ projectId }: { projectId: string }) {
 
       <section className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card p-4">
         <span className="text-sm font-medium text-foreground/80">Exportar:</span>
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           type="button"
           onClick={() => downloadExport(projectId, 'html')}
           className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
         >
           <FileText className="size-4" aria-hidden="true" />
           Documento del proyecto (HTML)
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
           type="button"
           onClick={() => downloadExport(projectId, 'json')}
           className="inline-flex items-center gap-1.5 rounded-md border border-input px-3 py-1.5 text-sm hover:bg-muted/40"
         >
           <Download className="size-4" aria-hidden="true" />
           Datos estructurados (JSON)
-        </button>
+        </Button>
       </section>
 
       <QueryState isLoading={readiness.isLoading} error={readiness.error}>
