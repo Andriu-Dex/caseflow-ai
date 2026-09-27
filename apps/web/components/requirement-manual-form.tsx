@@ -11,6 +11,7 @@ import { REQUIREMENT_PRIORITIES, REQUIREMENT_TYPES } from '@caseflow-ai/contract
 import { api, ApiError } from '../lib/api';
 import { csv } from '../lib/use-rows';
 import { TagInput } from './tag-input';
+import { Button } from '@caseflow-ai/ui';
 
 const PRIORITY_LABELS: Record<RequirementPriority, string> = {
   HIGH: 'Alta',
@@ -183,20 +184,17 @@ export function RequirementManualForm({
         </fieldset>
       ) : null}
       <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={submitting}
-          className="rounded-md bg-primary px-3 py-1.5 text-sm text-white disabled:opacity-50"
-        >
+        <Button type="submit" disabled={submitting}>
           {submitting ? 'Guardando…' : initial ? 'Guardar cambios' : 'Crear requisito'}
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="ghost"
           type="button"
           onClick={onCancel}
-          className="text-sm text-muted-foreground underline"
+          className="text-muted-foreground underline"
         >
           Cancelar
-        </button>
+        </Button>
       </div>
     </form>
   );

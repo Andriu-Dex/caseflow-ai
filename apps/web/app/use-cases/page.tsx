@@ -143,7 +143,9 @@ function UseCasesContent({ projectId }: { projectId: string }) {
 
       <section className="rounded-lg border border-border bg-card p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             type="button"
             onClick={() => setGeneratorOpen(!isGeneratorOpen)}
             className="flex items-center gap-1.5 text-sm font-semibold text-foreground"
@@ -159,7 +161,7 @@ function UseCasesContent({ projectId }: { projectId: string }) {
                 ({items.length} {items.length === 1 ? 'caso de uso' : 'casos de uso'})
               </span>
             ) : null}
-          </button>
+          </Button>
           <ApproveAllButton
             pending={pending}
             approve={(id) => approveDirectly(transitionFor(items.find((u) => u.id === id)!))}
@@ -176,9 +178,11 @@ function UseCasesContent({ projectId }: { projectId: string }) {
             ) : (
               <>
                 <div className="mb-1 flex justify-end">
-                  <button
+                  <Button
+                    variant="link"
+                    size="sm"
                     type="button"
-                    className="text-xs font-medium text-primary hover:underline"
+                    className="text-xs font-medium"
                     onClick={() =>
                       setSelected(
                         selectedRequirements.length === allRequirementIds.length
@@ -190,7 +194,7 @@ function UseCasesContent({ projectId }: { projectId: string }) {
                     {selectedRequirements.length === allRequirementIds.length
                       ? 'Quitar selección'
                       : 'Seleccionar todos'}
-                  </button>
+                  </Button>
                 </div>
                 <ul className="mb-2 flex max-h-64 flex-col gap-1 overflow-y-auto text-sm">
                   {approvedRequirements.map((r) => (
@@ -292,34 +296,42 @@ function UseCasesContent({ projectId }: { projectId: string }) {
                     <div className="flex flex-wrap items-center gap-2">
                       <StatusBadge status={u.version.status} />
                       {isPendingApproval(u.version.status) ? (
-                        <button
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           type="button"
                           onClick={() => approveOne(u)}
                           disabled={approvingId === u.id}
                           className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
                         >
                           {approvingId === u.id ? 'Aprobando…' : 'Aprobar'}
-                        </button>
+                        </Button>
                       ) : null}
                       {u.version.status === 'IN_REVIEW' ? (
                         <>
-                          <button
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             type="button"
                             onClick={() => transition(u, 'APPROVED')}
                             className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700"
                           >
                             Aprobar
-                          </button>
-                          <button
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             type="button"
                             onClick={() => transition(u, 'CHANGES_REQUESTED')}
                             className="rounded-md border border-destructive/40 px-3 py-1 text-sm text-destructive hover:bg-destructive/5"
                           >
                             Solicitar cambios
-                          </button>
+                          </Button>
                         </>
                       ) : null}
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         type="button"
                         onClick={() => {
                           setShowManualForm(false);
@@ -329,7 +341,7 @@ function UseCasesContent({ projectId }: { projectId: string }) {
                       >
                         <Pencil className="size-3.5" aria-hidden="true" />
                         Editar
-                      </button>
+                      </Button>
                       <ArchiveButton
                         projectId={projectId}
                         artifactId={u.id}

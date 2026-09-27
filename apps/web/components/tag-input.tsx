@@ -1,6 +1,7 @@
 'use client';
 
 import { X } from 'lucide-react';
+import { Button } from '@caseflow-ai/ui';
 import { useState, KeyboardEvent } from 'react';
 import { Badge } from '@caseflow-ai/ui';
 
@@ -58,13 +59,15 @@ export function TagInput({
           <span className="break-words min-w-0 whitespace-normal text-left leading-relaxed">
             {tag}
           </span>
-          <button
+          <Button
+            variant="ghost"
+            size="icon-xs"
             type="button"
             onClick={() => removeTag(i)}
             className="mt-0.5 shrink-0 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground focus:outline-none"
           >
             <X className="size-3" />
-          </button>
+          </Button>
         </Badge>
       ))}
       <input

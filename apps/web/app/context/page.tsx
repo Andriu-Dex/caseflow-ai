@@ -7,6 +7,7 @@ import { api, ApiError } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { PageHeading } from '../../components/page-heading';
 import { StatusBadge } from '../../components/status-badge';
+import { Button } from '@caseflow-ai/ui';
 
 const linesToItems = (text: string) =>
   text
@@ -177,7 +178,9 @@ function ContextForm({
         <h2 className="text-sm font-semibold text-foreground">
           {hasExisting ? 'Nueva versión del Contexto' : 'Definir Contexto del Proyecto'}
         </h2>
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           type="button"
           onClick={handleGenerate}
           disabled={generating || approvedSources.length === 0}
@@ -186,10 +189,10 @@ function ContextForm({
               ? 'Primero apruebe al menos una fuente del proyecto.'
               : 'Completa los campos a partir de las fuentes aprobadas. Revíselos y edítelos antes de guardar.'
           }
-          className="rounded-md border border-input px-3 py-1 text-sm hover:bg-muted/40 disabled:opacity-50"
+          className="text-muted-foreground h-8 px-2"
         >
           {generating ? 'Generando…' : 'Generar con IA'}
-        </button>
+        </Button>
       </div>
       <label className="flex flex-col gap-1 text-sm">
         Planteamiento del problema
@@ -284,13 +287,15 @@ function ContextForm({
         )}
       </fieldset>
 
-      <button
+      <Button
+        variant="default"
+        size="sm"
         type="submit"
         disabled={submitting}
-        className="self-start rounded-md bg-primary px-3 py-1.5 text-sm text-white disabled:opacity-50"
+        className="self-start"
       >
         {submitting ? 'Guardando…' : hasExisting ? 'Guardar nueva versión' : 'Crear Contexto'}
-      </button>
+      </Button>
     </form>
   );
 }
@@ -390,40 +395,48 @@ function ContextContent({ projectId }: { projectId: string }) {
             context.data.version.status === 'GENERATED' ? (
               // "Enviar a revisión" stays hidden until multi-user review ships
               // (see sources/page.tsx); approveDirectly still drives IN_REVIEW.
-              <button
+              <Button
+                variant="default"
+                size="sm"
                 type="button"
                 onClick={approveDirectly}
                 disabled={approving}
-                className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
               >
                 {approving ? 'Aprobando…' : 'Aprobar'}
-              </button>
+              </Button>
             ) : null}
             {context.data.version.status === 'IN_REVIEW' ? (
               <>
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
                   type="button"
                   onClick={() => transition('APPROVED')}
                   className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700"
                 >
                   Aprobar
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
                   type="button"
                   onClick={() => transition('CHANGES_REQUESTED')}
                   className="rounded-md border border-destructive/40 px-3 py-1 text-sm text-destructive hover:bg-destructive/5"
                 >
                   Solicitar cambios
-                </button>
+                </Button>
               </>
             ) : null}
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
               type="button"
               onClick={() => setShowForm((v) => !v)}
               className="text-sm text-muted-foreground underline"
             >
               {showForm ? 'Cancelar' : 'Crear nueva versión'}
-            </button>
+            </Button>
           </div>
         </div>
       ) : null}

@@ -6,6 +6,8 @@ import type { RequirementResponse, UseCaseResponse } from '@caseflow-ai/contract
 import { api, ApiError } from '../lib/api';
 import { csv, useRows } from '../lib/use-rows';
 import { TagInput } from './tag-input';
+import { Button } from '@caseflow-ai/ui';
+import { Trash2, Plus } from 'lucide-react';
 
 // Manual (non-AI) Use Case creation (spec: "CASEflow remains functional
 // without an AI provider"). Mirrors the AI candidate's field set exactly,
@@ -182,23 +184,27 @@ export function UseCaseManualForm({
               value={step.action}
               onChange={(e) => mainFlow.update(i, { action: e.target.value })}
             />
-            <button
+            <Button
+              variant="ghost"
+              size="icon-xs"
               type="button"
               onClick={() => mainFlow.remove(i)}
-              className="text-sm text-destructive"
+              className="mt-1 text-destructive hover:bg-destructive/10 hover:text-destructive"
               aria-label={`Eliminar paso ${i + 1}`}
             >
-              ✕
-            </button>
+              <Trash2 className="size-3.5" />
+            </Button>
           </div>
         ))}
-        <button
+        <Button
+          variant="outline"
+          size="sm"
           type="button"
           onClick={() => mainFlow.add({ actor: '', action: '' })}
-          className="text-sm text-muted-foreground underline"
+          className="self-start text-muted-foreground"
         >
-          + Agregar paso
-        </button>
+          <Plus className="mr-2 size-4" /> Agregar paso
+        </Button>
       </fieldset>
 
       <fieldset className="rounded-md border border-border p-2">
@@ -222,14 +228,16 @@ export function UseCaseManualForm({
                 value={flow.condition}
                 onChange={(e) => alternativeFlows.update(i, { condition: e.target.value })}
               />
-              <button
+              <Button
+                variant="ghost"
+                size="icon-xs"
                 type="button"
                 onClick={() => alternativeFlows.remove(i)}
-                className="text-sm text-destructive"
+                className="mt-1 text-destructive hover:bg-destructive/10 hover:text-destructive"
                 aria-label={`Eliminar flujo alternativo ${i + 1}`}
               >
-                ✕
-              </button>
+                <Trash2 className="size-3.5" />
+              </Button>
             </div>
             <textarea
               aria-label={`Pasos del flujo alternativo ${i + 1}`}
@@ -241,13 +249,15 @@ export function UseCaseManualForm({
             />
           </div>
         ))}
-        <button
+        <Button
+          variant="outline"
+          size="sm"
           type="button"
           onClick={() => alternativeFlows.add({ name: '', condition: '', stepsText: '' })}
-          className="text-sm text-muted-foreground underline"
+          className="self-start text-muted-foreground"
         >
-          + Agregar flujo alternativo
-        </button>
+          <Plus className="mr-2 size-4" /> Agregar flujo alternativo
+        </Button>
       </fieldset>
 
       <fieldset className="rounded-md border border-border p-2">
@@ -282,20 +292,17 @@ export function UseCaseManualForm({
       </fieldset>
 
       <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={submitting}
-          className="rounded-md bg-primary px-3 py-1.5 text-sm text-white disabled:opacity-50"
-        >
+        <Button type="submit" disabled={submitting}>
           {submitting ? 'Guardando…' : initial ? 'Guardar cambios' : 'Crear caso de uso'}
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="ghost"
           type="button"
           onClick={onCancel}
-          className="text-sm text-muted-foreground underline"
+          className="text-muted-foreground underline"
         >
           Cancelar
-        </button>
+        </Button>
       </div>
     </form>
   );
