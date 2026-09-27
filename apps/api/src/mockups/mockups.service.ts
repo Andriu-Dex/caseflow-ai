@@ -1,25 +1,53 @@
-import { Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import {
+  Inject,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { canTransitionArtifactVersionStatus, initialStatusForOrigin } from '@caseflow-ai/domain';
 import { uiBlueprintContentSchema, type ArtifactVersionStatus } from '@caseflow-ai/contracts';
 import { PrismaService } from '../database/prisma.service';
 import type { Prisma } from '../generated/prisma/client';
 import { sanitizeDiagramSvg } from '../data-models/svg-sanitizer';
-import { MOCKUP_GENERATOR_VERSION, MockupRenderer } from './mockup-renderer';
+import {
+  MockupProviderError,
+  type MockupGenerationResult,
+  type MockupProvider,
+  type StorageProvider,
+} from '@caseflow-ai/integrations';
+import { MOCKUP_GENERATOR_VERSION } from './mockup-renderer';
+import { MOCKUP_PROVIDER } from './mockup-provider.token';
+import { STORAGE_PROVIDER } from './storage-provider.token';
 
 type Tx = Prisma.TransactionClient;
 const MOCKUP_CODE_PREFIX = 'MCK';
+type StoredGeneration =
+  | { kind: 'INTERNAL_WIREFRAME'; svg: string }
+  | {
+      kind: 'STITCH';
+      screens: {
+        screenLocalId: string;
+        screenName: string;
+        imageStorageKey: string;
+        imageContentType: string;
+        htmlStorageKey: string;
+      }[];
+    };
 
 @Injectable()
 export class MockupsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly renderer: MockupRenderer,
+    @Inject(MOCKUP_PROVIDER) private readonly mockupProvider: MockupProvider,
+    @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
 
   async create(projectId: string, uiBlueprintVersionId: string) {
-    const svg = await this.renderFromApprovedBlueprint(projectId, uiBlueprintVersionId);
+    const generated = await this.generateFromApprovedBlueprint(projectId, uiBlueprintVersionId);
     return this.prisma.$transaction((tx) =>
-      this.createInTx(tx, projectId, uiBlueprintVersionId, svg),
+      this.createInTx(tx, projectId, uiBlueprintVersionId, generated),
     );
   }
 
@@ -30,7 +58,7 @@ export class MockupsService {
         versions: {
           orderBy: { versionNumber: 'desc' },
           take: 1,
-          include: { mockupDetail: true },
+          include: { mockupDetail: { include: { screens: true } } },
         },
       },
       orderBy: { code: 'asc' },
@@ -54,7 +82,7 @@ export class MockupsService {
           where: { status: 'APPROVED' },
           orderBy: { versionNumber: 'desc' },
           take: 1,
-          include: { mockupDetail: true },
+          include: { mockupDetail: { include: { screens: true } } },
         },
       },
       orderBy: { code: 'asc' },
@@ -71,6 +99,11 @@ export class MockupsService {
           versionId: version.id,
           uiBlueprintVersionId: detail.uiBlueprintVersionId,
           svg: detail.svg,
+          generatorKind: detail.generatorKind,
+          screens:
+            detail.generatorKind === 'STITCH'
+              ? this.screenLinks(projectId, row.id, detail.screens)
+              : null,
           createdAt: version.createdAt.toISOString(),
         };
       });
@@ -86,13 +119,18 @@ export class MockupsService {
       code: row.code,
       versionId: version.id,
       uiBlueprintVersionId: detail.uiBlueprintVersionId,
+      generatorKind: detail.generatorKind,
       svg: detail.svg,
+      screens:
+        detail.generatorKind === 'STITCH'
+          ? this.screenLinks(projectId, row.id, detail.screens)
+          : null,
       createdAt: version.createdAt.toISOString(),
     };
   }
 
   async version(projectId: string, mockupId: string, uiBlueprintVersionId: string) {
-    const svg = await this.renderFromApprovedBlueprint(projectId, uiBlueprintVersionId);
+    const generated = await this.generateFromApprovedBlueprint(projectId, uiBlueprintVersionId);
     return this.prisma.$transaction(async (tx) => {
       const locked = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM artifacts WHERE id=${mockupId}::uuid AND project_id=${projectId}::uuid AND artifact_type_code='MOCKUP' FOR NO KEY UPDATE`;
@@ -111,14 +149,7 @@ export class MockupsService {
           origin: 'SYSTEM_GENERATED',
         },
       });
-      await tx.mockupDetail.create({
-        data: {
-          artifactVersionId: version.id,
-          uiBlueprintVersionId,
-          generatorVersion: MOCKUP_GENERATOR_VERSION,
-          svg,
-        },
-      });
+      await this.saveDetail(tx, version.id, uiBlueprintVersionId, generated);
       return this.loadAndMap(tx, mockupId, version.id);
     });
   }
@@ -147,10 +178,10 @@ export class MockupsService {
 
   // Rendered/sanitized before any transaction opens, matching the established
   // "no network/CPU-heavy work under a DB lock" pattern used elsewhere.
-  private async renderFromApprovedBlueprint(
+  private async generateFromApprovedBlueprint(
     projectId: string,
     uiBlueprintVersionId: string,
-  ): Promise<string> {
+  ): Promise<StoredGeneration> {
     const source = await this.prisma.artifactVersion.findFirst({
       where: {
         id: uiBlueprintVersionId,
@@ -165,10 +196,67 @@ export class MockupsService {
         'Se requiere una versión exacta APPROVED de plano de interfaz del mismo proyecto.',
       );
     const content = uiBlueprintContentSchema.parse(source.structuredAnalysisDetail.content);
-    return sanitizeDiagramSvg(this.renderer.render(content));
+    let generated: MockupGenerationResult;
+    try {
+      generated = await this.mockupProvider.generate(content);
+    } catch (error) {
+      if (error instanceof MockupProviderError)
+        throw new ServiceUnavailableException({ message: error.message, code: error.code });
+      throw error;
+    }
+    if (generated.kind === 'INTERNAL_WIREFRAME')
+      return { kind: generated.kind, svg: sanitizeDiagramSvg(generated.svg) };
+    if (
+      generated.screens.length !== content.screens.length ||
+      new Set(generated.screens.map((screen) => screen.screenLocalId)).size !==
+        content.screens.length
+    )
+      throw new ServiceUnavailableException('El proveedor devolvió pantallas incompletas.');
+    const expectedIds = new Set(content.screens.map((screen) => screen.localId));
+    if (generated.screens.some((screen) => !expectedIds.has(screen.screenLocalId)))
+      throw new ServiceUnavailableException('El proveedor devolvió pantallas inesperadas.');
+    const screens: StoredGeneration & { kind: 'STITCH' } = { kind: 'STITCH', screens: [] };
+    try {
+      for (const screen of generated.screens) {
+        const extension =
+          screen.image.contentType === 'image/jpeg'
+            ? 'jpg'
+            : screen.image.contentType === 'image/webp'
+              ? 'webp'
+              : 'png';
+        const prefix = `mockups/${projectId}/${randomUUID()}`;
+        const imageStorageKey = `${prefix}.${extension}`;
+        const htmlStorageKey = `${prefix}.html`;
+        await this.storage.putObject({
+          key: imageStorageKey,
+          body: screen.image.body,
+          contentType: screen.image.contentType,
+        });
+        await this.storage.putObject({
+          key: htmlStorageKey,
+          body: Buffer.from(screen.html, 'utf8'),
+          contentType: 'text/html',
+        });
+        screens.screens.push({
+          screenLocalId: screen.screenLocalId,
+          screenName: screen.screenName,
+          imageStorageKey,
+          imageContentType: screen.image.contentType,
+          htmlStorageKey,
+        });
+      }
+    } catch {
+      throw new ServiceUnavailableException('No se pudieron guardar los archivos del boceto.');
+    }
+    return screens;
   }
 
-  private async createInTx(tx: Tx, projectId: string, uiBlueprintVersionId: string, svg: string) {
+  private async createInTx(
+    tx: Tx,
+    projectId: string,
+    uiBlueprintVersionId: string,
+    generated: StoredGeneration,
+  ) {
     if (!(await tx.project.findUnique({ where: { id: projectId } })))
       throw new NotFoundException('Proyecto no encontrado.');
     const number = await this.allocate(tx, projectId, MOCKUP_CODE_PREFIX);
@@ -179,8 +267,8 @@ export class MockupsService {
         code: `${MOCKUP_CODE_PREFIX}-${String(number).padStart(3, '0')}`,
       },
     });
-    // Deterministic derivation from an already-approved UI Blueprint, with no
-    // manual authoring and no AI involvement — SYSTEM_GENERATED (spec §6.3).
+    // Internal or Stitch derivation from an approved UI Blueprint; both remain
+    // SYSTEM_GENERATED candidates requiring human review.
     const version = await tx.artifactVersion.create({
       data: {
         artifactId: artifact.id,
@@ -191,14 +279,7 @@ export class MockupsService {
         origin: 'SYSTEM_GENERATED',
       },
     });
-    await tx.mockupDetail.create({
-      data: {
-        artifactVersionId: version.id,
-        uiBlueprintVersionId,
-        generatorVersion: MOCKUP_GENERATOR_VERSION,
-        svg,
-      },
-    });
+    await this.saveDetail(tx, version.id, uiBlueprintVersionId, generated);
     return this.loadAndMap(tx, artifact.id, version.id);
   }
 
@@ -209,7 +290,7 @@ export class MockupsService {
         versions: {
           orderBy: { versionNumber: 'desc' },
           take: 1,
-          include: { mockupDetail: true },
+          include: { mockupDetail: { include: { screens: true } } },
         },
       },
     });
@@ -224,11 +305,74 @@ export class MockupsService {
     return rows[0]!.last_number;
   }
 
+  private async saveDetail(
+    tx: Tx,
+    versionId: string,
+    uiBlueprintVersionId: string,
+    generated: StoredGeneration,
+  ) {
+    await tx.mockupDetail.create({
+      data: {
+        artifactVersionId: versionId,
+        uiBlueprintVersionId,
+        generatorKind: generated.kind,
+        generatorVersion:
+          generated.kind === 'STITCH' ? 'stitch-sdk-0.3.5' : MOCKUP_GENERATOR_VERSION,
+        svg: generated.kind === 'INTERNAL_WIREFRAME' ? generated.svg : null,
+        ...(generated.kind === 'STITCH' ? { screens: { create: generated.screens } } : {}),
+      },
+    });
+  }
+
+  private screenLinks(
+    projectId: string,
+    mockupId: string,
+    screens: { id: string; screenLocalId: string; screenName: string }[],
+  ) {
+    return screens.map((screen) => ({
+      id: screen.id,
+      screenLocalId: screen.screenLocalId,
+      screenName: screen.screenName,
+      imageUrl: `/projects/${projectId}/mockups/${mockupId}/screens/${screen.id}/image`,
+      htmlUrl: `/projects/${projectId}/mockups/${mockupId}/screens/${screen.id}/html`,
+    }));
+  }
+
+  private async findScreen(projectId: string, mockupId: string, screenId: string) {
+    const screen = await this.prisma.mockupScreenDetail.findFirst({
+      where: {
+        id: screenId,
+        mockup: {
+          artifactVersion: {
+            projectId,
+            artifactId: mockupId,
+            artifact: { artifactTypeCode: 'MOCKUP' },
+          },
+        },
+      },
+    });
+    if (!screen) throw new NotFoundException('Pantalla no encontrada.');
+    return screen;
+  }
+
+  async downloadScreenImage(projectId: string, mockupId: string, screenId: string) {
+    const screen = await this.findScreen(projectId, mockupId, screenId);
+    return {
+      body: await this.storage.getObject(screen.imageStorageKey),
+      contentType: screen.imageContentType,
+    };
+  }
+
+  async downloadScreenHtml(projectId: string, mockupId: string, screenId: string) {
+    const screen = await this.findScreen(projectId, mockupId, screenId);
+    return { body: await this.storage.getObject(screen.htmlStorageKey) };
+  }
+
   private async loadAndMap(tx: Tx, artifactId: string, versionId: string) {
     const artifact = await tx.artifact.findUniqueOrThrow({ where: { id: artifactId } });
     const version = await tx.artifactVersion.findUniqueOrThrow({
       where: { id: versionId },
-      include: { mockupDetail: true },
+      include: { mockupDetail: { include: { screens: true } } },
     });
     return this.map(artifact, version);
   }

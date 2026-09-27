@@ -362,6 +362,10 @@ export const api = {
       ),
   },
   mockups: {
+    screenImageUrl: (projectId: string, mockupId: string, screenId: string) =>
+      `${BASE_URL}/projects/${projectId}/mockups/${mockupId}/screens/${screenId}/image`,
+    screenHtmlUrl: (projectId: string, mockupId: string, screenId: string) =>
+      `${BASE_URL}/projects/${projectId}/mockups/${mockupId}/screens/${screenId}/html`,
     list: (projectId: string) => get<{ items: MockupResponse[] }>(`/projects/${projectId}/mockups`),
     getPreview: (projectId: string, id: string) =>
       get<MockupPreviewResponse>(`/projects/${projectId}/mockups/${id}/preview`),

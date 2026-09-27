@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { UiBlueprintContent } from '@caseflow-ai/contracts';
+import type { MockupGenerationResult, MockupProvider } from '@caseflow-ai/integrations';
 
 // Carried in every stored MockupDetail so a future format change is
 // distinguishable from the source UI Blueprint it was derived from.
@@ -92,5 +93,14 @@ export class MockupRenderer {
       );
     }
     return parts.join('');
+  }
+}
+
+@Injectable()
+export class InternalWireframeMockupProvider implements MockupProvider {
+  readonly id = 'internal-wireframe';
+  constructor(private readonly renderer: MockupRenderer) {}
+  async generate(content: UiBlueprintContent): Promise<MockupGenerationResult> {
+    return { kind: 'INTERNAL_WIREFRAME', svg: this.renderer.render(content) };
   }
 }

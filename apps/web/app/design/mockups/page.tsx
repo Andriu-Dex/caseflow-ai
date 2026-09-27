@@ -3,6 +3,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { MockupResponse } from '@caseflow-ai/contracts';
 import { useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@caseflow-ai/ui';
 import { api, ApiError, type ArtifactVersionStatus } from '../../../lib/api';
@@ -26,7 +27,32 @@ function MockupPreview({ mockupId, projectId }: { mockupId: string; projectId: s
   if (preview.isLoading)
     return <p className="text-sm text-muted-foreground">Cargando vista previa…</p>;
   if (!preview.data) return null;
-  return <TrustedDiagram svg={preview.data.svg} caption="Boceto de la interfaz" />;
+  if (preview.data.generatorKind === 'INTERNAL_WIREFRAME')
+    return <TrustedDiagram svg={preview.data.svg!} caption="Boceto de la interfaz" />;
+  return (
+    <div className="flex flex-col gap-4">
+      {preview.data.screens?.map((screen) => (
+        <figure key={screen.id} className="flex flex-col gap-1">
+          {/* The server serves validated image bytes; external HTML is download-only. */}
+          <img
+            src={api.mockups.screenImageUrl(projectId, mockupId, screen.id)}
+            alt={screen.screenName}
+            className="rounded-lg border border-border"
+          />
+          <figcaption className="flex items-center justify-between text-xs text-muted-foreground">
+            {screen.screenName}
+            <a
+              href={api.mockups.screenHtmlUrl(projectId, mockupId, screen.id)}
+              download
+              className="underline"
+            >
+              Descargar HTML
+            </a>
+          </figcaption>
+        </figure>
+      ))}
+    </div>
+  );
 }
 
 function MockupsContent({ projectId }: { projectId: string }) {
@@ -127,7 +153,13 @@ function MockupsContent({ projectId }: { projectId: string }) {
                   disabled={creatingVersionId === b.version.id}
                   onClick={() => createMockup(b.version.id)}
                 >
-                  {creatingVersionId === b.version.id ? 'Generando…' : 'Generar boceto'}
+                  {creatingVersionId === b.version.id ? (
+                    <>
+                      <Loader2 aria-hidden="true" className="size-4 animate-spin" /> Generando…
+                    </>
+                  ) : (
+                    'Generar boceto'
+                  )}
                 </Button>
               </li>
             ))}
