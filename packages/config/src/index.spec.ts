@@ -38,6 +38,7 @@ describe('loadAIConfig', () => {
           apiKey: 'groq-secret',
           model: 'llama-3.3-70b-versatile',
           timeoutMs: 30_000,
+          schemaDialect: 'strict',
         },
         {
           id: 'gemini',
@@ -45,9 +46,22 @@ describe('loadAIConfig', () => {
           apiKey: 'gemini-secret',
           model: 'gemini-2.0-flash',
           timeoutMs: 30_000,
+          schemaDialect: 'strict',
         },
       ],
     }));
+
+  it('reads an explicit narrow schema dialect for a slot that requires it', () =>
+    expect(
+      loadAIConfig({
+        AI_PROVIDER: 'fallback',
+        AI_PROVIDER_1_ID: 'gemini',
+        AI_PROVIDER_1_BASE_URL: 'https://generativelanguage.googleapis.com/v1beta/openai',
+        AI_PROVIDER_1_API_KEY: 'gemini-secret',
+        AI_PROVIDER_1_MODEL: 'gemini-3.8-flash',
+        AI_PROVIDER_1_SCHEMA_DIALECT: 'narrow',
+      }),
+    ).toMatchObject({ chain: [{ id: 'gemini', schemaDialect: 'narrow' }] }));
 
   it('stops the fallback chain at the first slot missing a base URL', () =>
     expect(

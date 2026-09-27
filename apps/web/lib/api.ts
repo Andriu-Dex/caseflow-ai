@@ -200,6 +200,8 @@ export const api = {
   requirements: {
     list: (projectId: string) =>
       get<{ items: RequirementResponse[] }>(`/projects/${projectId}/requirements`),
+    exportUrl: (projectId: string, format: 'pdf' | 'docx') =>
+      `${BASE_URL}/projects/${projectId}/requirements/export?format=${format}`,
     qualityReport: (projectId: string) =>
       get<{ issues: { requirementId: string; code: string; rule: string; message: string }[] }>(
         `/projects/${projectId}/requirements/quality-report`,

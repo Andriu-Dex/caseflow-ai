@@ -13,8 +13,9 @@ describe('RequirementsController', () => {
       accept: vi.fn(),
       transition: vi.fn(),
     };
+    const documents = { generate: vi.fn().mockResolvedValue(Buffer.from('document')) };
     for (const fn of Object.values(s)) fn.mockResolvedValue({});
-    const c = new RequirementsController(s as unknown as RequirementsService);
+    const c = new RequirementsController(s as unknown as RequirementsService, documents as never);
     const body = {
       requirementType: 'FUNCTIONAL' as const,
       name: 'N',
@@ -33,6 +34,8 @@ describe('RequirementsController', () => {
     await c.generation('p', 'g');
     await c.accept('p', 'g', { candidateIds: ['c'] });
     await c.transition('p', 'r', 'v', { status: 'IN_REVIEW' });
+    await c.exportDocument('p', 'pdf', { setHeader: vi.fn() } as never);
     expect(Object.values(s).every((fn) => fn.mock.calls.length === 1)).toBe(true);
+    expect(documents.generate).toHaveBeenCalledWith('p', 'pdf');
   });
 });

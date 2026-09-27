@@ -171,7 +171,7 @@ export class AIOrchestrator {
       inputHash: hash({ prompt: `${prompt.key}@${prompt.version}`, messages: input.messages }),
     });
     try {
-      const response = await this.provider.generateStructured({
+      const providerRequest: AIProviderRequest = {
         capability: prompt.capability,
         purpose: prompt.purpose,
         systemInstructions: prompt.systemInstructions,
@@ -186,8 +186,23 @@ export class AIOrchestrator {
         temperature: input.temperature,
         maxOutputTokens: input.maxOutputTokens,
         timeoutMs: input.timeoutMs ?? this.defaultTimeoutMs,
-      });
-      const candidate = input.outputSchema.safeParse(stripNulls(response.payload));
+      };
+      // A model occasionally produces output that fails schema validation
+      // (AI_INVALID_OUTPUT) on an otherwise-healthy provider — worth one retry
+      // against the same provider before giving up, since the failure is
+      // model-nondeterminism, not a provider/network problem other error
+      // codes already represent. Bounded to avoid runaway cost/latency; any
+      // other error code still fails immediately.
+      const maxAttempts = 2;
+      let response: AIProviderResponse | undefined;
+      let candidate: ReturnType<typeof input.outputSchema.safeParse> | undefined;
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        response = await this.provider.generateStructured(providerRequest);
+        candidate = input.outputSchema.safeParse(stripNulls(response.payload));
+        if (candidate.success || attempt === maxAttempts) break;
+      }
+      if (!response || !candidate)
+        throw new AIError('AI_INVALID_OUTPUT', 'La salida de IA no cumple el esquema requerido.');
       if (!candidate.success)
         throw new AIError('AI_INVALID_OUTPUT', 'La salida de IA no cumple el esquema requerido.');
       await this.recorder.succeed(runId, {

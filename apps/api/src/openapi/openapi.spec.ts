@@ -179,6 +179,7 @@ describe('OpenAPI contract', () => {
         'GET /projects/{projectId}/traceability',
         'GET /projects/{projectId}/readiness',
         'GET /projects/{projectId}/export',
+        'GET /projects/{projectId}/requirements/export',
         'GET /workspaces',
       ].sort(),
     );
@@ -241,6 +242,7 @@ describe('OpenAPI contract', () => {
         'getRequirement',
         'getRequirementGeneration',
         'getRequirementQualityReport',
+        'exportRequirementsDocument',
         'getSource',
         'getSourceReport',
         'getUseCase',
