@@ -397,6 +397,15 @@ export class DataModelsService {
     if (!row || !version || !diagram) throw new NotFoundException('Diagrama ER no encontrado.');
     return this.mapDiagram(row, version, diagram);
   }
+  // Re-rendered on demand from the stored canonical source (spec §4.8), never
+  // persisted: PNG export via client-side canvas rasterization is unreliable
+  // for Mermaid output (Chromium taints the canvas for any SVG containing
+  // `<foreignObject>`, which Mermaid emits for every ER attribute label).
+  async getERDiagramPng(projectId: string, dataModelId: string): Promise<Buffer> {
+    const diagram = await this.getERDiagram(projectId, dataModelId);
+    return this.renderDiagramPng(diagram.sourceFormat, diagram.source);
+  }
+
   async generateUseCaseDiagram(projectId: string, sourceVersionIds: string[]) {
     const unique = [...new Set(sourceVersionIds)];
     const sources = await this.prisma.artifactVersion.findMany({
@@ -550,6 +559,24 @@ export class DataModelsService {
     const diagram = version?.diagramDetail;
     if (!row || !version || !diagram) throw new NotFoundException('Diagrama no encontrado.');
     return this.mapDiagram(row, version, diagram);
+  }
+
+  async getUseCaseDiagramPng(projectId: string, id: string): Promise<Buffer> {
+    const diagram = await this.getUseCaseDiagram(projectId, id);
+    return this.renderDiagramPng(diagram.sourceFormat, diagram.source);
+  }
+
+  private async renderDiagramPng(
+    sourceFormat: DiagramSourceFormat,
+    source: string,
+  ): Promise<Buffer> {
+    try {
+      const { png } = await this.diagramProvider.renderPng({ format: sourceFormat, source });
+      return png;
+    } catch (error) {
+      if (error instanceof DiagramProviderError) mapDiagramProviderError(error);
+      throw error;
+    }
   }
 
   // Validates, renders and sanitizes a diagram. Performed outside any

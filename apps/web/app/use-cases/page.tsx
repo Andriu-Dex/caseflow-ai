@@ -372,6 +372,7 @@ function UseCasesContent({ projectId }: { projectId: string }) {
                   sourceFormat={diagram.sourceFormat}
                   code={diagram.code}
                   caption="Diagrama de casos de uso aprobados"
+                  pngUrl={api.useCaseDiagrams.diagramPngUrl(projectId, diagram.id)}
                   onSaveEdit={async (source) => {
                     await api.useCaseDiagrams.createManualVersion(projectId, diagram.id, source);
                     queryClient.invalidateQueries({ queryKey: ['use-case-diagrams', projectId] });
