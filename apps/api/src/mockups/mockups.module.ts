@@ -1,4 +1,6 @@
-import { Logger, Module } from '@nestjs/common';
+import { Inject, Logger, Module, type OnModuleDestroy } from '@nestjs/common';
+import { Queue } from 'bullmq';
+import { MOCKUP_GENERATION_QUEUE, type MockupGenerationJobPayload } from '@caseflow-ai/domain';
 import { loadMockupConfig, loadStorageConfig } from '@caseflow-ai/config';
 import {
   DisabledStorageProvider,
@@ -12,6 +14,7 @@ import { MockupsController } from './mockups.controller';
 import { MockupsService } from './mockups.service';
 import { StitchMockupProvider } from './stitch-mockup-provider';
 import { MOCKUP_PROVIDER } from './mockup-provider.token';
+import { MOCKUP_QUEUE } from './mockup-queue.token';
 import { STORAGE_PROVIDER } from './storage-provider.token';
 
 const logger = new Logger('MockupsModule');
@@ -47,7 +50,19 @@ const logger = new Logger('MockupsModule');
         return config.configured ? new S3StorageProvider(config) : new DisabledStorageProvider();
       },
     },
+    {
+      provide: MOCKUP_QUEUE,
+      useFactory: (): Queue<MockupGenerationJobPayload> =>
+        new Queue<MockupGenerationJobPayload>(MOCKUP_GENERATION_QUEUE, {
+          connection: { url: process.env.REDIS_URL ?? 'redis://localhost:6379' },
+        }),
+    },
   ],
   exports: [MockupsService],
 })
-export class MockupsModule {}
+export class MockupsModule implements OnModuleDestroy {
+  constructor(@Inject(MOCKUP_QUEUE) private readonly queue: Queue) {}
+  async onModuleDestroy(): Promise<void> {
+    await this.queue.close();
+  }
+}

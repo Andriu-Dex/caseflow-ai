@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { MockupResponse } from '@caseflow-ai/contracts';
+import type { MockupJobResponse, MockupResponse } from '@caseflow-ai/contracts';
 import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -76,12 +76,27 @@ function MockupsContent({ projectId }: { projectId: string }) {
     queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
   }
 
+  // The request only enqueues the job (spec §40): poll until the worker
+  // reports a terminal status instead of blocking on Stitch's real latency.
+  async function pollJob(jobId: string): Promise<MockupJobResponse> {
+    for (;;) {
+      const job = await api.mockups.getJob(projectId, jobId);
+      if (job.status === 'COMPLETED' || job.status === 'FAILED') return job;
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+  }
+
   async function createMockup(uiBlueprintVersionId: string) {
     setCreatingVersionId(uiBlueprintVersionId);
     try {
-      await api.mockups.create(projectId, uiBlueprintVersionId);
-      toast.success('Boceto generado.');
-      invalidate();
+      const job = await api.mockups.create(projectId, uiBlueprintVersionId);
+      const finished = await pollJob(job.id);
+      if (finished.status === 'FAILED') {
+        toast.error(finished.errorMessage ?? 'No se pudo generar el boceto.');
+      } else {
+        toast.success('Boceto generado.');
+        invalidate();
+      }
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'No se pudo generar el boceto.');
     } finally {
@@ -172,7 +187,7 @@ function MockupsContent({ projectId }: { projectId: string }) {
           <Loader2 className="size-8 animate-spin text-primary" aria-hidden="true" />
           <p className="text-sm font-medium text-foreground">Generando boceto con IA…</p>
           <p className="text-xs text-muted-foreground">
-            Esto puede tardar hasta un minuto. No cierre ni recargue esta página.
+            Esto puede tardar varios minutos. No cierre ni recargue esta página.
           </p>
         </div>
       ) : null}

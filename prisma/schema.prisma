@@ -215,6 +215,7 @@ model Project {
   sourceReportCandidates        SourceReportCandidate[]
   structuredAnalysisGenerations StructuredAnalysisGeneration[]
   projectContextCandidates      ProjectContextCandidate[]
+  mockupGenerationJobs          MockupGenerationJob[]
 
   @@index([workspaceId, createdAt, id])
   @@map("projects")
@@ -1044,4 +1045,34 @@ model MockupScreenDetail {
 
   @@unique([mockupVersionId, screenLocalId])
   @@map("mockup_screen_details")
+}
+
+enum MockupJobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+
+  @@map("mockup_job_status")
+}
+
+// Tracks an async mockup generation request (spec §40 job states), so the
+// HTTP request that creates it never blocks on Stitch's real latency.
+// existingMockupId is set only when the job regenerates a version of an
+// already-approved mockup artifact; null means a brand-new one.
+model MockupGenerationJob {
+  id                   String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId            String          @map("project_id") @db.Uuid
+  uiBlueprintVersionId String          @map("ui_blueprint_version_id") @db.Uuid
+  existingMockupId     String?         @map("existing_mockup_id") @db.Uuid
+  status               MockupJobStatus @default(QUEUED)
+  resultArtifactId     String?         @map("result_artifact_id") @db.Uuid
+  errorMessage         String?         @map("error_message")
+  createdAt            DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, createdAt])
+  @@map("mockup_generation_jobs")
 }

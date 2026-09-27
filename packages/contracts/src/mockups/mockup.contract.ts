@@ -37,6 +37,23 @@ export type MockupResponse = z.infer<typeof mockupResponseSchema>;
 
 export const mockupListResponseSchema = z.object({ items: z.array(mockupResponseSchema) });
 
+export const MOCKUP_JOB_STATUSES = ['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED'] as const;
+export type MockupJobStatus = (typeof MOCKUP_JOB_STATUSES)[number];
+
+// The synchronous create/version calls now only enqueue the real
+// generation (spec §40 async jobs) — the client polls this until it
+// reaches a terminal status instead of blocking the original request.
+export const mockupJobResponseSchema = z.object({
+  id: z.uuid(),
+  projectId: z.uuid(),
+  status: z.enum(MOCKUP_JOB_STATUSES),
+  resultArtifactId: z.uuid().nullable(),
+  errorMessage: z.string().nullable(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+export type MockupJobResponse = z.infer<typeof mockupJobResponseSchema>;
+
 export const mockupPreviewResponseSchema = z.object({
   id: z.uuid(),
   projectId: z.uuid(),

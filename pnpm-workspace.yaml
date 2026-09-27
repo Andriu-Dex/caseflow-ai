@@ -8,6 +8,9 @@ allowBuilds:
   # esbuild's own postinstall only downloads its prebuilt platform binary
   # (no arbitrary script) — required for apps/web's Vite/Vitest test runner.
   esbuild: true
+  # Optional native accelerator for msgpackr (bullmq's message serializer);
+  # falls back to a pure-JS implementation if this build is skipped.
+  msgpackr-extract: true
   prisma: true
 minimumReleaseAgeExclude:
   - '@vitest/coverage-v8@5.0.1'
