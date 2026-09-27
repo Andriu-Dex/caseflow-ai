@@ -10,6 +10,7 @@ export function toProjectResponse(
     workspaceId: project.workspaceId,
     name: project.name,
     description: project.description,
+    language: project.language,
     createdAt: project.createdAt.toISOString(),
     updatedAt: project.updatedAt.toISOString(),
     archivedAt: project.archivedAt ? project.archivedAt.toISOString() : null,

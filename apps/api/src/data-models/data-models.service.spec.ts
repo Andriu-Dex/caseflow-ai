@@ -129,6 +129,7 @@ function setup() {
     $queryRaw: vi.fn().mockResolvedValue([{ last_number: 1 }]),
   };
   const prisma = {
+    project: { findUnique: vi.fn().mockResolvedValue({ language: 'ES' }) },
     $transaction: vi.fn((callback) => callback(tx)),
     artifact: { findMany: vi.fn(), findFirst: vi.fn() },
     artifactVersion: { findMany: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
@@ -195,6 +196,7 @@ describe('DataModelsService', () => {
   });
   it('validates exact approved generation sources and persists candidates', async () => {
     const { service, prisma, tx, ai } = setup();
+    prisma.project.findUnique.mockResolvedValue({ language: 'EN' });
     const source = {
       id: 'source',
       artifact: { code: 'RF-001', artifactTypeCode: 'REQUIREMENT' },
@@ -217,7 +219,11 @@ describe('DataModelsService', () => {
       id: 'generation',
     });
     expect(ai.generateStructured).toHaveBeenCalledWith(
-      expect.objectContaining({ promptKey: 'data-model.generate', maxOutputTokens: 12_288 }),
+      expect.objectContaining({
+        promptKey: 'data-model.generate',
+        maxOutputTokens: 12_288,
+        language: 'EN',
+      }),
     );
     expect(tx.dataModelCandidate.create).toHaveBeenCalledOnce();
     prisma.artifactVersion.findMany.mockResolvedValue([]);

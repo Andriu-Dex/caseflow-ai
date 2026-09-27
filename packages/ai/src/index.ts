@@ -12,6 +12,11 @@ export const AI_ERROR_CODES = [
 export type AIErrorCode = (typeof AI_ERROR_CODES)[number];
 export type AICapability = 'STRUCTURED_OUTPUT';
 export type AIModelProfile = 'FAST' | 'BALANCED' | 'QUALITY' | 'LOCAL';
+export type AIGenerationLanguage = 'ES' | 'EN';
+const LANGUAGE_NAMES: Record<AIGenerationLanguage, string> = {
+  ES: 'español',
+  EN: 'English',
+};
 const MAX_OUTPUT_TOKENS_LIMIT = 1_000_000;
 
 export class AIError extends Error {
@@ -129,6 +134,7 @@ export interface StructuredGenerationInput<T> {
   outputSchema: z.ZodType<T>;
   schemaName: string;
   modelProfile?: AIModelProfile;
+  language?: AIGenerationLanguage;
   model?: string;
   temperature?: number;
   maxOutputTokens?: number;
@@ -168,13 +174,19 @@ export class AIOrchestrator {
       purpose: prompt.purpose,
       promptKey: prompt.key,
       promptVersion: prompt.version,
-      inputHash: hash({ prompt: `${prompt.key}@${prompt.version}`, messages: input.messages }),
+      inputHash: hash({
+        prompt: `${prompt.key}@${prompt.version}`,
+        language: input.language ?? null,
+        messages: input.messages,
+      }),
     });
     try {
       const providerRequest: AIProviderRequest = {
         capability: prompt.capability,
         purpose: prompt.purpose,
-        systemInstructions: prompt.systemInstructions,
+        systemInstructions: input.language
+          ? `${prompt.systemInstructions}\n\nGenera todo el contenido (etiquetas, nombres, descripciones y textos) en ${LANGUAGE_NAMES[input.language]}.`
+          : prompt.systemInstructions,
         messages: input.messages,
         outputSchema: toStrictJsonSchema(z.toJSONSchema(input.outputSchema)) as Record<
           string,

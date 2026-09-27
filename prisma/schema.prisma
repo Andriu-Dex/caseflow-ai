@@ -174,6 +174,13 @@ enum DiagramSourceFormat {
   @@map("diagram_source_format")
 }
 
+enum ProjectLanguage {
+  ES
+  EN
+
+  @@map("project_language")
+}
+
 // Logical team/organization that groups projects (spec §3.1).
 model Workspace {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -189,24 +196,25 @@ model Workspace {
 
 // Main functional unit of the system (spec §3.2). Domain-independent.
 model Project {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  workspaceId String   @map("workspace_id") @db.Uuid
+  id          String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String          @map("workspace_id") @db.Uuid
   name        String
   description String?
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  language    ProjectLanguage @default(ES)
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   // Archival (spec §87): hides the project from active use once it has
   // approved history and therefore can no longer be hard-deleted.
-  archivedAt  DateTime? @map("archived_at") @db.Timestamptz(6)
+  archivedAt  DateTime?       @map("archived_at") @db.Timestamptz(6)
 
-  workspace            Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  artifacts            Artifact[]
-  codeCounters         ProjectCodeCounter[]
-  aiRuns               AIRun[]
-  dataModelGenerations DataModelGeneration[]
-  sourceReportCandidates SourceReportCandidate[]
+  workspace                     Workspace                      @relation(fields: [workspaceId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  artifacts                     Artifact[]
+  codeCounters                  ProjectCodeCounter[]
+  aiRuns                        AIRun[]
+  dataModelGenerations          DataModelGeneration[]
+  sourceReportCandidates        SourceReportCandidate[]
   structuredAnalysisGenerations StructuredAnalysisGeneration[]
-  projectContextCandidates ProjectContextCandidate[]
+  projectContextCandidates      ProjectContextCandidate[]
 
   @@index([workspaceId, createdAt, id])
   @@map("projects")
@@ -238,10 +246,10 @@ model Artifact {
   // reserved forever (spec §31.4), unlike a hard delete.
   archivedAt       DateTime? @map("archived_at") @db.Timestamptz(6)
 
-  project                     Project              @relation(fields: [projectId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  artifactType                ArtifactType         @relation(fields: [artifactTypeCode], references: [code], onDelete: Restrict, onUpdate: Restrict)
-  versions                    ArtifactVersion[]
-  acceptedDataModelCandidates DataModelCandidate[]
+  project                              Project                       @relation(fields: [projectId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  artifactType                         ArtifactType                  @relation(fields: [artifactTypeCode], references: [code], onDelete: Restrict, onUpdate: Restrict)
+  versions                             ArtifactVersion[]
+  acceptedDataModelCandidates          DataModelCandidate[]
   acceptedStructuredAnalysisCandidates StructuredAnalysisCandidate[]
 
   // Project-scoped, never-reused codes (spec §31.4).
@@ -271,25 +279,25 @@ model ArtifactVersion {
   submittedAt       DateTime?             @map("submitted_at") @db.Timestamptz(6)
   approvedAt        DateTime?             @map("approved_at") @db.Timestamptz(6)
 
-  artifact                   Artifact                    @relation(fields: [artifactId, projectId], references: [id, projectId], onDelete: Restrict, onUpdate: Restrict)
-  projectContextDetail       ProjectContextDetail?
-  sourceForAIRuns            AIRun[]
-  requirementDetail          RequirementDetail?
-  sourcedRequirements        RequirementDetail[]         @relation("RequirementSourceContext")
-  useCaseDetail              UseCaseDetail?
-  useCaseRequirementLinks    UseCaseRequirementLink[]    @relation("UseCaseRequirementVersion")
-  useCaseGenerationSources   UseCaseGenerationSource[]
-  dataModelDetail            DataModelDetail?
-  dataModelGenerationSources DataModelGenerationSource[]
-  diagramDetail              DiagramDetail?
-  diagramSources             DiagramSourceVersion[]
-  sourceDetail               SourceDetail?
-  sourceReportCandidates     SourceReportCandidate[]
-  structuredAnalysisDetail   StructuredAnalysisDetail?
+  artifact                            Artifact                             @relation(fields: [artifactId, projectId], references: [id, projectId], onDelete: Restrict, onUpdate: Restrict)
+  projectContextDetail                ProjectContextDetail?
+  sourceForAIRuns                     AIRun[]
+  requirementDetail                   RequirementDetail?
+  sourcedRequirements                 RequirementDetail[]                  @relation("RequirementSourceContext")
+  useCaseDetail                       UseCaseDetail?
+  useCaseRequirementLinks             UseCaseRequirementLink[]             @relation("UseCaseRequirementVersion")
+  useCaseGenerationSources            UseCaseGenerationSource[]
+  dataModelDetail                     DataModelDetail?
+  dataModelGenerationSources          DataModelGenerationSource[]
+  diagramDetail                       DiagramDetail?
+  diagramSources                      DiagramSourceVersion[]
+  sourceDetail                        SourceDetail?
+  sourceReportCandidates              SourceReportCandidate[]
+  structuredAnalysisDetail            StructuredAnalysisDetail?
   structuredAnalysisGenerationSources StructuredAnalysisGenerationSource[]
-  mockupDetail               MockupDetail?             @relation("MockupOwnVersion")
-  mockupsSourcedFromHere     MockupDetail[]            @relation("MockupUiBlueprintSource")
-  projectContextSourceLinks  ProjectContextSource[]
+  mockupDetail                        MockupDetail?                        @relation("MockupOwnVersion")
+  mockupsSourcedFromHere              MockupDetail[]                       @relation("MockupUiBlueprintSource")
+  projectContextSourceLinks           ProjectContextSource[]
 
   @@unique([artifactId, versionNumber])
   @@unique([id, projectId])
@@ -381,10 +389,10 @@ model ProjectContextScopeItem {
 // Project Context version (requirements.md Phase B). Insert-only, validated
 // by trigger (same project, exact APPROVED PROJECT_SOURCE).
 model ProjectContextSource {
-  projectContextVersionId String          @map("project_context_version_id") @db.Uuid
-  sourceVersionId         String          @map("source_version_id") @db.Uuid
+  projectContextVersionId String               @map("project_context_version_id") @db.Uuid
+  sourceVersionId         String               @map("source_version_id") @db.Uuid
   context                 ProjectContextDetail @relation(fields: [projectContextVersionId], references: [artifactVersionId], onDelete: Restrict, onUpdate: Restrict)
-  sourceVersion           ArtifactVersion @relation(fields: [sourceVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sourceVersion           ArtifactVersion      @relation(fields: [sourceVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
   @@id([projectContextVersionId, sourceVersionId])
   @@map("project_context_sources")
@@ -426,18 +434,18 @@ model AIRun {
   inputHash               String       @map("input_hash") @db.Char(64)
   outputHash              String?      @map("output_hash") @db.Char(64)
 
-  project               Project?               @relation(fields: [projectId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  sourceArtifactVersion ArtifactVersion?       @relation(fields: [sourceArtifactVersionId, projectId], references: [id, projectId], onDelete: Restrict, onUpdate: Restrict)
-  requirementDetails    RequirementDetail[]
-  requirementGeneration RequirementGeneration?
-  useCaseGeneration     UseCaseGeneration?
-  dataModelGeneration   DataModelGeneration?
-  dataModelDetails      DataModelDetail[]
-  sourceReportCandidate SourceReportCandidate?
-  sourceReportDetails   SourceReportDetail[]
+  project                      Project?                      @relation(fields: [projectId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sourceArtifactVersion        ArtifactVersion?              @relation(fields: [sourceArtifactVersionId, projectId], references: [id, projectId], onDelete: Restrict, onUpdate: Restrict)
+  requirementDetails           RequirementDetail[]
+  requirementGeneration        RequirementGeneration?
+  useCaseGeneration            UseCaseGeneration?
+  dataModelGeneration          DataModelGeneration?
+  dataModelDetails             DataModelDetail[]
+  sourceReportCandidate        SourceReportCandidate?
+  sourceReportDetails          SourceReportDetail[]
   structuredAnalysisGeneration StructuredAnalysisGeneration?
   structuredAnalysisDetails    StructuredAnalysisDetail[]
-  projectContextCandidate ProjectContextCandidate?
+  projectContextCandidate      ProjectContextCandidate?
 
   @@index([projectId, startedAt, id])
   @@index([sourceArtifactVersionId])
@@ -926,9 +934,9 @@ model SourceReportDetail {
   generationCandidateId String? @unique @map("generation_candidate_id") @db.Uuid
   aiRunId               String? @map("ai_run_id") @db.Uuid
 
-  sourceDetail SourceDetail            @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict)
-  candidate    SourceReportCandidate?  @relation(fields: [generationCandidateId], references: [id], onDelete: Restrict)
-  aiRun        AIRun?                  @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+  sourceDetail SourceDetail           @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict)
+  candidate    SourceReportCandidate? @relation(fields: [generationCandidateId], references: [id], onDelete: Restrict)
+  aiRun        AIRun?                 @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
 
   @@map("source_report_details")
 }
@@ -938,16 +946,16 @@ model SourceReportDetail {
 // `kind` discriminator keeps each generation scoped to exactly one artifact
 // type; content shape per kind is validated by packages/contracts, not here.
 model StructuredAnalysisGeneration {
-  id         String                            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  projectId  String                            @map("project_id") @db.Uuid
-  kind       StructuredAnalysisKind
-  aiRunId    String                            @unique @map("ai_run_id") @db.Uuid
-  createdAt  DateTime                          @default(now()) @map("created_at") @db.Timestamptz(6)
+  id        String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId String                 @map("project_id") @db.Uuid
+  kind      StructuredAnalysisKind
+  aiRunId   String                 @unique @map("ai_run_id") @db.Uuid
+  createdAt DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  project    Project                           @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  aiRun      AIRun                             @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
-  sources    StructuredAnalysisGenerationSource[]
-  candidates StructuredAnalysisCandidate[]
+  project         Project                              @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  aiRun           AIRun                                @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+  sources         StructuredAnalysisGenerationSource[]
+  candidates      StructuredAnalysisCandidate[]
   acceptedDetails StructuredAnalysisDetail[]
 
   @@index([projectId, kind, createdAt])
@@ -955,9 +963,9 @@ model StructuredAnalysisGeneration {
 }
 
 model StructuredAnalysisGenerationSource {
-  generationId      String          @map("generation_id") @db.Uuid
-  artifactVersionId String          @map("artifact_version_id") @db.Uuid
-  sourceId          String          @map("source_id")
+  generationId      String @map("generation_id") @db.Uuid
+  artifactVersionId String @map("artifact_version_id") @db.Uuid
+  sourceId          String @map("source_id")
 
   generation      StructuredAnalysisGeneration @relation(fields: [generationId], references: [id], onDelete: Restrict)
   artifactVersion ArtifactVersion              @relation(fields: [artifactVersionId], references: [id], onDelete: Restrict)
@@ -985,12 +993,12 @@ model StructuredAnalysisCandidate {
 // Official structured snapshot for one ArtifactVersion of kind `kind`.
 // Immutable once created (see migration trigger), like every other Detail.
 model StructuredAnalysisDetail {
-  artifactVersionId     String                       @id @map("artifact_version_id") @db.Uuid
+  artifactVersionId     String                 @id @map("artifact_version_id") @db.Uuid
   kind                  StructuredAnalysisKind
   content               Json
-  generationId          String?                      @map("generation_id") @db.Uuid
-  generationCandidateId String?                      @unique @map("generation_candidate_id") @db.Uuid
-  aiRunId               String?                      @map("ai_run_id") @db.Uuid
+  generationId          String?                @map("generation_id") @db.Uuid
+  generationCandidateId String?                @unique @map("generation_candidate_id") @db.Uuid
+  aiRunId               String?                @map("ai_run_id") @db.Uuid
 
   artifactVersion     ArtifactVersion               @relation(fields: [artifactVersionId], references: [id], onDelete: Restrict)
   generation          StructuredAnalysisGeneration? @relation(fields: [generationId], references: [id], onDelete: Restrict)
@@ -1003,10 +1011,10 @@ model StructuredAnalysisDetail {
 // Deterministic mockup/wireframe preview derived from one exact approved
 // UI_BLUEPRINT version (spec §18) — never an AI-generated raster image.
 model MockupDetail {
-  artifactVersionId  String          @id @map("artifact_version_id") @db.Uuid
-  uiBlueprintVersionId String        @map("ui_blueprint_version_id") @db.Uuid
-  generatorVersion   String          @map("generator_version")
-  svg                String
+  artifactVersionId    String @id @map("artifact_version_id") @db.Uuid
+  uiBlueprintVersionId String @map("ui_blueprint_version_id") @db.Uuid
+  generatorVersion     String @map("generator_version")
+  svg                  String
 
   artifactVersion    ArtifactVersion @relation("MockupOwnVersion", fields: [artifactVersionId], references: [id], onDelete: Restrict)
   uiBlueprintVersion ArtifactVersion @relation("MockupUiBlueprintSource", fields: [uiBlueprintVersionId], references: [id], onDelete: Restrict)

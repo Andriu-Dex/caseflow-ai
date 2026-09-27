@@ -12,6 +12,7 @@ import {
   type UseCaseResponse,
 } from '@caseflow-ai/contracts';
 import { PrismaService } from '../database/prisma.service';
+import { getProjectLanguage } from '../projects/project-language';
 import type { Prisma } from '../generated/prisma/client';
 
 type Tx = Prisma.TransactionClient;
@@ -128,9 +129,11 @@ export class UseCasesService {
       code: version.artifact.code,
       requirement: version.requirementDetail,
     }));
+    const language = await getProjectLanguage(this.prisma, projectId);
     try {
       const result = await this.ai.generateStructured({
         projectId,
+        language,
         promptKey: 'use-cases.generate',
         promptVersion: 1,
         messages: [{ role: 'user', content: JSON.stringify({ requirementSources: sources }) }],

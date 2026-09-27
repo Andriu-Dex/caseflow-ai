@@ -18,6 +18,7 @@ import {
   type DataModelInput,
 } from '@caseflow-ai/contracts';
 import { PrismaService } from '../database/prisma.service';
+import { getProjectLanguage } from '../projects/project-language';
 import type { DiagramKind, DiagramSourceFormat, Prisma } from '../generated/prisma/client';
 import { DiagramEngine } from './diagram-engine';
 import { DIAGRAM_PROVIDER } from './diagram-provider.token';
@@ -195,9 +196,11 @@ export class DataModelsService {
       throw new UnprocessableEntityException(
         'La generación requiere versiones exactas APPROVED del tipo y proyecto indicados.',
       );
+    const language = await getProjectLanguage(this.prisma, projectId);
     try {
       const result = await this.ai.generateStructured({
         projectId,
+        language,
         promptKey: 'data-model.generate',
         promptVersion: 1,
         messages: [

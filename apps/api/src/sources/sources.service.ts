@@ -16,6 +16,7 @@ import {
   type SourceReportContent,
 } from '@caseflow-ai/contracts';
 import { PrismaService } from '../database/prisma.service';
+import { getProjectLanguage } from '../projects/project-language';
 import type { Prisma } from '../generated/prisma/client';
 import { SourceContentExtractor } from './source-content-extractor';
 import { STORAGE_PROVIDER } from './storage-provider.token';
@@ -348,9 +349,11 @@ export class SourcesService {
       throw new UnprocessableEntityException(
         'La fuente no tiene texto extraído ni transcripción manual.',
       );
+    const language = await getProjectLanguage(this.prisma, projectId);
     try {
       const result = await this.ai.generateStructured({
         projectId,
+        language,
         sourceArtifactVersionId: version.id,
         promptKey: 'source-report.generate',
         promptVersion: 1,

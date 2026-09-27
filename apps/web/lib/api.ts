@@ -113,6 +113,8 @@ export const api = {
     get: (projectId: string) => get<ProjectResponse>(`/projects/${projectId}`),
     delete: (projectId: string) => del<void>(`/projects/${projectId}`),
     archive: (projectId: string) => post<ProjectResponse>(`/projects/${projectId}/archive`),
+    updateLanguage: (projectId: string, language: 'ES' | 'EN') =>
+      post<ProjectResponse>(`/projects/${projectId}/language`, { language }),
   },
   artifacts: {
     archive: (projectId: string, artifactId: string) =>

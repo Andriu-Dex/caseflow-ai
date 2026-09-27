@@ -56,6 +56,7 @@ describe('RequirementsService', () => {
   });
   it('normalizes disabled generation and rejects missing/source-less context', async () => {
     const prisma = {
+      project: { findUnique: vi.fn().mockResolvedValue({ language: 'EN' }) },
       artifactVersion: {
         findFirst: vi
           .fn()
@@ -81,11 +82,12 @@ describe('RequirementsService', () => {
       response: { code: 'AI_NOT_CONFIGURED' },
     });
     expect(ai.generateStructured).toHaveBeenCalledWith(
-      expect.objectContaining({ maxOutputTokens: 4096 }),
+      expect.objectContaining({ maxOutputTokens: 4096, language: 'EN' }),
     );
   });
   it('does not persist candidates when structured output is invalid', async () => {
     const prisma = {
+      project: { findUnique: vi.fn().mockResolvedValue({ language: 'ES' }) },
       artifactVersion: {
         findFirst: vi.fn().mockResolvedValue({
           projectContextDetail: { objective: 'x', sources: [{ sourceVersionId: 's' }] },
