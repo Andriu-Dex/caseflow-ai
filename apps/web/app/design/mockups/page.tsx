@@ -167,6 +167,16 @@ function MockupsContent({ projectId }: { projectId: string }) {
         )}
       </section>
 
+      {creatingVersionId ? (
+        <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border bg-muted/20 p-10 text-center">
+          <Loader2 className="size-8 animate-spin text-primary" aria-hidden="true" />
+          <p className="text-sm font-medium text-foreground">Generando boceto con IA…</p>
+          <p className="text-xs text-muted-foreground">
+            Esto puede tardar hasta un minuto. No cierre ni recargue esta página.
+          </p>
+        </div>
+      ) : null}
+
       <QueryState isLoading={mockups.isLoading} error={mockups.error}>
         {items.length === 0 ? (
           <EmptyState title="Aún no hay bocetos">

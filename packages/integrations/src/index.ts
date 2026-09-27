@@ -43,6 +43,7 @@ export type {
   MockupGenerationResult,
   MockupProvider,
   MockupProviderErrorCode,
+  MockupProviderFailureHandler,
 } from './mockup-provider';
 
 export interface OpenAICompatibleProviderConfig {
