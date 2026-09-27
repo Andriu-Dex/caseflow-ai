@@ -4,9 +4,9 @@
   "private": true,
   "description": "CASEFlow AI worker application (NestJS standalone foundation)",
   "scripts": {
-    "dev": "node --watch --require ts-node/register src/main.ts",
+    "dev": "node --env-file-if-exists=../../.env --watch --require ts-node/register src/main.ts",
     "build": "tsc -p tsconfig.build.json",
-    "start": "node dist/main.js",
+    "start": "node --env-file-if-exists=../../.env dist/main.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

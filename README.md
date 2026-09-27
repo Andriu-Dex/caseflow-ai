@@ -89,6 +89,8 @@ pnpm dev
 
 `pnpm install` also generates the Prisma client (`postinstall`). `pnpm dev` runs the web, API, and worker together (via `concurrently`); use `pnpm dev:web` / `pnpm dev:api` / `pnpm dev:worker` to run just one.
 
+The API and worker load the root `.env` in both `dev` and `start`. Mockup jobs require a non-empty `INTERNAL_JOBS_SECRET` shared by both processes, plus Redis and `API_INTERNAL_URL`. Start only one instance of each app: web uses port 3000 and API uses port 3001.
+
 AI is optional. The default `AI_PROVIDER=disabled` starts the API without a key and preserves all manual functionality. To enable the adapter, set `AI_PROVIDER=openai_compatible` together with `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`, and optionally `AI_TIMEOUT_MS`. Requirements and Use Cases expose optional candidate-generation routes; with the disabled provider they return `AI_NOT_CONFIGURED`.
 
 Each project has an AI generation language: `ES` by default or `EN`. The selector beside the active project updates it through `POST /projects/{projectId}/language` with `{ "language": "ES" | "EN" }`. The chosen language applies to AI-generated source reports, project context, requirements, use cases, data models, navigation, software/system architecture, and UI blueprints. Diagram labels inherit the generated content's language. CASEFlow's interface and fixed export headings remain in Spanish.
@@ -156,6 +158,16 @@ Project Context uses the semantic routes `POST /projects/{projectId}/context`, `
 - **`caseflow_test`** is a separate, isolated database used only by integration tests. It is never read or written by the running applications. Both databases are built from the same `prisma/migrations` history; `db:push` is never used.
 
 ## Troubleshooting
+
+**`EADDRINUSE` on 3000 or 3001** means another web/API instance is already listening. Close its original terminal, or inspect the exact process before stopping it:
+
+```powershell
+Get-NetTCPConnection -LocalPort 3000,3001 -State Listen | Select-Object LocalPort,OwningProcess
+Get-CimInstance Win32_Process -Filter "ProcessId=<PID>" | Select-Object ProcessId,ParentProcessId,CommandLine
+Stop-Process -Id <PID>
+```
+
+Do not start `pnpm dev` and separate `pnpm dev:web`/`pnpm dev:api` instances at the same time.
 
 **A native PostgreSQL service may already occupy port 5432.** This was discovered during Foundation development on Windows: if a PostgreSQL server is already installed and running natively (outside Docker), it will conflict with this project's Dockerized PostgreSQL, which also needs port 5432.
 

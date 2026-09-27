@@ -46,6 +46,14 @@ export function TagInput({
     onChange(newTags.join(', '));
   };
 
+  const commitPendingTag = () => {
+    const newTag = inputValue.trim();
+    if (newTag) {
+      onChange([...tags, newTag].join(', '));
+      setInputValue('');
+    }
+  };
+
   return (
     <div
       className={`flex min-h-9 w-full flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-1 text-base shadow-xs transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50 md:text-sm dark:bg-input/30 ${className ?? ''}`}
@@ -94,6 +102,7 @@ export function TagInput({
           }
         }}
         onKeyDown={handleKeyDown}
+        onBlur={commitPendingTag}
       />
     </div>
   );
