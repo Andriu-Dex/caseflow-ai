@@ -278,7 +278,7 @@ export function renderExportHtml(data: FirstDeliverableExport): string {
   const ui = data.uiBlueprint?.content as UiBlueprintContent | undefined;
   add(
     'ui-blueprint',
-    'Diseño de interfaz (UI Blueprint)',
+    'Diseño de interfaz (Plano de interfaz)',
     ui
       ? ui.screens
           .map(
@@ -294,12 +294,12 @@ export function renderExportHtml(data: FirstDeliverableExport): string {
               ].join('')}</div>`,
           )
           .join('')
-      : '<p class="muted">Aún no hay un UI Blueprint aprobado.</p>',
+      : '<p class="muted">Aún no hay un plano de interfaz aprobado.</p>',
   );
 
   add(
     'mockups',
-    'Bocetos (mockups)',
+    'Bocetos',
     data.mockups.length
       ? data.mockups
           .map((m) => `<figure>${m.svg}<figcaption>Boceto ${e(m.code)}</figcaption></figure>`)

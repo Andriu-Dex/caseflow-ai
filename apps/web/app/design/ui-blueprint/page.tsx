@@ -7,7 +7,7 @@ export default function UiBlueprintPage() {
   return (
     <RequireActiveProject>
       {(projectId) => (
-        <StructuredKindPage kind="UI_BLUEPRINT" title="UI Blueprint" projectId={projectId} />
+        <StructuredKindPage kind="UI_BLUEPRINT" title="Plano de interfaz" projectId={projectId} />
       )}
     </RequireActiveProject>
   );

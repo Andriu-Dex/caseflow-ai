@@ -837,7 +837,9 @@ export function UiBlueprintManualForm({ projectId, initial, onCreated, onCancel 
       });
       onCreated();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'No se pudo guardar el UI Blueprint.');
+      toast.error(
+        err instanceof ApiError ? err.message : 'No se pudo guardar el plano de interfaz.',
+      );
     } finally {
       setSubmitting(false);
     }
@@ -845,7 +847,7 @@ export function UiBlueprintManualForm({ projectId, initial, onCreated, onCancel 
 
   return (
     <ManualFormShell
-      title={initial ? `Editar ${initial.code}` : 'Nuevo UI Blueprint'}
+      title={initial ? `Editar ${initial.code}` : 'Nuevo plano de interfaz'}
       onSubmit={handleSubmit}
       submitting={submitting}
       editing={Boolean(initial)}

@@ -27,7 +27,7 @@ const KIND_LABELS: Record<StructuredAnalysisKind, string> = {
   NAVIGATION_TREE: 'Navegación',
   SOFTWARE_ARCHITECTURE: 'Arquitectura de software',
   SYSTEM_ARCHITECTURE: 'Arquitectura de sistema',
-  UI_BLUEPRINT: 'UI Blueprint',
+  UI_BLUEPRINT: 'Plano de interfaz',
 };
 
 interface KindConfig {

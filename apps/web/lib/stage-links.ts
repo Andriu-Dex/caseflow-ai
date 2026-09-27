@@ -64,8 +64,8 @@ export const PIPELINE_STEPS: { step: number; href: string; label: string }[] = [
   { step: 6, href: '/design/navigation', label: 'Navegación' },
   { step: 7, href: '/design/software-architecture', label: 'Arquitectura de software' },
   { step: 8, href: '/design/system-architecture', label: 'Arquitectura de sistema' },
-  { step: 9, href: '/design/ui-blueprint', label: 'UI Blueprint' },
-  { step: 10, href: '/design/mockups', label: 'Mockups' },
+  { step: 9, href: '/design/ui-blueprint', label: 'Plano de interfaz' },
+  { step: 10, href: '/design/mockups', label: 'Bocetos' },
   { step: 11, href: '/traceability', label: 'Trazabilidad' },
 ];
 
