@@ -1,8 +1,19 @@
-import { Body, Controller, Get, Param, Post, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  HttpCode,
+  Param,
+  Post,
+  Res,
+  UnauthorizedException,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   createMockupRequestSchema,
+  mockupJobResponseSchema,
   mockupListResponseSchema,
   mockupPreviewResponseSchema,
   mockupResponseSchema,
@@ -21,15 +32,45 @@ export class MockupsController {
   constructor(private readonly service: MockupsService) {}
 
   @Post()
-  @ApiOperation({ operationId: 'createMockup', summary: 'Generar boceto desde un plano aprobado' })
+  @HttpCode(202)
+  @ApiOperation({
+    operationId: 'createMockup',
+    summary: 'Encolar la generación de un boceto desde un plano aprobado',
+  })
   @ApiZodBody(createMockupRequestSchema)
-  @ApiZodResponse(201, 'Mockup.', mockupResponseSchema)
+  @ApiZodResponse(202, 'Mockup generation job.', mockupJobResponseSchema)
   create(
     @Param('projectId', uuidParamPipe) projectId: string,
     @Body(new ZodValidationPipe(createMockupRequestSchema))
     body: z.output<typeof createMockupRequestSchema>,
   ) {
     return this.service.create(projectId, body.uiBlueprintVersionId);
+  }
+
+  @Get('jobs/:jobId')
+  @ApiOperation({ operationId: 'getMockupJob', summary: 'Consultar el estado de generación' })
+  @ApiZodResponse(200, 'Mockup generation job.', mockupJobResponseSchema)
+  getJob(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('jobId', uuidParamPipe) jobId: string,
+  ) {
+    return this.service.getJob(projectId, jobId);
+  }
+
+  // Invoked only by apps/worker after popping the job off the queue — never
+  // reachable from the browser. A shared secret (never the projectId/jobId
+  // alone, spec §33.1) is the only authorization here since this repo has no
+  // end-user session/auth layer yet.
+  @Post('jobs/:jobId/run')
+  @HttpCode(204)
+  @ApiOperation({ operationId: 'runMockupJob', summary: 'Ejecutar un trabajo encolado (interno)' })
+  async runJob(
+    @Param('jobId', uuidParamPipe) jobId: string,
+    @Headers('x-internal-jobs-secret') secret: string | undefined,
+  ) {
+    const expected = process.env.INTERNAL_JOBS_SECRET;
+    if (!expected || secret !== expected) throw new UnauthorizedException();
+    await this.service.runJob(jobId);
   }
 
   @Get()
@@ -97,9 +138,13 @@ export class MockupsController {
   }
 
   @Post(':mockupId/versions')
-  @ApiOperation({ operationId: 'createMockupVersion', summary: 'Regenerar versión de mockup' })
+  @HttpCode(202)
+  @ApiOperation({
+    operationId: 'createMockupVersion',
+    summary: 'Encolar la regeneración de una versión de boceto',
+  })
   @ApiZodBody(createMockupRequestSchema)
-  @ApiZodResponse(201, 'Mockup.', mockupResponseSchema)
+  @ApiZodResponse(202, 'Mockup generation job.', mockupJobResponseSchema)
   version(
     @Param('projectId', uuidParamPipe) projectId: string,
     @Param('mockupId', uuidParamPipe) mockupId: string,

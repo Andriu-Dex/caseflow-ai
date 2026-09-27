@@ -60,7 +60,7 @@ export class StitchMockupProvider implements MockupProvider {
     const project = await sdk.createProject(`CASEFlow ${Date.now()}`);
     const screens = await Promise.all(
       content.screens.map(async (screen): Promise<GeneratedScreen> => {
-        const generated = await project.generate(this.buildPrompt(screen));
+        const generated = await project.generate(this.buildPrompt(screen), 'DESKTOP');
         const [imageUrl, htmlUrl] = await Promise.all([generated.getImage(), generated.getHtml()]);
         const [image, html] = await Promise.all([
           this.download(imageUrl, 'image'),
@@ -117,12 +117,18 @@ export class StitchMockupProvider implements MockupProvider {
 
   private buildPrompt(screen: UiBlueprintContent['screens'][number]): string {
     return [
+      'Diseña una pantalla de aplicación web de escritorio, limpia y profesional,',
+      'con buen espaciado entre elementos, jerarquía visual clara y sin superponer componentes.',
       `Pantalla: ${screen.name}. Propósito: ${screen.purpose}.`,
-      screen.sections.length ? `Secciones: ${screen.sections.join(', ')}.` : '',
+      screen.targetActors.length ? `Usuarios objetivo: ${screen.targetActors.join(', ')}.` : '',
+      screen.sections.length ? `Secciones visibles: ${screen.sections.join(', ')}.` : '',
       screen.primaryActions.length
-        ? `Acciones principales: ${screen.primaryActions.join(', ')}.`
+        ? `Acciones principales (botones destacados): ${screen.primaryActions.join(', ')}.`
         : '',
-      screen.forms.length ? `Formularios: ${screen.forms.join(', ')}.` : '',
+      screen.secondaryActions.length
+        ? `Acciones secundarias: ${screen.secondaryActions.join(', ')}.`
+        : '',
+      screen.forms.length ? `Campos de formulario: ${screen.forms.join(', ')}.` : '',
     ]
       .filter(Boolean)
       .join(' ');

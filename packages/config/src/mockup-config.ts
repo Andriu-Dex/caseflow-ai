@@ -2,7 +2,11 @@ import { z } from 'zod';
 
 const stitchSchema = z.object({
   STITCH_API_KEY: z.string().min(1),
-  STITCH_TIMEOUT_MS: z.coerce.number().int().positive().max(120_000).default(30_000),
+  // Generation now runs as a background job (never blocks a browser
+  // request), so this can be as generous as the text-generation AI
+  // timeout (AI_TIMEOUT_MS, packages/config/src/index.ts) instead of the
+  // tighter ceiling a synchronous HTTP call would need.
+  STITCH_TIMEOUT_MS: z.coerce.number().int().positive().max(300_000).default(30_000),
 });
 
 export type MockupProviderConfig =

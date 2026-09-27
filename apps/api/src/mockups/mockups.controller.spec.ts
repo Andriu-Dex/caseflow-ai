@@ -9,6 +9,8 @@ describe('MockupsController', () => {
       create: vi.fn().mockResolvedValue({}),
       list: vi.fn().mockResolvedValue({}),
       get: vi.fn().mockResolvedValue({}),
+      getJob: vi.fn().mockResolvedValue({}),
+      runJob: vi.fn().mockResolvedValue(undefined),
       getPreview: vi.fn().mockResolvedValue({}),
       version: vi.fn().mockResolvedValue({}),
       transition: vi.fn().mockResolvedValue({}),
@@ -22,6 +24,7 @@ describe('MockupsController', () => {
     await controller.create('p', { uiBlueprintVersionId: 'b' });
     await controller.list('p');
     await controller.get('p', 'm');
+    await controller.getJob('p', 'j');
     await controller.preview('p', 'm');
     await controller.version('p', 'm', { uiBlueprintVersionId: 'b2' });
     await controller.transition('p', 'm', 'v', { status: 'IN_REVIEW' });
@@ -32,6 +35,7 @@ describe('MockupsController', () => {
     expect(service.create).toHaveBeenCalledWith('p', 'b');
     expect(service.list).toHaveBeenCalledWith('p');
     expect(service.get).toHaveBeenCalledWith('p', 'm');
+    expect(service.getJob).toHaveBeenCalledWith('p', 'j');
     expect(service.getPreview).toHaveBeenCalledWith('p', 'm');
     expect(service.version).toHaveBeenCalledWith('p', 'm', 'b2');
     expect(service.transition).toHaveBeenCalledWith('p', 'm', 'v', 'IN_REVIEW');
@@ -41,5 +45,24 @@ describe('MockupsController', () => {
       'Content-Disposition',
       'attachment; filename="pantalla.html"',
     );
+  });
+
+  it('runs an internal job only when the shared secret header matches', async () => {
+    const service = { runJob: vi.fn().mockResolvedValue(undefined) };
+    const controller = new MockupsController(service as unknown as MockupsService);
+    const originalSecret = process.env.INTERNAL_JOBS_SECRET;
+    process.env.INTERNAL_JOBS_SECRET = 'shh';
+
+    await expect(controller.runJob('j', 'wrong')).rejects.toThrow();
+    await expect(controller.runJob('j', undefined)).rejects.toThrow();
+    expect(service.runJob).not.toHaveBeenCalled();
+
+    await controller.runJob('j', 'shh');
+    expect(service.runJob).toHaveBeenCalledWith('j');
+
+    delete process.env.INTERNAL_JOBS_SECRET;
+    await expect(controller.runJob('j', 'shh')).rejects.toThrow();
+
+    process.env.INTERNAL_JOBS_SECRET = originalSecret;
   });
 });

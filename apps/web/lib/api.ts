@@ -3,6 +3,7 @@ import type {
   DataModelResponse,
   DiagramResponse,
   FirstDeliverableExport,
+  MockupJobResponse,
   MockupPreviewResponse,
   MockupResponse,
   ProjectContextCandidate,
@@ -370,7 +371,9 @@ export const api = {
     getPreview: (projectId: string, id: string) =>
       get<MockupPreviewResponse>(`/projects/${projectId}/mockups/${id}/preview`),
     create: (projectId: string, uiBlueprintVersionId: string) =>
-      post<MockupResponse>(`/projects/${projectId}/mockups`, { uiBlueprintVersionId }),
+      post<MockupJobResponse>(`/projects/${projectId}/mockups`, { uiBlueprintVersionId }),
+    getJob: (projectId: string, jobId: string) =>
+      get<MockupJobResponse>(`/projects/${projectId}/mockups/jobs/${jobId}`),
     transition: (projectId: string, id: string, versionId: string, status: ArtifactVersionStatus) =>
       post(`/projects/${projectId}/mockups/${id}/versions/${versionId}/transition`, { status }),
   },

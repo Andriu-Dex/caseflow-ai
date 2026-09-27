@@ -2,12 +2,23 @@ import { randomUUID } from 'node:crypto';
 import {
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { canTransitionArtifactVersionStatus, initialStatusForOrigin } from '@caseflow-ai/domain';
-import { uiBlueprintContentSchema, type ArtifactVersionStatus } from '@caseflow-ai/contracts';
+import type { Queue } from 'bullmq';
+import {
+  canTransitionArtifactVersionStatus,
+  initialStatusForOrigin,
+  MOCKUP_GENERATION_QUEUE,
+  type MockupGenerationJobPayload,
+} from '@caseflow-ai/domain';
+import {
+  uiBlueprintContentSchema,
+  type ArtifactVersionStatus,
+  type MockupJobResponse,
+} from '@caseflow-ai/contracts';
 import { PrismaService } from '../database/prisma.service';
 import type { Prisma } from '../generated/prisma/client';
 import { sanitizeDiagramSvg } from '../data-models/svg-sanitizer';
@@ -19,10 +30,12 @@ import {
 } from '@caseflow-ai/integrations';
 import { MOCKUP_GENERATOR_VERSION } from './mockup-renderer';
 import { MOCKUP_PROVIDER } from './mockup-provider.token';
+import { MOCKUP_QUEUE } from './mockup-queue.token';
 import { STORAGE_PROVIDER } from './storage-provider.token';
 
 type Tx = Prisma.TransactionClient;
 const MOCKUP_CODE_PREFIX = 'MCK';
+const logger = new Logger('MockupsService');
 type StoredGeneration =
   | { kind: 'INTERNAL_WIREFRAME'; svg: string }
   | {
@@ -42,13 +55,135 @@ export class MockupsService {
     private readonly prisma: PrismaService,
     @Inject(MOCKUP_PROVIDER) private readonly mockupProvider: MockupProvider,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
+    @Inject(MOCKUP_QUEUE) private readonly queue: Queue<MockupGenerationJobPayload>,
   ) {}
 
-  async create(projectId: string, uiBlueprintVersionId: string) {
-    const generated = await this.generateFromApprovedBlueprint(projectId, uiBlueprintVersionId);
-    return this.prisma.$transaction((tx) =>
-      this.createInTx(tx, projectId, uiBlueprintVersionId, generated),
-    );
+  // Creation/regeneration only enqueue the real generation (spec §40): the
+  // HTTP request never blocks on Stitch's real latency. The client polls
+  // getJob() until it reaches COMPLETED/FAILED.
+  async create(projectId: string, uiBlueprintVersionId: string): Promise<MockupJobResponse> {
+    await this.assertApprovedBlueprint(projectId, uiBlueprintVersionId);
+    return this.enqueueJob(projectId, uiBlueprintVersionId, null);
+  }
+
+  async version(
+    projectId: string,
+    mockupId: string,
+    uiBlueprintVersionId: string,
+  ): Promise<MockupJobResponse> {
+    await this.assertApprovedBlueprint(projectId, uiBlueprintVersionId);
+    const exists = await this.prisma.artifact.findFirst({
+      where: { id: mockupId, projectId, artifactTypeCode: 'MOCKUP' },
+      select: { id: true },
+    });
+    if (!exists) throw new NotFoundException('Artefacto no encontrado.');
+    return this.enqueueJob(projectId, uiBlueprintVersionId, mockupId);
+  }
+
+  private async enqueueJob(
+    projectId: string,
+    uiBlueprintVersionId: string,
+    existingMockupId: string | null,
+  ): Promise<MockupJobResponse> {
+    const job = await this.prisma.mockupGenerationJob.create({
+      data: { projectId, uiBlueprintVersionId, existingMockupId },
+    });
+    await this.queue.add(MOCKUP_GENERATION_QUEUE, { jobId: job.id, projectId });
+    return this.mapJob(job);
+  }
+
+  async getJob(projectId: string, jobId: string): Promise<MockupJobResponse> {
+    const job = await this.prisma.mockupGenerationJob.findFirst({
+      where: { id: jobId, projectId },
+    });
+    if (!job) throw new NotFoundException('Trabajo no encontrado.');
+    return this.mapJob(job);
+  }
+
+  // Invoked only by the worker's authenticated internal callback (never
+  // reachable from the browser) — runs the actual generation this job
+  // describes and always leaves the job in a terminal status, even on an
+  // unexpected failure, so polling never hangs on RUNNING forever.
+  async runJob(jobId: string): Promise<void> {
+    const job = await this.prisma.mockupGenerationJob.findUniqueOrThrow({ where: { id: jobId } });
+    await this.prisma.mockupGenerationJob.update({
+      where: { id: jobId },
+      data: { status: 'RUNNING' },
+    });
+    try {
+      const generated = await this.generateFromApprovedBlueprint(
+        job.projectId,
+        job.uiBlueprintVersionId,
+      );
+      const result = await this.prisma.$transaction((tx) =>
+        job.existingMockupId
+          ? this.createVersionInTx(
+              tx,
+              job.projectId,
+              job.existingMockupId!,
+              job.uiBlueprintVersionId,
+              generated,
+            )
+          : this.createInTx(tx, job.projectId, job.uiBlueprintVersionId, generated),
+      );
+      await this.prisma.mockupGenerationJob.update({
+        where: { id: jobId },
+        data: { status: 'COMPLETED', resultArtifactId: result.id },
+      });
+    } catch (error) {
+      const message =
+        error instanceof ServiceUnavailableException ||
+        error instanceof UnprocessableEntityException
+          ? ((error.getResponse() as { message?: string })?.message ?? error.message)
+          : 'No se pudo generar el boceto.';
+      logger.warn(
+        `Mockup job "${jobId}" failed: ${message}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      await this.prisma.mockupGenerationJob.update({
+        where: { id: jobId },
+        data: { status: 'FAILED', errorMessage: message },
+      });
+    }
+  }
+
+  private mapJob(job: {
+    id: string;
+    projectId: string;
+    status: string;
+    resultArtifactId: string | null;
+    errorMessage: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }): MockupJobResponse {
+    return {
+      id: job.id,
+      projectId: job.projectId,
+      status: job.status as MockupJobResponse['status'],
+      resultArtifactId: job.resultArtifactId,
+      errorMessage: job.errorMessage,
+      createdAt: job.createdAt.toISOString(),
+      updatedAt: job.updatedAt.toISOString(),
+    };
+  }
+
+  private async assertApprovedBlueprint(
+    projectId: string,
+    uiBlueprintVersionId: string,
+  ): Promise<void> {
+    const source = await this.prisma.artifactVersion.findFirst({
+      where: {
+        id: uiBlueprintVersionId,
+        projectId,
+        status: 'APPROVED',
+        artifact: { artifactTypeCode: 'UI_BLUEPRINT' },
+      },
+      select: { id: true },
+    });
+    if (!source)
+      throw new UnprocessableEntityException(
+        'Se requiere una versión exacta APPROVED de plano de interfaz del mismo proyecto.',
+      );
   }
 
   async list(projectId: string) {
@@ -129,29 +264,32 @@ export class MockupsService {
     };
   }
 
-  async version(projectId: string, mockupId: string, uiBlueprintVersionId: string) {
-    const generated = await this.generateFromApprovedBlueprint(projectId, uiBlueprintVersionId);
-    return this.prisma.$transaction(async (tx) => {
-      const locked = await tx.$queryRaw<{ id: string }[]>`
+  private async createVersionInTx(
+    tx: Tx,
+    projectId: string,
+    mockupId: string,
+    uiBlueprintVersionId: string,
+    generated: StoredGeneration,
+  ) {
+    const locked = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM artifacts WHERE id=${mockupId}::uuid AND project_id=${projectId}::uuid AND artifact_type_code='MOCKUP' FOR NO KEY UPDATE`;
-      if (!locked.length) throw new NotFoundException('Artefacto no encontrado.');
-      const latest = await tx.artifactVersion.findFirstOrThrow({
-        where: { artifactId: mockupId },
-        orderBy: { versionNumber: 'desc' },
-      });
-      const version = await tx.artifactVersion.create({
-        data: {
-          artifactId: mockupId,
-          projectId,
-          versionNumber: latest.versionNumber + 1,
-          title: latest.title,
-          status: initialStatusForOrigin('SYSTEM_GENERATED'),
-          origin: 'SYSTEM_GENERATED',
-        },
-      });
-      await this.saveDetail(tx, version.id, uiBlueprintVersionId, generated);
-      return this.loadAndMap(tx, mockupId, version.id);
+    if (!locked.length) throw new NotFoundException('Artefacto no encontrado.');
+    const latest = await tx.artifactVersion.findFirstOrThrow({
+      where: { artifactId: mockupId },
+      orderBy: { versionNumber: 'desc' },
     });
+    const version = await tx.artifactVersion.create({
+      data: {
+        artifactId: mockupId,
+        projectId,
+        versionNumber: latest.versionNumber + 1,
+        title: latest.title,
+        status: initialStatusForOrigin('SYSTEM_GENERATED'),
+        origin: 'SYSTEM_GENERATED',
+      },
+    });
+    await this.saveDetail(tx, version.id, uiBlueprintVersionId, generated);
+    return this.loadAndMap(tx, mockupId, version.id);
   }
 
   async transition(

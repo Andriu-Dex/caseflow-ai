@@ -411,7 +411,10 @@ describe('Readiness integration', () => {
     expect(result.stages.find((s) => s.key === 'UI_BLUEPRINT')?.satisfied).toBe(true);
     expect(result.stages.find((s) => s.key === 'MOCKUPS')?.satisfied).toBe(false);
 
-    const mockup = await ctx.mockups.create(projectId, blueprintAccepted.version.id);
+    const mockupJob = await ctx.mockups.create(projectId, blueprintAccepted.version.id);
+    await ctx.mockups.runJob(mockupJob.id);
+    const finishedMockupJob = await ctx.mockups.getJob(projectId, mockupJob.id);
+    const mockup = await ctx.mockups.get(projectId, finishedMockupJob.resultArtifactId!);
     await ctx.mockups.transition(projectId, mockup.id, mockup.version.id, 'IN_REVIEW');
     await ctx.mockups.transition(projectId, mockup.id, mockup.version.id, 'APPROVED');
 
