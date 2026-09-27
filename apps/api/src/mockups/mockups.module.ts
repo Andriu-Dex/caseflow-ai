@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Logger, Module } from '@nestjs/common';
 import { loadMockupConfig, loadStorageConfig } from '@caseflow-ai/config';
 import {
   DisabledStorageProvider,
@@ -14,6 +14,8 @@ import { StitchMockupProvider } from './stitch-mockup-provider';
 import { MOCKUP_PROVIDER } from './mockup-provider.token';
 import { STORAGE_PROVIDER } from './storage-provider.token';
 
+const logger = new Logger('MockupsModule');
+
 @Module({
   controllers: [MockupsController],
   providers: [
@@ -26,7 +28,16 @@ import { STORAGE_PROVIDER } from './storage-provider.token';
         const config = loadMockupConfig(process.env);
         if (config.provider === 'disabled' || !loadStorageConfig(process.env).configured)
           return internal;
-        return new FallbackMockupProvider([new StitchMockupProvider(config), internal]);
+        return new FallbackMockupProvider(
+          [new StitchMockupProvider(config), internal],
+          (id, error) =>
+            logger.warn(
+              `Mockup provider "${id}" failed, falling back: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+              error instanceof Error ? error.stack : undefined,
+            ),
+        );
       },
     },
     {

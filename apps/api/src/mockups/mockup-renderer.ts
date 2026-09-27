@@ -30,15 +30,19 @@ function compareOrdinal(a: string, b: string): number {
 export class MockupRenderer {
   render(content: UiBlueprintContent): string {
     const screens = [...content.screens].sort((a, b) => compareOrdinal(a.localId, b.localId));
+    const columns = Math.min(3, Math.max(1, screens.length));
+    const columnHeights = new Array<number>(columns).fill(PADDING);
     const parts: string[] = [];
-    let y = PADDING;
-    for (const screen of screens) {
+    screens.forEach((screen, index) => {
+      const column = index % columns;
+      const x = PADDING + column * (CARD_WIDTH + PADDING);
+      const y = columnHeights[column]!;
       const height = this.measureCard(screen);
-      parts.push(this.renderCard(screen, PADDING, y, height));
-      y += height + PADDING;
-    }
-    const width = CARD_WIDTH + PADDING * 2;
-    const totalHeight = Math.max(y, PADDING * 2);
+      parts.push(this.renderCard(screen, x, y, height));
+      columnHeights[column] = y + height + PADDING;
+    });
+    const width = columns * CARD_WIDTH + (columns + 1) * PADDING;
+    const totalHeight = Math.max(...columnHeights, PADDING * 2);
     return (
       `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${totalHeight}" ` +
       `viewBox="0 0 ${width} ${totalHeight}">` +
@@ -49,7 +53,10 @@ export class MockupRenderer {
   }
 
   private measureCard(screen: UiBlueprintContent['screens'][number]): number {
-    let lines = 1 + Math.min(screen.sections.length, MAX_VISIBLE_SECTIONS);
+    let lines =
+      2 +
+      (screen.targetActors.length ? 1 : 0) +
+      Math.min(screen.sections.length, MAX_VISIBLE_SECTIONS);
     if (screen.primaryActions.length || screen.secondaryActions.length) lines += 1;
     if (screen.forms.length) lines += 1;
     return HEADER_HEIGHT + lines * LINE_HEIGHT + PADDING;
@@ -67,6 +74,17 @@ export class MockupRenderer {
       `<text x="${x + PADDING}" y="${y + HEADER_HEIGHT / 2 + 5}" fill="#ffffff" font-family="sans-serif" font-size="14">${escapeXml(screen.name)}</text>`,
     ];
     let cursorY = y + HEADER_HEIGHT + PADDING;
+    const purpose = screen.purpose.length > 60 ? `${screen.purpose.slice(0, 59)}…` : screen.purpose;
+    parts.push(
+      `<text x="${x + PADDING}" y="${cursorY}" font-family="sans-serif" font-size="11" fill="#64748b">${escapeXml(purpose)}</text>`,
+    );
+    cursorY += LINE_HEIGHT;
+    if (screen.targetActors.length) {
+      parts.push(
+        `<text x="${x + PADDING}" y="${cursorY}" font-family="sans-serif" font-size="11" fill="#64748b">${escapeXml(`Actores: ${screen.targetActors.join(', ')}`)}</text>`,
+      );
+      cursorY += LINE_HEIGHT;
+    }
     for (const section of screen.sections.slice(0, MAX_VISIBLE_SECTIONS)) {
       parts.push(
         `<rect x="${x + PADDING}" y="${cursorY - 14}" width="${CARD_WIDTH - PADDING * 2}" height="18" fill="#e2e8f0"/>`,
@@ -80,7 +98,7 @@ export class MockupRenderer {
       for (const action of actions) {
         const buttonWidth = Math.min(120, 24 + action.length * 6);
         parts.push(
-          `<rect x="${buttonX}" y="${cursorY - 14}" width="${buttonWidth}" height="20" rx="3" fill="#2563eb"/>`,
+          `<rect x="${buttonX}" y="${cursorY - 14}" width="${buttonWidth}" height="20" rx="3" fill="#4f46e5"/>`,
           `<text x="${buttonX + 6}" y="${cursorY}" font-family="sans-serif" font-size="10" fill="#ffffff">${escapeXml(action)}</text>`,
         );
         buttonX += buttonWidth + 6;

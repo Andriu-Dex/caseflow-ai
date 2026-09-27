@@ -33,9 +33,14 @@ export interface MockupProvider {
   generate(content: UiBlueprintContent): Promise<MockupGenerationResult>;
 }
 
+export type MockupProviderFailureHandler = (providerId: string, error: unknown) => void;
+
 export class FallbackMockupProvider implements MockupProvider {
   readonly id = 'fallback';
-  constructor(private readonly providers: readonly MockupProvider[]) {
+  constructor(
+    private readonly providers: readonly MockupProvider[],
+    private readonly onProviderFailure?: MockupProviderFailureHandler,
+  ) {
     if (!providers.length) throw new Error('FallbackMockupProvider requires a provider.');
   }
   async generate(content: UiBlueprintContent): Promise<MockupGenerationResult> {
@@ -44,6 +49,7 @@ export class FallbackMockupProvider implements MockupProvider {
       try {
         return await provider.generate(content);
       } catch (cause) {
+        this.onProviderFailure?.(provider.id, cause);
         lastError = cause;
       }
     }
