@@ -85,6 +85,18 @@ describe('KrokiDiagramProvider', () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
+  it('posts to the png output path and returns raw bytes', async () => {
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const fetchMock = vi.fn().mockResolvedValue(new Response(bytes, { status: 200 }));
+    const result = await provider(fetchMock).renderPng({
+      format: 'MERMAID_FLOWCHART',
+      source: 'flowchart TD\n  a --> b',
+    });
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(url).toBe('http://localhost:8000/mermaid/png');
+    expect(Buffer.from(result.png)).toEqual(Buffer.from(bytes));
+  });
+
   it('normalizes a network failure as unavailable', async () => {
     const fetchMock = vi.fn().mockRejectedValue(new Error('ECONNREFUSED'));
     await expect(

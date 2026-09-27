@@ -255,6 +255,22 @@ describe('DataModelsService', () => {
     });
     await expect(service.getERDiagram('project', 'missing')).rejects.toThrow('no encontrado');
   });
+  it('re-renders the ER diagram as a PNG buffer from its stored canonical source', async () => {
+    const { service, prisma } = setup();
+    const diagram = {
+      kind: 'ER',
+      sourceFormat: 'MERMAID_ER',
+      source: 'erDiagram\n',
+      svg: '<svg/>',
+      sources: [{ sourceArtifactVersionId: 'version' }],
+    };
+    prisma.artifact.findFirst.mockResolvedValue({
+      ...artifact,
+      versions: [{ ...version, diagramDetail: diagram }],
+    });
+    const png = await service.getERDiagramPng('project', 'artifact');
+    expect(Buffer.isBuffer(png)).toBe(true);
+  });
   it('rejects invalid creation, version and duplicate-source branches', async () => {
     const { service, prisma, tx } = setup();
     tx.project.findUnique.mockResolvedValueOnce(null);
@@ -368,5 +384,21 @@ describe('DataModelsService', () => {
     await expect(service.generateUseCaseDiagram('project', ['draft'])).rejects.toThrow('APPROVED');
     prisma.artifact.findFirst.mockResolvedValue(null);
     await expect(service.getUseCaseDiagram('project', 'missing')).rejects.toThrow('no encontrado');
+  });
+  it('re-renders the use case diagram as a PNG buffer from its stored canonical source', async () => {
+    const { service, prisma } = setup();
+    const diagram = {
+      kind: 'USE_CASE',
+      sourceFormat: 'PLANTUML',
+      source: '@startuml\n@enduml',
+      svg: '<svg/>',
+      sources: [],
+    };
+    prisma.artifact.findFirst.mockResolvedValue({
+      ...artifact,
+      versions: [{ ...version, diagramDetail: diagram }],
+    });
+    const png = await service.getUseCaseDiagramPng('project', 'diagram');
+    expect(Buffer.isBuffer(png)).toBe(true);
   });
 });

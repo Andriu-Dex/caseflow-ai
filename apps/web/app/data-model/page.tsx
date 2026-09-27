@@ -296,6 +296,7 @@ function DataModelContent({ projectId }: { projectId: string }) {
                     sourceFormat={diagrams[m.id]!.sourceFormat}
                     code={m.code}
                     caption={`Diagrama entidad-relación de ${m.code}`}
+                    pngUrl={api.dataModels.diagramPngUrl(projectId, m.id)}
                   />
                 ) : null}
               </li>

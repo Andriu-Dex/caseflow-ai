@@ -33,9 +33,16 @@ export interface DiagramProviderRequest {
 export interface DiagramProviderResponse {
   svg: string;
 }
+export interface DiagramProviderPngResponse {
+  png: Buffer;
+}
 export interface DiagramProvider {
   readonly id: string;
   render(request: DiagramProviderRequest): Promise<DiagramProviderResponse>;
+  // PNG is always re-derived on demand from the canonical stored diagram
+  // source (spec §4.8) — never persisted, so this has no separate "detail"
+  // record of its own.
+  renderPng(request: DiagramProviderRequest): Promise<DiagramProviderPngResponse>;
 }
 
 // The default when DIAGRAM_RENDERER is unset: booting without local Kroki
@@ -48,16 +55,32 @@ export class DisabledDiagramProvider implements DiagramProvider {
       'El renderizado de diagramas no está configurado.',
     );
   }
+  async renderPng(): Promise<never> {
+    throw new DiagramProviderError(
+      'DIAGRAM_NOT_CONFIGURED',
+      'El renderizado de diagramas no está configurado.',
+    );
+  }
 }
 
 // For unit/integration tests that must not depend on a live renderer.
 export class FakeDiagramProvider implements DiagramProvider {
   readonly id = 'fake';
   lastRequest?: DiagramProviderRequest;
-  constructor(private readonly result: DiagramProviderResponse | DiagramProviderError) {}
+  constructor(
+    private readonly result: DiagramProviderResponse | DiagramProviderError,
+    private readonly pngResult: DiagramProviderPngResponse | DiagramProviderError = {
+      png: Buffer.from('fake-png'),
+    },
+  ) {}
   async render(request: DiagramProviderRequest): Promise<DiagramProviderResponse> {
     this.lastRequest = request;
     if (this.result instanceof DiagramProviderError) throw this.result;
     return this.result;
+  }
+  async renderPng(request: DiagramProviderRequest): Promise<DiagramProviderPngResponse> {
+    this.lastRequest = request;
+    if (this.pngResult instanceof DiagramProviderError) throw this.pngResult;
+    return this.pngResult;
   }
 }

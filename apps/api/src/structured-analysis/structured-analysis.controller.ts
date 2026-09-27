@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   acceptStructuredAnalysisCandidatesRequestSchema,
@@ -14,6 +15,7 @@ import {
   type StructuredAnalysisKind,
 } from '@caseflow-ai/contracts';
 import { z, type ZodType } from 'zod';
+import { pngResponse } from '../common/png-response';
 import { uuidParamPipe } from '../common/uuid-param.pipe';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ApiZodBody, ApiZodResponse } from '../openapi/zod-openapi';
@@ -63,6 +65,10 @@ abstract class BaseStructuredAnalysisController {
   }
   diagram(projectId: string, id: string) {
     return this.service.getDiagram(projectId, this.kind, id);
+  }
+  async diagramPng(projectId: string, id: string, response: Response) {
+    const png = await this.service.getDiagramPng(projectId, this.kind, id);
+    return pngResponse(response, `${id}.png`, png);
   }
 }
 
@@ -164,6 +170,18 @@ export class NavigationController extends BaseStructuredAnalysisController {
     @Param('navigationId', uuidParamPipe) id: string,
   ) {
     return super.diagram(projectId, id);
+  }
+  @Get(':navigationId/diagram/png')
+  @ApiOperation({
+    operationId: 'getNavigationDiagramPng',
+    summary: 'Obtener diagrama de flujo PNG',
+  })
+  override diagramPng(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('navigationId', uuidParamPipe) id: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    return super.diagramPng(projectId, id, response);
   }
 }
 
@@ -288,6 +306,18 @@ export class SoftwareArchitectureController extends BaseStructuredAnalysisContro
   ) {
     return super.diagram(projectId, id);
   }
+  @Get(':architectureId/diagram/png')
+  @ApiOperation({
+    operationId: 'getSoftwareArchitectureDiagramPng',
+    summary: 'Obtener diagrama de componentes PNG',
+  })
+  override diagramPng(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('architectureId', uuidParamPipe) id: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    return super.diagramPng(projectId, id, response);
+  }
 }
 
 @ApiTags('system-architecture')
@@ -407,6 +437,18 @@ export class SystemArchitectureController extends BaseStructuredAnalysisControll
     @Param('architectureId', uuidParamPipe) id: string,
   ) {
     return super.diagram(projectId, id);
+  }
+  @Get(':architectureId/diagram/png')
+  @ApiOperation({
+    operationId: 'getSystemArchitectureDiagramPng',
+    summary: 'Obtener diagrama de despliegue PNG',
+  })
+  override diagramPng(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('architectureId', uuidParamPipe) id: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    return super.diagramPng(projectId, id, response);
   }
 }
 
