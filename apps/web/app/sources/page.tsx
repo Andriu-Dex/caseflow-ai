@@ -325,13 +325,15 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
         <div className="flex items-center gap-2">
           {source.archivedAt ? <Badge variant="secondary">Archivada</Badge> : null}
           <StatusBadge status={source.version.status} />
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             type="button"
             onClick={() => setOpen((v) => !v)}
             className="text-sm text-muted-foreground underline"
           >
             {open ? 'Ocultar detalle' : 'Ver detalle'}
-          </button>
+          </Button>
         </div>
       </div>
       <p className="mt-1 text-sm text-muted-foreground">
@@ -441,13 +443,15 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
                 onChange={(e) => setTranscript(e.target.value)}
                 placeholder="Transcripción manual…"
               />
-              <button
+              <Button
+                variant="default"
+                size="sm"
                 type="button"
                 onClick={submitTranscript}
-                className="mt-2 rounded-md bg-primary px-3 py-1 text-sm text-white"
+                className="mt-2"
               >
                 Guardar transcripción
-              </button>
+              </Button>
             </div>
           ) : null}
 
@@ -527,14 +531,16 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
                   value={manualSummary}
                   onChange={(e) => setManualSummary(e.target.value)}
                 />
-                <button
+                <Button
+                  variant="default"
+                  size="sm"
                   type="button"
                   onClick={submitManualReport}
                   disabled={!manualSummary.trim()}
-                  className="self-start rounded-md bg-primary px-3 py-1 text-sm text-white disabled:opacity-50"
+                  className="self-start"
                 >
                   Guardar reporte manual
-                </button>
+                </Button>
               </div>
             ) : (
               <p className="text-muted-foreground">Guarde primero la transcripción manual.</p>
@@ -549,7 +555,9 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
               // IN_REVIEW status it targets, remain fully implemented for when
               // multi-user review ships — approveDirectly still drives through
               // IN_REVIEW on the way to APPROVED.
-              <button
+              <Button
+                variant="default"
+                size="sm"
                 type="button"
                 onClick={approveDirectly}
                 disabled={!source.source.hasExtractedText || approving}
@@ -558,27 +566,31 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
                     ? 'Se requiere conocimiento utilizable (texto extraído o transcripción manual).'
                     : undefined
                 }
-                className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
               >
                 {approving ? 'Aprobando…' : 'Aprobar'}
-              </button>
+              </Button>
             ) : null}
             {source.version.status === 'IN_REVIEW' ? (
               <>
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
                   type="button"
                   onClick={() => transition('APPROVED')}
                   className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700"
                 >
                   Aprobar
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
                   type="button"
                   onClick={() => transition('CHANGES_REQUESTED')}
                   className="rounded-md border border-destructive/40 px-3 py-1 text-sm text-destructive hover:bg-destructive/5"
                 >
                   Solicitar cambios
-                </button>
+                </Button>
               </>
             ) : null}
           </div>

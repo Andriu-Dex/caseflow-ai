@@ -7,6 +7,7 @@ import { api } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { PageHeading } from '../../components/page-heading';
 import { StatusBadge } from '../../components/status-badge';
+import { Button } from '@caseflow-ai/ui';
 
 function NodeLabel({ node }: { node: TraceabilityNode }) {
   return (
@@ -63,7 +64,9 @@ function TraceabilityContent({ projectId }: { projectId: string }) {
                 <ul className="max-h-[28rem] overflow-auto text-sm">
                   {graph.data.nodes.map((n) => (
                     <li key={n.id}>
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         type="button"
                         onClick={() => setSelectedId(n.id)}
                         className={`block w-full rounded px-2 py-1 text-left ${
@@ -73,7 +76,7 @@ function TraceabilityContent({ projectId }: { projectId: string }) {
                         }`}
                       >
                         {n.code} — {n.title}
-                      </button>
+                      </Button>
                     </li>
                   ))}
                 </ul>

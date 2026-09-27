@@ -1,6 +1,7 @@
 'use client';
 
 import { Code2, Download, Maximize2, Pencil, X } from 'lucide-react';
+import { Button } from '@caseflow-ai/ui';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { ApiError } from '../lib/api';
@@ -88,50 +89,62 @@ export function DiagramViewer({
     <div className="flex flex-col gap-2">
       <TrustedDiagram svg={svg} caption={caption} />
       <div className="flex flex-wrap gap-2 text-sm">
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           type="button"
           onClick={() => setFullscreen(true)}
           className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-muted-foreground hover:bg-muted/40"
         >
           <Maximize2 className="size-3.5" aria-hidden="true" />
           Ver en pantalla completa
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
           type="button"
           onClick={() => setShowSource((v) => !v)}
           className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-muted-foreground hover:bg-muted/40"
         >
           <Code2 className="size-3.5" aria-hidden="true" />
           {showSource ? 'Ocultar código fuente' : 'Ver código fuente'}
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
           type="button"
           onClick={() => download(`${code}.svg`, svg, 'image/svg+xml')}
           className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-muted-foreground hover:bg-muted/40"
         >
           <Download className="size-3.5" aria-hidden="true" />
           Descargar SVG
-        </button>
+        </Button>
         {pngUrl ? (
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             type="button"
             onClick={() => downloadPng(pngUrl, `${code}.png`)}
             className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-muted-foreground hover:bg-muted/40"
           >
             <Download className="size-3.5" aria-hidden="true" />
             Descargar PNG
-          </button>
+          </Button>
         ) : null}
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           type="button"
           onClick={() => download(`${code}.${extension}`, source, 'text/plain')}
           className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-muted-foreground hover:bg-muted/40"
         >
           <Download className="size-3.5" aria-hidden="true" />
           Descargar código fuente
-        </button>
+        </Button>
         {onSaveEdit && !editing ? (
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             type="button"
             onClick={() => {
               setDraft(source);
@@ -142,7 +155,7 @@ export function DiagramViewer({
           >
             <Pencil className="size-3.5" aria-hidden="true" />
             Editar código
-          </button>
+          </Button>
         ) : null}
       </div>
       {showSource ? (
@@ -155,22 +168,19 @@ export function DiagramViewer({
               onChange={(e) => setDraft(e.target.value)}
             />
             <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={save}
-                disabled={saving}
-                className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
-              >
+              <Button variant="default" size="sm" type="button" onClick={save} disabled={saving}>
                 {saving ? 'Guardando…' : 'Guardar y volver a generar'}
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
                 type="button"
                 onClick={() => setEditing(false)}
                 className="inline-flex items-center gap-1 text-sm text-muted-foreground underline"
               >
                 <X className="size-3.5" aria-hidden="true" />
                 Cancelar
-              </button>
+              </Button>
             </div>
           </div>
         ) : (
@@ -185,14 +195,16 @@ export function DiagramViewer({
           aria-modal="true"
           className="fixed inset-0 z-50 flex flex-col gap-2 overflow-auto bg-background/95 p-4"
         >
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             type="button"
             onClick={() => setFullscreen(false)}
             className="inline-flex w-fit items-center gap-1 rounded-md bg-muted px-3 py-1.5 text-sm text-foreground hover:bg-muted/70"
           >
             <X className="size-3.5" aria-hidden="true" />
             Cerrar
-          </button>
+          </Button>
           <div className="flex flex-1 items-center justify-center">
             <TrustedDiagram svg={svg} caption={caption} />
           </div>
