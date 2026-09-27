@@ -3,6 +3,7 @@ import type {
   CreateProjectRequest,
   ProjectListResponse,
   ProjectResponse,
+  ProjectLanguage,
 } from '@caseflow-ai/contracts';
 import { PrismaService } from '../database/prisma.service';
 import { toProjectResponse } from './projects.mapper';
@@ -85,6 +86,16 @@ export class ProjectsService {
     const updated = await this.prisma.project.update({
       where: { id: projectId },
       data: { archivedAt: new Date() },
+    });
+    return toProjectResponse(updated, await this.hasApprovedArtifacts(projectId));
+  }
+
+  async updateLanguage(projectId: string, language: ProjectLanguage): Promise<ProjectResponse> {
+    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) throw new NotFoundException('Proyecto no encontrado.');
+    const updated = await this.prisma.project.update({
+      where: { id: projectId },
+      data: { language },
     });
     return toProjectResponse(updated, await this.hasApprovedArtifacts(projectId));
   }

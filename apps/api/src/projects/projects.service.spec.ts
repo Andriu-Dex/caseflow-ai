@@ -9,6 +9,7 @@ const projectRow = {
   workspaceId,
   name: 'P',
   description: null,
+  language: 'ES' as const,
   createdAt: now,
   updatedAt: now,
 };
@@ -67,5 +68,28 @@ describe('ProjectsService (rule branches)', () => {
     prisma.project.findUnique.mockResolvedValue(null);
 
     await expect(service.get(projectRow.id)).rejects.toThrow('Proyecto no encontrado.');
+  });
+
+  it('updates the project language and preserves its approval indicator', async () => {
+    prisma.project.findUnique.mockResolvedValue(projectRow);
+    prisma.project.update.mockResolvedValue({ ...projectRow, language: 'EN' });
+    prisma.artifactVersion.count.mockResolvedValue(1);
+
+    const result = await service.updateLanguage(projectRow.id, 'EN');
+
+    expect(prisma.project.update).toHaveBeenCalledWith({
+      where: { id: projectRow.id },
+      data: { language: 'EN' },
+    });
+    expect(result).toMatchObject({ language: 'EN', hasApprovedArtifacts: true });
+  });
+
+  it('does not update the language of an unknown project', async () => {
+    prisma.project.findUnique.mockResolvedValue(null);
+
+    await expect(service.updateLanguage(projectRow.id, 'EN')).rejects.toThrow(
+      'Proyecto no encontrado.',
+    );
+    expect(prisma.project.update).not.toHaveBeenCalled();
   });
 });

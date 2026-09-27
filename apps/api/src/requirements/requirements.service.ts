@@ -12,6 +12,7 @@ import {
   type RequirementResponse,
 } from '@caseflow-ai/contracts';
 import { PrismaService } from '../database/prisma.service';
+import { getProjectLanguage } from '../projects/project-language';
 import type { Prisma } from '../generated/prisma/client';
 import { analyzeRequirementQuality } from './requirement-quality';
 
@@ -148,9 +149,11 @@ export class RequirementsService {
       throw new UnprocessableEntityException(
         'La generación oficial requiere un contexto respaldado por al menos una fuente de proyecto APPROVED.',
       );
+    const language = await getProjectLanguage(this.prisma, projectId);
     try {
       const result = await this.ai.generateStructured({
         projectId,
+        language,
         sourceArtifactVersionId: sourceContextVersionId,
         promptKey: 'requirements.generate',
         // ISO/IEC/IEEE 29148:2018-aligned quality principles (spec §4.4).

@@ -14,6 +14,7 @@ import {
 } from '@caseflow-ai/contracts';
 import type { z } from 'zod';
 import { PrismaService } from '../database/prisma.service';
+import { getProjectLanguage } from '../projects/project-language';
 import type { Prisma } from '../generated/prisma/client';
 import { DiagramEngine, type DiagramFormat } from '../data-models/diagram-engine';
 import { DIAGRAM_PROVIDER } from '../data-models/diagram-provider.token';
@@ -54,7 +55,7 @@ const ELIGIBLE_SOURCE_TYPES: Record<StructuredAnalysisKind, string[]> = {
 const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
   NAVIGATION_TREE: {
     promptKey: 'navigation.generate',
-    promptVersion: 2,
+    promptVersion: 3,
     maxOutputTokens: 4096,
     diagram: {
       format: 'MERMAID_FLOWCHART',
@@ -215,9 +216,11 @@ export class StructuredAnalysisService {
         'La generación requiere versiones exactas APPROVED de un tipo elegible del mismo proyecto.',
       );
     const config = KIND_CONFIG[kind];
+    const language = await getProjectLanguage(this.prisma, projectId);
     try {
       const result = await this.ai.generateStructured({
         projectId,
+        language,
         promptKey: config.promptKey,
         promptVersion: config.promptVersion,
         messages: [

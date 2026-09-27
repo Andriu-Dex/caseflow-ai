@@ -73,4 +73,121 @@ describe('renderExportHtml', () => {
     const html = renderExportHtml(data);
     expect(html).toContain('<svg><text>ok</text></svg>');
   });
+
+  it('keeps fixed export headings in Spanish while rendering approved English content', () => {
+    const data = baseExport('English project');
+    data.sources = [
+      { code: 'F-001', source: { title: 'Interview' }, version: { status: 'APPROVED' } },
+    ] as unknown as typeof data.sources;
+    data.context = {
+      problemStatement: 'Scheduling conflict',
+      objective: 'Book equipment',
+      actors: [{ name: 'Coordinator', description: 'Approves loans' }],
+      needs: [{ description: 'Track loans' }],
+      constraints: [{ description: 'Business hours' }],
+      businessRules: [{ description: 'Return before closing' }],
+      scopeItems: [
+        { type: 'IN_SCOPE', description: 'Reservations' },
+        { type: 'OUT_OF_SCOPE', description: 'Payments' },
+      ],
+      additionalContext: 'Campus',
+      sources: [{ code: 'F-001', title: 'Interview' }],
+    } as typeof data.context;
+    data.requirements = [
+      {
+        code: 'RF-001',
+        requirement: {
+          name: 'Reserve',
+          description: 'Reserve equipment',
+          priority: 'HIGH',
+          actors: ['Coordinator'],
+          requirementType: 'FUNCTIONAL',
+        },
+      },
+    ] as unknown as typeof data.requirements;
+    data.useCases = [
+      {
+        code: 'CU-001',
+        useCase: {
+          name: 'Reserve equipment',
+          objective: 'Create booking',
+          primaryActor: 'Coordinator',
+          secondaryActors: [],
+          preconditions: [],
+          postconditions: [],
+          mainFlow: [{ actor: 'Coordinator', action: 'Selects equipment' }],
+          alternativeFlows: [],
+        },
+      },
+    ] as unknown as typeof data.useCases;
+    data.dataModel = {
+      entities: [
+        {
+          localId: 'equipment',
+          name: 'Equipment',
+          attributes: [
+            { name: 'id', type: 'string', required: true, primaryKey: true, unique: true },
+          ],
+        },
+      ],
+      relationships: [
+        {
+          sourceEntityId: 'equipment',
+          targetEntityId: 'equipment',
+          sourceCardinality: 'ONE',
+          targetCardinality: 'ZERO_OR_MORE',
+        },
+      ],
+    } as unknown as typeof data.dataModel;
+    data.navigation = {
+      content: { nodes: [{ localId: 'home', label: 'Home', viewName: 'Home', kind: 'HOME' }] },
+    } as unknown as typeof data.navigation;
+    data.softwareArchitecture = {
+      content: {
+        style: 'Modular monolith',
+        components: [{ name: 'Loans', responsibilities: ['Reservations'] }],
+        decisions: ['Use REST'],
+      },
+    } as unknown as typeof data.softwareArchitecture;
+    data.systemArchitecture = {
+      content: {
+        boundary: 'Campus',
+        nodes: [{ localId: 'api', name: 'API', kind: 'SERVICE', responsibilities: ['Loans'] }],
+        links: [{ fromLocalId: 'api', toLocalId: 'api', protocol: 'HTTP' }],
+      },
+    } as unknown as typeof data.systemArchitecture;
+    data.uiBlueprint = {
+      content: {
+        screens: [
+          {
+            name: 'Booking',
+            purpose: 'Reserve',
+            targetActors: ['Coordinator'],
+            sections: ['Form'],
+            primaryActions: ['Submit'],
+            secondaryActions: [],
+            principalData: ['Equipment'],
+            forms: ['Booking'],
+          },
+        ],
+      },
+    } as unknown as typeof data.uiBlueprint;
+    data.mockups = [{ code: 'UI-001', svg: '<svg></svg>' }] as unknown as typeof data.mockups;
+    data.readiness.ready = true;
+    data.readiness.stages = [
+      { satisfied: true, label: 'Design', summary: 'Approved' },
+    ] as typeof data.readiness.stages;
+    data.readiness.blockers = [];
+    data.readiness.warnings = [];
+    data.traceabilitySummary.truncated = true;
+
+    const html = renderExportHtml(data);
+
+    expect(html).toContain('<html lang="es">');
+    expect(html).toContain('Fuentes del proyecto');
+    expect(html).toContain('Modelo de datos');
+    expect(html).toContain('Todas las etapas están completas.');
+    expect(html).toContain('Book equipment');
+    expect(html).toContain('Reserve equipment');
+  });
 });

@@ -54,6 +54,7 @@ function setup() {
     $queryRaw: vi.fn().mockResolvedValue([{ last_number: 1 }]),
   };
   const prisma = {
+    project: { findUnique: vi.fn().mockResolvedValue({ language: 'ES' }) },
     $transaction: vi.fn((callback) => callback(tx)),
     artifact: { findMany: vi.fn(), findFirst: vi.fn() },
     artifactVersion: { findMany: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
@@ -127,6 +128,7 @@ describe('StructuredAnalysisService', () => {
 
   it('requires exact APPROVED eligible sources before generating candidates', async () => {
     const { service, prisma, tx, ai } = setup();
+    prisma.project.findUnique.mockResolvedValue({ language: 'EN' });
     prisma.artifactVersion.findMany.mockResolvedValue([
       { id: 'source', artifact: { code: 'RF-001', artifactTypeCode: 'REQUIREMENT' } },
     ]);
@@ -144,7 +146,7 @@ describe('StructuredAnalysisService', () => {
     });
     await service.generate('project', 'NAVIGATION_TREE', ['source']);
     expect(ai.generateStructured).toHaveBeenCalledWith(
-      expect.objectContaining({ promptKey: 'navigation.generate' }),
+      expect.objectContaining({ promptKey: 'navigation.generate', language: 'EN' }),
     );
 
     prisma.artifactVersion.findMany.mockResolvedValue([]);
