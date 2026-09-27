@@ -173,7 +173,13 @@ export class DataModelsService {
         useCaseDetail: {
           include: {
             secondaryActors: { orderBy: { position: 'asc' } },
+            preconditions: { orderBy: { position: 'asc' } },
+            postconditions: { orderBy: { position: 'asc' } },
             mainFlowSteps: { orderBy: { position: 'asc' } },
+            alternativeFlows: {
+              orderBy: { position: 'asc' },
+              include: { steps: { orderBy: { position: 'asc' } } },
+            },
           },
         },
       },
@@ -199,11 +205,41 @@ export class DataModelsService {
             role: 'user',
             content: JSON.stringify({
               sources: sources.map((source) => ({
-                sourceId: source.id,
                 type: source.artifact.artifactTypeCode,
                 code: source.artifact.code,
-                requirement: source.requirementDetail,
-                useCase: source.useCaseDetail,
+                requirement: source.requirementDetail
+                  ? {
+                      requirementType: source.requirementDetail.requirementType,
+                      name: source.requirementDetail.name,
+                      description: source.requirementDetail.description,
+                      priority: source.requirementDetail.priority,
+                    }
+                  : null,
+                useCase: source.useCaseDetail
+                  ? {
+                      name: source.useCaseDetail.name,
+                      objective: source.useCaseDetail.objective,
+                      primaryActor: source.useCaseDetail.primaryActor,
+                      secondaryActors: source.useCaseDetail.secondaryActors.map(({ name }) => name),
+                      preconditions: source.useCaseDetail.preconditions.map(
+                        ({ description }) => description,
+                      ),
+                      postconditions: source.useCaseDetail.postconditions.map(
+                        ({ description }) => description,
+                      ),
+                      mainFlow: source.useCaseDetail.mainFlowSteps.map(({ actor, action }) => ({
+                        actor,
+                        action,
+                      })),
+                      alternativeFlows: source.useCaseDetail.alternativeFlows.map(
+                        ({ name, condition, steps }) => ({
+                          name,
+                          condition,
+                          steps: steps.map(({ actor, action }) => ({ actor, action })),
+                        }),
+                      ),
+                    }
+                  : null,
               })),
             }),
           },

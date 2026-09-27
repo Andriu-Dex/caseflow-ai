@@ -21,6 +21,7 @@ const fallbackSlotSchema = z.object({
   baseUrl: z.url(),
   apiKey: z.string().min(1),
   model: z.string().min(1),
+  schemaDialect: z.enum(['strict', 'narrow']).default('strict'),
 });
 const MAX_AI_FALLBACK_PROVIDERS = 5;
 
@@ -30,6 +31,7 @@ export type AIProviderSlot = {
   apiKey: string;
   model: string;
   timeoutMs: number;
+  schemaDialect: 'strict' | 'narrow';
 };
 export type AIConfig =
   | { provider: 'disabled' }
@@ -63,6 +65,7 @@ export function loadAIConfig(environment: NodeJS.ProcessEnv): AIConfig {
         baseUrl,
         apiKey: environment[`AI_PROVIDER_${index}_API_KEY`],
         model: environment[`AI_PROVIDER_${index}_MODEL`],
+        schemaDialect: environment[`AI_PROVIDER_${index}_SCHEMA_DIALECT`],
       });
       chain.push({ ...slot, timeoutMs });
     }
