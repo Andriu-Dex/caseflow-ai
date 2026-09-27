@@ -22,6 +22,13 @@ import { sanitizeDiagramSvg } from '../data-models/svg-sanitizer';
 type Tx = Prisma.TransactionClient;
 type Content = Record<string, unknown>;
 
+const KIND_LABELS: Record<StructuredAnalysisKind, string> = {
+  NAVIGATION_TREE: 'Navegación',
+  SOFTWARE_ARCHITECTURE: 'Arquitectura de software',
+  SYSTEM_ARCHITECTURE: 'Arquitectura de sistema',
+  UI_BLUEPRINT: 'UI Blueprint',
+};
+
 interface KindConfig {
   promptKey: string;
   promptVersion: number;
@@ -47,7 +54,7 @@ const ELIGIBLE_SOURCE_TYPES: Record<StructuredAnalysisKind, string[]> = {
 const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
   NAVIGATION_TREE: {
     promptKey: 'navigation.generate',
-    promptVersion: 1,
+    promptVersion: 2,
     maxOutputTokens: 4096,
     diagram: {
       format: 'MERMAID_FLOWCHART',
@@ -221,6 +228,7 @@ export class StructuredAnalysisService {
                 sourceId: source.id,
                 type: source.artifact.artifactTypeCode,
                 code: source.artifact.code,
+                title: source.title,
               })),
             }),
           },
@@ -244,7 +252,7 @@ export class StructuredAnalysisService {
           data: {
             generationId: generation.id,
             candidateId: 'candidate-1',
-            title: `${kind} candidate`,
+            title: `${KIND_LABELS[kind]} (candidato)`,
             content: result.data as Prisma.InputJsonValue,
           },
         });
@@ -365,6 +373,32 @@ export class StructuredAnalysisService {
     const diagram = version?.diagramDetail;
     if (!row || !version || !diagram) throw new NotFoundException('Diagrama no encontrado.');
     return this.mapDiagram(row, version, diagram);
+  }
+
+  // Re-rendered on demand from the stored canonical source (spec §4.8), never
+  // persisted: PNG export via client-side canvas rasterization is unreliable
+  // for Mermaid output (Chromium taints the canvas for any SVG containing
+  // `<foreignObject>`, which Mermaid emits for every flowchart edge label).
+  async getDiagramPng(
+    projectId: string,
+    kind: StructuredAnalysisKind,
+    id: string,
+  ): Promise<Buffer> {
+    const diagram = await this.getDiagram(projectId, kind, id);
+    try {
+      const { png } = await this.diagramProvider.renderPng({
+        format: diagram.sourceFormat as DiagramFormat,
+        source: diagram.source,
+      });
+      return png;
+    } catch (error) {
+      if (error instanceof DiagramProviderError) {
+        if (error.code === 'DIAGRAM_INVALID_SOURCE')
+          throw new UnprocessableEntityException({ message: error.message, code: error.code });
+        throw new ServiceUnavailableException({ message: error.message, code: error.code });
+      }
+      throw error;
+    }
   }
 
   // Exact-version diagram lookup, used by Export (spec Phase H): the diagram

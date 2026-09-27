@@ -449,6 +449,7 @@ export function StructuredKindPage({
                         sourceFormat={diagrams[item.id]!.sourceFormat}
                         code={item.code}
                         caption={`${title} — ${item.code}`}
+                        pngUrl={api.structuredAnalysis.diagramPngUrl(projectId, kind, item.id)}
                       />
                     ) : null}
                   </CardContent>
