@@ -2,6 +2,7 @@ import {
   DiagramProviderError,
   type DiagramFormat,
   type DiagramProvider,
+  type DiagramProviderPngResponse,
   type DiagramProviderRequest,
   type DiagramProviderResponse,
 } from './diagram-provider';
@@ -39,11 +40,28 @@ export class KrokiDiagramProvider implements DiagramProvider {
   }
 
   async render(request: DiagramProviderRequest): Promise<DiagramProviderResponse> {
+    const bytes = await this.post(request, 'svg');
+    return { svg: bytes.toString('utf-8') };
+  }
+
+  // Kroki renders PNG itself (a real headless engine, not a browser), so this
+  // sidesteps a browser limitation with no fix: Chromium/WebKit refuse
+  // `canvas.toBlob`/`toDataURL` ("Tainted canvases may not be exported") for
+  // any SVG image containing `<foreignObject>` — which Mermaid emits for
+  // every flowchart/ER edge label, even empty ones — regardless of origin.
+  async renderPng(request: DiagramProviderRequest): Promise<DiagramProviderPngResponse> {
+    return { png: await this.post(request, 'png') };
+  }
+
+  private async post(
+    request: DiagramProviderRequest,
+    outputFormat: 'svg' | 'png',
+  ): Promise<Buffer> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs);
     try {
       const response = await this.fetchImplementation(
-        `${this.config.baseUrl.replace(/\/$/, '')}/${KROKI_DIAGRAM_TYPE[request.format]}/svg`,
+        `${this.config.baseUrl.replace(/\/$/, '')}/${KROKI_DIAGRAM_TYPE[request.format]}/${outputFormat}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain; charset=utf-8' },
@@ -63,7 +81,7 @@ export class KrokiDiagramProvider implements DiagramProvider {
           'DIAGRAM_RESPONSE_TOO_LARGE',
           'La respuesta del renderizador excede el límite permitido.',
         );
-      return { svg: await readBounded(response, MAX_RESPONSE_BYTES) };
+      return readBounded(response, MAX_RESPONSE_BYTES);
     } catch (cause) {
       if (cause instanceof DiagramProviderError) throw cause;
       if (controller.signal.aborted)
@@ -101,9 +119,9 @@ function statusError(status: number): DiagramProviderError {
 
 // Streams the body with an explicit byte bound instead of trusting a
 // Content-Length header, since a local renderer could omit or misreport it.
-async function readBounded(response: Response, maxBytes: number): Promise<string> {
+async function readBounded(response: Response, maxBytes: number): Promise<Buffer> {
   const reader = response.body?.getReader();
-  if (!reader) return response.text();
+  if (!reader) return Buffer.from(await response.arrayBuffer());
   const chunks: Uint8Array[] = [];
   let total = 0;
   for (;;) {
@@ -119,5 +137,5 @@ async function readBounded(response: Response, maxBytes: number): Promise<string
     }
     chunks.push(value);
   }
-  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString('utf-8');
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
 }

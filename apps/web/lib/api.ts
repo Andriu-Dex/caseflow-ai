@@ -264,6 +264,8 @@ export const api = {
       get<{ items: DiagramResponse[] }>(`/projects/${projectId}/diagrams/use-cases`),
     get: (projectId: string, id: string) =>
       get<DiagramResponse>(`/projects/${projectId}/diagrams/use-cases/${id}`),
+    diagramPngUrl: (projectId: string, id: string) =>
+      `${BASE_URL}/projects/${projectId}/diagrams/use-cases/${id}/png`,
     createManualVersion: (projectId: string, id: string, source: string) =>
       post<DiagramResponse>(`/projects/${projectId}/diagrams/use-cases/${id}/versions`, {
         source,
@@ -280,6 +282,8 @@ export const api = {
       post(`/projects/${projectId}/data-models/${id}/versions`, input),
     getDiagram: (projectId: string, id: string) =>
       get<DiagramResponse>(`/projects/${projectId}/data-models/${id}/diagram`),
+    diagramPngUrl: (projectId: string, id: string) =>
+      `${BASE_URL}/projects/${projectId}/data-models/${id}/diagram/png`,
     generate: (projectId: string, requirementVersionIds: string[], useCaseVersionIds: string[]) =>
       post<GenerationResult>(`/projects/${projectId}/data-models/generate`, {
         requirementVersionIds,
@@ -326,6 +330,8 @@ export const api = {
       get<DiagramResponse>(
         `/projects/${projectId}/${api.structuredAnalysis.basePath(kind)}/${id}/diagram`,
       ),
+    diagramPngUrl: (projectId: string, kind: StructuredAnalysisKind, id: string) =>
+      `${BASE_URL}/projects/${projectId}/${api.structuredAnalysis.basePath(kind)}/${id}/diagram/png`,
     generate: (projectId: string, kind: StructuredAnalysisKind, sourceVersionIds: string[]) =>
       post<GenerationResult>(
         `/projects/${projectId}/${api.structuredAnalysis.basePath(kind)}/generate`,

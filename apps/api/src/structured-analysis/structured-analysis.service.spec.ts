@@ -297,4 +297,21 @@ describe('StructuredAnalysisService', () => {
       'no tiene diagrama',
     );
   });
+
+  it('re-renders a diagram as a PNG buffer from its stored canonical source', async () => {
+    const { service, prisma } = setup();
+    const diagram = {
+      kind: 'NAVIGATION_TREE',
+      sourceFormat: 'MERMAID_FLOWCHART',
+      source: 'flowchart TD\n',
+      svg: '<svg/>',
+      sources: [{ sourceArtifactVersionId: 'version' }],
+    };
+    prisma.artifact.findFirst.mockResolvedValue({
+      ...artifact,
+      versions: [{ ...version, diagramDetail: diagram }],
+    });
+    const png = await service.getDiagramPng('project', 'NAVIGATION_TREE', 'artifact');
+    expect(Buffer.isBuffer(png)).toBe(true);
+  });
 });

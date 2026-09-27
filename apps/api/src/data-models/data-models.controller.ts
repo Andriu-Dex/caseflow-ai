@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   acceptDataModelCandidatesRequestSchema,
@@ -14,6 +15,7 @@ import {
   transitionArtifactVersionRequestSchema,
 } from '@caseflow-ai/contracts';
 import type { z } from 'zod';
+import { pngResponse } from '../common/png-response';
 import { uuidParamPipe } from '../common/uuid-param.pipe';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ApiUuidParam, ApiZodBody, ApiZodResponse } from '../openapi/zod-openapi';
@@ -127,6 +129,16 @@ export class DataModelsController {
   ) {
     return this.service.getERDiagram(projectId, dataModelId);
   }
+  @Get(':dataModelId/diagram/png')
+  @ApiOperation({ operationId: 'getDataModelDiagramPng', summary: 'Obtener diagrama ER como PNG' })
+  async diagramPng(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('dataModelId', uuidParamPipe) dataModelId: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const png = await this.service.getERDiagramPng(projectId, dataModelId);
+    return pngResponse(response, `${dataModelId}.png`, png);
+  }
 }
 
 @ApiTags('diagrams')
@@ -166,6 +178,16 @@ export class UseCaseDiagramsController {
     @Param('diagramId', uuidParamPipe) diagramId: string,
   ) {
     return this.service.getUseCaseDiagram(projectId, diagramId);
+  }
+  @Get(':diagramId/png')
+  @ApiOperation({ operationId: 'getUseCaseDiagramPng', summary: 'Obtener diagrama UML como PNG' })
+  async getPng(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('diagramId', uuidParamPipe) diagramId: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const png = await this.service.getUseCaseDiagramPng(projectId, diagramId);
+    return pngResponse(response, `${diagramId}.png`, png);
   }
   @Post(':diagramId/versions')
   @ApiOperation({

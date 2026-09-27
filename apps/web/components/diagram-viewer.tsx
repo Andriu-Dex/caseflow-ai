@@ -1,6 +1,6 @@
 'use client';
 
-import { Code2, Download, Pencil, X } from 'lucide-react';
+import { Code2, Download, Maximize2, Pencil, X } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { ApiError } from '../lib/api';
@@ -24,42 +24,18 @@ function download(filename: string, content: string, mime: string) {
   URL.revokeObjectURL(url);
 }
 
-async function downloadPng(filename: string, svg: string): Promise<void> {
-  const svgUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
-  try {
-    const image = new Image();
-    await new Promise<void>((resolve, reject) => {
-      image.onload = () => resolve();
-      image.onerror = () => reject(new Error('No se pudo rasterizar el diagrama.'));
-      image.src = svgUrl;
-    });
-    const viewBox = svg.match(/\bviewBox=["']\s*[-\d.]+\s+[-\d.]+\s+([\d.]+)\s+([\d.]+)["']/i);
-    const width = image.naturalWidth || Number(viewBox?.[1]) || 1200;
-    const height = image.naturalHeight || Number(viewBox?.[2]) || 800;
-    const scale = Math.min(2, 4096 / Math.max(width, height));
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.round(width * scale));
-    canvas.height = Math.max(1, Math.round(height * scale));
-    const context = canvas.getContext('2d');
-    if (!context) throw new Error('El navegador no pudo preparar la imagen.');
-    context.fillStyle = '#ffffff';
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    const png = await new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob(
-        (blob) => (blob ? resolve(blob) : reject(new Error('No se pudo crear el archivo PNG.'))),
-        'image/png',
-      ),
-    );
-    const pngUrl = URL.createObjectURL(png);
-    const anchor = document.createElement('a');
-    anchor.href = pngUrl;
-    anchor.download = filename;
-    anchor.click();
-    URL.revokeObjectURL(pngUrl);
-  } finally {
-    URL.revokeObjectURL(svgUrl);
-  }
+// PNG is streamed from the backend (re-rendered on demand from the canonical
+// stored source, spec §4.8) rather than rasterized here client-side: Mermaid
+// always emits `<foreignObject>` for edge/attribute labels, and Chromium/
+// WebKit refuse `canvas.toBlob` for any SVG containing one, regardless of
+// origin — there is no reliable client-only fix for that.
+function downloadPng(pngUrl: string, filename: string) {
+  const anchor = document.createElement('a');
+  anchor.href = pngUrl;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
 }
 
 // Shows a backend-rendered/sanitized diagram (TrustedDiagram) alongside its
@@ -77,6 +53,7 @@ export function DiagramViewer({
   sourceFormat,
   code,
   caption,
+  pngUrl,
   onSaveEdit,
 }: {
   svg: string;
@@ -84,12 +61,14 @@ export function DiagramViewer({
   sourceFormat: string;
   code: string;
   caption?: string;
+  pngUrl?: string;
   onSaveEdit?: (source: string) => Promise<void>;
 }) {
   const [showSource, setShowSource] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(source);
   const [saving, setSaving] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
   const extension = SOURCE_EXTENSION[sourceFormat] ?? 'txt';
 
   async function save() {
@@ -111,6 +90,14 @@ export function DiagramViewer({
       <div className="flex flex-wrap gap-2 text-sm">
         <button
           type="button"
+          onClick={() => setFullscreen(true)}
+          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-muted-foreground hover:bg-muted/40"
+        >
+          <Maximize2 className="size-3.5" aria-hidden="true" />
+          Ver en pantalla completa
+        </button>
+        <button
+          type="button"
           onClick={() => setShowSource((v) => !v)}
           className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-muted-foreground hover:bg-muted/40"
         >
@@ -125,18 +112,16 @@ export function DiagramViewer({
           <Download className="size-3.5" aria-hidden="true" />
           Descargar SVG
         </button>
-        <button
-          type="button"
-          onClick={() => {
-            void downloadPng(`${code}.png`, svg).catch(() =>
-              toast.error('No se pudo exportar el diagrama como PNG.'),
-            );
-          }}
-          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-muted-foreground hover:bg-muted/40"
-        >
-          <Download className="size-3.5" aria-hidden="true" />
-          Descargar PNG
-        </button>
+        {pngUrl ? (
+          <button
+            type="button"
+            onClick={() => downloadPng(pngUrl, `${code}.png`)}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-muted-foreground hover:bg-muted/40"
+          >
+            <Download className="size-3.5" aria-hidden="true" />
+            Descargar PNG
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => download(`${code}.${extension}`, source, 'text/plain')}
@@ -193,6 +178,25 @@ export function DiagramViewer({
             {source}
           </pre>
         )
+      ) : null}
+      {fullscreen ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex flex-col gap-2 overflow-auto bg-background/95 p-4"
+        >
+          <button
+            type="button"
+            onClick={() => setFullscreen(false)}
+            className="inline-flex w-fit items-center gap-1 rounded-md bg-muted px-3 py-1.5 text-sm text-foreground hover:bg-muted/70"
+          >
+            <X className="size-3.5" aria-hidden="true" />
+            Cerrar
+          </button>
+          <div className="flex flex-1 items-center justify-center">
+            <TrustedDiagram svg={svg} caption={caption} />
+          </div>
+        </div>
       ) : null}
     </div>
   );
