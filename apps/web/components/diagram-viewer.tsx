@@ -7,9 +7,15 @@ import { toast } from 'sonner';
 import { ApiError } from '../lib/api';
 import { TrustedDiagram } from './trusted-svg';
 
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 4;
+const ZOOM_STEP = 0.25;
+
 // Same wheel-zoom/drag-to-pan interaction as MockupScreenDialog
 // (apps/web/app/design/mockups/page.tsx) — reused here so every diagram
 // viewer in the product behaves the same way, not a second implementation.
+// Unlike the mockup viewer, this one also allows zooming out below 100%
+// (large traceability graphs benefit from shrinking to see the whole shape).
 function ZoomableDiagram({ svg, caption }: { svg: string; caption?: string }) {
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -44,9 +50,12 @@ function ZoomableDiagram({ svg, caption }: { svg: string; caption?: string }) {
         }}
         onWheel={(event) => {
           event.preventDefault();
-          const next = Math.min(4, Math.max(1, zoom + (event.deltaY < 0 ? 0.25 : -0.25)));
+          const next = Math.min(
+            MAX_ZOOM,
+            Math.max(MIN_ZOOM, zoom + (event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP)),
+          );
           setZoom(next);
-          if (next === 1) setOffset({ x: 0, y: 0 });
+          if (next <= 1) setOffset({ x: 0, y: 0 });
         }}
         aria-label="Vista ampliable: use la rueda para acercar y arrastre para desplazarse"
       >
@@ -63,11 +72,11 @@ function ZoomableDiagram({ svg, caption }: { svg: string; caption?: string }) {
           variant="outline"
           size="icon-sm"
           aria-label="Alejar"
-          disabled={zoom <= 1}
+          disabled={zoom <= MIN_ZOOM}
           onClick={() => {
-            const next = Math.max(1, zoom - 0.25);
+            const next = Math.max(MIN_ZOOM, zoom - ZOOM_STEP);
             setZoom(next);
-            if (next === 1) setOffset({ x: 0, y: 0 });
+            if (next <= 1) setOffset({ x: 0, y: 0 });
           }}
         >
           <ZoomOut aria-hidden="true" className="size-4" />
@@ -78,12 +87,12 @@ function ZoomableDiagram({ svg, caption }: { svg: string; caption?: string }) {
           variant="outline"
           size="icon-sm"
           aria-label="Acercar"
-          disabled={zoom >= 4}
-          onClick={() => setZoom((current) => Math.min(4, current + 0.25))}
+          disabled={zoom >= MAX_ZOOM}
+          onClick={() => setZoom((current) => Math.min(MAX_ZOOM, current + ZOOM_STEP))}
         >
           <ZoomIn aria-hidden="true" className="size-4" />
         </Button>
-        {zoom > 1 ? (
+        {zoom !== 1 ? (
           <Button
             type="button"
             variant="ghost"

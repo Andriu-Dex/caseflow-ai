@@ -24,14 +24,18 @@ describe('DiagramViewer — zoom/pan', () => {
     expect(screen.getByText('100%')).toBeInTheDocument();
   });
 
-  it('never zooms below 100% and disables "Alejar" there', async () => {
+  it('zooms out below 100%, clamps at 25%, and disables "Alejar" there', async () => {
     renderViewer();
     expect(screen.getByText('100%')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Alejar' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Alejar' })).not.toBeDisabled();
 
     const viewport = screen.getByLabelText(/Vista ampliable/i);
     fireEvent.wheel(viewport, { deltaY: 1 });
-    expect(screen.getByText('100%')).toBeInTheDocument();
+    expect(screen.getByText('75%')).toBeInTheDocument();
+
+    for (let i = 0; i < 20; i += 1) fireEvent.wheel(viewport, { deltaY: 1 });
+    expect(screen.getByText('25%')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Alejar' })).toBeDisabled();
   });
 
   it('zooms via the Acercar/Alejar buttons in fixed steps', async () => {
