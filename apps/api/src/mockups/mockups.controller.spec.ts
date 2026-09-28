@@ -14,9 +14,11 @@ describe('MockupsController', () => {
       getPreview: vi.fn().mockResolvedValue({}),
       version: vi.fn().mockResolvedValue({}),
       transition: vi.fn().mockResolvedValue({}),
-      downloadScreenImage: vi
-        .fn()
-        .mockResolvedValue({ body: Buffer.from('png'), contentType: 'image/png' }),
+      downloadScreenImage: vi.fn().mockResolvedValue({
+        body: Buffer.from('png'),
+        contentType: 'image/png',
+        fileName: 'inicio.png',
+      }),
       downloadScreenHtml: vi.fn().mockResolvedValue({ body: Buffer.from('<html>') }),
     };
     const controller = new MockupsController(service as unknown as MockupsService);

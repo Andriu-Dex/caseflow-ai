@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
+import JSZip from 'jszip';
 import {
   Inject,
   Injectable,
   Logger,
   NotFoundException,
+  PayloadTooLargeException,
   ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -36,7 +38,20 @@ import { STORAGE_PROVIDER } from './storage-provider.token';
 
 type Tx = Prisma.TransactionClient;
 const MOCKUP_CODE_PREFIX = 'MCK';
+const MAX_MOCKUP_ARCHIVE_BYTES = 50_000_000;
 const logger = new Logger('MockupsService');
+
+function safeFileName(value: string, fallback: string): string {
+  return (
+    value
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9_-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .toLowerCase() || fallback
+  );
+}
+
 type StoredGeneration =
   | { kind: 'INTERNAL_WIREFRAME'; svg: string }
   | {
@@ -511,10 +526,43 @@ export class MockupsService {
 
   async downloadScreenImage(projectId: string, mockupId: string, screenId: string) {
     const screen = await this.findScreen(projectId, mockupId, screenId);
+    const extension =
+      screen.imageContentType === 'image/jpeg'
+        ? 'jpg'
+        : screen.imageContentType === 'image/webp'
+          ? 'webp'
+          : 'png';
     return {
       body: await this.storage.getObject(screen.imageStorageKey),
       contentType: screen.imageContentType,
+      fileName: `${safeFileName(screen.screenName, 'pantalla')}.${extension}`,
     };
+  }
+
+  async downloadMockupScreensZip(projectId: string, mockupId: string) {
+    const mockup = await this.findLatest(projectId, mockupId);
+    const detail = mockup.versions[0]!.mockupDetail!;
+    const screens = detail.generatorKind === 'STITCH' ? detail.screens : [];
+    if (screens.length === 0) throw new NotFoundException('No hay imágenes para descargar.');
+
+    const zip = new JSZip();
+    let archiveSourceBytes = 0;
+    for (const [index, screen] of screens.entries()) {
+      const extension =
+        screen.imageContentType === 'image/jpeg'
+          ? 'jpg'
+          : screen.imageContentType === 'image/webp'
+            ? 'webp'
+            : 'png';
+      const safeName = safeFileName(screen.screenName, `pantalla-${index + 1}`);
+      const body = await this.storage.getObject(screen.imageStorageKey);
+      archiveSourceBytes += body.length;
+      if (archiveSourceBytes > MAX_MOCKUP_ARCHIVE_BYTES)
+        throw new PayloadTooLargeException('El archivo de pantallas supera el límite de descarga.');
+      zip.file(`${String(index + 1).padStart(2, '0')}-${safeName}.${extension}`, body);
+    }
+    const body = await zip.generateAsync({ type: 'nodebuffer' });
+    return { body, fileName: `${mockup.code}-pantallas.zip` };
   }
 
   async downloadScreenHtml(projectId: string, mockupId: string, screenId: string) {

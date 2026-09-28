@@ -364,6 +364,8 @@ export const api = {
       ),
   },
   mockups: {
+    downloadAllUrl: (projectId: string, mockupId: string) =>
+      `${BASE_URL}/projects/${projectId}/mockups/${mockupId}/screens/download`,
     screenImageUrl: (projectId: string, mockupId: string, screenId: string) =>
       `${BASE_URL}/projects/${projectId}/mockups/${mockupId}/screens/${screenId}/image`,
     screenHtmlUrl: (projectId: string, mockupId: string, screenId: string) =>

@@ -108,12 +108,30 @@ export class MockupsController {
     @Param('screenId', uuidParamPipe) screenId: string,
     @Res() res: Response,
   ) {
-    const { body, contentType } = await this.service.downloadScreenImage(
+    const { body, contentType, fileName } = await this.service.downloadScreenImage(
       projectId,
       mockupId,
       screenId,
     );
     res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.send(body);
+  }
+
+  @Get(':mockupId/screens/download')
+  @ApiOperation({
+    operationId: 'downloadMockupScreens',
+    summary: 'Descargar todas las pantallas en ZIP',
+  })
+  async downloadScreens(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('mockupId', uuidParamPipe) mockupId: string,
+    @Res() res: Response,
+  ) {
+    const { body, fileName } = await this.service.downloadMockupScreensZip(projectId, mockupId);
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.send(body);
   }

@@ -111,6 +111,9 @@ importers:
       ioredis:
         specifier: ^6.0.0
         version: 6.0.0(supports-color@10.2.2)
+      jszip:
+        specifier: 3.10.2
+        version: 3.10.2
       multer:
         specifier: 2.4.0
         version: 2.4.0
