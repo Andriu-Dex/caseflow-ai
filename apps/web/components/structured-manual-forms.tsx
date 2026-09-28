@@ -1,0 +1,1020 @@
+'use client';
+
+import { useState } from 'react';
+import { toast } from 'sonner';
+import {
+  NAVIGATION_NODE_KINDS,
+  SYSTEM_NODE_KINDS,
+  type NavigationTreeContent,
+  type SoftwareArchitectureContent,
+  type StructuredAnalysisKind,
+  type StructuredAnalysisResponse,
+  type SystemArchitectureContent,
+  type UiBlueprintContent,
+} from '@caseflow-ai/contracts';
+import { api, ApiError } from '../lib/api';
+import { csv } from '../lib/use-rows';
+import { TagInput } from './tag-input';
+import { Button } from '@caseflow-ai/ui';
+import { Trash2, Plus } from 'lucide-react';
+
+// Creating, or editing (`initial` given): an edit submits a complete new
+// version that starts again as a draft; the previous version stays intact.
+async function save(
+  projectId: string,
+  kind: StructuredAnalysisKind,
+  initial: StructuredAnalysisResponse | undefined,
+  title: string,
+  content: unknown,
+) {
+  if (initial) {
+    await api.structuredAnalysis.createVersion(projectId, kind, initial.id, title, content);
+    toast.success(`${initial.code} actualizado. La nueva versión queda pendiente de aprobación.`);
+  } else {
+    await api.structuredAnalysis.create(projectId, kind, title, content);
+    toast.success('Creado correctamente.');
+  }
+}
+
+// Existing rows keep their original localId so references between them
+// (parent node, dependency, link) stay valid; new rows get a fresh one.
+const rowId = (row: { localId?: string }, prefix: string, i: number) =>
+  row.localId ?? `${prefix}${i + 1}`;
+
+function ManualFormShell({
+  title,
+  onSubmit,
+  submitting,
+  editing,
+  onCancel,
+  children,
+}: {
+  title: string;
+  onSubmit: (e: React.FormEvent) => void;
+  submitting: boolean;
+  editing: boolean;
+  onCancel: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <form
+      onSubmit={onSubmit}
+      className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4"
+    >
+      <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+      {children}
+      <div className="flex gap-2">
+        <Button type="submit" disabled={submitting}>
+          {submitting ? 'Guardando…' : editing ? 'Guardar cambios' : 'Crear'}
+        </Button>
+        <Button
+          variant="ghost"
+          type="button"
+          onClick={onCancel}
+          className="text-muted-foreground underline"
+        >
+          Cancelar
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+interface FormProps {
+  projectId: string;
+  initial?: StructuredAnalysisResponse;
+  onCreated: () => void;
+  onCancel: () => void;
+}
+
+export function NavigationManualForm({ projectId, initial, onCreated, onCancel }: FormProps) {
+  const c0 = initial?.content as NavigationTreeContent | undefined;
+  const [title, setTitle] = useState(initial?.title ?? '');
+  const [nodes, setNodes] = useState<
+    {
+      localId?: string;
+      label: string;
+      viewName: string;
+      kind: (typeof NAVIGATION_NODE_KINDS)[number];
+      parentLocalId: string;
+      route: string;
+      description: string;
+      relatedUseCaseCodes: string;
+    }[]
+  >(
+    c0?.nodes.map((n) => ({
+      localId: n.localId,
+      label: n.label,
+      viewName: n.viewName,
+      kind: n.kind,
+      parentLocalId: n.parentLocalId ?? '',
+      route: n.route ?? '',
+      description: n.description ?? '',
+      relatedUseCaseCodes: n.relatedUseCaseCodes.join(', '),
+    })) ?? [
+      {
+        label: '',
+        viewName: '',
+        kind: 'VIEW' as (typeof NAVIGATION_NODE_KINDS)[number],
+        parentLocalId: '',
+        route: '',
+        description: '',
+        relatedUseCaseCodes: '',
+      },
+    ],
+  );
+  const [submitting, setSubmitting] = useState(false);
+  const ids = nodes.map((n, i) => rowId(n, 'n', i));
+
+  function update(i: number, patch: Partial<(typeof nodes)[number]>) {
+    setNodes((prev) => prev.map((n, idx) => (idx === i ? { ...n, ...patch } : n)));
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      await save(projectId, 'NAVIGATION_TREE', initial, title, {
+        nodes: nodes.map((n, i) => ({
+          localId: ids[i],
+          label: n.label,
+          viewName: n.viewName,
+          kind: n.kind,
+          parentLocalId: n.parentLocalId || undefined,
+          route: n.route || undefined,
+          description: n.description || undefined,
+          relatedUseCaseCodes: csv(n.relatedUseCaseCodes),
+        })),
+      });
+      onCreated();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo guardar la navegación.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <ManualFormShell
+      title={initial ? `Editar ${initial.code}` : 'Nueva navegación'}
+      onSubmit={handleSubmit}
+      submitting={submitting}
+      editing={Boolean(initial)}
+      onCancel={onCancel}
+    >
+      <input
+        required
+        placeholder="Título"
+        className="rounded-md border border-input px-2 py-1 text-sm"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+      />
+      {nodes.map((n, i) => (
+        <div
+          key={i}
+          className="flex flex-wrap items-center gap-2 rounded-md border border-border p-2 text-sm"
+        >
+          <input
+            required
+            placeholder="Etiqueta"
+            className="w-32 rounded-md border border-input px-2 py-1"
+            value={n.label}
+            onChange={(e) => update(i, { label: e.target.value })}
+          />
+          <input
+            required
+            placeholder="Nombre de pantalla"
+            className="w-40 rounded-md border border-input px-2 py-1"
+            value={n.viewName}
+            onChange={(e) => update(i, { viewName: e.target.value })}
+          />
+          <select
+            className="rounded-md border border-input px-2 py-1"
+            value={n.kind}
+            onChange={(e) =>
+              update(i, { kind: e.target.value as (typeof NAVIGATION_NODE_KINDS)[number] })
+            }
+          >
+            {NAVIGATION_NODE_KINDS.map((k) => (
+              <option key={k} value={k}>
+                {k}
+              </option>
+            ))}
+          </select>
+          <select
+            className="rounded-md border border-input px-2 py-1"
+            value={n.parentLocalId}
+            onChange={(e) => update(i, { parentLocalId: e.target.value })}
+          >
+            <option value="">(sin padre)</option>
+            {ids
+              .filter((id) => id !== ids[i])
+              .map((id, idx) => (
+                <option key={id} value={id}>
+                  {nodes[idx]?.label || id}
+                </option>
+              ))}
+          </select>
+          <input
+            placeholder="Ruta (opcional)"
+            className="w-28 rounded-md border border-input px-2 py-1"
+            value={n.route}
+            onChange={(e) => update(i, { route: e.target.value })}
+          />
+          <input
+            placeholder="Descripción (opcional)"
+            className="w-40 rounded-md border border-input px-2 py-1"
+            value={n.description}
+            onChange={(e) => update(i, { description: e.target.value })}
+          />
+          <TagInput
+            placeholder="Casos de uso relacionados (códigos, coma)"
+            className="w-56"
+            value={n.relatedUseCaseCodes}
+            onChange={(val) => update(i, { relatedUseCaseCodes: val })}
+          />
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            type="button"
+            onClick={() => setNodes((prev) => prev.filter((_, idx) => idx !== i))}
+            className="mt-1 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            aria-label={`Eliminar nodo ${i + 1}`}
+          >
+            <Trash2 className="size-3.5" />
+          </Button>
+        </div>
+      ))}
+      <Button
+        variant="outline"
+        size="sm"
+        type="button"
+        onClick={() =>
+          setNodes((prev) => [
+            ...prev,
+            {
+              label: '',
+              viewName: '',
+              kind: 'VIEW',
+              parentLocalId: '',
+              route: '',
+              description: '',
+              relatedUseCaseCodes: '',
+            },
+          ])
+        }
+        className="self-start text-muted-foreground"
+      >
+        <Plus className="mr-2 size-4" /> Agregar nodo
+      </Button>
+    </ManualFormShell>
+  );
+}
+
+export function SoftwareArchitectureManualForm({
+  projectId,
+  initial,
+  onCreated,
+  onCancel,
+}: FormProps) {
+  const c0 = initial?.content as SoftwareArchitectureContent | undefined;
+  const [title, setTitle] = useState(initial?.title ?? '');
+  const [style, setStyle] = useState(c0?.style ?? '');
+  const [components, setComponents] = useState<
+    { localId?: string; name: string; responsibilities: string; layer: string }[]
+  >(
+    c0?.components.map((c) => ({
+      localId: c.localId,
+      name: c.name,
+      responsibilities: c.responsibilities.join(', '),
+      layer: c.layerLocalId ?? '',
+    })) ?? [{ name: '', responsibilities: '', layer: '' }],
+  );
+  const [dependencies, setDependencies] = useState<
+    { fromLocalId: string; toLocalId: string; description: string }[]
+  >(c0?.dependencies.map((d) => ({ ...d, description: d.description ?? '' })) ?? []);
+  const [decisionsText, setDecisionsText] = useState(c0?.decisions.join('\n') ?? '');
+  const [submitting, setSubmitting] = useState(false);
+  const ids = components.map((c, i) => rowId(c, 'c', i));
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      await save(projectId, 'SOFTWARE_ARCHITECTURE', initial, title, {
+        style,
+        components: components.map((c, i) => ({
+          localId: ids[i],
+          name: c.name,
+          layerLocalId: c.layer.trim() || undefined,
+          responsibilities: csv(c.responsibilities),
+        })),
+        dependencies: dependencies
+          .filter((d) => d.fromLocalId && d.toLocalId)
+          .map((d) => ({ ...d, description: d.description || undefined })),
+        decisions: decisionsText
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean),
+      });
+      onCreated();
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError ? err.message : 'No se pudo guardar la arquitectura de software.',
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <ManualFormShell
+      title={initial ? `Editar ${initial.code}` : 'Nueva arquitectura de software'}
+      onSubmit={handleSubmit}
+      submitting={submitting}
+      editing={Boolean(initial)}
+      onCancel={onCancel}
+    >
+      <input
+        required
+        placeholder="Título"
+        className="rounded-md border border-input px-2 py-1 text-sm"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+      />
+      <input
+        required
+        placeholder="Estilo/patrón arquitectónico"
+        className="rounded-md border border-input px-2 py-1 text-sm"
+        value={style}
+        onChange={(e) => setStyle(e.target.value)}
+      />
+      {components.map((c, i) => (
+        <div
+          key={i}
+          className="flex flex-wrap items-center gap-2 rounded-md border border-border p-2 text-sm"
+        >
+          <input
+            required
+            placeholder="Nombre del componente"
+            className="w-40 rounded-md border border-input px-2 py-1"
+            value={c.name}
+            onChange={(e) =>
+              setComponents((prev) =>
+                prev.map((x, idx) => (idx === i ? { ...x, name: e.target.value } : x)),
+              )
+            }
+          />
+          <TagInput
+            placeholder="Responsabilidades (separadas por coma)"
+            className="flex-1"
+            value={c.responsibilities}
+            onChange={(val) =>
+              setComponents((prev) =>
+                prev.map((x, idx) => (idx === i ? { ...x, responsibilities: val } : x)),
+              )
+            }
+          />
+          <input
+            list="software-architecture-layers"
+            placeholder="Capa (opcional)"
+            className="w-40 rounded-md border border-input px-2 py-1"
+            value={c.layer}
+            onChange={(e) =>
+              setComponents((prev) =>
+                prev.map((x, idx) => (idx === i ? { ...x, layer: e.target.value } : x)),
+              )
+            }
+          />
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            type="button"
+            onClick={() => setComponents((prev) => prev.filter((_, idx) => idx !== i))}
+            className="mt-1 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            aria-label={`Eliminar componente ${i + 1}`}
+          >
+            <Trash2 className="size-3.5" />
+          </Button>
+        </div>
+      ))}
+      <Button
+        variant="outline"
+        size="sm"
+        type="button"
+        onClick={() =>
+          setComponents((prev) => [...prev, { name: '', responsibilities: '', layer: '' }])
+        }
+        className="self-start text-muted-foreground"
+      >
+        <Plus className="mr-2 size-4" /> Agregar componente
+      </Button>
+      {/* Populated from layers already typed on other components in this
+          form — layerLocalId is the only Component→Layer mechanism in the
+          Software Architecture contract (no separate Layer entity exists),
+          so the layer's own name is used directly as its localId; this
+          datalist lets later components reuse an existing layer by
+          selecting it instead of retyping it. */}
+      <datalist id="software-architecture-layers">
+        {[...new Set(components.map((c) => c.layer.trim()).filter(Boolean))].map((layer) => (
+          <option key={layer} value={layer} />
+        ))}
+      </datalist>
+
+      <fieldset className="rounded-md border border-border p-2">
+        <legend className="px-1 text-sm font-medium text-foreground/80">
+          Dependencias entre componentes (opcional)
+        </legend>
+        {dependencies.map((dep, di) => (
+          <div key={di} className="mb-1 flex flex-wrap items-center gap-2 text-sm">
+            <select
+              aria-label={`Componente origen de la dependencia ${di + 1}`}
+              className="rounded-md border border-input px-2 py-1"
+              value={dep.fromLocalId}
+              onChange={(e) =>
+                setDependencies((prev) =>
+                  prev.map((d, i) => (i === di ? { ...d, fromLocalId: e.target.value } : d)),
+                )
+              }
+            >
+              <option value="">Componente origen…</option>
+              {components.map((c, i) => (
+                <option key={ids[i]} value={ids[i]}>
+                  {c.name || ids[i]}
+                </option>
+              ))}
+            </select>
+            <span>→</span>
+            <select
+              aria-label={`Componente destino de la dependencia ${di + 1}`}
+              className="rounded-md border border-input px-2 py-1"
+              value={dep.toLocalId}
+              onChange={(e) =>
+                setDependencies((prev) =>
+                  prev.map((d, i) => (i === di ? { ...d, toLocalId: e.target.value } : d)),
+                )
+              }
+            >
+              <option value="">Componente destino…</option>
+              {components.map((c, i) => (
+                <option key={ids[i]} value={ids[i]}>
+                  {c.name || ids[i]}
+                </option>
+              ))}
+            </select>
+            <input
+              placeholder="descripción (opcional)"
+              className="flex-1 rounded-md border border-input px-2 py-1"
+              value={dep.description}
+              onChange={(e) =>
+                setDependencies((prev) =>
+                  prev.map((d, i) => (i === di ? { ...d, description: e.target.value } : d)),
+                )
+              }
+            />
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              type="button"
+              onClick={() => setDependencies((prev) => prev.filter((_, i) => i !== di))}
+              className="mt-1 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              aria-label={`Eliminar dependencia ${di + 1}`}
+            >
+              <Trash2 className="size-3.5" />
+            </Button>
+          </div>
+        ))}
+        <Button
+          variant="outline"
+          size="sm"
+          type="button"
+          onClick={() =>
+            setDependencies((prev) => [
+              ...prev,
+              { fromLocalId: '', toLocalId: '', description: '' },
+            ])
+          }
+          className="self-start text-muted-foreground"
+        >
+          <Plus className="mr-2 size-4" /> Agregar dependencia
+        </Button>
+      </fieldset>
+
+      <label className="flex flex-col gap-1 text-sm">
+        Decisiones de arquitectura (una por línea, opcional)
+        <textarea
+          rows={2}
+          className="rounded-md border border-input px-2 py-1"
+          value={decisionsText}
+          onChange={(e) => setDecisionsText(e.target.value)}
+        />
+      </label>
+    </ManualFormShell>
+  );
+}
+
+export function SystemArchitectureManualForm({
+  projectId,
+  initial,
+  onCreated,
+  onCancel,
+}: FormProps) {
+  const c0 = initial?.content as SystemArchitectureContent | undefined;
+  const [title, setTitle] = useState(initial?.title ?? '');
+  const [boundary, setBoundary] = useState(c0?.boundary ?? '');
+  const [nodes, setNodes] = useState<
+    {
+      localId?: string;
+      name: string;
+      kind: (typeof SYSTEM_NODE_KINDS)[number];
+      responsibilities: string;
+    }[]
+  >(
+    c0?.nodes.map((n) => ({
+      localId: n.localId,
+      name: n.name,
+      kind: n.kind,
+      responsibilities: n.responsibilities.join(', '),
+    })) ?? [{ name: '', kind: 'RUNTIME', responsibilities: '' }],
+  );
+  const [links, setLinks] = useState<
+    { fromLocalId: string; toLocalId: string; protocol: string; description: string }[]
+  >(
+    c0?.links.map((l) => ({
+      fromLocalId: l.fromLocalId,
+      toLocalId: l.toLocalId,
+      protocol: l.protocol ?? '',
+      description: l.description ?? '',
+    })) ?? [],
+  );
+  const [submitting, setSubmitting] = useState(false);
+  const ids = nodes.map((n, i) => rowId(n, 'n', i));
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      await save(projectId, 'SYSTEM_ARCHITECTURE', initial, title, {
+        boundary,
+        nodes: nodes.map((n, i) => ({
+          localId: ids[i],
+          name: n.name,
+          kind: n.kind,
+          responsibilities: csv(n.responsibilities),
+        })),
+        links: links
+          .filter((l) => l.fromLocalId && l.toLocalId)
+          .map((l) => ({
+            ...l,
+            protocol: l.protocol || undefined,
+            description: l.description || undefined,
+          })),
+      });
+      onCreated();
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError ? err.message : 'No se pudo guardar la arquitectura de sistema.',
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <ManualFormShell
+      title={initial ? `Editar ${initial.code}` : 'Nueva arquitectura de sistema'}
+      onSubmit={handleSubmit}
+      submitting={submitting}
+      editing={Boolean(initial)}
+      onCancel={onCancel}
+    >
+      <input
+        required
+        placeholder="Título"
+        className="rounded-md border border-input px-2 py-1 text-sm"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+      />
+      <textarea
+        required
+        placeholder="Límite del sistema (boundary)"
+        rows={2}
+        className="rounded-md border border-input px-2 py-1 text-sm"
+        value={boundary}
+        onChange={(e) => setBoundary(e.target.value)}
+      />
+      {nodes.map((n, i) => (
+        <div
+          key={i}
+          className="flex flex-wrap items-center gap-2 rounded-md border border-border p-2 text-sm"
+        >
+          <input
+            required
+            placeholder="Nombre"
+            className="w-40 rounded-md border border-input px-2 py-1"
+            value={n.name}
+            onChange={(e) =>
+              setNodes((prev) =>
+                prev.map((x, idx) => (idx === i ? { ...x, name: e.target.value } : x)),
+              )
+            }
+          />
+          <select
+            className="rounded-md border border-input px-2 py-1"
+            value={n.kind}
+            onChange={(e) =>
+              setNodes((prev) =>
+                prev.map((x, idx) =>
+                  idx === i
+                    ? { ...x, kind: e.target.value as (typeof SYSTEM_NODE_KINDS)[number] }
+                    : x,
+                ),
+              )
+            }
+          >
+            {SYSTEM_NODE_KINDS.map((k) => (
+              <option key={k} value={k}>
+                {k}
+              </option>
+            ))}
+          </select>
+          <TagInput
+            placeholder="Responsabilidades (coma)"
+            className="flex-1"
+            value={n.responsibilities}
+            onChange={(val) =>
+              setNodes((prev) =>
+                prev.map((x, idx) => (idx === i ? { ...x, responsibilities: val } : x)),
+              )
+            }
+          />
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            type="button"
+            onClick={() => setNodes((prev) => prev.filter((_, idx) => idx !== i))}
+            className="mt-1 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            aria-label={`Eliminar nodo ${i + 1}`}
+          >
+            <Trash2 className="size-3.5" />
+          </Button>
+        </div>
+      ))}
+      <Button
+        variant="outline"
+        size="sm"
+        type="button"
+        onClick={() =>
+          setNodes((prev) => [...prev, { name: '', kind: 'RUNTIME', responsibilities: '' }])
+        }
+        className="self-start text-muted-foreground"
+      >
+        <Plus className="mr-2 size-4" /> Agregar nodo
+      </Button>
+
+      <fieldset className="rounded-md border border-border p-2">
+        <legend className="px-1 text-sm font-medium text-foreground/80">
+          Enlaces de comunicación (opcional)
+        </legend>
+        {links.map((link, li) => (
+          <div key={li} className="mb-1 flex flex-wrap items-center gap-2 text-sm">
+            <select
+              aria-label={`Nodo origen del enlace ${li + 1}`}
+              className="rounded-md border border-input px-2 py-1"
+              value={link.fromLocalId}
+              onChange={(e) =>
+                setLinks((prev) =>
+                  prev.map((l, i) => (i === li ? { ...l, fromLocalId: e.target.value } : l)),
+                )
+              }
+            >
+              <option value="">Nodo origen…</option>
+              {nodes.map((n, i) => (
+                <option key={ids[i]} value={ids[i]}>
+                  {n.name || ids[i]}
+                </option>
+              ))}
+            </select>
+            <span>→</span>
+            <select
+              aria-label={`Nodo destino del enlace ${li + 1}`}
+              className="rounded-md border border-input px-2 py-1"
+              value={link.toLocalId}
+              onChange={(e) =>
+                setLinks((prev) =>
+                  prev.map((l, i) => (i === li ? { ...l, toLocalId: e.target.value } : l)),
+                )
+              }
+            >
+              <option value="">Nodo destino…</option>
+              {nodes.map((n, i) => (
+                <option key={ids[i]} value={ids[i]}>
+                  {n.name || ids[i]}
+                </option>
+              ))}
+            </select>
+            <input
+              placeholder="protocolo (opcional)"
+              className="w-32 rounded-md border border-input px-2 py-1"
+              value={link.protocol}
+              onChange={(e) =>
+                setLinks((prev) =>
+                  prev.map((l, i) => (i === li ? { ...l, protocol: e.target.value } : l)),
+                )
+              }
+            />
+            <input
+              placeholder="descripción (opcional)"
+              className="flex-1 rounded-md border border-input px-2 py-1"
+              value={link.description}
+              onChange={(e) =>
+                setLinks((prev) =>
+                  prev.map((l, i) => (i === li ? { ...l, description: e.target.value } : l)),
+                )
+              }
+            />
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              type="button"
+              onClick={() => setLinks((prev) => prev.filter((_, i) => i !== li))}
+              className="mt-1 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              aria-label={`Eliminar enlace ${li + 1}`}
+            >
+              <Trash2 className="size-3.5" />
+            </Button>
+          </div>
+        ))}
+        <Button
+          variant="outline"
+          size="sm"
+          type="button"
+          onClick={() =>
+            setLinks((prev) => [
+              ...prev,
+              { fromLocalId: '', toLocalId: '', protocol: '', description: '' },
+            ])
+          }
+          className="self-start text-muted-foreground"
+        >
+          <Plus className="mr-2 size-4" /> Agregar enlace
+        </Button>
+      </fieldset>
+    </ManualFormShell>
+  );
+}
+
+export function UiBlueprintManualForm({ projectId, initial, onCreated, onCancel }: FormProps) {
+  const c0 = initial?.content as UiBlueprintContent | undefined;
+  const [title, setTitle] = useState(initial?.title ?? '');
+  const [screens, setScreens] = useState<
+    {
+      localId?: string;
+      name: string;
+      purpose: string;
+      targetActors: string;
+      relatedUseCaseCodes: string;
+      navigationNodeLocalId: string;
+      sections: string;
+      primaryActions: string;
+      secondaryActions: string;
+      principalData: string;
+      forms: string;
+      states: string;
+    }[]
+  >(
+    c0?.screens.map((s) => ({
+      localId: s.localId,
+      name: s.name,
+      purpose: s.purpose,
+      targetActors: s.targetActors.join(', '),
+      relatedUseCaseCodes: s.relatedUseCaseCodes.join(', '),
+      navigationNodeLocalId: s.navigationNodeLocalId ?? '',
+      sections: s.sections.join(', '),
+      primaryActions: s.primaryActions.join(', '),
+      secondaryActions: s.secondaryActions.join(', '),
+      principalData: s.principalData.join(', '),
+      forms: s.forms.join(', '),
+      states: s.states.join(', '),
+    })) ?? [
+      {
+        name: '',
+        purpose: '',
+        targetActors: '',
+        relatedUseCaseCodes: '',
+        navigationNodeLocalId: '',
+        sections: '',
+        primaryActions: '',
+        secondaryActions: '',
+        principalData: '',
+        forms: '',
+        states: '',
+      },
+    ],
+  );
+  const [submitting, setSubmitting] = useState(false);
+  const ids = screens.map((s, i) => rowId(s, 's', i));
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      await save(projectId, 'UI_BLUEPRINT', initial, title, {
+        screens: screens.map((s, i) => ({
+          localId: ids[i],
+          name: s.name,
+          purpose: s.purpose,
+          targetActors: csv(s.targetActors),
+          relatedUseCaseCodes: csv(s.relatedUseCaseCodes),
+          navigationNodeLocalId: s.navigationNodeLocalId || undefined,
+          sections: csv(s.sections),
+          primaryActions: csv(s.primaryActions),
+          secondaryActions: csv(s.secondaryActions),
+          principalData: csv(s.principalData),
+          forms: csv(s.forms),
+          states: csv(s.states),
+        })),
+      });
+      onCreated();
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError ? err.message : 'No se pudo guardar el plano de interfaz.',
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <ManualFormShell
+      title={initial ? `Editar ${initial.code}` : 'Nuevo plano de interfaz'}
+      onSubmit={handleSubmit}
+      submitting={submitting}
+      editing={Boolean(initial)}
+      onCancel={onCancel}
+    >
+      <input
+        required
+        placeholder="Título"
+        className="rounded-md border border-input px-2 py-1 text-sm"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+      />
+      {screens.map((s, i) => (
+        <div key={i} className="flex flex-col gap-2 rounded-md border border-border p-2 text-sm">
+          <div className="flex flex-wrap gap-2">
+            <input
+              required
+              placeholder="Nombre de pantalla"
+              className="w-40 rounded-md border border-input px-2 py-1"
+              value={s.name}
+              onChange={(e) =>
+                setScreens((prev) =>
+                  prev.map((x, idx) => (idx === i ? { ...x, name: e.target.value } : x)),
+                )
+              }
+            />
+            <TagInput
+              placeholder="Actores objetivo (coma)"
+              className="w-48"
+              value={s.targetActors}
+              onChange={(val) =>
+                setScreens((prev) =>
+                  prev.map((x, idx) => (idx === i ? { ...x, targetActors: val } : x)),
+                )
+              }
+            />
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              type="button"
+              onClick={() => setScreens((prev) => prev.filter((_, idx) => idx !== i))}
+              className="mt-1 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              aria-label={`Eliminar pantalla ${i + 1}`}
+            >
+              <Trash2 className="size-3.5" />
+            </Button>
+          </div>
+          <textarea
+            required
+            placeholder="Propósito de la pantalla"
+            rows={2}
+            className="rounded-md border border-input px-2 py-1"
+            value={s.purpose}
+            onChange={(e) =>
+              setScreens((prev) =>
+                prev.map((x, idx) => (idx === i ? { ...x, purpose: e.target.value } : x)),
+              )
+            }
+          />
+          <div className="flex flex-wrap gap-2">
+            <TagInput
+              placeholder="Casos de uso relacionados (códigos, coma)"
+              className="flex-1"
+              value={s.relatedUseCaseCodes}
+              onChange={(val) =>
+                setScreens((prev) =>
+                  prev.map((x, idx) => (idx === i ? { ...x, relatedUseCaseCodes: val } : x)),
+                )
+              }
+            />
+            <input
+              placeholder="Nodo de navegación relacionado (opcional)"
+              className="flex-1 rounded-md border border-input px-2 py-1"
+              value={s.navigationNodeLocalId}
+              onChange={(e) =>
+                setScreens((prev) =>
+                  prev.map((x, idx) =>
+                    idx === i ? { ...x, navigationNodeLocalId: e.target.value } : x,
+                  ),
+                )
+              }
+            />
+          </div>
+          <TagInput
+            placeholder="Secciones (separadas por coma)"
+            value={s.sections}
+            onChange={(val) =>
+              setScreens((prev) => prev.map((x, idx) => (idx === i ? { ...x, sections: val } : x)))
+            }
+          />
+          <div className="flex flex-wrap gap-2">
+            <TagInput
+              placeholder="Acciones principales (coma)"
+              className="flex-1"
+              value={s.primaryActions}
+              onChange={(val) =>
+                setScreens((prev) =>
+                  prev.map((x, idx) => (idx === i ? { ...x, primaryActions: val } : x)),
+                )
+              }
+            />
+            <TagInput
+              placeholder="Acciones secundarias (coma)"
+              className="flex-1"
+              value={s.secondaryActions}
+              onChange={(val) =>
+                setScreens((prev) =>
+                  prev.map((x, idx) => (idx === i ? { ...x, secondaryActions: val } : x)),
+                )
+              }
+            />
+          </div>
+          <TagInput
+            placeholder="Datos mostrados (separados por coma)"
+            value={s.principalData}
+            onChange={(val) =>
+              setScreens((prev) =>
+                prev.map((x, idx) => (idx === i ? { ...x, principalData: val } : x)),
+              )
+            }
+          />
+          <div className="flex flex-wrap gap-2">
+            <TagInput
+              placeholder="Formularios/entradas (coma)"
+              className="flex-1"
+              value={s.forms}
+              onChange={(val) =>
+                setScreens((prev) => prev.map((x, idx) => (idx === i ? { ...x, forms: val } : x)))
+              }
+            />
+            <TagInput
+              placeholder="Estados relevantes (coma)"
+              className="flex-1"
+              value={s.states}
+              onChange={(val) =>
+                setScreens((prev) => prev.map((x, idx) => (idx === i ? { ...x, states: val } : x)))
+              }
+            />
+          </div>
+        </div>
+      ))}
+      <Button
+        variant="outline"
+        size="sm"
+        type="button"
+        onClick={() =>
+          setScreens((prev) => [
+            ...prev,
+            {
+              name: '',
+              purpose: '',
+              targetActors: '',
+              relatedUseCaseCodes: '',
+              navigationNodeLocalId: '',
+              sections: '',
+              primaryActions: '',
+              secondaryActions: '',
+              principalData: '',
+              forms: '',
+              states: '',
+            },
+          ])
+        }
+        className="self-start text-muted-foreground"
+      >
+        <Plus className="mr-2 size-4" /> Agregar pantalla
+      </Button>
+    </ManualFormShell>
+  );
+}

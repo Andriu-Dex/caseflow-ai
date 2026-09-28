@@ -1,1 +1,119 @@
 @import 'tailwindcss';
+@source '../../../packages/ui/src';
+
+@custom-variant dark (&:is(.dark *));
+
+@keyframes mockup-progress-indeterminate {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(410%);
+  }
+}
+
+.mockup-progress-indeterminate {
+  animation: mockup-progress-indeterminate 1.7s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mockup-progress-indeterminate {
+    animation: none;
+    transform: translateX(100%);
+  }
+}
+
+:root {
+  --radius: 0.75rem;
+  --background: oklch(0.93 0.009 265);
+  --foreground: oklch(0.21 0.02 265);
+  --card: oklch(0.985 0.004 265);
+  --card-foreground: oklch(0.21 0.02 265);
+  --popover: oklch(0.985 0.004 265);
+  --popover-foreground: oklch(0.21 0.02 265);
+  --primary: oklch(0.511 0.22 273);
+  --primary-foreground: oklch(0.98 0.005 265);
+  --secondary: oklch(0.89 0.012 265);
+  --secondary-foreground: oklch(0.3 0.04 270);
+  --muted: oklch(0.895 0.011 265);
+  --muted-foreground: oklch(0.46 0.02 265);
+  --accent: oklch(0.88 0.035 273);
+  --accent-foreground: oklch(0.4 0.14 273);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.83 0.012 265);
+  --input: oklch(0.8 0.012 265);
+  --ring: oklch(0.6 0.14 273);
+  --sidebar: oklch(0.19 0.035 268);
+  --sidebar-foreground: oklch(0.9 0.015 265);
+  --sidebar-active: oklch(0.511 0.22 273);
+  --sidebar-border: oklch(0.28 0.03 268);
+}
+
+.dark {
+  --background: oklch(0.12 0.01 265);
+  --foreground: oklch(0.95 0.005 265);
+  --card: oklch(0.16 0.015 265);
+  --card-foreground: oklch(0.95 0.005 265);
+  --popover: oklch(0.16 0.015 265);
+  --popover-foreground: oklch(0.95 0.005 265);
+  --primary: oklch(0.65 0.2 265);
+  --primary-foreground: oklch(0.98 0.005 265);
+  --secondary: oklch(0.26 0.02 265);
+  --secondary-foreground: oklch(0.98 0.005 265);
+  --muted: oklch(0.2 0.02 265);
+  --muted-foreground: oklch(0.7 0.02 265);
+  --accent: oklch(0.26 0.02 265);
+  --accent-foreground: oklch(0.98 0.005 265);
+  --destructive: oklch(0.55 0.2 27);
+  --border: oklch(0.35 0.02 265);
+  --input: oklch(0.35 0.02 265);
+  --ring: oklch(0.65 0.2 265);
+  --sidebar: oklch(0.22 0.02 265);
+  --sidebar-foreground: oklch(0.98 0.005 265);
+  --sidebar-active: oklch(0.65 0.2 265);
+  --sidebar-border: oklch(0.35 0.02 265);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-active: var(--sidebar-active);
+  --color-sidebar-border: var(--sidebar-border);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  /* Fix native inputs blending into cards in dark mode by default */
+  input:not([type='checkbox']):not([type='radio']):not([type='submit']):not([type='button']),
+  textarea,
+  select {
+    @apply bg-transparent dark:bg-input/30;
+  }
+}

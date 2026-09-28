@@ -16,5 +16,8 @@
   "scripts": {
     "build": "tsc --build",
     "typecheck": "tsc --noEmit --pretty"
+  },
+  "dependencies": {
+    "zod": "4.6.5"
   }
 }
