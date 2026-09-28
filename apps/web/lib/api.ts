@@ -3,6 +3,8 @@ import type {
   DataModelResponse,
   DiagramResponse,
   FirstDeliverableExport,
+  MockupDeviceType,
+  MockupJobResponse,
   MockupPreviewResponse,
   MockupResponse,
   ProjectContextCandidate,
@@ -362,11 +364,22 @@ export const api = {
       ),
   },
   mockups: {
+    downloadAllUrl: (projectId: string, mockupId: string) =>
+      `${BASE_URL}/projects/${projectId}/mockups/${mockupId}/screens/download`,
+    screenImageUrl: (projectId: string, mockupId: string, screenId: string) =>
+      `${BASE_URL}/projects/${projectId}/mockups/${mockupId}/screens/${screenId}/image`,
+    screenHtmlUrl: (projectId: string, mockupId: string, screenId: string) =>
+      `${BASE_URL}/projects/${projectId}/mockups/${mockupId}/screens/${screenId}/html`,
     list: (projectId: string) => get<{ items: MockupResponse[] }>(`/projects/${projectId}/mockups`),
     getPreview: (projectId: string, id: string) =>
       get<MockupPreviewResponse>(`/projects/${projectId}/mockups/${id}/preview`),
-    create: (projectId: string, uiBlueprintVersionId: string) =>
-      post<MockupResponse>(`/projects/${projectId}/mockups`, { uiBlueprintVersionId }),
+    create: (projectId: string, uiBlueprintVersionId: string, deviceType: MockupDeviceType) =>
+      post<MockupJobResponse>(`/projects/${projectId}/mockups`, {
+        uiBlueprintVersionId,
+        deviceType,
+      }),
+    getJob: (projectId: string, jobId: string) =>
+      get<MockupJobResponse>(`/projects/${projectId}/mockups/jobs/${jobId}`),
     transition: (projectId: string, id: string, versionId: string, status: ArtifactVersionStatus) =>
       post(`/projects/${projectId}/mockups/${id}/versions/${versionId}/transition`, { status }),
   },

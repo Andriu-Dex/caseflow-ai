@@ -3,6 +3,7 @@ import { PrismaService } from '../database/prisma.service';
 import { DataModelsService } from '../data-models/data-models.service';
 import { FirstDeliverableSnapshotService } from '../first-deliverable/first-deliverable-snapshot.service';
 import { MockupsService } from '../mockups/mockups.service';
+import type { FirstDeliverableExport } from '@caseflow-ai/contracts';
 import { ProjectContextService } from '../project-context/project-context.service';
 import { ReadinessService } from '../readiness/readiness.service';
 import { RequirementsService } from '../requirements/requirements.service';
@@ -34,6 +35,21 @@ export class ExportService {
     private readonly staleness: StalenessService,
     private readonly traceability: TraceabilityService,
   ) {}
+
+  async mockupImageDataUrls(snapshot: FirstDeliverableExport): Promise<Map<string, string>> {
+    const images = new Map<string, string>();
+    for (const mockup of snapshot.mockups) {
+      for (const screen of mockup.screens ?? []) {
+        const image = await this.mockups.downloadScreenImage(
+          snapshot.projectId,
+          mockup.id,
+          screen.id,
+        );
+        images.set(screen.id, `data:${image.contentType};base64,${image.body.toString('base64')}`);
+      }
+    }
+    return images;
+  }
 
   async buildSnapshot(projectId: string) {
     const project = await this.prisma.project.findUnique({

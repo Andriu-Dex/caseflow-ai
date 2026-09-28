@@ -52,8 +52,18 @@ describe('Mockups integration', () => {
   });
   afterAll(async () => ctx.close());
 
+  // Mirrors what apps/worker does after popping the job off the queue: run
+  // it, then fetch the artifact it produced.
+  async function createAndGet(pid: string, blueprintVersionId: string) {
+    const job = await ctx.mockups.create(pid, blueprintVersionId);
+    await ctx.mockups.runJob(job.id);
+    const finished = await ctx.mockups.getJob(pid, job.id);
+    expect(finished.status).toBe('COMPLETED');
+    return ctx.mockups.get(pid, finished.resultArtifactId!);
+  }
+
   it('creates a SYSTEM_GENERATED mockup from an approved UI Blueprint with a safe deterministic preview', async () => {
-    const mockup = await ctx.mockups.create(projectId, approvedBlueprintVersionId);
+    const mockup = await createAndGet(projectId, approvedBlueprintVersionId);
     expect(mockup).toMatchObject({
       code: 'MCK-001',
       uiBlueprintVersionId: approvedBlueprintVersionId,
@@ -84,8 +94,12 @@ describe('Mockups integration', () => {
   });
 
   it('creates a new mockup version and enforces stage-gated approval', async () => {
-    const mockup = await ctx.mockups.create(projectId, approvedBlueprintVersionId);
-    const versioned = await ctx.mockups.version(projectId, mockup.id, approvedBlueprintVersionId);
+    const mockup = await createAndGet(projectId, approvedBlueprintVersionId);
+    const job = await ctx.mockups.version(projectId, mockup.id, approvedBlueprintVersionId);
+    await ctx.mockups.runJob(job.id);
+    const finished = await ctx.mockups.getJob(projectId, job.id);
+    expect(finished.status).toBe('COMPLETED');
+    const versioned = await ctx.mockups.get(projectId, finished.resultArtifactId!);
     expect(versioned.version.versionNumber).toBe(2);
 
     await expect(
@@ -108,7 +122,7 @@ describe('Mockups integration', () => {
   });
 
   it('never exposes a mockup or its preview through another project', async () => {
-    const mockup = await ctx.mockups.create(projectId, approvedBlueprintVersionId);
+    const mockup = await createAndGet(projectId, approvedBlueprintVersionId);
     const workspace = await createWorkspace(ctx.prisma, 'Isolation Mockups');
     const otherProjectId = (await ctx.projects.create({ workspaceId: workspace.id, name: 'Other' }))
       .id;

@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 export { loadDiagramRendererConfig } from './diagram-config';
 export type { DiagramRendererConfig } from './diagram-config';
+export { loadMockupConfig } from './mockup-config';
+export type { MockupProviderConfig } from './mockup-config';
 export { loadStorageConfig } from './storage-config';
 export type { StorageConfig } from './storage-config';
 

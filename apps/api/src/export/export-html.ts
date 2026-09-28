@@ -78,7 +78,10 @@ interface Section {
   body: string;
 }
 
-export function renderExportHtml(data: FirstDeliverableExport): string {
+export function renderExportHtml(
+  data: FirstDeliverableExport,
+  mockupImages = new Map<string, string>(),
+): string {
   const sections: Section[] = [];
   const add = (id: string, title: string, body: string) => sections.push({ id, title, body });
 
@@ -302,7 +305,16 @@ export function renderExportHtml(data: FirstDeliverableExport): string {
     'Bocetos',
     data.mockups.length
       ? data.mockups
-          .map((m) => `<figure>${m.svg}<figcaption>Boceto ${e(m.code)}</figcaption></figure>`)
+          .map((m) =>
+            m.generatorKind === 'INTERNAL_WIREFRAME'
+              ? `<figure>${m.svg ?? ''}<figcaption>Boceto ${e(m.code)}</figcaption></figure>`
+              : (m.screens ?? [])
+                  .map(
+                    (screen) =>
+                      `<figure><img src="${e(mockupImages.get(screen.id))}" alt="${e(screen.screenName)}"/><figcaption>Boceto ${e(m.code)}: ${e(screen.screenName)}</figcaption></figure>`,
+                  )
+                  .join(''),
+          )
           .join('')
       : '<p class="muted">Aún no hay bocetos aprobados.</p>',
   );
