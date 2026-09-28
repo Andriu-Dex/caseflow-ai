@@ -1,11 +1,105 @@
 'use client';
 
-import { Code2, Download, Maximize2, Pencil, X } from 'lucide-react';
+import { Code2, Download, Maximize2, Pencil, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { Button } from '@caseflow-ai/ui';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { ApiError } from '../lib/api';
 import { TrustedDiagram } from './trusted-svg';
+
+// Same wheel-zoom/drag-to-pan interaction as MockupScreenDialog
+// (apps/web/app/design/mockups/page.tsx) — reused here so every diagram
+// viewer in the product behaves the same way, not a second implementation.
+function ZoomableDiagram({ svg, caption }: { svg: string; caption?: string }) {
+  const [zoom, setZoom] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const dragStart = useRef<{ x: number; y: number; offsetX: number; offsetY: number } | null>(null);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div
+        className={`overflow-hidden rounded-lg ${zoom > 1 ? 'cursor-grab touch-none active:cursor-grabbing' : 'touch-pan-y'}`}
+        onPointerDown={(event) => {
+          if (zoom <= 1 || event.button !== 0) return;
+          dragStart.current = {
+            x: event.clientX,
+            y: event.clientY,
+            offsetX: offset.x,
+            offsetY: offset.y,
+          };
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerMove={(event) => {
+          if (!dragStart.current) return;
+          setOffset({
+            x: dragStart.current.offsetX + event.clientX - dragStart.current.x,
+            y: dragStart.current.offsetY + event.clientY - dragStart.current.y,
+          });
+        }}
+        onPointerUp={() => {
+          dragStart.current = null;
+        }}
+        onPointerCancel={() => {
+          dragStart.current = null;
+        }}
+        onWheel={(event) => {
+          event.preventDefault();
+          const next = Math.min(4, Math.max(1, zoom + (event.deltaY < 0 ? 0.25 : -0.25)));
+          setZoom(next);
+          if (next === 1) setOffset({ x: 0, y: 0 });
+        }}
+        aria-label="Vista ampliable: use la rueda para acercar y arrastre para desplazarse"
+      >
+        <div
+          className="origin-top-left transition-transform duration-100"
+          style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})` }}
+        >
+          <TrustedDiagram svg={svg} caption={caption} />
+        </div>
+      </div>
+      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+        <Button
+          type="button"
+          variant="outline"
+          size="icon-sm"
+          aria-label="Alejar"
+          disabled={zoom <= 1}
+          onClick={() => {
+            const next = Math.max(1, zoom - 0.25);
+            setZoom(next);
+            if (next === 1) setOffset({ x: 0, y: 0 });
+          }}
+        >
+          <ZoomOut aria-hidden="true" className="size-4" />
+        </Button>
+        <span className="min-w-12 text-center">{Math.round(zoom * 100)}%</span>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon-sm"
+          aria-label="Acercar"
+          disabled={zoom >= 4}
+          onClick={() => setZoom((current) => Math.min(4, current + 0.25))}
+        >
+          <ZoomIn aria-hidden="true" className="size-4" />
+        </Button>
+        {zoom > 1 ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setZoom(1);
+              setOffset({ x: 0, y: 0 });
+            }}
+          >
+            Restablecer
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 const SOURCE_EXTENSION: Record<string, string> = {
   MERMAID_ER: 'mmd',
@@ -87,7 +181,7 @@ export function DiagramViewer({
 
   return (
     <div className="flex flex-col gap-2">
-      <TrustedDiagram svg={svg} caption={caption} />
+      <ZoomableDiagram key={svg} svg={svg} caption={caption} />
       <div className="flex flex-wrap gap-2 text-sm">
         <Button
           variant="ghost"
@@ -205,8 +299,8 @@ export function DiagramViewer({
             <X className="size-3.5" aria-hidden="true" />
             Cerrar
           </Button>
-          <div className="flex flex-1 items-center justify-center">
-            <TrustedDiagram svg={svg} caption={caption} />
+          <div className="flex flex-1 items-center justify-center overflow-hidden">
+            <ZoomableDiagram key={svg} svg={svg} caption={caption} />
           </div>
         </div>
       ) : null}
