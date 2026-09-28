@@ -2,7 +2,7 @@
 
 import { Code2, Download, Maximize2, Pencil, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { Button } from '@caseflow-ai/ui';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { ApiError } from '../lib/api';
 import { TrustedDiagram } from './trusted-svg';
@@ -15,18 +15,44 @@ const ZOOM_STEP = 0.25;
 // (apps/web/app/design/mockups/page.tsx) — reused here so every diagram
 // viewer in the product behaves the same way, not a second implementation.
 // Unlike the mockup viewer, this one also allows zooming out below 100%
-// (large traceability graphs benefit from shrinking to see the whole shape).
+// (large traceability graphs benefit from shrinking to see the whole shape),
+// and panning is always available (not gated to zoom > 1): a diagram this
+// wide can overflow its box at 100% zoom too.
 function ZoomableDiagram({ svg, caption }: { svg: string; caption?: string }) {
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
   const dragStart = useRef<{ x: number; y: number; offsetX: number; offsetY: number } | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // React attaches wheel listeners as passive by default, so an onWheel prop
+  // can't reliably call preventDefault() — the page scrolls underneath while
+  // this also zooms. A native listener registered with { passive: false } is
+  // the only way to actually stop the page scroll here.
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return;
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const next = Math.min(
+        MAX_ZOOM,
+        Math.max(MIN_ZOOM, zoomRef.current + (event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP)),
+      );
+      setZoom(next);
+      if (next <= 1) setOffset({ x: 0, y: 0 });
+    };
+    node.addEventListener('wheel', handleWheel, { passive: false });
+    return () => node.removeEventListener('wheel', handleWheel);
+  }, []);
 
   return (
     <div className="flex flex-col gap-2">
       <div
-        className={`overflow-hidden rounded-lg ${zoom > 1 ? 'cursor-grab touch-none active:cursor-grabbing' : 'touch-pan-y'}`}
+        ref={containerRef}
+        className="cursor-grab touch-none overflow-hidden rounded-lg border border-border bg-card p-4 active:cursor-grabbing"
         onPointerDown={(event) => {
-          if (zoom <= 1 || event.button !== 0) return;
+          if (event.button !== 0) return;
           dragStart.current = {
             x: event.clientX,
             y: event.clientY,
@@ -48,19 +74,10 @@ function ZoomableDiagram({ svg, caption }: { svg: string; caption?: string }) {
         onPointerCancel={() => {
           dragStart.current = null;
         }}
-        onWheel={(event) => {
-          event.preventDefault();
-          const next = Math.min(
-            MAX_ZOOM,
-            Math.max(MIN_ZOOM, zoom + (event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP)),
-          );
-          setZoom(next);
-          if (next <= 1) setOffset({ x: 0, y: 0 });
-        }}
         aria-label="Vista ampliable: use la rueda para acercar y arrastre para desplazarse"
       >
         <div
-          className="origin-top-left transition-transform duration-100"
+          className="origin-top-left transition-transform duration-100 [&_figure]:m-0 [&_figure]:overflow-visible [&_figure]:border-0 [&_figure]:bg-transparent [&_figure]:p-0"
           style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})` }}
         >
           <TrustedDiagram svg={svg} caption={caption} />
