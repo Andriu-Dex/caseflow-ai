@@ -282,6 +282,7 @@ describe('MockupsService', () => {
   it('downloads only a screen scoped to the requested mockup', async () => {
     const { service, prisma, storage } = setup();
     const screen = {
+      screenName: 'Inicio',
       imageStorageKey: 'mockups/project/image.png',
       imageContentType: 'image/png',
       htmlStorageKey: 'mockups/project/page.html',
@@ -300,6 +301,7 @@ describe('MockupsService', () => {
     await expect(service.downloadScreenImage('project', 'artifact', 'screen-id')).resolves.toEqual({
       body: Buffer.from('image'),
       contentType: 'image/png',
+      fileName: 'inicio.png',
     });
     await expect(service.downloadScreenHtml('project', 'artifact', 'screen-id')).resolves.toEqual({
       body: Buffer.from('html'),

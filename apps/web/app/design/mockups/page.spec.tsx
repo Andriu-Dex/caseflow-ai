@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   listMockups: vi.fn(),
   getPreview: vi.fn(),
   listBlueprints: vi.fn(),
+  downloadAllUrl: vi.fn((projectId: string, mockupId: string) => `/${projectId}/${mockupId}.zip`),
   screenImageUrl: vi.fn(
     (projectId: string, mockupId: string, screenId: string) =>
       `/${projectId}/${mockupId}/${screenId}.png`,
@@ -23,6 +24,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../../lib/api', () => ({
   api: {
     mockups: {
+      downloadAllUrl: mocks.downloadAllUrl,
       list: (...args: unknown[]) => mocks.listMockups(...args),
       getPreview: (...args: unknown[]) => mocks.getPreview(...args),
       screenImageUrl: mocks.screenImageUrl,
