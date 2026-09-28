@@ -355,6 +355,7 @@ Una versión debe poder indicar:
 - `MANUAL`
 - `AI_GENERATED`
 - `AI_ASSISTED`
+- `SYSTEM_GENERATED` (derivado determinísticamente por CASEFlow, sin autoría manual ni IA — p. ej. el diagrama de casos de uso; Incremento 1F.1, §218.8)
 - `IMPORTED`
 
 ## 6.4 Artefacto vs vista
@@ -6352,6 +6353,8 @@ Release Candidate
 
 P0 anterior incompleto tiene prioridad sobre P1/P2 posterior.
 
+> **Nota de priorización (DEC-115):** el orden anterior describe el orden de dependencias a largo plazo. La planificación inmediata de calendario fue reordenada alrededor del **Primer Entregable Funcional (First Deliverable MVP)**. Ver §217–§219. Ningún elemento de este roadmap fue eliminado; Identity, Workspace, RBAC, Knowledge Base, RAG, Construction y Code Generation fueron repriorizados, no cancelados.
+
 ---
 
 # 181. Incremento 0 — Foundation
@@ -6415,9 +6418,13 @@ Gate:
 - usuario no autorizado no accede;
 - aislamiento probado.
 
+> **Nota de priorización (DEC-115):** este incremento **no** es el siguiente en el calendario inmediato. Su implementación completa (registration, login, sesiones, memberships, RBAC) queda diferida hasta después del Primer Entregable (§218, Incremento 1J). El Incremento 1A introduce únicamente la relación estructural mínima `Workspace → Project` para no contradecir este modelo.
+
 ---
 
 # 183. Incremento 2 — Artifact Core
+
+> **Nota de priorización (DEC-115):** la base de identidad/versión de `Artifact` y `ArtifactVersion` se adelanta en el Incremento 1A (§218). Este incremento conserva el alcance restante: ReviewRequest, ReviewDecision, approval, archive, audit y edición de borradores.
 
 Implementar:
 
@@ -7222,6 +7229,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-112 | Un GeneratedProject válido debe pasar install, lint, typecheck, test y build | Accepted |
 | DEC-113 | V1 no implementará sincronización bidireccional automática de cambios externos del código generado | Accepted |
 | DEC-114 | La generalidad de Construction se validará generando software en al menos dos dominios distintos | Accepted |
+| DEC-115 | El calendario inmediato se repriorizó alrededor del Primer Entregable Funcional (§217–§219); Identity/Workspace/RBAC, Knowledge Base, RAG y Construction se difieren, no se cancelan. Supera solo la priorización de calendario de §180 y §182 | Accepted |
 
 ---
 
@@ -7324,3 +7332,334 @@ README.md
 - prohibición de one-shot generation;
 - reglas de snapshot/regeneración;
 - Definition of Done del proyecto generado.
+
+---
+
+# 217. Primer Entregable Funcional (First Deliverable MVP)
+
+El instructor del curso aclaró el primer entregable funcional exigido. Las actividades de planificación y gestión del proyecto siguen siendo documentación principalmente elaborada por el equipo; **a partir de Análisis de Requisitos, el software CASEFlow AI mismo debe generar los artefactos CASE solicitados**.
+
+## 217.1 Alcance
+
+El primer entregable funcional académico requiere que el software produzca:
+
+- requisitos funcionales (RF) y no funcionales (RNF);
+- casos de uso estructurados (mínimo cuatro para el entregable académico);
+- representación del modelo de casos de uso (diagrama);
+- modelo de datos (ER o clases);
+- árbol de navegación;
+- arquitectura de software;
+- arquitectura de sistema;
+- UI Blueprint;
+- bocetos/mockups;
+- revisión y edición humana;
+- persistencia y versionamiento;
+- trazabilidad básica.
+
+## 217.2 Actividades fuera del núcleo P0 de generación
+
+La planificación del proyecto (Gantt, PERT y afines) y la reflexión/evidencia del equipo permanecen como actividades académicas **elaboradas por el equipo**. No forman parte de la generación P0 de CASEFlow AI.
+
+## 217.3 Relación con el resto de la especificación
+
+- El First Deliverable MVP **no reemplaza** la visión V1 de §1–§216; la reordena en el calendario.
+- Se mantienen íntegramente las reglas de human-in-the-loop, artefactos estructurados y versionados, fuente canónica sobre render, aislamiento por proyecto y funcionamiento sin IA.
+- La IA que genere artefactos en este entregable debe seguir el flujo `AI Output → Schema Validation → Domain Validation → Candidate → Human Review → Official Artifact` (DEC-025). Cada artefacto debe poder crearse y editarse manualmente (DEC-028, DEC-078).
+- La generación de código y el resto de Construction siguen siendo P0 de V1 (DEC-084), pero quedan posteriores al primer entregable.
+
+---
+
+# 218. Roadmap inmediato reordenado — Primer Entregable
+
+El siguiente orden gobierna el calendario inmediato. Cada incremento es un vertical slice y deja el repositorio ejecutable.
+
+| ID | Incremento | Alcance |
+|---|---|---|
+| 1A | Project + Artifact Foundation | `Workspace` y `Project` mínimos, `Artifact`, `ArtifactVersion`, tipos de artefacto controlados, ciclo de vida, migraciones, runtime Prisma y API mínima de persistencia. Sin generación. |
+| 1B | Project Context | Contexto del proyecto (objetivo, descripción, alcance) como base de la generación. |
+| 1C | AI Generation Foundation | `AIOrchestrator`, `ModelRouter`, gateway/provider, salida estructurada, candidatos y evidencia. |
+| 1D | Requirements | RF/RNF estructurados (§27), generación asistida y edición manual. |
+| 1E | Use Cases | Casos de uso estructurados (§28), mínimo cuatro. |
+| 1F | Data Model + Diagram Engine | Modelo de datos (ER/clases) y motor de diagramas (Mermaid), incluido el diagrama de casos de uso. |
+| 1G | Navigation + Architecture | Árbol de navegación, arquitectura de software y de sistema. |
+| 1H | UI Blueprint + Mockups | `UIBlueprint` canónico y bocetos/mockups con fallback interno. |
+| 1I | Traceability + Versions + Export | Trazabilidad básica, historial/comparación de versiones y exportación. |
+| 1J | First Deliverable Hardening | Estabilización, revisión humana de extremo a extremo y preparación de la entrega. |
+
+Tras el Incremento 1J se retoma el orden de dependencias de §180: Identity / Workspace / RBAC completos, Knowledge Base, RAG, Construction y Code Generation, sin cambios de alcance.
+
+## 218.3 Decisiones de implementación del Incremento 1C
+
+- La frontera inicial es `Feature → AIOrchestrator → AIProvider`; el router avanzado se difiere hasta que existan múltiples proveedores o reglas reales de selección.
+- `AI_PROVIDER=disabled` es el modo predeterminado y no requiere credenciales. El primer adapter es `openai_compatible`, implementado con `fetch` nativo y sin fallback ni reintentos automáticos.
+- Los prompts son definiciones inmutables y versionadas en código. El contenido de proyecto se transporta exclusivamente como mensajes de rol `user`, separado de las instrucciones de sistema.
+- La salida se valida con el esquema Zod entregado por el feature antes de producir un `ValidatedGenerationCandidate<T>`.
+- `ai_runs` conserva metadatos, hashes SHA-256 y procedencia opcional hacia la versión exacta de contexto; no conserva claves, encabezados de autorización ni payloads completos.
+- Incremento 1C no expone endpoints de generación y no persiste artefactos de producto.
+
+## 218.4 Decisiones de implementación del Incremento 1D
+
+- `REQUIREMENT` conserva la identidad genérica de artefacto; su subtipo versionado normaliza tipo, prioridad, actores, precondiciones, postcondiciones y dependencias.
+- `FUNCTIONAL` asigna códigos `RF`; `NON_FUNCTIONAL`, `RNF`. El cliente no controla prefijos.
+- `requirements.generate@1` produce hasta 20 candidatos estrictos desde una versión explícita de Project Context. Los candidatos se persisten separados de los artefactos oficiales.
+- La aceptación es transaccional: una dependencia hacia un candidato no seleccionado se rechaza; dependencias duplicadas, propias, cruzadas o cíclicas se rechazan.
+- La procedencia es `RequirementDetail → RequirementCandidate → RequirementGeneration → AIRun → Project Context ArtifactVersion` y también se conservan enlaces directos auditables.
+
+## 218.5 Decisiones de implementación del Incremento 1E
+
+- `USE_CASE` conserva la identidad genérica `Artifact` y el código estable `CU`; cada `ArtifactVersion` posee un snapshot relacional inmutable con nombre, objetivo, actor principal, actores secundarios ordenados, pre/postcondiciones, pasos del flujo principal y flujos alternativos con pasos.
+- Cada vínculo apunta a una versión exacta de `REQUIREMENT` del mismo proyecto. La generación acepta exclusivamente versiones `APPROVED`; la creación manual permite versiones válidas del mismo proyecto para conservar el trabajo determinístico sin IA.
+- `use-cases.generate@1` admite hasta 20 candidatos. Cada caso admite hasta 100 pasos principales, 25 flujos alternativos y 50 pasos por flujo alternativo. Las referencias emitidas deben pertenecer exactamente al conjunto de fuentes suministrado; una referencia inventada produce `AI_INVALID_OUTPUT` sin persistir candidatos.
+- La aceptación seleccionada es transaccional y crea `AI_GENERATED/GENERATED`. La procedencia es `UseCaseDetail → UseCaseCandidate → UseCaseGeneration → AIRun → use-cases.generate@1`, con `UseCaseCandidateSource/UseCaseGenerationSource → Requirement ArtifactVersion` para todas las fuentes exactas.
+- La validación académica informa si existen al menos cuatro casos de uso oficiales (`acceptedCount`, `minimumRequired=4`, `satisfied`). No restringe la cardinalidad del producto, no fabrica casos y no bloquea el flujo normal.
+- El diagrama de casos de uso se difiere al Incremento 1F. La acumulación Contexto → Requisitos → Casos de Uso ya justifica un próximo flujo frontend coordinado, pero 1E no introduce una interfaz provisional con identificadores hardcodeados.
+
+## 218.6 Compatibilidad con proveedores reales
+
+- La abstracción pública usa `maxOutputTokens` como presupuesto opcional, entero positivo y neutral al proveedor. Cada adapter lo traduce al campo de su protocolo; el adapter OpenAI-compatible usa `max_tokens`.
+- `requirements.generate@1` solicita 4096 tokens de salida y `use-cases.generate@1`, 8192. Los presupuestos pertenecen a cada feature y no al adapter reutilizable.
+- Para la validación actual de desarrollo, Groq es el proveedor directo de referencia, OmniRoute es el router de desarrollo y Cloudflare Workers AI es el proveedor estructurado de respaldo. Todos siguen siendo reemplazables mediante `AIProvider`; estas elecciones no constituyen dependencias permanentes del dominio.
+- Los tests y CI nunca requieren proveedores reales: ejecutan con `AI_PROVIDER=disabled`, `FakeAIProvider` o HTTP simulado. Las validaciones live son manuales y separadas.
+
+## 218.7 Decisiones de implementación del Incremento 1F
+
+- `DATA_MODEL` permite múltiples modelos conceptuales por proyecto y reutiliza `Artifact → ArtifactVersion`, con prefijo `MD`. El P0 es `ER`; una futura variante `CLASS` puede añadirse mediante `modelKind` sin alterar Artifact Core. Cada snapshot normaliza entidades, atributos y relaciones. Se admite una sola clave primaria conceptual por entidad; las claves compuestas se difieren hasta contar con un caso aprobado.
+- Los tipos conceptuales controlados son `STRING`, `TEXT`, `INTEGER`, `DECIMAL`, `BOOLEAN`, `DATE`, `DATETIME` y `UUID`. Las cardinalidades son `ONE`, `ZERO_OR_ONE`, `ONE_OR_MORE` y `ZERO_OR_MORE`. Límites: 60 entidades, 50 atributos por entidad, 150 relaciones, nombres de 120 caracteres, descripciones de entidad de 2000 y descripciones de atributo/relación de 1000.
+- `data-model.generate@1` recibe identificadores explícitos de versiones `APPROVED` de `REQUIREMENT` y `USE_CASE` del mismo proyecto. Usa `maxOutputTokens=12288`, suficiente para el payload estructurado máximo sin imponer un límite universal al orquestador. La salida persiste primero como `DataModelGeneration → DataModelCandidate`; solo la aceptación humana transaccional crea un `DATA_MODEL` `AI_GENERATED/GENERATED`.
+- La procedencia de generación es `DataModelDetail → DataModelCandidate → DataModelGeneration → AIRun → data-model.generate@1`, y `DataModelGenerationSource → ArtifactVersion` conserva todas las versiones exactas suministradas.
+- El motor determinístico separa modelo estructurado, generación de fuente y validación ligera de render. ER usa `MERMAID_ER`; UML de casos de uso usa `PLANTUML` porque conserva actores, asociaciones y límite de sistema sin degradarlos a flowchart. `DiagramEngine` nunca ejecuta Mermaid, PlantUML, shell ni texto de IA arbitrario; solo genera fuente determinística desde datos ya validados y aplica una validación local ligera (formato, tamaño). **Superseded por el Incremento 1F.1 (§218.8):** en 1F el render real todavía no existía — el "SVG" era una previsualización textual fija (`caseflow-svg-v1`) que mostraba la fuente escapada como texto monoespaciado, sin layout gráfico ni compatibilidad demostrada con motores oficiales.
+- Cada versión de `DATA_MODEL` conserva su fuente/render ER derivado y un vínculo a la misma versión estructurada. Cada generación de `USE_CASE_DIAGRAM` crea un Artifact/ArtifactVersion nuevo con prefijo `DIA` y vínculos exactos a versiones `APPROVED` de `USE_CASE`; no inventa relaciones include/extend. El SVG es derivado y nunca canónico.
+- La persistencia del SVG en `diagram_details` se acepta temporalmente para el Primer Entregable por su tamaño acotado y naturaleza determinística. La migración a `StorageProvider` se evaluará cuando existan exports/objetos binarios; la fuente estructurada y la versión del generador siguen siendo autoritativas.
+
+## 218.8 Decisiones de implementación del Incremento 1F.1 (Diagram Rendering Stabilization)
+
+- **Cadena oficial real.** `caseflow-svg-v1` (previsualización textual fija) deja de ser el render oficial. La cadena oficial pasa a ser: modelo/casos de uso estructurados → `DiagramEngine` (fuente determinística `MERMAID_ER`/`PLANTUML` + validación local ligera) → `DiagramProvider` (abstracción) → `KrokiDiagramProvider` (adapter HTTP hacia un Kroki local propio, `yuzutech/kroki:0.32.1` + `yuzutech/kroki-mermaid:0.32.1` para el motor Mermaid) → SVG real → saneamiento XML explícito → SVG confiable persistido/entregado. Ningún módulo de dominio/feature depende directamente de Kroki; solo lo hace el adapter en `packages/integrations`, detrás de `DiagramProvider`.
+- **Kroki es autoridad de compatibilidad.** El validador local de `DiagramEngine` sigue existiendo como filtro barato (formato/tamaño), pero ya no certifica compatibilidad Mermaid/PlantUML por sí mismo; una fuente malformada es rechazada por el propio Kroki (`HTTP 400` → `DIAGRAM_INVALID_SOURCE`).
+- **Nunca un endpoint público.** `KROKI_BASE_URL` proviene exclusivamente de configuración confiable de CASEFlow (`DIAGRAM_RENDERER`, `KROKI_BASE_URL`, `DIAGRAM_RENDER_TIMEOUT_MS`); el adapter solo acepta `MERMAID_ER`/`PLANTUML` internamente controlados, aplica timeout, cota de tamaño de fuente (heredada de `DiagramEngine.validate`) y cota de tamaño de respuesta (`5 MB`, aplicada en streaming).
+- **Saneamiento XML real.** El SVG devuelto por Kroki se trata como contenido derivado no confiable: se parsea como XML real (`fast-xml-parser@5.11.1`, nunca solo regex) y se reconstruye desde una lista explícita de etiquetas/atributos permitidos. `foreignObject` se conserva (Mermaid ER lo requiere para el layout de etiquetas) pero su contenido queda acotado a `div`/`span`/`p`/`br`; `script`, `iframe`, `object`, `embed`, `img`, `a`, `base`, `link`, atributos `href`/`src`/`on*` y valores `javascript:`/`url()` externos nunca sobreviven.
+- **Renderer deshabilitado por defecto en pruebas.** `DIAGRAM_RENDERER=disabled` (sin `KROKI_BASE_URL`) es el valor por defecto cuando la variable no está definida, de modo que arrancar sin infraestructura local nunca intenta una llamada saliente; solo un intento real de render falla (`DIAGRAM_NOT_CONFIGURED`). El desarrollo/producción normales configuran `DIAGRAM_RENDERER=kroki` (ver `.env.example`); las pruebas unitarias e de integración ordinarias usan `FakeDiagramProvider` sin red.
+- **Falla de render = ninguna escritura.** El render (y su saneamiento) ocurre siempre antes de abrir la transacción de escritura correspondiente (creación/versión manual de `DATA_MODEL`, aceptación de candidatos, generación de `USE_CASE_DIAGRAM`). Si falla, no se abre transacción y no se escribe ninguna fila: el dato estructural canónico nunca se destruye ni se marca con un SVG falso. La entrada manual es responsabilidad del cliente (reintentar la misma solicitud); los candidatos de IA ya persistidos en `generate()` permanecen disponibles para un nuevo intento de `accept()`.
+- **`SYSTEM_GENERATED`.** `ArtifactOrigin` gana un quinto valor aditivo (`MANUAL`, `AI_GENERATED`, `AI_ASSISTED`, `SYSTEM_GENERATED`, `IMPORTED`; spec §6.3) para artefactos derivados determinísticamente por CASEFlow sin autoría manual ni IA. El diagrama de casos de uso (`USE_CASE_DIAGRAM`) pasa de `MANUAL/GENERATED` a `SYSTEM_GENERATED/GENERATED`; ningún otro tipo de artefacto cambia de origen. `initialStatusForOrigin` trata `SYSTEM_GENERATED` igual que `AI_GENERATED` (arranca en `GENERATED`, nunca en `DRAFT`).
+- **Orden determinístico sin locale.** La generación de fuente PlantUML de casos de uso reemplaza `localeCompare` por comparación ordinal de unidades de código (nunca dependiente del locale del SO/ICU) y deduplica actores dentro de cada caso de uso (identidad normalizada por `trim`) antes de generar asociaciones, evitando asociaciones visuales duplicadas por datos históricos/malformados.
+- **Alcance no cambiado.** Se preserva exactamente la política de regeneración/duplicados de 1F (regenerar el mismo conjunto de fuentes puede crear diagramas `USE_CASE_DIAGRAM` duplicados; Impact Analysis sigue diferido) y la ausencia de PK compuestas/UML include-extend-generalización.
+- **Regla de frontend (aún sin UI en 1F.1).** El SVG que la API entrega ya está saneado y es confiable; cuando exista UI de diagramas, debe renderizarse mediante una frontera de render segura, no `innerHTML` arbitrario tratando el SVG como contenido de usuario no confiable. El backend sigue siendo la única frontera de saneamiento autoritativa.
+
+## 218.1 Decisiones de modelo del Incremento 1A
+
+- **Workspace → Project.** Todo `Project` pertenece obligatoriamente a un `Workspace` (§3.1). El Incremento 1A crea únicamente las columnas mínimas de `Workspace`. `User`, memberships y RBAC pertenecen al incremento de Identity.
+- **Sin autenticación en 1A.** Los workspaces de desarrollo se crean mediante un seed de desarrollo explícito o fixtures de prueba, nunca mediante comportamiento hardcodeado de producción.
+- **Tipo de artefacto.** Se representa mediante una tabla de referencia normalizada (`artifact_types`), no un enum de base de datos, para poder añadir tipos sin `ALTER TYPE`. Los tipos iniciales son `REQUIREMENT`, `USE_CASE`, `DATA_MODEL`, `USE_CASE_DIAGRAM`, `NAVIGATION_TREE`, `SOFTWARE_ARCHITECTURE`, `SYSTEM_ARCHITECTURE`, `UI_BLUEPRINT` y `MOCKUP`.
+- **Estado y origen.** `ArtifactVersion.status` usa exactamente `DRAFT`, `GENERATED`, `IN_REVIEW`, `APPROVED`, `CHANGES_REQUESTED` (§5.2). `ArtifactVersion.origin` usa exactamente `MANUAL`, `AI_GENERATED`, `AI_ASSISTED`, `SYSTEM_GENERATED`, `IMPORTED` (§6.3; `SYSTEM_GENERATED` añadido de forma aditiva en el Incremento 1F.1, §218.8).
+- **`current_state` derivado.** El estado vigente de un artefacto se deriva de su versión vigente (la de mayor `version_number`); no se persiste un duplicado en `Artifact` (coherente con §5.4).
+- **Contenido genérico.** `metadata_auxiliary` (JSONB, objeto) es únicamente el mecanismo genérico auxiliar de §6.2. Los detalles de dominio de cada tipo se modelarán en tablas relacionales por su propio slice (§26).
+- **Inmutabilidad.** En 1A, una `ArtifactVersion` no se edita en sitio: editar crea una nueva versión. Solo las columnas de ciclo de vida (`status`, `submitted_at`, `approved_at`) pueden cambiar, y nunca en una versión `APPROVED`. Una versión no puede eliminarse. Se aplica en base de datos. El autosave de borradores (§15.2) se define en el Incremento 2.
+- **Aislamiento.** `artifact_versions` referencia `(artifact_id, project_id)` con una clave foránea compuesta hacia `artifacts (id, project_id)`, de modo que una versión no puede cruzar la frontera de proyecto. Todo acceso por API usa `projectId` en la ruta.
+- **Códigos.** `Artifact.code` es único por proyecto y se asigna con un contador monótono por `(project, prefijo)`; un código nunca se reutiliza (§31.4). El prefijo de código es una capacidad interna del servicio (p. ej. RNF para requisitos no funcionales en el Incremento 1D); la API pública no lo expone y no acepta prefijos arbitrarios.
+- **OpenAPI.** El documento OpenAPI se genera desde los mismos esquemas zod de `packages/contracts` que validan las solicitudes (una sola fuente de verdad). La UI interactiva (`/docs`) solo se sirve fuera de producción; el documento JSON se genera de forma determinística con `pnpm openapi:generate`.
+- **Versiones secuenciales.** `version_number` es único por artefacto y se asigna dentro de una transacción con bloqueo de la fila del artefacto.
+
+## 218.2 Decisiones de modelo del Incremento 1B
+
+- **Contexto canónico.** Cada proyecto puede tener como máximo un artefacto `PROJECT_CONTEXT`, con prefijo `CTX`. La unicidad se refuerza mediante un índice único parcial en base de datos.
+- **Versionamiento común.** Project Context reutiliza `Artifact` → `ArtifactVersion`; cada edición crea una versión completa nueva y nunca modifica una versión previa.
+- **Estructura relacional.** El detalle de cada versión conserva `problem_statement`, `objective` y `additional_context`; actores, necesidades, restricciones, reglas de negocio y elementos de alcance se almacenan en tablas relacionadas con posición determinística. `IN_SCOPE` y `OUT_OF_SCOPE` son los únicos tipos de alcance.
+- **Inmutabilidad.** El detalle y todas sus colecciones pertenecen a una `ArtifactVersion` específica y la base de datos rechaza su actualización o eliminación.
+- **API semántica.** El flujo público es `/projects/{projectId}/context`; la creación genérica de artefactos rechaza `PROJECT_CONTEXT` para impedir bypass de la invariante canónica.
+- **Límites de entrada.** Cada colección admite hasta 100 elementos; las descripciones de elementos admiten 2 000 caracteres, `problemStatement` y `additionalContext` 10 000, `objective` 5 000 y nombres de actor 200. Estos límites permiten describir proyectos reales y acotan solicitudes abusivas.
+- **Sin IA ni UI provisional.** El contexto funciona manualmente. La IA pertenece a 1C. La pantalla se difiere hasta disponer de selección coherente de proyecto, evitando IDs hardcodeados.
+
+## 218.3 Documento de alcance
+
+`docs/FIRST_DELIVERABLE_MVP.md` resume este alcance para el equipo. Esta especificación es la fuente de verdad; ante discrepancia prevalece este documento.
+
+---
+
+# 219. DEC-115 — Repriorización del calendario alrededor del Primer Entregable
+
+- **Contexto.** El instructor exige que, desde Análisis de Requisitos, el propio software genere los artefactos CASE del primer entregable (§217).
+- **Decisión.** Reordenar el calendario inmediato como en §218. La tarea anteriormente planificada «Increment 1A — Identity Persistence Foundation» **no** se implementa; su lugar lo toma «Increment 1A — Project + Artifact Foundation».
+- **Supera.** Únicamente la priorización de calendario de §180 (orden de incrementos inmediatos) y §182 (Identity como siguiente incremento). No modifica ninguna decisión aprobada DEC-001…DEC-114.
+- **Conserva.** Identity, Workspace, RBAC, Knowledge Base, RAG, Construction y Code Generation permanecen en el alcance de V1.
+- **Estado.** Accepted.
+
+# 220. Cierre del Primer Entregable — Frontend, fallback manual, Export completo y E2E
+
+Documenta el comportamiento final implementado tras completar §217–§219
+(Incrementos 1G–1S). Es descriptivo del estado real del código, no
+aspiracional.
+
+## 220.1 Frontend (`apps/web`)
+
+`apps/web` deja de ser el scaffold por defecto de Next.js y pasa a ser la
+aplicación real consumida por el usuario final. Arquitectura de
+información organizada por ciclo de vida del usuario, no por tabla de base
+de datos: Inicio, Conocimiento (Fuentes, Contexto), Análisis (Requisitos,
+Casos de Uso, Modelo de Datos), Diseño (Navegación, Arquitectura de
+Software, Arquitectura de Sistema, UI Blueprint, Mockups), Trazabilidad,
+Preparación/Exportar.
+
+- **Descubrimiento de proyecto/workspace sin UUID fijo.** `GET
+  /workspaces` (endpoint de solo lectura, añadido específicamente para
+  esto — Identity/Workspace completos siguen diferidos por DEC-115) y `GET
+  /projects` alimentan un selector real, con creación de proyecto y estado
+  vacío manejados en la UI.
+- **Capa de API tipada** (`apps/web/lib/api.ts`): un único `fetch`
+  compartido, errores normalizados como `ApiError`, sin URLs ni lógica de
+  negocio del backend duplicadas en componentes individuales.
+- **Sistema de estado.** `StatusBadge`/`CandidateBadge` muestran cada
+  estado de ciclo de vida con ícono + texto, nunca solo color; un
+  candidato de IA se distingue visualmente de un Artifact Version oficial
+  (Aceptar ≠ Aprobar).
+- **Frontera de SVG confiable.** `TrustedDiagram`
+  (`apps/web/components/trusted-svg.tsx`) es el único componente del
+  frontend que usa `dangerouslySetInnerHTML`; solo recibe SVG que ya pasó
+  por `sanitizeDiagramSvg()` del backend, a través de los endpoints de
+  diagrama o de preview de Mockup — nunca contenido de fuente subida,
+  texto de formulario, ni una cadena cruda de candidato de IA. Existe una
+  prueba estática que falla si `dangerouslySetInnerHTML` aparece en
+  cualquier otro archivo del frontend, además de la auditoría manual de
+  cada llamador.
+- **Explicación de bloqueo de etapa.** Cuando una acción requiere un
+  prerequisito no satisfecho, la UI explica la razón en lenguaje natural
+  (p. ej. "Apruebe el Contexto del Proyecto antes de generar
+  Requisitos.") en vez de solo deshabilitar el control; el backend sigue
+  siendo la autoridad — la UI no reproduce la máquina de estados completa.
+
+## 220.2 Fallback manual sin IA (todos los tipos de artefacto downstream)
+
+Todo tipo de artefacto downstream tiene ahora una ruta de creación manual
+estructurada expuesta en el frontend, junto a "Generar con IA" cuando hay
+un proveedor configurado:
+
+- **Requisitos:** tipo, nombre, descripción, prioridad, actores,
+  precondiciones, postcondiciones, y `dependencyArtifactIds` (dependencias
+  hacia otros Requisitos del mismo proyecto, presentadas como tarjetas
+  seleccionables por código + nombre — nunca un ArtifactVersion UUID
+  escrito a mano).
+- **Casos de Uso:** incluye editor de flujos alternativos
+  (nombre/condición/pasos) y selección de Requisitos relacionados por
+  código + nombre.
+- **Modelo de Datos:** editor de entidades/atributos (nombre, tipo
+  conceptual, requerido/PK/único, descripción) y relaciones (entidad
+  origen/destino por nombre, nombre, cardinalidades, descripción) — nunca
+  autoría de Mermaid.
+- **Navegación, Arquitectura de Software, Arquitectura de Sistema, UI
+  Blueprint:** editores de filas estructuradas (nodos/componentes/enlaces/
+  pantallas) — nunca PlantUML, Mermaid ni JSON crudo. La capa Componente →
+  Capa en Arquitectura de Software usa el único mecanismo que el contrato
+  soporta (`layerLocalId`, un string libre, no una capa formal separada),
+  expuesto como un campo de texto con autocompletado nativo del navegador
+  sobre las capas ya usadas en el mismo formulario.
+
+En todos los casos, la creación manual invoca directamente el endpoint
+`create()` oficial del backend (`origin=MANUAL`, `status=DRAFT`), sin
+ningún paso de generación/candidato de por medio. Los diagramas y Mockups
+deterministas se siguen generando igual después de la creación manual —
+el pipeline `DiagramEngine → Kroki → sanitizeDiagramSvg` no distingue
+entre contenido manual y contenido aceptado desde un candidato de IA.
+
+### Dependencias de Requisito y ciclo de vida (semántica confirmada)
+
+`dependencyArtifactIds` en el contrato de creación de Requisito referencia
+la identidad estable del Artifact Requisito (nunca una versión, nunca un
+Requisito de otro proyecto) y **no** exige que el Requisito referenciado
+esté `APPROVED`: la especificación exige la garantía `APPROVED`-only
+explícitamente para la generación de Casos de Uso/Modelo de Datos/
+diagramas a partir de Requisitos/Casos de Uso (§218.5, §218.7), pero nunca
+la exige para dependencias Requisito↔Requisito, y la transición a
+`APPROVED` de un Requisito tampoco revalida el estado de sus dependencias.
+Esto es intencional, no un descuido: se preserva tal cual (sin agregar una
+restricción no solicitada), consistente con el único test de integración
+existente que aprueba explícitamente esta combinación
+(`requirements.integration.spec.ts`).
+
+## 220.3 Export completo (cierre de evidencia)
+
+La suite de integración de Export (`export.integration.spec.ts`) prueba,
+sin duplicar condiciones ya probadas: proyecto vacío/incompleto; un
+proyecto completamente poblado con los 14 tipos de artefacto relevantes
+presentes simultáneamente y sus secciones compuestas juntas (readiness,
+staleness y resumen de trazabilidad incluidos); correspondencia exacta
+Modelo de Datos↔ER, Navegación/Arquitectura de Software/Arquitectura de
+Sistema↔diagrama y UI Blueprint↔Mockup con la versión autoritativa exacta
+seleccionada; la política compartida de selección autoritativa entre
+múltiples artefactos `APPROVED` del mismo tipo; `Content-Type` JSON/HTML;
+`Content-Disposition` seguro y determinístico (derivado únicamente del
+`projectId`, nunca del nombre del proyecto); ausencia de cuerpos binarios,
+`storageKey` o secretos; y escape HTML contra XSS.
+
+## 220.4 Playwright E2E
+
+Herramienta de repositorio (no un script ad-hoc), versión fijada en el
+lockfile (`@playwright/test`), configurada exclusivamente contra
+infraestructura local: una base de datos Postgres de pruebas aislada (la
+misma que usa la suite de integración del backend), sin proveedor de IA
+externo, sin renderizador público.
+
+- **Escenario A (obligatorio, sin IA):** con `AI_PROVIDER=disabled`,
+  recorre en un Chromium real el flujo completo — proyecto, Fuente
+  TEXT/NOTES, interpretación manual, aprobación de la Fuente, Contexto
+  respaldado por esa Fuente a través de la UI, aprobación del Contexto,
+  Requisito manual, aprobación del Requisito, y verificación de que Inicio
+  refleja la progresión real. Prueba que CASEflow funciona sin IA externa
+  de punta a punta, no solo a nivel de unidad.
+- **Escenario B (visual/procedencia):** con `DIAGRAM_RENDERER=kroki`
+  contra el Kroki local propio del repositorio, prepara el estado
+  necesario vía llamadas API directas (aceptable para este escenario
+  acotado) y verifica en el navegador: un SVG real renderizado por Kroki y
+  saneado por el backend dentro de `TrustedSvg`; procedencia real ascendente
+  en Trazabilidad; estado real de Readiness; y descargas de exportación
+  JSON/HTML con el nombre de archivo determinístico exacto.
+
+`pnpm run test:e2e` es el comando canónico (ejecuta ambos escenarios). CI
+instala Chromium de forma determinística con `pnpm exec playwright
+install --with-deps chromium` (resuelve la versión fijada en el lockfile
+ya disponible en `PATH` vía `pnpm/action-setup`, en vez de `npx`) y ejecuta
+`pnpm run test:e2e` dentro del job Integration, después de la suite de
+integración del backend.
+
+## 220.5 CI
+
+El job Quality ejecuta, además de formato/lint/typecheck/build/tests/
+coverage del backend, la suite Vitest propia del frontend
+(`pnpm --filter @caseflow-ai/web run test`) — antes era un comando
+exclusivamente de desarrollador que Quality nunca ejecutaba. El job
+Integration ejecuta la suite de integración del backend contra PostgreSQL
+real y ambos escenarios de Playwright. Ninguno de los dos jobs usa
+`continue-on-error` para verificaciones obligatorias ni debilita el umbral
+de cobertura.
+
+## 220.6 Backlog conservado
+
+Confirmar los tipos exactos de diagrama "second-partial" con el
+profesor permanece como backlog, sin resolver arbitrariamente.
+
+## 220.7 Pulido de experiencia del Primer Entregable
+
+Descriptivo del comportamiento implementado:
+
+- **Edición en cualquier estado.** Requisitos, Casos de Uso, Modelo de Datos,
+  Navegación, Arquitecturas y UI Blueprint pueden editarse aunque su versión
+  vigente esté `APPROVED`: la edición crea una versión nueva `DRAFT` y la
+  versión aprobada permanece intacta (§4.4). Requisitos y Casos de Uso
+  dejan de rechazar esta operación, alineándose con Contexto, Modelo de
+  Datos y artefactos de diseño.
+- **Archivado genérico.** `POST /projects/{projectId}/artifacts/{artifactId}/archive`
+  retira de listas, Readiness y Export a Requisitos, Casos de Uso, Modelos
+  de Datos, diagramas, artefactos de diseño y Mockups sin borrar historial.
+  Fuentes y Proyectos conservan su endpoint propio; el Contexto canónico no
+  se archiva (se versiona).
+- **Revisión de un solo miembro.** Mientras exista un único miembro, la UI
+  oculta "Enviar a revisión" y aprueba en un clic (atravesando `IN_REVIEW`
+  internamente); existe además "Aprobar todos los pendientes" por paso.
+- **Sin reinicio de pasos.** La barra lateral mantiene la guía secuencial
+  la primera vez, pero nunca vuelve a bloquear un paso al que el proyecto
+  ya llegó cuando se edita un paso anterior; los artefactos potencialmente
+  desactualizados (StalenessService) se señalan en su propia página.
+- **Notificaciones y lenguaje.** Errores y confirmaciones usan
+  notificaciones flotantes (`sonner`); la interfaz y los mensajes de
+  Readiness no muestran códigos de estado en inglés ni textos académicos.
+- **Export.** El documento HTML es una especificación completa y con estilo
+  (contexto, requisitos, casos de uso con flujos, modelo de datos,
+  arquitecturas, UI Blueprint, bocetos y diagramas), con todo el contenido
+  escapado salvo los SVG ya saneados.

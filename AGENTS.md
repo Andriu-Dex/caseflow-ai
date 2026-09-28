@@ -368,6 +368,8 @@ Rules:
 
 Prefer vertical slices that leave the repository runnable.
 
+Immediate scheduling priority (DEC-115): the roadmap above is the long-term dependency order. The immediate calendar is governed by `docs/CASEFLOW_AI_SPEC.md` §217–§219 (First Deliverable MVP, Increments 1A–1J); Identity, Knowledge Base, RAG and Construction are deferred, not cancelled.
+
 ---
 
 ## 9. Vertical Slice Rule

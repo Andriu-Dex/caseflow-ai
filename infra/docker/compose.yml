@@ -68,6 +68,48 @@ services:
         aws --endpoint-url=http://seaweedfs:8333 s3api create-bucket --bucket caseflow
     restart: 'no'
 
+  # Local, self-hosted diagram rendering (Increment 1F.1). No public kroki.io
+  # endpoint is ever used. kroki-mermaid is the companion service Kroki's
+  # Mermaid engine requires; PlantUML is bundled in the main image.
+  kroki-mermaid:
+    image: yuzutech/kroki-mermaid:0.32.1
+    restart: unless-stopped
+    healthcheck:
+      # No HTTP health endpoint on this internal companion (it 400s on a bare
+      # GET /, which still proves it is listening); a raw TCP connect is
+      # simplest with the tools actually present in this image.
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "const s=require('net').connect(8002,'localhost');s.on('connect',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  kroki:
+    image: yuzutech/kroki:0.32.1
+    restart: unless-stopped
+    environment:
+      KROKI_MERMAID_HOST: kroki-mermaid
+    depends_on:
+      kroki-mermaid:
+        condition: service_healthy
+    ports:
+      - '127.0.0.1:8000:8000'
+    healthcheck:
+      # A plain GET, not --spider: Kroki's /health does not answer HEAD the
+      # way wget's spider mode expects, which made --spider report failure
+      # even though the endpoint itself returns 200 to a normal GET.
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://localhost:8000/health']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
   mailpit:
     image: axllent/mailpit:v1.31.1
     restart: unless-stopped

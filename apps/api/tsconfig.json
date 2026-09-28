@@ -14,8 +14,9 @@
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
-      "@caseflow-ai/contracts": ["../../packages/contracts/src/index.ts"]
+      "@caseflow-ai/contracts": ["../../packages/contracts/src/index.ts"],
+      "@caseflow-ai/domain": ["../../packages/domain/src/index.ts"]
     }
   },
-  "include": ["src"]
+  "include": ["src", "test"]
 }

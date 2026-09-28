@@ -1,0 +1,201 @@
+CASEFlow AI — Datos de ejemplo para llenado manual
+====================================================
+
+Este archivo contiene DOS ejemplos completos para probar el flujo manual
+(sin IA) de CASEFlow AI de principio a fin, copiando y pegando los valores
+en cada pantalla en el orden del pipeline (Fuentes -> Contexto -> Requisitos
+-> Casos de uso -> Modelo de datos -> Navegación/Arquitecturas/UI Blueprint
+-> Mockups -> Trazabilidad -> Preparación/Exportar).
+
+- EJEMPLO 1: redactado con cuidado (claro, específico, verificable) —
+  para ver cómo se comporta el sistema con datos "buenos".
+- EJEMPLO 2: redactado de forma descuidada (vago, ambiguo, incompleto) —
+  útil sobre todo para ver cómo reacciona la IA / el reporte de calidad
+  ISO/IEC/IEEE 29148:2018 ante requisitos mal escritos.
+
+Cada ejemplo es independiente: crea un Proyecto nuevo para cada uno.
+
+
+====================================================
+EJEMPLO 1 — "Sistema de préstamo de equipos deportivos"
+====================================================
+
+Nombre del proyecto:
+Préstamo de Equipos Deportivos
+
+--- PASO 1: Fuente (Tipo: Notas) ---
+Título: Entrevista con el coordinador de deportes
+¿Qué representa esta fuente?: Notas tomadas durante una reunión con el
+  coordinador del área de deportes de la universidad para entender cómo
+  se presta y devuelve equipamiento deportivo actualmente.
+Área / dominio de negocio: Bienestar universitario — Deportes
+Contenido:
+  Actualmente el préstamo de balones, raquetas y colchonetas se registra
+  en un cuaderno físico. Un estudiante con carnet vigente puede solicitar
+  hasta 2 artículos por día. El encargado anota nombre, carnet, artículo,
+  fecha y hora de salida. Cuando el estudiante devuelve el artículo, se
+  anota la hora de devolución. Si un estudiante no devuelve un artículo en
+  el mismo día, queda "moroso" y no puede pedir nada nuevo hasta que
+  regularice. El coordinador quiere un sistema que reemplace el cuaderno,
+  permita ver en tiempo real qué artículos están disponibles, quién los
+  tiene, y bloquee automáticamente a los morosos.
+
+--- PASO 2: Contexto del proyecto ---
+Planteamiento del problema:
+  El registro manual en cuaderno de préstamos de equipos deportivos genera
+  pérdida de artículos, falta de visibilidad sobre disponibilidad en tiempo
+  real y no impide que estudiantes morosos sigan solicitando equipamiento.
+Objetivo:
+  Digitalizar el proceso de préstamo y devolución de equipos deportivos,
+  con visibilidad de disponibilidad en tiempo real y bloqueo automático de
+  estudiantes morosos.
+Actores:
+  - Estudiante
+  - Encargado de deportes
+  - Coordinador de deportes
+Necesidades:
+  - Saber qué equipos están disponibles antes de acercarse a pedirlos.
+  - Evitar que un estudiante con artículos pendientes de devolución pida más.
+  - Tener un historial de préstamos por estudiante y por artículo.
+Restricciones:
+  - Debe funcionar en un navegador de escritorio del área de deportes,
+    sin instalar software adicional.
+  - El carnet del estudiante es el único identificador disponible (no hay
+    integración con el sistema académico central todavía).
+Reglas de negocio:
+  - Un estudiante no puede tener más de 2 préstamos activos simultáneos.
+  - Un estudiante con al menos un préstamo vencido (no devuelto el mismo
+    día) queda marcado como moroso y no puede solicitar nuevos préstamos.
+  - Un artículo solo puede estar prestado a un estudiante a la vez.
+
+--- PASO 3: Requisitos ---
+RF-001 (Funcional, prioridad HIGH)
+  Nombre: Registrar préstamo de artículo
+  Descripción: El sistema debe permitir al encargado registrar el préstamo
+    de un artículo disponible a un estudiante con carnet vigente y sin
+    morosidad activa, guardando fecha y hora de salida.
+  Actores: Encargado de deportes
+
+RF-002 (Funcional, prioridad HIGH)
+  Nombre: Registrar devolución de artículo
+  Descripción: El sistema debe permitir al encargado registrar la
+    devolución de un artículo prestado, guardando fecha y hora de entrada
+    y liberando el artículo para nuevos préstamos.
+  Actores: Encargado de deportes
+
+RF-003 (Funcional, prioridad MEDIUM)
+  Nombre: Consultar disponibilidad de artículos
+  Descripción: El sistema debe mostrar en tiempo real qué artículos están
+    disponibles y cuáles están actualmente prestados, con el nombre del
+    estudiante que los tiene.
+  Actores: Encargado de deportes, Coordinador de deportes
+
+RNF-001 (No funcional, prioridad HIGH)
+  Nombre: Bloqueo automático de morosos
+  Descripción: El sistema debe impedir automáticamente que un estudiante
+    con al menos un préstamo vencido pueda registrar un nuevo préstamo,
+    sin intervención manual del encargado.
+
+--- PASO 4: Casos de uso ---
+Nombre: Registrar préstamo de artículo
+Actor principal: Encargado de deportes
+Actores secundarios: (ninguno)
+Objetivo: Registrar la salida de un artículo deportivo a un estudiante
+  habilitado.
+Precondiciones:
+  - El estudiante tiene carnet vigente.
+  - El estudiante no tiene morosidad activa.
+  - El artículo solicitado está disponible.
+Postcondiciones:
+  - El artículo queda marcado como prestado al estudiante.
+  - Se registra la fecha y hora de salida.
+Flujo principal:
+  1. (Encargado de deportes) Ingresa el número de carnet del estudiante.
+  2. (Encargado de deportes) Selecciona el artículo disponible a prestar.
+  3. (Encargado de deportes) Confirma el préstamo.
+Flujos alternativos:
+  Nombre: Estudiante moroso
+  Condición: El estudiante tiene al menos un préstamo vencido.
+  Pasos:
+    1. (Encargado de deportes) Ingresa el número de carnet del estudiante.
+
+--- PASO 5: Modelo de datos ---
+Entidad: Estudiante
+  Atributos: carnet (texto, PK, único, requerido), nombre (texto, requerido),
+    esMoroso (booleano, requerido)
+Entidad: Articulo
+  Atributos: id (UUID, PK, único, requerido), nombre (texto, requerido),
+    disponible (booleano, requerido)
+Entidad: Prestamo
+  Atributos: id (UUID, PK, único, requerido), fechaSalida (fecha-hora,
+    requerido), fechaDevolucion (fecha-hora, opcional)
+Relaciones:
+  - Estudiante 1..N Prestamo
+  - Articulo 1..N Prestamo
+
+
+====================================================
+EJEMPLO 2 — mismo dominio, redactado a propósito de forma descuidada
+====================================================
+(Sirve para ver cómo el reporte de calidad ISO/IEC/IEEE 29148:2018 y la IA
+reaccionan ante ambigüedad, falta de verificabilidad y requisitos mezclados.)
+
+Nombre del proyecto:
+sistema deportes v2
+
+--- PASO 1: Fuente (Tipo: Notas) ---
+Título: notas reunion
+¿Qué representa esta fuente?: cosas que dijo el man de deportes
+Área / dominio de negocio: (dejar vacío)
+Contenido:
+  el tema es que la gente se lleva las cosas y no las regresa y hay que
+  hacer algo, tipo un sistema para eso, que sea rapido y facil, no se bien
+  como pero algo con computadora que reemplace el cuaderno ese
+
+--- PASO 2: Contexto del proyecto ---
+Planteamiento del problema:
+  hay un problema con los prestamos de cosas deportivas que no funciona bien
+Objetivo:
+  mejorar el sistema de deportes
+Actores:
+  - el man de deportes
+Necesidades:
+  - que funcione mejor
+Restricciones:
+  - que sea rapido
+Reglas de negocio:
+  - no se pueden prestar cosas a cualquiera
+
+--- PASO 3: Requisitos ---
+RF-001 (Funcional, prioridad HIGH)
+  Nombre: sistema de prestamos
+  Descripción: el sistema tiene que dejar prestar y devolver cosas y
+    tambien mostrar reportes y mandar correos y tener login de usuarios y
+    ademas debe ser rapido y seguro
+  Actores: usuario
+
+RF-002 (Funcional, prioridad HIGH)
+  Nombre: cosas
+  Descripción: que se puedan ver las cosas
+  Actores: (dejar vacío)
+
+RNF-001 (No funcional, prioridad MEDIUM)
+  Nombre: rendimiento
+  Descripción: el sistema debe ser rapido y no fallar nunca
+
+--- PASO 4: Casos de uso ---
+Nombre: hacer prestamo
+Actor principal: usuario
+Objetivo: prestar algo
+Precondiciones: (dejar vacío)
+Postcondiciones: (dejar vacío)
+Flujo principal:
+  1. (usuario) hace el prestamo
+
+--- PASO 5: Modelo de datos ---
+Entidad: cosa
+  Atributos: nombre (texto)
+Entidad: persona
+  Atributos: nombre (texto)
+Relaciones:
+  - (sin especificar)
