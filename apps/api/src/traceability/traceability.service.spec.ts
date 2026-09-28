@@ -1,7 +1,22 @@
 import { describe, expect, it, vi } from 'vitest';
 import { TRACEABILITY_MAX_NODES } from '@caseflow-ai/contracts';
+import { DiagramProviderError, type DiagramProvider } from '@caseflow-ai/integrations';
 import type { PrismaService } from '../database/prisma.service';
+import { DiagramEngine } from '../data-models/diagram-engine';
 import { TraceabilityService } from './traceability.service';
+
+function createService(prisma: unknown) {
+  const diagramProvider: DiagramProvider = {
+    id: 'fake',
+    render: vi.fn(),
+    renderPng: vi.fn(),
+  };
+  return new TraceabilityService(
+    prisma as unknown as PrismaService,
+    new DiagramEngine(),
+    diagramProvider,
+  );
+}
 
 function emptyPrisma() {
   return {
@@ -25,7 +40,7 @@ function emptyPrisma() {
 describe('TraceabilityService', () => {
   it('returns an empty graph for a project with no traced artifacts', async () => {
     const prisma = emptyPrisma();
-    const service = new TraceabilityService(prisma as unknown as PrismaService);
+    const service = createService(prisma);
     await expect(service.buildGraph('p')).resolves.toEqual({
       nodes: [],
       edges: [],
@@ -58,7 +73,7 @@ describe('TraceabilityService', () => {
         artifact,
       },
     ]);
-    const service = new TraceabilityService(prisma as unknown as PrismaService);
+    const service = createService(prisma);
     const { nodes } = await service.buildGraph('p');
     expect(nodes.find((n) => n.id === 'v1')?.isCurrent).toBe(false);
     expect(nodes.find((n) => n.id === 'v2')?.isCurrent).toBe(true);
@@ -96,7 +111,7 @@ describe('TraceabilityService', () => {
         aiRun: null,
       },
     ]);
-    const service = new TraceabilityService(prisma as unknown as PrismaService);
+    const service = createService(prisma);
     const { edges } = await service.buildGraph('p');
     expect(edges).toEqual([]);
   });
@@ -114,7 +129,7 @@ describe('TraceabilityService', () => {
         artifact: { id: `a${i}`, code: `X-${i}` },
       })),
     );
-    const service = new TraceabilityService(prisma as unknown as PrismaService);
+    const service = createService(prisma);
     const { nodes, truncated } = await service.buildGraph('p');
     expect(nodes).toHaveLength(TRACEABILITY_MAX_NODES);
     expect(truncated).toBe(true);
@@ -149,12 +164,155 @@ describe('TraceabilityService', () => {
         aiRun: null,
       },
     ]);
-    const service = new TraceabilityService(prisma as unknown as PrismaService);
+    const service = createService(prisma);
     const { nodes, edges } = await service.buildGraph('p');
     const nodeIds = new Set(nodes.map((n) => n.id));
     for (const edge of edges) {
       expect(nodeIds.has(edge.fromId)).toBe(true);
       expect(nodeIds.has(edge.toId)).toBe(true);
     }
+  });
+
+  it('returns a fixed placeholder diagram instead of calling the renderer for an empty project', async () => {
+    const prisma = emptyPrisma();
+    const render = vi.fn();
+    const service = new TraceabilityService(
+      prisma as unknown as PrismaService,
+      new DiagramEngine(),
+      {
+        id: 'fake',
+        render,
+        renderPng: vi.fn(),
+      },
+    );
+    const diagram = await service.buildDiagram('p');
+    expect(diagram.svg).toContain('Aún no hay artefactos');
+    expect(render).not.toHaveBeenCalled();
+  });
+
+  it('renders a deterministic Mermaid flowchart from the graph and sanitizes the result', async () => {
+    const prisma = emptyPrisma();
+    prisma.artifactVersion.findMany.mockResolvedValue([
+      {
+        id: 'v1',
+        artifactId: 'a1',
+        versionNumber: 1,
+        status: 'APPROVED',
+        origin: 'MANUAL',
+        title: 'Registrar pedido',
+        artifact: { id: 'a1', code: 'RF-001' },
+      },
+    ]);
+    const render = vi
+      .fn()
+      .mockResolvedValue({ svg: '<svg xmlns="http://www.w3.org/2000/svg"><g/></svg>' });
+    const service = new TraceabilityService(
+      prisma as unknown as PrismaService,
+      new DiagramEngine(),
+      {
+        id: 'fake',
+        render,
+        renderPng: vi.fn(),
+      },
+    );
+    const diagram = await service.buildDiagram('p');
+    expect(diagram.sourceFormat).toBe('MERMAID_FLOWCHART');
+    expect(diagram.source).toBe('flowchart TD\n  v1["RF-001: Registrar pedido"]');
+    expect(render).toHaveBeenCalledWith({ format: 'MERMAID_FLOWCHART', source: diagram.source });
+    expect(diagram.svg).toContain('<svg');
+  });
+
+  it('rejects a PNG download for an empty project instead of rendering nothing', async () => {
+    const prisma = emptyPrisma();
+    const service = createService(prisma);
+    await expect(service.getDiagramPng('p')).rejects.toThrow('No hay artefactos que graficar.');
+  });
+
+  function withOneNode(prisma: ReturnType<typeof emptyPrisma>) {
+    prisma.artifactVersion.findMany.mockResolvedValue([
+      {
+        id: 'v1',
+        artifactId: 'a1',
+        versionNumber: 1,
+        status: 'APPROVED',
+        origin: 'MANUAL',
+        title: 'Registrar pedido',
+        artifact: { id: 'a1', code: 'RF-001' },
+      },
+    ]);
+  }
+
+  it('renders the diagram PNG from the same on-demand source', async () => {
+    const prisma = emptyPrisma();
+    withOneNode(prisma);
+    const png = Buffer.from('png-bytes');
+    const renderPng = vi.fn().mockResolvedValue({ png });
+    const service = new TraceabilityService(
+      prisma as unknown as PrismaService,
+      new DiagramEngine(),
+      {
+        id: 'fake',
+        render: vi.fn(),
+        renderPng,
+      },
+    );
+    await expect(service.getDiagramPng('p')).resolves.toBe(png);
+    expect(renderPng).toHaveBeenCalledWith({
+      format: 'MERMAID_FLOWCHART',
+      source: 'flowchart TD\n  v1["RF-001: Registrar pedido"]',
+    });
+  });
+
+  it.each([
+    ['DIAGRAM_INVALID_SOURCE' as const, 'invalid'],
+    ['DIAGRAM_PROVIDER_UNAVAILABLE' as const, 'unavailable'],
+  ])(
+    'maps a %s DiagramProviderError from render() to the right HTTP exception',
+    async (code, description) => {
+      const prisma = emptyPrisma();
+      withOneNode(prisma);
+      const service = new TraceabilityService(
+        prisma as unknown as PrismaService,
+        new DiagramEngine(),
+        {
+          id: 'fake',
+          render: vi.fn().mockRejectedValue(new DiagramProviderError(code, description)),
+          renderPng: vi.fn(),
+        },
+      );
+      await expect(service.buildDiagram('p')).rejects.toMatchObject({ message: description });
+    },
+  );
+
+  it('lets a non-DiagramProviderError from render() propagate unchanged', async () => {
+    const prisma = emptyPrisma();
+    withOneNode(prisma);
+    const service = new TraceabilityService(
+      prisma as unknown as PrismaService,
+      new DiagramEngine(),
+      {
+        id: 'fake',
+        render: vi.fn().mockRejectedValue(new Error('boom')),
+        renderPng: vi.fn(),
+      },
+    );
+    await expect(service.buildDiagram('p')).rejects.toThrow('boom');
+  });
+
+  it('maps a DiagramProviderError from renderPng() the same way as buildDiagram()', async () => {
+    const prisma = emptyPrisma();
+    withOneNode(prisma);
+    const service = new TraceabilityService(
+      prisma as unknown as PrismaService,
+      new DiagramEngine(),
+      {
+        id: 'fake',
+        render: vi.fn(),
+        renderPng: vi
+          .fn()
+          .mockRejectedValue(new DiagramProviderError('DIAGRAM_PROVIDER_UNAVAILABLE', 'down')),
+      },
+    );
+    await expect(service.getDiagramPng('p')).rejects.toMatchObject({ message: 'down' });
   });
 });

@@ -85,3 +85,14 @@ export const traceabilityGraphResponseSchema = z.object({
   truncated: z.boolean(),
 });
 export type TraceabilityGraphResponse = z.infer<typeof traceabilityGraphResponseSchema>;
+
+// A visual rendering of the same graph (spec §4.8 canonical-source-over-render):
+// the Mermaid `source` is derived deterministically from nodes/edges above and
+// is never persisted — re-rendered on demand, like every other diagram in the
+// product.
+export const traceabilityDiagramResponseSchema = z.object({
+  source: z.string(),
+  sourceFormat: z.literal('MERMAID_FLOWCHART'),
+  svg: z.string(),
+});
+export type TraceabilityDiagramResponse = z.infer<typeof traceabilityDiagramResponseSchema>;
