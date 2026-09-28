@@ -36,16 +36,27 @@ export class ExportService {
     private readonly traceability: TraceabilityService,
   ) {}
 
+  // One unavailable screen (deleted storage object, provider hiccup) must
+  // never fail the whole document export — the affected screen is simply
+  // omitted from the map, and export-html.ts renders a safe placeholder for
+  // it instead of an <img> with a broken/empty src.
   async mockupImageDataUrls(snapshot: FirstDeliverableExport): Promise<Map<string, string>> {
     const images = new Map<string, string>();
     for (const mockup of snapshot.mockups) {
       for (const screen of mockup.screens ?? []) {
-        const image = await this.mockups.downloadScreenImage(
-          snapshot.projectId,
-          mockup.id,
-          screen.id,
-        );
-        images.set(screen.id, `data:${image.contentType};base64,${image.body.toString('base64')}`);
+        try {
+          const image = await this.mockups.downloadScreenImage(
+            snapshot.projectId,
+            mockup.id,
+            screen.id,
+          );
+          images.set(
+            screen.id,
+            `data:${image.contentType};base64,${image.body.toString('base64')}`,
+          );
+        } catch {
+          // Omitted from the map; export-html.ts falls back to a placeholder.
+        }
       }
     }
     return images;

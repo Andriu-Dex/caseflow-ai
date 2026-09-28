@@ -49,9 +49,10 @@ table{border-collapse:collapse;width:100%;margin:8px 0;font-size:.9rem}th,td{bor
 th{background:#f1f2f8}.card{border:1px solid #d9dbe5;border-radius:8px;padding:12px 16px;margin:12px 0}
 .code{font-family:ui-monospace,Consolas,monospace;color:#4f46e5;font-size:.85rem}
 figure{margin:12px 0;padding:12px;border:1px solid #d9dbe5;border-radius:8px;overflow-x:auto;text-align:center}
-figure svg{max-width:100%;height:auto}figcaption{color:#64677a;font-size:.85rem;margin-top:6px}
+figure svg,figure img{max-width:100%;height:auto}figcaption{color:#64677a;font-size:.85rem;margin-top:6px}
 .toc{columns:2;font-size:.95rem}.ok{color:#047857}.pending{color:#b45309}
-@media print{h2{page-break-before:always}figure{page-break-inside:avoid}}`;
+@page{margin:2cm}
+@media print{h2{page-break-before:always}figure{page-break-inside:avoid}figure svg,figure img{max-width:100%!important}}`;
 
 function list(items: string[], empty = 'Sin elementos.'): string {
   return items.length
@@ -134,11 +135,25 @@ export function renderExportHtml(
   const nonFunctional = data.requirements.filter(
     (r) => r.requirement.requirementType !== 'FUNCTIONAL',
   );
+  const quality = data.requirementQuality;
   add(
     'requisitos',
     'Requisitos',
     `<h3>Requisitos funcionales (${functional.length})</h3>${table(['Código', 'Requisito', 'Prioridad', 'Actores'], functional.map(reqRow))}` +
-      `<h3>Requisitos no funcionales (${nonFunctional.length})</h3>${table(['Código', 'Requisito', 'Prioridad', 'Actores'], nonFunctional.map(reqRow))}`,
+      `<h3>Requisitos no funcionales (${nonFunctional.length})</h3>${table(['Código', 'Requisito', 'Prioridad', 'Actores'], nonFunctional.map(reqRow))}` +
+      (quality
+        ? `<h3>Calidad de requisitos (${e(quality.standard)})</h3>` +
+          (quality.issues.length
+            ? `<p class="pending">${quality.issues.length} observación(es) sobre ${quality.totalRequirements} requisito(s).</p>` +
+              table(
+                ['Código', 'Observación'],
+                quality.issues.map((issue) => [
+                  `<span class="code">${e(issue.code)}</span>`,
+                  e(issue.message),
+                ]),
+              )
+            : `<p class="ok">Sin observaciones de calidad sobre ${quality.totalRequirements} requisito(s).</p>`)
+        : ''),
   );
 
   add(
@@ -309,10 +324,13 @@ export function renderExportHtml(
             m.generatorKind === 'INTERNAL_WIREFRAME'
               ? `<figure>${m.svg ?? ''}<figcaption>Boceto ${e(m.code)}</figcaption></figure>`
               : (m.screens ?? [])
-                  .map(
-                    (screen) =>
-                      `<figure><img src="${e(mockupImages.get(screen.id))}" alt="${e(screen.screenName)}"/><figcaption>Boceto ${e(m.code)}: ${e(screen.screenName)}</figcaption></figure>`,
-                  )
+                  .map((screen) => {
+                    const src = mockupImages.get(screen.id);
+                    const image = src
+                      ? `<img src="${e(src)}" alt="${e(screen.screenName)}"/>`
+                      : '<p class="muted">Imagen no disponible.</p>';
+                    return `<figure>${image}<figcaption>Boceto ${e(m.code)}: ${e(screen.screenName)}</figcaption></figure>`;
+                  })
                   .join(''),
           )
           .join('')

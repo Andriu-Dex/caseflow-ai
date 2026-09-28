@@ -74,6 +74,9 @@ describe('renderExportHtml', () => {
     expect(html).toContain('data:image/png;base64,cG5n');
     expect(html).toContain('Inicio');
     expect(html).not.toContain('href="/html"');
+    // Mockup screenshots are embedded at their real (often large) resolution:
+    // without this rule they overflow the printed page/exported sheet.
+    expect(html).toMatch(/figure svg,figure img\{max-width:100%/);
   });
   for (const payload of XSS_PAYLOADS) {
     it(`never emits the raw payload unescaped: ${payload}`, () => {
@@ -82,6 +85,45 @@ describe('renderExportHtml', () => {
       expect(html).toContain(escapeHtml(payload));
     });
   }
+
+  it('shows a safe placeholder instead of a broken <img> for a screen missing from the image map', () => {
+    const data = baseExport('Proyecto seguro');
+    const screenId = '11111111-1111-4111-8111-111111111111';
+    data.mockups = [
+      {
+        code: 'MCK-001',
+        generatorKind: 'STITCH',
+        svg: null,
+        screens: [{ id: screenId, screenName: 'Inicio', screenLocalId: 'home' }],
+      },
+    ] as unknown as typeof data.mockups;
+    const html = renderExportHtml(data, new Map());
+    expect(html).not.toContain('<img');
+    expect(html).toContain('Imagen no disponible.');
+  });
+
+  it('renders the requirement quality report when present, and its absence when null', () => {
+    const withQuality = baseExport('Proyecto seguro');
+    withQuality.requirements = [
+      {
+        code: 'RF-001',
+        requirement: { name: 'Registrar', description: 'd', priority: 'HIGH', actors: [] },
+      },
+    ] as unknown as typeof withQuality.requirements;
+    withQuality.requirementQuality = {
+      standard: 'ISO/IEC/IEEE 29148:2018-aligned',
+      totalRequirements: 1,
+      issues: [
+        { requirementId: 'r1', code: 'RF-001', rule: 'BLANK_DESCRIPTION', message: 'Vacío.' },
+      ],
+    } as unknown as typeof withQuality.requirementQuality;
+    const html = renderExportHtml(withQuality);
+    expect(html).toContain('Calidad de requisitos');
+    expect(html).toContain('Vacío.');
+
+    const withoutQuality = baseExport('Proyecto seguro');
+    expect(renderExportHtml(withoutQuality)).not.toContain('Calidad de requisitos');
+  });
 
   it('embeds only already-sanitized diagram/mockup svg, never re-escaping it', () => {
     const data = baseExport('Proyecto seguro');

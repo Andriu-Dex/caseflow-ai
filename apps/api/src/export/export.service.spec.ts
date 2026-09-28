@@ -32,7 +32,7 @@ function setup() {
     getUseCaseDiagram: vi.fn(),
   };
   const structuredAnalysis = { getVersion: vi.fn(), getDiagramForVersion: vi.fn() };
-  const mockups = { listApprovedForBlueprint: vi.fn() };
+  const mockups = { listApprovedForBlueprint: vi.fn(), downloadScreenImage: vi.fn() };
   const readiness = {
     evaluate: vi.fn().mockResolvedValue({ ready: false, stages: [], blockers: [], warnings: [] }),
   };
@@ -138,5 +138,26 @@ describe('ExportService', () => {
     mockups.listApprovedForBlueprint.mockResolvedValue([]);
     await service.buildSnapshot('p');
     expect(mockups.listApprovedForBlueprint).toHaveBeenCalledWith('p', 'bp-v2');
+  });
+
+  it('omits a screen whose image download fails instead of failing the whole export', async () => {
+    const { service, mockups } = setup();
+    mockups.downloadScreenImage
+      .mockResolvedValueOnce({ contentType: 'image/png', body: Buffer.from('ok') })
+      .mockRejectedValueOnce(new Error('storage unavailable'));
+    const images = await service.mockupImageDataUrls({
+      projectId: 'p',
+      mockups: [
+        {
+          id: 'm1',
+          screens: [
+            { id: 's1', screenName: 'Inicio' },
+            { id: 's2', screenName: 'Detalle' },
+          ],
+        },
+      ],
+    } as never);
+    expect(images.get('s1')).toBe('data:image/png;base64,b2s=');
+    expect(images.has('s2')).toBe(false);
   });
 });

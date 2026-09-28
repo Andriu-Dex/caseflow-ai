@@ -1,20 +1,30 @@
 'use client';
 
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { AlertCircle, CheckCircle2, Circle, Download, FileText } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Circle, Download, FileText, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@caseflow-ai/ui';
 import Link from 'next/link';
 import { api } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { STAGE_LINKS } from '../../lib/stage-links';
 
-function downloadExport(projectId: string, format: 'json' | 'html') {
+// A plain <a download> gives no way to know whether the request failed or is
+// still generating (image-heavy HTML exports take a moment) — fetching the
+// blob ourselves lets the buttons show a loading state and a real error.
+async function downloadExport(projectId: string, format: 'json' | 'html'): Promise<void> {
+  const response = await fetch(api.export.url(projectId, format));
+  if (!response.ok) throw new Error('export request failed');
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = api.export.url(projectId, format);
+  a.href = url;
   a.download = `proyecto-${projectId}.${format}`;
   document.body.appendChild(a);
   a.click();
   a.remove();
+  URL.revokeObjectURL(url);
 }
 
 function ReadinessContent({ projectId }: { projectId: string }) {
@@ -24,6 +34,19 @@ function ReadinessContent({ projectId }: { projectId: string }) {
   });
   const done = readiness.data?.stages.filter((s) => s.satisfied).length ?? 0;
   const total = readiness.data?.stages.length ?? 0;
+  const [downloading, setDownloading] = useState<'json' | 'html' | null>(null);
+  const nothingApproved = readiness.data !== undefined && done === 0;
+
+  async function handleDownload(format: 'json' | 'html') {
+    setDownloading(format);
+    try {
+      await downloadExport(projectId, format);
+    } catch {
+      toast.error('No se pudo generar el documento. Intente nuevamente.');
+    } finally {
+      setDownloading(null);
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -41,22 +64,39 @@ function ReadinessContent({ projectId }: { projectId: string }) {
           variant="ghost"
           size="sm"
           type="button"
-          onClick={() => downloadExport(projectId, 'html')}
-          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
+          disabled={nothingApproved || downloading !== null}
+          title={nothingApproved ? 'Aún no hay nada aprobado para exportar.' : undefined}
+          onClick={() => handleDownload('html')}
+          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground disabled:opacity-50"
         >
-          <FileText className="size-4" aria-hidden="true" />
-          Documento del proyecto (HTML)
+          {downloading === 'html' ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <FileText className="size-4" aria-hidden="true" />
+          )}
+          {downloading === 'html' ? 'Generando…' : 'Documento del proyecto (HTML)'}
         </Button>
         <Button
           variant="ghost"
           size="sm"
           type="button"
-          onClick={() => downloadExport(projectId, 'json')}
-          className="inline-flex items-center gap-1.5 rounded-md border border-input px-3 py-1.5 text-sm hover:bg-muted/40"
+          disabled={nothingApproved || downloading !== null}
+          title={nothingApproved ? 'Aún no hay nada aprobado para exportar.' : undefined}
+          onClick={() => handleDownload('json')}
+          className="inline-flex items-center gap-1.5 rounded-md border border-input px-3 py-1.5 text-sm hover:bg-muted/40 disabled:opacity-50"
         >
-          <Download className="size-4" aria-hidden="true" />
-          Datos estructurados (JSON)
+          {downloading === 'json' ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <Download className="size-4" aria-hidden="true" />
+          )}
+          {downloading === 'json' ? 'Generando…' : 'Datos estructurados (JSON)'}
         </Button>
+        {nothingApproved ? (
+          <span className="text-xs text-muted-foreground">
+            Aún no hay nada aprobado para exportar.
+          </span>
+        ) : null}
       </section>
 
       <QueryState isLoading={readiness.isLoading} error={readiness.error}>
