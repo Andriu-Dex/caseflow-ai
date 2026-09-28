@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import JSZip from 'jszip';
 import type { PrismaService } from '../database/prisma.service';
 import type { Queue } from 'bullmq';
 import {
@@ -306,6 +307,91 @@ describe('MockupsService', () => {
     await expect(service.downloadScreenHtml('project', 'artifact', 'screen-id')).resolves.toEqual({
       body: Buffer.from('html'),
     });
+  });
+
+  it('bundles every Stitch screen image into a downloadable ZIP', async () => {
+    const { service, prisma, storage } = setup();
+    const screens = [
+      {
+        id: 's1',
+        screenLocalId: 'home',
+        screenName: 'Inicio',
+        imageStorageKey: 'mockups/project/home.png',
+        imageContentType: 'image/png',
+        htmlStorageKey: 'mockups/project/home.html',
+      },
+      {
+        id: 's2',
+        screenLocalId: 'detail',
+        screenName: 'Detalle',
+        imageStorageKey: 'mockups/project/detail.png',
+        imageContentType: 'image/png',
+        htmlStorageKey: 'mockups/project/detail.html',
+      },
+    ];
+    prisma.artifact.findFirst.mockResolvedValue({
+      ...artifact,
+      versions: [
+        {
+          ...version,
+          mockupDetail: { ...mockupDetail, generatorKind: 'STITCH', svg: null, screens },
+        },
+      ],
+    });
+    await storage.putObject({
+      key: screens[0]!.imageStorageKey,
+      body: Buffer.from('png-home'),
+      contentType: 'image/png',
+    });
+    await storage.putObject({
+      key: screens[1]!.imageStorageKey,
+      body: Buffer.from('png-detail'),
+      contentType: 'image/png',
+    });
+
+    const { body, fileName } = await service.downloadMockupScreensZip('project', 'artifact');
+    expect(fileName).toBe('MCK-001-pantallas.zip');
+    const zip = await JSZip.loadAsync(body);
+    expect(Object.keys(zip.files).sort()).toEqual(['01-inicio.png', '02-detalle.png']);
+    expect(await zip.files['01-inicio.png']!.async('nodebuffer')).toEqual(Buffer.from('png-home'));
+    expect(await zip.files['02-detalle.png']!.async('nodebuffer')).toEqual(
+      Buffer.from('png-detail'),
+    );
+  });
+
+  it('rejects a ZIP download for a mockup with no screen images (internal wireframe)', async () => {
+    const { service, prisma } = setup();
+    prisma.artifact.findFirst.mockResolvedValue({ ...artifact, versions: [version] });
+    await expect(service.downloadMockupScreensZip('project', 'artifact')).rejects.toThrow(
+      'No hay imágenes para descargar.',
+    );
+  });
+
+  it('rejects a ZIP whose combined image size exceeds the archive limit', async () => {
+    const { service, prisma, storage } = setup();
+    const screens = [
+      {
+        id: 's1',
+        screenLocalId: 'home',
+        screenName: 'Inicio',
+        imageStorageKey: 'mockups/project/home.png',
+        imageContentType: 'image/png',
+        htmlStorageKey: 'mockups/project/home.html',
+      },
+    ];
+    prisma.artifact.findFirst.mockResolvedValue({
+      ...artifact,
+      versions: [
+        {
+          ...version,
+          mockupDetail: { ...mockupDetail, generatorKind: 'STITCH', svg: null, screens },
+        },
+      ],
+    });
+    vi.spyOn(storage, 'getObject').mockResolvedValue(Buffer.alloc(50_000_001));
+    await expect(service.downloadMockupScreensZip('project', 'artifact')).rejects.toThrow(
+      'supera el límite',
+    );
   });
 
   it('rejects incomplete or foreign provider screen lists before persistence', async () => {
