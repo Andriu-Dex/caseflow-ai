@@ -180,7 +180,7 @@ describe('Traceability graph integration', () => {
 
     const structuredAnalysisService = new StructuredAnalysisService(
       ctx.prisma,
-      fakeAi(ctx, 'navigation.generate', 1, {
+      fakeAi(ctx, 'navigation.generate', 3, {
         nodes: [{ localId: 'home', label: 'Home', viewName: 'Home', kind: 'HOME' as const }],
       }),
       new DiagramEngine(),
@@ -288,7 +288,10 @@ describe('Traceability graph integration', () => {
       'APPROVED',
     );
 
-    const mockup = await ctx.mockups.create(projectId, blueprintAccepted.version.id);
+    const mockupJob = await ctx.mockups.create(projectId, blueprintAccepted.version.id);
+    await ctx.mockups.runJob(mockupJob.id);
+    const finishedMockupJob = await ctx.mockups.getJob(projectId, mockupJob.id);
+    const mockup = await ctx.mockups.get(projectId, finishedMockupJob.resultArtifactId!);
 
     const { nodes, edges } = await ctx.traceability.buildGraph(projectId);
 

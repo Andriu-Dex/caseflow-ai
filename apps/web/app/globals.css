@@ -3,6 +3,26 @@
 
 @custom-variant dark (&:is(.dark *));
 
+@keyframes mockup-progress-indeterminate {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(410%);
+  }
+}
+
+.mockup-progress-indeterminate {
+  animation: mockup-progress-indeterminate 1.7s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mockup-progress-indeterminate {
+    animation: none;
+    transform: translateX(100%);
+  }
+}
+
 :root {
   --radius: 0.75rem;
   --background: oklch(0.93 0.009 265);

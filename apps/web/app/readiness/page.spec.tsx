@@ -44,7 +44,7 @@ describe('ReadinessPage', () => {
         <ReadinessPage />
       </TestProviders>,
     );
-    await waitFor(() => expect(screen.getByText(/listo/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/proyecto completo/i)).toBeInTheDocument());
     expect(screen.getByText(/fuentes del proyecto/i)).toBeInTheDocument();
   });
 
@@ -54,7 +54,11 @@ describe('ReadinessPage', () => {
         <ReadinessPage />
       </TestProviders>,
     );
-    expect(screen.getByRole('button', { name: /exportar json/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /exportar reporte html/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /datos estructurados \(json\)/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /documento del proyecto \(html\)/i }),
+    ).toBeInTheDocument();
   });
 });

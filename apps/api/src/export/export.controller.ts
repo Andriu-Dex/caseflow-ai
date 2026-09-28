@@ -38,7 +38,7 @@ export class ExportController {
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     if (resolved === 'html') {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      return renderExportHtml(snapshot);
+      return renderExportHtml(snapshot, await this.service.mockupImageDataUrls(snapshot));
     }
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     return snapshot;

@@ -213,7 +213,10 @@ describe('Export (First Deliverable, Phase H)', () => {
       'APPROVED',
     );
 
-    const mockup = await ctx.mockups.create(projectId, blueprint.version.id);
+    const mockupJob = await ctx.mockups.create(projectId, blueprint.version.id);
+    await ctx.mockups.runJob(mockupJob.id);
+    const finishedMockupJob = await ctx.mockups.getJob(projectId, mockupJob.id);
+    const mockup = await ctx.mockups.get(projectId, finishedMockupJob.resultArtifactId!);
     await ctx.mockups.transition(projectId, mockup.id, mockup.version.id, 'IN_REVIEW');
     await ctx.mockups.transition(projectId, mockup.id, mockup.version.id, 'APPROVED');
 
@@ -439,7 +442,7 @@ describe('Export (First Deliverable, Phase H)', () => {
 
     const navigationService = new StructuredAnalysisService(
       ctx.prisma,
-      fakeAi(ctx, 'navigation.generate', 1, {
+      fakeAi(ctx, 'navigation.generate', 3, {
         nodes: [{ localId: 'home', label: 'Home', viewName: 'Home', kind: 'HOME' as const }],
       }),
       new DiagramEngine(),
@@ -572,7 +575,10 @@ describe('Export (First Deliverable, Phase H)', () => {
       'APPROVED',
     );
 
-    const mockup = await ctx.mockups.create(projectId, blueprintAccepted.version.id);
+    const mockupJob = await ctx.mockups.create(projectId, blueprintAccepted.version.id);
+    await ctx.mockups.runJob(mockupJob.id);
+    const finishedMockupJob = await ctx.mockups.getJob(projectId, mockupJob.id);
+    const mockup = await ctx.mockups.get(projectId, finishedMockupJob.resultArtifactId!);
     await ctx.mockups.transition(projectId, mockup.id, mockup.version.id, 'IN_REVIEW');
     await ctx.mockups.transition(projectId, mockup.id, mockup.version.id, 'APPROVED');
 

@@ -50,7 +50,12 @@ const requirement = {
   dependencyArtifactIds: [],
 };
 
-function fakeAIOrchestrator(ctx: TestContext, promptKey: string, payload: unknown) {
+function fakeAIOrchestrator(
+  ctx: TestContext,
+  promptKey: string,
+  payload: unknown,
+  promptVersion = 1,
+) {
   const provider = new FakeAIProvider({
     provider: 'fake',
     model: 'fake-v1',
@@ -63,7 +68,7 @@ function fakeAIOrchestrator(ctx: TestContext, promptKey: string, payload: unknow
     new PromptRegistry([
       {
         key: promptKey,
-        version: 1,
+        version: promptVersion,
         capability: 'STRUCTURED_OUTPUT',
         purpose: promptKey,
         systemInstructions: 'policy',
@@ -167,7 +172,7 @@ describe('Structured Analysis (Navigation/Architecture/UI Blueprint) integration
   });
 
   it('generates a candidate from exact APPROVED sources and accepts it with full provenance', async () => {
-    const { provider, ai } = fakeAIOrchestrator(ctx, 'navigation.generate', navigation);
+    const { provider, ai } = fakeAIOrchestrator(ctx, 'navigation.generate', navigation, 3);
     const service = new StructuredAnalysisService(
       ctx.prisma,
       ai,
@@ -196,7 +201,7 @@ describe('Structured Analysis (Navigation/Architecture/UI Blueprint) integration
 
   it('rejects draft and cross-project generation sources', async () => {
     const draft = await ctx.requirements.create(projectId, { ...requirement, name: 'Borrador' });
-    const { ai } = fakeAIOrchestrator(ctx, 'navigation.generate', navigation);
+    const { ai } = fakeAIOrchestrator(ctx, 'navigation.generate', navigation, 3);
     const service = new StructuredAnalysisService(
       ctx.prisma,
       ai,
