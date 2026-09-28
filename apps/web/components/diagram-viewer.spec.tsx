@@ -46,4 +46,30 @@ describe('DiagramViewer — zoom/pan', () => {
     await user.click(screen.getByRole('button', { name: 'Alejar' }));
     expect(screen.getByText('100%')).toBeInTheDocument();
   });
+
+  it('pans by dragging, even at 100% zoom, and stops panning on pointer up', () => {
+    renderViewer();
+    const viewport = screen.getByLabelText(/Vista ampliable/i);
+    const content = viewport.firstElementChild as HTMLElement;
+    expect(content.style.transform).toBe('translate(0px, 0px) scale(1)');
+    // jsdom doesn't implement pointer capture.
+    viewport.setPointerCapture = () => undefined;
+
+    fireEvent.pointerDown(viewport, { button: 0, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(viewport, { clientX: 130, clientY: 80 });
+    expect(content.style.transform).toBe('translate(30px, -20px) scale(1)');
+
+    // Movement after pointer up must not keep panning.
+    fireEvent.pointerUp(viewport);
+    fireEvent.pointerMove(viewport, { clientX: 999, clientY: 999 });
+    expect(content.style.transform).toBe('translate(30px, -20px) scale(1)');
+  });
+
+  it("does not prevent dragging with the browser's own default action (native wheel listener only blocks scroll on wheel)", () => {
+    renderViewer();
+    const viewport = screen.getByLabelText(/Vista ampliable/i);
+    const wheelEvent = new WheelEvent('wheel', { deltaY: -1, cancelable: true });
+    viewport.dispatchEvent(wheelEvent);
+    expect(wheelEvent.defaultPrevented).toBe(true);
+  });
 });

@@ -101,7 +101,7 @@ describe('DiagramEngine', () => {
     expect(() => engine.validate('MERMAID_FLOWCHART', source)).not.toThrow();
   });
 
-  it('generates a deterministic Mermaid flowchart from the traceability graph, sorted by code, truncating long titles', () => {
+  it('generates a deterministic Mermaid flowchart from the traceability graph, sorted by code, word-wrapping long titles instead of truncating them', () => {
     const source = engine.generateTraceabilityFlowchart({
       nodes: [
         { id: 'v2', code: 'RF-002', title: 'B' },
@@ -115,7 +115,7 @@ describe('DiagramEngine', () => {
     });
     expect(source).toBe(
       'flowchart TD\n' +
-        '  v1["RF-001: Un título extremadamente largo que supe…"]\n' +
+        '  v1["RF-001: Un título extremadamente largo que supera cuarenta\\ncaracteres"]\n' +
         '  v2["RF-002: B"]\n' +
         '  v1 --> v2',
     );

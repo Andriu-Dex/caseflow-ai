@@ -7,6 +7,6 @@ export default defineConfig({
     environment: 'jsdom',
     include: ['**/*.spec.tsx', '**/*.spec.ts'],
     exclude: ['**/node_modules/**', '**/.next/**'],
-    setupFiles: ['./vitest.setup.ts'],
+    setupFiles: ['./vitest.setup.pointer-event.ts', './vitest.setup.ts'],
   },
 });

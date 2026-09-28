@@ -58,6 +58,27 @@ function dedupePreserveOrder(values: string[]): string[] {
   return [...new Set(values)];
 }
 
+function wrapText(text: string, maxLineLength: number = 40): string {
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let currentLine = '';
+
+  for (const word of words) {
+    if (!currentLine) {
+      currentLine = word;
+    } else if (currentLine.length + 1 + word.length > maxLineLength) {
+      lines.push(currentLine);
+      currentLine = word;
+    } else {
+      currentLine += ' ' + word;
+    }
+  }
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+
+  return lines.join('\\n');
+}
 @Injectable()
 export class DiagramEngine {
   generateER(model: ERDiagramModel): string {
@@ -137,8 +158,9 @@ export class DiagramEngine {
     );
     const lines = ['flowchart TD'];
     for (const node of nodes) {
-      const title = node.title.length > 40 ? `${node.title.slice(0, 39)}…` : node.title;
-      lines.push(`  ${safeId(node.id)}["${quote(`${node.code}: ${title}`)}"]`);
+      const fullTitle = `${node.code}: ${node.title}`;
+      const title = wrapText(fullTitle, 60);
+      lines.push(`  ${safeId(node.id)}["${quote(title)}"]`);
     }
     for (const edge of edges) lines.push(`  ${safeId(edge.fromId)} --> ${safeId(edge.toId)}`);
     return lines.join('\n');
