@@ -29,6 +29,10 @@ export type SystemArchitectureDiagramModel = {
   nodes: { localId: string; name: string; kind: string }[];
   links: { fromLocalId: string; toLocalId: string; description?: string }[];
 };
+export type TraceabilityDiagramModel = {
+  nodes: { id: string; code: string; title: string }[];
+  edges: { fromId: string; toId: string }[];
+};
 export type DiagramFormat =
   'MERMAID_ER' | 'PLANTUML' | 'MERMAID_FLOWCHART' | 'PLANTUML_COMPONENT' | 'PLANTUML_DEPLOYMENT';
 const cardinality: Record<string, string> = {
@@ -118,6 +122,25 @@ export class DiagramEngine {
     for (const node of nodes)
       if (node.parentLocalId)
         lines.push(`  ${safeId(node.parentLocalId)} --> ${safeId(node.localId)}`);
+    return lines.join('\n');
+  }
+
+  // Deterministic Mermaid flowchart from the Traceability graph (spec §4.8:
+  // canonical source over render — this source is derived and re-rendered on
+  // demand, never persisted, since the graph itself is already recomputed on
+  // every request). Node ids are real UUIDs, so safeId() is what keeps them
+  // valid Mermaid identifiers.
+  generateTraceabilityFlowchart(model: TraceabilityDiagramModel): string {
+    const nodes = [...model.nodes].sort((a, b) => compareOrdinal(a.code, b.code));
+    const edges = [...model.edges].sort(
+      (a, b) => compareOrdinal(a.fromId, b.fromId) || compareOrdinal(a.toId, b.toId),
+    );
+    const lines = ['flowchart TD'];
+    for (const node of nodes) {
+      const title = node.title.length > 40 ? `${node.title.slice(0, 39)}…` : node.title;
+      lines.push(`  ${safeId(node.id)}["${quote(`${node.code}: ${title}`)}"]`);
+    }
+    for (const edge of edges) lines.push(`  ${safeId(edge.fromId)} --> ${safeId(edge.toId)}`);
     return lines.join('\n');
   }
 

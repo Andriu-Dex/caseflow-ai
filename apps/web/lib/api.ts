@@ -22,6 +22,7 @@ import type {
   StalenessAnalysisResponse,
   StructuredAnalysisKind,
   StructuredAnalysisResponse,
+  TraceabilityDiagramResponse,
   TraceabilityGraphResponse,
   UseCaseInput,
   UseCaseResponse,
@@ -131,6 +132,10 @@ export const api = {
   traceability: {
     get: (projectId: string) =>
       get<TraceabilityGraphResponse>(`/projects/${projectId}/traceability`),
+    getDiagram: (projectId: string) =>
+      get<TraceabilityDiagramResponse>(`/projects/${projectId}/traceability/diagram`),
+    diagramPngUrl: (projectId: string) =>
+      `${BASE_URL}/projects/${projectId}/traceability/diagram/png`,
   },
   sources: {
     list: (projectId: string) => get<{ items: SourceResponse[] }>(`/projects/${projectId}/sources`),

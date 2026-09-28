@@ -1,5 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  ServiceUnavailableException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import type {
+  TraceabilityDiagramResponse,
   TraceabilityEdge,
   TraceabilityGeneration,
   TraceabilityGenerator,
@@ -10,7 +16,19 @@ import {
   TRACEABILITY_MAX_EDGES,
   TRACEABILITY_MAX_NODES,
 } from '@caseflow-ai/contracts';
+import { DiagramProviderError, type DiagramProvider } from '@caseflow-ai/integrations';
 import { PrismaService } from '../database/prisma.service';
+import { DiagramEngine } from '../data-models/diagram-engine';
+import { DIAGRAM_PROVIDER } from '../data-models/diagram-provider.token';
+import { sanitizeDiagramSvg } from '../data-models/svg-sanitizer';
+
+// A project with no traceable artifacts yet is a normal, valid state (spec
+// §56 graceful degradation) — this fixed placeholder avoids sending an empty
+// project through the diagram renderer just to get an equally empty result.
+const EMPTY_DIAGRAM_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="360" height="48">' +
+  '<text x="8" y="28" font-family="sans-serif" font-size="14" fill="#64748b">' +
+  'Aún no hay artefactos que graficar.</text></svg>';
 
 type AIRunRow = {
   id: string;
@@ -43,7 +61,11 @@ function toGeneration(
 
 @Injectable()
 export class TraceabilityService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly diagrams: DiagramEngine,
+    @Inject(DIAGRAM_PROVIDER) private readonly diagramProvider: DiagramProvider,
+  ) {}
 
   // Every node/edge below is read directly from persisted exact-version
   // relationships — nothing is inferred from stage adjacency (spec Phase F).
@@ -292,5 +314,56 @@ export class TraceabilityService {
       edges.length = TRACEABILITY_MAX_EDGES;
     }
     return { nodes, edges, truncated };
+  }
+
+  // A rendered, downloadable view of the same graph (spec §4.8): re-derived
+  // and re-rendered on every request, exactly like every other diagram in the
+  // product — nothing here is persisted.
+  private async buildDiagramSource(projectId: string): Promise<string | null> {
+    const { nodes, edges } = await this.buildGraph(projectId);
+    if (nodes.length === 0) return null;
+    const source = this.diagrams.generateTraceabilityFlowchart({ nodes, edges });
+    this.diagrams.validate('MERMAID_FLOWCHART', source);
+    return source;
+  }
+
+  async buildDiagram(projectId: string): Promise<TraceabilityDiagramResponse> {
+    const source = await this.buildDiagramSource(projectId);
+    if (!source)
+      return { source: 'flowchart TD', sourceFormat: 'MERMAID_FLOWCHART', svg: EMPTY_DIAGRAM_SVG };
+    try {
+      const rendered = await this.diagramProvider.render({ format: 'MERMAID_FLOWCHART', source });
+      const svg = sanitizeDiagramSvg(rendered.svg);
+      return { source, sourceFormat: 'MERMAID_FLOWCHART', svg };
+    } catch (error) {
+      if (error instanceof DiagramProviderError) {
+        if (error.code === 'DIAGRAM_INVALID_SOURCE')
+          throw new UnprocessableEntityException({ message: error.message, code: error.code });
+        throw new ServiceUnavailableException({ message: error.message, code: error.code });
+      }
+      throw error;
+    }
+  }
+
+  // Re-rendered from the same on-demand source as buildDiagram(), never from
+  // a stored SVG (spec §4.8; PNG rasterization is unreliable client-side —
+  // see apps/web/components/diagram-viewer.tsx).
+  async getDiagramPng(projectId: string): Promise<Buffer> {
+    const source = await this.buildDiagramSource(projectId);
+    if (!source) throw new UnprocessableEntityException('No hay artefactos que graficar.');
+    try {
+      const { png } = await this.diagramProvider.renderPng({
+        format: 'MERMAID_FLOWCHART',
+        source,
+      });
+      return png;
+    } catch (error) {
+      if (error instanceof DiagramProviderError) {
+        if (error.code === 'DIAGRAM_INVALID_SOURCE')
+          throw new UnprocessableEntityException({ message: error.message, code: error.code });
+        throw new ServiceUnavailableException({ message: error.message, code: error.code });
+      }
+      throw error;
+    }
   }
 }

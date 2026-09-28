@@ -451,4 +451,23 @@ describe('Traceability graph integration', () => {
     expect(v2Node.isCurrent).toBe(true);
     expect(v2Node.id).toBe(v2.version.id);
   });
+
+  it('wires the diagram pipeline end to end: real graph, real DI, real Mermaid generation/validation', async () => {
+    const workspace = await createWorkspace(ctx.prisma, 'Traceability Diagram');
+    const projectId = (await ctx.projects.create({ workspaceId: workspace.id, name: 'P' })).id;
+    const source = await approveSource(ctx, projectId, 'Notas iniciales');
+
+    const diagram = await ctx.traceability.buildDiagram(projectId);
+    expect(diagram.sourceFormat).toBe('MERMAID_FLOWCHART');
+    expect(diagram.source).toBe(
+      `flowchart TD\n  ${source.version.id.replace(/-/g, '_')}["SRC-001: Notas iniciales"]`,
+    );
+    // The renderer itself is the shared fake used by every integration test in
+    // this suite (see FAKE_DIAGRAM_SVG in support/test-app.ts) — real Kroki
+    // rendering is exercised only by the Playwright E2E job in CI.
+    expect(diagram.svg).toMatch(/^<svg/);
+
+    const png = await ctx.traceability.getDiagramPng(projectId);
+    expect(png.toString()).toBe('fake-png');
+  });
 });

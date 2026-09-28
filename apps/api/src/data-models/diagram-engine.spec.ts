@@ -101,6 +101,27 @@ describe('DiagramEngine', () => {
     expect(() => engine.validate('MERMAID_FLOWCHART', source)).not.toThrow();
   });
 
+  it('generates a deterministic Mermaid flowchart from the traceability graph, sorted by code, truncating long titles', () => {
+    const source = engine.generateTraceabilityFlowchart({
+      nodes: [
+        { id: 'v2', code: 'RF-002', title: 'B' },
+        {
+          id: 'v1',
+          code: 'RF-001',
+          title: 'Un título extremadamente largo que supera cuarenta caracteres',
+        },
+      ],
+      edges: [{ fromId: 'v1', toId: 'v2' }],
+    });
+    expect(source).toBe(
+      'flowchart TD\n' +
+        '  v1["RF-001: Un título extremadamente largo que supe…"]\n' +
+        '  v2["RF-002: B"]\n' +
+        '  v1 --> v2',
+    );
+    expect(() => engine.validate('MERMAID_FLOWCHART', source)).not.toThrow();
+  });
+
   it('generates a deterministic PlantUML component diagram, with and without a dependency description', () => {
     const source = engine.generateSoftwareComponentDiagram({
       components: [
