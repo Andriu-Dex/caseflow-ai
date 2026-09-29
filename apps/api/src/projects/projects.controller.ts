@@ -1,3 +1,8 @@
+import { UseGuards } from "@nestjs/common";
+import { JwtAuthGuard } from "../identity/jwt-auth.guard";
+import { ProjectMembershipGuard } from "../identity/project-membership.guard";
+import { WorkspaceMembershipGuard } from "../identity/workspace-membership.guard";
+
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
@@ -22,6 +27,7 @@ import {
 import { ProjectsService } from './projects.service';
 
 @ApiTags('projects')
+@UseGuards(JwtAuthGuard, ProjectMembershipGuard, WorkspaceMembershipGuard)
 @Controller('projects')
 export class ProjectsController {
   constructor(private readonly projects: ProjectsService) {}

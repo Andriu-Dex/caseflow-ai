@@ -62,17 +62,21 @@ export class ApiError extends Error {
   }
 }
 
+let accessToken: string | null = null;
+export function setAccessToken(token: string | null) {
+  accessToken = token;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
-  // FormData bodies (multipart file uploads) must never get an explicit
-  // Content-Type here — the browser sets its own multipart boundary, and
-  // overriding it to application/json breaks the backend's multipart parser.
   const isFormData = typeof FormData !== 'undefined' && init?.body instanceof FormData;
   try {
     response = await fetch(`${BASE_URL}${path}`, {
       ...init,
+      credentials: 'include',
       headers: {
         ...(init?.body && !isFormData ? { 'Content-Type': 'application/json' } : {}),
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
         ...init?.headers,
       },
     });
@@ -106,6 +110,12 @@ const post = <T>(path: string, body?: unknown) =>
 const del = <T>(path: string) => request<T>(path, { method: 'DELETE' });
 
 export const api = {
+  auth: {
+    login: (body: any) => post<any>('/auth/login', body).then(res => { setAccessToken(res.accessToken); return res; }),
+    register: (body: any) => post<any>('/auth/register', body).then(res => { setAccessToken(res.accessToken); return res; }),
+    logout: () => post<any>('/auth/logout').then(() => setAccessToken(null)),
+    refresh: () => post<any>('/auth/refresh').then(res => { setAccessToken(res.accessToken); return res; }),
+  },
   workspaces: {
     list: () => get<WorkspaceListResponse>('/workspaces'),
   },

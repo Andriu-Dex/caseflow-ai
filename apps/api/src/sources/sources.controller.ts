@@ -1,3 +1,7 @@
+import { UseGuards } from "@nestjs/common";
+import { JwtAuthGuard } from "../identity/jwt-auth.guard";
+import { ProjectMembershipGuard } from "../identity/project-membership.guard";
+
 import {
   Body,
   Controller,
@@ -32,6 +36,7 @@ import { ApiErrorResponse, ApiZodBody, ApiZodResponse } from '../openapi/zod-ope
 import { SourcesService } from './sources.service';
 
 @ApiTags('sources')
+@UseGuards(JwtAuthGuard, ProjectMembershipGuard)
 @Controller('projects/:projectId/sources')
 export class SourcesController {
   constructor(private readonly service: SourcesService) {}

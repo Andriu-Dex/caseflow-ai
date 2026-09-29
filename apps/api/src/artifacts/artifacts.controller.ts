@@ -1,3 +1,7 @@
+import { UseGuards } from "@nestjs/common";
+import { JwtAuthGuard } from "../identity/jwt-auth.guard";
+import { ProjectMembershipGuard } from "../identity/project-membership.guard";
+
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
@@ -15,6 +19,7 @@ import { ApiErrorResponse, ApiUuidParam, ApiZodBody, ApiZodResponse } from '../o
 import { ArtifactsService } from './artifacts.service';
 
 @ApiTags('artifacts')
+@UseGuards(JwtAuthGuard, ProjectMembershipGuard)
 @Controller('projects/:projectId/artifacts')
 export class ArtifactsController {
   constructor(private readonly artifacts: ArtifactsService) {}
