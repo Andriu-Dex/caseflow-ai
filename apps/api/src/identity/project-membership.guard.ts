@@ -4,7 +4,9 @@ import {
   ExecutionContext,
   ForbiddenException,
   UnauthorizedException,
+  BadRequestException,
 } from '@nestjs/common';
+import { z } from 'zod';
 import { PrismaService } from '../database/prisma.service';
 
 @Injectable()
@@ -19,15 +21,23 @@ export class ProjectMembershipGuard implements CanActivate {
     const projectId =
       request.params.projectId || request.body?.projectId || request.query?.projectId;
     if (!projectId) return true;
+    if (!z.uuid().safeParse(projectId).success)
+      throw new BadRequestException('La solicitud no es válida.');
 
-    const membership = await this.prisma.projectMembership.findUnique({
-      where: {
-        projectId_userId: { projectId, userId: user.id },
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: {
+        projectMemberships: { where: { userId: user.id }, select: { id: true } },
+        workspace: {
+          select: { memberships: { where: { userId: user.id }, select: { id: true } } },
+        },
       },
     });
 
-    if (!membership) {
-      throw new ForbiddenException('User is not a member of this project');
+    // Let the route's resource lookup preserve its established 404 semantics.
+    if (!project) return true;
+    if (!project.projectMemberships.length || !project.workspace.memberships.length) {
+      throw new ForbiddenException('User is not a member of this workspace and project');
     }
     return true;
   }

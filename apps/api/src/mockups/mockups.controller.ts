@@ -2,17 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../identity/jwt-auth.guard';
 import { ProjectMembershipGuard } from '../identity/project-membership.guard';
 
-import {
-  Body,
-  Controller,
-  Get,
-  Headers,
-  HttpCode,
-  Param,
-  Post,
-  Res,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
@@ -60,22 +50,6 @@ export class MockupsController {
     @Param('jobId', uuidParamPipe) jobId: string,
   ) {
     return this.service.getJob(projectId, jobId);
-  }
-
-  // Invoked only by apps/worker after popping the job off the queue — never
-  // reachable from the browser. A shared secret (never the projectId/jobId
-  // alone, spec §33.1) is the only authorization here since this repo has no
-  // end-user session/auth layer yet.
-  @Post('jobs/:jobId/run')
-  @HttpCode(204)
-  @ApiOperation({ operationId: 'runMockupJob', summary: 'Ejecutar un trabajo encolado (interno)' })
-  async runJob(
-    @Param('jobId', uuidParamPipe) jobId: string,
-    @Headers('x-internal-jobs-secret') secret: string | undefined,
-  ) {
-    const expected = process.env.INTERNAL_JOBS_SECRET;
-    if (!expected || secret !== expected) throw new UnauthorizedException();
-    await this.service.runJob(jobId);
   }
 
   @Get()

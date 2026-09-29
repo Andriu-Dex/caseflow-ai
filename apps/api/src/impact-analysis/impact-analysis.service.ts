@@ -10,16 +10,18 @@ export class ImpactAnalysisService {
     private readonly traceabilityService: TraceabilityService,
   ) {}
 
-  async analyzeImpact(artifactVersionId: string): Promise<ImpactAnalysisResponse> {
-    const version = await this.prisma.artifactVersion.findUnique({
-      where: { id: artifactVersionId },
+  async analyzeImpact(
+    projectId: string,
+    artifactVersionId: string,
+  ): Promise<ImpactAnalysisResponse> {
+    const version = await this.prisma.artifactVersion.findFirst({
+      where: { id: artifactVersionId, projectId },
       include: { artifact: true },
     });
     if (!version) {
       throw new NotFoundException(`Artifact version ${artifactVersionId} not found`);
     }
 
-    const projectId = version.projectId;
     const { nodes, edges } = await this.traceabilityService.buildGraph(projectId);
 
     const adj = new Map<string, string[]>();

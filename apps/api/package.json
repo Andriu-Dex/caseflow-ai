@@ -27,6 +27,7 @@
     "@types/passport-jwt": "^4.0.1",
     "argon2": "^0.45.1",
     "bullmq": "^6.3.9",
+    "cookie-parser": "^1.4.7",
     "docx": "9.7.2",
     "express": "^4.22.3",
     "fast-xml-parser": "5.11.1",

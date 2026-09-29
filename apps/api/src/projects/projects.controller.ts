@@ -3,7 +3,7 @@ import { JwtAuthGuard } from '../identity/jwt-auth.guard';
 import { ProjectMembershipGuard } from '../identity/project-membership.guard';
 import { WorkspaceMembershipGuard } from '../identity/workspace-membership.guard';
 
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Query, Req } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   createProjectRequestSchema,
@@ -25,6 +25,11 @@ import {
   ApiZodResponse,
 } from '../openapi/zod-openapi';
 import { ProjectsService } from './projects.service';
+import type { Request } from 'express';
+
+interface AuthenticatedRequest extends Request {
+  user: { id: string };
+}
 
 @ApiTags('projects')
 @UseGuards(JwtAuthGuard, ProjectMembershipGuard, WorkspaceMembershipGuard)
@@ -41,8 +46,9 @@ export class ProjectsController {
   create(
     @Body(new ZodValidationPipe(createProjectRequestSchema))
     body: z.output<typeof createProjectRequestSchema>,
+    @Req() req: AuthenticatedRequest,
   ): Promise<ProjectResponse> {
-    return this.projects.create(body);
+    return this.projects.create(body, req.user.id);
   }
 
   @Get()
@@ -53,8 +59,9 @@ export class ProjectsController {
   list(
     @Query(new ZodValidationPipe(listProjectsQuerySchema))
     query: z.output<typeof listProjectsQuerySchema>,
+    @Req() req: AuthenticatedRequest,
   ): Promise<ProjectListResponse> {
-    return this.projects.list(query.workspaceId, query.limit, query.offset);
+    return this.projects.list(query.workspaceId, query.limit, query.offset, req.user.id);
   }
 
   @Get(':projectId')

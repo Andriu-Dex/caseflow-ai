@@ -17,12 +17,20 @@ export class AuthService {
     if (existing) throw new ConflictException('User already exists');
 
     const passwordHash = await argon2.hash(dto.password);
-    const user = await this.prisma.user.create({
-      data: {
-        email: dto.email,
-        passwordHash,
-        displayName: dto.displayName,
-      },
+    const user = await this.prisma.$transaction(async (tx) => {
+      const createdUser = await tx.user.create({
+        data: { email: dto.email, passwordHash, displayName: dto.displayName },
+      });
+      const workspace = await tx.workspace.create({
+        data: {
+          name: `${dto.displayName} - Espacio de trabajo`,
+          slug: `ws-${randomBytes(8).toString('hex')}`,
+        },
+      });
+      await tx.workspaceMembership.create({
+        data: { workspaceId: workspace.id, userId: createdUser.id, role: 'OWNER' },
+      });
+      return createdUser;
     });
 
     return this.generateTokens(user);
@@ -39,46 +47,40 @@ export class AuthService {
   }
 
   async refresh(refreshToken: string): Promise<AuthResponse & { refreshToken: string }> {
-    // In a real app we'd find the specific session. For MVP, we fetch all and verify:
-    const sessions = await this.prisma.session.findMany({
-      where: { revokedAt: null, expiresAt: { gt: new Date() } },
+    const [tokenId, secret, extra] = refreshToken.split('.');
+    if (!tokenId || !secret || extra) throw new UnauthorizedException('Invalid refresh token');
+    const session = await this.prisma.session.findUnique({
+      where: { tokenId },
       include: { user: true },
     });
-
-    let validSession = null;
-    for (const s of sessions) {
-      if (await argon2.verify(s.refreshTokenHash, refreshToken)) {
-        validSession = s;
-        break;
-      }
-    }
-
-    if (!validSession || validSession.user.archivedAt) {
+    if (
+      !session ||
+      session.revokedAt ||
+      session.expiresAt <= new Date() ||
+      session.user.archivedAt ||
+      !(await argon2.verify(session.refreshTokenHash, secret))
+    ) {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    // Revoke old session and generate new tokens (rotation)
-    await this.prisma.session.update({
-      where: { id: validSession.id },
+    const revoked = await this.prisma.session.updateMany({
+      where: { id: session.id, revokedAt: null, expiresAt: { gt: new Date() } },
       data: { revokedAt: new Date() },
     });
+    if (revoked.count !== 1) throw new UnauthorizedException('Refresh token was already used');
 
-    return this.generateTokens(validSession.user);
+    return this.generateTokens(session.user);
   }
 
   async logout(refreshToken: string) {
-    const sessions = await this.prisma.session.findMany({
-      where: { revokedAt: null },
+    const [tokenId, secret, extra] = refreshToken.split('.');
+    if (!tokenId || !secret || extra) return;
+    const session = await this.prisma.session.findUnique({ where: { tokenId } });
+    if (!session || !(await argon2.verify(session.refreshTokenHash, secret))) return;
+    await this.prisma.session.updateMany({
+      where: { id: session.id, revokedAt: null },
+      data: { revokedAt: new Date() },
     });
-    for (const s of sessions) {
-      if (await argon2.verify(s.refreshTokenHash, refreshToken)) {
-        await this.prisma.session.update({
-          where: { id: s.id },
-          data: { revokedAt: new Date() },
-        });
-        break;
-      }
-    }
   }
 
   private async generateTokens(user: {
@@ -89,8 +91,10 @@ export class AuthService {
     const payload = { sub: user.id };
     const accessToken = this.jwtService.sign(payload);
 
-    const refreshToken = randomBytes(32).toString('hex');
-    const refreshTokenHash = await argon2.hash(refreshToken);
+    const tokenId = randomBytes(16).toString('hex');
+    const secret = randomBytes(32).toString('hex');
+    const refreshToken = `${tokenId}.${secret}`;
+    const refreshTokenHash = await argon2.hash(secret);
 
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7); // 7 days
@@ -98,6 +102,7 @@ export class AuthService {
     await this.prisma.session.create({
       data: {
         userId: user.id,
+        tokenId,
         refreshTokenHash,
         expiresAt,
       },

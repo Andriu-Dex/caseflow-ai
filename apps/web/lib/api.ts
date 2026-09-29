@@ -63,11 +63,13 @@ export class ApiError extends Error {
 }
 
 let accessToken: string | null = null;
+let refreshInFlight: Promise<void> | null = null;
+if (typeof window !== 'undefined') localStorage.removeItem('caseflow_token');
 export function setAccessToken(token: string | null) {
   accessToken = token;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit, allowRefresh = true): Promise<T> {
   let response: Response;
   const isFormData = typeof FormData !== 'undefined' && init?.body instanceof FormData;
   try {
@@ -84,6 +86,28 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError('No se pudo conectar con el servidor de CASEFlow AI.', 0);
   }
   if (!response.ok) {
+    if (response.status === 401 && allowRefresh && !path.startsWith('/auth/')) {
+      try {
+        refreshInFlight ??= api.auth
+          .refresh()
+          .then(() => undefined)
+          .finally(() => {
+            refreshInFlight = null;
+          });
+        await refreshInFlight;
+        return request<T>(path, init, false);
+      } catch {
+        setAccessToken(null);
+      }
+    }
+    if (
+      response.status === 401 &&
+      typeof window !== 'undefined' &&
+      window.location.pathname !== '/login' &&
+      window.location.pathname !== '/register'
+    ) {
+      window.location.href = '/login';
+    }
     const message = await extractErrorMessage(response);
     throw new ApiError(message, response.status);
   }
