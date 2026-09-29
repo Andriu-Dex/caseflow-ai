@@ -55,7 +55,18 @@ export class UseCasesService {
   // Authoritative collection for Export (spec Phase H): each artifact's own
   // highest APPROVED version, never a newer DRAFT on top of it — unlike
   // list() above, which always takes the latest version regardless of status.
-  async listApproved(projectId: string) {
+  async listApproved(projectId: string, artifactVersionIds?: Record<string, string>) {
+    if (artifactVersionIds) {
+      const versionIds = Object.values(artifactVersionIds);
+      if (versionIds.length === 0) return { items: [] };
+      const versions = await this.prisma.artifactVersion.findMany({
+        where: { id: { in: versionIds }, artifact: { projectId, artifactTypeCode: 'USE_CASE' } },
+        include: { artifact: true, useCaseDetail: { include: detailInclude } },
+        orderBy: { artifact: { code: 'asc' } },
+      });
+      return { items: versions.map((v) => this.map(v.artifact, v)) };
+    }
+
     const rows = await this.prisma.artifact.findMany({
       where: {
         projectId,

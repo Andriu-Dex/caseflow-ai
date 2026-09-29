@@ -412,4 +412,16 @@ export const api = {
     get: (projectId: string) =>
       get<import('@caseflow-ai/contracts').ConsistencyReportResponse>(`/projects/${projectId}/consistency`),
   },
+  baselines: {
+    list: (projectId: string) =>
+      get<import('@caseflow-ai/contracts').BaselinesListResponse>(`/projects/${projectId}/baselines`),
+    get: (projectId: string, id: string) =>
+      get<import('@caseflow-ai/contracts').BaselineResponse>(`/projects/${projectId}/baselines/${id}`),
+    create: (projectId: string, data: import('@caseflow-ai/contracts').CreateBaselineRequest) =>
+      post<import('@caseflow-ai/contracts').BaselineResponse>(`/projects/${projectId}/baselines`, data),
+    exportHtmlUrl: (projectId: string, id: string) =>
+      `${BASE_URL}/projects/${projectId}/baselines/${id}/export?format=html`,
+    exportJsonUrl: (projectId: string, id: string) =>
+      `${BASE_URL}/projects/${projectId}/baselines/${id}/export?format=json`,
+  },
 };

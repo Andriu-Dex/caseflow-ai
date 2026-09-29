@@ -20,6 +20,7 @@ import { IdentityModule } from './identity/identity.module';
 import { KnowledgeBaseModule } from './knowledge-base/knowledge-base.module';
 import { ImpactAnalysisModule } from './impact-analysis/impact-analysis.module';
 import { ConsistencyEngineModule } from './consistency-engine/consistency-engine.module';
+import { BaselinesModule } from './baselines/baselines.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { ConsistencyEngineModule } from './consistency-engine/consistency-engine
     KnowledgeBaseModule,
     ImpactAnalysisModule,
     ConsistencyEngineModule,
+    BaselinesModule,
   ],
 })
 export class AppModule {}
