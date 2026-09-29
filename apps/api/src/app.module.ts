@@ -18,6 +18,7 @@ import { ExportModule } from './export/export.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
 import { IdentityModule } from './identity/identity.module';
 import { KnowledgeBaseModule } from './knowledge-base/knowledge-base.module';
+import { ImpactAnalysisModule } from './impact-analysis/impact-analysis.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { KnowledgeBaseModule } from './knowledge-base/knowledge-base.module';
     ExportModule,
     WorkspacesModule,
     KnowledgeBaseModule,
+    ImpactAnalysisModule,
   ],
 })
 export class AppModule {}
