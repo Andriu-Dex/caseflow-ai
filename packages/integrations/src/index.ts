@@ -31,6 +31,11 @@ export {
 export type { PutObjectInput, StorageProvider, StorageProviderErrorCode } from './storage-provider';
 export { S3StorageProvider } from './s3-storage-provider';
 export type { S3StorageProviderConfig } from './s3-storage-provider';
+export {
+  DisabledTranscriptionProvider,
+  OpenAICompatibleTranscriptionProvider,
+} from './transcription-provider';
+export type { TranscriptionProvider } from './transcription-provider';
 
 export {
   FallbackMockupProvider,

@@ -26,6 +26,7 @@ import {
   sourceReportCandidateSchema,
   sourceReportResponseSchema,
   sourceResponseSchema,
+  sourceTextResponseSchema,
   SOURCE_MAX_FILE_SIZE_BYTES,
   type SourceMetadataInput,
 } from '@caseflow-ai/contracts';
@@ -47,7 +48,7 @@ export class SourcesController {
   @ApiBody({
     schema: {
       type: 'object',
-      required: ['title', 'sourceKind', 'purpose', 'description'],
+      required: ['title', 'sourceKind', 'purpose'],
       properties: {
         file: { type: 'string', format: 'binary' },
         title: { type: 'string' },
@@ -84,6 +85,26 @@ export class SourcesController {
     @Param('sourceId', uuidParamPipe) sourceId: string,
   ) {
     return this.service.get(projectId, sourceId);
+  }
+
+  @Get(':sourceId/text')
+  @ApiOperation({ operationId: 'getSourceText', summary: 'Consultar texto extraído' })
+  @ApiZodResponse(200, 'Texto extraído.', sourceTextResponseSchema)
+  getText(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('sourceId', uuidParamPipe) sourceId: string,
+  ) {
+    return this.service.getText(projectId, sourceId);
+  }
+
+  @Post(':sourceId/processing/retry')
+  @ApiOperation({ operationId: 'retrySourceProcessing', summary: 'Reintentar extracción' })
+  @ApiZodResponse(201, 'Project Source.', sourceResponseSchema)
+  retryProcessing(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('sourceId', uuidParamPipe) sourceId: string,
+  ) {
+    return this.service.retryProcessing(projectId, sourceId);
   }
 
   @Get(':sourceId/download')

@@ -24,7 +24,12 @@ export const SOURCE_EXTRACTION_STATES = [
 export type SourceExtractionState = (typeof SOURCE_EXTRACTION_STATES)[number];
 
 // Deterministically extractable without any AI/OCR/ASR provider (§7.1).
-export const LOCALLY_EXTRACTABLE_MIME_TYPES = ['text/plain', 'text/markdown', 'application/pdf'];
+export const LOCALLY_EXTRACTABLE_MIME_TYPES = [
+  'text/plain',
+  'text/markdown',
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+];
 // MIME types accepted at all (upload/classification is always possible even
 // when automatic extraction is not — §7.2/§7.3).
 export const ALLOWED_SOURCE_MIME_TYPES = [
@@ -34,6 +39,7 @@ export const ALLOWED_SOURCE_MIME_TYPES = [
   'image/webp',
   'audio/mpeg',
   'audio/wav',
+  'audio/x-wav',
   'audio/mp4',
   'audio/x-m4a',
 ] as const;
@@ -47,9 +53,9 @@ export const sourceMetadataInputSchema = z
     sourceKind: z.enum(PROJECT_SOURCE_KINDS),
     purpose: text(2000),
     businessArea: text(200).optional(),
-    // Required: the source's typed content. When no file is uploaded, this
-    // becomes the source's sole extractedText (manual-transcript mechanism).
-    description: text(4000),
+    // Required by the service only when no file is uploaded. With a file,
+    // this is optional context while the original content is extracted.
+    description: z.string().trim().max(4000).default(''),
     language: text(20).optional(),
   })
   .strict();
@@ -77,6 +83,15 @@ export const sourceResponseSchema = z.object({
   // (spec §87: "fuentes utilizadas → archivar antes que borrar").
   hasApprovedHistory: z.boolean(),
   version: versionSchema,
+  processing: z
+    .object({
+      id: z.uuid(),
+      status: z.enum(['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED', 'UNSUPPORTED']),
+      processor: z.string(),
+      errorMessage: z.string().nullable(),
+      updatedAt: z.iso.datetime(),
+    })
+    .nullable(),
   source: z.object({
     title: z.string(),
     sourceKind: z.enum(PROJECT_SOURCE_KINDS),
@@ -95,6 +110,10 @@ export const sourceResponseSchema = z.object({
 });
 export type SourceResponse = z.infer<typeof sourceResponseSchema>;
 export const sourceListResponseSchema = z.object({ items: z.array(sourceResponseSchema) });
+export const sourceTextResponseSchema = z.object({
+  sourceVersionId: z.uuid(),
+  text: z.string(),
+});
 
 const reportContentSchema = z
   .object({

@@ -28,6 +28,7 @@ import { DataModelsService } from '../../../src/data-models/data-models.service'
 import { DIAGRAM_PROVIDER } from '../../../src/data-models/diagram-provider.token';
 import { SourcesModule } from '../../../src/sources/sources.module';
 import { SourcesService } from '../../../src/sources/sources.service';
+import { SOURCE_QUEUE } from '../../../src/sources/source-queue.token';
 import { STORAGE_PROVIDER } from '../../../src/sources/storage-provider.token';
 import { StructuredAnalysisModule } from '../../../src/structured-analysis/structured-analysis.module';
 import { StructuredAnalysisService } from '../../../src/structured-analysis/structured-analysis.service';
@@ -122,6 +123,8 @@ export async function createTestContext(): Promise<TestContext> {
     .useValue(new FakeDiagramProvider({ svg: FAKE_DIAGRAM_SVG }))
     .overrideProvider(STORAGE_PROVIDER)
     .useValue(new FakeStorageProvider())
+    .overrideProvider(SOURCE_QUEUE)
+    .useValue({ add: async () => undefined, close: async () => undefined })
     .overrideGuard(JwtAuthGuard)
     .useValue({
       canActivate: async (context: ExecutionContext) => {

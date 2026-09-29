@@ -15,3 +15,5 @@ export {
 export type { FirstDeliverableArtifactTypeCode } from './artifacts/artifact-types';
 export { MOCKUP_GENERATION_QUEUE } from './jobs/mockup-generation-job';
 export type { MockupGenerationJobPayload } from './jobs/mockup-generation-job';
+export { SOURCE_PROCESSING_QUEUE } from './jobs/source-processing-job';
+export type { SourceProcessingJobPayload } from './jobs/source-processing-job';
