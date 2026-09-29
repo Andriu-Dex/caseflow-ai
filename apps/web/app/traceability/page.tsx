@@ -1,7 +1,7 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { useMemo, useState, useEffect } from 'react';
 import { TRACEABILITY_ARTIFACT_TYPES, type TraceabilityNode } from '@caseflow-ai/contracts';
 import { api } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
@@ -80,6 +80,14 @@ function TraceabilityContent({ projectId }: { projectId: string }) {
     queryFn: () => api.traceability.getDiagram(projectId),
     enabled: view === 'diagram',
   });
+
+  const analyzeImpactMutation = useMutation({
+    mutationFn: (versionId: string) => api.impactAnalysis.analyze(projectId, versionId),
+  });
+
+  useEffect(() => {
+    analyzeImpactMutation.reset();
+  }, [selectedId, analyzeImpactMutation]);
 
   const selected = graph.data?.nodes.find((n) => n.id === selectedId) ?? null;
 
@@ -270,6 +278,71 @@ function TraceabilityContent({ projectId }: { projectId: string }) {
                               </li>
                             ))}
                           </ul>
+                        )}
+                      </div>
+                      
+                      <div className="mt-4 border-t border-border pt-4">
+                        <h3 className="mb-2 text-sm font-semibold text-foreground">Análisis de impacto</h3>
+                        {!analyzeImpactMutation.data && !analyzeImpactMutation.isPending && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => analyzeImpactMutation.mutate(selectedId!)}
+                          >
+                            Analizar impacto de este cambio
+                          </Button>
+                        )}
+                        {analyzeImpactMutation.isPending && (
+                          <p className="text-sm text-muted-foreground">Analizando...</p>
+                        )}
+                        {analyzeImpactMutation.isError && (
+                          <p className="text-sm text-red-500">Error al analizar impacto.</p>
+                        )}
+                        {analyzeImpactMutation.data && (
+                          <div className="flex flex-col gap-3">
+                            <div>
+                              <h4 className="text-xs font-semibold uppercase text-muted-foreground">Afectados Directamente (1 salto)</h4>
+                              {analyzeImpactMutation.data.directlyAffected.length === 0 ? (
+                                <p className="text-sm text-muted-foreground">Ninguno</p>
+                              ) : (
+                                <ul className="flex flex-col gap-1 mt-1 text-sm">
+                                  {analyzeImpactMutation.data.directlyAffected.map(id => {
+                                    const node = graph.data.nodes.find(n => n.id === id);
+                                    if (!node) return <li key={id}>{id}</li>;
+                                    return <li key={id}><NodeLabel node={node} /></li>;
+                                  })}
+                                </ul>
+                              )}
+                            </div>
+                            <div>
+                              <h4 className="text-xs font-semibold uppercase text-muted-foreground">Afectados Transitivamente (&gt;1 salto)</h4>
+                              {analyzeImpactMutation.data.transitivelyAffected.length === 0 ? (
+                                <p className="text-sm text-muted-foreground">Ninguno</p>
+                              ) : (
+                                <ul className="flex flex-col gap-1 mt-1 text-sm">
+                                  {analyzeImpactMutation.data.transitivelyAffected.map(id => {
+                                    const node = graph.data.nodes.find(n => n.id === id);
+                                    if (!node) return <li key={id}>{id}</li>;
+                                    return <li key={id}><NodeLabel node={node} /></li>;
+                                  })}
+                                </ul>
+                              )}
+                            </div>
+                            <div>
+                              <h4 className="text-xs font-semibold uppercase text-muted-foreground">Orden de Revisión Recomendado</h4>
+                              {analyzeImpactMutation.data.recommendedReviewOrder.length === 0 ? (
+                                <p className="text-sm text-muted-foreground">Ninguno</p>
+                              ) : (
+                                <ol className="list-decimal pl-5 flex flex-col gap-1 mt-1 text-sm">
+                                  {analyzeImpactMutation.data.recommendedReviewOrder.map(id => {
+                                    const node = graph.data.nodes.find(n => n.id === id);
+                                    if (!node) return <li key={id}>{id}</li>;
+                                    return <li key={id}><NodeLabel node={node} /></li>;
+                                  })}
+                                </ol>
+                              )}
+                            </div>
+                          </div>
                         )}
                       </div>
                     </div>

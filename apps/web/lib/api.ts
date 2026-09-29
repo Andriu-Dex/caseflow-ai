@@ -404,4 +404,8 @@ export const api = {
     getJson: (projectId: string) =>
       get<FirstDeliverableExport>(`/projects/${projectId}/export?format=json`),
   },
+  impactAnalysis: {
+    analyze: (projectId: string, artifactVersionId: string) =>
+      get<import('@caseflow-ai/contracts').ImpactAnalysisResponse>(`/projects/${projectId}/impact-analysis/${artifactVersionId}`),
+  },
 };
