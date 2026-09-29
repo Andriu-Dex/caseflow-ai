@@ -1,7 +1,7 @@
-import { UseGuards } from "@nestjs/common";
-import { JwtAuthGuard } from "../identity/jwt-auth.guard";
-import { ProjectMembershipGuard } from "../identity/project-membership.guard";
-import { WorkspaceMembershipGuard } from "../identity/workspace-membership.guard";
+import { UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../identity/jwt-auth.guard';
+import { ProjectMembershipGuard } from '../identity/project-membership.guard';
+import { WorkspaceMembershipGuard } from '../identity/workspace-membership.guard';
 
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';

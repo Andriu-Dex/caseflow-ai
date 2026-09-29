@@ -1,5 +1,5 @@
-import { JwtService } from "@nestjs/jwt";
-import { IdentityModule } from "../../../src/identity/identity.module";
+import { IdentityModule } from '../../../src/identity/identity.module';
+import { JwtService } from '@nestjs/jwt';
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FakeDiagramProvider, FakeStorageProvider } from '@caseflow-ai/integrations';
@@ -61,6 +61,9 @@ export interface TestContext {
   export: ExportService;
   // Raw connection for asserting database-level rules, bypassing the services.
   sql: Client;
+  token: string;
+  userId: string;
+  jwtService: JwtService;
   close: () => Promise<void>;
 }
 
@@ -98,54 +101,18 @@ export async function createTestContext(): Promise<TestContext> {
     .compile();
 
   const app = moduleRef.createNestApplication();
-  
-  const prisma = app.get(PrismaService);
-  const jwtService = app.get(JwtService);
-  let user = await prisma.user.findFirst();
-  if (!user) {
-    user = await prisma.user.create({
-      data: {
-        email: "test@example.com",
-        passwordHash: "dummy",
-        displayName: "Test User"
-      }
-    });
-  }
-  const token = jwtService.sign({ sub: user.id });
-
-  const originalWorkspaceCreate = prisma.workspace.create;
-  prisma.workspace.create = async (args) => {
-    const w = await originalWorkspaceCreate.call(prisma, args);
-    const currentUser = await prisma.user.findFirst();
-    if (currentUser) {
-      await prisma.workspaceMembership.create({
-        data: { workspaceId: w.id, userId: currentUser.id, role: "OWNER" }
-      });
-    }
-    return w;
-  };
-  
-  const originalProjectCreate = prisma.project.create;
-  prisma.project.create = async (args) => {
-    const p = await originalProjectCreate.call(prisma, args);
-    const currentUser = await prisma.user.findFirst();
-    if (currentUser) {
-      await prisma.projectMembership.create({
-        data: { projectId: p.id, userId: currentUser.id, role: "OWNER" }
-      });
-    }
-    return p;
-  };
-
-  app.use((req, res, next) => {
-    if (!req.headers.authorization) {
-      req.headers.authorization = "Bearer " + token;
-    }
-    next();
-  });
 
   await app.init();
-
+  const jwtService = app.get(JwtService);
+  const prisma = app.get(PrismaService);
+  const user = await prisma.user.create({
+    data: {
+      email: 'test@example.com',
+      passwordHash: 'dummy',
+      displayName: 'Test User',
+    },
+  });
+  const token = jwtService.sign({ sub: user.id });
 
   return {
     app,
@@ -164,6 +131,9 @@ export async function createTestContext(): Promise<TestContext> {
     readiness: app.get(ReadinessService),
     export: app.get(ExportService),
     sql,
+    token,
+    userId: user.id,
+    jwtService,
     close: async () => {
       await app.close();
       await sql.end();
@@ -176,4 +146,37 @@ let workspaceCounter = 0;
 export async function createWorkspace(prisma: PrismaService, name = 'Test Workspace') {
   workspaceCounter += 1;
   return prisma.workspace.create({ data: { slug: `test-workspace-${workspaceCounter}`, name } });
+}
+
+export async function createUnauthorizedUser(
+  ctx: TestContext,
+): Promise<{ id: string; token: string }> {
+  const user = await ctx.prisma.user.create({
+    data: {
+      email: 'intruder_' + Date.now() + '@example.com',
+      passwordHash: 'dummy',
+      displayName: 'Intruder',
+    },
+  });
+  return { id: user.id, token: ctx.jwtService.sign({ sub: user.id }) };
+}
+
+export async function createWorkspaceWithOwner(ctx: TestContext, name = 'Test Workspace') {
+  const workspace = await createWorkspace(ctx.prisma, name);
+  await ctx.prisma.workspaceMembership.create({
+    data: { workspaceId: workspace.id, userId: ctx.userId, role: 'OWNER' },
+  });
+  return workspace;
+}
+
+export async function createProjectWithOwner(
+  ctx: TestContext,
+  workspaceId: string,
+  name = 'Test Project',
+) {
+  const project = await ctx.projects.create({ workspaceId, name });
+  await ctx.prisma.projectMembership.create({
+    data: { projectId: project.id, userId: ctx.userId, role: 'OWNER' },
+  });
+  return project;
 }

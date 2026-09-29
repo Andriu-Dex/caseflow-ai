@@ -83,6 +83,7 @@ function setup() {
       ai as unknown as AIOrchestrator,
       new SourceContentExtractor(),
       storage,
+      {} as never,
     ),
   };
 }
@@ -142,6 +143,7 @@ describe('SourcesService', () => {
       ai as unknown as AIOrchestrator,
       new SourceContentExtractor(),
       failingStorage,
+      {} as never,
     );
     await expect(service.create('project', metadata, file())).rejects.toMatchObject({
       response: { code: 'STORAGE_PROVIDER_UNAVAILABLE' },

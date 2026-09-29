@@ -207,7 +207,9 @@ function ReadinessContent({ projectId }: { projectId: string }) {
                       <div className="flex items-start gap-2 font-medium">
                         <AlertCircle className="size-5 shrink-0 mt-0.5" />
                         <div>
-                          <p>[{issue.rule}] {issue.message}</p>
+                          <p>
+                            [{issue.rule}] {issue.message}
+                          </p>
                           <p className="mt-1 text-sm opacity-80">
                             Artefactos afectados:{' '}
                             {issue.affectedArtifactIds.map((id) => (

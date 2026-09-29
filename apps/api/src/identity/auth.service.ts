@@ -39,14 +39,6 @@ export class AuthService {
   }
 
   async refresh(refreshToken: string): Promise<AuthResponse & { refreshToken: string }> {
-    const session = await this.prisma.session.findFirst({
-      where: {
-        revokedAt: null,
-        expiresAt: { gt: new Date() },
-      },
-      include: { user: true },
-    });
-    
     // In a real app we'd find the specific session. For MVP, we fetch all and verify:
     const sessions = await this.prisma.session.findMany({
       where: { revokedAt: null, expiresAt: { gt: new Date() } },
@@ -89,7 +81,11 @@ export class AuthService {
     }
   }
 
-  private async generateTokens(user: any): Promise<AuthResponse & { refreshToken: string }> {
+  private async generateTokens(user: {
+    id: string;
+    email: string;
+    displayName: string;
+  }): Promise<AuthResponse & { refreshToken: string }> {
     const payload = { sub: user.id };
     const accessToken = this.jwtService.sign(payload);
 

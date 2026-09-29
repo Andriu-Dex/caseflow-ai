@@ -9,7 +9,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PrismaAIRunRecorder } from '../../src/ai/ai-run-recorder';
 import { ProjectContextService } from '../../src/project-context/project-context.service';
-import { createTestContext, createWorkspace, type TestContext } from './support/test-app';
+import { createTestContext, createWorkspaceWithOwner, type TestContext } from './support/test-app';
 
 const contextInput = (suffix = ''): ProjectContextRequest => ({
   problemStatement: `Información dispersa${suffix}`,
@@ -29,7 +29,7 @@ const contextInput = (suffix = ''): ProjectContextRequest => ({
 });
 
 async function createProject(ctx: TestContext, name: string) {
-  const workspace = await createWorkspace(ctx.prisma, `${name} Workspace`);
+  const workspace = await createWorkspaceWithOwner(ctx, `${name} Workspace`);
   return ctx.projects.create({ workspaceId: workspace.id, name });
 }
 

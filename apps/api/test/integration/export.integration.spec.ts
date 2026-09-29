@@ -7,9 +7,12 @@ import { PrismaAIRunRecorder } from '../../src/ai/ai-run-recorder';
 import { DataModelsService } from '../../src/data-models/data-models.service';
 import { DiagramEngine } from '../../src/data-models/diagram-engine';
 import { renderExportHtml } from '../../src/export/export-html';
+import type { KnowledgeBaseService } from '../../src/knowledge-base/knowledge-base.service';
 import { StructuredAnalysisService } from '../../src/structured-analysis/structured-analysis.service';
 import { UseCasesService } from '../../src/use-cases/use-cases.service';
 import { createTestContext, createWorkspace, type TestContext } from './support/test-app';
+
+const disabledKb: Pick<KnowledgeBaseService, 'retrieve'> = { retrieve: async () => [] };
 
 const FAKE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><g></g></svg>';
 
@@ -348,6 +351,7 @@ describe('Export (First Deliverable, Phase H)', () => {
           },
         ],
       }),
+      disabledKb as KnowledgeBaseService,
     );
     const rfGeneration = await requirementsService.generate(projectId, context.id);
     const rfAccepted = (

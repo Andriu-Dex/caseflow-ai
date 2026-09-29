@@ -9,9 +9,7 @@ export class ConsistencyEngineController {
   constructor(private readonly consistencyEngineService: ConsistencyEngineService) {}
 
   @Get()
-  async getConsistencyReport(
-    @Param('projectId', ParseUUIDPipe) projectId: string,
-  ) {
+  async getConsistencyReport(@Param('projectId', ParseUUIDPipe) projectId: string) {
     return this.consistencyEngineService.generateReport(projectId);
   }
 }

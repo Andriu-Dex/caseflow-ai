@@ -72,7 +72,7 @@ export class ImpactAnalysisService {
     }
 
     const affectedNodes = new Set([...directlyAffected, ...transitivelyAffected]);
-    
+
     const affectedAdj = new Map<string, string[]>();
     const affectedInDegree = new Map<string, number>();
     for (const node of affectedNodes) {

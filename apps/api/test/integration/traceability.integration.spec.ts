@@ -93,7 +93,7 @@ describe('Traceability graph integration', () => {
       ],
     });
     const { RequirementsService } = await import('../../src/requirements/requirements.service');
-    const requirementsService = new RequirementsService(ctx.prisma, requirementsAi);
+    const requirementsService = new RequirementsService(ctx.prisma, requirementsAi, {} as never);
     const rfGeneration = await requirementsService.generate(projectId, context.version.id);
     const rfAccepted = (
       await requirementsService.accept(projectId, rfGeneration.id, [rfGeneration.candidates[0]!.id])

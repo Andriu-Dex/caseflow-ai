@@ -109,12 +109,25 @@ const post = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
 const del = <T>(path: string) => request<T>(path, { method: 'DELETE' });
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
 export const api = {
   auth: {
-    login: (body: any) => post<any>('/auth/login', body).then(res => { setAccessToken(res.accessToken); return res; }),
-    register: (body: any) => post<any>('/auth/register', body).then(res => { setAccessToken(res.accessToken); return res; }),
+    login: (body: any) =>
+      post<any>('/auth/login', body).then((res) => {
+        setAccessToken(res.accessToken);
+        return res;
+      }),
+    register: (body: any) =>
+      post<any>('/auth/register', body).then((res) => {
+        setAccessToken(res.accessToken);
+        return res;
+      }),
     logout: () => post<any>('/auth/logout').then(() => setAccessToken(null)),
-    refresh: () => post<any>('/auth/refresh').then(res => { setAccessToken(res.accessToken); return res; }),
+    refresh: () =>
+      post<any>('/auth/refresh').then((res) => {
+        setAccessToken(res.accessToken);
+        return res;
+      }),
   },
   workspaces: {
     list: () => get<WorkspaceListResponse>('/workspaces'),
@@ -406,19 +419,30 @@ export const api = {
   },
   impactAnalysis: {
     analyze: (projectId: string, artifactVersionId: string) =>
-      get<import('@caseflow-ai/contracts').ImpactAnalysisResponse>(`/projects/${projectId}/impact-analysis/${artifactVersionId}`),
+      get<import('@caseflow-ai/contracts').ImpactAnalysisResponse>(
+        `/projects/${projectId}/impact-analysis/${artifactVersionId}`,
+      ),
   },
   consistency: {
     get: (projectId: string) =>
-      get<import('@caseflow-ai/contracts').ConsistencyReportResponse>(`/projects/${projectId}/consistency`),
+      get<import('@caseflow-ai/contracts').ConsistencyReportResponse>(
+        `/projects/${projectId}/consistency`,
+      ),
   },
   baselines: {
     list: (projectId: string) =>
-      get<import('@caseflow-ai/contracts').BaselinesListResponse>(`/projects/${projectId}/baselines`),
+      get<import('@caseflow-ai/contracts').BaselinesListResponse>(
+        `/projects/${projectId}/baselines`,
+      ),
     get: (projectId: string, id: string) =>
-      get<import('@caseflow-ai/contracts').BaselineResponse>(`/projects/${projectId}/baselines/${id}`),
+      get<import('@caseflow-ai/contracts').BaselineResponse>(
+        `/projects/${projectId}/baselines/${id}`,
+      ),
     create: (projectId: string, data: import('@caseflow-ai/contracts').CreateBaselineRequest) =>
-      post<import('@caseflow-ai/contracts').BaselineResponse>(`/projects/${projectId}/baselines`, data),
+      post<import('@caseflow-ai/contracts').BaselineResponse>(
+        `/projects/${projectId}/baselines`,
+        data,
+      ),
     exportHtmlUrl: (projectId: string, id: string) =>
       `${BASE_URL}/projects/${projectId}/baselines/${id}/export?format=html`,
     exportJsonUrl: (projectId: string, id: string) =>

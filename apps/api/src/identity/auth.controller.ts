@@ -1,7 +1,13 @@
 import { Controller, Post, Body, Res, Req, HttpCode, UnauthorizedException } from '@nestjs/common';
 import { Response, Request } from 'express';
 import { AuthService } from './auth.service';
-import { RegisterRequest, LoginRequest, registerRequestSchema, loginRequestSchema, authResponseSchema } from '@caseflow-ai/contracts';
+import {
+  RegisterRequest,
+  LoginRequest,
+  registerRequestSchema,
+  loginRequestSchema,
+  authResponseSchema,
+} from '@caseflow-ai/contracts';
 import { ApiZodResponse, ApiZodBody } from '../openapi/zod-openapi';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 

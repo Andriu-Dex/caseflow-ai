@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AIOrchestrator, FakeAIProvider, PromptRegistry } from '@caseflow-ai/ai';
 import { PrismaAIRunRecorder } from '../../src/ai/ai-run-recorder';
 import { UseCasesService } from '../../src/use-cases/use-cases.service';
-import { createTestContext, createWorkspace, type TestContext } from './support/test-app';
+import { createTestContext, createWorkspaceWithOwner, type TestContext } from './support/test-app';
 import request from 'supertest';
 const requirement = (name: string) => ({
   requirementType: 'FUNCTIONAL' as const,
@@ -40,7 +40,7 @@ describe('Use Cases integration', () => {
   let approvedVersionId: string;
   beforeAll(async () => {
     ctx = await createTestContext();
-    const w = await createWorkspace(ctx.prisma, 'Use Cases');
+    const w = await createWorkspaceWithOwner(ctx, 'Use Cases');
     projectId = (await ctx.projects.create({ workspaceId: w.id, name: 'P' })).id;
     const r = await ctx.requirements.create(projectId, requirement('Registrar'));
     await ctx.requirements.transition(projectId, r.id, r.version.id, 'IN_REVIEW');
@@ -89,7 +89,7 @@ describe('Use Cases integration', () => {
     ).toBe('APPROVED');
   });
   it('rejects cross-project, non-requirement and non-approved generation sources', async () => {
-    const w = await createWorkspace(ctx.prisma, 'Other UC');
+    const w = await createWorkspaceWithOwner(ctx, 'Other UC');
     const other = (await ctx.projects.create({ workspaceId: w.id, name: 'Other' })).id;
     await expect(ctx.useCases.create(other, useCase(approvedVersionId))).rejects.toThrow(
       'Referencia',
@@ -107,6 +107,7 @@ describe('Use Cases integration', () => {
   it('exposes project-scoped HTTP creation with shared contract validation', async () => {
     const response = await request(ctx.app.getHttpServer())
       .post(`/projects/${projectId}/use-cases`)
+      .set('Authorization', `Bearer ${ctx.token}`)
       .send(useCase(approvedVersionId, 'Caso HTTP'));
     expect(response.status).toBe(201);
     expect(response.body).toMatchObject({
@@ -116,6 +117,7 @@ describe('Use Cases integration', () => {
     });
     const invalid = await request(ctx.app.getHttpServer())
       .post(`/projects/${projectId}/use-cases`)
+      .set('Authorization', `Bearer ${ctx.token}`)
       .send({});
     expect(invalid.status).toBe(400);
   });
