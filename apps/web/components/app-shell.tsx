@@ -50,6 +50,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     items: [
       { href: '/traceability', label: 'Trazabilidad' },
       { href: '/readiness', label: 'Preparación / Exportar' },
+      { href: '/baselines', label: 'Líneas Base' },
     ],
   },
 ];

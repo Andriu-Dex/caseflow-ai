@@ -150,7 +150,18 @@ export class SourcesService {
     });
   }
 
-  async list(projectId: string) {
+  async list(projectId: string, artifactVersionIds?: Record<string, string>) {
+    if (artifactVersionIds) {
+      const versionIds = Object.values(artifactVersionIds);
+      if (versionIds.length === 0) return { items: [] };
+      const versions = await this.prisma.artifactVersion.findMany({
+        where: { id: { in: versionIds }, artifact: { projectId, artifactTypeCode: 'PROJECT_SOURCE' } },
+        include: { artifact: true, sourceDetail: { include: { report: true } } },
+        orderBy: { artifact: { code: 'asc' } },
+      });
+      return { items: versions.map((v) => this.map(v.artifact, v, true)) };
+    }
+
     const rows = await this.prisma.artifact.findMany({
       where: { projectId, artifactTypeCode: 'PROJECT_SOURCE' },
       include: {

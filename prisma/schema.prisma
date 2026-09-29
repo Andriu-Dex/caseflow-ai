@@ -210,6 +210,7 @@ model User {
   sessions             Session[]
   workspaceMemberships WorkspaceMembership[]
   projectMemberships   ProjectMembership[]
+  projectBaselines     ProjectBaseline[]
 
   @@map("users")
 }
@@ -295,6 +296,7 @@ model Project {
   projectContextCandidates      ProjectContextCandidate[]
   mockupGenerationJobs          MockupGenerationJob[]
   projectMemberships            ProjectMembership[]
+  projectBaselines              ProjectBaseline[]
 
   @@index([workspaceId, createdAt, id])
   @@map("projects")
@@ -331,6 +333,7 @@ model Artifact {
   versions                             ArtifactVersion[]
   acceptedDataModelCandidates          DataModelCandidate[]
   acceptedStructuredAnalysisCandidates StructuredAnalysisCandidate[]
+  projectBaselineEntries               ProjectBaselineEntry[]
 
   // Project-scoped, never-reused codes (spec §31.4).
   @@unique([projectId, code])
@@ -378,6 +381,7 @@ model ArtifactVersion {
   mockupDetail                        MockupDetail?                        @relation("MockupOwnVersion")
   mockupsSourcedFromHere              MockupDetail[]                       @relation("MockupUiBlueprintSource")
   projectContextSourceLinks           ProjectContextSource[]
+  projectBaselineEntries              ProjectBaselineEntry[]
 
   @@unique([artifactId, versionNumber])
   @@unique([id, projectId])
@@ -1179,4 +1183,34 @@ model SourceFragment {
   embedding       Unsupported("vector(1536)")?
 
   @@map("source_fragments")
+}
+
+// Immutable snapshot of all approved project artifacts (spec Increment 5)
+model ProjectBaseline {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId       String   @map("project_id") @db.Uuid
+  label           String
+  description     String?
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdByUserId String   @map("created_by_user_id") @db.Uuid
+
+  project Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User                   @relation(fields: [createdByUserId], references: [id])
+  entries ProjectBaselineEntry[]
+
+  @@map("project_baselines")
+}
+
+model ProjectBaselineEntry {
+  id                String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  baselineId        String @map("baseline_id") @db.Uuid
+  artifactId        String @map("artifact_id") @db.Uuid
+  artifactVersionId String @map("artifact_version_id") @db.Uuid
+
+  baseline        ProjectBaseline @relation(fields: [baselineId], references: [id], onDelete: Cascade)
+  artifact        Artifact        @relation(fields: [artifactId], references: [id])
+  artifactVersion ArtifactVersion @relation(fields: [artifactVersionId], references: [id])
+
+  @@unique([baselineId, artifactId])
+  @@map("project_baseline_entries")
 }
