@@ -20,6 +20,7 @@ import { getProjectLanguage } from '../projects/project-language';
 import type { Prisma } from '../generated/prisma/client';
 import { SourceContentExtractor } from './source-content-extractor';
 import { STORAGE_PROVIDER } from './storage-provider.token';
+import { KnowledgeBaseService } from '../knowledge-base/knowledge-base.service';
 
 type Tx = Prisma.TransactionClient;
 const SOURCE_REPORT_MAX_OUTPUT_TOKENS = 4096;
@@ -49,6 +50,7 @@ export class SourcesService {
     private readonly ai: AIOrchestrator,
     private readonly extractor: SourceContentExtractor,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
+    private readonly knowledgeBase: KnowledgeBaseService,
   ) {}
 
   async create(
@@ -331,7 +333,7 @@ export class SourcesService {
       throw new UnprocessableEntityException(
         'La fuente no tiene conocimiento utilizable (texto extraído o transcripción manual).',
       );
-    return this.prisma.artifactVersion.update({
+    const updatedVersion = await this.prisma.artifactVersion.update({
       where: { id },
       data: {
         status,
@@ -339,6 +341,15 @@ export class SourcesService {
         approvedAt: status === 'APPROVED' ? new Date() : version.approvedAt,
       },
     });
+
+    if (status === 'APPROVED') {
+      // Run asynchronously without awaiting so the transition is fast
+      this.knowledgeBase.fragmentAndEmbedSource(projectId, id).catch((err) => {
+        console.error('Failed to embed source:', err);
+      });
+    }
+
+    return updatedVersion;
   }
 
   async generateReport(projectId: string, id: string) {

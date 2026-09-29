@@ -10,9 +10,10 @@ import { SourceContentExtractor } from './source-content-extractor';
 import { SourcesController } from './sources.controller';
 import { SourcesService } from './sources.service';
 import { STORAGE_PROVIDER } from './storage-provider.token';
+import { KnowledgeBaseModule } from '../knowledge-base/knowledge-base.module';
 
 @Module({
-  imports: [AIModule],
+  imports: [AIModule, KnowledgeBaseModule],
   controllers: [SourcesController],
   providers: [
     SourcesService,

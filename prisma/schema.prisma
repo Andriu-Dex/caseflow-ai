@@ -1164,3 +1164,19 @@ model MockupGenerationJob {
   @@index([projectId, createdAt])
   @@map("mockup_generation_jobs")
 }
+
+// Knowledge Base Fragment for RAG (spec Increment 2)
+model SourceFragment {
+  id              String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sourceVersionId String                       @map("source_version_id") @db.Uuid
+  projectId       String                       @map("project_id") @db.Uuid
+  sequence        Int
+  content         String
+  page            String?
+  section         String?
+  speaker         String?
+  timestamp       String?
+  embedding       Unsupported("vector(1536)")?
+
+  @@map("source_fragments")
+}
