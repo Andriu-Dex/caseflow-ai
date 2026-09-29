@@ -20,6 +20,7 @@ export class FakeEmbeddingProvider implements EmbeddingProvider {
 }
 
 export class DisabledEmbeddingProvider implements EmbeddingProvider {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async embed(_texts: string[]): Promise<number[][]> {
     throw new Error('EmbeddingProvider is disabled');
   }
