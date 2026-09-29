@@ -1,3 +1,7 @@
+import { UseGuards } from "@nestjs/common";
+import { JwtAuthGuard } from "../identity/jwt-auth.guard";
+import { ProjectMembershipGuard } from "../identity/project-membership.guard";
+
 import { BadRequestException, Controller, Get, Param, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
@@ -11,6 +15,7 @@ const EXPORT_FORMATS = ['json', 'html'] as const;
 type ExportFormat = (typeof EXPORT_FORMATS)[number];
 
 @ApiTags('export')
+@UseGuards(JwtAuthGuard, ProjectMembershipGuard)
 @Controller('projects/:projectId/export')
 export class ExportController {
   constructor(private readonly service: ExportService) {}

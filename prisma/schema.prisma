@@ -181,6 +181,83 @@ enum ProjectLanguage {
   @@map("project_language")
 }
 
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+
+  @@map("workspace_role")
+}
+
+enum ProjectRole {
+  OWNER
+  EDITOR
+  REVIEWER
+  VIEWER
+
+  @@map("project_role")
+}
+
+// Authenticated user (spec Increment 1).
+model User {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  displayName  String    @map("display_name")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  archivedAt   DateTime? @map("archived_at") @db.Timestamptz(6)
+
+  sessions             Session[]
+  workspaceMemberships WorkspaceMembership[]
+  projectMemberships   ProjectMembership[]
+
+  @@map("users")
+}
+
+// Active user session handling long-lived refresh tokens.
+model Session {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  refreshTokenHash String    @map("refresh_token_hash")
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+// Access control binding a user to a Workspace.
+model WorkspaceMembership {
+  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String        @map("workspace_id") @db.Uuid
+  userId      String        @map("user_id") @db.Uuid
+  role        WorkspaceRole
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@map("workspace_memberships")
+}
+
+// Access control binding a user to a Project.
+model ProjectMembership {
+  id        String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId String      @map("project_id") @db.Uuid
+  userId    String      @map("user_id") @db.Uuid
+  role      ProjectRole
+  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@map("project_memberships")
+}
+
 // Logical team/organization that groups projects (spec §3.1).
 model Workspace {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -189,7 +266,8 @@ model Workspace {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  projects Project[]
+  projects    Project[]
+  memberships WorkspaceMembership[]
 
   @@map("workspaces")
 }
@@ -216,6 +294,7 @@ model Project {
   structuredAnalysisGenerations StructuredAnalysisGeneration[]
   projectContextCandidates      ProjectContextCandidate[]
   mockupGenerationJobs          MockupGenerationJob[]
+  projectMemberships            ProjectMembership[]
 
   @@index([workspaceId, createdAt, id])
   @@map("projects")

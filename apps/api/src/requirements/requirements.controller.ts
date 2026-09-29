@@ -1,3 +1,7 @@
+import { UseGuards } from "@nestjs/common";
+import { JwtAuthGuard } from "../identity/jwt-auth.guard";
+import { ProjectMembershipGuard } from "../identity/project-membership.guard";
+
 import {
   BadRequestException,
   Body,
@@ -30,6 +34,7 @@ import {
   type RequirementDocumentFormat,
 } from './requirement-document-export.service';
 @ApiTags('requirements')
+@UseGuards(JwtAuthGuard, ProjectMembershipGuard)
 @Controller('projects/:projectId/requirements')
 export class RequirementsController {
   constructor(

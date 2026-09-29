@@ -1,3 +1,7 @@
+import { UseGuards } from "@nestjs/common";
+import { JwtAuthGuard } from "../identity/jwt-auth.guard";
+import { ProjectMembershipGuard } from "../identity/project-membership.guard";
+
 import { Body, Controller, Get, Param, Post, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -22,6 +26,7 @@ import { ApiUuidParam, ApiZodBody, ApiZodResponse } from '../openapi/zod-openapi
 import { DataModelsService } from './data-models.service';
 
 @ApiTags('data-models')
+@UseGuards(JwtAuthGuard, ProjectMembershipGuard)
 @Controller('projects/:projectId/data-models')
 export class DataModelsController {
   constructor(private readonly service: DataModelsService) {}

@@ -67,3 +67,5 @@ export type {
   CreateArtifactRequest,
   CreateArtifactVersionRequest,
 } from './artifacts/artifact.contract';
+
+export * from './identity/identity.contract';

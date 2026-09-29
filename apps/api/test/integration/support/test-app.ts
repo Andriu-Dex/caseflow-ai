@@ -1,3 +1,5 @@
+import { JwtService } from "@nestjs/jwt";
+import { IdentityModule } from "../../../src/identity/identity.module";
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FakeDiagramProvider, FakeStorageProvider } from '@caseflow-ai/integrations';
@@ -85,6 +87,7 @@ export async function createTestContext(): Promise<TestContext> {
       StalenessModule,
       TraceabilityModule,
       ReadinessModule,
+      IdentityModule,
       ExportModule,
     ],
   })
@@ -93,8 +96,56 @@ export async function createTestContext(): Promise<TestContext> {
     .overrideProvider(STORAGE_PROVIDER)
     .useValue(new FakeStorageProvider())
     .compile();
+
   const app = moduleRef.createNestApplication();
+  
+  const prisma = app.get(PrismaService);
+  const jwtService = app.get(JwtService);
+  let user = await prisma.user.findFirst();
+  if (!user) {
+    user = await prisma.user.create({
+      data: {
+        email: "test@example.com",
+        passwordHash: "dummy",
+        displayName: "Test User"
+      }
+    });
+  }
+  const token = jwtService.sign({ sub: user.id });
+
+  const originalWorkspaceCreate = prisma.workspace.create;
+  prisma.workspace.create = async (args) => {
+    const w = await originalWorkspaceCreate.call(prisma, args);
+    const currentUser = await prisma.user.findFirst();
+    if (currentUser) {
+      await prisma.workspaceMembership.create({
+        data: { workspaceId: w.id, userId: currentUser.id, role: "OWNER" }
+      });
+    }
+    return w;
+  };
+  
+  const originalProjectCreate = prisma.project.create;
+  prisma.project.create = async (args) => {
+    const p = await originalProjectCreate.call(prisma, args);
+    const currentUser = await prisma.user.findFirst();
+    if (currentUser) {
+      await prisma.projectMembership.create({
+        data: { projectId: p.id, userId: currentUser.id, role: "OWNER" }
+      });
+    }
+    return p;
+  };
+
+  app.use((req, res, next) => {
+    if (!req.headers.authorization) {
+      req.headers.authorization = "Bearer " + token;
+    }
+    next();
+  });
+
   await app.init();
+
 
   return {
     app,

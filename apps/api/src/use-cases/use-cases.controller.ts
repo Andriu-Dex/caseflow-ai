@@ -1,3 +1,7 @@
+import { UseGuards } from "@nestjs/common";
+import { JwtAuthGuard } from "../identity/jwt-auth.guard";
+import { ProjectMembershipGuard } from "../identity/project-membership.guard";
+
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
@@ -15,6 +19,7 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ApiUuidParam, ApiZodBody, ApiZodResponse } from '../openapi/zod-openapi';
 import { UseCasesService } from './use-cases.service';
 @ApiTags('use-cases')
+@UseGuards(JwtAuthGuard, ProjectMembershipGuard)
 @Controller('projects/:projectId/use-cases')
 export class UseCasesController {
   constructor(private readonly service: UseCasesService) {}

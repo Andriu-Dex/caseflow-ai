@@ -5,6 +5,7 @@ allowBuilds:
   '@prisma/engines': true
   '@scarf/scarf': false
   '@swc/core': true
+  argon2: true
   # esbuild's own postinstall only downloads its prebuilt platform binary
   # (no arbitrary script) — required for apps/web's Vite/Vitest test runner.
   esbuild: true

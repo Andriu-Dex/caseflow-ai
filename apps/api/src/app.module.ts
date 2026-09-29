@@ -16,10 +16,12 @@ import { TraceabilityModule } from './traceability/traceability.module';
 import { ReadinessModule } from './readiness/readiness.module';
 import { ExportModule } from './export/export.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
+import { IdentityModule } from './identity/identity.module';
 
 @Module({
   imports: [
     DatabaseModule.forRoot(),
+    IdentityModule,
     AIModule,
     HealthModule,
     ProjectsModule,

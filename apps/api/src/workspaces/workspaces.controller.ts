@@ -1,3 +1,6 @@
+import { UseGuards } from "@nestjs/common";
+import { JwtAuthGuard } from "../identity/jwt-auth.guard";
+
 import { Controller, Get } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { workspaceListResponseSchema, type WorkspaceListResponse } from '@caseflow-ai/contracts';
@@ -5,6 +8,7 @@ import { ApiZodResponse } from '../openapi/zod-openapi';
 import { WorkspacesService } from './workspaces.service';
 
 @ApiTags('workspaces')
+@UseGuards(JwtAuthGuard)
 @Controller('workspaces')
 export class WorkspacesController {
   constructor(private readonly workspaces: WorkspacesService) {}
