@@ -297,6 +297,7 @@ model Project {
   structuredAnalysisGenerations StructuredAnalysisGeneration[]
   projectContextCandidates      ProjectContextCandidate[]
   mockupGenerationJobs          MockupGenerationJob[]
+  sourceProcessingJobs          SourceProcessingJob[]
   projectMemberships            ProjectMembership[]
   projectBaselines              ProjectBaseline[]
 
@@ -377,6 +378,7 @@ model ArtifactVersion {
   diagramDetail                       DiagramDetail?
   diagramSources                      DiagramSourceVersion[]
   sourceDetail                        SourceDetail?
+  sourceProcessingJobs                SourceProcessingJob[]
   sourceReportCandidates              SourceReportCandidate[]
   structuredAnalysisDetail            StructuredAnalysisDetail?
   structuredAnalysisGenerationSources StructuredAnalysisGenerationSource[]
@@ -969,6 +971,7 @@ model SourceDetail {
   report          SourceReportDetail?
 
   @@map("source_details")
+  @@index([contentHash])
 }
 
 // One candidate-first AI interpretation attempt for one exact source version.
@@ -1147,6 +1150,33 @@ enum MockupJobStatus {
   FAILED
 
   @@map("mockup_job_status")
+}
+
+enum SourceProcessingStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  UNSUPPORTED
+
+  @@map("source_processing_status")
+}
+
+model SourceProcessingJob {
+  id              String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId       String                 @map("project_id") @db.Uuid
+  sourceVersionId String                 @unique @map("source_version_id") @db.Uuid
+  status          SourceProcessingStatus @default(QUEUED)
+  processor       String
+  errorMessage    String?                @map("error_message")
+  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project       Project         @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  sourceVersion ArtifactVersion @relation(fields: [sourceVersionId, projectId], references: [id, projectId], onDelete: Cascade)
+
+  @@index([projectId, status])
+  @@map("source_processing_jobs")
 }
 
 // Tracks an async mockup generation request (spec §40 job states), so the

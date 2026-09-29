@@ -188,6 +188,12 @@ export const api = {
     list: (projectId: string) => get<{ items: SourceResponse[] }>(`/projects/${projectId}/sources`),
     get: (projectId: string, sourceId: string) =>
       get<SourceResponse>(`/projects/${projectId}/sources/${sourceId}`),
+    getText: (projectId: string, sourceId: string) =>
+      get<{ sourceVersionId: string; text: string }>(
+        `/projects/${projectId}/sources/${sourceId}/text`,
+      ),
+    retryProcessing: (projectId: string, sourceId: string) =>
+      post<SourceResponse>(`/projects/${projectId}/sources/${sourceId}/processing/retry`),
     create: (projectId: string, metadata: SourceMetadataInput, file: File | null) => {
       const form = new FormData();
       form.set('title', metadata.title);

@@ -1,4 +1,7 @@
 import { randomUUID, createHash } from 'node:crypto';
+import { Logger, Optional } from '@nestjs/common';
+import type { Queue } from 'bullmq';
+import { SOURCE_PROCESSING_QUEUE, type SourceProcessingJobPayload } from '@caseflow-ai/domain';
 import {
   Inject,
   Injectable,
@@ -20,10 +23,14 @@ import { getProjectLanguage } from '../projects/project-language';
 import type { Prisma } from '../generated/prisma/client';
 import { SourceContentExtractor } from './source-content-extractor';
 import { STORAGE_PROVIDER } from './storage-provider.token';
+import { SOURCE_QUEUE } from './source-queue.token';
+import { hasExpectedFileSignature } from './source-file-validation';
 import { KnowledgeBaseService } from '../knowledge-base/knowledge-base.service';
 
 type Tx = Prisma.TransactionClient;
 const SOURCE_REPORT_MAX_OUTPUT_TOKENS = 4096;
+const STALE_SOURCE_JOB_MS = 15 * 60_000;
+const logger = new Logger('SourcesService');
 
 export interface UploadedSourceFile {
   originalname: string;
@@ -33,11 +40,21 @@ export interface UploadedSourceFile {
 }
 
 function safeStorageKey(projectId: string, mimeType: string): string {
-  const extension = ALLOWED_SOURCE_MIME_TYPES.includes(
-    mimeType as (typeof ALLOWED_SOURCE_MIME_TYPES)[number],
-  )
-    ? `.${mimeType.split('/')[1]!.replace(/[^a-z0-9]/gi, '')}`
-    : '';
+  const extensionByMime: Record<string, string> = {
+    'text/plain': '.txt',
+    'text/markdown': '.md',
+    'application/pdf': '.pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+    'image/png': '.png',
+    'image/jpeg': '.jpg',
+    'image/webp': '.webp',
+    'audio/mpeg': '.mp3',
+    'audio/wav': '.wav',
+    'audio/x-wav': '.wav',
+    'audio/mp4': '.m4a',
+    'audio/x-m4a': '.m4a',
+  };
+  const extension = extensionByMime[mimeType] ?? '';
   // Never derived from the client-supplied filename: no path traversal, no
   // filename trust for storage paths (spec §6.6).
   return `sources/${projectId}/${randomUUID()}${extension}`;
@@ -51,6 +68,7 @@ export class SourcesService {
     private readonly extractor: SourceContentExtractor,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
     private readonly knowledgeBase: KnowledgeBaseService,
+    @Optional() @Inject(SOURCE_QUEUE) private readonly queue?: Queue<SourceProcessingJobPayload>,
   ) {}
 
   async create(
@@ -58,6 +76,8 @@ export class SourcesService {
     metadata: SourceMetadataInput,
     file: UploadedSourceFile | undefined,
   ) {
+    if (!file && !metadata.description.trim())
+      throw new UnprocessableEntityException('Escriba contenido o adjunte un archivo.');
     let fileFields: {
       originalFilename: string;
       mimeType: string;
@@ -68,6 +88,9 @@ export class SourcesService {
       extractedText: string | null;
     };
 
+    let processAsync = Boolean(
+      file && this.queue && !['text/plain', 'text/markdown'].includes(file.mimetype),
+    );
     if (file) {
       if (
         !ALLOWED_SOURCE_MIME_TYPES.includes(
@@ -76,10 +99,25 @@ export class SourcesService {
       )
         throw new UnprocessableEntityException('Tipo de archivo no permitido.');
       if (file.size <= 0) throw new UnprocessableEntityException('El archivo está vacío.');
+      if (!(await hasExpectedFileSignature(file)))
+        throw new UnprocessableEntityException('El contenido del archivo no coincide con su tipo.');
 
       const contentHash = createHash('sha256').update(file.buffer).digest('hex');
       const storageKey = safeStorageKey(projectId, file.mimetype);
-      const extraction = await this.extractor.extract(file.mimetype, file.buffer);
+      const reusable = await this.prisma.sourceDetail.findFirst({
+        where: {
+          contentHash,
+          extractionState: 'EXTRACTED',
+          artifactVersion: { projectId, artifact: { archivedAt: null } },
+        },
+        select: { extractedText: true },
+      });
+      if (reusable?.extractedText) processAsync = false;
+      const extraction = reusable?.extractedText
+        ? ({ state: 'EXTRACTED', text: reusable.extractedText } as const)
+        : processAsync
+          ? ({ state: 'PENDING' } as const)
+          : await this.extractor.extract(file.mimetype, file.buffer, file.originalname);
       try {
         await this.storage.putObject({
           key: storageKey,
@@ -114,7 +152,8 @@ export class SourcesService {
       };
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    let processingJob: { id: string; projectId: string } | undefined;
+    const created = await this.prisma.$transaction(async (tx) => {
       if (!(await tx.project.findUnique({ where: { id: projectId } })))
         throw new NotFoundException('Proyecto no encontrado.');
       const number = await this.allocate(tx, projectId, 'SRC');
@@ -146,8 +185,38 @@ export class SourcesService {
           ...fileFields,
         },
       });
+      if (processAsync) {
+        processingJob = await tx.sourceProcessingJob.create({
+          data: {
+            projectId,
+            sourceVersionId: version.id,
+            processor: file!.mimetype.startsWith('audio/')
+              ? 'TRANSCRIPTION'
+              : file!.mimetype.startsWith('image/')
+                ? 'OCR'
+                : file!.mimetype === 'application/pdf'
+                  ? 'PDF'
+                  : 'DOCUMENT',
+          },
+        });
+      }
       return this.loadAndMap(tx, artifact.id, version.id);
     });
+    if (processingJob && this.queue) {
+      try {
+        await this.queue.add(
+          SOURCE_PROCESSING_QUEUE,
+          { jobId: processingJob.id, projectId: processingJob.projectId },
+          { jobId: processingJob.id },
+        );
+      } catch {
+        await this.prisma.sourceProcessingJob.update({
+          where: { id: processingJob.id },
+          data: { status: 'FAILED', errorMessage: 'No se pudo iniciar el procesamiento.' },
+        });
+      }
+    }
+    return created;
   }
 
   async list(projectId: string, artifactVersionIds?: Record<string, string>) {
@@ -159,7 +228,11 @@ export class SourcesService {
           id: { in: versionIds },
           artifact: { projectId, artifactTypeCode: 'PROJECT_SOURCE' },
         },
-        include: { artifact: true, sourceDetail: { include: { report: true } } },
+        include: {
+          artifact: true,
+          sourceDetail: { include: { report: true } },
+          sourceProcessingJobs: { take: 1, orderBy: { createdAt: 'desc' } },
+        },
         orderBy: { artifact: { code: 'asc' } },
       });
       return { items: versions.map((v) => this.map(v.artifact, v, true)) };
@@ -171,7 +244,10 @@ export class SourcesService {
         versions: {
           orderBy: { versionNumber: 'desc' },
           take: 1,
-          include: { sourceDetail: { include: { report: true } } },
+          include: {
+            sourceDetail: { include: { report: true } },
+            sourceProcessingJobs: { take: 1, orderBy: { createdAt: 'desc' } },
+          },
         },
       },
       orderBy: { code: 'asc' },
@@ -190,6 +266,135 @@ export class SourcesService {
   async get(projectId: string, id: string) {
     const row = await this.findLatest(projectId, id);
     return this.map(row, row.versions[0]!, await this.hasApprovedHistory(id));
+  }
+
+  async getText(projectId: string, id: string) {
+    const row = await this.findLatest(projectId, id);
+    const version = row.versions[0]!;
+    const text = version.sourceDetail?.extractedText;
+    if (!text) throw new NotFoundException('La fuente todavía no tiene texto procesado.');
+    return { sourceVersionId: version.id, text };
+  }
+
+  async retryProcessing(projectId: string, id: string) {
+    if (!this.queue) throw new ServiceUnavailableException('El procesamiento no está disponible.');
+    const row = await this.findLatest(projectId, id);
+    const version = row.versions[0]!;
+    const job = await this.prisma.sourceProcessingJob.findFirst({
+      where: { projectId, sourceVersionId: version.id },
+    });
+    const stale =
+      job?.status === 'RUNNING' && Date.now() - job.updatedAt.getTime() > STALE_SOURCE_JOB_MS;
+    if (!job || (!['FAILED', 'UNSUPPORTED'].includes(job.status) && !stale))
+      throw new UnprocessableEntityException('Esta fuente no tiene un procesamiento reintentable.');
+    await this.prisma.sourceProcessingJob.update({
+      where: { id: job.id },
+      data: { status: 'QUEUED', errorMessage: null },
+    });
+    try {
+      await this.queue.add(
+        SOURCE_PROCESSING_QUEUE,
+        { jobId: job.id, projectId },
+        { jobId: `${job.id}-${randomUUID()}` },
+      );
+    } catch {
+      await this.prisma.sourceProcessingJob.update({
+        where: { id: job.id },
+        data: { status: 'FAILED', errorMessage: 'No se pudo iniciar el procesamiento.' },
+      });
+    }
+    return this.get(projectId, id);
+  }
+
+  async runProcessingJob(projectId: string, jobId: string): Promise<void> {
+    const job = await this.prisma.sourceProcessingJob.findFirst({
+      where: { id: jobId, projectId },
+    });
+    if (!job) throw new NotFoundException('Trabajo no encontrado.');
+    const claimed = await this.prisma.sourceProcessingJob.updateMany({
+      where: { id: jobId, projectId, status: 'QUEUED' },
+      data: { status: 'RUNNING' },
+    });
+    if (claimed.count !== 1) return;
+    try {
+      const source = await this.prisma.artifactVersion.findFirst({
+        where: {
+          id: job.sourceVersionId,
+          projectId,
+          artifact: { artifactTypeCode: 'PROJECT_SOURCE', archivedAt: null },
+        },
+        include: { sourceDetail: true },
+      });
+      const detail = source?.sourceDetail;
+      if (!source || !detail?.storageKey || !detail.mimeType)
+        throw new Error('Source file is unavailable.');
+      const body = await this.storage.getObject(detail.storageKey);
+      const outcome = await this.extractor.extract(
+        detail.mimeType,
+        body,
+        detail.originalFilename ?? 'source',
+      );
+      if (outcome.state === 'EXTRACTED') {
+        await this.prisma.$transaction(async (tx) => {
+          const latest = await tx.artifactVersion.findFirst({
+            where: { artifactId: source.artifactId, projectId },
+            orderBy: { versionNumber: 'desc' },
+          });
+          if (latest?.id === source.id) {
+            const version = await tx.artifactVersion.create({
+              data: {
+                artifactId: source.artifactId,
+                projectId,
+                versionNumber: source.versionNumber + 1,
+                title: source.title,
+                status: 'DRAFT',
+                origin: 'SYSTEM_GENERATED',
+              },
+            });
+            await tx.sourceDetail.create({
+              data: {
+                artifactVersionId: version.id,
+                sourceKind: detail.sourceKind,
+                purpose: detail.purpose,
+                businessArea: detail.businessArea,
+                description: detail.description,
+                originalFilename: detail.originalFilename,
+                mimeType: detail.mimeType,
+                sizeBytes: detail.sizeBytes,
+                contentHash: detail.contentHash,
+                storageKey: detail.storageKey,
+                language: detail.language,
+                extractionState: 'EXTRACTED',
+                extractedText: outcome.text,
+              },
+            });
+          }
+          await tx.sourceProcessingJob.update({
+            where: { id: jobId },
+            data: { status: 'COMPLETED', errorMessage: null },
+          });
+        });
+        return;
+      }
+      await this.prisma.sourceProcessingJob.update({
+        where: { id: jobId },
+        data: {
+          status: outcome.state === 'UNSUPPORTED' ? 'UNSUPPORTED' : 'FAILED',
+          errorMessage:
+            outcome.state === 'UNSUPPORTED'
+              ? 'No hay un transcriptor configurado para este archivo.'
+              : 'No se pudo obtener texto legible del archivo.',
+        },
+      });
+    } catch (error) {
+      logger.warn(
+        `Source processing job ${jobId} failed: ${error instanceof Error ? error.message : 'unknown'}`,
+      );
+      await this.prisma.sourceProcessingJob.update({
+        where: { id: jobId },
+        data: { status: 'FAILED', errorMessage: 'No se pudo procesar el archivo.' },
+      });
+    }
   }
 
   async submitManualTranscript(projectId: string, id: string, transcript: string) {
@@ -235,6 +440,15 @@ export class SourcesService {
     const row = await this.findLatest(projectId, id);
     const latest = row.versions[0]!;
     const detail = latest.sourceDetail!;
+    if (!detail.storageKey && !metadata.description.trim())
+      throw new UnprocessableEntityException('El contenido de la fuente no puede estar vacío.');
+    if (
+      detail.extractionState === 'PENDING' &&
+      latest.sourceProcessingJobs.some((job) => ['QUEUED', 'RUNNING'].includes(job.status))
+    )
+      throw new UnprocessableEntityException(
+        'Espere a que termine el procesamiento o ingrese una transcripción manual.',
+      );
     return this.prisma.$transaction(async (tx) => {
       const version = await tx.artifactVersion.create({
         data: {
@@ -456,7 +670,10 @@ export class SourcesService {
         versions: {
           orderBy: { versionNumber: 'desc' },
           take: 1,
-          include: { sourceDetail: { include: { report: true } } },
+          include: {
+            sourceDetail: { include: { report: true } },
+            sourceProcessingJobs: { take: 1, orderBy: { createdAt: 'desc' } },
+          },
         },
       },
     });
@@ -473,7 +690,10 @@ export class SourcesService {
     const artifact = await tx.artifact.findUniqueOrThrow({ where: { id: artifactId } });
     const version = await tx.artifactVersion.findUniqueOrThrow({
       where: { id: versionId },
-      include: { sourceDetail: { include: { report: true } } },
+      include: {
+        sourceDetail: { include: { report: true } },
+        sourceProcessingJobs: { take: 1, orderBy: { createdAt: 'desc' } },
+      },
     });
     const approvedCount = await tx.artifactVersion.count({
       where: { artifactId, status: 'APPROVED' },
@@ -509,6 +729,13 @@ export class SourcesService {
         language: string | null;
         report: unknown;
       } | null;
+      sourceProcessingJobs?: {
+        id: string;
+        status: string;
+        processor: string;
+        errorMessage: string | null;
+        updatedAt: Date;
+      }[];
     },
     hasApprovedHistory: boolean,
   ) {
@@ -527,6 +754,15 @@ export class SourcesService {
         origin: version.origin,
         createdAt: version.createdAt.toISOString(),
       },
+      processing: version.sourceProcessingJobs?.[0]
+        ? {
+            id: version.sourceProcessingJobs[0].id,
+            status: version.sourceProcessingJobs[0].status,
+            processor: version.sourceProcessingJobs[0].processor,
+            errorMessage: version.sourceProcessingJobs[0].errorMessage,
+            updatedAt: version.sourceProcessingJobs[0].updatedAt.toISOString(),
+          }
+        : null,
       source: {
         title: version.title,
         sourceKind: detail.sourceKind,
