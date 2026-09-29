@@ -23,10 +23,10 @@ export class BaselinesService {
     });
 
     const entriesToCreate = artifacts
-      .filter((a: any) => a.versions.length > 0)
-      .map((a: any) => ({
+      .filter((a) => a.versions.length > 0)
+      .map((a) => ({
         artifactId: a.id,
-        artifactVersionId: a.versions[0].id,
+        artifactVersionId: a.versions[0]!.id,
       }));
 
     const baseline = await this.db.projectBaseline.create({

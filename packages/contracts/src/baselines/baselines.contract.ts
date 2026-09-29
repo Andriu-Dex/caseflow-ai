@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from 'zod';
 
 export const projectBaselineEntrySchema = z.object({
   id: z.string().uuid(),
@@ -14,16 +14,18 @@ export const projectBaselineSchema = z.object({
   description: z.string().nullable(),
   createdAt: z.string().datetime(),
   createdByUserId: z.string().uuid(),
-  user: z.object({
-    id: z.string().uuid(),
-    email: z.string().email(),
-    displayName: z.string()
-  }).optional(),
+  user: z
+    .object({
+      id: z.string().uuid(),
+      email: z.string().email(),
+      displayName: z.string(),
+    })
+    .optional(),
   entries: z.array(projectBaselineEntrySchema).optional(),
 });
 
 export const createBaselineRequestSchema = z.object({
-  label: z.string().min(1, "Baseline label is required").max(100),
+  label: z.string().min(1, 'Baseline label is required').max(100),
   description: z.string().optional(),
 });
 

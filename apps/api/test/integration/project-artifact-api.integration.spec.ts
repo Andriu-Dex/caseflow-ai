@@ -7,7 +7,7 @@ import {
 } from '@caseflow-ai/contracts';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createTestContext, createWorkspace, type TestContext } from './support/test-app';
+import { createTestContext, createWorkspaceWithOwner, type TestContext } from './support/test-app';
 
 describe('Project + Artifact HTTP API', () => {
   let ctx: TestContext;
@@ -16,7 +16,7 @@ describe('Project + Artifact HTTP API', () => {
 
   beforeAll(async () => {
     ctx = await createTestContext();
-    workspaceId = (await createWorkspace(ctx.prisma)).id;
+    workspaceId = (await createWorkspaceWithOwner(ctx)).id;
     // Every current first-deliverable artifact type now has a dedicated
     // endpoint; this test-only type exercises the generic HTTP Artifact/
     // ArtifactVersion API in isolation.

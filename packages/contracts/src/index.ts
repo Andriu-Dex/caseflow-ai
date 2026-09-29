@@ -47,7 +47,6 @@ export * from './impact-analysis/impact-analysis.contract';
 export * from './consistency-engine/consistency-engine.contract';
 export * from './baselines/baselines.contract';
 
-
 export {
   PROJECT_CONTEXT_COLLECTION_LIMIT,
   PROJECT_CONTEXT_SCOPE_TYPES,

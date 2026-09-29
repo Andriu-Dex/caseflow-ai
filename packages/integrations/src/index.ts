@@ -49,7 +49,6 @@ export type {
 export { FakeEmbeddingProvider, DisabledEmbeddingProvider } from './embedding-provider';
 export type { EmbeddingProvider } from './embedding-provider';
 
-
 export interface OpenAICompatibleProviderConfig {
   id?: string;
   baseUrl: string;

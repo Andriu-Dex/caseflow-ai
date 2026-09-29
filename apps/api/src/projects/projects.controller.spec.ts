@@ -2,6 +2,9 @@ import { NotFoundException, type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { JwtAuthGuard } from '../identity/jwt-auth.guard';
+import { ProjectMembershipGuard } from '../identity/project-membership.guard';
+import { WorkspaceMembershipGuard } from '../identity/workspace-membership.guard';
 import { ProjectsController } from './projects.controller';
 import { ProjectsService } from './projects.service';
 
@@ -16,7 +19,14 @@ describe('ProjectsController (validation and routing)', () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [ProjectsController],
       providers: [{ provide: ProjectsService, useValue: service }],
-    }).compile();
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(ProjectMembershipGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(WorkspaceMembershipGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
     app = moduleRef.createNestApplication();
     await app.init();
   });

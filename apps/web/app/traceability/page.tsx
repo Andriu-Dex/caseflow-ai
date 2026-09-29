@@ -280,9 +280,11 @@ function TraceabilityContent({ projectId }: { projectId: string }) {
                           </ul>
                         )}
                       </div>
-                      
+
                       <div className="mt-4 border-t border-border pt-4">
-                        <h3 className="mb-2 text-sm font-semibold text-foreground">Análisis de impacto</h3>
+                        <h3 className="mb-2 text-sm font-semibold text-foreground">
+                          Análisis de impacto
+                        </h3>
                         {!analyzeImpactMutation.data && !analyzeImpactMutation.isPending && (
                           <Button
                             type="button"
@@ -301,43 +303,61 @@ function TraceabilityContent({ projectId }: { projectId: string }) {
                         {analyzeImpactMutation.data && (
                           <div className="flex flex-col gap-3">
                             <div>
-                              <h4 className="text-xs font-semibold uppercase text-muted-foreground">Afectados Directamente (1 salto)</h4>
+                              <h4 className="text-xs font-semibold uppercase text-muted-foreground">
+                                Afectados Directamente (1 salto)
+                              </h4>
                               {analyzeImpactMutation.data.directlyAffected.length === 0 ? (
                                 <p className="text-sm text-muted-foreground">Ninguno</p>
                               ) : (
                                 <ul className="flex flex-col gap-1 mt-1 text-sm">
-                                  {analyzeImpactMutation.data.directlyAffected.map(id => {
-                                    const node = graph.data.nodes.find(n => n.id === id);
+                                  {analyzeImpactMutation.data.directlyAffected.map((id) => {
+                                    const node = graph.data.nodes.find((n) => n.id === id);
                                     if (!node) return <li key={id}>{id}</li>;
-                                    return <li key={id}><NodeLabel node={node} /></li>;
+                                    return (
+                                      <li key={id}>
+                                        <NodeLabel node={node} />
+                                      </li>
+                                    );
                                   })}
                                 </ul>
                               )}
                             </div>
                             <div>
-                              <h4 className="text-xs font-semibold uppercase text-muted-foreground">Afectados Transitivamente (&gt;1 salto)</h4>
+                              <h4 className="text-xs font-semibold uppercase text-muted-foreground">
+                                Afectados Transitivamente (&gt;1 salto)
+                              </h4>
                               {analyzeImpactMutation.data.transitivelyAffected.length === 0 ? (
                                 <p className="text-sm text-muted-foreground">Ninguno</p>
                               ) : (
                                 <ul className="flex flex-col gap-1 mt-1 text-sm">
-                                  {analyzeImpactMutation.data.transitivelyAffected.map(id => {
-                                    const node = graph.data.nodes.find(n => n.id === id);
+                                  {analyzeImpactMutation.data.transitivelyAffected.map((id) => {
+                                    const node = graph.data.nodes.find((n) => n.id === id);
                                     if (!node) return <li key={id}>{id}</li>;
-                                    return <li key={id}><NodeLabel node={node} /></li>;
+                                    return (
+                                      <li key={id}>
+                                        <NodeLabel node={node} />
+                                      </li>
+                                    );
                                   })}
                                 </ul>
                               )}
                             </div>
                             <div>
-                              <h4 className="text-xs font-semibold uppercase text-muted-foreground">Orden de Revisión Recomendado</h4>
+                              <h4 className="text-xs font-semibold uppercase text-muted-foreground">
+                                Orden de Revisión Recomendado
+                              </h4>
                               {analyzeImpactMutation.data.recommendedReviewOrder.length === 0 ? (
                                 <p className="text-sm text-muted-foreground">Ninguno</p>
                               ) : (
                                 <ol className="list-decimal pl-5 flex flex-col gap-1 mt-1 text-sm">
-                                  {analyzeImpactMutation.data.recommendedReviewOrder.map(id => {
-                                    const node = graph.data.nodes.find(n => n.id === id);
+                                  {analyzeImpactMutation.data.recommendedReviewOrder.map((id) => {
+                                    const node = graph.data.nodes.find((n) => n.id === id);
                                     if (!node) return <li key={id}>{id}</li>;
-                                    return <li key={id}><NodeLabel node={node} /></li>;
+                                    return (
+                                      <li key={id}>
+                                        <NodeLabel node={node} />
+                                      </li>
+                                    );
                                   })}
                                 </ol>
                               )}

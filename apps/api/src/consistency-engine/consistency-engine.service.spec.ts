@@ -1,16 +1,14 @@
-/// <reference types="jest" />
-import { Test, TestingModule } from '@nestjs/common';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { Test, TestingModule } from '@nestjs/testing';
 import { ConsistencyEngineService } from './consistency-engine.service';
 import { PrismaService } from '../database/prisma.service';
-import { ConsistencyReportResponse } from '@caseflow-ai/contracts';
 
 describe('ConsistencyEngineService', () => {
   let service: ConsistencyEngineService;
-  let prismaService: PrismaService;
 
   const mockPrismaService = {
     artifact: {
-      findMany: jest.fn(),
+      findMany: vi.fn(),
     },
   };
 
@@ -23,11 +21,10 @@ describe('ConsistencyEngineService', () => {
     }).compile();
 
     service = module.get<ConsistencyEngineService>(ConsistencyEngineService);
-    prismaService = module.get<PrismaService>(PrismaService);
   });
 
   afterEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it('should be defined', () => {
@@ -80,19 +77,14 @@ describe('ConsistencyEngineService', () => {
               status: 'APPROVED',
               structuredAnalysisDetail: {
                 content: {
-                  screens: [
-                    { localId: 'screen-1', name: 'Home Screen' }
-                  ]
-                }
+                  screens: [{ localId: 'screen-1', name: 'Home Screen' }],
+                },
               },
               mockupsSourcedFromHere: [
                 {
-                  screens: [
-                    // Different screen associated
-                    { screenLocalId: 'screen-2' }
-                  ]
-                }
-              ]
+                  screens: [{ screenLocalId: 'screen-2' }],
+                },
+              ],
             },
           ],
         },
@@ -118,15 +110,12 @@ describe('ConsistencyEngineService', () => {
               status: 'APPROVED',
               structuredAnalysisDetail: {
                 content: {
-                  nodes: [
-                    { localId: 'node-1', label: 'Home Node' }
-                  ]
-                }
-              }
+                  nodes: [{ localId: 'node-1', label: 'Home Node' }],
+                },
+              },
             },
           ],
         },
-        // No UI Blueprint mapping to this node
       ]);
 
       const result = await service.generateReport('project-1');
@@ -149,7 +138,7 @@ describe('ConsistencyEngineService', () => {
               status: 'APPROVED',
               useCaseDetail: {
                 name: 'Login',
-              }
+              },
             },
           ],
         },
@@ -162,8 +151,8 @@ describe('ConsistencyEngineService', () => {
             {
               status: 'APPROVED',
               useCaseDetail: {
-                name: ' Login ', // should be case-insensitive / trimmed duplicate
-              }
+                name: ' Login ',
+              },
             },
           ],
         },

@@ -146,6 +146,7 @@ describe('Project Source intake integration', () => {
       ai,
       new SourceContentExtractor(),
       new FakeStorageProvider(),
+      {} as never,
     );
 
     const candidate = await service.generateReport(projectId, source.id);

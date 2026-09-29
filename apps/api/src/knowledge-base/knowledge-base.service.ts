@@ -1,7 +1,6 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { RetrievalStrategy } from '@caseflow-ai/contracts';
-import type { Prisma } from '../generated/prisma/client';
 import { EmbeddingProvider } from '@caseflow-ai/integrations';
 
 @Injectable()
@@ -22,7 +21,7 @@ export class KnowledgeBaseService {
     projectId: string,
     query: string,
     strategy: RetrievalStrategy,
-    queryEmbedding?: number[]
+    queryEmbedding?: number[],
   ): Promise<string[]> {
     if (strategy === 'NONE') {
       return [];
@@ -33,9 +32,8 @@ export class KnowledgeBaseService {
       const embeddings = await this.embeddingProvider.embed([query]);
       embedding = embeddings[0];
     }
-    
-    if (!embedding || embedding.length === 0) return [];
 
+    if (!embedding || embedding.length === 0) return [];
 
     // Determine target entity types based on strategy
     const entityTypes: string[] = [];
@@ -50,9 +48,7 @@ export class KnowledgeBaseService {
     const embeddingString = `[${embedding.join(',')}]`;
 
     // Explicit projectId filtering to guarantee cross-project isolation.
-    const fragments = await this.prisma.$queryRaw<
-      { content: string; distance: number }[]
-    >`
+    const fragments = await this.prisma.$queryRaw<{ content: string; distance: number }[]>`
       SELECT 
         content, 
         embedding <-> ${embeddingString}::vector AS distance
@@ -72,7 +68,7 @@ export class KnowledgeBaseService {
   async fragmentAndEmbedSource(projectId: string, sourceVersionId: string): Promise<void> {
     const version = await this.prisma.artifactVersion.findFirst({
       where: { id: sourceVersionId, projectId },
-      include: { sourceDetail: true }
+      include: { sourceDetail: true },
     });
 
     if (!version || !version.sourceDetail?.extractedText) {
@@ -80,7 +76,9 @@ export class KnowledgeBaseService {
     }
 
     // A very simple chunking strategy: split by paragraphs
-    const paragraphs = version.sourceDetail.extractedText.split(/\n\s*\n/).filter((p: string) => p.trim().length > 0);
+    const paragraphs = version.sourceDetail.extractedText
+      .split(/\n\s*\n/)
+      .filter((p: string) => p.trim().length > 0);
     if (paragraphs.length === 0) return;
 
     // Generate embeddings
@@ -109,4 +107,3 @@ export class KnowledgeBaseService {
     }
   }
 }
-

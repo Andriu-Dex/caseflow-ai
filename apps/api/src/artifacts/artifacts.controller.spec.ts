@@ -2,6 +2,8 @@ import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { JwtAuthGuard } from '../identity/jwt-auth.guard';
+import { ProjectMembershipGuard } from '../identity/project-membership.guard';
 import { ArtifactsController } from './artifacts.controller';
 import { ArtifactsService } from './artifacts.service';
 
@@ -16,7 +18,12 @@ describe('ArtifactsController (validation and routing)', () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [ArtifactsController],
       providers: [{ provide: ArtifactsService, useValue: service }],
-    }).compile();
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(ProjectMembershipGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
     app = moduleRef.createNestApplication();
     await app.init();
   });

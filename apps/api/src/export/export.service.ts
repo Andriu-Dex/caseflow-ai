@@ -62,7 +62,10 @@ export class ExportService {
     return images;
   }
 
-  async buildSnapshot(projectId: string, options?: { artifactVersionIds?: Record<string, string> }) {
+  async buildSnapshot(
+    projectId: string,
+    options?: { artifactVersionIds?: Record<string, string> },
+  ) {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
       select: { name: true },

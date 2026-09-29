@@ -7,8 +7,8 @@ import { NotFoundException } from '@nestjs/common';
 
 describe('ImpactAnalysisService', () => {
   let service: ImpactAnalysisService;
-  let prismaMock: any;
-  let traceabilityMock: any;
+  let prismaMock: { artifactVersion: { findUnique: ReturnType<typeof vi.fn> } };
+  let traceabilityMock: { buildGraph: ReturnType<typeof vi.fn> };
 
   beforeEach(async () => {
     prismaMock = {
@@ -46,13 +46,7 @@ describe('ImpactAnalysisService', () => {
     });
 
     traceabilityMock.buildGraph.mockResolvedValue({
-      nodes: [
-        { id: 'v1' },
-        { id: 'v2' },
-        { id: 'v3' },
-        { id: 'v4' },
-        { id: 'v5' },
-      ],
+      nodes: [{ id: 'v1' }, { id: 'v2' }, { id: 'v3' }, { id: 'v4' }, { id: 'v5' }],
       edges: [
         { fromId: 'v1', toId: 'v2' },
         { fromId: 'v1', toId: 'v3' },
@@ -86,7 +80,7 @@ describe('ImpactAnalysisService', () => {
     expect(v4Index).toBeGreaterThan(v3Index);
     expect(v5Index).toBeGreaterThan(v4Index);
   });
-  
+
   it('should not include root node in affected or incorrectly transitively if reached by cycle', async () => {
     prismaMock.artifactVersion.findUnique.mockResolvedValue({
       id: 'v1',
@@ -95,10 +89,7 @@ describe('ImpactAnalysisService', () => {
     });
 
     traceabilityMock.buildGraph.mockResolvedValue({
-      nodes: [
-        { id: 'v1' },
-        { id: 'v2' },
-      ],
+      nodes: [{ id: 'v1' }, { id: 'v2' }],
       edges: [
         { fromId: 'v1', toId: 'v2' },
         { fromId: 'v2', toId: 'v1' }, // cycle

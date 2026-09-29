@@ -1,4 +1,10 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 
 @Injectable()
@@ -10,7 +16,8 @@ export class ProjectMembershipGuard implements CanActivate {
     const user = request.user;
     if (!user) throw new UnauthorizedException();
 
-    const projectId = request.params.projectId || request.body?.projectId || request.query?.projectId;
+    const projectId =
+      request.params.projectId || request.body?.projectId || request.query?.projectId;
     if (!projectId) return true;
 
     const membership = await this.prisma.projectMembership.findUnique({

@@ -1,4 +1,10 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 
 @Injectable()
@@ -10,7 +16,8 @@ export class WorkspaceMembershipGuard implements CanActivate {
     const user = request.user;
     if (!user) throw new UnauthorizedException();
 
-    const workspaceId = request.params.workspaceId || request.body?.workspaceId || request.query?.workspaceId;
+    const workspaceId =
+      request.params.workspaceId || request.body?.workspaceId || request.query?.workspaceId;
     if (!workspaceId) return true;
 
     const membership = await this.prisma.workspaceMembership.findUnique({

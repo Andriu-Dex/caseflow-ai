@@ -155,7 +155,10 @@ export class SourcesService {
       const versionIds = Object.values(artifactVersionIds);
       if (versionIds.length === 0) return { items: [] };
       const versions = await this.prisma.artifactVersion.findMany({
-        where: { id: { in: versionIds }, artifact: { projectId, artifactTypeCode: 'PROJECT_SOURCE' } },
+        where: {
+          id: { in: versionIds },
+          artifact: { projectId, artifactTypeCode: 'PROJECT_SOURCE' },
+        },
         include: { artifact: true, sourceDetail: { include: { report: true } } },
         orderBy: { artifact: { code: 'asc' } },
       });

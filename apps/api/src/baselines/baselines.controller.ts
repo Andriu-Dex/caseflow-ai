@@ -1,10 +1,14 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Query, Res, Req } from '@nestjs/common';
-import type { Response, Request } from 'express';
+import { Controller, Get, Post, Body, Param, UseGuards, Query, Res, Request } from '@nestjs/common';
+import type { Response } from 'express';
 import { BaselinesService } from './baselines.service';
 import { ExportService } from '../export/export.service';
 import { JwtAuthGuard } from '../identity/jwt-auth.guard';
 import { ProjectMembershipGuard } from '../identity/project-membership.guard';
 import { createBaselineRequestSchema } from '@caseflow-ai/contracts';
+
+interface AuthenticatedRequest {
+  user: { id: string };
+}
 
 @UseGuards(JwtAuthGuard, ProjectMembershipGuard)
 @Controller('projects/:projectId/baselines')
@@ -17,11 +21,16 @@ export class BaselinesController {
   @Post()
   async create(
     @Param('projectId') projectId: string,
-    @Body() body: any,
-    @Req() req: any,
+    @Body() body: unknown,
+    @Request() req: AuthenticatedRequest,
   ) {
     const data = createBaselineRequestSchema.parse(body);
-    return this.baselinesService.create(projectId, data.label, data.description || undefined, req.user.id);
+    return this.baselinesService.create(
+      projectId,
+      data.label,
+      data.description || undefined,
+      req.user.id,
+    );
   }
 
   @Get()

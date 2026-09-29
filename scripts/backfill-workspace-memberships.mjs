@@ -11,14 +11,14 @@ async function main() {
       data: {
         email: 'admin@example.com',
         passwordHash: 'dummy',
-        displayName: 'Admin User'
-      }
+        displayName: 'Admin User',
+      },
     });
     users.push(defaultUser);
   }
 
   const ownerId = users[0].id;
-  
+
   const workspaces = await prisma.workspace.findMany();
   for (const workspace of workspaces) {
     await prisma.workspaceMembership.upsert({
@@ -26,14 +26,14 @@ async function main() {
         workspaceId_userId: {
           workspaceId: workspace.id,
           userId: ownerId,
-        }
+        },
       },
       update: {},
       create: {
         workspaceId: workspace.id,
         userId: ownerId,
-        role: 'OWNER'
-      }
+        role: 'OWNER',
+      },
     });
   }
 
@@ -44,14 +44,14 @@ async function main() {
         projectId_userId: {
           projectId: project.id,
           userId: ownerId,
-        }
+        },
       },
       update: {},
       create: {
         projectId: project.id,
         userId: ownerId,
-        role: 'OWNER'
-      }
+        role: 'OWNER',
+      },
     });
   }
 

@@ -15,12 +15,12 @@ export class FakeEmbeddingProvider implements EmbeddingProvider {
   }
 
   async embed(texts: string[]): Promise<number[][]> {
-    return texts.map(() => Array(this.dimension).fill(0.1));
+    return texts.map(() => Array(this.dimension).fill(0.1) as number[]);
   }
 }
 
 export class DisabledEmbeddingProvider implements EmbeddingProvider {
-  async embed(texts: string[]): Promise<number[][]> {
+  async embed(_texts: string[]): Promise<number[][]> {
     throw new Error('EmbeddingProvider is disabled');
   }
 }

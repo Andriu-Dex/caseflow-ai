@@ -1,6 +1,25 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { ConsistencyReportResponse, ConsistencyIssue, NavigationTreeContent, UiBlueprintContent } from '@caseflow-ai/contracts';
+import {
+  ConsistencyReportResponse,
+  ConsistencyIssue,
+  NavigationTreeContent,
+  UiBlueprintContent,
+} from '@caseflow-ai/contracts';
+
+interface MockupScreen {
+  screenLocalId: string;
+}
+
+interface MockupWithScreens {
+  screens: MockupScreen[];
+}
+
+interface ScreenWithArtifact {
+  localId: string;
+  navigationNodeLocalId?: string;
+  artifactId: string;
+}
 
 @Injectable()
 export class ConsistencyEngineService {
@@ -22,22 +41,26 @@ export class ConsistencyEngineService {
             mockupsSourcedFromHere: {
               include: {
                 screens: true,
-              }
+              },
             },
             structuredAnalysisDetail: true,
             useCaseDetail: true,
-          }
-        }
-      }
+          },
+        },
+      },
     });
 
+    type ArtifactWithVersion = (typeof artifacts)[number];
+
     const approvedArtifacts = artifacts.filter(
-      (a: any) => a.versions.length > 0 && a.versions[0].status === 'APPROVED'
+      (a: ArtifactWithVersion) => a.versions.length > 0 && a.versions[0]!.status === 'APPROVED',
     );
     const totalArtifacts = approvedArtifacts.length;
 
     // Rule 1: Every APPROVED Requirement must be referenced by at least one Use Case.
-    const requirements = approvedArtifacts.filter((a: any) => a.artifactTypeCode === 'REQUIREMENT');
+    const requirements = approvedArtifacts.filter(
+      (a: ArtifactWithVersion) => a.artifactTypeCode === 'REQUIREMENT',
+    );
     for (const req of requirements) {
       if (req.versions[0]!.useCaseRequirementLinks.length === 0) {
         issues.push({
@@ -50,15 +73,19 @@ export class ConsistencyEngineService {
     }
 
     // Prepare data for UI Blueprint and Navigation Tree
-    const uiBlueprints = approvedArtifacts.filter((a: any) => a.artifactTypeCode === 'UI_BLUEPRINT');
-    const navTrees = approvedArtifacts.filter((a: any) => a.artifactTypeCode === 'NAVIGATION_TREE');
+    const uiBlueprints = approvedArtifacts.filter(
+      (a: ArtifactWithVersion) => a.artifactTypeCode === 'UI_BLUEPRINT',
+    );
+    const navTrees = approvedArtifacts.filter(
+      (a: ArtifactWithVersion) => a.artifactTypeCode === 'NAVIGATION_TREE',
+    );
 
-    const allScreens = uiBlueprints.flatMap((bp: any) => {
+    const allScreens: ScreenWithArtifact[] = uiBlueprints.flatMap((bp: ArtifactWithVersion) => {
       const detail = bp.versions[0]!.structuredAnalysisDetail;
       if (detail && detail.content) {
-        return (detail.content as unknown as UiBlueprintContent).screens.map(s => ({
+        return (detail.content as unknown as UiBlueprintContent).screens.map((s) => ({
           ...s,
-          artifactId: bp.id
+          artifactId: bp.id,
         }));
       }
       return [];
@@ -70,9 +97,9 @@ export class ConsistencyEngineService {
       if (!detail || !detail.content) continue;
 
       const content = detail.content as unknown as UiBlueprintContent;
-      const mockups = bp.versions[0]!.mockupsSourcedFromHere;
+      const mockups = bp.versions[0]!.mockupsSourcedFromHere as MockupWithScreens[];
       const mockupScreenLocalIds = new Set(
-        mockups.flatMap((m: any) => m.screens.map((s: any) => s.screenLocalId))
+        mockups.flatMap((m) => m.screens.map((s) => s.screenLocalId)),
       );
 
       for (const screen of content.screens) {
@@ -94,7 +121,7 @@ export class ConsistencyEngineService {
 
       const content = detail.content as unknown as NavigationTreeContent;
       for (const node of content.nodes) {
-        const screen = allScreens.find((s: any) => s.navigationNodeLocalId === node.localId);
+        const screen = allScreens.find((s) => s.navigationNodeLocalId === node.localId);
         if (!screen) {
           issues.push({
             rule: 'Navigation Node Link',
@@ -107,21 +134,23 @@ export class ConsistencyEngineService {
     }
 
     // Rule 4: No APPROVED Use Case should have a duplicated name within the project.
-    const useCases = approvedArtifacts.filter((a: any) => a.artifactTypeCode === 'USE_CASE');
+    const useCases = approvedArtifacts.filter(
+      (a: ArtifactWithVersion) => a.artifactTypeCode === 'USE_CASE',
+    );
     const useCaseNames = new Map<string, string[]>();
 
     for (const uc of useCases) {
       const detail = uc.versions[0]!.useCaseDetail;
       if (detail && detail.name) {
-        const name = detail.name.trim().toLowerCase();
-        if (!useCaseNames.has(name)) {
-          useCaseNames.set(name, []);
+        const normalizedName = detail.name.trim().toLowerCase();
+        if (!useCaseNames.has(normalizedName)) {
+          useCaseNames.set(normalizedName, []);
         }
-        useCaseNames.get(name)!.push(uc.id);
+        useCaseNames.get(normalizedName)!.push(uc.id);
       }
     }
 
-    for (const [name, ids] of useCaseNames.entries()) {
+    for (const [, ids] of useCaseNames.entries()) {
       if (ids.length > 1) {
         issues.push({
           rule: 'Unique Use Case Name',
