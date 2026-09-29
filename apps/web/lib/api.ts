@@ -408,4 +408,8 @@ export const api = {
     analyze: (projectId: string, artifactVersionId: string) =>
       get<import('@caseflow-ai/contracts').ImpactAnalysisResponse>(`/projects/${projectId}/impact-analysis/${artifactVersionId}`),
   },
+  consistency: {
+    get: (projectId: string) =>
+      get<import('@caseflow-ai/contracts').ConsistencyReportResponse>(`/projects/${projectId}/consistency`),
+  },
 };

@@ -44,6 +44,7 @@ export * from './export/export.contract';
 export * from './workspaces/workspace.contract';
 export * from './knowledge-base/knowledge-base.contract';
 export * from './impact-analysis/impact-analysis.contract';
+export * from './consistency-engine/consistency-engine.contract';
 
 
 export {
