@@ -32,6 +32,10 @@ function ReadinessContent({ projectId }: { projectId: string }) {
     queryKey: ['readiness', projectId],
     queryFn: () => api.readiness.get(projectId),
   });
+  const consistency = useQuery({
+    queryKey: ['consistency', projectId],
+    queryFn: () => api.consistency.get(projectId),
+  });
   const done = readiness.data?.stages.filter((s) => s.satisfied).length ?? 0;
   const total = readiness.data?.stages.length ?? 0;
   const [downloading, setDownloading] = useState<'json' | 'html' | null>(null);
@@ -176,6 +180,56 @@ function ReadinessContent({ projectId }: { projectId: string }) {
           </>
         ) : null}
       </QueryState>
+
+      <div className="mt-8">
+        <h2 className="mb-4 text-xl font-semibold text-foreground">Reporte de Consistencia</h2>
+        <QueryState isLoading={consistency.isLoading} error={consistency.error}>
+          {consistency.data ? (
+            <div className="flex flex-col gap-4">
+              {consistency.data.issues.length === 0 ? (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-400">
+                  <p className="flex items-center gap-2 font-medium">
+                    <CheckCircle2 className="size-5" />
+                    No se encontraron problemas de consistencia.
+                  </p>
+                </div>
+              ) : (
+                <ul className="flex flex-col gap-2">
+                  {consistency.data.issues.map((issue, idx) => (
+                    <li
+                      key={idx}
+                      className={`rounded-lg border p-3 ${
+                        issue.severity === 'ERROR'
+                          ? 'border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400'
+                          : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-400'
+                      }`}
+                    >
+                      <div className="flex items-start gap-2 font-medium">
+                        <AlertCircle className="size-5 shrink-0 mt-0.5" />
+                        <div>
+                          <p>[{issue.rule}] {issue.message}</p>
+                          <p className="mt-1 text-sm opacity-80">
+                            Artefactos afectados:{' '}
+                            {issue.affectedArtifactIds.map((id) => (
+                              <Link
+                                key={id}
+                                href={`/projects/${projectId}/artifacts/${id}`}
+                                className="mr-2 underline hover:opacity-80"
+                              >
+                                {id.split('-')[0]}
+                              </Link>
+                            ))}
+                          </p>
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ) : null}
+        </QueryState>
+      </div>
     </div>
   );
 }

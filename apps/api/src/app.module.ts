@@ -19,6 +19,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
 import { IdentityModule } from './identity/identity.module';
 import { KnowledgeBaseModule } from './knowledge-base/knowledge-base.module';
 import { ImpactAnalysisModule } from './impact-analysis/impact-analysis.module';
+import { ConsistencyEngineModule } from './consistency-engine/consistency-engine.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { ImpactAnalysisModule } from './impact-analysis/impact-analysis.module';
     WorkspacesModule,
     KnowledgeBaseModule,
     ImpactAnalysisModule,
+    ConsistencyEngineModule,
   ],
 })
 export class AppModule {}
