@@ -8,6 +8,7 @@ type MockFn = ReturnType<typeof vi.fn>;
 type PrismaMock = {
   $queryRaw: MockFn;
   $executeRaw: MockFn;
+  artifact: { findMany: MockFn };
   artifactVersion: { findFirst: MockFn };
 };
 
@@ -24,6 +25,7 @@ describe('KnowledgeBaseService', () => {
           useValue: {
             $queryRaw: vi.fn(),
             $executeRaw: vi.fn(),
+            artifact: { findMany: vi.fn().mockResolvedValue([]) },
             artifactVersion: {
               findFirst: vi.fn(),
             },
@@ -61,9 +63,45 @@ describe('KnowledgeBaseService', () => {
       const queryStrings = queryCallArgs[0] as string[];
       const sqlString = queryStrings.join('?');
       // Verify isolation in query
-      expect(sqlString).toContain('"project_id" = ');
+      expect(sqlString).toContain('fragment.project_id = ');
       // Verify that the parameter matches the projectId
       expect(queryCallArgs[2]).toBe('proj-1');
+    });
+
+    it('retrieves approved artifact context without querying source fragments', async () => {
+      db.artifact.findMany.mockResolvedValue([
+        {
+          code: 'RF-001',
+          artifactTypeCode: 'REQUIREMENT',
+          versions: [
+            { title: 'Registrar usuario', requirementDetail: { statement: 'Crear cuenta' } },
+          ],
+        },
+      ]);
+
+      const result = await service.retrieve('proj-1', 'ignored', 'ARTIFACT_ONLY');
+
+      expect(result[0]).toContain('[RF-001] Registrar usuario');
+      expect(db.$queryRaw).not.toHaveBeenCalled();
+      expect(db.artifact.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ projectId: 'proj-1' }) }),
+      );
+    });
+
+    it('loads full-project source fragments without needing embeddings', async () => {
+      db.artifact.findMany.mockResolvedValue([]);
+      db.$queryRaw.mockResolvedValue([{ content: 'Project source text' }]);
+
+      await expect(service.retrieve('proj-1', 'ignored', 'FULL_PROJECT')).resolves.toEqual([
+        'Project source text',
+      ]);
+      expect((db.$queryRaw.mock.calls[0]![0] as string[]).join(' ')).toContain(
+        'ORDER BY artifact.code ASC, fragment.sequence ASC',
+      );
+      const queryText = (db.$queryRaw.mock.calls[0]![0] as string[]).join(' ');
+      expect(queryText).toContain("artifact.artifact_type_code = 'PROJECT_SOURCE'");
+      expect(queryText).toContain("version.status = 'APPROVED'");
+      expect(queryText).toContain('NOT EXISTS');
     });
   });
 

@@ -7,13 +7,13 @@ import { NotFoundException } from '@nestjs/common';
 
 describe('ImpactAnalysisService', () => {
   let service: ImpactAnalysisService;
-  let prismaMock: { artifactVersion: { findUnique: ReturnType<typeof vi.fn> } };
+  let prismaMock: { artifactVersion: { findFirst: ReturnType<typeof vi.fn> } };
   let traceabilityMock: { buildGraph: ReturnType<typeof vi.fn> };
 
   beforeEach(async () => {
     prismaMock = {
       artifactVersion: {
-        findUnique: vi.fn(),
+        findFirst: vi.fn(),
       },
     };
 
@@ -33,13 +33,13 @@ describe('ImpactAnalysisService', () => {
   });
 
   it('should throw NotFoundException if artifact version is not found', async () => {
-    prismaMock.artifactVersion.findUnique.mockResolvedValue(null);
+    prismaMock.artifactVersion.findFirst.mockResolvedValue(null);
 
-    await expect(service.analyzeImpact('v1')).rejects.toThrow(NotFoundException);
+    await expect(service.analyzeImpact('p1', 'v1')).rejects.toThrow(NotFoundException);
   });
 
   it('should correctly analyze impact using BFS and topological sort', async () => {
-    prismaMock.artifactVersion.findUnique.mockResolvedValue({
+    prismaMock.artifactVersion.findFirst.mockResolvedValue({
       id: 'v1',
       projectId: 'p1',
       artifact: {},
@@ -56,7 +56,7 @@ describe('ImpactAnalysisService', () => {
       ],
     });
 
-    const result = await service.analyzeImpact('v1');
+    const result = await service.analyzeImpact('p1', 'v1');
 
     // directly affected: v2, v3
     expect(result.directlyAffected).toContain('v2');
@@ -82,7 +82,7 @@ describe('ImpactAnalysisService', () => {
   });
 
   it('should not include root node in affected or incorrectly transitively if reached by cycle', async () => {
-    prismaMock.artifactVersion.findUnique.mockResolvedValue({
+    prismaMock.artifactVersion.findFirst.mockResolvedValue({
       id: 'v1',
       projectId: 'p1',
       artifact: {},
@@ -96,9 +96,17 @@ describe('ImpactAnalysisService', () => {
       ],
     });
 
-    const result = await service.analyzeImpact('v1');
+    const result = await service.analyzeImpact('p1', 'v1');
     expect(result.directlyAffected).toEqual(['v2']);
     expect(result.transitivelyAffected).toEqual([]);
     expect(result.recommendedReviewOrder).toEqual(['v2']);
+  });
+
+  it('does not analyze a version belonging to another project', async () => {
+    prismaMock.artifactVersion.findFirst.mockResolvedValue(null);
+    await expect(service.analyzeImpact('project-a', 'version-from-project-b')).rejects.toThrow(
+      NotFoundException,
+    );
+    expect(traceabilityMock.buildGraph).not.toHaveBeenCalled();
   });
 });

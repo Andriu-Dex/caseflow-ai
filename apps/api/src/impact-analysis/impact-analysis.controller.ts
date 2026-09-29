@@ -23,6 +23,6 @@ export class ImpactAnalysisController {
     @Param('projectId', uuidParamPipe) projectId: string,
     @Param('artifactVersionId', uuidParamPipe) artifactVersionId: string,
   ) {
-    return this.service.analyzeImpact(artifactVersionId);
+    return this.service.analyzeImpact(projectId, artifactVersionId);
   }
 }

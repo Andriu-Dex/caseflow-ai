@@ -12,7 +12,7 @@ import { toProjectResponse } from './projects.mapper';
 export class ProjectsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(input: CreateProjectRequest): Promise<ProjectResponse> {
+  async create(input: CreateProjectRequest, userId: string): Promise<ProjectResponse> {
     const workspace = await this.prisma.workspace.findUnique({
       where: { id: input.workspaceId },
       select: { id: true },
@@ -21,19 +21,34 @@ export class ProjectsService {
       throw new NotFoundException('Workspace no encontrado.');
     }
 
-    const project = await this.prisma.project.create({
-      data: {
-        workspaceId: input.workspaceId,
-        name: input.name,
-        description: input.description ?? null,
-      },
+    const project = await this.prisma.$transaction(async (tx) => {
+      const newProject = await tx.project.create({
+        data: {
+          workspaceId: input.workspaceId,
+          name: input.name,
+          description: input.description ?? null,
+        },
+      });
+      await tx.projectMembership.create({
+        data: {
+          projectId: newProject.id,
+          userId: userId,
+          role: 'OWNER',
+        },
+      });
+      return newProject;
     });
     return toProjectResponse(project, false);
   }
 
-  async list(workspaceId: string, limit: number, offset: number): Promise<ProjectListResponse> {
+  async list(
+    workspaceId: string,
+    limit: number,
+    offset: number,
+    userId: string,
+  ): Promise<ProjectListResponse> {
     const projects = await this.prisma.project.findMany({
-      where: { workspaceId },
+      where: { workspaceId, projectMemberships: { some: { userId } } },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       take: limit,
       skip: offset,

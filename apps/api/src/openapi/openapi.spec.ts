@@ -1,16 +1,26 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { OpenAPIObject } from '@nestjs/swagger';
+import {
+  createArtifactRequestSchema,
+  createArtifactVersionRequestSchema,
+  createProjectRequestSchema,
+  projectContextRequestSchema,
+} from '@caseflow-ai/contracts';
 import request from 'supertest';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AppModule } from '../app.module';
 import { PrismaService } from '../database/prisma.service';
 import {
+  API_VERSION,
   createOpenApiDocument,
   OPENAPI_JSON_PATH,
   renderOpenApiDocument,
   setupOpenApi,
 } from './openapi';
+import { toOpenApiSchema } from './zod-openapi';
 
 // The real application modules are used; only the database client is replaced,
 // so the document is generated without any infrastructure.
@@ -80,6 +90,36 @@ describe('OpenAPI contract', () => {
       ]),
     );
     expect(routes.length).toBeGreaterThan(50);
+  });
+
+  it('uses the package API version and assigns every route a unique operation id', async () => {
+    await load();
+    const rootPackage = JSON.parse(
+      readFileSync(join(__dirname, '..', '..', '..', '..', 'package.json'), 'utf8'),
+    ) as { version: string };
+    const operationIds = Object.values(document.paths).flatMap((item) =>
+      Object.values(item as Record<string, { operationId?: string }>).map(
+        (operation) => operation.operationId,
+      ),
+    );
+
+    expect(document.openapi).toMatch(/^3\./);
+    expect(document.info.version).toBe(API_VERSION);
+    expect(API_VERSION).toBe(rootPackage.version);
+    expect(operationIds.every(Boolean)).toBe(true);
+    expect(new Set(operationIds).size).toBe(operationIds.length);
+  });
+
+  it('derives request bodies from the zod contracts', async () => {
+    await load();
+    const body = (path: string) =>
+      operation(path, 'post').requestBody.content['application/json'].schema;
+
+    expect(body('/projects')).toEqual(toOpenApiSchema(createProjectRequestSchema, 'input'));
+    expect(body(ARTIFACTS)).toEqual(toOpenApiSchema(createArtifactRequestSchema, 'input'));
+    expect(body(VERSIONS)).toEqual(toOpenApiSchema(createArtifactVersionRequestSchema, 'input'));
+    expect(body(CONTEXT)).toEqual(toOpenApiSchema(projectContextRequestSchema, 'input'));
+    expect(body(CONTEXT_VERSIONS)).toEqual(toOpenApiSchema(projectContextRequestSchema, 'input'));
   });
 
   it('does not expose the artifact code prefix, status or origin as request fields', async () => {

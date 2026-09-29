@@ -31,9 +31,14 @@ export class ConsistencyEngineService {
     const issues: ConsistencyIssue[] = [];
 
     const artifacts = await this.prisma.artifact.findMany({
-      where: { projectId, archivedAt: null },
+      where: {
+        projectId,
+        archivedAt: null,
+        versions: { some: { status: 'APPROVED' } },
+      },
       include: {
         versions: {
+          where: { status: 'APPROVED' },
           orderBy: { versionNumber: 'desc' },
           take: 1,
           include: {

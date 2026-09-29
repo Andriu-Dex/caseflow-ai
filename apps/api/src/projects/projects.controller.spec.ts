@@ -28,6 +28,10 @@ describe('ProjectsController (validation and routing)', () => {
       .useValue({ canActivate: () => true })
       .compile();
     app = moduleRef.createNestApplication();
+    app.use((request: { user?: { id: string } }, _response: unknown, next: () => void) => {
+      request.user = { id: 'test-user' };
+      next();
+    });
     await app.init();
   });
 
@@ -49,7 +53,7 @@ describe('ProjectsController (validation and routing)', () => {
 
     expect(ok.status).toBe(201);
     expect(service.create).toHaveBeenCalledTimes(1);
-    expect(service.create).toHaveBeenCalledWith({ workspaceId, name: 'Nuevo' });
+    expect(service.create).toHaveBeenCalledWith({ workspaceId, name: 'Nuevo' }, 'test-user');
     expect(invalid.status).toBe(400);
     expect(invalid.body.message).toBe('La solicitud no es válida.');
   });
@@ -62,7 +66,7 @@ describe('ProjectsController (validation and routing)', () => {
 
     expect(missing.status).toBe(400);
     expect(ok.status).toBe(200);
-    expect(service.list).toHaveBeenCalledWith(workspaceId, 50, 0);
+    expect(service.list).toHaveBeenCalledWith(workspaceId, 50, 0, 'test-user');
   });
 
   it('GET /projects/:projectId rejects a non-UUID id before reaching the service', async () => {

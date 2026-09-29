@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Inject,
   NotFoundException,
   UnprocessableEntityException,
   ServiceUnavailableException,
@@ -29,7 +30,7 @@ export class RequirementsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ai: AIOrchestrator,
-    private readonly knowledgeBase: KnowledgeBaseService,
+    @Inject(KnowledgeBaseService) private readonly knowledgeBase: KnowledgeBaseService,
   ) {}
   create(projectId: string, input: RequirementInput) {
     return this.prisma.$transaction((tx) => this.createInTx(tx, projectId, input, 'MANUAL'));

@@ -149,7 +149,7 @@ describe('Requirements integration', () => {
       ]),
       new PrismaAIRunRecorder(ctx.prisma),
     );
-    const service = new RequirementsService(ctx.prisma, ai, {} as never);
+    const service = new RequirementsService(ctx.prisma, ai, { retrieve: async () => [] } as never);
     const generation = await service.generate(projectId, contextVersionId);
     expect(generation).toMatchObject({
       sourceContextVersionId: contextVersionId,

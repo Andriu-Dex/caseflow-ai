@@ -6,8 +6,11 @@ import { PrismaService } from '../database/prisma.service';
 export class WorkspacesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(): Promise<WorkspaceListResponse> {
-    const workspaces = await this.prisma.workspace.findMany({ orderBy: { name: 'asc' } });
+  async list(userId: string): Promise<WorkspaceListResponse> {
+    const workspaces = await this.prisma.workspace.findMany({
+      where: { memberships: { some: { userId } } },
+      orderBy: { name: 'asc' },
+    });
     return { items: workspaces.map((w) => ({ id: w.id, slug: w.slug, name: w.name })) };
   }
 }
