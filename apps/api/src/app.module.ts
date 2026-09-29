@@ -17,6 +17,7 @@ import { ReadinessModule } from './readiness/readiness.module';
 import { ExportModule } from './export/export.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
 import { IdentityModule } from './identity/identity.module';
+import { KnowledgeBaseModule } from './knowledge-base/knowledge-base.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { IdentityModule } from './identity/identity.module';
     ReadinessModule,
     ExportModule,
     WorkspacesModule,
+    KnowledgeBaseModule,
   ],
 })
 export class AppModule {}

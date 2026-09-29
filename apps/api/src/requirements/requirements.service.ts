@@ -15,6 +15,7 @@ import { PrismaService } from '../database/prisma.service';
 import { getProjectLanguage } from '../projects/project-language';
 import type { Prisma } from '../generated/prisma/client';
 import { analyzeRequirementQuality } from './requirement-quality';
+import { KnowledgeBaseService } from '../knowledge-base/knowledge-base.service';
 
 type Tx = Prisma.TransactionClient;
 const detailInclude = {
@@ -28,6 +29,7 @@ export class RequirementsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ai: AIOrchestrator,
+    private readonly knowledgeBase: KnowledgeBaseService,
   ) {}
   create(projectId: string, input: RequirementInput) {
     return this.prisma.$transaction((tx) => this.createInTx(tx, projectId, input, 'MANUAL'));
@@ -150,6 +152,14 @@ export class RequirementsService {
         'La generación oficial requiere un contexto respaldado por al menos una fuente de proyecto APPROVED.',
       );
     const language = await getProjectLanguage(this.prisma, projectId);
+    
+    // Retrieve context from knowledge base
+    const query = context.projectContextDetail.problemStatement;
+    const retrievedFragments = await this.knowledgeBase.retrieve(projectId, query, 'HYBRID');
+    const ragContext = retrievedFragments.length > 0 
+      ? '\n\nInformación de contexto adicional de la base de conocimiento:\n' + retrievedFragments.join('\n\n')
+      : '';
+
     try {
       const result = await this.ai.generateStructured({
         projectId,
@@ -158,7 +168,7 @@ export class RequirementsService {
         promptKey: 'requirements.generate',
         // ISO/IEC/IEEE 29148:2018-aligned quality principles (spec §4.4).
         promptVersion: 2,
-        messages: [{ role: 'user', content: JSON.stringify(context.projectContextDetail) }],
+        messages: [{ role: 'user', content: JSON.stringify(context.projectContextDetail) + ragContext }],
         outputSchema: requirementGenerationOutputSchema,
         schemaName: 'requirements_generation',
         maxOutputTokens: 4096,
