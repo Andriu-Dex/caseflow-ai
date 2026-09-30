@@ -56,6 +56,18 @@ export interface DesignSystemProfile {
   readonly feedback: string;
 }
 
+// Package-manager settings the generated workspace needs to install with the
+// same toolchain CASEFlow AI is verified on.
+export interface ToolchainSettings {
+  readonly node: string;
+  readonly packageManager: string;
+  // Install scripts: true = may run (engines, native binaries); false = explicitly
+  // skipped (e.g. telemetry). pnpm fails on any dependency left undecided.
+  readonly allowBuilds: Readonly<Record<string, boolean>>;
+  // Pinned releases newer than pnpm's minimum release age.
+  readonly minimumReleaseAgeExclude: readonly string[];
+}
+
 export interface TargetTemplateVersion {
   readonly identifier: string;
   readonly version: number;
@@ -70,6 +82,7 @@ export interface TargetTemplateVersion {
   readonly designSystemProfile: DesignSystemProfile;
   readonly dependencies: readonly CatalogDependency[];
   readonly validationCommands: readonly ValidationCommand[];
+  readonly toolchain: ToolchainSettings;
 }
 
 export const CASEFLOW_STANDARD_WEB_V1: DesignSystemProfile = Object.freeze({
@@ -169,6 +182,22 @@ export const CASEFLOW_WEB_TS_V1: TargetTemplateVersion = Object.freeze({
       ] as const
     ).map(([stage, argv]) => Object.freeze({ stage, argv: Object.freeze([...argv]) })),
   ),
+  toolchain: Object.freeze({
+    node: '>=24 <25',
+    packageManager: 'pnpm@11.27.0',
+    allowBuilds: Object.freeze({
+      '@prisma/engines': true,
+      prisma: true,
+      '@swc/core': true,
+      esbuild: true,
+      '@scarf/scarf': false,
+    }),
+    minimumReleaseAgeExclude: Object.freeze([
+      '@vitest/mocker@5.0.1',
+      '@vitest/spy@5.0.1',
+      'vitest@5.0.1',
+    ]),
+  }),
 });
 
 export const TARGET_TEMPLATES: readonly TargetTemplateVersion[] = Object.freeze([
