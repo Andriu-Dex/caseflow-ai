@@ -33,6 +33,7 @@ export type {
   DependencyLayer,
   DesignSystemProfile,
   TargetTemplateVersion,
+  ToolchainSettings,
   ValidationCommand,
   ValidationStage,
 } from './construction/target-templates';
