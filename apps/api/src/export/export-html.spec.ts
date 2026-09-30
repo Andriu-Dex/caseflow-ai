@@ -51,6 +51,20 @@ describe('escapeHtml', () => {
 });
 
 describe('renderExportHtml', () => {
+  it('opens with an executive summary of counts and stage progress', () => {
+    const data = baseExport('Demo');
+    data.readiness.stages = [
+      { satisfied: true, label: 'Fuentes' },
+      { satisfied: false, label: 'Requisitos' },
+    ] as FirstDeliverableExport['readiness']['stages'];
+    data.traceabilitySummary.edgeCount = 7;
+    const html = renderExportHtml(data);
+    const summary = html.slice(html.indexOf('Resumen ejecutivo'), html.indexOf('Contenido'));
+    expect(summary).toContain('1 de 2 etapas completas (50%)');
+    expect(summary).toContain('<b>7</b><span>Relaciones de trazabilidad</span>');
+    expect(summary).toContain('width:50%');
+  });
+
   it('embeds trusted Stitch screenshot bytes without embedding provider HTML', () => {
     const data = baseExport('Proyecto seguro');
     const screenId = '11111111-1111-4111-8111-111111111111';
