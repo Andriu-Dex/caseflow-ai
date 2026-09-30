@@ -191,6 +191,7 @@ export class NavigationController extends BaseStructuredAnalysisController {
 }
 
 @ApiTags('software-architecture')
+@UseGuards(JwtAuthGuard, ProjectMembershipGuard)
 @Controller('projects/:projectId/software-architecture')
 export class SoftwareArchitectureController extends BaseStructuredAnalysisController {
   constructor(service: StructuredAnalysisService) {
@@ -326,6 +327,7 @@ export class SoftwareArchitectureController extends BaseStructuredAnalysisContro
 }
 
 @ApiTags('system-architecture')
+@UseGuards(JwtAuthGuard, ProjectMembershipGuard)
 @Controller('projects/:projectId/system-architecture')
 export class SystemArchitectureController extends BaseStructuredAnalysisController {
   constructor(service: StructuredAnalysisService) {
@@ -458,6 +460,7 @@ export class SystemArchitectureController extends BaseStructuredAnalysisControll
 }
 
 @ApiTags('ui-blueprint')
+@UseGuards(JwtAuthGuard, ProjectMembershipGuard)
 @Controller('projects/:projectId/ui-blueprint')
 export class UiBlueprintController extends BaseStructuredAnalysisController {
   constructor(service: StructuredAnalysisService) {
