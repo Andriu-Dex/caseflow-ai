@@ -1138,6 +1138,12 @@ model MockupScreenDetail {
   imageStorageKey  String @map("image_storage_key")
   imageContentType String @map("image_content_type")
   htmlStorageKey   String @map("html_storage_key")
+  // Stitch project/screen that produced this image, so the screen can be edited
+  // in place later. Null for screens generated before this was recorded.
+  stitchProjectId  String? @map("stitch_project_id")
+  stitchScreenId   String? @map("stitch_screen_id")
+  // Instruction that produced this screen by editing the previous version's screen.
+  refinementPrompt String? @map("refinement_prompt")
 
   mockup MockupDetail @relation(fields: [mockupVersionId], references: [artifactVersionId], onDelete: Restrict)
 
@@ -1192,6 +1198,8 @@ model MockupGenerationJob {
   existingMockupId     String?          @map("existing_mockup_id") @db.Uuid
   deviceType           MockupDeviceType @default(DESKTOP) @map("device_type")
   refinementPrompt     String?          @map("refinement_prompt")
+  // Set only for a single-screen edit: the blueprint localId of the screen to edit.
+  screenLocalId        String?          @map("screen_local_id")
   status               MockupJobStatus  @default(QUEUED)
   resultArtifactId     String?          @map("result_artifact_id") @db.Uuid
   errorMessage         String?          @map("error_message")

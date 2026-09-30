@@ -521,6 +521,10 @@ export const api = {
       }),
     refine: (projectId: string, id: string, prompt: string) =>
       post<MockupJobResponse>(`/projects/${projectId}/mockups/${id}/refine`, { prompt }),
+    refineScreen: (projectId: string, id: string, screenId: string, prompt: string) =>
+      post<MockupJobResponse>(`/projects/${projectId}/mockups/${id}/screens/${screenId}/refine`, {
+        prompt,
+      }),
     getJob: (projectId: string, jobId: string) =>
       get<MockupJobResponse>(`/projects/${projectId}/mockups/jobs/${jobId}`),
     transition: (projectId: string, id: string, versionId: string, status: ArtifactVersionStatus) =>

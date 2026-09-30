@@ -81,6 +81,38 @@ describe('StitchMockupProvider', () => {
     });
   });
 
+  it('tells Stitch to keep the rest of the screen when editing it', () => {
+    const provider = new StitchMockupProvider({ apiKey: 'test', timeoutMs: 100 });
+    const buildEditPrompt = (
+      provider as unknown as { buildEditPrompt: (prompt: string) => string }
+    ).buildEditPrompt.bind(provider);
+    const prompt = buildEditPrompt('Usa tonos verdes');
+    expect(prompt).toContain('conserva el resto del diseño');
+    expect(prompt.endsWith('Usa tonos verdes')).toBe(true);
+  });
+
+  it('bounds a screen edit and hides SDK failures behind a safe message', async () => {
+    const provider = new StitchMockupProvider({ apiKey: 'test', timeoutMs: 5 });
+    const withTimeout = (
+      provider as unknown as {
+        withTimeout: (run: () => Promise<unknown>, t: string, u: string) => Promise<unknown>;
+      }
+    ).withTimeout.bind(provider);
+    await expect(withTimeout(() => new Promise(() => {}), 'lento', 'caído')).rejects.toMatchObject({
+      code: 'MOCKUP_PROVIDER_TIMEOUT',
+      message: 'lento',
+    });
+    await expect(
+      withTimeout(
+        async () => {
+          throw new Error('secret SDK detail');
+        },
+        'lento',
+        'caído',
+      ),
+    ).rejects.toMatchObject({ code: 'MOCKUP_PROVIDER_UNAVAILABLE', message: 'caído' });
+  });
+
   it('normalizes unexpected SDK failures without exposing them', async () => {
     const provider = new StitchMockupProvider({ apiKey: 'test', timeoutMs: 100 });
     (

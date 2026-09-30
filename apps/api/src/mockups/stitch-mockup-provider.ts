@@ -1,7 +1,9 @@
 import type { MockupDeviceType, UiBlueprintContent } from '@caseflow-ai/contracts';
 import {
   MockupProviderError,
+  type EditedScreen,
   type GeneratedScreen,
+  type ProviderScreenRef,
   type MockupGenerationResult,
   type MockupProvider,
 } from '@caseflow-ai/integrations';
@@ -27,30 +29,33 @@ export class StitchMockupProvider implements MockupProvider {
     deviceType: MockupDeviceType = 'DESKTOP',
     refinement?: string,
   ): Promise<MockupGenerationResult> {
+    return this.withTimeout(
+      () => this.generateWithSdk(content, deviceType, refinement),
+      'La generación del boceto excedió el tiempo límite.',
+      'El proveedor de bocetos no está disponible.',
+    );
+  }
+
+  // Bounds the whole provider call and hides SDK internals behind a safe error.
+  private async withTimeout<T>(
+    run: () => Promise<T>,
+    timeoutMessage: string,
+    unavailableMessage: string,
+  ): Promise<T> {
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
       return await Promise.race([
-        this.generateWithSdk(content, deviceType, refinement),
+        run(),
         new Promise<never>((_, reject) => {
           timeout = setTimeout(
-            () =>
-              reject(
-                new MockupProviderError(
-                  'MOCKUP_PROVIDER_TIMEOUT',
-                  'La generación del boceto excedió el tiempo límite.',
-                ),
-              ),
+            () => reject(new MockupProviderError('MOCKUP_PROVIDER_TIMEOUT', timeoutMessage)),
             this.config.timeoutMs,
           );
         }),
       ]);
     } catch (cause) {
       if (cause instanceof MockupProviderError) throw cause;
-      throw new MockupProviderError(
-        'MOCKUP_PROVIDER_UNAVAILABLE',
-        'El proveedor de bocetos no está disponible.',
-        { cause },
-      );
+      throw new MockupProviderError('MOCKUP_PROVIDER_UNAVAILABLE', unavailableMessage, { cause });
     } finally {
       if (timeout) clearTimeout(timeout);
     }
@@ -85,11 +90,50 @@ export class StitchMockupProvider implements MockupProvider {
           screenName: screen.name,
           image: { body: image.body, contentType: image.contentType },
           html: html.body.toString('utf8'),
+          providerRef: { projectId: project.id, screenId: generated.id },
         };
       }),
     );
     if (screens.length === 0) throw new Error('Stitch returned no screens.');
     return { kind: 'STITCH', screens };
+  }
+
+  async editScreen(
+    ref: ProviderScreenRef,
+    prompt: string,
+    deviceType: MockupDeviceType = 'DESKTOP',
+  ): Promise<EditedScreen> {
+    return this.withTimeout(
+      async () => {
+        const { Stitch, StitchToolClient } = await importSdk();
+        const sdk = new Stitch(
+          new StitchToolClient({ apiKey: this.config.apiKey, timeout: this.config.timeoutMs }),
+        );
+        const edited = await sdk
+          .project(ref.projectId)
+          .screen(ref.screenId)
+          .edit(this.buildEditPrompt(prompt), deviceType);
+        const [imageUrl, htmlUrl] = await Promise.all([edited.getImage(), edited.getHtml()]);
+        const [image, html] = await Promise.all([
+          this.download(
+            this.fullResolutionImageUrl(imageUrl, edited.data?.width, deviceType),
+            'image',
+          ),
+          this.download(htmlUrl, 'html'),
+        ]);
+        return {
+          image: { body: image.body, contentType: image.contentType },
+          html: html.body.toString('utf8'),
+          providerRef: { projectId: edited.projectId ?? ref.projectId, screenId: edited.id },
+        };
+      },
+      'La edición de la pantalla excedió el tiempo límite.',
+      'El proveedor de bocetos no pudo editar la pantalla.',
+    );
+  }
+
+  private buildEditPrompt(prompt: string): string {
+    return `Modifica solo lo indicado y conserva el resto del diseño, el contenido y la estructura de la pantalla: ${prompt}`;
   }
 
   private fullResolutionImageUrl(
