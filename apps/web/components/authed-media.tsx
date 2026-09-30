@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ImageOff, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ApiError, downloadFile } from '../lib/api';
@@ -35,31 +35,56 @@ export function AuthedDownloadButton({
   filename,
   className,
   children,
+  disabled,
+  onClick,
+  ...buttonProps
 }: {
   url: string;
   filename: string;
   className?: string;
   children: ReactNode;
-}) {
+} & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const [busy, setBusy] = useState(false);
+  const [showSpinner, setShowSpinner] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
   return (
     <button
       type="button"
-      disabled={busy}
+      {...buttonProps}
+      disabled={busy || disabled}
       aria-busy={busy}
-      onClick={async () => {
+      onClick={async (event) => {
+        onClick?.(event);
+        if (event.defaultPrevented) return;
         setBusy(true);
+        timerRef.current = setTimeout(() => {
+          setShowSpinner(true);
+        }, 400);
         try {
           await downloadFile(url, filename);
         } catch (err) {
           toast.error(err instanceof ApiError ? err.message : 'No se pudo descargar el archivo.');
         } finally {
+          if (timerRef.current) {
+            clearTimeout(timerRef.current);
+            timerRef.current = null;
+          }
+          setShowSpinner(false);
           setBusy(false);
         }
       }}
       className={className}
     >
-      {busy ? <Loader2 aria-hidden="true" className="size-4 animate-spin" /> : null}
+      {showSpinner ? (
+        <Loader2 aria-hidden="true" className="size-3.5 animate-spin shrink-0" />
+      ) : null}
       {children}
     </button>
   );

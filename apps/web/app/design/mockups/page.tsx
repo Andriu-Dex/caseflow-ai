@@ -5,6 +5,7 @@ import {
   MOCKUP_REFINEMENT_PROMPT_MAX_LENGTH,
   type MockupDeviceType,
   type MockupJobResponse,
+  type MockupPreviewResponse,
   type MockupResponse,
 } from '@caseflow-ai/contracts';
 import { useEffect, useId, useRef, useState } from 'react';
@@ -14,6 +15,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  FileCode,
+  FileImage,
   Loader2,
   Maximize2,
   Minimize2,
@@ -72,26 +75,46 @@ export async function pollMockupJob(
   }
 }
 
+const REFINE_HINT =
+  'Se generará una versión nueva para revisión; la versión actual no se modifica.';
+
 function MockupRefineForm({
   busy,
   onRefine,
+  label,
+  hint = REFINE_HINT,
+  placeholder,
+  className = 'rounded-lg border border-border bg-muted/20 p-3',
+  autoFocus,
 }: {
   busy: boolean;
   onRefine: (prompt: string) => Promise<boolean>;
+  label: string;
+  hint?: string;
+  placeholder: string;
+  className?: string;
+  autoFocus?: boolean;
 }) {
   const [prompt, setPrompt] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const promptId = useId();
   const valid = prompt.trim().length >= 3;
   return (
     <form
-      className="flex flex-col gap-2 rounded-lg border border-border bg-muted/20 p-3"
+      className={`flex flex-col gap-2 ${className}`}
       onSubmit={async (event) => {
         event.preventDefault();
-        if (valid && (await onRefine(prompt.trim()))) setPrompt('');
+        if (!valid) return;
+        setSubmitting(true);
+        try {
+          if (await onRefine(prompt.trim())) setPrompt('');
+        } finally {
+          setSubmitting(false);
+        }
       }}
     >
       <label htmlFor={promptId} className="text-sm font-medium">
-        Editar con instrucciones
+        {label}
       </label>
       <Textarea
         id={promptId}
@@ -99,19 +122,79 @@ function MockupRefineForm({
         maxLength={MOCKUP_REFINEMENT_PROMPT_MAX_LENGTH}
         rows={2}
         disabled={busy}
-        placeholder="Ej.: usa una paleta verde, agranda el botón principal y agrega un buscador en la cabecera."
+        autoFocus={autoFocus}
+        placeholder={placeholder}
         onChange={(event) => setPrompt(event.target.value)}
       />
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground">
-          Se generará una versión nueva para revisión; la versión actual no se modifica.
-        </p>
+        <p className="text-xs text-muted-foreground">{hint}</p>
         <Button type="submit" size="sm" variant="outline" disabled={busy || !valid}>
-          <Wand2 aria-hidden="true" className="size-4" />
-          Aplicar cambios
+          {submitting ? (
+            <Loader2 aria-hidden="true" className="size-4 animate-spin" />
+          ) : (
+            <Wand2 aria-hidden="true" className="size-4" />
+          )}
+          {submitting ? 'Aplicando…' : 'Aplicar cambios'}
         </Button>
       </div>
     </form>
+  );
+}
+
+type MockupScreen = NonNullable<MockupPreviewResponse['screens']>[number];
+
+// Edits one screen at Stitch; the other screens are carried over unchanged.
+function ScreenEditDialog({
+  screen,
+  imageUrl,
+  busy,
+  onClose,
+  onRefine,
+}: {
+  screen: MockupScreen | null;
+  imageUrl: string | null;
+  busy: boolean;
+  onClose: () => void;
+  onRefine: (prompt: string) => Promise<boolean>;
+}) {
+  return (
+    <Dialog open={screen !== null} onOpenChange={(open) => (!open && !busy ? onClose() : null)}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Editar pantalla: {screen?.screenName}</DialogTitle>
+          <DialogDescription>
+            Stitch modificará solo esta pantalla; las demás se conservan tal cual.
+          </DialogDescription>
+        </DialogHeader>
+        {imageUrl ? (
+          <div className="flex aspect-[16/10] items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40 p-2">
+            <AuthedImage
+              url={imageUrl}
+              alt={screen?.screenName ?? ''}
+              className="max-h-full max-w-full object-contain"
+            />
+          </div>
+        ) : null}
+        {screen?.refinementPrompt ? (
+          <p className="text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">Última edición:</span>{' '}
+            {screen.refinementPrompt}
+          </p>
+        ) : null}
+        <MockupRefineForm
+          busy={busy}
+          autoFocus
+          className=""
+          label="Instrucciones para esta pantalla"
+          placeholder="Ej.: agrega un buscador en la cabecera y cambia la tabla por tarjetas."
+          onRefine={async (prompt) => {
+            const done = await onRefine(prompt);
+            if (done) onClose();
+            return done;
+          }}
+        />
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -120,13 +203,16 @@ function MockupPreview({
   projectId,
   busy,
   onRefine,
+  onRefineScreen,
 }: {
   mockupId: string;
   projectId: string;
   busy: boolean;
   onRefine: (prompt: string) => Promise<boolean>;
+  onRefineScreen: (screenId: string, prompt: string) => Promise<boolean>;
 }) {
   const [selectedScreenIndex, setSelectedScreenIndex] = useState<number | null>(null);
+  const [editingScreen, setEditingScreen] = useState<MockupScreen | null>(null);
   const preview = useQuery({
     queryKey: ['mockup-preview', projectId, mockupId],
     queryFn: () => api.mockups.getPreview(projectId, mockupId),
@@ -207,10 +293,18 @@ function MockupPreview({
           <AuthedDownloadButton
             url={downloadAllUrl}
             filename="bocetos.zip"
-            className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm font-medium hover:bg-muted"
+            className="group inline-flex items-center gap-2 rounded-md border border-border/80 bg-background px-3.5 py-2 text-xs font-medium text-foreground shadow-xs transition-all duration-150 hover:-translate-y-0.5 hover:border-primary/50 hover:bg-accent hover:text-accent-foreground hover:shadow-sm active:translate-y-0 disabled:pointer-events-none disabled:opacity-50"
           >
-            <Download aria-hidden="true" className="size-4" />
-            Descargar todas (ZIP)
+            <Download
+              aria-hidden="true"
+              className="size-4 text-primary transition-transform duration-200 group-hover:translate-y-0.5"
+            />
+            <span>
+              Descargar todas{' '}
+              <span className="font-normal text-muted-foreground">
+                (ZIP · {screens.length} {screens.length === 1 ? 'pantalla' : 'pantallas'})
+              </span>
+            </span>
           </AuthedDownloadButton>
         </div>
       ) : null}
@@ -233,24 +327,63 @@ function MockupPreview({
               />
             </button>
             <figcaption className="flex items-center justify-between gap-2 border-t border-border px-3 py-2 text-sm">
-              <span className="truncate font-medium">{screen.screenName}</span>
-              <span className="flex shrink-0 items-center gap-3">
+              <span className="truncate font-medium text-foreground" title={screen.screenName}>
+                {screen.screenName}
+              </span>
+              <span className="flex shrink-0 items-center gap-1.5">
+                {screen.editable ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setEditingScreen(screen)}
+                    title="Editar esta pantalla con instrucciones"
+                    aria-label={`Editar la pantalla ${screen.screenName} con instrucciones`}
+                    className="group inline-flex items-center gap-1 rounded-md border border-border/70 bg-background px-2.5 py-1 text-xs font-medium text-foreground/80 shadow-xs transition-all duration-150 hover:-translate-y-0.5 hover:border-violet-500/50 hover:bg-violet-500/5 hover:text-violet-600 dark:hover:text-violet-400 hover:shadow-xs active:translate-y-0 disabled:pointer-events-none disabled:opacity-50"
+                  >
+                    <Wand2
+                      aria-hidden="true"
+                      className="size-3.5 text-violet-500/70 transition-colors group-hover:text-violet-500"
+                    />
+                    <span>Editar</span>
+                  </button>
+                ) : null}
                 <AuthedDownloadButton
                   url={api.mockups.screenImageUrl(projectId, mockupId, screen.id)}
                   filename={`${screen.screenName}.png`}
-                  className="inline-flex items-center gap-1 text-xs text-primary underline underline-offset-2"
+                  title="Descargar imagen PNG"
+                  aria-label={`Descargar ${screen.screenName} en formato PNG`}
+                  className="group inline-flex items-center gap-1 rounded-md border border-border/70 bg-background px-2.5 py-1 text-xs font-medium text-foreground/80 shadow-xs transition-all duration-150 hover:-translate-y-0.5 hover:border-primary/50 hover:bg-primary/5 hover:text-primary hover:shadow-xs active:translate-y-0 disabled:pointer-events-none disabled:opacity-50"
                 >
-                  Descargar PNG
+                  <FileImage
+                    aria-hidden="true"
+                    className="size-3.5 text-primary/70 transition-colors group-hover:text-primary"
+                  />
+                  <span>PNG</span>
                 </AuthedDownloadButton>
                 <AuthedDownloadButton
                   url={api.mockups.screenHtmlUrl(projectId, mockupId, screen.id)}
                   filename={`${screen.screenName}.html`}
-                  className="inline-flex items-center gap-1 text-xs text-primary underline underline-offset-2"
+                  title="Descargar archivo HTML"
+                  aria-label={`Descargar ${screen.screenName} en formato HTML`}
+                  className="group inline-flex items-center gap-1 rounded-md border border-border/70 bg-background px-2.5 py-1 text-xs font-medium text-foreground/80 shadow-xs transition-all duration-150 hover:-translate-y-0.5 hover:border-amber-500/50 hover:bg-amber-500/5 hover:text-amber-600 dark:hover:text-amber-400 hover:shadow-xs active:translate-y-0 disabled:pointer-events-none disabled:opacity-50"
                 >
-                  Descargar HTML
+                  <FileCode
+                    aria-hidden="true"
+                    className="size-3.5 text-amber-500/70 transition-colors group-hover:text-amber-500"
+                  />
+                  <span>HTML</span>
                 </AuthedDownloadButton>
               </span>
             </figcaption>
+            {screen.refinementPrompt ? (
+              <p
+                className="line-clamp-2 border-t border-border bg-violet-500/5 px-3 py-1.5 text-xs text-muted-foreground"
+                title={screen.refinementPrompt}
+              >
+                <span className="font-medium text-violet-600 dark:text-violet-400">Editada:</span>{' '}
+                {screen.refinementPrompt}
+              </p>
+            ) : null}
           </figure>
         ))}
         {selectedScreenIndex !== null && screens[selectedScreenIndex] ? (
@@ -283,7 +416,28 @@ function MockupPreview({
           </MockupScreenDialog>
         ) : null}
       </div>
-      <MockupRefineForm busy={busy} onRefine={onRefine} />
+      {screens.some((screen) => !screen.editable) ? (
+        <p className="text-xs text-muted-foreground">
+          Algunas pantallas se generaron antes de habilitar la edición individual. Regenere el
+          boceto completo una vez para poder editarlas una por una.
+        </p>
+      ) : null}
+      <MockupRefineForm
+        busy={busy}
+        onRefine={onRefine}
+        label="Editar todas las pantallas"
+        hint={`Para cambios que afectan a todo el boceto (p. ej., la paleta de colores); regenera todas las pantallas. ${REFINE_HINT}`}
+        placeholder="Ej.: usa una paleta verde y una tipografía más grande en todas las pantallas."
+      />
+      <ScreenEditDialog
+        screen={editingScreen}
+        imageUrl={
+          editingScreen ? api.mockups.screenImageUrl(projectId, mockupId, editingScreen.id) : null
+        }
+        busy={busy}
+        onClose={() => setEditingScreen(null)}
+        onRefine={(prompt) => onRefineScreen(editingScreen!.id, prompt)}
+      />
     </div>
   );
 }
@@ -806,6 +960,11 @@ function MockupsContent({ projectId }: { projectId: string }) {
                     projectId={projectId}
                     busy={creatingVersionId !== null}
                     onRefine={(prompt) => refineMockup(m.id, prompt)}
+                    onRefineScreen={(screenId, prompt) =>
+                      runMockupJob(m.id, () =>
+                        api.mockups.refineScreen(projectId, m.id, screenId, prompt),
+                      )
+                    }
                   />
                 </div>
               </li>

@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   getPreview: vi.fn(),
   listBlueprints: vi.fn(),
   refine: vi.fn(),
+  refineScreen: vi.fn(),
   getJob: vi.fn(),
   downloadAllUrl: vi.fn((projectId: string, mockupId: string) => `/${projectId}/${mockupId}.zip`),
   screenImageUrl: vi.fn(
@@ -33,6 +34,7 @@ vi.mock('../../../lib/api', () => ({
       screenHtmlUrl: mocks.screenHtmlUrl,
       transition: vi.fn(),
       refine: (...args: unknown[]) => mocks.refine(...args),
+      refineScreen: (...args: unknown[]) => mocks.refineScreen(...args),
       getJob: (...args: unknown[]) => mocks.getJob(...args),
     },
     structuredAnalysis: { list: (...args: unknown[]) => mocks.listBlueprints(...args) },
@@ -59,6 +61,18 @@ vi.mock('../../../components/artifact-actions', () => ({
   approveDirectly: vi.fn(),
   isPendingApproval: () => false,
 }));
+
+function stitchScreen(id: string, screenName: string, editable: boolean) {
+  return {
+    id,
+    screenLocalId: id,
+    screenName,
+    imageUrl: '',
+    htmlUrl: '',
+    editable,
+    refinementPrompt: null,
+  };
+}
 
 beforeEach(() => {
   window.localStorage.setItem('caseflow.activeProjectId', 'p1');
@@ -92,10 +106,11 @@ beforeEach(() => {
     generatorKind: 'STITCH',
     svg: null,
     screens: [
-      { id: 'screen-1', screenLocalId: 's1', screenName: 'Inicio', imageUrl: '', htmlUrl: '' },
-      { id: 'screen-2', screenLocalId: 's2', screenName: 'Catálogo', imageUrl: '', htmlUrl: '' },
-      { id: 'screen-3', screenLocalId: 's3', screenName: 'Detalle', imageUrl: '', htmlUrl: '' },
+      stitchScreen('screen-1', 'Inicio', true),
+      stitchScreen('screen-2', 'Catálogo', true),
+      stitchScreen('screen-3', 'Detalle', false),
     ],
+    refinementPrompt: null,
     createdAt: new Date().toISOString(),
   });
 });
@@ -163,13 +178,46 @@ describe('MockupsPage refinement', () => {
         <MockupsPage />
       </TestProviders>,
     );
-    const input = await screen.findByLabelText('Editar con instrucciones');
+    const input = await screen.findByLabelText('Editar todas las pantallas');
     const submit = screen.getByRole('button', { name: /aplicar cambios/i });
     expect(submit).toBeDisabled();
     await user.type(input, 'Usa tonos verdes');
     await user.click(submit);
     await waitFor(() => expect(input).toHaveValue(''));
     expect(mocks.refine).toHaveBeenCalledWith('p1', 'mockup-1', 'Usa tonos verdes');
+  });
+
+  it('edits a single screen from its own dialog and only offers it for editable screens', async () => {
+    const user = userEvent.setup();
+    mocks.refineScreen.mockResolvedValue(job('QUEUED'));
+    mocks.getJob.mockResolvedValue(job('COMPLETED'));
+    render(
+      <TestProviders>
+        <MockupsPage />
+      </TestProviders>,
+    );
+    await user.click(
+      await screen.findByRole('button', { name: 'Editar la pantalla Catálogo con instrucciones' }),
+    );
+    expect(
+      screen.queryByRole('button', { name: 'Editar la pantalla Detalle con instrucciones' }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/regenere el boceto completo una vez/i)).toBeInTheDocument();
+
+    const dialog = screen.getByRole('dialog');
+    await user.type(
+      within(dialog).getByLabelText('Instrucciones para esta pantalla'),
+      'Agrega un buscador',
+    );
+    await user.click(within(dialog).getByRole('button', { name: /aplicar cambios/i }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(mocks.refineScreen).toHaveBeenCalledWith(
+      'p1',
+      'mockup-1',
+      'screen-2',
+      'Agrega un buscador',
+    );
+    expect(mocks.refine).not.toHaveBeenCalled();
   });
 
   it('explains that an internal wireframe cannot be refined instead of offering the form', async () => {
@@ -186,7 +234,7 @@ describe('MockupsPage refinement', () => {
       </TestProviders>,
     );
     expect(await screen.findByText(/no puede editarse con instrucciones/i)).toBeInTheDocument();
-    expect(screen.queryByLabelText('Editar con instrucciones')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Editar todas las pantallas')).not.toBeInTheDocument();
   });
 });
 
