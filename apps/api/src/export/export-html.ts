@@ -42,17 +42,29 @@ const CARDINALITY_LABELS: Record<string, string> = {
 };
 
 const STYLE = `
-body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:#1f2330;max-width:960px;margin:0 auto;padding:40px 24px;line-height:1.55}
-h1{font-size:2rem;margin:0 0 4px}h2{font-size:1.35rem;margin:40px 0 12px;padding-bottom:6px;border-bottom:2px solid #4f46e5}
-h3{font-size:1.05rem;margin:20px 0 6px}.muted{color:#64677a;font-size:.9rem}
-table{border-collapse:collapse;width:100%;margin:8px 0;font-size:.9rem}th,td{border:1px solid #d9dbe5;padding:6px 8px;text-align:left;vertical-align:top}
-th{background:#f1f2f8}.card{border:1px solid #d9dbe5;border-radius:8px;padding:12px 16px;margin:12px 0}
-.code{font-family:ui-monospace,Consolas,monospace;color:#4f46e5;font-size:.85rem}
-figure{margin:12px 0;padding:12px;border:1px solid #d9dbe5;border-radius:8px;overflow-x:auto;text-align:center}
-figure svg,figure img{max-width:100%;height:auto}figcaption{color:#64677a;font-size:.85rem;margin-top:6px}
-.toc{columns:2;font-size:.95rem}.ok{color:#047857}.pending{color:#b45309}
+body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:#1f2330;background:#f6f7fb;margin:0;line-height:1.6}
+main{max-width:960px;margin:0 auto;padding:0 24px 56px}
+.cover{background:linear-gradient(135deg,#312e81,#4f46e5 60%,#6366f1);color:#fff;padding:56px 24px 64px}
+.cover-inner{max-width:960px;margin:0 auto}.cover .eyebrow{text-transform:uppercase;letter-spacing:.12em;font-size:.78rem;opacity:.8;margin:0}
+.cover h1{font-size:2.4rem;line-height:1.2;margin:8px 0}.cover .meta{opacity:.85;margin:0;font-size:.95rem}
+.panel{background:#fff;border:1px solid #e3e5ee;border-radius:14px;padding:20px 24px;margin:24px 0;box-shadow:0 1px 2px rgba(20,20,50,.04)}
+.summary{margin-top:-40px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin:12px 0 4px}
+.stat{border:1px solid #e3e5ee;border-radius:10px;padding:12px 14px;background:#fafbff}.stat b{display:block;font-size:1.6rem;color:#312e81;line-height:1.2}.stat span{font-size:.82rem;color:#64677a}
+.progress{height:10px;border-radius:999px;background:#e7e8f2;overflow:hidden;margin:6px 0}.progress>div{height:100%;background:linear-gradient(90deg,#4f46e5,#10b981)}
+h2{font-size:1.4rem;margin:0 0 14px;padding-bottom:8px;border-bottom:2px solid #e3e5ee;color:#1e1b4b}
+h2 .num{display:inline-block;min-width:1.9em;color:#4f46e5}
+h3{font-size:1.05rem;margin:22px 0 8px;color:#312e81}.muted{color:#64677a;font-size:.9rem}
+table{border-collapse:collapse;width:100%;margin:8px 0;font-size:.9rem;border-radius:8px;overflow:hidden}th,td{border-bottom:1px solid #e3e5ee;padding:8px 10px;text-align:left;vertical-align:top}
+th{background:#eef0fa;color:#312e81;font-weight:600}tbody tr:nth-child(even){background:#fafbff}
+.card{border:1px solid #e3e5ee;border-left:4px solid #4f46e5;border-radius:10px;padding:12px 16px;margin:12px 0;background:#fff}
+.code{font-family:ui-monospace,Consolas,monospace;color:#4f46e5;font-size:.85rem;background:#eef0fa;border-radius:4px;padding:1px 5px}
+figure{margin:14px 0;padding:14px;border:1px solid #e3e5ee;border-radius:10px;overflow-x:auto;text-align:center;background:#fff}
+figure svg,figure img{max-width:100%;height:auto}figcaption{color:#64677a;font-size:.85rem;margin-top:8px}
+.toc{columns:2;font-size:.95rem;padding-left:1.2em}.toc a{color:#312e81;text-decoration:none}.toc a:hover{text-decoration:underline}
+.ok{color:#047857}.pending{color:#b45309}
 @page{margin:2cm}
-@media print{h2{page-break-before:always}figure{page-break-inside:avoid}figure svg,figure img{max-width:100%!important}}`;
+@media print{body{background:#fff}.cover{-webkit-print-color-adjust:exact;print-color-adjust:exact}.panel{box-shadow:none;border:none;padding:0}section.panel{page-break-before:always}figure,.card,tr{page-break-inside:avoid}figure svg,figure img{max-width:100%!important}}`;
 
 function list(items: string[], empty = 'Sin elementos.'): string {
   return items.length
@@ -373,7 +385,46 @@ export function renderExportHtml(
   });
   const toc = `<ol class="toc">${sections.map((s) => `<li><a href="#${s.id}">${s.title}</a></li>`).join('')}</ol>`;
   const body = sections
-    .map((s, i) => `<section id="${s.id}"><h2>${i + 1}. ${s.title}</h2>${s.body}</section>`)
+    .map(
+      (s, i) =>
+        `<section id="${s.id}" class="panel"><h2><span class="num">${i + 1}.</span>${s.title}</h2>${s.body}</section>`,
+    )
     .join('');
-  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${e(data.projectName)} — Especificación del proyecto</title><style>${STYLE}</style></head><body><header><p class="muted">Especificación del proyecto</p><h1>${e(data.projectName)}</h1><p class="muted">Generado el ${e(generated)}</p></header><nav><h2>Contenido</h2>${toc}</nav>${body}</body></html>`;
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${e(data.projectName)} — Especificación del proyecto</title><style>${STYLE}</style></head><body><header class="cover"><div class="cover-inner"><p class="eyebrow">Especificación del proyecto</p><h1>${e(data.projectName)}</h1><p class="meta">Generado el ${e(generated)}</p></div></header><main>${executiveSummary(data)}<nav class="panel"><h2>Contenido</h2>${toc}</nav>${body}</main></body></html>`;
+}
+
+// Cover summary: headline counts and stage progress, so a reader gets the
+// project's state before diving into the sections. Derived only from data
+// already in the export — nothing new is computed or stored.
+function executiveSummary(data: FirstDeliverableExport): string {
+  const stages = data.readiness.stages;
+  const done = stages.filter((s) => s.satisfied).length;
+  const percent = stages.length ? Math.round((done / stages.length) * 100) : 0;
+  const functional = data.requirements.filter(
+    (r) => r.requirement.requirementType === 'FUNCTIONAL',
+  ).length;
+  const screens = data.mockups.reduce(
+    (total, m) => total + (m.generatorKind === 'INTERNAL_WIREFRAME' ? 1 : (m.screens?.length ?? 0)),
+    0,
+  );
+  const stats: [number, string][] = [
+    [data.sources.length, 'Fuentes'],
+    [functional, 'Requisitos funcionales'],
+    [data.requirements.length - functional, 'Requisitos no funcionales'],
+    [data.useCases.length, 'Casos de uso'],
+    [
+      (data.uiBlueprint?.content as UiBlueprintContent | undefined)?.screens.length ?? 0,
+      'Pantallas planificadas',
+    ],
+    [screens, 'Bocetos'],
+    [data.traceabilitySummary.edgeCount, 'Relaciones de trazabilidad'],
+  ];
+  const objective = data.context?.objective ? `<p>${e(data.context.objective)}</p>` : '';
+  return `<section class="panel summary"><h2>Resumen ejecutivo</h2>${objective}<div class="stats">${stats
+    .map(([value, label]) => `<div class="stat"><b>${value}</b><span>${label}</span></div>`)
+    .join(
+      '',
+    )}</div><p class="${data.readiness.ready ? 'ok' : 'pending'}"><strong>${done} de ${stages.length} etapas completas (${percent}%)</strong>${
+    data.readiness.blockers.length ? ` · ${data.readiness.blockers.length} pendiente(s)` : ''
+  }</p><div class="progress" role="img" aria-label="${percent}% completo"><div style="width:${percent}%"></div></div></section>`;
 }
