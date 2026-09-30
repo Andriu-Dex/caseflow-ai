@@ -1,5 +1,6 @@
 'use client';
 
+import { GenerationOverlay } from '../../components/generation-overlay';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Archive, Pencil, Trash2, Upload, X } from 'lucide-react';
 import { useRef, useState } from 'react';
@@ -53,6 +54,7 @@ const SOURCE_KIND_ACCEPT: Partial<Record<ProjectSourceKind, string>> = {
   AUDIO: 'audio/*',
   IMAGE: 'image/*',
   INVOICE: 'application/pdf,.pdf,image/*',
+  TEXT: '.txt,.md,.docx,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 };
 
 const EXTRACTION_LABEL: Record<string, string> = {
@@ -76,7 +78,7 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
     e.preventDefault();
     setSubmitting(true);
     try {
-      await api.sources.create(
+      const created = await api.sources.create(
         projectId,
         {
           title,
@@ -93,6 +95,11 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
       setDescription('');
       setFile(null);
       onCreated();
+      toast.success(
+        created.processing
+          ? 'Fuente guardada. El procesamiento continuará en segundo plano.'
+          : 'Fuente guardada.',
+      );
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'No se pudo crear la fuente.');
     } finally {
@@ -191,19 +198,28 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
         </div>
       </div>
       <div className="flex flex-col gap-1.5 text-sm">
-        <Label htmlFor="source-description">Contenido</Label>
+        <Label htmlFor="source-description">
+          {file ? 'Contexto adicional (opcional)' : 'Contenido'}
+        </Label>
         <p className="text-xs text-muted-foreground">
-          Escriba aquí el contenido de la fuente. Si no sube un archivo, este texto es el único
-          conocimiento que se guarda.
+          {file
+            ? 'El archivo se procesará para obtener su texto. Puede añadir contexto aquí.'
+            : 'Escriba aquí el contenido de la fuente o adjunte un archivo.'}
         </p>
         <Textarea
           id="source-description"
-          required
+          required={!file}
           rows={3}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
       </div>
+      {sourceKind === 'AUDIO' && file ? (
+        <p className="text-xs text-muted-foreground">
+          Si hay un servicio de transcripción configurado, el audio se enviará a ese servicio. Puede
+          registrar la fuente y transcribirla manualmente si el servicio no está disponible.
+        </p>
+      ) : null}
       <Button type="submit" disabled={submitting} className="self-start">
         {submitting ? 'Guardando…' : 'Agregar fuente'}
       </Button>
@@ -228,6 +244,11 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
     queryFn: () => api.sources.getReport(projectId, source.id),
     enabled: open && source.source.hasReport,
     retry: false,
+  });
+  const extractedText = useQuery({
+    queryKey: ['source-text', projectId, source.id, source.version.id],
+    queryFn: () => api.sources.getText(projectId, source.id),
+    enabled: open && source.source.hasExtractedText,
   });
 
   function invalidate() {
@@ -264,6 +285,17 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
       invalidate();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'No se pudo guardar la transcripción.');
+    }
+  }
+
+  async function retryProcessing() {
+    try {
+      await api.sources.retryProcessing(projectId, source.id);
+      invalidate();
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError ? err.message : 'No se pudo reintentar el procesamiento.',
+      );
     }
   }
 
@@ -308,12 +340,32 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
     }
   }
 
-  const needsExtraction =
-    source.source.extractionState === 'MANUAL' ||
-    source.source.extractionState === 'UNSUPPORTED' ||
-    source.source.extractionState === 'FAILED' ||
-    source.source.extractionState === 'PENDING';
-  const canSubmitTranscript = needsExtraction && !source.source.hasExtractedText;
+  const canSubmitTranscript = Boolean(source.source.originalFilename) && !source.archivedAt;
+  const processing = source.processing;
+  const longWait =
+    processing?.status === 'QUEUED' &&
+    Date.now() - new Date(processing.updatedAt).getTime() > 5 * 60_000;
+  const staleProcessing =
+    processing?.status === 'RUNNING' &&
+    Date.now() - new Date(processing.updatedAt).getTime() > 15 * 60_000;
+  const processingLabel =
+    processing?.status === 'QUEUED'
+      ? longWait
+        ? 'En cola desde hace varios minutos; puede transcribir manualmente o volver después'
+        : 'En cola'
+      : processing?.status === 'RUNNING'
+        ? staleProcessing
+          ? 'El procesamiento tardó demasiado; puede reintentarlo o transcribirlo manualmente'
+          : processing.processor === 'OCR'
+            ? 'Aplicando OCR'
+            : processing.processor === 'TRANSCRIPTION'
+              ? 'Transcribiendo audio'
+              : 'Extrayendo texto'
+        : processing?.status === 'FAILED'
+          ? 'Procesamiento fallido'
+          : processing?.status === 'UNSUPPORTED'
+            ? 'Procesador no disponible'
+            : EXTRACTION_LABEL[source.source.extractionState];
 
   return (
     <li className="rounded-lg border border-border bg-card p-4">
@@ -337,8 +389,16 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
         </div>
       </div>
       <p className="mt-1 text-sm text-muted-foreground">
-        {source.source.sourceKind} · {EXTRACTION_LABEL[source.source.extractionState]}
+        {source.source.sourceKind} · {processingLabel}
       </p>
+      {processing && (['FAILED', 'UNSUPPORTED'].includes(processing.status) || staleProcessing) ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-amber-700">
+          <span>{processing.errorMessage}</span>
+          <Button type="button" variant="outline" size="sm" onClick={retryProcessing}>
+            Reintentar
+          </Button>
+        </div>
+      ) : null}
 
       {open ? (
         <div className="mt-3 flex flex-col gap-3 border-t border-border pt-3 text-sm">
@@ -362,6 +422,19 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
             <dt className="font-medium">Versión</dt>
             <dd>v{source.version.versionNumber}</dd>
           </dl>
+
+          {source.source.hasExtractedText ? (
+            <div className="rounded-md border border-border p-3">
+              <p className="mb-2 font-medium">Texto extraído para revisión</p>
+              {extractedText.isLoading ? <p>Cargando texto…</p> : null}
+              {extractedText.isError ? <p>No se pudo cargar el texto.</p> : null}
+              {extractedText.data ? (
+                <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-xs">
+                  {extractedText.data.text}
+                </pre>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="outline" size="sm" onClick={() => setEditing(true)}>
@@ -433,9 +506,21 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
           {canSubmitTranscript ? (
             <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
               <p className="mb-2 text-amber-800">
-                Este tipo de archivo no tiene extracción automática de texto. Ingrese una
-                transcripción manual para que el conocimiento sea utilizable.
+                {source.source.hasExtractedText
+                  ? 'Revise el texto extraído. Si tiene errores, guarde una versión corregida.'
+                  : 'Puede escribir una transcripción o corrección manual mientras se procesa el archivo.'}
               </p>
+              {extractedText.data ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setTranscript(extractedText.data!.text)}
+                  className="mb-2"
+                >
+                  Copiar texto extraído para corregir
+                </Button>
+              ) : null}
               <textarea
                 className="w-full rounded-md border border-input px-2 py-1"
                 rows={3}
@@ -448,6 +533,7 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
                 size="sm"
                 type="button"
                 onClick={submitTranscript}
+                disabled={!transcript.trim()}
                 className="mt-2"
               >
                 Guardar transcripción
@@ -488,6 +574,7 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
                 >
                   {generatingReport ? 'Generando…' : 'Generar reporte con IA'}
                 </Button>
+                <GenerationOverlay open={generatingReport} />
                 {reportCandidate ? (
                   <div className="rounded-md border border-dashed border-purple-300 bg-purple-50 p-3 text-foreground/80">
                     <p className="mb-2 text-xs font-medium text-purple-700">
@@ -694,10 +781,12 @@ function EditSourceForm({
         />
       </div>
       <div className="flex flex-col gap-1.5 text-sm">
-        <Label htmlFor="edit-source-description">Contenido</Label>
+        <Label htmlFor="edit-source-description">
+          {source.source.originalFilename ? 'Contexto adicional (opcional)' : 'Contenido'}
+        </Label>
         <Textarea
           id="edit-source-description"
-          required
+          required={!source.source.originalFilename}
           rows={3}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
@@ -832,6 +921,18 @@ function SourcesContent({ projectId }: { projectId: string }) {
   const sources = useQuery({
     queryKey: ['sources', projectId],
     queryFn: () => api.sources.list(projectId),
+    refetchInterval: (query) =>
+      query.state.data?.items.some(
+        (source) => source.processing && ['QUEUED', 'RUNNING'].includes(source.processing.status),
+      )
+        ? query.state.data?.items.some(
+            (source) =>
+              source.processing?.status === 'QUEUED' &&
+              Date.now() - new Date(source.processing.updatedAt).getTime() > 5 * 60_000,
+          )
+          ? 15_000
+          : 2500
+        : false,
   });
 
   return (

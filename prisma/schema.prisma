@@ -181,6 +181,86 @@ enum ProjectLanguage {
   @@map("project_language")
 }
 
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+
+  @@map("workspace_role")
+}
+
+enum ProjectRole {
+  OWNER
+  EDITOR
+  REVIEWER
+  VIEWER
+
+  @@map("project_role")
+}
+
+// Authenticated user (spec Increment 1).
+model User {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  displayName  String    @map("display_name")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  archivedAt   DateTime? @map("archived_at") @db.Timestamptz(6)
+
+  sessions             Session[]
+  workspaceMemberships WorkspaceMembership[]
+  projectMemberships   ProjectMembership[]
+  projectBaselines     ProjectBaseline[]
+
+  @@map("users")
+}
+
+// Active user session handling long-lived refresh tokens.
+model Session {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tokenId          String    @unique @map("token_id")
+  userId           String    @map("user_id") @db.Uuid
+  refreshTokenHash String    @map("refresh_token_hash")
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([revokedAt, expiresAt])
+  @@map("sessions")
+}
+
+// Access control binding a user to a Workspace.
+model WorkspaceMembership {
+  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String        @map("workspace_id") @db.Uuid
+  userId      String        @map("user_id") @db.Uuid
+  role        WorkspaceRole
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@map("workspace_memberships")
+}
+
+// Access control binding a user to a Project.
+model ProjectMembership {
+  id        String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId String      @map("project_id") @db.Uuid
+  userId    String      @map("user_id") @db.Uuid
+  role      ProjectRole
+  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@map("project_memberships")
+}
+
 // Logical team/organization that groups projects (spec §3.1).
 model Workspace {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -189,7 +269,8 @@ model Workspace {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  projects Project[]
+  projects    Project[]
+  memberships WorkspaceMembership[]
 
   @@map("workspaces")
 }
@@ -216,6 +297,9 @@ model Project {
   structuredAnalysisGenerations StructuredAnalysisGeneration[]
   projectContextCandidates      ProjectContextCandidate[]
   mockupGenerationJobs          MockupGenerationJob[]
+  sourceProcessingJobs          SourceProcessingJob[]
+  projectMemberships            ProjectMembership[]
+  projectBaselines              ProjectBaseline[]
 
   @@index([workspaceId, createdAt, id])
   @@map("projects")
@@ -252,6 +336,7 @@ model Artifact {
   versions                             ArtifactVersion[]
   acceptedDataModelCandidates          DataModelCandidate[]
   acceptedStructuredAnalysisCandidates StructuredAnalysisCandidate[]
+  projectBaselineEntries               ProjectBaselineEntry[]
 
   // Project-scoped, never-reused codes (spec §31.4).
   @@unique([projectId, code])
@@ -293,12 +378,14 @@ model ArtifactVersion {
   diagramDetail                       DiagramDetail?
   diagramSources                      DiagramSourceVersion[]
   sourceDetail                        SourceDetail?
+  sourceProcessingJobs                SourceProcessingJob[]
   sourceReportCandidates              SourceReportCandidate[]
   structuredAnalysisDetail            StructuredAnalysisDetail?
   structuredAnalysisGenerationSources StructuredAnalysisGenerationSource[]
   mockupDetail                        MockupDetail?                        @relation("MockupOwnVersion")
   mockupsSourcedFromHere              MockupDetail[]                       @relation("MockupUiBlueprintSource")
   projectContextSourceLinks           ProjectContextSource[]
+  projectBaselineEntries              ProjectBaselineEntry[]
 
   @@unique([artifactId, versionNumber])
   @@unique([id, projectId])
@@ -884,6 +971,7 @@ model SourceDetail {
   report          SourceReportDetail?
 
   @@map("source_details")
+  @@index([contentHash])
 }
 
 // One candidate-first AI interpretation attempt for one exact source version.
@@ -1032,6 +1120,8 @@ model MockupDetail {
   generatorKind        MockupGeneratorKind @default(INTERNAL_WIREFRAME) @map("generator_kind")
   deviceType           MockupDeviceType    @default(DESKTOP) @map("device_type")
   svg                  String?
+  // User instruction that produced this version by refining the previous one; null for plain generation.
+  refinementPrompt     String?             @map("refinement_prompt")
 
   artifactVersion    ArtifactVersion      @relation("MockupOwnVersion", fields: [artifactVersionId], references: [id], onDelete: Restrict)
   uiBlueprintVersion ArtifactVersion      @relation("MockupUiBlueprintSource", fields: [uiBlueprintVersionId], references: [id], onDelete: Restrict)
@@ -1048,6 +1138,12 @@ model MockupScreenDetail {
   imageStorageKey  String @map("image_storage_key")
   imageContentType String @map("image_content_type")
   htmlStorageKey   String @map("html_storage_key")
+  // Stitch project/screen that produced this image, so the screen can be edited
+  // in place later. Null for screens generated before this was recorded.
+  stitchProjectId  String? @map("stitch_project_id")
+  stitchScreenId   String? @map("stitch_screen_id")
+  // Instruction that produced this screen by editing the previous version's screen.
+  refinementPrompt String? @map("refinement_prompt")
 
   mockup MockupDetail @relation(fields: [mockupVersionId], references: [artifactVersionId], onDelete: Restrict)
 
@@ -1064,6 +1160,33 @@ enum MockupJobStatus {
   @@map("mockup_job_status")
 }
 
+enum SourceProcessingStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  UNSUPPORTED
+
+  @@map("source_processing_status")
+}
+
+model SourceProcessingJob {
+  id              String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId       String                 @map("project_id") @db.Uuid
+  sourceVersionId String                 @unique @map("source_version_id") @db.Uuid
+  status          SourceProcessingStatus @default(QUEUED)
+  processor       String
+  errorMessage    String?                @map("error_message")
+  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project       Project         @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  sourceVersion ArtifactVersion @relation(fields: [sourceVersionId, projectId], references: [id, projectId], onDelete: Cascade)
+
+  @@index([projectId, status])
+  @@map("source_processing_jobs")
+}
+
 // Tracks an async mockup generation request (spec §40 job states), so the
 // HTTP request that creates it never blocks on Stitch's real latency.
 // existingMockupId is set only when the job regenerates a version of an
@@ -1074,6 +1197,9 @@ model MockupGenerationJob {
   uiBlueprintVersionId String           @map("ui_blueprint_version_id") @db.Uuid
   existingMockupId     String?          @map("existing_mockup_id") @db.Uuid
   deviceType           MockupDeviceType @default(DESKTOP) @map("device_type")
+  refinementPrompt     String?          @map("refinement_prompt")
+  // Set only for a single-screen edit: the blueprint localId of the screen to edit.
+  screenLocalId        String?          @map("screen_local_id")
   status               MockupJobStatus  @default(QUEUED)
   resultArtifactId     String?          @map("result_artifact_id") @db.Uuid
   errorMessage         String?          @map("error_message")
@@ -1084,4 +1210,50 @@ model MockupGenerationJob {
 
   @@index([projectId, createdAt])
   @@map("mockup_generation_jobs")
+}
+
+// Knowledge Base Fragment for RAG (spec Increment 2)
+model SourceFragment {
+  id              String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sourceVersionId String                       @map("source_version_id") @db.Uuid
+  projectId       String                       @map("project_id") @db.Uuid
+  sequence        Int
+  content         String
+  page            String?
+  section         String?
+  speaker         String?
+  timestamp       String?
+  embedding       Unsupported("vector(1536)")?
+
+  @@map("source_fragments")
+}
+
+// Immutable snapshot of all approved project artifacts (spec Increment 5)
+model ProjectBaseline {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId       String   @map("project_id") @db.Uuid
+  label           String
+  description     String?
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdByUserId String   @map("created_by_user_id") @db.Uuid
+
+  project Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User                   @relation(fields: [createdByUserId], references: [id])
+  entries ProjectBaselineEntry[]
+
+  @@map("project_baselines")
+}
+
+model ProjectBaselineEntry {
+  id                String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  baselineId        String @map("baseline_id") @db.Uuid
+  artifactId        String @map("artifact_id") @db.Uuid
+  artifactVersionId String @map("artifact_version_id") @db.Uuid
+
+  baseline        ProjectBaseline @relation(fields: [baselineId], references: [id], onDelete: Cascade)
+  artifact        Artifact        @relation(fields: [artifactId], references: [id])
+  artifactVersion ArtifactVersion @relation(fields: [artifactVersionId], references: [id])
+
+  @@unique([baselineId, artifactId])
+  @@map("project_baseline_entries")
 }

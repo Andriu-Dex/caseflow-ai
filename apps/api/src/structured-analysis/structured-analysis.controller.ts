@@ -1,3 +1,7 @@
+import { UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../identity/jwt-auth.guard';
+import { ProjectMembershipGuard } from '../identity/project-membership.guard';
+
 import { Body, Controller, Get, Param, Post, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -73,6 +77,7 @@ abstract class BaseStructuredAnalysisController {
 }
 
 @ApiTags('navigation')
+@UseGuards(JwtAuthGuard, ProjectMembershipGuard)
 @Controller('projects/:projectId/navigation')
 export class NavigationController extends BaseStructuredAnalysisController {
   protected readonly kind = 'NAVIGATION_TREE' as const;

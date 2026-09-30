@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AIOrchestrator, FakeAIProvider, PromptRegistry } from '@caseflow-ai/ai';
 import { FakeStorageProvider } from '@caseflow-ai/integrations';
+import { Document, Packer, Paragraph } from 'docx';
 import { PrismaAIRunRecorder } from '../../src/ai/ai-run-recorder';
 import { SourceContentExtractor } from '../../src/sources/source-content-extractor';
 import { SourcesService } from '../../src/sources/sources.service';
@@ -12,6 +13,10 @@ const MINIMAL_PDF = Buffer.from(
     '4 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\n5 0 obj<</Length 44>>stream\n' +
     'BT /F1 24 Tf 10 100 Td (Hello CASEFlow) Tj ET\nendstream\nendobj\nxref\n0 6\n0000000000 65535 f \n' +
     'trailer<</Size 6/Root 1 0 R>>\nstartxref\n0\n%%EOF',
+);
+const SMALL_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lXcAAAAASUVORK5CYII=',
+  'base64',
 );
 
 const reportContent = {
@@ -37,7 +42,7 @@ describe('Project Source intake integration', () => {
   afterAll(async () => ctx.close());
 
   it('uploads a real text-layer PDF and extracts its text locally, without any AI/OCR provider', async () => {
-    const source = await ctx.sources.create(
+    const pending = await ctx.sources.create(
       projectId,
       {
         title: 'Acta de reunión',
@@ -52,11 +57,58 @@ describe('Project Source intake integration', () => {
         buffer: MINIMAL_PDF,
       },
     );
-    expect(source).toMatchObject({
+    expect(pending).toMatchObject({
       code: 'SRC-001',
       version: { origin: 'MANUAL', status: 'DRAFT' },
-      source: { extractionState: 'EXTRACTED', hasExtractedText: true, sourceKind: 'PDF' },
+      processing: { status: 'QUEUED', processor: 'PDF' },
+      source: { extractionState: 'PENDING', hasExtractedText: false, sourceKind: 'PDF' },
     });
+    await ctx.sources.runProcessingJob(projectId, pending.processing!.id);
+    const source = await ctx.sources.get(projectId, pending.id);
+    expect(source).toMatchObject({
+      version: { versionNumber: 2, origin: 'SYSTEM_GENERATED', status: 'DRAFT' },
+      source: { extractionState: 'EXTRACTED', hasExtractedText: true },
+    });
+    expect((await ctx.sources.getText(projectId, source.id)).text).toContain('Hello CASEFlow');
+
+    const reused = await ctx.sources.create(
+      projectId,
+      {
+        title: 'Copia del acta',
+        sourceKind: 'PDF',
+        purpose: 'Verificar reutilización',
+        description: 'Mismo archivo.',
+      },
+      {
+        originalname: 'copia.pdf',
+        mimetype: 'application/pdf',
+        size: MINIMAL_PDF.length,
+        buffer: MINIMAL_PDF,
+      },
+    );
+    expect(reused.source).toMatchObject({ extractionState: 'EXTRACTED', hasExtractedText: true });
+    expect(reused.processing).toBeNull();
+
+    const otherWorkspace = await createWorkspace(ctx.prisma, 'Other sources');
+    const otherProject = (
+      await ctx.projects.create({ workspaceId: otherWorkspace.id, name: 'Other' })
+    ).id;
+    const isolated = await ctx.sources.create(
+      otherProject,
+      {
+        title: 'Acta aislada',
+        sourceKind: 'PDF',
+        purpose: 'Verificar aislamiento',
+        description: 'Mismo archivo, distinto proyecto.',
+      },
+      {
+        originalname: 'acta.pdf',
+        mimetype: 'application/pdf',
+        size: MINIMAL_PDF.length,
+        buffer: MINIMAL_PDF,
+      },
+    );
+    expect(isolated.source.extractionState).toBe('PENDING');
 
     const { body, mimeType, filename } = await ctx.sources.download(projectId, source.id);
     expect(body.toString()).toBe(MINIMAL_PDF.toString());
@@ -73,10 +125,15 @@ describe('Project Source intake integration', () => {
         purpose: 'Lluvia de ideas del equipo',
         description: 'Contenido de prueba.',
       },
-      { originalname: 'pizarra.png', mimetype: 'image/png', size: 4, buffer: Buffer.from('abcd') },
+      {
+        originalname: 'pizarra.png',
+        mimetype: 'image/png',
+        size: SMALL_PNG.length,
+        buffer: SMALL_PNG,
+      },
     );
     expect(source.source).toMatchObject({
-      extractionState: 'UNSUPPORTED',
+      extractionState: 'PENDING',
       hasExtractedText: false,
     });
 
@@ -100,6 +157,38 @@ describe('Project Source intake integration', () => {
       'APPROVED',
     );
     expect(approved.status).toBe('APPROVED');
+  });
+
+  it('processes an uploaded DOCX with no manually entered content', async () => {
+    const document = new Document({
+      sections: [{ children: [new Paragraph('Necesidad del cliente')] }],
+    });
+    const file = await Packer.toBuffer(document);
+    const pending = await ctx.sources.create(
+      projectId,
+      {
+        title: 'Documento de entrevista',
+        sourceKind: 'TEXT',
+        purpose: 'Recopilar necesidades',
+        description: '',
+      },
+      {
+        originalname: 'entrevista.docx',
+        mimetype: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        size: file.length,
+        buffer: file,
+      },
+    );
+    expect(pending.source.extractionState).toBe('PENDING');
+    await ctx.sources.runProcessingJob(projectId, pending.processing!.id);
+    const completed = await ctx.sources.get(projectId, pending.id);
+    expect(completed.source).toMatchObject({
+      extractionState: 'EXTRACTED',
+      hasExtractedText: true,
+    });
+    expect((await ctx.sources.getText(projectId, pending.id)).text).toContain(
+      'Necesidad del cliente',
+    );
   });
 
   it('generates a candidate-first interpretation, requires explicit acceptance, and keeps exact provenance', async () => {
@@ -146,6 +235,7 @@ describe('Project Source intake integration', () => {
       ai,
       new SourceContentExtractor(),
       new FakeStorageProvider(),
+      {} as never,
     );
 
     const candidate = await service.generateReport(projectId, source.id);

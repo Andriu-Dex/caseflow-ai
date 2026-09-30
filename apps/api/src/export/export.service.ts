@@ -62,12 +62,17 @@ export class ExportService {
     return images;
   }
 
-  async buildSnapshot(projectId: string) {
+  async buildSnapshot(
+    projectId: string,
+    options?: { artifactVersionIds?: Record<string, string> },
+  ) {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
       select: { name: true },
     });
     if (!project) throw new NotFoundException('Proyecto no encontrado.');
+
+    const av = options?.artifactVersionIds;
 
     const [
       sourcesList,
@@ -83,15 +88,15 @@ export class ExportService {
       stalenessEntries,
       traceabilityGraph,
     ] = await Promise.all([
-      this.sources.list(projectId),
-      this.requirements.listApproved(projectId),
-      this.useCases.listApproved(projectId),
-      this.snapshot.approvedArtifactVersion(projectId, 'PROJECT_CONTEXT'),
-      this.snapshot.approvedArtifactVersion(projectId, 'DATA_MODEL'),
-      this.snapshot.approvedArtifactVersion(projectId, 'NAVIGATION_TREE'),
-      this.snapshot.approvedArtifactVersion(projectId, 'SOFTWARE_ARCHITECTURE'),
-      this.snapshot.approvedArtifactVersion(projectId, 'SYSTEM_ARCHITECTURE'),
-      this.snapshot.approvedArtifactVersion(projectId, 'UI_BLUEPRINT'),
+      this.sources.list(projectId, av),
+      this.requirements.listApproved(projectId, av),
+      this.useCases.listApproved(projectId, av),
+      this.snapshot.approvedArtifactVersion(projectId, 'PROJECT_CONTEXT', av),
+      this.snapshot.approvedArtifactVersion(projectId, 'DATA_MODEL', av),
+      this.snapshot.approvedArtifactVersion(projectId, 'NAVIGATION_TREE', av),
+      this.snapshot.approvedArtifactVersion(projectId, 'SOFTWARE_ARCHITECTURE', av),
+      this.snapshot.approvedArtifactVersion(projectId, 'SYSTEM_ARCHITECTURE', av),
+      this.snapshot.approvedArtifactVersion(projectId, 'UI_BLUEPRINT', av),
       this.readiness.evaluate(projectId),
       this.staleness.analyzeProject(projectId),
       this.traceability.buildGraph(projectId),

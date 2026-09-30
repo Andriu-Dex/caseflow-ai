@@ -18,7 +18,9 @@ describe('ProjectsService (rule branches)', () => {
   const prisma = {
     workspace: { findUnique: vi.fn() },
     project: { create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
+    projectMembership: { create: vi.fn() },
     artifactVersion: { count: vi.fn(), findMany: vi.fn() },
+    $transaction: vi.fn(async (callback: (tx: typeof prisma) => unknown) => callback(prisma)),
   };
   let service: ProjectsService;
 
@@ -31,10 +33,13 @@ describe('ProjectsService (rule branches)', () => {
     prisma.workspace.findUnique.mockResolvedValue({ id: workspaceId });
     prisma.project.create.mockResolvedValue(projectRow);
 
-    const result = await service.create({ workspaceId, name: 'P' });
+    const result = await service.create({ workspaceId, name: 'P' }, 'user-1');
 
     expect(prisma.project.create).toHaveBeenCalledWith({
       data: { workspaceId, name: 'P', description: null },
+    });
+    expect(prisma.projectMembership.create).toHaveBeenCalledWith({
+      data: { projectId: projectRow.id, userId: 'user-1', role: 'OWNER' },
     });
     expect(result).toMatchObject({ workspaceId, createdAt: now.toISOString(), description: null });
   });
@@ -42,20 +47,20 @@ describe('ProjectsService (rule branches)', () => {
   it('does not create a project for an unknown workspace', async () => {
     prisma.workspace.findUnique.mockResolvedValue(null);
 
-    await expect(service.create({ workspaceId, name: 'P' })).rejects.toThrow(
+    await expect(service.create({ workspaceId, name: 'P' }, 'user-1')).rejects.toThrow(
       'Workspace no encontrado.',
     );
     expect(prisma.project.create).not.toHaveBeenCalled();
   });
 
-  it('lists only the given workspace with a stable order and bounded page', async () => {
+  it('lists only projects in the workspace where the user is a member', async () => {
     prisma.project.findMany.mockResolvedValue([projectRow]);
     prisma.artifactVersion.findMany.mockResolvedValue([]);
 
-    const result = await service.list(workspaceId, 10, 20);
+    const result = await service.list(workspaceId, 10, 20, 'user-1');
 
     expect(prisma.project.findMany).toHaveBeenCalledWith({
-      where: { workspaceId },
+      where: { workspaceId, projectMemberships: { some: { userId: 'user-1' } } },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       take: 10,
       skip: 20,

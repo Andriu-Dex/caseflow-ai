@@ -28,6 +28,49 @@ describe('StitchMockupProvider', () => {
     );
   });
 
+  it('passes the blueprint data and states to the visual generator', () => {
+    const provider = new StitchMockupProvider({ apiKey: 'test', timeoutMs: 100 });
+    const buildPrompt = (
+      provider as unknown as {
+        buildPrompt: (screen: unknown, device: 'DESKTOP', refinement?: string) => string;
+      }
+    ).buildPrompt.bind(provider);
+    const screen = {
+      name: 'Pedidos',
+      purpose: 'Registrar un pedido',
+      targetActors: [],
+      sections: [],
+      primaryActions: [],
+      secondaryActions: [],
+      forms: [],
+      principalData: [],
+      states: [],
+      relatedUseCaseCodes: [],
+    };
+    expect(buildPrompt(screen, 'DESKTOP')).not.toContain('Ajustes solicitados');
+    const refined = buildPrompt(screen, 'DESKTOP', 'Usa tonos verdes');
+    expect(refined).toContain('Registrar un pedido');
+    expect(refined.endsWith('Usa tonos verdes')).toBe(true);
+    const prompt = buildPrompt(
+      {
+        name: 'Pedidos',
+        purpose: 'Registrar un pedido',
+        targetActors: ['Vendedor'],
+        sections: ['Productos'],
+        primaryActions: ['Guardar'],
+        secondaryActions: [],
+        forms: ['Cantidad'],
+        principalData: ['Precio total'],
+        states: ['Error de validación'],
+        relatedUseCaseCodes: ['CU-001'],
+      },
+      'DESKTOP',
+    );
+    expect(prompt).toContain('Precio total');
+    expect(prompt).toContain('Error de validación');
+    expect(prompt).toContain('CU-001');
+  });
+
   it('bounds the overall provider wait so fallback can proceed', async () => {
     const provider = new StitchMockupProvider({ apiKey: 'test', timeoutMs: 5 });
     (
@@ -36,6 +79,38 @@ describe('StitchMockupProvider', () => {
     await expect(provider.generate(content)).rejects.toMatchObject({
       code: 'MOCKUP_PROVIDER_TIMEOUT',
     });
+  });
+
+  it('tells Stitch to keep the rest of the screen when editing it', () => {
+    const provider = new StitchMockupProvider({ apiKey: 'test', timeoutMs: 100 });
+    const buildEditPrompt = (
+      provider as unknown as { buildEditPrompt: (prompt: string) => string }
+    ).buildEditPrompt.bind(provider);
+    const prompt = buildEditPrompt('Usa tonos verdes');
+    expect(prompt).toContain('conserva el resto del diseño');
+    expect(prompt.endsWith('Usa tonos verdes')).toBe(true);
+  });
+
+  it('bounds a screen edit and hides SDK failures behind a safe message', async () => {
+    const provider = new StitchMockupProvider({ apiKey: 'test', timeoutMs: 5 });
+    const withTimeout = (
+      provider as unknown as {
+        withTimeout: (run: () => Promise<unknown>, t: string, u: string) => Promise<unknown>;
+      }
+    ).withTimeout.bind(provider);
+    await expect(withTimeout(() => new Promise(() => {}), 'lento', 'caído')).rejects.toMatchObject({
+      code: 'MOCKUP_PROVIDER_TIMEOUT',
+      message: 'lento',
+    });
+    await expect(
+      withTimeout(
+        async () => {
+          throw new Error('secret SDK detail');
+        },
+        'lento',
+        'caído',
+      ),
+    ).rejects.toMatchObject({ code: 'MOCKUP_PROVIDER_UNAVAILABLE', message: 'caído' });
   });
 
   it('normalizes unexpected SDK failures without exposing them', async () => {

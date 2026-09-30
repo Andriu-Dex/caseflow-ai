@@ -23,27 +23,36 @@ export class FirstDeliverableSnapshotService {
   async approvedArtifactVersion(
     projectId: string,
     artifactTypeCode: string,
+    artifactVersionIds?: Record<string, string>,
   ): Promise<AuthoritativeArtifactVersion | null> {
     const artifacts = await this.prisma.artifact.findMany({
       where: { projectId, artifactTypeCode, archivedAt: null },
       include: {
-        versions: {
-          where: { status: 'APPROVED' },
-          orderBy: { versionNumber: 'desc' },
-          take: 1,
-        },
+        versions: artifactVersionIds
+          ? {
+              where: { id: { in: Object.values(artifactVersionIds) } },
+              take: 1,
+            }
+          : {
+              where: { status: 'APPROVED' },
+              orderBy: { versionNumber: 'desc' },
+              take: 1,
+            },
       },
     });
     let best: (AuthoritativeArtifactVersion & { approvedAt: Date; versionNumber: number }) | null =
       null;
     for (const artifact of artifacts) {
       const version = artifact.versions[0];
-      if (!version?.approvedAt) continue;
+      if (!version) continue;
+      // In baseline mode we trust the baseline's selection, which might lack approvedAt if it was somehow missing, but usually it has it.
+      // We use createdAt as a fallback for sorting just in case.
+      const candidateTime = version.approvedAt || version.createdAt;
       const candidate = {
         artifactId: artifact.id,
         code: artifact.code,
         versionId: version.id,
-        approvedAt: version.approvedAt,
+        approvedAt: candidateTime,
         versionNumber: version.versionNumber,
       };
       if (

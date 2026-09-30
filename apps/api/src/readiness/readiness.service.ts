@@ -434,13 +434,14 @@ export class ReadinessService {
       }
       downstreamWarnings = [...reached].map((id) => {
         const node = nodes.find((n) => n.id === id);
-        return `DOWNSTREAM_REVIEW_RECOMMENDED: ${node?.code ?? id} depende de conocimiento potencialmente desactualizado (HAS_POTENTIALLY_AFFECTED_UPSTREAM).`;
+        return `${node?.code ?? id} depende de artefactos potencialmente desactualizados: se recomienda revisarlo.`;
       });
     }
 
     const warnings = [
       ...affected.map(
-        (a) => `POTENTIALLY_AFFECTED: ${a.code} (v${a.versionNumber}) — revisión recomendada.`,
+        (a) =>
+          `${a.code} (v${a.versionNumber}) podría estar desactualizado: se recomienda revisarlo.`,
       ),
       ...downstreamWarnings,
     ];

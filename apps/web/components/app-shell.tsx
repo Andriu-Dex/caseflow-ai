@@ -50,6 +50,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     items: [
       { href: '/traceability', label: 'Trazabilidad' },
       { href: '/readiness', label: 'Preparación / Exportar' },
+      { href: '/baselines', label: 'Líneas Base' },
     ],
   },
 ];
@@ -60,11 +61,22 @@ export function AppShell({ children }: { children: ReactNode }) {
   const readiness = useQuery({
     queryKey: ['readiness', projectId],
     queryFn: () => api.readiness.get(projectId!),
-    enabled: Boolean(projectId),
+    enabled: Boolean(projectId) && pathname !== '/login' && pathname !== '/register',
   });
   const [lockedMessage, setLockedMessage] = useState<string | null>(null);
 
   useEffect(() => setLockedMessage(null), [pathname]);
+
+  if (pathname === '/login' || pathname === '/register') {
+    return (
+      <main
+        id="main-content"
+        className="flex min-h-screen items-center justify-center bg-background p-4"
+      >
+        {children}
+      </main>
+    );
+  }
 
   const stages = readiness.data?.stages;
 

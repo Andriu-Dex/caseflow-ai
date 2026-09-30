@@ -165,8 +165,14 @@ describe('ReadinessService', () => {
     expect(result.stages.find((s) => s.key === 'MOCKUPS')?.satisfied).toBe(true);
     const impact = result.stages.find((s) => s.key === 'IMPACT')!;
     expect(impact.satisfied).toBe(true);
-    expect(impact.warnings.some((w) => w.includes('POTENTIALLY_AFFECTED'))).toBe(true);
-    expect(impact.warnings.some((w) => w.includes('DOWNSTREAM_REVIEW_RECOMMENDED'))).toBe(true);
+    expect(impact.warnings.some((w) => w.includes('podría estar desactualizado'))).toBe(true);
+    expect(
+      impact.warnings.some((w) =>
+        w.includes('depende de artefactos potencialmente desactualizados'),
+      ),
+    ).toBe(true);
+    // User-facing text only: no raw English state codes.
+    expect(impact.warnings.join(' ')).not.toMatch(/POTENTIALLY_AFFECTED|DOWNSTREAM_REVIEW/);
   });
 
   it('blocks IMPACT when the current Context is flagged as newer-knowledge-available', async () => {

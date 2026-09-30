@@ -1,3 +1,7 @@
+import { UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../identity/jwt-auth.guard';
+import { ProjectMembershipGuard } from '../identity/project-membership.guard';
+
 import { Controller, Get, Param } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { readinessResponseSchema } from '@caseflow-ai/contracts';
@@ -6,6 +10,7 @@ import { ApiZodResponse } from '../openapi/zod-openapi';
 import { ReadinessService } from './readiness.service';
 
 @ApiTags('readiness')
+@UseGuards(JwtAuthGuard, ProjectMembershipGuard)
 @Controller('projects/:projectId/readiness')
 export class ReadinessController {
   constructor(private readonly service: ReadinessService) {}

@@ -42,6 +42,10 @@ export * from './traceability/traceability.contract';
 export * from './readiness/readiness.contract';
 export * from './export/export.contract';
 export * from './workspaces/workspace.contract';
+export * from './knowledge-base/knowledge-base.contract';
+export * from './impact-analysis/impact-analysis.contract';
+export * from './consistency-engine/consistency-engine.contract';
+export * from './baselines/baselines.contract';
 
 export {
   PROJECT_CONTEXT_COLLECTION_LIMIT,
@@ -67,3 +71,5 @@ export type {
   CreateArtifactRequest,
   CreateArtifactVersionRequest,
 } from './artifacts/artifact.contract';
+
+export * from './identity/identity.contract';
