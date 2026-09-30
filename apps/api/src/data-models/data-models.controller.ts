@@ -147,6 +147,7 @@ export class DataModelsController {
 }
 
 @ApiTags('diagrams')
+@UseGuards(JwtAuthGuard, ProjectMembershipGuard)
 @Controller('projects/:projectId/diagrams/use-cases')
 export class UseCaseDiagramsController {
   constructor(private readonly service: DataModelsService) {}

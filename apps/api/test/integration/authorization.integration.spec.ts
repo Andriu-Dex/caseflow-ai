@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
+import { ModulesContainer } from '@nestjs/core';
+import { JwtAuthGuard } from '../../src/identity/jwt-auth.guard';
 import {
   createTestContext,
   createWorkspaceWithOwner,
@@ -74,5 +77,44 @@ describe('Cross-Project Authorization (Isolation)', () => {
 
     expect(workspaces.body.items.map((item: { id: string }) => item.id)).toContain(workspaceId);
     expect(projects.body.items).toEqual([]);
+  });
+
+  it.each([
+    'software-architecture',
+    'system-architecture',
+    'ui-blueprint',
+    'navigation',
+    'diagrams/use-cases',
+  ])('rejects a non-member reading or writing %s', async (segment) => {
+    const intruder = await createUnauthorizedUser(ctx);
+    await request(ctx.app.getHttpServer())
+      .get(`/projects/${projectId}/${segment}`)
+      .set('Authorization', `Bearer ${intruder.token}`)
+      .expect((res) => expect([403, 404]).toContain(res.status));
+    await request(ctx.app.getHttpServer())
+      .post(`/projects/${projectId}/${segment}`)
+      .set('Authorization', `Bearer ${intruder.token}`)
+      .send({})
+      .expect(403);
+  });
+
+  // Structural invariant: a controller added without the auth guard fails here,
+  // before it can ship. Only these routes are intentionally public or protected
+  // by the internal jobs secret instead of a user session.
+  it('guards every controller with JWT authentication except the known public ones', () => {
+    const PUBLIC_CONTROLLERS = new Set([
+      'HealthController',
+      'AuthController',
+      'InternalMockupJobsController',
+      'InternalSourceJobsController',
+    ]);
+    const unguarded: string[] = [];
+    for (const module of ctx.app.get(ModulesContainer).values())
+      for (const { metatype } of module.controllers.values()) {
+        if (!metatype || PUBLIC_CONTROLLERS.has(metatype.name)) continue;
+        const guards = (Reflect.getMetadata(GUARDS_METADATA, metatype) ?? []) as unknown[];
+        if (!guards.includes(JwtAuthGuard)) unguarded.push(metatype.name);
+      }
+    expect(unguarded).toEqual([]);
   });
 });
