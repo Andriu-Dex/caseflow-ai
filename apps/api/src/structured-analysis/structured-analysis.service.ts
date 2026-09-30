@@ -11,6 +11,7 @@ import { canTransitionArtifactVersionStatus, formatArtifactCode } from '@caseflo
 import { DiagramProviderError, type DiagramProvider } from '@caseflow-ai/integrations';
 import {
   STRUCTURED_ANALYSIS_CONTENT_SCHEMAS,
+  implementationPlanBodySchema,
   type StructuredAnalysisKind,
 } from '@caseflow-ai/contracts';
 import type { z } from 'zod';
@@ -36,18 +37,23 @@ const KIND_LABELS: Record<StructuredAnalysisKind, string> = {
   UI_BLUEPRINT: 'Plano de interfaz',
   GENERATION_PLAN: 'Plan de generación',
   CONCEPTUAL_DOMAIN_MODEL: 'Modelo conceptual',
+  IMPLEMENTATION_PLAN: 'Plan de implementación',
 };
 
 // Construction gates whose approval is an audited event (AGENTS.md §35).
 const APPROVAL_AUDIT_ACTIONS: Partial<Record<StructuredAnalysisKind, AuditAction>> = {
   GENERATION_PLAN: 'GENERATION_PLAN_APPROVED',
   CONCEPTUAL_DOMAIN_MODEL: 'CONCEPTUAL_DOMAIN_MODEL_APPROVED',
+  IMPLEMENTATION_PLAN: 'IMPLEMENTATION_PLAN_APPROVED',
 };
 
 interface KindConfig {
   promptKey: string;
   promptVersion: number;
   maxOutputTokens: number;
+  // What the AI proposes when the system fills part of the content itself.
+  aiOutputSchema?: z.ZodType;
+  maxContextChars?: number;
   diagram?: { format: DiagramFormat; generate: (content: Content) => string };
 }
 
@@ -76,6 +82,16 @@ const ELIGIBLE_SOURCE_TYPES: Record<StructuredAnalysisKind, string[]> = {
   ],
   // spec §157: the conceptual model refines the plan's conceptual entities.
   CONCEPTUAL_DOMAIN_MODEL: ['GENERATION_PLAN', 'REQUIREMENT', 'USE_CASE', 'DATA_MODEL'],
+  // spec §161: built from what the approved Design Baseline froze (the mockup
+  // itself carries no structured content, its UI blueprint does).
+  IMPLEMENTATION_PLAN: [
+    'GENERATION_PLAN',
+    'CONCEPTUAL_DOMAIN_MODEL',
+    'NAVIGATION_TREE',
+    'UI_BLUEPRINT',
+    'SOFTWARE_ARCHITECTURE',
+    'SYSTEM_ARCHITECTURE',
+  ],
 };
 
 const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
@@ -146,6 +162,13 @@ const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
     promptVersion: 1,
     maxOutputTokens: 8192,
   },
+  IMPLEMENTATION_PLAN: {
+    promptKey: 'implementation-plan.generate',
+    promptVersion: 1,
+    maxOutputTokens: 16384,
+    aiOutputSchema: implementationPlanBodySchema,
+    maxContextChars: 40_000,
+  },
 };
 
 @Injectable()
@@ -164,6 +187,7 @@ export class StructuredAnalysisService {
   }
 
   async create(projectId: string, kind: StructuredAnalysisKind, title: string, content: Content) {
+    await this.assertContentReferences(projectId, kind, content);
     const diagram = await this.renderDiagramIfApplicable(kind, content);
     return this.prisma.$transaction((tx) =>
       this.createInTx(tx, projectId, kind, title, content, diagram, 'MANUAL'),
@@ -216,6 +240,7 @@ export class StructuredAnalysisService {
     title: string,
     content: Content,
   ) {
+    await this.assertContentReferences(projectId, kind, content);
     const diagram = await this.renderDiagramIfApplicable(kind, content);
     return this.prisma.$transaction(async (tx) => {
       const locked = await tx.$queryRaw<{ id: string }[]>`
@@ -240,10 +265,30 @@ export class StructuredAnalysisService {
     });
   }
 
-  async generate(projectId: string, kind: StructuredAnalysisKind, sourceVersionIds: string[]) {
+  async generate(
+    projectId: string,
+    kind: StructuredAnalysisKind,
+    sourceVersionIds: string[],
+    options: { designBaselineId?: string } = {},
+  ) {
     const unique = [...new Set(sourceVersionIds)];
     if (unique.length !== sourceVersionIds.length)
       throw new UnprocessableEntityException('Las versiones fuente no pueden repetirse.');
+    // DEC-095: an Implementation Plan is derived only from the exact versions
+    // an approved Design Baseline froze, never from an arbitrary selection.
+    if (kind === 'IMPLEMENTATION_PLAN') {
+      if (!options.designBaselineId)
+        throw new UnprocessableEntityException(
+          'Seleccione la línea base de diseño aprobada de la que parte el plan.',
+        );
+      const frozen = new Set(
+        await this.designBaselineVersionIds(projectId, options.designBaselineId),
+      );
+      if (unique.some((id) => !frozen.has(id)))
+        throw new UnprocessableEntityException(
+          'Las fuentes deben ser versiones congeladas en la línea base de diseño seleccionada.',
+        );
+    }
     const sources = await this.prisma.artifactVersion.findMany({
       where: {
         id: { in: unique },
@@ -353,11 +398,11 @@ export class StructuredAnalysisService {
         'Una fuente seleccionada no tiene contenido estructurado disponible.',
       );
     const serializedContext = JSON.stringify({ sources: contextSources });
-    if (serializedContext.length > 18_000)
+    const config = KIND_CONFIG[kind];
+    if (serializedContext.length > (config.maxContextChars ?? 18_000))
       throw new UnprocessableEntityException(
         'Las fuentes seleccionadas exceden el límite de contexto. Seleccione menos versiones para esta generación.',
       );
-    const config = KIND_CONFIG[kind];
     const language = await getProjectLanguage(this.prisma, projectId);
     try {
       const result = await this.ai.generateStructured({
@@ -371,7 +416,8 @@ export class StructuredAnalysisService {
             content: serializedContext,
           },
         ],
-        outputSchema: STRUCTURED_ANALYSIS_CONTENT_SCHEMAS[kind] as unknown as z.ZodType<Content>,
+        outputSchema: (config.aiOutputSchema ??
+          STRUCTURED_ANALYSIS_CONTENT_SCHEMAS[kind]) as unknown as z.ZodType<Content>,
         schemaName: `${kind.toLowerCase()}_generation`,
         maxOutputTokens: config.maxOutputTokens,
       });
@@ -391,7 +437,9 @@ export class StructuredAnalysisService {
             generationId: generation.id,
             candidateId: 'candidate-1',
             title: `${KIND_LABELS[kind]} (candidato)`,
-            content: result.data as Prisma.InputJsonValue,
+            content: (options.designBaselineId
+              ? { ...result.data, designBaselineId: options.designBaselineId }
+              : result.data) as Prisma.InputJsonValue,
           },
         });
         return generation.id;
@@ -462,6 +510,7 @@ export class StructuredAnalysisService {
     const diagrams = new Map<string, Awaited<ReturnType<typeof this.renderDiagramIfApplicable>>>();
     for (const candidate of previewCandidates) {
       const content = this.parseContent(kind, candidate.content);
+      await this.assertContentReferences(projectId, kind, content);
       diagrams.set(candidate.id, await this.renderDiagramIfApplicable(kind, content));
     }
     return this.prisma.$transaction(async (tx) => {
@@ -634,6 +683,49 @@ export class StructuredAnalysisService {
       svg: diagram.svg,
       sourceArtifactVersionIds: diagram.sources.map((source) => source.sourceArtifactVersionId),
     };
+  }
+
+  // The frozen versions of a Design Baseline this kind may use as sources.
+  async generateFromDesignBaseline(
+    projectId: string,
+    kind: StructuredAnalysisKind,
+    designBaselineId: string,
+  ) {
+    const frozen = await this.prisma.artifactVersion.findMany({
+      where: {
+        id: { in: await this.designBaselineVersionIds(projectId, designBaselineId) },
+        artifact: { artifactTypeCode: { in: ELIGIBLE_SOURCE_TYPES[kind] } },
+      },
+      select: { id: true },
+    });
+    return this.generate(
+      projectId,
+      kind,
+      frozen.map((version) => version.id),
+      { designBaselineId },
+    );
+  }
+
+  private async designBaselineVersionIds(projectId: string, designBaselineId: string) {
+    const baseline = await this.prisma.designBaseline.findFirst({
+      where: { id: designBaselineId, projectId },
+      select: { entries: { select: { artifactVersionId: true } } },
+    });
+    if (!baseline)
+      throw new UnprocessableEntityException(
+        'Se requiere una línea base de diseño aprobada del mismo proyecto.',
+      );
+    return baseline.entries.map((entry) => entry.artifactVersionId);
+  }
+
+  // References inside content that the schema alone cannot check.
+  private async assertContentReferences(
+    projectId: string,
+    kind: StructuredAnalysisKind,
+    content: Content,
+  ) {
+    if (kind === 'IMPLEMENTATION_PLAN')
+      await this.designBaselineVersionIds(projectId, content.designBaselineId as string);
   }
 
   private parseContent(kind: StructuredAnalysisKind, raw: unknown): Content {

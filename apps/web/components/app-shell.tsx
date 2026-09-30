@@ -53,6 +53,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
       { href: '/construction/generation-plan', label: 'Plan de generación' },
       { href: '/construction/conceptual-model', label: 'Modelo conceptual' },
       { href: '/construction/design-baseline', label: 'Aprobación de diseño' },
+      { href: '/construction/implementation-plan', label: 'Plan de implementación' },
     ],
   },
   {

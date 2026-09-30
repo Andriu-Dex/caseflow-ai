@@ -12,6 +12,7 @@ export const STRUCTURED_ANALYSIS_KINDS = [
   'UI_BLUEPRINT',
   'GENERATION_PLAN',
   'CONCEPTUAL_DOMAIN_MODEL',
+  'IMPLEMENTATION_PLAN',
 ] as const;
 export type StructuredAnalysisKind = (typeof STRUCTURED_ANALYSIS_KINDS)[number];
 
@@ -333,6 +334,226 @@ export const conceptualDomainModelContentSchema = z
   });
 export type ConceptualDomainModelContent = z.output<typeof conceptualDomainModelContentSchema>;
 
+// ---- IMPLEMENTATION_PLAN (spec §161) ----------------------------------------
+// "How exactly will the approved system be built?" Produced after the Design
+// Gate from an approved Design Baseline (DEC-095). It is also the logical and
+// physical data model and the API contract: the Prisma schema and OpenAPI
+// document of the generated project are derived from it deterministically.
+// Names follow the generated code's conventions so no translation step (and
+// no guessing) happens between review and generation.
+export const IMPLEMENTATION_FIELD_TYPES = [
+  'STRING',
+  'TEXT',
+  'INT',
+  'DECIMAL',
+  'BOOLEAN',
+  'DATE',
+  'DATETIME',
+  'ENUM',
+] as const;
+export const IMPLEMENTATION_RELATION_KINDS = ['MANY_TO_ONE', 'ONE_TO_ONE', 'MANY_TO_MANY'] as const;
+export const IMPLEMENTATION_CRUD_OPERATIONS = [
+  'LIST',
+  'GET',
+  'CREATE',
+  'UPDATE',
+  'DELETE',
+] as const;
+export const IMPLEMENTATION_HTTP_METHODS = ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'] as const;
+export const IMPLEMENTATION_ROUTE_KINDS = [
+  'LIST',
+  'DETAIL',
+  'FORM',
+  'DASHBOARD',
+  'CUSTOM',
+] as const;
+export const IMPLEMENTATION_TEST_KINDS = ['UNIT', 'INTEGRATION', 'E2E'] as const;
+// Added to every entity by the generator; the plan must not redeclare them.
+export const IMPLEMENTATION_RESERVED_FIELDS = ['id', 'createdAt', 'updatedAt'] as const;
+
+const pascalName = () =>
+  text(60).regex(/^[A-Z][A-Za-z0-9]*$/, 'Use PascalCase sin espacios (p. ej. OrderItem).');
+const camelName = () =>
+  text(60).regex(/^[a-z][A-Za-z0-9]*$/, 'Use camelCase sin espacios (p. ej. unitPrice).');
+const enumValue = () =>
+  text(60).regex(/^[A-Z][A-Z0-9_]*$/, 'Use MAYÚSCULAS_CON_GUIONES (p. ej. IN_PROGRESS).');
+
+const implementationFieldSchema = z
+  .object({
+    name: camelName(),
+    type: z.enum(IMPLEMENTATION_FIELD_TYPES),
+    required: z.boolean().default(true),
+    unique: z.boolean().default(false),
+    enumValues: z.array(enumValue()).max(30).default([]),
+    description: text(300).optional(),
+  })
+  .strict();
+const implementationRelationSchema = z
+  .object({
+    name: camelName(),
+    kind: z.enum(IMPLEMENTATION_RELATION_KINDS),
+    targetEntityLocalId: localId(),
+    required: z.boolean().default(false),
+  })
+  .strict();
+const implementationEntitySchema = z
+  .object({
+    localId: localId(),
+    name: pascalName(),
+    moduleLocalId: localId(),
+    description: text(500).optional(),
+    fields: z.array(implementationFieldSchema).min(1).max(60),
+    relations: z.array(implementationRelationSchema).max(30).default([]),
+    operations: z.array(z.enum(IMPLEMENTATION_CRUD_OPERATIONS)).max(5).default([]),
+    // Empty = any authenticated user (when authentication is required).
+    readRoles: z.array(text(60)).max(20).default([]),
+    writeRoles: z.array(text(60)).max(20).default([]),
+    relatedSourceCodes: z.array(text(40)).max(100).optional(),
+  })
+  .strict();
+const implementationModuleSchema = z
+  .object({
+    localId: localId(),
+    name: pascalName(),
+    description: text(500),
+    relatedSourceCodes: z.array(text(40)).max(100).optional(),
+  })
+  .strict();
+const implementationEndpointSchema = z
+  .object({
+    moduleLocalId: localId(),
+    method: z.enum(IMPLEMENTATION_HTTP_METHODS),
+    path: text(200).regex(
+      /^\/[a-z0-9-]+(?:\/(?:[a-z0-9-]+|:[a-z][A-Za-z0-9]*))*$/,
+      'Use una ruta en minúsculas, p. ej. /orders/:orderId/confirm.',
+    ),
+    summary: text(300),
+    entityLocalId: localId().optional(),
+    roles: z.array(text(60)).max(20).default([]),
+    relatedSourceCodes: z.array(text(40)).max(100).optional(),
+  })
+  .strict();
+const implementationRouteSchema = z
+  .object({
+    path: text(200).regex(
+      /^\/(?:[a-z0-9-]+(?:\/(?:[a-z0-9-]+|\[[a-z][A-Za-z0-9]*\]))*)?$/,
+      'Use una ruta Next.js en minúsculas, p. ej. /orders/[orderId].',
+    ),
+    screenName: text(200),
+    moduleLocalId: localId(),
+    kind: z.enum(IMPLEMENTATION_ROUTE_KINDS),
+    entityLocalId: localId().optional(),
+    relatedSourceCodes: z.array(text(40)).max(100).optional(),
+  })
+  .strict();
+const implementationEnvVarSchema = z
+  .object({
+    name: text(80).regex(/^[A-Z][A-Z0-9_]*$/, 'Use MAYÚSCULAS_CON_GUIONES.'),
+    description: text(300),
+    required: z.boolean().default(true),
+  })
+  .strict();
+const implementationTestSchema = z
+  .object({
+    moduleLocalId: localId(),
+    kind: z.enum(IMPLEMENTATION_TEST_KINDS),
+    description: text(500),
+  })
+  .strict();
+
+// The part an AI proposes; the Design Baseline id is set by the system.
+export const implementationPlanBodySchema = z
+  .object({
+    authentication: z
+      .object({ required: z.boolean(), roles: z.array(text(60)).max(20).default([]) })
+      .strict(),
+    modules: z.array(implementationModuleSchema).min(1).max(40),
+    entities: z.array(implementationEntitySchema).min(1).max(80),
+    customEndpoints: z.array(implementationEndpointSchema).max(100).default([]),
+    routes: z.array(implementationRouteSchema).max(100).default([]),
+    envVars: z.array(implementationEnvVarSchema).max(40).default([]),
+    tests: z.array(implementationTestSchema).max(200).default([]),
+  })
+  .strict();
+
+export const implementationPlanContentSchema = implementationPlanBodySchema
+  .extend({ designBaselineId: z.uuid() })
+  .strict()
+  .superRefine((value, ctx) => {
+    const issue = (message: string, path: (string | number)[]) =>
+      ctx.addIssue({ code: 'custom', message, path });
+    if (!uniqueBy(value.modules, (m) => m.localId)) issue('localId debe ser único.', ['modules']);
+    if (!uniqueBy(value.modules, (m) => m.name))
+      issue('Los módulos deben tener nombres distintos.', ['modules']);
+    if (!uniqueBy(value.entities, (e) => e.localId)) issue('localId debe ser único.', ['entities']);
+    if (!uniqueBy(value.entities, (e) => e.name))
+      issue('Las entidades deben tener nombres distintos.', ['entities']);
+    const modules = new Set(value.modules.map((m) => m.localId));
+    const entities = new Set(value.entities.map((e) => e.localId));
+    const roles = new Set(value.authentication.roles);
+    const checkRoles = (list: string[], path: (string | number)[]) => {
+      for (const role of list)
+        if (!roles.has(role)) issue(`El rol «${role}» no está declarado en autenticación.`, path);
+    };
+    value.entities.forEach((entity, i) => {
+      if (!modules.has(entity.moduleLocalId))
+        issue('La entidad referencia un módulo inexistente.', ['entities', i, 'moduleLocalId']);
+      const names = [...entity.fields.map((f) => f.name), ...entity.relations.map((r) => r.name)];
+      if (new Set(names).size !== names.length)
+        issue('Los campos y relaciones de una entidad deben tener nombres distintos.', [
+          'entities',
+          i,
+        ]);
+      entity.fields.forEach((field, j) => {
+        if ((IMPLEMENTATION_RESERVED_FIELDS as readonly string[]).includes(field.name))
+          issue(`«${field.name}» lo agrega el generador; no lo declare.`, [
+            'entities',
+            i,
+            'fields',
+            j,
+          ]);
+        if ((field.type === 'ENUM') !== field.enumValues.length > 0)
+          issue('Solo los campos ENUM llevan valores, y todo ENUM necesita al menos uno.', [
+            'entities',
+            i,
+            'fields',
+            j,
+          ]);
+      });
+      entity.relations.forEach((relation, j) => {
+        if (!entities.has(relation.targetEntityLocalId))
+          issue('La relación apunta a una entidad inexistente.', ['entities', i, 'relations', j]);
+      });
+      if (new Set(entity.operations).size !== entity.operations.length)
+        issue('Las operaciones no deben repetirse.', ['entities', i, 'operations']);
+      checkRoles([...entity.readRoles, ...entity.writeRoles], ['entities', i]);
+    });
+    value.customEndpoints.forEach((endpoint, i) => {
+      if (!modules.has(endpoint.moduleLocalId))
+        issue('El endpoint referencia un módulo inexistente.', ['customEndpoints', i]);
+      if (endpoint.entityLocalId && !entities.has(endpoint.entityLocalId))
+        issue('El endpoint referencia una entidad inexistente.', ['customEndpoints', i]);
+      checkRoles(endpoint.roles, ['customEndpoints', i, 'roles']);
+    });
+    if (!uniqueBy(value.customEndpoints, (e) => `${e.method} ${e.path}`))
+      issue('Cada endpoint (método y ruta) debe ser único.', ['customEndpoints']);
+    value.routes.forEach((route, i) => {
+      if (!modules.has(route.moduleLocalId))
+        issue('La ruta referencia un módulo inexistente.', ['routes', i]);
+      if (route.entityLocalId && !entities.has(route.entityLocalId))
+        issue('La ruta referencia una entidad inexistente.', ['routes', i]);
+    });
+    if (!uniqueBy(value.routes, (r) => r.path))
+      issue('Cada ruta del frontend debe ser única.', ['routes']);
+    if (!uniqueBy(value.envVars, (v) => v.name))
+      issue('Las variables de entorno deben ser únicas.', ['envVars']);
+    value.tests.forEach((test, i) => {
+      if (!modules.has(test.moduleLocalId))
+        issue('La prueba referencia un módulo inexistente.', ['tests', i]);
+    });
+  });
+export type ImplementationPlanContent = z.output<typeof implementationPlanContentSchema>;
+
 // ---- Shared envelope -------------------------------------------------------
 export const STRUCTURED_ANALYSIS_CONTENT_SCHEMAS = {
   NAVIGATION_TREE: navigationTreeContentSchema,
@@ -341,6 +562,7 @@ export const STRUCTURED_ANALYSIS_CONTENT_SCHEMAS = {
   UI_BLUEPRINT: uiBlueprintContentSchema,
   GENERATION_PLAN: generationPlanContentSchema,
   CONCEPTUAL_DOMAIN_MODEL: conceptualDomainModelContentSchema,
+  IMPLEMENTATION_PLAN: implementationPlanContentSchema,
 } as const;
 
 const structuredAnalysisContentSchema = z.union([
@@ -350,6 +572,7 @@ const structuredAnalysisContentSchema = z.union([
   uiBlueprintContentSchema,
   generationPlanContentSchema,
   conceptualDomainModelContentSchema,
+  implementationPlanContentSchema,
 ]);
 
 export const structuredAnalysisInputSchema = z

@@ -6,6 +6,7 @@ import type {
   ConceptualDomainModelContent,
   DiagramResponse,
   GenerationPlanContent,
+  ImplementationPlanContent,
   NavigationTreeContent,
   SoftwareArchitectureContent,
   StructuredAnalysisKind,
@@ -32,6 +33,11 @@ import {
   ConceptualDomainModelManualForm,
   GenerationPlanManualForm,
 } from './construction-manual-forms';
+import { ImplementationPlanManualForm } from './implementation-plan-manual-form';
+import {
+  ImplementationPlanArtifacts,
+  ImplementationPlanDetail,
+} from './implementation-plan-detail';
 import { DiagramViewer } from './diagram-viewer';
 import {
   AI_UNAVAILABLE_HINT,
@@ -57,6 +63,7 @@ const MANUAL_FORMS: Record<
   UI_BLUEPRINT: UiBlueprintManualForm,
   GENERATION_PLAN: GenerationPlanManualForm,
   CONCEPTUAL_DOMAIN_MODEL: ConceptualDomainModelManualForm,
+  IMPLEMENTATION_PLAN: ImplementationPlanManualForm,
 };
 
 type SourceType =
@@ -92,6 +99,8 @@ const ELIGIBLE_SOURCES: Record<StructuredAnalysisKind, SourceType[]> = {
     'UI_BLUEPRINT',
   ],
   CONCEPTUAL_DOMAIN_MODEL: ['GENERATION_PLAN', 'REQUIREMENT', 'USE_CASE', 'DATA_MODEL'],
+  // Sources come from the chosen Design Baseline, not from this picker.
+  IMPLEMENTATION_PLAN: [],
 };
 
 const SOURCE_LABELS: Record<SourceType, string> = {
@@ -413,6 +422,8 @@ function renderContentDetail(kind: StructuredAnalysisKind, content: unknown) {
         </div>
       );
     }
+    case 'IMPLEMENTATION_PLAN':
+      return <ImplementationPlanDetail content={content as ImplementationPlanContent} />;
     case 'CONCEPTUAL_DOMAIN_MODEL': {
       const { entities, relationships } = content as ConceptualDomainModelContent;
       const names = new Map(entities.map((entity) => [entity.localId, entity.name]));
@@ -502,6 +513,16 @@ export function StructuredKindPage({
   const [generating, setGenerating] = useState(false);
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const ManualForm = MANUAL_FORMS[kind];
+  // An Implementation Plan starts from an approved Design Baseline (the
+  // backend resolves its frozen versions as sources), not a free selection.
+  const usesBaseline = kind === 'IMPLEMENTATION_PLAN';
+  const baselines = useQuery({
+    queryKey: ['design-baselines', projectId],
+    queryFn: () => api.designBaselines.list(projectId),
+    enabled: usesBaseline,
+  });
+  const [baselineId, setBaselineId] = useState<string | null>(null);
+  const chosenBaselineId = baselineId ?? baselines.data?.items[0]?.id ?? null;
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['structured-analysis', kind, projectId] });
@@ -518,6 +539,20 @@ export function StructuredKindPage({
   }
 
   async function generate() {
+    if (usesBaseline) {
+      if (!chosenBaselineId) return;
+      setGenerating(true);
+      try {
+        setGeneration(
+          await api.structuredAnalysis.generateImplementationPlan(projectId, chosenBaselineId),
+        );
+      } catch (err) {
+        toast.error(err instanceof ApiError ? err.message : 'No se pudo generar la propuesta.');
+      } finally {
+        setGenerating(false);
+      }
+      return;
+    }
     if (!selectedIds.length) {
       toast.info('Seleccione al menos un elemento aprobado como base para la generación.');
       return;
@@ -597,7 +632,34 @@ export function StructuredKindPage({
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {loadingSources ? (
+          {usesBaseline ? (
+            baselines.isLoading ? (
+              <p className="text-sm text-muted-foreground">Cargando diseños aprobados…</p>
+            ) : baselines.data?.items.length ? (
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-xs text-muted-foreground">
+                  La IA propone el plan a partir de las versiones congeladas en el diseño aprobado:
+                </span>
+                <select
+                  className="rounded-md border border-input bg-background px-2 py-1.5"
+                  value={chosenBaselineId ?? ''}
+                  onChange={(e) => setBaselineId(e.target.value)}
+                >
+                  {baselines.data.items.map((baseline, index) => (
+                    <option key={baseline.id} value={baseline.id}>
+                      {baseline.label}
+                      {index === 0 ? ' (vigente)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Primero apruebe y congele el diseño en «Aprobación de diseño»; el plan de
+                implementación siempre parte de un diseño aprobado.
+              </p>
+            )
+          ) : loadingSources ? (
             <p className="text-sm text-muted-foreground">Cargando información aprobada…</p>
           ) : sourceGroups.length === 0 ? (
             <p className="text-sm text-muted-foreground">
@@ -660,7 +722,9 @@ export function StructuredKindPage({
               type="button"
               variant="outline"
               size="sm"
-              disabled={generating || sourceGroups.length === 0}
+              disabled={
+                generating || (usesBaseline ? !chosenBaselineId : sourceGroups.length === 0)
+              }
               onClick={generate}
             >
               <Sparkles className="size-4" aria-hidden="true" />
@@ -811,6 +875,9 @@ export function StructuredKindPage({
                       </Button>
                     ) : null}
                     {expandedId === item.id ? renderContentDetail(kind, item.content) : null}
+                    {expandedId === item.id && kind === 'IMPLEMENTATION_PLAN' ? (
+                      <ImplementationPlanArtifacts projectId={projectId} planId={item.id} />
+                    ) : null}
                     {diagrams[item.id] ? (
                       <DiagramViewer
                         svg={diagrams[item.id]!.svg}

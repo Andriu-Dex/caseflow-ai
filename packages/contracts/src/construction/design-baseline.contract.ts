@@ -63,3 +63,18 @@ export type DesignBaselineResponse = z.infer<typeof designBaselineResponseSchema
 export const designBaselineListResponseSchema = z.object({
   items: z.array(designBaselineResponseSchema),
 });
+
+// An Implementation Plan is generated from one approved Design Baseline
+// (DEC-095): its frozen versions are the only sources.
+export const generateImplementationPlanRequestSchema = z
+  .object({ designBaselineId: z.uuid() })
+  .strict();
+
+// Deterministic, read-only preview of what the plan will generate.
+export const implementationPlanArtifactsResponseSchema = z.object({
+  databaseSchema: z.string(),
+  openApi: z.record(z.string(), z.unknown()),
+});
+export type ImplementationPlanArtifactsResponse = z.infer<
+  typeof implementationPlanArtifactsResponseSchema
+>;

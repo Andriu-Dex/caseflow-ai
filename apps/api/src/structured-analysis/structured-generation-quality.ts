@@ -1,6 +1,7 @@
 import {
   conceptualDomainModelContentSchema,
   generationPlanContentSchema,
+  implementationPlanContentSchema,
   navigationTreeContentSchema,
   softwareArchitectureContentSchema,
   systemArchitectureContentSchema,
@@ -120,6 +121,19 @@ export function evaluateStructuredGeneration(
     const parsed = conceptualDomainModelContentSchema.parse(content);
     for (const entity of parsed.entities)
       checkReferences(`La entidad «${entity.name}»`, entity.relatedSourceCodes ?? []);
+  } else if (kind === 'IMPLEMENTATION_PLAN') {
+    const parsed = implementationPlanContentSchema.parse(content);
+    for (const module of parsed.modules)
+      checkReferences(`El módulo ${module.name}`, module.relatedSourceCodes ?? []);
+    for (const entity of parsed.entities)
+      checkReferences(`La entidad ${entity.name}`, entity.relatedSourceCodes ?? []);
+    for (const endpoint of parsed.customEndpoints)
+      checkReferences(
+        `El endpoint ${endpoint.method} ${endpoint.path}`,
+        endpoint.relatedSourceCodes ?? [],
+      );
+    for (const route of parsed.routes)
+      checkReferences(`La ruta ${route.path}`, route.relatedSourceCodes ?? []);
   } else if (kind === 'UI_BLUEPRINT') {
     const parsed = uiBlueprintContentSchema.parse(content);
     const navigationNodes = sources

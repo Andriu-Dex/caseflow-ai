@@ -18,6 +18,7 @@ export const TRACEABILITY_ARTIFACT_TYPES = [
   'MOCKUP',
   'GENERATION_PLAN',
   'CONCEPTUAL_DOMAIN_MODEL',
+  'IMPLEMENTATION_PLAN',
 ] as const;
 export type TraceabilityArtifactType = (typeof TRACEABILITY_ARTIFACT_TYPES)[number];
 

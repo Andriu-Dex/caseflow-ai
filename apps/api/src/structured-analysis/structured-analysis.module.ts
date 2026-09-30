@@ -11,6 +11,7 @@ import { StructuredAnalysisService } from './structured-analysis.service';
 import {
   ConceptualDomainModelController,
   GenerationPlanController,
+  ImplementationPlanController,
 } from './construction-kinds.controller';
 
 @Module({
@@ -24,6 +25,7 @@ import {
     UiBlueprintController,
     GenerationPlanController,
     ConceptualDomainModelController,
+    ImplementationPlanController,
   ],
   providers: [StructuredAnalysisService],
   exports: [StructuredAnalysisService],
