@@ -157,4 +157,37 @@ describe('structured generation provenance checks', () => {
     );
     expect(findings.map((f) => f.code)).toEqual(['MISSING_PROVENANCE', 'UNKNOWN_SOURCE']);
   });
+
+  it('checks the provenance of implementation plan modules, entities, endpoints and routes', () => {
+    const findings = evaluateStructuredGeneration(
+      'IMPLEMENTATION_PLAN',
+      {
+        designBaselineId: '11111111-1111-4111-8111-111111111111',
+        authentication: { required: false },
+        modules: [
+          {
+            localId: 'sales',
+            name: 'Sales',
+            description: 'Pedidos',
+            relatedSourceCodes: ['PG-001'],
+          },
+        ],
+        entities: [
+          {
+            localId: 'order',
+            name: 'Order',
+            moduleLocalId: 'sales',
+            fields: [{ name: 'total', type: 'DECIMAL' }],
+            relatedSourceCodes: ['MC-999'],
+          },
+        ],
+        routes: [{ path: '/orders', screenName: 'Pedidos', moduleLocalId: 'sales', kind: 'LIST' }],
+      },
+      [{ code: 'PG-001', type: 'GENERATION_PLAN' }],
+    );
+    expect(findings.map((f) => `${f.severity}:${f.code}`)).toEqual([
+      'ERROR:UNKNOWN_SOURCE',
+      'WARNING:MISSING_PROVENANCE',
+    ]);
+  });
 });

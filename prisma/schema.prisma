@@ -90,6 +90,7 @@ enum StructuredAnalysisKind {
   UI_BLUEPRINT
   GENERATION_PLAN
   CONCEPTUAL_DOMAIN_MODEL
+  IMPLEMENTATION_PLAN
 
   @@map("structured_analysis_kind")
 }

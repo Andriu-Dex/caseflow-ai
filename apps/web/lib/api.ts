@@ -2,6 +2,7 @@ import type {
   CreateDesignBaselineRequest,
   DataModelInput,
   DesignBaselineResponse,
+  ImplementationPlanArtifactsResponse,
   DataModelResponse,
   DiagramResponse,
   FirstDeliverableExport,
@@ -454,6 +455,7 @@ export const api = {
         UI_BLUEPRINT: 'ui-blueprint',
         GENERATION_PLAN: 'generation-plan',
         CONCEPTUAL_DOMAIN_MODEL: 'conceptual-domain-model',
+        IMPLEMENTATION_PLAN: 'implementation-plan',
       })[kind],
     list: (projectId: string, kind: StructuredAnalysisKind) =>
       get<{ items: StructuredAnalysisResponse[] }>(
@@ -485,6 +487,15 @@ export const api = {
       post<GenerationResult>(
         `/projects/${projectId}/${api.structuredAnalysis.basePath(kind)}/generate`,
         { sourceVersionIds },
+      ),
+    // An Implementation Plan is generated from an approved Design Baseline.
+    generateImplementationPlan: (projectId: string, designBaselineId: string) =>
+      post<GenerationResult>(`/projects/${projectId}/implementation-plan/generate`, {
+        designBaselineId,
+      }),
+    implementationPlanArtifacts: (projectId: string, id: string) =>
+      get<ImplementationPlanArtifactsResponse>(
+        `/projects/${projectId}/implementation-plan/${id}/artifacts`,
       ),
     accept: (
       projectId: string,

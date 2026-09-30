@@ -26,6 +26,7 @@ const ARCHIVABLE_TYPES = new Set([
   'MOCKUP',
   'GENERATION_PLAN',
   'CONCEPTUAL_DOMAIN_MODEL',
+  'IMPLEMENTATION_PLAN',
 ]);
 
 export interface CreateArtifactInput {
@@ -67,6 +68,7 @@ export class ArtifactsService {
         'MOCKUP',
         'GENERATION_PLAN',
         'CONCEPTUAL_DOMAIN_MODEL',
+        'IMPLEMENTATION_PLAN',
       ].includes(input.type)
     ) {
       throw new UnprocessableEntityException(

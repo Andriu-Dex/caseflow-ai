@@ -1,47 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
-import type { StructuredAnalysisKind } from '@caseflow-ai/contracts';
 import {
   createTestContext,
   createUnauthorizedUser,
   createWorkspaceWithOwner,
   type TestContext,
 } from './support/test-app';
-
-const CONTENT: Record<StructuredAnalysisKind, Record<string, unknown>> = {
-  GENERATION_PLAN: {
-    summary: 'Sistema de gestión de pedidos.',
-    modules: [{ localId: 'orders', name: 'Pedidos', purpose: 'Registrar y seguir pedidos.' }],
-    authentication: { required: true, strategy: 'Correo y contraseña', roles: ['Vendedor'] },
-  },
-  CONCEPTUAL_DOMAIN_MODEL: {
-    entities: [
-      {
-        localId: 'order',
-        name: 'Pedido',
-        description: 'Solicitud de compra de un cliente.',
-        attributes: [{ name: 'fecha' }, { name: 'total' }],
-      },
-    ],
-  },
-  NAVIGATION_TREE: {
-    nodes: [{ localId: 'home', label: 'Inicio', viewName: 'Inicio', kind: 'HOME' }],
-  },
-  UI_BLUEPRINT: {
-    screens: [{ localId: 'home', name: 'Inicio', purpose: 'Ver el panel principal' }],
-  },
-  SOFTWARE_ARCHITECTURE: {
-    style: 'Monolito modular',
-    dependencies: [],
-    decisions: [],
-    components: [{ localId: 'api', name: 'API' }],
-  },
-  SYSTEM_ARCHITECTURE: {
-    boundary: 'Tienda',
-    links: [],
-    nodes: [{ localId: 'api', name: 'API', kind: 'RUNTIME' }],
-  },
-};
+import { CONTENT, approved, freezableDesign } from './support/construction-fixtures';
 
 describe('Construction Design Gate integration', () => {
   let ctx: TestContext;
@@ -49,36 +14,6 @@ describe('Construction Design Gate integration', () => {
   let otherProjectId: string;
   const http = () => request(ctx.app.getHttpServer());
   const auth = { Authorization: '' };
-
-  async function approved(pid: string, kind: StructuredAnalysisKind) {
-    const created = await ctx.structuredAnalysis.create(pid, kind, `${kind} demo`, CONTENT[kind]);
-    await ctx.structuredAnalysis.transition(pid, kind, created.id, created.version.id, 'IN_REVIEW');
-    await ctx.structuredAnalysis.transition(pid, kind, created.id, created.version.id, 'APPROVED');
-    return created;
-  }
-
-  async function approvedMockup(pid: string, uiBlueprintVersionId: string) {
-    const job = await ctx.mockups.create(pid, uiBlueprintVersionId);
-    await ctx.mockups.runJob(job.id);
-    const mockup = await ctx.mockups.get(
-      pid,
-      (await ctx.mockups.getJob(pid, job.id)).resultArtifactId!,
-    );
-    await ctx.mockups.transition(pid, mockup.id, mockup.version.id, 'IN_REVIEW');
-    await ctx.mockups.transition(pid, mockup.id, mockup.version.id, 'APPROVED');
-    return mockup;
-  }
-
-  async function freezableDesign(pid: string) {
-    const ui = await approved(pid, 'UI_BLUEPRINT');
-    return {
-      GENERATION_PLAN: (await approved(pid, 'GENERATION_PLAN')).version.id,
-      CONCEPTUAL_DOMAIN_MODEL: (await approved(pid, 'CONCEPTUAL_DOMAIN_MODEL')).version.id,
-      NAVIGATION_TREE: (await approved(pid, 'NAVIGATION_TREE')).version.id,
-      UI_BLUEPRINT: ui.version.id,
-      MOCKUP: (await approvedMockup(pid, ui.version.id)).version.id,
-    };
-  }
 
   beforeAll(async () => {
     ctx = await createTestContext();
@@ -142,7 +77,7 @@ describe('Construction Design Gate integration', () => {
   });
 
   it('freezes exactly the approved design and audits the Design Gate approval', async () => {
-    const versions = await freezableDesign(projectId);
+    const versions = await freezableDesign(ctx, projectId);
     const res = await http()
       .post(`/projects/${projectId}/design-baselines`)
       .set(auth)
@@ -169,7 +104,7 @@ describe('Construction Design Gate integration', () => {
   });
 
   it('refuses unapproved versions, a mockup from another blueprint and another project', async () => {
-    const versions = await freezableDesign(projectId);
+    const versions = await freezableDesign(ctx, projectId);
     const post = (overrides: Record<string, string>) =>
       http()
         .post(`/projects/${projectId}/design-baselines`)
@@ -180,17 +115,17 @@ describe('Construction Design Gate integration', () => {
       projectId,
       'GENERATION_PLAN',
       'Borrador',
-      CONTENT.GENERATION_PLAN,
+      CONTENT.GENERATION_PLAN!,
     );
     const unapproved = await post({ GENERATION_PLAN: draft.version.id }).expect(422);
     expect(unapproved.body.message).toContain('Apruebe el plan de generación');
 
-    const otherUi = await approved(projectId, 'UI_BLUEPRINT');
+    const otherUi = await approved(ctx, projectId, 'UI_BLUEPRINT');
     const mismatch = await post({ UI_BLUEPRINT: otherUi.version.id }).expect(422);
     expect(mismatch.body.message).toContain('boceto');
 
     // Knowing the id of another project's approved plan is not enough.
-    const foreignPlan = await approved(otherProjectId, 'GENERATION_PLAN');
+    const foreignPlan = await approved(ctx, otherProjectId, 'GENERATION_PLAN');
     await post({ GENERATION_PLAN: foreignPlan.version.id }).expect(422);
 
     // A role must point at a version of its own type.
@@ -198,7 +133,7 @@ describe('Construction Design Gate integration', () => {
   });
 
   it('enforces baseline integrity and immutability in the database', async () => {
-    const versions = await freezableDesign(projectId);
+    const versions = await freezableDesign(ctx, projectId);
     const created = await http()
       .post(`/projects/${projectId}/design-baselines`)
       .set(auth)
@@ -217,7 +152,7 @@ describe('Construction Design Gate integration', () => {
       projectId,
       'SOFTWARE_ARCHITECTURE',
       'Borrador',
-      CONTENT.SOFTWARE_ARCHITECTURE,
+      CONTENT.SOFTWARE_ARCHITECTURE!,
     );
     await expect(
       ctx.sql.query(
