@@ -4,10 +4,13 @@ import { FakeDiagramProvider } from '@caseflow-ai/integrations';
 import { PrismaAIRunRecorder } from '../../src/ai/ai-run-recorder';
 import { DataModelsService } from '../../src/data-models/data-models.service';
 import { DiagramEngine } from '../../src/data-models/diagram-engine';
+import type { KnowledgeBaseService } from '../../src/knowledge-base/knowledge-base.service';
 import { RequirementsService } from '../../src/requirements/requirements.service';
 import { StructuredAnalysisService } from '../../src/structured-analysis/structured-analysis.service';
 import { UseCasesService } from '../../src/use-cases/use-cases.service';
 import { createTestContext, createWorkspace, type TestContext } from './support/test-app';
+
+const disabledKb: Pick<KnowledgeBaseService, 'retrieve'> = { retrieve: async () => [] };
 
 const FAKE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><g></g></svg>';
 
@@ -80,6 +83,7 @@ async function approveRequirement(
         },
       ],
     }),
+    disabledKb as KnowledgeBaseService,
   );
   const generation = await service.generate(projectId, contextVersionId);
   const accepted = (await service.accept(projectId, generation.id, [generation.candidates[0]!.id]))
@@ -266,7 +270,7 @@ describe('Readiness integration', () => {
 
     const structuredAnalysisService = new StructuredAnalysisService(
       ctx.prisma,
-      fakeAi(ctx, 'navigation.generate', 3, {
+      fakeAi(ctx, 'navigation.generate', 4, {
         nodes: [{ localId: 'home', label: 'Home', viewName: 'Home', kind: 'HOME' as const }],
       }),
       new DiagramEngine(),
@@ -300,7 +304,7 @@ describe('Readiness integration', () => {
 
     const softwareArchitectureService = new StructuredAnalysisService(
       ctx.prisma,
-      fakeAi(ctx, 'software-architecture.generate', 1, {
+      fakeAi(ctx, 'software-architecture.generate', 2, {
         style: 'Monolito modular',
         components: [{ localId: 'api', name: 'API' }],
         dependencies: [],
@@ -341,7 +345,7 @@ describe('Readiness integration', () => {
 
     const systemArchitectureService = new StructuredAnalysisService(
       ctx.prisma,
-      fakeAi(ctx, 'system-architecture.generate', 1, {
+      fakeAi(ctx, 'system-architecture.generate', 2, {
         boundary: 'Sistema',
         nodes: [{ localId: 'server', name: 'Servidor', kind: 'RUNTIME' as const }],
         links: [],
@@ -379,7 +383,7 @@ describe('Readiness integration', () => {
 
     const uiService = new StructuredAnalysisService(
       ctx.prisma,
-      fakeAi(ctx, 'ui-blueprint.generate', 1, {
+      fakeAi(ctx, 'ui-blueprint.generate', 2, {
         screens: [{ localId: 'home', name: 'Inicio', purpose: 'Ver panel' }],
       }),
       new DiagramEngine(),

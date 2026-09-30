@@ -11,6 +11,7 @@ import {
 } from '@caseflow-ai/integrations';
 import { InternalWireframeMockupProvider, MockupRenderer } from './mockup-renderer';
 import { MockupsController } from './mockups.controller';
+import { InternalMockupJobsController } from './internal-mockup-jobs.controller';
 import { MockupsService } from './mockups.service';
 import { StitchMockupProvider } from './stitch-mockup-provider';
 import { MOCKUP_PROVIDER } from './mockup-provider.token';
@@ -20,7 +21,7 @@ import { STORAGE_PROVIDER } from './storage-provider.token';
 const logger = new Logger('MockupsModule');
 
 @Module({
-  controllers: [MockupsController],
+  controllers: [MockupsController, InternalMockupJobsController],
   providers: [
     MockupsService,
     MockupRenderer,

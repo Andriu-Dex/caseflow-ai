@@ -16,10 +16,16 @@ import { TraceabilityModule } from './traceability/traceability.module';
 import { ReadinessModule } from './readiness/readiness.module';
 import { ExportModule } from './export/export.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
+import { IdentityModule } from './identity/identity.module';
+import { KnowledgeBaseModule } from './knowledge-base/knowledge-base.module';
+import { ImpactAnalysisModule } from './impact-analysis/impact-analysis.module';
+import { ConsistencyEngineModule } from './consistency-engine/consistency-engine.module';
+import { BaselinesModule } from './baselines/baselines.module';
 
 @Module({
   imports: [
     DatabaseModule.forRoot(),
+    IdentityModule,
     AIModule,
     HealthModule,
     ProjectsModule,
@@ -36,6 +42,10 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
     ReadinessModule,
     ExportModule,
     WorkspacesModule,
+    KnowledgeBaseModule,
+    ImpactAnalysisModule,
+    ConsistencyEngineModule,
+    BaselinesModule,
   ],
 })
 export class AppModule {}

@@ -1,3 +1,7 @@
+import { UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../identity/jwt-auth.guard';
+import { ProjectMembershipGuard } from '../identity/project-membership.guard';
+
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
@@ -16,6 +20,7 @@ import { ApiErrorResponse, ApiUuidParam, ApiZodBody, ApiZodResponse } from '../o
 import { ProjectContextService } from './project-context.service';
 
 @ApiTags('project-context')
+@UseGuards(JwtAuthGuard, ProjectMembershipGuard)
 @Controller('projects/:projectId/context')
 export class ProjectContextController {
   constructor(private readonly projectContext: ProjectContextService) {}

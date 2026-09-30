@@ -53,6 +53,7 @@ vi.mock('../../lib/api', () => ({
     },
   },
   ApiError: class ApiError extends Error {},
+  restoreSession: vi.fn(),
 }));
 
 beforeEach(() => {

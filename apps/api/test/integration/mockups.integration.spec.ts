@@ -121,6 +121,38 @@ describe('Mockups integration', () => {
     expect(approved.status).toBe('APPROVED');
   });
 
+  it('refines only Stitch mockups in the same project and never stores a wireframe as the refinement', async () => {
+    const mockup = await createAndGet(projectId, approvedBlueprintVersionId);
+    await expect(ctx.mockups.refine(projectId, mockup.id, 'Usa tonos verdes')).rejects.toThrow(
+      'Stitch',
+    );
+
+    const workspace = await createWorkspace(ctx.prisma, 'Refine Mockups');
+    const otherProjectId = (await ctx.projects.create({ workspaceId: workspace.id, name: 'Other' }))
+      .id;
+    await expect(ctx.mockups.refine(otherProjectId, mockup.id, 'Usa tonos verdes')).rejects.toThrow(
+      'no encontrado',
+    );
+
+    // Mockup history is immutable, so a Stitch source version can't be faked here; a
+    // refinement job is queued directly instead. The test app's provider only produces
+    // wireframes, which must fail the job rather than become a "refined" version.
+    const job = await ctx.prisma.mockupGenerationJob.create({
+      data: {
+        projectId,
+        uiBlueprintVersionId: approvedBlueprintVersionId,
+        existingMockupId: mockup.id,
+        refinementPrompt: 'Usa tonos verdes',
+      },
+    });
+    await ctx.mockups.runJob(job.id);
+    expect(await ctx.mockups.getJob(projectId, job.id)).toMatchObject({
+      status: 'FAILED',
+      errorMessage: 'Stitch no está disponible; no se pudo aplicar la edición del boceto.',
+    });
+    expect((await ctx.mockups.get(projectId, mockup.id)).version.versionNumber).toBe(1);
+  });
+
   it('never exposes a mockup or its preview through another project', async () => {
     const mockup = await createAndGet(projectId, approvedBlueprintVersionId);
     const workspace = await createWorkspace(ctx.prisma, 'Isolation Mockups');

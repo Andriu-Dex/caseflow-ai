@@ -1,5 +1,6 @@
 'use client';
 
+import { GenerationOverlay } from '../../components/generation-overlay';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { DataModelResponse, DiagramResponse } from '@caseflow-ai/contracts';
 import { Eye, EyeOff, Pencil, Sparkles } from 'lucide-react';
@@ -132,6 +133,7 @@ function DataModelContent({ projectId }: { projectId: string }) {
             <Sparkles className="size-4" aria-hidden="true" />
             {generating ? 'Generando…' : 'Generar con IA'}
           </Button>
+          <GenerationOverlay open={generating} />
           <Button
             type="button"
             variant="outline"

@@ -1,7 +1,16 @@
-import type { INestApplication } from '@nestjs/common';
+import { IdentityModule } from '../../../src/identity/identity.module';
+import { JwtAuthGuard } from '../../../src/identity/jwt-auth.guard';
+import { JwtService } from '@nestjs/jwt';
+import {
+  UnauthorizedException,
+  type ExecutionContext,
+  type INestApplication,
+} from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FakeDiagramProvider, FakeStorageProvider } from '@caseflow-ai/integrations';
 import { Client } from 'pg';
+import { randomUUID } from 'crypto';
+import cookieParser from 'cookie-parser';
 import { ArtifactsModule } from '../../../src/artifacts/artifacts.module';
 import { ArtifactsService } from '../../../src/artifacts/artifacts.service';
 import { DatabaseModule } from '../../../src/database/database.module';
@@ -19,6 +28,7 @@ import { DataModelsService } from '../../../src/data-models/data-models.service'
 import { DIAGRAM_PROVIDER } from '../../../src/data-models/diagram-provider.token';
 import { SourcesModule } from '../../../src/sources/sources.module';
 import { SourcesService } from '../../../src/sources/sources.service';
+import { SOURCE_QUEUE } from '../../../src/sources/source-queue.token';
 import { STORAGE_PROVIDER } from '../../../src/sources/storage-provider.token';
 import { StructuredAnalysisModule } from '../../../src/structured-analysis/structured-analysis.module';
 import { StructuredAnalysisService } from '../../../src/structured-analysis/structured-analysis.service';
@@ -32,7 +42,12 @@ import { ReadinessModule } from '../../../src/readiness/readiness.module';
 import { ReadinessService } from '../../../src/readiness/readiness.service';
 import { ExportModule } from '../../../src/export/export.module';
 import { ExportService } from '../../../src/export/export.service';
+import { WorkspacesModule } from '../../../src/workspaces/workspaces.module';
+import { ImpactAnalysisModule } from '../../../src/impact-analysis/impact-analysis.module';
+import { ConsistencyEngineModule } from '../../../src/consistency-engine/consistency-engine.module';
+import { BaselinesModule } from '../../../src/baselines/baselines.module';
 import { getTestConnectionString, resetTestData } from './test-database';
+import type { CreateProjectRequest, ProjectResponse } from '@caseflow-ai/contracts';
 
 // A minimal, always-valid graphical SVG: ordinary integration tests (Postgres
 // only) must not depend on a live renderer (AGENTS.md §23/47). Real
@@ -44,7 +59,10 @@ const FAKE_DIAGRAM_SVG =
 export interface TestContext {
   app: INestApplication;
   prisma: PrismaService;
-  projects: ProjectsService;
+  projects: Omit<ProjectsService, 'create' | 'list'> & {
+    create(input: CreateProjectRequest): Promise<ProjectResponse>;
+    list(workspaceId: string, limit: number, offset: number): ReturnType<ProjectsService['list']>;
+  };
   artifacts: ArtifactsService;
   projectContext: ProjectContextService;
   requirements: RequirementsService;
@@ -59,6 +77,9 @@ export interface TestContext {
   export: ExportService;
   // Raw connection for asserting database-level rules, bypassing the services.
   sql: Client;
+  token: string;
+  userId: string;
+  jwtService: JwtService;
   close: () => Promise<void>;
 }
 
@@ -70,6 +91,11 @@ export async function createTestContext(): Promise<TestContext> {
   await sql.connect();
   await resetTestData(sql);
 
+  const authState: {
+    jwtService?: JwtService;
+    prisma?: PrismaService;
+    defaultUserId?: string;
+  } = {};
   const moduleRef = await Test.createTestingModule({
     imports: [
       DatabaseModule.forRoot({ connectionString }),
@@ -85,21 +111,103 @@ export async function createTestContext(): Promise<TestContext> {
       StalenessModule,
       TraceabilityModule,
       ReadinessModule,
+      IdentityModule,
       ExportModule,
+      WorkspacesModule,
+      ImpactAnalysisModule,
+      ConsistencyEngineModule,
+      BaselinesModule,
     ],
   })
     .overrideProvider(DIAGRAM_PROVIDER)
     .useValue(new FakeDiagramProvider({ svg: FAKE_DIAGRAM_SVG }))
     .overrideProvider(STORAGE_PROVIDER)
     .useValue(new FakeStorageProvider())
+    .overrideProvider(SOURCE_QUEUE)
+    .useValue({ add: async () => undefined, close: async () => undefined })
+    .overrideGuard(JwtAuthGuard)
+    .useValue({
+      canActivate: async (context: ExecutionContext) => {
+        const request = context.switchToHttp().getRequest();
+        const authorization = request.headers.authorization as string | undefined;
+        let userId = authState.defaultUserId;
+        if (authorization?.startsWith('Bearer ')) {
+          try {
+            const payload = await authState.jwtService!.verifyAsync<{ sub: string }>(
+              authorization.slice('Bearer '.length),
+            );
+            userId = payload.sub;
+          } catch {
+            throw new UnauthorizedException();
+          }
+        }
+        const user = userId
+          ? await authState.prisma!.user.findUnique({ where: { id: userId } })
+          : null;
+        if (!user || user.archivedAt) throw new UnauthorizedException();
+        request.user = user;
+        return true;
+      },
+    })
     .compile();
+
   const app = moduleRef.createNestApplication();
+  app.use(cookieParser());
   await app.init();
+  const jwtService = app.get(JwtService);
+  const prisma = app.get(PrismaService);
+  authState.jwtService = jwtService;
+  authState.prisma = prisma;
+  const user = await prisma.user.create({
+    data: {
+      email: `test-${randomUUID()}@example.com`,
+      passwordHash: 'dummy',
+      displayName: 'Test User',
+    },
+  });
+  const token = jwtService.sign({ sub: user.id });
+  authState.defaultUserId = user.id;
 
   return {
     app,
     prisma: app.get(PrismaService),
-    projects: app.get(ProjectsService),
+    projects: new Proxy(app.get(ProjectsService), {
+      get(target, property, receiver) {
+        if (property === 'create') {
+          return async (input: CreateProjectRequest): Promise<ProjectResponse> => {
+            const workspace = await prisma.workspace.findUnique({
+              where: { id: input.workspaceId },
+              select: { id: true },
+            });
+            if (!workspace) {
+              const create = Reflect.get(target, 'create') as ProjectsService['create'];
+              return create.call(target, input, user.id);
+            }
+            await prisma.workspaceMembership.upsert({
+              where: { workspaceId_userId: { workspaceId: input.workspaceId, userId: user.id } },
+              create: { workspaceId: input.workspaceId, userId: user.id, role: 'OWNER' },
+              update: {},
+            });
+            const create = Reflect.get(target, 'create') as (
+              request: CreateProjectRequest,
+              ownerId: string,
+            ) => Promise<ProjectResponse>;
+            return create.call(target, input, user.id);
+          };
+        }
+        if (property === 'list') {
+          return (workspaceId: string, limit: number, offset: number) =>
+            (Reflect.get(target, 'list') as ProjectsService['list']).call(
+              target,
+              workspaceId,
+              limit,
+              offset,
+              user.id,
+            );
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    }),
     artifacts: app.get(ArtifactsService),
     projectContext: app.get(ProjectContextService),
     requirements: app.get(RequirementsService),
@@ -113,6 +221,9 @@ export async function createTestContext(): Promise<TestContext> {
     readiness: app.get(ReadinessService),
     export: app.get(ExportService),
     sql,
+    token,
+    userId: user.id,
+    jwtService,
     close: async () => {
       await app.close();
       await sql.end();
@@ -125,4 +236,34 @@ let workspaceCounter = 0;
 export async function createWorkspace(prisma: PrismaService, name = 'Test Workspace') {
   workspaceCounter += 1;
   return prisma.workspace.create({ data: { slug: `test-workspace-${workspaceCounter}`, name } });
+}
+
+export async function createUnauthorizedUser(
+  ctx: TestContext,
+): Promise<{ id: string; token: string }> {
+  const user = await ctx.prisma.user.create({
+    data: {
+      email: `intruder-${randomUUID()}@example.com`,
+      passwordHash: 'dummy',
+      displayName: 'Intruder',
+    },
+  });
+  return { id: user.id, token: ctx.jwtService.sign({ sub: user.id }) };
+}
+
+export async function createWorkspaceWithOwner(ctx: TestContext, name = 'Test Workspace') {
+  const workspace = await createWorkspace(ctx.prisma, name);
+  await ctx.prisma.workspaceMembership.create({
+    data: { workspaceId: workspace.id, userId: ctx.userId, role: 'OWNER' },
+  });
+  return workspace;
+}
+
+export async function createProjectWithOwner(
+  ctx: TestContext,
+  workspaceId: string,
+  name = 'Test Project',
+) {
+  const project = await ctx.projects.create({ workspaceId, name });
+  return project;
 }

@@ -1,8 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { KnowledgeBaseService } from '../knowledge-base/knowledge-base.service';
 import { AIError } from '@caseflow-ai/ai';
 import type { AIOrchestrator } from '@caseflow-ai/ai';
 import type { PrismaService } from '../database/prisma.service';
 import { RequirementsService } from './requirements.service';
+
+const fakeKb = (): Pick<KnowledgeBaseService, 'retrieve'> => ({
+  retrieve: vi.fn().mockResolvedValue([]),
+});
+
 const version = {
   id: 'v',
   versionNumber: 1,
@@ -37,7 +43,11 @@ describe('RequirementsService', () => {
         findFirst: vi.fn().mockResolvedValueOnce(artifact).mockResolvedValueOnce(null),
       },
     };
-    const s = new RequirementsService(prisma as unknown as PrismaService, {} as AIOrchestrator);
+    const s = new RequirementsService(
+      prisma as unknown as PrismaService,
+      {} as AIOrchestrator,
+      fakeKb() as KnowledgeBaseService,
+    );
     expect((await s.list('p')).items).toHaveLength(1);
     expect((await s.get('p', 'a')).code).toBe('RF-001');
     await expect(s.get('other', 'a')).rejects.toThrow('no encontrado');
@@ -49,7 +59,11 @@ describe('RequirementsService', () => {
         update: vi.fn().mockResolvedValue({}),
       },
     };
-    const s = new RequirementsService(prisma as unknown as PrismaService, {} as AIOrchestrator);
+    const s = new RequirementsService(
+      prisma as unknown as PrismaService,
+      {} as AIOrchestrator,
+      fakeKb() as KnowledgeBaseService,
+    );
     await s.transition('p', 'a', 'v', 'IN_REVIEW');
     expect(prisma.artifactVersion.update).toHaveBeenCalled();
     await expect(s.transition('p', 'a', 'v', 'APPROVED')).rejects.toThrow('Transición');
@@ -73,6 +87,7 @@ describe('RequirementsService', () => {
     const s = new RequirementsService(
       prisma as unknown as PrismaService,
       ai as unknown as AIOrchestrator,
+      fakeKb() as KnowledgeBaseService,
     );
     await expect(s.generate('p', 'v')).rejects.toThrow('APPROVED');
     // An APPROVED context with zero linked approved sources does not satisfy
@@ -101,6 +116,7 @@ describe('RequirementsService', () => {
     const service = new RequirementsService(
       prisma as unknown as PrismaService,
       ai as unknown as AIOrchestrator,
+      fakeKb() as KnowledgeBaseService,
     );
     await expect(service.generate('p', 'v')).rejects.toMatchObject({
       response: { code: 'AI_INVALID_OUTPUT' },

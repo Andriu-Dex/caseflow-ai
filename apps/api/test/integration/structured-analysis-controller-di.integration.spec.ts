@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
-import { createTestContext, createWorkspace, type TestContext } from './support/test-app';
+import { createTestContext, createWorkspaceWithOwner, type TestContext } from './support/test-app';
 
 // Regression test for a real DI bug: subclasses of BaseStructuredAnalysisController
 // had no explicit constructor, so tsc never emitted design:paramtypes metadata for
@@ -19,37 +19,41 @@ describe('structured-analysis controllers: real HTTP dependency injection', () =
   });
 
   it('GET /projects/:projectId/ui-blueprint does not crash with undefined service', async () => {
-    const workspace = await createWorkspace(ctx.prisma);
+    const workspace = await createWorkspaceWithOwner(ctx);
     const project = await ctx.projects.create({ workspaceId: workspace.id, name: 'Smoke' });
-    const res = await request(ctx.app.getHttpServer()).get(`/projects/${project.id}/ui-blueprint`);
+    const res = await request(ctx.app.getHttpServer())
+      .get(`/projects/${project.id}/ui-blueprint`)
+      .set('Authorization', `Bearer ${ctx.token}`);
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ items: [] });
   });
 
   it('GET /projects/:projectId/navigation does not crash with undefined service', async () => {
-    const workspace = await createWorkspace(ctx.prisma);
+    const workspace = await createWorkspaceWithOwner(ctx);
     const project = await ctx.projects.create({ workspaceId: workspace.id, name: 'Smoke2' });
-    const res = await request(ctx.app.getHttpServer()).get(`/projects/${project.id}/navigation`);
+    const res = await request(ctx.app.getHttpServer())
+      .get(`/projects/${project.id}/navigation`)
+      .set('Authorization', `Bearer ${ctx.token}`);
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ items: [] });
   });
 
   it('GET /projects/:projectId/software-architecture does not crash with undefined service', async () => {
-    const workspace = await createWorkspace(ctx.prisma);
+    const workspace = await createWorkspaceWithOwner(ctx);
     const project = await ctx.projects.create({ workspaceId: workspace.id, name: 'Smoke3' });
-    const res = await request(ctx.app.getHttpServer()).get(
-      `/projects/${project.id}/software-architecture`,
-    );
+    const res = await request(ctx.app.getHttpServer())
+      .get(`/projects/${project.id}/software-architecture`)
+      .set('Authorization', `Bearer ${ctx.token}`);
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ items: [] });
   });
 
   it('GET /projects/:projectId/system-architecture does not crash with undefined service', async () => {
-    const workspace = await createWorkspace(ctx.prisma);
+    const workspace = await createWorkspaceWithOwner(ctx);
     const project = await ctx.projects.create({ workspaceId: workspace.id, name: 'Smoke4' });
-    const res = await request(ctx.app.getHttpServer()).get(
-      `/projects/${project.id}/system-architecture`,
-    );
+    const res = await request(ctx.app.getHttpServer())
+      .get(`/projects/${project.id}/system-architecture`)
+      .set('Authorization', `Bearer ${ctx.token}`);
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ items: [] });
   });

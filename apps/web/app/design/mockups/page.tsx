@@ -1,17 +1,26 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { MockupDeviceType, MockupJobResponse, MockupResponse } from '@caseflow-ai/contracts';
-import { useEffect, useRef, useState } from 'react';
+import {
+  MOCKUP_REFINEMENT_PROMPT_MAX_LENGTH,
+  type MockupDeviceType,
+  type MockupJobResponse,
+  type MockupPreviewResponse,
+  type MockupResponse,
+} from '@caseflow-ai/contracts';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import {
   Check,
   ChevronLeft,
   ChevronRight,
   Download,
+  FileCode,
+  FileImage,
   Loader2,
   Maximize2,
   Minimize2,
+  Wand2,
   X,
   ZoomIn,
   ZoomOut,
@@ -25,12 +34,15 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  Textarea,
 } from '@caseflow-ai/ui';
 import { api, ApiError, type ArtifactVersionStatus } from '../../../lib/api';
 import { QueryState, RequireActiveProject } from '../../../components/query-state';
 import { PageHeading } from '../../../components/page-heading';
 import { StatusBadge } from '../../../components/status-badge';
 import { TrustedDiagram } from '../../../components/trusted-svg';
+import { AuthedDownloadButton, AuthedImage } from '../../../components/authed-media';
+import { AiOrbitSpinner, GenerationOverlay } from '../../../components/generation-overlay';
 import {
   ApproveAllButton,
   ArchiveButton,
@@ -63,8 +75,148 @@ export async function pollMockupJob(
   }
 }
 
-function MockupPreview({ mockupId, projectId }: { mockupId: string; projectId: string }) {
+const REFINE_HINT =
+  'Se generará una versión nueva para revisión; la versión actual no se modifica.';
+
+function MockupRefineForm({
+  busy,
+  onRefine,
+  label,
+  hint = REFINE_HINT,
+  placeholder,
+  className = 'rounded-lg border border-border bg-muted/20 p-3',
+  autoFocus,
+}: {
+  busy: boolean;
+  onRefine: (prompt: string) => Promise<boolean>;
+  label: string;
+  hint?: string;
+  placeholder: string;
+  className?: string;
+  autoFocus?: boolean;
+}) {
+  const [prompt, setPrompt] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const promptId = useId();
+  const valid = prompt.trim().length >= 3;
+  return (
+    <form
+      className={`flex flex-col gap-2 ${className}`}
+      onSubmit={async (event) => {
+        event.preventDefault();
+        if (!valid) return;
+        setSubmitting(true);
+        try {
+          if (await onRefine(prompt.trim())) setPrompt('');
+        } finally {
+          setSubmitting(false);
+        }
+      }}
+    >
+      <label htmlFor={promptId} className="text-sm font-medium">
+        {label}
+      </label>
+      <Textarea
+        id={promptId}
+        value={prompt}
+        maxLength={MOCKUP_REFINEMENT_PROMPT_MAX_LENGTH}
+        rows={2}
+        disabled={busy}
+        autoFocus={autoFocus}
+        placeholder={placeholder}
+        onChange={(event) => setPrompt(event.target.value)}
+      />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">{hint}</p>
+        <Button type="submit" size="sm" variant="outline" disabled={busy || !valid}>
+          {submitting ? (
+            <Loader2 aria-hidden="true" className="size-4 animate-spin" />
+          ) : (
+            <Wand2 aria-hidden="true" className="size-4" />
+          )}
+          {submitting ? 'Aplicando…' : 'Aplicar cambios'}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+type MockupScreen = NonNullable<MockupPreviewResponse['screens']>[number];
+
+// Edits one screen at Stitch; the other screens are carried over unchanged.
+function ScreenEditDialog({
+  screen,
+  imageUrl,
+  busy,
+  onClose,
+  onRefine,
+}: {
+  screen: MockupScreen | null;
+  imageUrl: string | null;
+  busy: boolean;
+  onClose: () => void;
+  onRefine: (prompt: string) => Promise<boolean>;
+}) {
+  return (
+    <Dialog open={screen !== null} onOpenChange={(open) => (!open && !busy ? onClose() : null)}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Editar pantalla: {screen?.screenName}</DialogTitle>
+          <DialogDescription>
+            Stitch modificará solo esta pantalla; las demás se conservan tal cual.
+          </DialogDescription>
+        </DialogHeader>
+        {imageUrl ? (
+          <div className="flex aspect-[16/10] items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40 p-2">
+            {busy ? (
+              <AiOrbitSpinner label="Aplicando los cambios a esta pantalla…" />
+            ) : (
+              <AuthedImage
+                url={imageUrl}
+                alt={screen?.screenName ?? ''}
+                className="max-h-full max-w-full object-contain"
+              />
+            )}
+          </div>
+        ) : null}
+        {screen?.refinementPrompt ? (
+          <p className="text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">Última edición:</span>{' '}
+            {screen.refinementPrompt}
+          </p>
+        ) : null}
+        <MockupRefineForm
+          busy={busy}
+          autoFocus
+          className=""
+          label="Instrucciones para esta pantalla"
+          placeholder="Ej.: agrega un buscador en la cabecera y cambia la tabla por tarjetas."
+          onRefine={async (prompt) => {
+            const done = await onRefine(prompt);
+            if (done) onClose();
+            return done;
+          }}
+        />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function MockupPreview({
+  mockupId,
+  projectId,
+  busy,
+  onRefine,
+  onRefineScreen,
+}: {
+  mockupId: string;
+  projectId: string;
+  busy: boolean;
+  onRefine: (prompt: string) => Promise<boolean>;
+  onRefineScreen: (screenId: string, prompt: string) => Promise<boolean>;
+}) {
   const [selectedScreenIndex, setSelectedScreenIndex] = useState<number | null>(null);
+  const [editingScreen, setEditingScreen] = useState<MockupScreen | null>(null);
   const preview = useQuery({
     queryKey: ['mockup-preview', projectId, mockupId],
     queryFn: () => api.mockups.getPreview(projectId, mockupId),
@@ -125,21 +277,39 @@ function MockupPreview({ mockupId, projectId }: { mockupId: string; projectId: s
             <TrustedDiagram svg={preview.data.svg!} />
           </div>
         </MockupScreenDialog>
+        <p className="text-xs text-muted-foreground">
+          Este boceto es un esquema interno generado sin IA, por lo que no puede editarse con
+          instrucciones. Modifique el Plano de interfaz o genere el boceto con Stitch.
+        </p>
       </div>
     );
   }
   return (
     <div className="flex flex-col gap-3">
+      {preview.data.refinementPrompt ? (
+        <p className="text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">Instrucciones aplicadas:</span>{' '}
+          {preview.data.refinementPrompt}
+        </p>
+      ) : null}
       {screens.length > 0 ? (
         <div className="flex justify-end">
-          <a
-            href={downloadAllUrl}
-            download
-            className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm font-medium hover:bg-muted"
+          <AuthedDownloadButton
+            url={downloadAllUrl}
+            filename="bocetos.zip"
+            className="group inline-flex items-center gap-2 rounded-md border border-border/80 bg-background px-3.5 py-2 text-xs font-medium text-foreground shadow-xs transition-all duration-150 hover:-translate-y-0.5 hover:border-primary/50 hover:bg-accent hover:text-accent-foreground hover:shadow-sm active:translate-y-0 disabled:pointer-events-none disabled:opacity-50"
           >
-            <Download aria-hidden="true" className="size-4" />
-            Descargar todas (ZIP)
-          </a>
+            <Download
+              aria-hidden="true"
+              className="size-4 text-primary transition-transform duration-200 group-hover:translate-y-0.5"
+            />
+            <span>
+              Descargar todas{' '}
+              <span className="font-normal text-muted-foreground">
+                (ZIP · {screens.length} {screens.length === 1 ? 'pantalla' : 'pantallas'})
+              </span>
+            </span>
+          </AuthedDownloadButton>
         </div>
       ) : null}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -154,34 +324,70 @@ function MockupPreview({ mockupId, projectId }: { mockupId: string; projectId: s
               onClick={() => setSelectedScreenIndex(index)}
               className="group flex aspect-[16/10] w-full items-center justify-center overflow-hidden bg-muted/40 p-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             >
-              <img
-                src={api.mockups.screenImageUrl(projectId, mockupId, screen.id)}
+              <AuthedImage
+                url={api.mockups.screenImageUrl(projectId, mockupId, screen.id)}
                 alt={screen.screenName}
-                loading="lazy"
-                decoding="async"
-                draggable={false}
                 className="max-h-full max-w-full object-contain transition-transform group-hover:scale-[1.02]"
               />
             </button>
             <figcaption className="flex items-center justify-between gap-2 border-t border-border px-3 py-2 text-sm">
-              <span className="truncate font-medium">{screen.screenName}</span>
-              <span className="flex shrink-0 items-center gap-3">
-                <a
-                  href={api.mockups.screenImageUrl(projectId, mockupId, screen.id)}
-                  download
-                  className="text-xs text-primary underline underline-offset-2"
+              <span className="truncate font-medium text-foreground" title={screen.screenName}>
+                {screen.screenName}
+              </span>
+              <span className="flex shrink-0 items-center gap-1.5">
+                {screen.editable ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setEditingScreen(screen)}
+                    title="Editar esta pantalla con instrucciones"
+                    aria-label={`Editar la pantalla ${screen.screenName} con instrucciones`}
+                    className="group inline-flex items-center gap-1 rounded-md border border-border/70 bg-background px-2.5 py-1 text-xs font-medium text-foreground/80 shadow-xs transition-all duration-150 hover:-translate-y-0.5 hover:border-violet-500/50 hover:bg-violet-500/5 hover:text-violet-600 dark:hover:text-violet-400 hover:shadow-xs active:translate-y-0 disabled:pointer-events-none disabled:opacity-50"
+                  >
+                    <Wand2
+                      aria-hidden="true"
+                      className="size-3.5 text-violet-500/70 transition-colors group-hover:text-violet-500"
+                    />
+                    <span>Editar</span>
+                  </button>
+                ) : null}
+                <AuthedDownloadButton
+                  url={api.mockups.screenImageUrl(projectId, mockupId, screen.id)}
+                  filename={`${screen.screenName}.png`}
+                  title="Descargar imagen PNG"
+                  aria-label={`Descargar ${screen.screenName} en formato PNG`}
+                  className="group inline-flex items-center gap-1 rounded-md border border-border/70 bg-background px-2.5 py-1 text-xs font-medium text-foreground/80 shadow-xs transition-all duration-150 hover:-translate-y-0.5 hover:border-primary/50 hover:bg-primary/5 hover:text-primary hover:shadow-xs active:translate-y-0 disabled:pointer-events-none disabled:opacity-50"
                 >
-                  Descargar PNG
-                </a>
-                <a
-                  href={api.mockups.screenHtmlUrl(projectId, mockupId, screen.id)}
-                  download
-                  className="text-xs text-primary underline underline-offset-2"
+                  <FileImage
+                    aria-hidden="true"
+                    className="size-3.5 text-primary/70 transition-colors group-hover:text-primary"
+                  />
+                  <span>PNG</span>
+                </AuthedDownloadButton>
+                <AuthedDownloadButton
+                  url={api.mockups.screenHtmlUrl(projectId, mockupId, screen.id)}
+                  filename={`${screen.screenName}.html`}
+                  title="Descargar archivo HTML"
+                  aria-label={`Descargar ${screen.screenName} en formato HTML`}
+                  className="group inline-flex items-center gap-1 rounded-md border border-border/70 bg-background px-2.5 py-1 text-xs font-medium text-foreground/80 shadow-xs transition-all duration-150 hover:-translate-y-0.5 hover:border-amber-500/50 hover:bg-amber-500/5 hover:text-amber-600 dark:hover:text-amber-400 hover:shadow-xs active:translate-y-0 disabled:pointer-events-none disabled:opacity-50"
                 >
-                  Descargar HTML
-                </a>
+                  <FileCode
+                    aria-hidden="true"
+                    className="size-3.5 text-amber-500/70 transition-colors group-hover:text-amber-500"
+                  />
+                  <span>HTML</span>
+                </AuthedDownloadButton>
               </span>
             </figcaption>
+            {screen.refinementPrompt ? (
+              <p
+                className="line-clamp-2 border-t border-border bg-violet-500/5 px-3 py-1.5 text-xs text-muted-foreground"
+                title={screen.refinementPrompt}
+              >
+                <span className="font-medium text-violet-600 dark:text-violet-400">Editada:</span>{' '}
+                {screen.refinementPrompt}
+              </p>
+            ) : null}
           </figure>
         ))}
         {selectedScreenIndex !== null && screens[selectedScreenIndex] ? (
@@ -202,19 +408,40 @@ function MockupPreview({ mockupId, projectId }: { mockupId: string; projectId: s
               )
             }
           >
-            <img
-              src={api.mockups.screenImageUrl(
+            <AuthedImage
+              url={api.mockups.screenImageUrl(
                 projectId,
                 mockupId,
                 screens[selectedScreenIndex]!.id,
               )}
               alt={screens[selectedScreenIndex]!.screenName}
-              draggable={false}
               className="max-h-[var(--mockup-image-max-height)] max-w-full object-contain"
             />
           </MockupScreenDialog>
         ) : null}
       </div>
+      {screens.some((screen) => !screen.editable) ? (
+        <p className="text-xs text-muted-foreground">
+          Algunas pantallas se generaron antes de habilitar la edición individual. Regenere el
+          boceto completo una vez para poder editarlas una por una.
+        </p>
+      ) : null}
+      <MockupRefineForm
+        busy={busy}
+        onRefine={onRefine}
+        label="Editar todas las pantallas"
+        hint={`Para cambios que afectan a todo el boceto (p. ej., la paleta de colores); regenera todas las pantallas. ${REFINE_HINT}`}
+        placeholder="Ej.: usa una paleta verde y una tipografía más grande en todas las pantallas."
+      />
+      <ScreenEditDialog
+        screen={editingScreen}
+        imageUrl={
+          editingScreen ? api.mockups.screenImageUrl(projectId, mockupId, editingScreen.id) : null
+        }
+        busy={busy}
+        onClose={() => setEditingScreen(null)}
+        onRefine={(prompt) => onRefineScreen(editingScreen!.id, prompt)}
+      />
     </div>
   );
 }
@@ -426,12 +653,27 @@ function MockupsContent({ projectId }: { projectId: string }) {
     queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
   }
 
-  async function createMockup(uiBlueprintVersionId: string) {
-    setCreatingVersionId(uiBlueprintVersionId);
+  function createMockup(uiBlueprintVersionId: string) {
+    const deviceType = deviceTypes[uiBlueprintVersionId] ?? 'DESKTOP';
+    return runMockupJob(uiBlueprintVersionId, () =>
+      api.mockups.create(projectId, uiBlueprintVersionId, deviceType),
+    );
+  }
+
+  // Resolves true when a new version was produced, so the refine form can clear.
+  function refineMockup(mockupId: string, prompt: string) {
+    return runMockupJob(mockupId, () => api.mockups.refine(projectId, mockupId, prompt));
+  }
+
+  // Shared enqueue → poll flow; `busyKey` marks which control is generating.
+  async function runMockupJob(
+    busyKey: string,
+    enqueue: () => Promise<MockupJobResponse>,
+  ): Promise<boolean> {
+    setCreatingVersionId(busyKey);
     setCreatingJobStatus('SUBMITTING');
     try {
-      const deviceType = deviceTypes[uiBlueprintVersionId] ?? 'DESKTOP';
-      const job = await api.mockups.create(projectId, uiBlueprintVersionId, deviceType);
+      const job = await enqueue();
       setCreatingJobStatus(job.status);
       const result = await pollMockupJob(
         () => api.mockups.getJob(projectId, job.id),
@@ -453,6 +695,9 @@ function MockupsContent({ projectId }: { projectId: string }) {
       } else {
         toast.success('Boceto generado.');
         invalidate();
+        // A refinement adds a version to an existing mockup: its preview changes too.
+        queryClient.invalidateQueries({ queryKey: ['mockup-preview', projectId] });
+        return true;
       }
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'No se pudo generar el boceto.');
@@ -460,6 +705,7 @@ function MockupsContent({ projectId }: { projectId: string }) {
       setCreatingVersionId(null);
       setCreatingJobStatus(null);
     }
+    return false;
   }
 
   const transitionFor = (m: MockupResponse) => (status: ArtifactVersionStatus) =>
@@ -557,6 +803,17 @@ function MockupsContent({ projectId }: { projectId: string }) {
         )}
       </section>
 
+      <GenerationOverlay
+        open={creatingVersionId !== null}
+        title={
+          creatingJobStatus === 'SUBMITTING'
+            ? 'Preparando la generación'
+            : creatingJobStatus === 'QUEUED'
+              ? 'Boceto en cola'
+              : 'Generando las pantallas'
+        }
+        description="Puede tardar varios minutos. El estado se actualizará automáticamente."
+      />
       {creatingVersionId ? (
         <div
           role="status"
@@ -702,7 +959,17 @@ function MockupsContent({ projectId }: { projectId: string }) {
                   </div>
                 </div>
                 <div className="mt-2">
-                  <MockupPreview mockupId={m.id} projectId={projectId} />
+                  <MockupPreview
+                    mockupId={m.id}
+                    projectId={projectId}
+                    busy={creatingVersionId !== null}
+                    onRefine={(prompt) => refineMockup(m.id, prompt)}
+                    onRefineScreen={(screenId, prompt) =>
+                      runMockupJob(m.id, () =>
+                        api.mockups.refineScreen(projectId, m.id, screenId, prompt),
+                      )
+                    }
+                  />
                 </div>
               </li>
             ))}
