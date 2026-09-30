@@ -65,16 +65,73 @@ export class ApiError extends Error {
 
 let accessToken: string | null = null;
 let refreshInFlight: Promise<void> | null = null;
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 if (typeof window !== 'undefined') localStorage.removeItem('caseflow_token');
-export function setAccessToken(token: string | null) {
-  accessToken = token;
+
+// Refresh one minute before the short-lived access token expires, so a long
+// AI generation never starts with a token that dies mid-flight.
+const REFRESH_MARGIN_MS = 60_000;
+function tokenExpiryMs(token: string): number | null {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]!.replace(/-/g, '+').replace(/_/g, '/')));
+    return typeof payload.exp === 'number' ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
 }
 
-async function request<T>(path: string, init?: RequestInit, allowRefresh = true): Promise<T> {
-  let response: Response;
-  const isFormData = typeof FormData !== 'undefined' && init?.body instanceof FormData;
+export function setAccessToken(token: string | null) {
+  accessToken = token;
+  if (refreshTimer) clearTimeout(refreshTimer);
+  refreshTimer = null;
+  const expiry = token ? tokenExpiryMs(token) : null;
+  if (expiry && typeof window !== 'undefined') {
+    const delay = Math.max(expiry - Date.now() - REFRESH_MARGIN_MS, 0);
+    refreshTimer = setTimeout(() => void refreshSession(), delay);
+  }
+}
+
+// Single-flight: concurrent 401s (or the proactive timer) share one refresh,
+// so the rotating refresh cookie is never presented twice.
+function refreshSession(): Promise<void> {
+  refreshInFlight ??= api.auth
+    .refresh()
+    .then(() => undefined)
+    .finally(() => {
+      refreshInFlight = null;
+    });
+  return refreshInFlight;
+}
+
+// The access token lives only in memory (never localStorage), so a full page
+// reload loses it; restore it from the httpOnly refresh cookie on app start.
+export async function restoreSession(): Promise<boolean> {
+  if (accessToken) return true;
   try {
-    response = await fetch(`${BASE_URL}${path}`, {
+    await refreshSession();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const NETWORK_ERROR_MESSAGE =
+  'No se pudo conectar con el servidor de CASEFlow AI. Verifique que la API esté en ejecución e intente nuevamente.';
+
+// Every call to the API — JSON, file downloads and images alike — goes
+// through here, so the Bearer token, the refresh-on-401 retry and the
+// redirect to /login apply uniformly. A raw <img src>/<a href> to the API can
+// never carry the Authorization header, which is why those use this too.
+async function authedFetch(
+  url: string,
+  init?: RequestInit,
+  allowRefresh = true,
+): Promise<Response> {
+  const isFormData = typeof FormData !== 'undefined' && init?.body instanceof FormData;
+  const isAuthPath = url.startsWith(`${BASE_URL}/auth/`);
+  const method = (init?.method ?? 'GET').toUpperCase();
+  const send = () =>
+    fetch(url, {
       ...init,
       credentials: 'include',
       headers: {
@@ -83,37 +140,62 @@ async function request<T>(path: string, init?: RequestInit, allowRefresh = true)
         ...init?.headers,
       },
     });
+  let response: Response;
+  try {
+    response = await send();
   } catch {
-    throw new ApiError('No se pudo conectar con el servidor de CASEFlow AI.', 0);
-  }
-  if (!response.ok) {
-    if (response.status === 401 && allowRefresh && !path.startsWith('/auth/')) {
-      try {
-        refreshInFlight ??= api.auth
-          .refresh()
-          .then(() => undefined)
-          .finally(() => {
-            refreshInFlight = null;
-          });
-        await refreshInFlight;
-        return request<T>(path, init, false);
-      } catch {
-        setAccessToken(null);
-      }
+    // A GET is safe to repeat once: in development the API restarts on every
+    // file change (node --watch), dropping in-flight requests. Never retry a
+    // POST — it could duplicate an AI generation or a created artifact.
+    if (method !== 'GET') throw new ApiError(NETWORK_ERROR_MESSAGE, 0);
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    try {
+      response = await send();
+    } catch {
+      throw new ApiError(NETWORK_ERROR_MESSAGE, 0);
     }
-    if (
-      response.status === 401 &&
-      typeof window !== 'undefined' &&
-      window.location.pathname !== '/login' &&
-      window.location.pathname !== '/register'
-    ) {
-      window.location.href = '/login';
-    }
-    const message = await extractErrorMessage(response);
-    throw new ApiError(message, response.status);
   }
+  if (response.ok) return response;
+  if (response.status === 401 && allowRefresh && !isAuthPath) {
+    try {
+      await refreshSession();
+      return authedFetch(url, init, false);
+    } catch {
+      setAccessToken(null);
+    }
+  }
+  if (
+    response.status === 401 &&
+    typeof window !== 'undefined' &&
+    window.location.pathname !== '/login' &&
+    window.location.pathname !== '/register'
+  ) {
+    window.location.href = '/login';
+  }
+  throw new ApiError(await extractErrorMessage(response), response.status);
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await authedFetch(`${BASE_URL}${path}`, init);
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
+}
+
+export async function fetchBlob(url: string): Promise<Blob> {
+  return (await authedFetch(url)).blob();
+}
+
+// Downloads an authenticated API resource as a file (the browser cannot
+// attach the Bearer token to a plain <a href download>).
+export async function downloadFile(url: string, filename: string): Promise<void> {
+  const blobUrl = URL.createObjectURL(await fetchBlob(url));
+  const anchor = document.createElement('a');
+  anchor.href = blobUrl;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(blobUrl);
 }
 
 async function extractErrorMessage(response: Response): Promise<string> {

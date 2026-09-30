@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button, Input, Textarea } from '@caseflow-ai/ui';
 import { Download, FileText, Loader2, Plus } from 'lucide-react';
 import { toast } from 'sonner';
-import { api } from '../../lib/api';
+import { api, ApiError, downloadFile } from '../../lib/api';
 import { RequireActiveProject } from '../../components/query-state';
 import type { BaselineResponse } from '@caseflow-ai/contracts';
 
@@ -18,17 +18,11 @@ async function downloadExport(
     format === 'html'
       ? api.baselines.exportHtmlUrl(projectId, id)
       : api.baselines.exportJsonUrl(projectId, id);
-  const response = await fetch(url, { credentials: 'include' });
-  if (!response.ok) throw new Error('export request failed');
-  const blob = await response.blob();
-  const blobUrl = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = blobUrl;
-  a.download = `baseline-${id}.${format}`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(blobUrl);
+  try {
+    await downloadFile(url, `baseline-${id}.${format}`);
+  } catch (err) {
+    toast.error(err instanceof ApiError ? err.message : 'No se pudo exportar la línea base.');
+  }
 }
 
 function BaselinesContent({ projectId }: { projectId: string }) {

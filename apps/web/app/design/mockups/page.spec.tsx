@@ -34,7 +34,14 @@ vi.mock('../../../lib/api', () => ({
     structuredAnalysis: { list: (...args: unknown[]) => mocks.listBlueprints(...args) },
   },
   ApiError: class ApiError extends Error {},
+  restoreSession: vi.fn(),
+  downloadFile: vi.fn(),
+  fetchBlob: vi.fn(async () => new Blob(['png'], { type: 'image/png' })),
 }));
+
+// jsdom implements neither; images are fetched with the token and shown via object URLs.
+URL.createObjectURL = vi.fn(() => 'blob:mock');
+URL.revokeObjectURL = vi.fn();
 
 vi.mock('../../../components/artifact-actions', () => ({
   ApproveAllButton: () => null,
@@ -157,12 +164,13 @@ describe('MockupsPage screen gallery', () => {
 
     await user.click(firstScreen);
     let dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByRole('img', { name: 'Inicio' })).toBeInTheDocument();
+    expect(await within(dialog).findByRole('img', { name: 'Inicio' })).toBeInTheDocument();
+    expect(mocks.screenImageUrl).toHaveBeenCalledWith('p1', 'mockup-1', 'screen-1');
     expect(within(dialog).getByText('1 / 3')).toBeInTheDocument();
 
     await user.click(within(dialog).getByRole('button', { name: /siguiente/i }));
     dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByRole('img', { name: 'Catálogo' })).toBeInTheDocument();
+    expect(await within(dialog).findByRole('img', { name: 'Catálogo' })).toBeInTheDocument();
 
     fireEvent.keyDown(window, { key: 'ArrowRight' });
     await waitFor(() =>

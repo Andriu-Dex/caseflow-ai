@@ -6,25 +6,20 @@ import { AlertCircle, CheckCircle2, Circle, Download, FileText, Loader2 } from '
 import { toast } from 'sonner';
 import { Button } from '@caseflow-ai/ui';
 import Link from 'next/link';
-import { api } from '../../lib/api';
+import { api, downloadFile } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { STAGE_LINKS } from '../../lib/stage-links';
 
-// A plain <a download> gives no way to know whether the request failed or is
-// still generating (image-heavy HTML exports take a moment) — fetching the
-// blob ourselves lets the buttons show a loading state and a real error.
-async function downloadExport(projectId: string, format: 'json' | 'html'): Promise<void> {
-  const response = await fetch(api.export.url(projectId, format));
-  if (!response.ok) throw new Error('export request failed');
-  const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `proyecto-${projectId}.${format}`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+// Rule ids stay as English identifiers in the API contract; only the label is localized.
+const CONSISTENCY_RULE_LABELS: Record<string, string> = {
+  'Requirement Reference': 'Referencia a requisito',
+  'Mockup Association': 'Asociación de boceto',
+  'Navigation Node Link': 'Enlace de nodo de navegación',
+  'Unique Use Case Name': 'Nombre de caso de uso único',
+};
+
+function downloadExport(projectId: string, format: 'json' | 'html'): Promise<void> {
+  return downloadFile(api.export.url(projectId, format), `proyecto-${projectId}.${format}`);
 }
 
 function ReadinessContent({ projectId }: { projectId: string }) {
@@ -208,7 +203,7 @@ function ReadinessContent({ projectId }: { projectId: string }) {
                         <AlertCircle className="size-5 shrink-0 mt-0.5" />
                         <div>
                           <p>
-                            [{issue.rule}] {issue.message}
+                            [{CONSISTENCY_RULE_LABELS[issue.rule] ?? issue.rule}] {issue.message}
                           </p>
                           <p className="mt-1 text-sm opacity-80">
                             Artefactos afectados:{' '}

@@ -4,7 +4,7 @@ import { Code2, Download, Maximize2, Pencil, X, ZoomIn, ZoomOut } from 'lucide-r
 import { Button } from '@caseflow-ai/ui';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { ApiError } from '../lib/api';
+import { ApiError, downloadFile } from '../lib/api';
 import { TrustedDiagram } from './trusted-svg';
 
 const MIN_ZOOM = 0.25;
@@ -150,13 +150,12 @@ function download(filename: string, content: string, mime: string) {
 // always emits `<foreignObject>` for edge/attribute labels, and Chromium/
 // WebKit refuse `canvas.toBlob` for any SVG containing one, regardless of
 // origin — there is no reliable client-only fix for that.
-function downloadPng(pngUrl: string, filename: string) {
-  const anchor = document.createElement('a');
-  anchor.href = pngUrl;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
+async function downloadPng(pngUrl: string, filename: string) {
+  try {
+    await downloadFile(pngUrl, filename);
+  } catch (err) {
+    toast.error(err instanceof ApiError ? err.message : 'No se pudo descargar el PNG.');
+  }
 }
 
 // Shows a backend-rendered/sanitized diagram (TrustedDiagram) alongside its
