@@ -14,6 +14,14 @@ export const createMockupRequestSchema = z
   .strict();
 export type CreateMockupRequest = z.output<typeof createMockupRequestSchema>;
 
+// Refinement regenerates a Stitch mockup as a new version, from the same
+// approved UI Blueprint plus a free-text instruction; never overwrites.
+export const MOCKUP_REFINEMENT_PROMPT_MAX_LENGTH = 1000;
+export const refineMockupRequestSchema = z
+  .object({ prompt: z.string().trim().min(3).max(MOCKUP_REFINEMENT_PROMPT_MAX_LENGTH) })
+  .strict();
+export type RefineMockupRequest = z.output<typeof refineMockupRequestSchema>;
+
 export const MOCKUP_GENERATOR_KINDS = ['INTERNAL_WIREFRAME', 'STITCH'] as const;
 export type MockupGeneratorKind = (typeof MOCKUP_GENERATOR_KINDS)[number];
 
@@ -73,6 +81,7 @@ export const mockupPreviewResponseSchema = z.object({
   generatorKind: z.enum(MOCKUP_GENERATOR_KINDS),
   svg: z.string().nullable(),
   screens: z.array(mockupScreenSchema).nullable(),
+  refinementPrompt: z.string().nullable(),
   createdAt: z.iso.datetime(),
 });
 export type MockupPreviewResponse = z.infer<typeof mockupPreviewResponseSchema>;

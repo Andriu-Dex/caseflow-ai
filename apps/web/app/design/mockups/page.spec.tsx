@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   listMockups: vi.fn(),
   getPreview: vi.fn(),
   listBlueprints: vi.fn(),
+  refine: vi.fn(),
+  getJob: vi.fn(),
   downloadAllUrl: vi.fn((projectId: string, mockupId: string) => `/${projectId}/${mockupId}.zip`),
   screenImageUrl: vi.fn(
     (projectId: string, mockupId: string, screenId: string) =>
@@ -30,6 +32,8 @@ vi.mock('../../../lib/api', () => ({
       screenImageUrl: mocks.screenImageUrl,
       screenHtmlUrl: mocks.screenHtmlUrl,
       transition: vi.fn(),
+      refine: (...args: unknown[]) => mocks.refine(...args),
+      getJob: (...args: unknown[]) => mocks.getJob(...args),
     },
     structuredAnalysis: { list: (...args: unknown[]) => mocks.listBlueprints(...args) },
   },
@@ -147,6 +151,43 @@ describe('pollMockupJob', () => {
       expect(delay).toHaveBeenCalledTimes(1);
     },
   );
+});
+
+describe('MockupsPage refinement', () => {
+  it('sends the instruction to refine a Stitch mockup and clears it once a new version exists', async () => {
+    const user = userEvent.setup();
+    mocks.refine.mockResolvedValue(job('QUEUED'));
+    mocks.getJob.mockResolvedValue(job('COMPLETED'));
+    render(
+      <TestProviders>
+        <MockupsPage />
+      </TestProviders>,
+    );
+    const input = await screen.findByLabelText('Editar con instrucciones');
+    const submit = screen.getByRole('button', { name: /aplicar cambios/i });
+    expect(submit).toBeDisabled();
+    await user.type(input, 'Usa tonos verdes');
+    await user.click(submit);
+    await waitFor(() => expect(input).toHaveValue(''));
+    expect(mocks.refine).toHaveBeenCalledWith('p1', 'mockup-1', 'Usa tonos verdes');
+  });
+
+  it('explains that an internal wireframe cannot be refined instead of offering the form', async () => {
+    mocks.getPreview.mockResolvedValue({
+      id: 'mockup-1',
+      generatorKind: 'INTERNAL_WIREFRAME',
+      svg: '<svg></svg>',
+      screens: null,
+      refinementPrompt: null,
+    });
+    render(
+      <TestProviders>
+        <MockupsPage />
+      </TestProviders>,
+    );
+    expect(await screen.findByText(/no puede editarse con instrucciones/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Editar con instrucciones')).not.toBeInTheDocument();
+  });
 });
 
 describe('MockupsPage screen gallery', () => {

@@ -1,8 +1,13 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { MockupDeviceType, MockupJobResponse, MockupResponse } from '@caseflow-ai/contracts';
-import { useEffect, useRef, useState } from 'react';
+import {
+  MOCKUP_REFINEMENT_PROMPT_MAX_LENGTH,
+  type MockupDeviceType,
+  type MockupJobResponse,
+  type MockupResponse,
+} from '@caseflow-ai/contracts';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import {
   Check,
@@ -12,6 +17,7 @@ import {
   Loader2,
   Maximize2,
   Minimize2,
+  Wand2,
   X,
   ZoomIn,
   ZoomOut,
@@ -25,6 +31,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  Textarea,
 } from '@caseflow-ai/ui';
 import { api, ApiError, type ArtifactVersionStatus } from '../../../lib/api';
 import { QueryState, RequireActiveProject } from '../../../components/query-state';
@@ -65,7 +72,60 @@ export async function pollMockupJob(
   }
 }
 
-function MockupPreview({ mockupId, projectId }: { mockupId: string; projectId: string }) {
+function MockupRefineForm({
+  busy,
+  onRefine,
+}: {
+  busy: boolean;
+  onRefine: (prompt: string) => Promise<boolean>;
+}) {
+  const [prompt, setPrompt] = useState('');
+  const promptId = useId();
+  const valid = prompt.trim().length >= 3;
+  return (
+    <form
+      className="flex flex-col gap-2 rounded-lg border border-border bg-muted/20 p-3"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        if (valid && (await onRefine(prompt.trim()))) setPrompt('');
+      }}
+    >
+      <label htmlFor={promptId} className="text-sm font-medium">
+        Editar con instrucciones
+      </label>
+      <Textarea
+        id={promptId}
+        value={prompt}
+        maxLength={MOCKUP_REFINEMENT_PROMPT_MAX_LENGTH}
+        rows={2}
+        disabled={busy}
+        placeholder="Ej.: usa una paleta verde, agranda el botón principal y agrega un buscador en la cabecera."
+        onChange={(event) => setPrompt(event.target.value)}
+      />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">
+          Se generará una versión nueva para revisión; la versión actual no se modifica.
+        </p>
+        <Button type="submit" size="sm" variant="outline" disabled={busy || !valid}>
+          <Wand2 aria-hidden="true" className="size-4" />
+          Aplicar cambios
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function MockupPreview({
+  mockupId,
+  projectId,
+  busy,
+  onRefine,
+}: {
+  mockupId: string;
+  projectId: string;
+  busy: boolean;
+  onRefine: (prompt: string) => Promise<boolean>;
+}) {
   const [selectedScreenIndex, setSelectedScreenIndex] = useState<number | null>(null);
   const preview = useQuery({
     queryKey: ['mockup-preview', projectId, mockupId],
@@ -127,11 +187,21 @@ function MockupPreview({ mockupId, projectId }: { mockupId: string; projectId: s
             <TrustedDiagram svg={preview.data.svg!} />
           </div>
         </MockupScreenDialog>
+        <p className="text-xs text-muted-foreground">
+          Este boceto es un esquema interno generado sin IA, por lo que no puede editarse con
+          instrucciones. Modifique el Plano de interfaz o genere el boceto con Stitch.
+        </p>
       </div>
     );
   }
   return (
     <div className="flex flex-col gap-3">
+      {preview.data.refinementPrompt ? (
+        <p className="text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">Instrucciones aplicadas:</span>{' '}
+          {preview.data.refinementPrompt}
+        </p>
+      ) : null}
       {screens.length > 0 ? (
         <div className="flex justify-end">
           <AuthedDownloadButton
@@ -213,6 +283,7 @@ function MockupPreview({ mockupId, projectId }: { mockupId: string; projectId: s
           </MockupScreenDialog>
         ) : null}
       </div>
+      <MockupRefineForm busy={busy} onRefine={onRefine} />
     </div>
   );
 }
@@ -424,12 +495,27 @@ function MockupsContent({ projectId }: { projectId: string }) {
     queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
   }
 
-  async function createMockup(uiBlueprintVersionId: string) {
-    setCreatingVersionId(uiBlueprintVersionId);
+  function createMockup(uiBlueprintVersionId: string) {
+    const deviceType = deviceTypes[uiBlueprintVersionId] ?? 'DESKTOP';
+    return runMockupJob(uiBlueprintVersionId, () =>
+      api.mockups.create(projectId, uiBlueprintVersionId, deviceType),
+    );
+  }
+
+  // Resolves true when a new version was produced, so the refine form can clear.
+  function refineMockup(mockupId: string, prompt: string) {
+    return runMockupJob(mockupId, () => api.mockups.refine(projectId, mockupId, prompt));
+  }
+
+  // Shared enqueue → poll flow; `busyKey` marks which control is generating.
+  async function runMockupJob(
+    busyKey: string,
+    enqueue: () => Promise<MockupJobResponse>,
+  ): Promise<boolean> {
+    setCreatingVersionId(busyKey);
     setCreatingJobStatus('SUBMITTING');
     try {
-      const deviceType = deviceTypes[uiBlueprintVersionId] ?? 'DESKTOP';
-      const job = await api.mockups.create(projectId, uiBlueprintVersionId, deviceType);
+      const job = await enqueue();
       setCreatingJobStatus(job.status);
       const result = await pollMockupJob(
         () => api.mockups.getJob(projectId, job.id),
@@ -451,6 +537,9 @@ function MockupsContent({ projectId }: { projectId: string }) {
       } else {
         toast.success('Boceto generado.');
         invalidate();
+        // A refinement adds a version to an existing mockup: its preview changes too.
+        queryClient.invalidateQueries({ queryKey: ['mockup-preview', projectId] });
+        return true;
       }
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'No se pudo generar el boceto.');
@@ -458,6 +547,7 @@ function MockupsContent({ projectId }: { projectId: string }) {
       setCreatingVersionId(null);
       setCreatingJobStatus(null);
     }
+    return false;
   }
 
   const transitionFor = (m: MockupResponse) => (status: ArtifactVersionStatus) =>
@@ -711,7 +801,12 @@ function MockupsContent({ projectId }: { projectId: string }) {
                   </div>
                 </div>
                 <div className="mt-2">
-                  <MockupPreview mockupId={m.id} projectId={projectId} />
+                  <MockupPreview
+                    mockupId={m.id}
+                    projectId={projectId}
+                    busy={creatingVersionId !== null}
+                    onRefine={(prompt) => refineMockup(m.id, prompt)}
+                  />
                 </div>
               </li>
             ))}

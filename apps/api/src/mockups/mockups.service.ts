@@ -101,14 +101,34 @@ export class MockupsService {
     return this.enqueueJob(projectId, uiBlueprintVersionId, mockupId, deviceType);
   }
 
+  // Refinement = a new version of the same mockup, regenerated from the same
+  // approved UI Blueprint plus the user's instruction. Only Stitch mockups
+  // qualify: the internal wireframe is deterministic and has no prompt.
+  async refine(projectId: string, mockupId: string, prompt: string): Promise<MockupJobResponse> {
+    const detail = (await this.findLatest(projectId, mockupId)).versions[0]!.mockupDetail!;
+    if (detail.generatorKind !== 'STITCH')
+      throw new UnprocessableEntityException(
+        'Solo los bocetos generados con Stitch pueden editarse con instrucciones.',
+      );
+    await this.assertApprovedBlueprint(projectId, detail.uiBlueprintVersionId);
+    return this.enqueueJob(
+      projectId,
+      detail.uiBlueprintVersionId,
+      mockupId,
+      detail.deviceType,
+      prompt,
+    );
+  }
+
   private async enqueueJob(
     projectId: string,
     uiBlueprintVersionId: string,
     existingMockupId: string | null,
     deviceType: MockupDeviceType,
+    refinementPrompt: string | null = null,
   ): Promise<MockupJobResponse> {
     const job = await this.prisma.mockupGenerationJob.create({
-      data: { projectId, uiBlueprintVersionId, existingMockupId, deviceType },
+      data: { projectId, uiBlueprintVersionId, existingMockupId, deviceType, refinementPrompt },
     });
     await this.queue.add(MOCKUP_GENERATION_QUEUE, { jobId: job.id, projectId });
     return this.mapJob(job);
@@ -137,6 +157,7 @@ export class MockupsService {
         job.projectId,
         job.uiBlueprintVersionId,
         job.deviceType,
+        job.refinementPrompt,
       );
       const result = await this.prisma.$transaction((tx) =>
         job.existingMockupId
@@ -147,6 +168,7 @@ export class MockupsService {
               job.uiBlueprintVersionId,
               job.deviceType,
               generated,
+              job.refinementPrompt,
             )
           : this.createInTx(tx, job.projectId, job.uiBlueprintVersionId, job.deviceType, generated),
       );
@@ -264,6 +286,7 @@ export class MockupsService {
             detail.generatorKind === 'STITCH'
               ? this.screenLinks(projectId, row.id, detail.screens)
               : null,
+          refinementPrompt: detail.refinementPrompt,
           createdAt: version.createdAt.toISOString(),
         };
       });
@@ -286,6 +309,7 @@ export class MockupsService {
         detail.generatorKind === 'STITCH'
           ? this.screenLinks(projectId, row.id, detail.screens)
           : null,
+      refinementPrompt: detail.refinementPrompt,
       createdAt: version.createdAt.toISOString(),
     };
   }
@@ -297,6 +321,7 @@ export class MockupsService {
     uiBlueprintVersionId: string,
     deviceType: MockupDeviceType,
     generated: StoredGeneration,
+    refinementPrompt: string | null = null,
   ) {
     const locked = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM artifacts WHERE id=${mockupId}::uuid AND project_id=${projectId}::uuid AND artifact_type_code='MOCKUP' FOR NO KEY UPDATE`;
@@ -315,7 +340,14 @@ export class MockupsService {
         origin: 'SYSTEM_GENERATED',
       },
     });
-    await this.saveDetail(tx, version.id, uiBlueprintVersionId, deviceType, generated);
+    await this.saveDetail(
+      tx,
+      version.id,
+      uiBlueprintVersionId,
+      deviceType,
+      generated,
+      refinementPrompt,
+    );
     return this.loadAndMap(tx, mockupId, version.id);
   }
 
@@ -347,6 +379,7 @@ export class MockupsService {
     projectId: string,
     uiBlueprintVersionId: string,
     deviceType: MockupDeviceType,
+    refinementPrompt: string | null = null,
   ): Promise<StoredGeneration> {
     const source = await this.prisma.artifactVersion.findFirst({
       where: {
@@ -364,12 +397,21 @@ export class MockupsService {
     const content = uiBlueprintContentSchema.parse(source.structuredAnalysisDetail.content);
     let generated: MockupGenerationResult;
     try {
-      generated = await this.mockupProvider.generate(content, deviceType);
+      generated = await this.mockupProvider.generate(
+        content,
+        deviceType,
+        refinementPrompt ?? undefined,
+      );
     } catch (error) {
       if (error instanceof MockupProviderError)
         throw new ServiceUnavailableException({ message: error.message, code: error.code });
       throw error;
     }
+    // A fallback wireframe would silently drop the user's instruction.
+    if (refinementPrompt && generated.kind !== 'STITCH')
+      throw new ServiceUnavailableException(
+        'Stitch no está disponible; no se pudo aplicar la edición del boceto.',
+      );
     if (generated.kind === 'INTERNAL_WIREFRAME')
       return { kind: generated.kind, svg: sanitizeDiagramSvg(generated.svg) };
     if (
@@ -478,12 +520,14 @@ export class MockupsService {
     uiBlueprintVersionId: string,
     deviceType: MockupDeviceType,
     generated: StoredGeneration,
+    refinementPrompt: string | null = null,
   ) {
     await tx.mockupDetail.create({
       data: {
         artifactVersionId: versionId,
         uiBlueprintVersionId,
         deviceType,
+        refinementPrompt,
         generatorKind: generated.kind,
         generatorVersion:
           generated.kind === 'STITCH' ? 'stitch-sdk-0.3.5' : MOCKUP_GENERATOR_VERSION,

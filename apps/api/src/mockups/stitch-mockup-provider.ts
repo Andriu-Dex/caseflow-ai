@@ -25,11 +25,12 @@ export class StitchMockupProvider implements MockupProvider {
   async generate(
     content: UiBlueprintContent,
     deviceType: MockupDeviceType = 'DESKTOP',
+    refinement?: string,
   ): Promise<MockupGenerationResult> {
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
       return await Promise.race([
-        this.generateWithSdk(content, deviceType),
+        this.generateWithSdk(content, deviceType, refinement),
         new Promise<never>((_, reject) => {
           timeout = setTimeout(
             () =>
@@ -58,6 +59,7 @@ export class StitchMockupProvider implements MockupProvider {
   private async generateWithSdk(
     content: UiBlueprintContent,
     deviceType: MockupDeviceType,
+    refinement?: string,
   ): Promise<MockupGenerationResult> {
     const { Stitch, StitchToolClient } = await importSdk();
     const sdk = new Stitch(
@@ -66,7 +68,10 @@ export class StitchMockupProvider implements MockupProvider {
     const project = await sdk.createProject(`CASEFlow ${Date.now()}`);
     const screens = await Promise.all(
       content.screens.map(async (screen): Promise<GeneratedScreen> => {
-        const generated = await project.generate(this.buildPrompt(screen, deviceType), deviceType);
+        const generated = await project.generate(
+          this.buildPrompt(screen, deviceType, refinement),
+          deviceType,
+        );
         const [imageUrl, htmlUrl] = await Promise.all([generated.getImage(), generated.getHtml()]);
         const [image, html] = await Promise.all([
           this.download(
@@ -145,6 +150,7 @@ export class StitchMockupProvider implements MockupProvider {
   private buildPrompt(
     screen: UiBlueprintContent['screens'][number],
     deviceType: MockupDeviceType,
+    refinement?: string,
   ): string {
     return [
       deviceType === 'MOBILE'
@@ -167,6 +173,10 @@ export class StitchMockupProvider implements MockupProvider {
       screen.states.length ? `Estados relevantes: ${screen.states.join(', ')}.` : '',
       screen.relatedUseCaseCodes.length
         ? `Casos de uso relacionados: ${screen.relatedUseCaseCodes.join(', ')}.`
+        : '',
+      // Last, so it adjusts the design without replacing the blueprint above.
+      refinement
+        ? `Ajustes solicitados por el usuario (aplícalos sin eliminar el contenido anterior): ${refinement}`
         : '',
     ]
       .filter(Boolean)

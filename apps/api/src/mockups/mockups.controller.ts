@@ -11,6 +11,7 @@ import {
   mockupListResponseSchema,
   mockupPreviewResponseSchema,
   mockupResponseSchema,
+  refineMockupRequestSchema,
   transitionArtifactVersionRequestSchema,
   type ArtifactVersionStatus,
 } from '@caseflow-ai/contracts';
@@ -149,6 +150,23 @@ export class MockupsController {
     body: z.output<typeof createMockupRequestSchema>,
   ) {
     return this.service.version(projectId, mockupId, body.uiBlueprintVersionId, body.deviceType);
+  }
+
+  @Post(':mockupId/refine')
+  @HttpCode(202)
+  @ApiOperation({
+    operationId: 'refineMockup',
+    summary: 'Encolar una nueva versión del boceto aplicando instrucciones de edición',
+  })
+  @ApiZodBody(refineMockupRequestSchema)
+  @ApiZodResponse(202, 'Mockup generation job.', mockupJobResponseSchema)
+  refine(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('mockupId', uuidParamPipe) mockupId: string,
+    @Body(new ZodValidationPipe(refineMockupRequestSchema))
+    body: z.output<typeof refineMockupRequestSchema>,
+  ) {
+    return this.service.refine(projectId, mockupId, body.prompt);
   }
 
   @Post(':mockupId/versions/:versionId/transition')

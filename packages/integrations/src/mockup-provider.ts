@@ -30,9 +30,12 @@ export type MockupGenerationResult =
 
 export interface MockupProvider {
   readonly id: string;
+  // `refinement` is an extra user instruction layered on the blueprint; a
+  // deterministic provider may ignore it (callers check the result kind).
   generate(
     content: UiBlueprintContent,
     deviceType?: MockupDeviceType,
+    refinement?: string,
   ): Promise<MockupGenerationResult>;
 }
 
@@ -49,11 +52,12 @@ export class FallbackMockupProvider implements MockupProvider {
   async generate(
     content: UiBlueprintContent,
     deviceType?: MockupDeviceType,
+    refinement?: string,
   ): Promise<MockupGenerationResult> {
     let lastError: unknown;
     for (const provider of this.providers) {
       try {
-        return await provider.generate(content, deviceType);
+        return await provider.generate(content, deviceType, refinement);
       } catch (cause) {
         this.onProviderFailure?.(provider.id, cause);
         lastError = cause;
