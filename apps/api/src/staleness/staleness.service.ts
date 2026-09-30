@@ -51,7 +51,7 @@ export class StalenessService {
           type: 'NEWER_APPROVED_SOURCE_VERSION',
           sourceArtifactId: linked.artifactId,
           sourceVersionId: latest.id,
-          message: `${linked.artifact.code} tiene una versión APPROVED más reciente (v${latest.versionNumber}) que la vinculada al contexto (v${linked.versionNumber}).`,
+          message: `${linked.artifact.code} tiene una versión aprobada más reciente (v${latest.versionNumber}) que la vinculada al contexto (v${linked.versionNumber}).`,
         });
       }
     }
@@ -74,7 +74,7 @@ export class StalenessService {
         type: 'NEW_APPROVED_SOURCE_NOT_LINKED',
         sourceArtifactId: source.id,
         sourceVersionId: approved.id,
-        message: `${source.code} está APPROVED pero no está vinculado al contexto actual del proyecto.`,
+        message: `${source.code} está aprobada pero no está vinculada al contexto actual del proyecto.`,
       });
     }
 
