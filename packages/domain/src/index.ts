@@ -9,6 +9,7 @@ export {
 } from './artifacts/artifact-lifecycle';
 export type { ArtifactOrigin, ArtifactVersionStatus } from './artifacts/artifact-lifecycle';
 export {
+  CONSTRUCTION_ARTIFACT_TYPE_CODES,
   FIRST_DELIVERABLE_ARTIFACT_TYPE_CODES,
   formatArtifactCode,
 } from './artifacts/artifact-types';

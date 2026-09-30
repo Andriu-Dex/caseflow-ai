@@ -97,7 +97,14 @@ describe('Structured Analysis controllers (delegation)', () => {
       navigationBody.content,
     );
     expect(service.getDiagram).toHaveBeenCalledWith('p', 'NAVIGATION_TREE', 'n');
-    expect(service.transition).toHaveBeenCalledWith('p', 'NAVIGATION_TREE', 'n', 'v', 'IN_REVIEW');
+    expect(service.transition).toHaveBeenCalledWith(
+      'p',
+      'NAVIGATION_TREE',
+      'n',
+      'v',
+      'IN_REVIEW',
+      null,
+    );
   });
 
   it('SoftwareArchitectureController delegates every route, including its diagram route', async () => {

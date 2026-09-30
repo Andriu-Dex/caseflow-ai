@@ -1,4 +1,6 @@
 import {
+  conceptualDomainModelContentSchema,
+  generationPlanContentSchema,
   navigationTreeContentSchema,
   softwareArchitectureContentSchema,
   systemArchitectureContentSchema,
@@ -88,7 +90,37 @@ export function evaluateStructuredGeneration(
     const parsed = systemArchitectureContentSchema.parse(content);
     for (const node of parsed.nodes)
       checkReferences(`El nodo «${node.name}»`, node.relatedSourceCodes ?? []);
-  } else {
+  } else if (kind === 'GENERATION_PLAN') {
+    const parsed = generationPlanContentSchema.parse(content);
+    const requirementCodes = new Set(
+      sources.filter((source) => source.type === 'REQUIREMENT').map((source) => source.code),
+    );
+    for (const module of parsed.modules) {
+      const label = `El módulo «${module.name}»`;
+      checkReferences(label, module.relatedSourceCodes ?? []);
+      checkUseCases(label, module.relatedUseCaseCodes, module.relatedSourceCodes ?? []);
+      for (const code of module.relatedRequirementCodes) {
+        if (!requirementCodes.has(code))
+          findings.push({
+            severity: 'ERROR',
+            code: 'UNKNOWN_REQUIREMENT',
+            message: `${label} cita el requisito ${code}, que no fue seleccionado.`,
+          });
+        else referenced.add(code);
+      }
+    }
+    for (const workflow of parsed.workflows) {
+      const label = `El flujo «${workflow.name}»`;
+      checkReferences(label, workflow.relatedSourceCodes ?? []);
+      checkUseCases(label, workflow.relatedUseCaseCodes, workflow.relatedSourceCodes ?? []);
+    }
+    for (const screen of parsed.screens)
+      checkReferences(`La pantalla «${screen.name}»`, screen.relatedSourceCodes ?? []);
+  } else if (kind === 'CONCEPTUAL_DOMAIN_MODEL') {
+    const parsed = conceptualDomainModelContentSchema.parse(content);
+    for (const entity of parsed.entities)
+      checkReferences(`La entidad «${entity.name}»`, entity.relatedSourceCodes ?? []);
+  } else if (kind === 'UI_BLUEPRINT') {
     const parsed = uiBlueprintContentSchema.parse(content);
     const navigationNodes = sources
       .filter((source) => source.type === 'NAVIGATION_TREE')

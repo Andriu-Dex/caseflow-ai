@@ -8,6 +8,10 @@ import {
   UiBlueprintController,
 } from './structured-analysis.controller';
 import { StructuredAnalysisService } from './structured-analysis.service';
+import {
+  ConceptualDomainModelController,
+  GenerationPlanController,
+} from './construction-kinds.controller';
 
 @Module({
   // Reuses DataModelsModule's DiagramEngine/DIAGRAM_PROVIDER wiring — one
@@ -18,6 +22,8 @@ import { StructuredAnalysisService } from './structured-analysis.service';
     SoftwareArchitectureController,
     SystemArchitectureController,
     UiBlueprintController,
+    GenerationPlanController,
+    ConceptualDomainModelController,
   ],
   providers: [StructuredAnalysisService],
   exports: [StructuredAnalysisService],

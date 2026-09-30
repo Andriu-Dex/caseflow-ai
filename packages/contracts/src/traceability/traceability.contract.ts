@@ -16,6 +16,8 @@ export const TRACEABILITY_ARTIFACT_TYPES = [
   'SYSTEM_ARCHITECTURE',
   'UI_BLUEPRINT',
   'MOCKUP',
+  'GENERATION_PLAN',
+  'CONCEPTUAL_DOMAIN_MODEL',
 ] as const;
 export type TraceabilityArtifactType = (typeof TRACEABILITY_ARTIFACT_TYPES)[number];
 

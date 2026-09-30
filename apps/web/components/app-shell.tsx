@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ClipboardCheck, Check, Home, Lock, Sparkles } from 'lucide-react';
+import { ClipboardCheck, Check, Hammer, Home, Lock, Sparkles } from 'lucide-react';
 import type { MouseEvent, ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { Alert, AlertDescription, Separator } from '@caseflow-ai/ui';
@@ -43,6 +43,16 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
       { href: '/design/system-architecture', label: 'Arquitectura de sistema' },
       { href: '/design/ui-blueprint', label: 'Plano de interfaz' },
       { href: '/design/mockups', label: 'Bocetos' },
+    ],
+  },
+  {
+    // Not numbered readiness steps: construction gates are enforced by the
+    // backend (approved plan → approved design baseline → generation).
+    label: 'Construcción',
+    items: [
+      { href: '/construction/generation-plan', label: 'Plan de generación' },
+      { href: '/construction/conceptual-model', label: 'Modelo conceptual' },
+      { href: '/construction/design-baseline', label: 'Aprobación de diseño' },
     ],
   },
   {
@@ -191,6 +201,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                           </span>
                         ) : item.href === '/readiness' ? (
                           <ClipboardCheck className="size-4 shrink-0" aria-hidden="true" />
+                        ) : item.href.startsWith('/construction/') ? (
+                          <Hammer className="size-4 shrink-0" aria-hidden="true" />
                         ) : (
                           <Home className="size-4 shrink-0" aria-hidden="true" />
                         )}

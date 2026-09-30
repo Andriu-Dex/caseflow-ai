@@ -22,6 +22,8 @@ const ARTIFACT_TYPE_LABELS: Record<TraceabilityNode['artifactType'], string> = {
   SYSTEM_ARCHITECTURE: 'Arquitectura de sistema',
   UI_BLUEPRINT: 'Plano de interfaz',
   MOCKUP: 'Bocetos',
+  GENERATION_PLAN: 'Plan de generación',
+  CONCEPTUAL_DOMAIN_MODEL: 'Modelo conceptual',
 };
 
 // Accent-insensitive, case-insensitive substring match — mirrors the same
