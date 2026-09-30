@@ -100,6 +100,7 @@ export function NavigationManualForm({ projectId, initial, onCreated, onCancel }
       route: string;
       description: string;
       relatedUseCaseCodes: string;
+      relatedSourceCodes: string;
     }[]
   >(
     c0?.nodes.map((n) => ({
@@ -111,6 +112,7 @@ export function NavigationManualForm({ projectId, initial, onCreated, onCancel }
       route: n.route ?? '',
       description: n.description ?? '',
       relatedUseCaseCodes: n.relatedUseCaseCodes.join(', '),
+      relatedSourceCodes: n.relatedSourceCodes?.join(', ') ?? '',
     })) ?? [
       {
         label: '',
@@ -120,6 +122,7 @@ export function NavigationManualForm({ projectId, initial, onCreated, onCancel }
         route: '',
         description: '',
         relatedUseCaseCodes: '',
+        relatedSourceCodes: '',
       },
     ],
   );
@@ -144,6 +147,7 @@ export function NavigationManualForm({ projectId, initial, onCreated, onCancel }
           route: n.route || undefined,
           description: n.description || undefined,
           relatedUseCaseCodes: csv(n.relatedUseCaseCodes),
+          relatedSourceCodes: csv(n.relatedSourceCodes),
         })),
       });
       onCreated();
@@ -233,6 +237,12 @@ export function NavigationManualForm({ projectId, initial, onCreated, onCancel }
             value={n.relatedUseCaseCodes}
             onChange={(val) => update(i, { relatedUseCaseCodes: val })}
           />
+          <TagInput
+            placeholder="Fuentes relacionadas (códigos, coma)"
+            className="w-56"
+            value={n.relatedSourceCodes}
+            onChange={(val) => update(i, { relatedSourceCodes: val })}
+          />
           <Button
             variant="ghost"
             size="icon-xs"
@@ -260,6 +270,7 @@ export function NavigationManualForm({ projectId, initial, onCreated, onCancel }
               route: '',
               description: '',
               relatedUseCaseCodes: '',
+              relatedSourceCodes: '',
             },
           ])
         }
@@ -281,14 +292,21 @@ export function SoftwareArchitectureManualForm({
   const [title, setTitle] = useState(initial?.title ?? '');
   const [style, setStyle] = useState(c0?.style ?? '');
   const [components, setComponents] = useState<
-    { localId?: string; name: string; responsibilities: string; layer: string }[]
+    {
+      localId?: string;
+      name: string;
+      responsibilities: string;
+      layer: string;
+      relatedSourceCodes: string;
+    }[]
   >(
     c0?.components.map((c) => ({
       localId: c.localId,
       name: c.name,
       responsibilities: c.responsibilities.join(', '),
       layer: c.layerLocalId ?? '',
-    })) ?? [{ name: '', responsibilities: '', layer: '' }],
+      relatedSourceCodes: c.relatedSourceCodes?.join(', ') ?? '',
+    })) ?? [{ name: '', responsibilities: '', layer: '', relatedSourceCodes: '' }],
   );
   const [dependencies, setDependencies] = useState<
     { fromLocalId: string; toLocalId: string; description: string }[]
@@ -308,6 +326,7 @@ export function SoftwareArchitectureManualForm({
           name: c.name,
           layerLocalId: c.layer.trim() || undefined,
           responsibilities: csv(c.responsibilities),
+          relatedSourceCodes: csv(c.relatedSourceCodes),
         })),
         dependencies: dependencies
           .filter((d) => d.fromLocalId && d.toLocalId)
@@ -386,6 +405,16 @@ export function SoftwareArchitectureManualForm({
               )
             }
           />
+          <TagInput
+            placeholder="Fuentes relacionadas (códigos, coma)"
+            className="w-56"
+            value={c.relatedSourceCodes}
+            onChange={(val) =>
+              setComponents((prev) =>
+                prev.map((x, idx) => (idx === i ? { ...x, relatedSourceCodes: val } : x)),
+              )
+            }
+          />
           <Button
             variant="ghost"
             size="icon-xs"
@@ -403,7 +432,10 @@ export function SoftwareArchitectureManualForm({
         size="sm"
         type="button"
         onClick={() =>
-          setComponents((prev) => [...prev, { name: '', responsibilities: '', layer: '' }])
+          setComponents((prev) => [
+            ...prev,
+            { name: '', responsibilities: '', layer: '', relatedSourceCodes: '' },
+          ])
         }
         className="self-start text-muted-foreground"
       >
@@ -528,6 +560,7 @@ export function SystemArchitectureManualForm({
       name: string;
       kind: (typeof SYSTEM_NODE_KINDS)[number];
       responsibilities: string;
+      relatedSourceCodes: string;
     }[]
   >(
     c0?.nodes.map((n) => ({
@@ -535,7 +568,8 @@ export function SystemArchitectureManualForm({
       name: n.name,
       kind: n.kind,
       responsibilities: n.responsibilities.join(', '),
-    })) ?? [{ name: '', kind: 'RUNTIME', responsibilities: '' }],
+      relatedSourceCodes: n.relatedSourceCodes?.join(', ') ?? '',
+    })) ?? [{ name: '', kind: 'RUNTIME', responsibilities: '', relatedSourceCodes: '' }],
   );
   const [links, setLinks] = useState<
     { fromLocalId: string; toLocalId: string; protocol: string; description: string }[]
@@ -561,6 +595,7 @@ export function SystemArchitectureManualForm({
           name: n.name,
           kind: n.kind,
           responsibilities: csv(n.responsibilities),
+          relatedSourceCodes: csv(n.relatedSourceCodes),
         })),
         links: links
           .filter((l) => l.fromLocalId && l.toLocalId)
@@ -648,6 +683,16 @@ export function SystemArchitectureManualForm({
               )
             }
           />
+          <TagInput
+            placeholder="Fuentes relacionadas (códigos, coma)"
+            className="w-56"
+            value={n.relatedSourceCodes}
+            onChange={(val) =>
+              setNodes((prev) =>
+                prev.map((x, idx) => (idx === i ? { ...x, relatedSourceCodes: val } : x)),
+              )
+            }
+          />
           <Button
             variant="ghost"
             size="icon-xs"
@@ -665,7 +710,10 @@ export function SystemArchitectureManualForm({
         size="sm"
         type="button"
         onClick={() =>
-          setNodes((prev) => [...prev, { name: '', kind: 'RUNTIME', responsibilities: '' }])
+          setNodes((prev) => [
+            ...prev,
+            { name: '', kind: 'RUNTIME', responsibilities: '', relatedSourceCodes: '' },
+          ])
         }
         className="self-start text-muted-foreground"
       >
@@ -774,6 +822,7 @@ export function UiBlueprintManualForm({ projectId, initial, onCreated, onCancel 
       purpose: string;
       targetActors: string;
       relatedUseCaseCodes: string;
+      relatedSourceCodes: string;
       navigationNodeLocalId: string;
       sections: string;
       primaryActions: string;
@@ -789,6 +838,7 @@ export function UiBlueprintManualForm({ projectId, initial, onCreated, onCancel 
       purpose: s.purpose,
       targetActors: s.targetActors.join(', '),
       relatedUseCaseCodes: s.relatedUseCaseCodes.join(', '),
+      relatedSourceCodes: s.relatedSourceCodes?.join(', ') ?? '',
       navigationNodeLocalId: s.navigationNodeLocalId ?? '',
       sections: s.sections.join(', '),
       primaryActions: s.primaryActions.join(', '),
@@ -802,6 +852,7 @@ export function UiBlueprintManualForm({ projectId, initial, onCreated, onCancel 
         purpose: '',
         targetActors: '',
         relatedUseCaseCodes: '',
+        relatedSourceCodes: '',
         navigationNodeLocalId: '',
         sections: '',
         primaryActions: '',
@@ -826,6 +877,7 @@ export function UiBlueprintManualForm({ projectId, initial, onCreated, onCancel 
           purpose: s.purpose,
           targetActors: csv(s.targetActors),
           relatedUseCaseCodes: csv(s.relatedUseCaseCodes),
+          relatedSourceCodes: csv(s.relatedSourceCodes),
           navigationNodeLocalId: s.navigationNodeLocalId || undefined,
           sections: csv(s.sections),
           primaryActions: csv(s.primaryActions),
@@ -918,6 +970,16 @@ export function UiBlueprintManualForm({ projectId, initial, onCreated, onCancel 
                 )
               }
             />
+            <TagInput
+              placeholder="Fuentes relacionadas (códigos, coma)"
+              className="flex-1"
+              value={s.relatedSourceCodes}
+              onChange={(val) =>
+                setScreens((prev) =>
+                  prev.map((x, idx) => (idx === i ? { ...x, relatedSourceCodes: val } : x)),
+                )
+              }
+            />
             <input
               placeholder="Nodo de navegación relacionado (opcional)"
               className="flex-1 rounded-md border border-input px-2 py-1"
@@ -1001,6 +1063,7 @@ export function UiBlueprintManualForm({ projectId, initial, onCreated, onCancel 
               purpose: '',
               targetActors: '',
               relatedUseCaseCodes: '',
+              relatedSourceCodes: '',
               navigationNodeLocalId: '',
               sections: '',
               primaryActions: '',

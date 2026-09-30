@@ -42,6 +42,7 @@ export interface GenerationCandidate {
   id: string;
   candidateId: string;
   name?: string;
+  qualityFindings?: { severity: 'ERROR' | 'WARNING'; code: string; message: string }[];
   [key: string]: unknown;
 }
 export interface GenerationResult {

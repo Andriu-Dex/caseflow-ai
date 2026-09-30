@@ -161,6 +161,13 @@ export class StitchMockupProvider implements MockupProvider {
         ? `Acciones secundarias: ${screen.secondaryActions.join(', ')}.`
         : '',
       screen.forms.length ? `Campos de formulario: ${screen.forms.join(', ')}.` : '',
+      screen.principalData.length
+        ? `Datos principales que debe representar: ${screen.principalData.join(', ')}.`
+        : '',
+      screen.states.length ? `Estados relevantes: ${screen.states.join(', ')}.` : '',
+      screen.relatedUseCaseCodes.length
+        ? `Casos de uso relacionados: ${screen.relatedUseCaseCodes.join(', ')}.`
+        : '',
     ]
       .filter(Boolean)
       .join(' ');

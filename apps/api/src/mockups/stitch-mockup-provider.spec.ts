@@ -28,6 +28,33 @@ describe('StitchMockupProvider', () => {
     );
   });
 
+  it('passes the blueprint data and states to the visual generator', () => {
+    const provider = new StitchMockupProvider({ apiKey: 'test', timeoutMs: 100 });
+    const buildPrompt = (
+      provider as unknown as {
+        buildPrompt: (screen: unknown, device: 'DESKTOP') => string;
+      }
+    ).buildPrompt.bind(provider);
+    const prompt = buildPrompt(
+      {
+        name: 'Pedidos',
+        purpose: 'Registrar un pedido',
+        targetActors: ['Vendedor'],
+        sections: ['Productos'],
+        primaryActions: ['Guardar'],
+        secondaryActions: [],
+        forms: ['Cantidad'],
+        principalData: ['Precio total'],
+        states: ['Error de validación'],
+        relatedUseCaseCodes: ['CU-001'],
+      },
+      'DESKTOP',
+    );
+    expect(prompt).toContain('Precio total');
+    expect(prompt).toContain('Error de validación');
+    expect(prompt).toContain('CU-001');
+  });
+
   it('bounds the overall provider wait so fallback can proceed', async () => {
     const provider = new StitchMockupProvider({ apiKey: 'test', timeoutMs: 5 });
     (
