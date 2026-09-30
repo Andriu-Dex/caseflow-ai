@@ -139,6 +139,12 @@ function renderContentDetail(kind: StructuredAnalysisKind, content: unknown) {
                   · Casos de uso: {node.relatedUseCaseCodes.join(', ')}
                 </span>
               ) : null}
+              {node.relatedSourceCodes?.length ? (
+                <span className="text-muted-foreground">
+                  {' '}
+                  · Fuentes: {node.relatedSourceCodes.join(', ')}
+                </span>
+              ) : null}
             </li>
           ))}
         </ul>
@@ -160,6 +166,12 @@ function renderContentDetail(kind: StructuredAnalysisKind, content: unknown) {
                   <span className="text-muted-foreground">
                     {' '}
                     — {component.responsibilities.join('; ')}
+                  </span>
+                ) : null}
+                {component.relatedSourceCodes?.length ? (
+                  <span className="text-muted-foreground">
+                    {' '}
+                    · Fuentes: {component.relatedSourceCodes.join(', ')}
                   </span>
                 ) : null}
               </li>
@@ -203,6 +215,12 @@ function renderContentDetail(kind: StructuredAnalysisKind, content: unknown) {
                     — {node.responsibilities.join('; ')}
                   </span>
                 ) : null}
+                {node.relatedSourceCodes?.length ? (
+                  <span className="text-muted-foreground">
+                    {' '}
+                    · Fuentes: {node.relatedSourceCodes.join(', ')}
+                  </span>
+                ) : null}
               </li>
             ))}
           </ul>
@@ -227,6 +245,11 @@ function renderContentDetail(kind: StructuredAnalysisKind, content: unknown) {
           {screens.map((screen) => (
             <li key={screen.localId}>
               <strong>{screen.name}</strong> — {screen.purpose}
+              {screen.relatedSourceCodes?.length ? (
+                <div className="text-muted-foreground">
+                  Fuentes: {screen.relatedSourceCodes.join(', ')}
+                </div>
+              ) : null}
               {screen.targetActors.length > 0 ? (
                 <div className="text-muted-foreground">
                   Actores: {screen.targetActors.join(', ')}

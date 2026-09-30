@@ -172,7 +172,7 @@ describe('Structured Analysis (Navigation/Architecture/UI Blueprint) integration
   });
 
   it('generates a candidate from exact APPROVED sources and accepts it with full provenance', async () => {
-    const { provider, ai } = fakeAIOrchestrator(ctx, 'navigation.generate', navigation, 3);
+    const { provider, ai } = fakeAIOrchestrator(ctx, 'navigation.generate', navigation, 4);
     const service = new StructuredAnalysisService(
       ctx.prisma,
       ai,
@@ -201,7 +201,7 @@ describe('Structured Analysis (Navigation/Architecture/UI Blueprint) integration
 
   it('rejects draft and cross-project generation sources', async () => {
     const draft = await ctx.requirements.create(projectId, { ...requirement, name: 'Borrador' });
-    const { ai } = fakeAIOrchestrator(ctx, 'navigation.generate', navigation, 3);
+    const { ai } = fakeAIOrchestrator(ctx, 'navigation.generate', navigation, 4);
     const service = new StructuredAnalysisService(
       ctx.prisma,
       ai,
@@ -296,7 +296,7 @@ describe('Structured Analysis (Navigation/Architecture/UI Blueprint) integration
       'APPROVED',
     );
 
-    const { ai } = fakeAIOrchestrator(ctx, 'ui-blueprint.generate', uiBlueprint);
+    const { ai } = fakeAIOrchestrator(ctx, 'ui-blueprint.generate', uiBlueprint, 2);
     const service = new StructuredAnalysisService(
       ctx.prisma,
       ai,
@@ -357,7 +357,12 @@ describe('Structured Analysis (Navigation/Architecture/UI Blueprint) integration
     expect(v2.version.versionNumber).toBe(2);
     expect(v2.version.status).toBe('DRAFT');
 
-    const { ai } = fakeAIOrchestrator(ctx, 'software-architecture.generate', softwareArchitecture);
+    const { ai } = fakeAIOrchestrator(
+      ctx,
+      'software-architecture.generate',
+      softwareArchitecture,
+      2,
+    );
     const service = new StructuredAnalysisService(
       ctx.prisma,
       ai,

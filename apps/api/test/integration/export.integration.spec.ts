@@ -446,7 +446,7 @@ describe('Export (First Deliverable, Phase H)', () => {
 
     const navigationService = new StructuredAnalysisService(
       ctx.prisma,
-      fakeAi(ctx, 'navigation.generate', 3, {
+      fakeAi(ctx, 'navigation.generate', 4, {
         nodes: [{ localId: 'home', label: 'Home', viewName: 'Home', kind: 'HOME' as const }],
       }),
       new DiagramEngine(),
@@ -477,7 +477,7 @@ describe('Export (First Deliverable, Phase H)', () => {
 
     const softwareArchitectureService = new StructuredAnalysisService(
       ctx.prisma,
-      fakeAi(ctx, 'software-architecture.generate', 1, {
+      fakeAi(ctx, 'software-architecture.generate', 2, {
         style: 'Monolito modular',
         components: [{ localId: 'api', name: 'API' }],
         dependencies: [],
@@ -515,7 +515,7 @@ describe('Export (First Deliverable, Phase H)', () => {
 
     const systemArchitectureService = new StructuredAnalysisService(
       ctx.prisma,
-      fakeAi(ctx, 'system-architecture.generate', 1, {
+      fakeAi(ctx, 'system-architecture.generate', 2, {
         boundary: 'Sistema',
         nodes: [{ localId: 'server', name: 'Servidor', kind: 'RUNTIME' as const }],
         links: [],
@@ -550,7 +550,7 @@ describe('Export (First Deliverable, Phase H)', () => {
 
     const uiBlueprintService = new StructuredAnalysisService(
       ctx.prisma,
-      fakeAi(ctx, 'ui-blueprint.generate', 1, {
+      fakeAi(ctx, 'ui-blueprint.generate', 2, {
         screens: [{ localId: 'home', name: 'Inicio', purpose: 'Ver panel' }],
       }),
       new DiagramEngine(),

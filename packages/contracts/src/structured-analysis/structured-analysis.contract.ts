@@ -42,6 +42,7 @@ const navigationNodeSchema = z
     kind: z.enum(NAVIGATION_NODE_KINDS),
     parentLocalId: localId().optional(),
     relatedUseCaseCodes: z.array(text(40)).max(20).default([]),
+    relatedSourceCodes: z.array(text(40)).max(100).optional(),
   })
   .strict();
 export const navigationTreeContentSchema = z
@@ -89,6 +90,7 @@ const softwareComponentSchema = z
     name: text(200),
     layerLocalId: localId().optional(),
     responsibilities: z.array(text(500)).max(20).default([]),
+    relatedSourceCodes: z.array(text(40)).max(100).optional(),
   })
   .strict();
 const componentDependencySchema = z
@@ -132,6 +134,7 @@ const systemNodeSchema = z
     name: text(200),
     kind: z.enum(SYSTEM_NODE_KINDS),
     responsibilities: z.array(text(500)).max(20).default([]),
+    relatedSourceCodes: z.array(text(40)).max(100).optional(),
   })
   .strict();
 const systemLinkSchema = z
@@ -172,6 +175,7 @@ const screenSchema = z
     purpose: text(1000),
     targetActors: z.array(text(200)).max(20).default([]),
     relatedUseCaseCodes: z.array(text(40)).max(20).default([]),
+    relatedSourceCodes: z.array(text(40)).max(100).optional(),
     navigationNodeLocalId: localId().optional(),
     sections: z.array(text(300)).max(30).default([]),
     primaryActions: z.array(text(200)).max(20).default([]),
@@ -246,6 +250,15 @@ export const structuredAnalysisGenerationCandidateResponseSchema = z.object({
   candidateId: z.string(),
   title: z.string(),
   content: structuredAnalysisContentSchema,
+  qualityFindings: z
+    .array(
+      z.object({
+        severity: z.enum(['ERROR', 'WARNING']),
+        code: z.string(),
+        message: z.string(),
+      }),
+    )
+    .optional(),
   createdAt: z.iso.datetime(),
 });
 export const structuredAnalysisGenerationResponseSchema = z.object({

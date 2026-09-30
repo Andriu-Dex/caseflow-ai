@@ -182,7 +182,7 @@ describe('Traceability graph integration', () => {
 
     const structuredAnalysisService = new StructuredAnalysisService(
       ctx.prisma,
-      fakeAi(ctx, 'navigation.generate', 3, {
+      fakeAi(ctx, 'navigation.generate', 4, {
         nodes: [{ localId: 'home', label: 'Home', viewName: 'Home', kind: 'HOME' as const }],
       }),
       new DiagramEngine(),
@@ -216,7 +216,7 @@ describe('Traceability graph integration', () => {
     // StructuredAnalysisGenerationSource — never inferred from adjacency.
     const softwareArchitectureService = new StructuredAnalysisService(
       ctx.prisma,
-      fakeAi(ctx, 'software-architecture.generate', 1, {
+      fakeAi(ctx, 'software-architecture.generate', 2, {
         style: 'Monolito modular',
         components: [{ localId: 'api', name: 'API' }],
         dependencies: [],
@@ -240,7 +240,7 @@ describe('Traceability graph integration', () => {
 
     const systemArchitectureService = new StructuredAnalysisService(
       ctx.prisma,
-      fakeAi(ctx, 'system-architecture.generate', 1, {
+      fakeAi(ctx, 'system-architecture.generate', 2, {
         boundary: 'Sistema',
         nodes: [{ localId: 'server', name: 'Servidor', kind: 'RUNTIME' as const }],
         links: [],
@@ -261,7 +261,7 @@ describe('Traceability graph integration', () => {
 
     const uiBlueprintService = new StructuredAnalysisService(
       ctx.prisma,
-      fakeAi(ctx, 'ui-blueprint.generate', 1, {
+      fakeAi(ctx, 'ui-blueprint.generate', 2, {
         screens: [{ localId: 'home', name: 'Inicio', purpose: 'Ver panel' }],
       }),
       new DiagramEngine(),

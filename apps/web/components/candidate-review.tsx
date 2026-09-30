@@ -24,6 +24,11 @@ export function CandidateReview({
   const [busy, setBusy] = useState(false);
   const total = generation.candidates.length;
   const allSelected = selected.length === total;
+  const hasInvalidSelection = generation.candidates.some(
+    (candidate) =>
+      selected.includes(candidate.id) &&
+      candidate.qualityFindings?.some((finding) => finding.severity === 'ERROR'),
+  );
 
   function toggle(id: string) {
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -91,7 +96,25 @@ export function CandidateReview({
                   checked={checked}
                   onChange={() => toggle(c.id)}
                 />
-                <span className="text-foreground">{describe(c)}</span>
+                <span className="text-foreground">
+                  {describe(c)}
+                  {c.qualityFindings?.length ? (
+                    <span className="mt-1 block space-y-1 text-xs">
+                      {c.qualityFindings.map((finding, index) => (
+                        <span
+                          key={`${finding.code}-${index}`}
+                          className={`block ${finding.severity === 'ERROR' ? 'text-destructive' : 'text-amber-700 dark:text-amber-400'}`}
+                        >
+                          {finding.severity === 'ERROR' ? 'Error' : 'Revisar'}: {finding.message}
+                        </span>
+                      ))}
+                      <span className="block text-muted-foreground">
+                        Estas comprobaciones no verifican la fidelidad semántica; compare la
+                        propuesta con las fuentes antes de aprobarla.
+                      </span>
+                    </span>
+                  ) : null}
+                </span>
               </label>
             </li>
           );
@@ -114,7 +137,7 @@ export function CandidateReview({
           size="sm"
           type="button"
           onClick={accept}
-          disabled={busy || selected.length === 0}
+          disabled={busy || selected.length === 0 || hasInvalidSelection}
         >
           <Check className="size-4" aria-hidden="true" />
           {busy ? 'Incorporando…' : `Incorporar ${selected.length} de ${total}`}
