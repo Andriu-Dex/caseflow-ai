@@ -44,11 +44,13 @@ export {
   MOCKUP_PROVIDER_ERROR_CODES,
 } from './mockup-provider';
 export type {
+  EditedScreen,
   GeneratedScreen,
   MockupGenerationResult,
   MockupProvider,
   MockupProviderErrorCode,
   MockupProviderFailureHandler,
+  ProviderScreenRef,
 } from './mockup-provider';
 
 export { FakeEmbeddingProvider, DisabledEmbeddingProvider } from './embedding-provider';
