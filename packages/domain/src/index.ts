@@ -16,4 +16,23 @@ export type { FirstDeliverableArtifactTypeCode } from './artifacts/artifact-type
 export { MOCKUP_GENERATION_QUEUE } from './jobs/mockup-generation-job';
 export type { MockupGenerationJobPayload } from './jobs/mockup-generation-job';
 export { SOURCE_PROCESSING_QUEUE } from './jobs/source-processing-job';
+export {
+  CASEFLOW_STANDARD_WEB_V1,
+  CASEFLOW_WEB_TS_V1,
+  DEPENDENCY_CATEGORIES,
+  DEPENDENCY_LAYERS,
+  TARGET_TEMPLATES,
+  VALIDATION_STAGES,
+  findCatalogDependency,
+  findTargetTemplate,
+} from './construction/target-templates';
+export type {
+  CatalogDependency,
+  DependencyCategory,
+  DependencyLayer,
+  DesignSystemProfile,
+  TargetTemplateVersion,
+  ValidationCommand,
+  ValidationStage,
+} from './construction/target-templates';
 export type { SourceProcessingJobPayload } from './jobs/source-processing-job';
