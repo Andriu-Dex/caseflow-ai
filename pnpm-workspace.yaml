@@ -5,6 +5,7 @@ allowBuilds:
   '@prisma/engines': true
   '@scarf/scarf': false
   '@swc/core': true
+  argon2: true
   # esbuild's own postinstall only downloads its prebuilt platform binary
   # (no arbitrary script) — required for apps/web's Vite/Vitest test runner.
   esbuild: true
@@ -12,6 +13,7 @@ allowBuilds:
   # falls back to a pure-JS implementation if this build is skipped.
   msgpackr-extract: true
   prisma: true
+  tesseract.js: false # optional funding notice; OCR runtime needs no install script
 minimumReleaseAgeExclude:
   - '@vitest/coverage-v8@5.0.1'
   - '@vitest/mocker@5.0.1'

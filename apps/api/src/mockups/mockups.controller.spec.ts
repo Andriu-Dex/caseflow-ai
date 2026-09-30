@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MockupsController } from './mockups.controller';
+import { InternalMockupJobsController } from './internal-mockup-jobs.controller';
 import type { MockupsService } from './mockups.service';
 import type { Response } from 'express';
 
@@ -10,7 +11,6 @@ describe('MockupsController', () => {
       list: vi.fn().mockResolvedValue({}),
       get: vi.fn().mockResolvedValue({}),
       getJob: vi.fn().mockResolvedValue({}),
-      runJob: vi.fn().mockResolvedValue(undefined),
       getPreview: vi.fn().mockResolvedValue({}),
       version: vi.fn().mockResolvedValue({}),
       transition: vi.fn().mockResolvedValue({}),
@@ -51,7 +51,7 @@ describe('MockupsController', () => {
 
   it('runs an internal job only when the shared secret header matches', async () => {
     const service = { runJob: vi.fn().mockResolvedValue(undefined) };
-    const controller = new MockupsController(service as unknown as MockupsService);
+    const controller = new InternalMockupJobsController(service as unknown as MockupsService);
     const originalSecret = process.env.INTERNAL_JOBS_SECRET;
     process.env.INTERNAL_JOBS_SECRET = 'shh';
 

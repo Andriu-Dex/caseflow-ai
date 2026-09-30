@@ -19,6 +19,10 @@ import type { Prisma } from '../generated/prisma/client';
 import { DiagramEngine, type DiagramFormat } from '../data-models/diagram-engine';
 import { DIAGRAM_PROVIDER } from '../data-models/diagram-provider.token';
 import { sanitizeDiagramSvg } from '../data-models/svg-sanitizer';
+import {
+  evaluateStructuredGeneration,
+  type GenerationSourceReference,
+} from './structured-generation-quality';
 
 type Tx = Prisma.TransactionClient;
 type Content = Record<string, unknown>;
@@ -55,7 +59,7 @@ const ELIGIBLE_SOURCE_TYPES: Record<StructuredAnalysisKind, string[]> = {
 const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
   NAVIGATION_TREE: {
     promptKey: 'navigation.generate',
-    promptVersion: 3,
+    promptVersion: 4,
     maxOutputTokens: 4096,
     diagram: {
       format: 'MERMAID_FLOWCHART',
@@ -73,7 +77,7 @@ const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
   },
   SOFTWARE_ARCHITECTURE: {
     promptKey: 'software-architecture.generate',
-    promptVersion: 1,
+    promptVersion: 2,
     maxOutputTokens: 6144,
     diagram: {
       format: 'PLANTUML_COMPONENT',
@@ -90,7 +94,7 @@ const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
   },
   SYSTEM_ARCHITECTURE: {
     promptKey: 'system-architecture.generate',
-    promptVersion: 1,
+    promptVersion: 2,
     maxOutputTokens: 6144,
     diagram: {
       format: 'PLANTUML_DEPLOYMENT',
@@ -107,7 +111,7 @@ const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
   },
   UI_BLUEPRINT: {
     promptKey: 'ui-blueprint.generate',
-    promptVersion: 1,
+    promptVersion: 2,
     maxOutputTokens: 8192,
   },
 };
@@ -209,11 +213,111 @@ export class StructuredAnalysisService {
         status: 'APPROVED',
         artifact: { artifactTypeCode: { in: ELIGIBLE_SOURCE_TYPES[kind] } },
       },
-      include: { artifact: true },
+      include: {
+        artifact: true,
+        requirementDetail: {
+          include: {
+            actors: { orderBy: { position: 'asc' } },
+            preconditions: { orderBy: { position: 'asc' } },
+            postconditions: { orderBy: { position: 'asc' } },
+          },
+        },
+        useCaseDetail: {
+          include: {
+            secondaryActors: { orderBy: { position: 'asc' } },
+            preconditions: { orderBy: { position: 'asc' } },
+            postconditions: { orderBy: { position: 'asc' } },
+            mainFlowSteps: { orderBy: { position: 'asc' } },
+            alternativeFlows: {
+              orderBy: { position: 'asc' },
+              include: { steps: { orderBy: { position: 'asc' } } },
+            },
+          },
+        },
+        dataModelDetail: {
+          include: {
+            entities: {
+              orderBy: { position: 'asc' },
+              include: { attributes: { orderBy: { position: 'asc' } } },
+            },
+            relationships: { orderBy: { position: 'asc' } },
+          },
+        },
+        structuredAnalysisDetail: true,
+      },
     });
     if (sources.length !== unique.length)
       throw new UnprocessableEntityException(
         'La generación requiere versiones exactas APPROVED de un tipo elegible del mismo proyecto.',
+      );
+    const contextSources = sources.map((source) => {
+      const requirement = source.requirementDetail;
+      const useCase = source.useCaseDetail;
+      const model = source.dataModelDetail;
+      const entityNames = new Map(model?.entities.map((entity) => [entity.id, entity.name]));
+      return {
+        sourceVersionId: source.id,
+        type: source.artifact.artifactTypeCode,
+        code: source.artifact.code,
+        title: source.title,
+        content: requirement
+          ? {
+              name: requirement.name,
+              description: requirement.description,
+              requirementType: requirement.requirementType,
+              priority: requirement.priority,
+              actors: requirement.actors.map((item) => item.name),
+              preconditions: requirement.preconditions.map((item) => item.description),
+              postconditions: requirement.postconditions.map((item) => item.description),
+            }
+          : useCase
+            ? {
+                name: useCase.name,
+                objective: useCase.objective,
+                primaryActor: useCase.primaryActor,
+                secondaryActors: useCase.secondaryActors.map((item) => item.name),
+                preconditions: useCase.preconditions.map((item) => item.description),
+                postconditions: useCase.postconditions.map((item) => item.description),
+                mainFlow: useCase.mainFlowSteps.map((step) => ({
+                  actor: step.actor,
+                  action: step.action,
+                })),
+                alternativeFlows: useCase.alternativeFlows.map((flow) => ({
+                  name: flow.name,
+                  condition: flow.condition,
+                  steps: flow.steps.map((step) => ({ actor: step.actor, action: step.action })),
+                })),
+              }
+            : model
+              ? {
+                  entities: model.entities.map((entity) => ({
+                    name: entity.name,
+                    description: entity.description,
+                    attributes: entity.attributes.map((attribute) => ({
+                      name: attribute.name,
+                      type: attribute.type,
+                      required: attribute.required,
+                    })),
+                  })),
+                  relationships: model.relationships.map((relationship) => ({
+                    name: relationship.name,
+                    source: entityNames.get(relationship.sourceEntityId),
+                    target: entityNames.get(relationship.targetEntityId),
+                    sourceCardinality: relationship.sourceCardinality,
+                    targetCardinality: relationship.targetCardinality,
+                  })),
+                }
+              : source.structuredAnalysisDetail?.content,
+      };
+    });
+    if (contextSources.some((source) => source.content === undefined))
+      throw new UnprocessableEntityException(
+        'Una fuente seleccionada no tiene contenido estructurado disponible.',
+      );
+    const serializedContext = JSON.stringify({ sources: contextSources });
+    if (serializedContext.length > 18_000)
+      throw new UnprocessableEntityException(
+        'Las fuentes seleccionadas exceden el límite de contexto. Seleccione menos versiones para esta generación.',
       );
     const config = KIND_CONFIG[kind];
     const language = await getProjectLanguage(this.prisma, projectId);
@@ -226,14 +330,7 @@ export class StructuredAnalysisService {
         messages: [
           {
             role: 'user',
-            content: JSON.stringify({
-              sources: sources.map((source) => ({
-                sourceId: source.id,
-                type: source.artifact.artifactTypeCode,
-                code: source.artifact.code,
-                title: source.title,
-              })),
-            }),
+            content: serializedContext,
           },
         ],
         outputSchema: STRUCTURED_ANALYSIS_CONTENT_SCHEMAS[kind] as unknown as z.ZodType<Content>,
@@ -275,7 +372,25 @@ export class StructuredAnalysisService {
       include: { sources: true, candidates: { orderBy: { candidateId: 'asc' } } },
     });
     if (!generation) throw new NotFoundException('Generación no encontrada.');
-    return generation;
+    const sourceVersions = await this.prisma.artifactVersion.findMany({
+      where: {
+        id: { in: generation.sources.map((source) => source.artifactVersionId) },
+        projectId,
+      },
+      include: { artifact: true, structuredAnalysisDetail: true },
+    });
+    const references: GenerationSourceReference[] = sourceVersions.map((source) => ({
+      code: source.artifact.code,
+      type: source.artifact.artifactTypeCode,
+      content: source.structuredAnalysisDetail?.content,
+    }));
+    return {
+      ...generation,
+      candidates: generation.candidates.map((candidate) => ({
+        ...candidate,
+        qualityFindings: evaluateStructuredGeneration(kind, candidate.content, references),
+      })),
+    };
   }
 
   async accept(
@@ -293,6 +408,17 @@ export class StructuredAnalysisService {
     const previewCandidates = preview.candidates.filter((candidate) => selected.has(candidate.id));
     if (previewCandidates.length !== selected.size)
       throw new NotFoundException('Candidato no encontrado.');
+    const reviewed = await this.getGeneration(projectId, kind, generationId);
+    if (
+      reviewed.candidates.some(
+        (candidate) =>
+          selected.has(candidate.id) &&
+          candidate.qualityFindings.some((finding) => finding.severity === 'ERROR'),
+      )
+    )
+      throw new UnprocessableEntityException(
+        'La propuesta contiene referencias inválidas. Corríjala o genere una nueva antes de incorporarla.',
+      );
     // Rendered before the write transaction opens (no network I/O under a
     // DB lock); a render failure aborts the whole batch, nothing is written.
     const diagrams = new Map<string, Awaited<ReturnType<typeof this.renderDiagramIfApplicable>>>();

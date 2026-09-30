@@ -14,6 +14,16 @@ export const createMockupRequestSchema = z
   .strict();
 export type CreateMockupRequest = z.output<typeof createMockupRequestSchema>;
 
+// Refinement produces a new mockup version from a free-text instruction and
+// never overwrites: either the whole mockup is regenerated from the same
+// approved UI Blueprint, or one screen is edited in place at Stitch while the
+// other screens are carried over unchanged. Same body for both endpoints.
+export const MOCKUP_REFINEMENT_PROMPT_MAX_LENGTH = 1000;
+export const refineMockupRequestSchema = z
+  .object({ prompt: z.string().trim().min(3).max(MOCKUP_REFINEMENT_PROMPT_MAX_LENGTH) })
+  .strict();
+export type RefineMockupRequest = z.output<typeof refineMockupRequestSchema>;
+
 export const MOCKUP_GENERATOR_KINDS = ['INTERNAL_WIREFRAME', 'STITCH'] as const;
 export type MockupGeneratorKind = (typeof MOCKUP_GENERATOR_KINDS)[number];
 
@@ -23,6 +33,9 @@ const mockupScreenSchema = z.object({
   screenName: z.string(),
   imageUrl: z.string(),
   htmlUrl: z.string(),
+  // False for screens generated before their Stitch identity was recorded.
+  editable: z.boolean(),
+  refinementPrompt: z.string().nullable(),
 });
 
 const mockupVersionSchema = z.object({
@@ -73,6 +86,7 @@ export const mockupPreviewResponseSchema = z.object({
   generatorKind: z.enum(MOCKUP_GENERATOR_KINDS),
   svg: z.string().nullable(),
   screens: z.array(mockupScreenSchema).nullable(),
+  refinementPrompt: z.string().nullable(),
   createdAt: z.iso.datetime(),
 });
 export type MockupPreviewResponse = z.infer<typeof mockupPreviewResponseSchema>;

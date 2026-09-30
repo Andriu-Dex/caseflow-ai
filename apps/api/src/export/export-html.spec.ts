@@ -51,6 +51,67 @@ describe('escapeHtml', () => {
 });
 
 describe('renderExportHtml', () => {
+  it('groups observations by severity, shows reasons and never repeats impacted artifacts', () => {
+    const data = baseExport('Demo');
+    const entry = (code: string, artifactType: string, impactState: string, message: string) => ({
+      code,
+      artifactType,
+      impactState,
+      versionNumber: 1,
+      reasons: [{ message }],
+    });
+    data.stalenessSummary.entries = [
+      entry(
+        'CTX-001',
+        'PROJECT_CONTEXT',
+        'NEWER_APPROVED_KNOWLEDGE_AVAILABLE',
+        'Fuente F-002 nueva.',
+      ),
+      entry('RF-002', 'REQUIREMENT', 'POTENTIALLY_AFFECTED', 'Generado desde CTX-001 v1.'),
+      entry('CU-001', 'USE_CASE', 'POTENTIALLY_AFFECTED', 'Vinculado a RF-002 v1.'),
+      entry('RF-001', 'REQUIREMENT', 'CURRENT', 'no debe aparecer'),
+    ] as unknown as typeof data.stalenessSummary.entries;
+    const impactWarnings = [
+      'RF-002 (v1) podría estar desactualizado: se recomienda revisarlo.',
+      'CU-001 (v1) podría estar desactualizado: se recomienda revisarlo.',
+      'MD-001 depende de artefactos potencialmente desactualizados: se recomienda revisarlo.',
+    ];
+    data.readiness.stages = [
+      { key: 'IMPACT', satisfied: false, label: 'Impacto', summary: '', warnings: impactWarnings },
+    ] as unknown as typeof data.readiness.stages;
+    data.readiness.warnings = [...impactWarnings, 'Falta aprobar el diagrama.'];
+
+    const html = renderExportHtml(data);
+    const obs = html.slice(html.indexOf('<h3>Observaciones</h3>'));
+
+    expect(obs).toContain('1 con información más reciente');
+    expect(obs).toContain('2 potencialmente desactualizados');
+    expect(obs).toContain('1 a revisar por dependencia');
+    expect(obs).toContain('1 aviso general');
+    expect(obs).toContain('Fuente F-002 nueva.');
+    expect(obs).toContain('Vinculado a RF-002 v1.');
+    expect(obs).toContain('<span class="code">MD-001</span>');
+    expect(obs).toContain('Falta aprobar el diagrama.');
+    // Each impacted artifact appears once (table row), not again as a warning line.
+    expect(obs).not.toContain('podría estar desactualizado: se recomienda');
+    expect(obs).not.toContain('no debe aparecer');
+    expect(obs).not.toMatch(/POTENTIALLY_AFFECTED|NEWER_APPROVED|DOWNSTREAM/);
+  });
+
+  it('opens with an executive summary of counts and stage progress', () => {
+    const data = baseExport('Demo');
+    data.readiness.stages = [
+      { satisfied: true, label: 'Fuentes' },
+      { satisfied: false, label: 'Requisitos' },
+    ] as FirstDeliverableExport['readiness']['stages'];
+    data.traceabilitySummary.edgeCount = 7;
+    const html = renderExportHtml(data);
+    const summary = html.slice(html.indexOf('Resumen ejecutivo'), html.indexOf('Contenido'));
+    expect(summary).toContain('1 de 2 etapas completas (50%)');
+    expect(summary).toContain('<b>7</b><span>Relaciones de trazabilidad</span>');
+    expect(summary).toContain('width:50%');
+  });
+
   it('embeds trusted Stitch screenshot bytes without embedding provider HTML', () => {
     const data = baseExport('Proyecto seguro');
     const screenId = '11111111-1111-4111-8111-111111111111';

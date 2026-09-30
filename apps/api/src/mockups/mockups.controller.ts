@@ -1,14 +1,8 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Headers,
-  HttpCode,
-  Param,
-  Post,
-  Res,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../identity/jwt-auth.guard';
+import { ProjectMembershipGuard } from '../identity/project-membership.guard';
+
+import { Body, Controller, Get, HttpCode, Param, Post, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
@@ -17,6 +11,7 @@ import {
   mockupListResponseSchema,
   mockupPreviewResponseSchema,
   mockupResponseSchema,
+  refineMockupRequestSchema,
   transitionArtifactVersionRequestSchema,
   type ArtifactVersionStatus,
 } from '@caseflow-ai/contracts';
@@ -27,6 +22,7 @@ import { ApiZodBody, ApiZodResponse } from '../openapi/zod-openapi';
 import { MockupsService } from './mockups.service';
 
 @ApiTags('mockups')
+@UseGuards(JwtAuthGuard, ProjectMembershipGuard)
 @Controller('projects/:projectId/mockups')
 export class MockupsController {
   constructor(private readonly service: MockupsService) {}
@@ -55,22 +51,6 @@ export class MockupsController {
     @Param('jobId', uuidParamPipe) jobId: string,
   ) {
     return this.service.getJob(projectId, jobId);
-  }
-
-  // Invoked only by apps/worker after popping the job off the queue — never
-  // reachable from the browser. A shared secret (never the projectId/jobId
-  // alone, spec §33.1) is the only authorization here since this repo has no
-  // end-user session/auth layer yet.
-  @Post('jobs/:jobId/run')
-  @HttpCode(204)
-  @ApiOperation({ operationId: 'runMockupJob', summary: 'Ejecutar un trabajo encolado (interno)' })
-  async runJob(
-    @Param('jobId', uuidParamPipe) jobId: string,
-    @Headers('x-internal-jobs-secret') secret: string | undefined,
-  ) {
-    const expected = process.env.INTERNAL_JOBS_SECRET;
-    if (!expected || secret !== expected) throw new UnauthorizedException();
-    await this.service.runJob(jobId);
   }
 
   @Get()
@@ -170,6 +150,41 @@ export class MockupsController {
     body: z.output<typeof createMockupRequestSchema>,
   ) {
     return this.service.version(projectId, mockupId, body.uiBlueprintVersionId, body.deviceType);
+  }
+
+  @Post(':mockupId/refine')
+  @HttpCode(202)
+  @ApiOperation({
+    operationId: 'refineMockup',
+    summary: 'Encolar una nueva versión del boceto aplicando instrucciones de edición',
+  })
+  @ApiZodBody(refineMockupRequestSchema)
+  @ApiZodResponse(202, 'Mockup generation job.', mockupJobResponseSchema)
+  refine(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('mockupId', uuidParamPipe) mockupId: string,
+    @Body(new ZodValidationPipe(refineMockupRequestSchema))
+    body: z.output<typeof refineMockupRequestSchema>,
+  ) {
+    return this.service.refine(projectId, mockupId, body.prompt);
+  }
+
+  @Post(':mockupId/screens/:screenId/refine')
+  @HttpCode(202)
+  @ApiOperation({
+    operationId: 'refineMockupScreen',
+    summary: 'Encolar una nueva versión del boceto editando una sola pantalla',
+  })
+  @ApiZodBody(refineMockupRequestSchema)
+  @ApiZodResponse(202, 'Mockup generation job.', mockupJobResponseSchema)
+  refineScreen(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('mockupId', uuidParamPipe) mockupId: string,
+    @Param('screenId', uuidParamPipe) screenId: string,
+    @Body(new ZodValidationPipe(refineMockupRequestSchema))
+    body: z.output<typeof refineMockupRequestSchema>,
+  ) {
+    return this.service.refineScreen(projectId, mockupId, screenId, body.prompt);
   }
 
   @Post(':mockupId/versions/:versionId/transition')
