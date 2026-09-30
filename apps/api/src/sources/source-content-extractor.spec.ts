@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { Document, Packer, Paragraph } from 'docx';
+import PDFDocument from 'pdfkit';
 import { SourceContentExtractor } from './source-content-extractor';
 
 // A minimal, real (if not fully spec-compliant) single-page PDF containing
@@ -42,6 +44,71 @@ describe('SourceContentExtractor', () => {
   it('reports FAILED for a PDF unpdf cannot parse, never fabricating a transcript', async () => {
     expect(await extractor.extract('application/pdf', Buffer.from('not a pdf'))).toEqual({
       state: 'FAILED',
+    });
+  });
+
+  it('extracts a real DOCX document without an AI provider', async () => {
+    const document = new Document({
+      sections: [{ children: [new Paragraph('Acta de CASEFlow')] }],
+    });
+    const buffer = await Packer.toBuffer(document);
+    expect(
+      await extractor.extract(
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        buffer,
+      ),
+    ).toEqual({ state: 'EXTRACTED', text: 'Acta de CASEFlow' });
+  });
+
+  it('uses OCR for images only when an OCR adapter is available', async () => {
+    const recognize = vi.fn().mockResolvedValue('Texto de la pizarra');
+    const withOcr = new SourceContentExtractor({ available: true, recognize });
+    expect(await withOcr.extract('image/png', Buffer.from('image'))).toEqual({
+      state: 'EXTRACTED',
+      text: 'Texto de la pizarra',
+    });
+    expect(recognize).toHaveBeenCalledOnce();
+  });
+
+  it('uses OCR on a scanned PDF page with no text layer', async () => {
+    const document = new PDFDocument({ autoFirstPage: false });
+    const chunks: Buffer[] = [];
+    document.on('data', (chunk: Buffer) => chunks.push(chunk));
+    const finished = new Promise<Buffer>((resolve) =>
+      document.on('end', () => resolve(Buffer.concat(chunks))),
+    );
+    document.addPage().rect(20, 20, 60, 60).fill();
+    document.end();
+    const pdf = await finished;
+    const recognize = vi.fn().mockResolvedValue('Texto escaneado');
+    const withOcr = new SourceContentExtractor({ available: true, recognize });
+    expect(await withOcr.extract('application/pdf', pdf)).toEqual({
+      state: 'EXTRACTED',
+      text: 'Texto escaneado',
+    });
+    expect(recognize).toHaveBeenCalledOnce();
+  });
+
+  it('transcribes audio through the configured adapter and never invents text without it', async () => {
+    const transcribe = vi.fn().mockResolvedValue('Entrevista transcrita');
+    const withTranscription = new SourceContentExtractor(undefined, {
+      id: 'test',
+      available: true,
+      transcribe,
+    });
+    expect(
+      await withTranscription.extract('audio/mpeg', Buffer.from('audio'), 'audio.mp3'),
+    ).toEqual({
+      state: 'EXTRACTED',
+      text: 'Entrevista transcrita',
+    });
+    expect(transcribe).toHaveBeenCalledWith({
+      data: Buffer.from('audio'),
+      mimeType: 'audio/mpeg',
+      filename: 'audio.mp3',
+    });
+    expect(await extractor.extract('audio/mpeg', Buffer.from('audio'))).toEqual({
+      state: 'UNSUPPORTED',
     });
   });
 

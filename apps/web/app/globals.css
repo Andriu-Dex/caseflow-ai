@@ -16,10 +16,45 @@
   animation: mockup-progress-indeterminate 1.7s ease-in-out infinite;
 }
 
+@keyframes ai-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes ai-pulse {
+  0%,
+  100% {
+    transform: scale(0.85);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 1;
+  }
+}
+
+.ai-orbit {
+  animation: ai-orbit 2.4s linear infinite;
+}
+
+.ai-orbit-reverse {
+  animation: ai-orbit 3.6s linear infinite reverse;
+}
+
+.ai-pulse {
+  animation: ai-pulse 1.8s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .mockup-progress-indeterminate {
     animation: none;
     transform: translateX(100%);
+  }
+  .ai-orbit,
+  .ai-orbit-reverse,
+  .ai-pulse {
+    animation: none;
   }
 }
 

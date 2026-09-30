@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Inject,
   NotFoundException,
   UnprocessableEntityException,
   ServiceUnavailableException,
@@ -15,6 +16,7 @@ import { PrismaService } from '../database/prisma.service';
 import { getProjectLanguage } from '../projects/project-language';
 import type { Prisma } from '../generated/prisma/client';
 import { analyzeRequirementQuality } from './requirement-quality';
+import { KnowledgeBaseService } from '../knowledge-base/knowledge-base.service';
 
 type Tx = Prisma.TransactionClient;
 const detailInclude = {
@@ -28,6 +30,7 @@ export class RequirementsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ai: AIOrchestrator,
+    @Inject(KnowledgeBaseService) private readonly knowledgeBase: KnowledgeBaseService,
   ) {}
   create(projectId: string, input: RequirementInput) {
     return this.prisma.$transaction((tx) => this.createInTx(tx, projectId, input, 'MANUAL'));
@@ -49,7 +52,18 @@ export class RequirementsService {
   // Authoritative collection for Export (spec Phase H): each artifact's own
   // highest APPROVED version, never a newer DRAFT on top of it — unlike
   // list() above, which always takes the latest version regardless of status.
-  async listApproved(projectId: string) {
+  async listApproved(projectId: string, artifactVersionIds?: Record<string, string>) {
+    if (artifactVersionIds) {
+      const versionIds = Object.values(artifactVersionIds);
+      if (versionIds.length === 0) return { items: [] };
+      const versions = await this.prisma.artifactVersion.findMany({
+        where: { id: { in: versionIds }, artifact: { projectId, artifactTypeCode: 'REQUIREMENT' } },
+        include: { artifact: true, requirementDetail: { include: detailInclude } },
+        orderBy: { artifact: { code: 'asc' } },
+      });
+      return { items: versions.map((v) => this.map(v.artifact, v)) };
+    }
+
     const rows = await this.prisma.artifact.findMany({
       where: {
         projectId,
@@ -150,6 +164,16 @@ export class RequirementsService {
         'La generación oficial requiere un contexto respaldado por al menos una fuente de proyecto APPROVED.',
       );
     const language = await getProjectLanguage(this.prisma, projectId);
+
+    // Retrieve context from knowledge base
+    const query = context.projectContextDetail.problemStatement;
+    const retrievedFragments = await this.knowledgeBase.retrieve(projectId, query, 'HYBRID');
+    const ragContext =
+      retrievedFragments.length > 0
+        ? '\n\nInformación de contexto adicional de la base de conocimiento:\n' +
+          retrievedFragments.join('\n\n')
+        : '';
+
     try {
       const result = await this.ai.generateStructured({
         projectId,
@@ -158,7 +182,9 @@ export class RequirementsService {
         promptKey: 'requirements.generate',
         // ISO/IEC/IEEE 29148:2018-aligned quality principles (spec §4.4).
         promptVersion: 2,
-        messages: [{ role: 'user', content: JSON.stringify(context.projectContextDetail) }],
+        messages: [
+          { role: 'user', content: JSON.stringify(context.projectContextDetail) + ragContext },
+        ],
         outputSchema: requirementGenerationOutputSchema,
         schemaName: 'requirements_generation',
         maxOutputTokens: 4096,

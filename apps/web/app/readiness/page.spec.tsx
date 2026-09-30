@@ -15,7 +15,11 @@ vi.mock('../../lib/api', () => ({
     },
   },
   ApiError: class ApiError extends Error {},
+  restoreSession: vi.fn(),
+  downloadFile: (...args: unknown[]) => downloadFile(...args),
 }));
+
+const downloadFile = vi.fn();
 
 const oneStageSatisfied = {
   projectId: 'p1',
@@ -85,9 +89,8 @@ describe('ReadinessPage', () => {
 
   it('shows a loading state on the clicked export button and reports a failed download', async () => {
     const user = userEvent.setup();
-    let resolveFetch!: (value: { ok: boolean }) => void;
-    const fetchMock = vi.fn().mockReturnValue(new Promise((resolve) => (resolveFetch = resolve)));
-    vi.stubGlobal('fetch', fetchMock);
+    let rejectDownload!: (reason: Error) => void;
+    downloadFile.mockReturnValue(new Promise((_, reject) => (rejectDownload = reject)));
     render(
       <TestProviders>
         <ReadinessPage />
@@ -97,11 +100,15 @@ describe('ReadinessPage', () => {
     await user.click(button);
     expect(await screen.findByText(/generando…/i)).toBeInTheDocument();
 
-    resolveFetch({ ok: false });
+    expect(downloadFile).toHaveBeenCalledWith(
+      'http://localhost:3001/projects/p1/export?format=html',
+      'proyecto-p1.html',
+    );
+
+    rejectDownload(new Error('boom'));
     await waitFor(() => expect(button).not.toBeDisabled());
     expect(
       screen.getByRole('button', { name: /documento del proyecto \(html\)/i }),
     ).toBeInTheDocument();
-    vi.unstubAllGlobals();
   });
 });

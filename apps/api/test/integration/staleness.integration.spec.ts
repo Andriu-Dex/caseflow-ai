@@ -124,7 +124,9 @@ describe('Staleness / potential-impact integration', () => {
       ]),
       new PrismaAIRunRecorder(ctx.prisma),
     );
-    const requirementsService = new RequirementsService(ctx.prisma, ai);
+    const requirementsService = new RequirementsService(ctx.prisma, ai, {
+      retrieve: async () => [],
+    } as never);
     const generation = await requirementsService.generate(projectId, context.version.id);
     const accepted = await requirementsService.accept(projectId, generation.id, [
       generation.candidates[0]!.id,

@@ -1,3 +1,7 @@
+import { UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../identity/jwt-auth.guard';
+import { ProjectMembershipGuard } from '../identity/project-membership.guard';
+
 import { Controller, Get, Param, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -11,6 +15,7 @@ import { ApiZodResponse } from '../openapi/zod-openapi';
 import { TraceabilityService } from './traceability.service';
 
 @ApiTags('traceability')
+@UseGuards(JwtAuthGuard, ProjectMembershipGuard)
 @Controller('projects/:projectId/traceability')
 export class TraceabilityController {
   constructor(private readonly service: TraceabilityService) {}

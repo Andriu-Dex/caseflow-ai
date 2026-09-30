@@ -52,18 +52,18 @@ function safeFileName(value: string, fallback: string): string {
   );
 }
 
+type StoredScreen = {
+  screenLocalId: string;
+  screenName: string;
+  imageStorageKey: string;
+  imageContentType: string;
+  htmlStorageKey: string;
+  stitchProjectId: string | null;
+  stitchScreenId: string | null;
+  refinementPrompt: string | null;
+};
 type StoredGeneration =
-  | { kind: 'INTERNAL_WIREFRAME'; svg: string }
-  | {
-      kind: 'STITCH';
-      screens: {
-        screenLocalId: string;
-        screenName: string;
-        imageStorageKey: string;
-        imageContentType: string;
-        htmlStorageKey: string;
-      }[];
-    };
+  { kind: 'INTERNAL_WIREFRAME'; svg: string } | { kind: 'STITCH'; screens: StoredScreen[] };
 
 @Injectable()
 export class MockupsService {
@@ -101,14 +101,70 @@ export class MockupsService {
     return this.enqueueJob(projectId, uiBlueprintVersionId, mockupId, deviceType);
   }
 
+  // Refinement = a new version of the same mockup, regenerated from the same
+  // approved UI Blueprint plus the user's instruction. Only Stitch mockups
+  // qualify: the internal wireframe is deterministic and has no prompt.
+  async refine(projectId: string, mockupId: string, prompt: string): Promise<MockupJobResponse> {
+    const detail = (await this.findLatest(projectId, mockupId)).versions[0]!.mockupDetail!;
+    if (detail.generatorKind !== 'STITCH')
+      throw new UnprocessableEntityException(
+        'Solo los bocetos generados con Stitch pueden editarse con instrucciones.',
+      );
+    await this.assertApprovedBlueprint(projectId, detail.uiBlueprintVersionId);
+    return this.enqueueJob(
+      projectId,
+      detail.uiBlueprintVersionId,
+      mockupId,
+      detail.deviceType,
+      prompt,
+    );
+  }
+
+  // Single-screen edit: Stitch edits that one screen in place; the new mockup
+  // version carries every other screen over unchanged (same stored assets).
+  async refineScreen(
+    projectId: string,
+    mockupId: string,
+    screenId: string,
+    prompt: string,
+  ): Promise<MockupJobResponse> {
+    const detail = (await this.findLatest(projectId, mockupId)).versions[0]!.mockupDetail!;
+    // Only a screen of the latest version can be edited, so an old gallery
+    // page can't silently fork history from a superseded version.
+    const screen = detail.screens.find((s) => s.id === screenId);
+    if (!screen) throw new NotFoundException('Pantalla no encontrada.');
+    if (detail.generatorKind !== 'STITCH' || !screen.stitchProjectId || !screen.stitchScreenId)
+      throw new UnprocessableEntityException(
+        'Esta pantalla no se puede editar individualmente. Regenere el boceto con Stitch para habilitarlo.',
+      );
+    await this.assertApprovedBlueprint(projectId, detail.uiBlueprintVersionId);
+    return this.enqueueJob(
+      projectId,
+      detail.uiBlueprintVersionId,
+      mockupId,
+      detail.deviceType,
+      prompt,
+      screen.screenLocalId,
+    );
+  }
+
   private async enqueueJob(
     projectId: string,
     uiBlueprintVersionId: string,
     existingMockupId: string | null,
     deviceType: MockupDeviceType,
+    refinementPrompt: string | null = null,
+    screenLocalId: string | null = null,
   ): Promise<MockupJobResponse> {
     const job = await this.prisma.mockupGenerationJob.create({
-      data: { projectId, uiBlueprintVersionId, existingMockupId, deviceType },
+      data: {
+        projectId,
+        uiBlueprintVersionId,
+        existingMockupId,
+        deviceType,
+        refinementPrompt,
+        ...(screenLocalId ? { screenLocalId } : {}),
+      },
     });
     await this.queue.add(MOCKUP_GENERATION_QUEUE, { jobId: job.id, projectId });
     return this.mapJob(job);
@@ -133,11 +189,21 @@ export class MockupsService {
       data: { status: 'RUNNING' },
     });
     try {
-      const generated = await this.generateFromApprovedBlueprint(
-        job.projectId,
-        job.uiBlueprintVersionId,
-        job.deviceType,
-      );
+      const screenEdit = Boolean(job.screenLocalId && job.existingMockupId && job.refinementPrompt);
+      const generated = screenEdit
+        ? await this.editOneScreen(
+            job.projectId,
+            job.existingMockupId!,
+            job.screenLocalId!,
+            job.refinementPrompt!,
+            job.deviceType,
+          )
+        : await this.generateFromApprovedBlueprint(
+            job.projectId,
+            job.uiBlueprintVersionId,
+            job.deviceType,
+            job.refinementPrompt,
+          );
       const result = await this.prisma.$transaction((tx) =>
         job.existingMockupId
           ? this.createVersionInTx(
@@ -147,6 +213,8 @@ export class MockupsService {
               job.uiBlueprintVersionId,
               job.deviceType,
               generated,
+              // A screen edit records its prompt on that screen, not the version.
+              screenEdit ? null : job.refinementPrompt,
             )
           : this.createInTx(tx, job.projectId, job.uiBlueprintVersionId, job.deviceType, generated),
       );
@@ -264,6 +332,7 @@ export class MockupsService {
             detail.generatorKind === 'STITCH'
               ? this.screenLinks(projectId, row.id, detail.screens)
               : null,
+          refinementPrompt: detail.refinementPrompt,
           createdAt: version.createdAt.toISOString(),
         };
       });
@@ -286,6 +355,7 @@ export class MockupsService {
         detail.generatorKind === 'STITCH'
           ? this.screenLinks(projectId, row.id, detail.screens)
           : null,
+      refinementPrompt: detail.refinementPrompt,
       createdAt: version.createdAt.toISOString(),
     };
   }
@@ -297,6 +367,7 @@ export class MockupsService {
     uiBlueprintVersionId: string,
     deviceType: MockupDeviceType,
     generated: StoredGeneration,
+    refinementPrompt: string | null = null,
   ) {
     const locked = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM artifacts WHERE id=${mockupId}::uuid AND project_id=${projectId}::uuid AND artifact_type_code='MOCKUP' FOR NO KEY UPDATE`;
@@ -315,7 +386,14 @@ export class MockupsService {
         origin: 'SYSTEM_GENERATED',
       },
     });
-    await this.saveDetail(tx, version.id, uiBlueprintVersionId, deviceType, generated);
+    await this.saveDetail(
+      tx,
+      version.id,
+      uiBlueprintVersionId,
+      deviceType,
+      generated,
+      refinementPrompt,
+    );
     return this.loadAndMap(tx, mockupId, version.id);
   }
 
@@ -347,6 +425,7 @@ export class MockupsService {
     projectId: string,
     uiBlueprintVersionId: string,
     deviceType: MockupDeviceType,
+    refinementPrompt: string | null = null,
   ): Promise<StoredGeneration> {
     const source = await this.prisma.artifactVersion.findFirst({
       where: {
@@ -364,12 +443,21 @@ export class MockupsService {
     const content = uiBlueprintContentSchema.parse(source.structuredAnalysisDetail.content);
     let generated: MockupGenerationResult;
     try {
-      generated = await this.mockupProvider.generate(content, deviceType);
+      generated = await this.mockupProvider.generate(
+        content,
+        deviceType,
+        refinementPrompt ?? undefined,
+      );
     } catch (error) {
       if (error instanceof MockupProviderError)
         throw new ServiceUnavailableException({ message: error.message, code: error.code });
       throw error;
     }
+    // A fallback wireframe would silently drop the user's instruction.
+    if (refinementPrompt && generated.kind !== 'STITCH')
+      throw new ServiceUnavailableException(
+        'Stitch no está disponible; no se pudo aplicar la edición del boceto.',
+      );
     if (generated.kind === 'INTERNAL_WIREFRAME')
       return { kind: generated.kind, svg: sanitizeDiagramSvg(generated.svg) };
     if (
@@ -382,39 +470,102 @@ export class MockupsService {
     if (generated.screens.some((screen) => !expectedIds.has(screen.screenLocalId)))
       throw new ServiceUnavailableException('El proveedor devolvió pantallas inesperadas.');
     const screens: StoredGeneration & { kind: 'STITCH' } = { kind: 'STITCH', screens: [] };
+    for (const screen of generated.screens)
+      screens.screens.push({
+        screenLocalId: screen.screenLocalId,
+        screenName: screen.screenName,
+        ...(await this.storeScreenAssets(projectId, screen.image, screen.html)),
+        stitchProjectId: screen.providerRef?.projectId ?? null,
+        stitchScreenId: screen.providerRef?.screenId ?? null,
+        refinementPrompt: null,
+      });
+    return screens;
+  }
+
+  // Edits one screen at the provider and returns the full screen set for the
+  // next version: the edited screen replaced, the rest copied as-is (same
+  // storage keys, so their files are shared with the previous version).
+  private async editOneScreen(
+    projectId: string,
+    mockupId: string,
+    screenLocalId: string,
+    prompt: string,
+    deviceType: MockupDeviceType,
+  ): Promise<StoredGeneration> {
+    const detail = (await this.findLatest(projectId, mockupId)).versions[0]!.mockupDetail!;
+    const target = detail.screens.find((s) => s.screenLocalId === screenLocalId);
+    if (detail.generatorKind !== 'STITCH' || !target?.stitchProjectId || !target.stitchScreenId)
+      throw new UnprocessableEntityException('Esta pantalla no se puede editar individualmente.');
+    if (!this.mockupProvider.editScreen)
+      throw new ServiceUnavailableException('Stitch no está disponible para editar la pantalla.');
+    let edited;
     try {
-      for (const screen of generated.screens) {
-        const extension =
-          screen.image.contentType === 'image/jpeg'
-            ? 'jpg'
-            : screen.image.contentType === 'image/webp'
-              ? 'webp'
-              : 'png';
-        const prefix = `mockups/${projectId}/${randomUUID()}`;
-        const imageStorageKey = `${prefix}.${extension}`;
-        const htmlStorageKey = `${prefix}.html`;
-        await this.storage.putObject({
-          key: imageStorageKey,
-          body: screen.image.body,
-          contentType: screen.image.contentType,
-        });
-        await this.storage.putObject({
-          key: htmlStorageKey,
-          body: Buffer.from(screen.html, 'utf8'),
-          contentType: 'text/html',
-        });
-        screens.screens.push({
-          screenLocalId: screen.screenLocalId,
-          screenName: screen.screenName,
-          imageStorageKey,
-          imageContentType: screen.image.contentType,
-          htmlStorageKey,
-        });
-      }
+      edited = await this.mockupProvider.editScreen(
+        { projectId: target.stitchProjectId, screenId: target.stitchScreenId },
+        prompt,
+        deviceType,
+      );
+    } catch (error) {
+      if (error instanceof MockupProviderError)
+        throw new ServiceUnavailableException({ message: error.message, code: error.code });
+      throw error;
+    }
+    const assets = await this.storeScreenAssets(projectId, edited.image, edited.html);
+    return {
+      kind: 'STITCH',
+      screens: detail.screens.map((s) =>
+        s.id === target.id
+          ? {
+              screenLocalId: s.screenLocalId,
+              screenName: s.screenName,
+              ...assets,
+              stitchProjectId: edited.providerRef.projectId,
+              stitchScreenId: edited.providerRef.screenId,
+              refinementPrompt: prompt,
+            }
+          : {
+              screenLocalId: s.screenLocalId,
+              screenName: s.screenName,
+              imageStorageKey: s.imageStorageKey,
+              imageContentType: s.imageContentType,
+              htmlStorageKey: s.htmlStorageKey,
+              stitchProjectId: s.stitchProjectId,
+              stitchScreenId: s.stitchScreenId,
+              refinementPrompt: s.refinementPrompt,
+            },
+      ),
+    };
+  }
+
+  private async storeScreenAssets(
+    projectId: string,
+    image: { body: Buffer; contentType: string },
+    html: string,
+  ) {
+    const extension =
+      image.contentType === 'image/jpeg'
+        ? 'jpg'
+        : image.contentType === 'image/webp'
+          ? 'webp'
+          : 'png';
+    const prefix = `mockups/${projectId}/${randomUUID()}`;
+    const imageStorageKey = `${prefix}.${extension}`;
+    const htmlStorageKey = `${prefix}.html`;
+    try {
+      await this.storage.putObject({
+        key: imageStorageKey,
+        body: image.body,
+        contentType: image.contentType,
+      });
+      await this.storage.putObject({
+        key: htmlStorageKey,
+        body: Buffer.from(html, 'utf8'),
+        contentType: 'text/html',
+      });
     } catch {
       throw new ServiceUnavailableException('No se pudieron guardar los archivos del boceto.');
     }
-    return screens;
+    return { imageStorageKey, imageContentType: image.contentType, htmlStorageKey };
   }
 
   private async createInTx(
@@ -478,12 +629,14 @@ export class MockupsService {
     uiBlueprintVersionId: string,
     deviceType: MockupDeviceType,
     generated: StoredGeneration,
+    refinementPrompt: string | null = null,
   ) {
     await tx.mockupDetail.create({
       data: {
         artifactVersionId: versionId,
         uiBlueprintVersionId,
         deviceType,
+        refinementPrompt,
         generatorKind: generated.kind,
         generatorVersion:
           generated.kind === 'STITCH' ? 'stitch-sdk-0.3.5' : MOCKUP_GENERATOR_VERSION,
@@ -496,7 +649,14 @@ export class MockupsService {
   private screenLinks(
     projectId: string,
     mockupId: string,
-    screens: { id: string; screenLocalId: string; screenName: string }[],
+    screens: {
+      id: string;
+      screenLocalId: string;
+      screenName: string;
+      stitchProjectId?: string | null;
+      stitchScreenId?: string | null;
+      refinementPrompt?: string | null;
+    }[],
   ) {
     return screens.map((screen) => ({
       id: screen.id,
@@ -504,6 +664,8 @@ export class MockupsService {
       screenName: screen.screenName,
       imageUrl: `/projects/${projectId}/mockups/${mockupId}/screens/${screen.id}/image`,
       htmlUrl: `/projects/${projectId}/mockups/${mockupId}/screens/${screen.id}/html`,
+      editable: Boolean(screen.stitchProjectId && screen.stitchScreenId),
+      refinementPrompt: screen.refinementPrompt ?? null,
     }));
   }
 
