@@ -45,7 +45,9 @@ function setup() {
       create: vi.fn().mockResolvedValue(version),
       findUniqueOrThrow: vi.fn().mockResolvedValue(version),
       findFirstOrThrow: vi.fn().mockResolvedValue(version),
+      update: vi.fn(),
     },
+    auditEvent: { create: vi.fn() },
     structuredAnalysisDetail: { create: vi.fn() },
     diagramDetail: { create: vi.fn() },
     structuredAnalysisGeneration: { create: vi.fn(), findFirst: vi.fn() },
@@ -364,10 +366,33 @@ describe('StructuredAnalysisService', () => {
     expect(tx.artifact.create).not.toHaveBeenCalled();
   });
 
+  it('audits the approval of construction gates, and only those, in the same transaction', async () => {
+    const { service, prisma, tx } = setup();
+    prisma.artifactVersion.findFirst.mockResolvedValue({
+      id: 'version',
+      status: 'IN_REVIEW',
+      versionNumber: 2,
+    });
+    tx.artifactVersion.update.mockResolvedValue({ id: 'version', status: 'APPROVED' });
+    await service.transition('project', 'GENERATION_PLAN', 'plan', 'version', 'APPROVED', 'user');
+    expect(tx.auditEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        projectId: 'project',
+        actorUserId: 'user',
+        action: 'GENERATION_PLAN_APPROVED',
+        entityId: 'version',
+      }),
+    });
+
+    tx.auditEvent.create.mockClear();
+    await service.transition('project', 'UI_BLUEPRINT', 'ui', 'version', 'APPROVED', 'user');
+    expect(tx.auditEvent.create).not.toHaveBeenCalled();
+  });
+
   it('enforces the artifact lifecycle transition rules', async () => {
-    const { service, prisma } = setup();
+    const { service, prisma, tx } = setup();
     prisma.artifactVersion.findFirst.mockResolvedValue({ id: 'version', status: 'DRAFT' });
-    prisma.artifactVersion.update.mockResolvedValue({ id: 'version', status: 'IN_REVIEW' });
+    tx.artifactVersion.update.mockResolvedValue({ id: 'version', status: 'IN_REVIEW' });
     await expect(
       service.transition('project', 'NAVIGATION_TREE', 'artifact', 'version', 'IN_REVIEW'),
     ).resolves.toMatchObject({ status: 'IN_REVIEW' });

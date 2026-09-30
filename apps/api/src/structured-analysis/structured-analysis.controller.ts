@@ -25,11 +25,11 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ApiZodBody, ApiZodResponse } from '../openapi/zod-openapi';
 import { StructuredAnalysisService } from './structured-analysis.service';
 
-function inputSchema<T extends ZodType>(contentSchema: T) {
+export function inputSchema<T extends ZodType>(contentSchema: T) {
   return z.object({ title: z.string().trim().min(1).max(200), content: contentSchema }).strict();
 }
 
-abstract class BaseStructuredAnalysisController {
+export abstract class BaseStructuredAnalysisController {
   protected abstract readonly kind: StructuredAnalysisKind;
   protected abstract readonly contentSchema: ZodType;
   constructor(protected readonly service: StructuredAnalysisService) {}
@@ -64,8 +64,16 @@ abstract class BaseStructuredAnalysisController {
     artifactId: string,
     versionId: string,
     body: { status: 'DRAFT' | 'IN_REVIEW' | 'APPROVED' | 'CHANGES_REQUESTED' },
+    actorUserId: string | null = null,
   ) {
-    return this.service.transition(projectId, this.kind, artifactId, versionId, body.status);
+    return this.service.transition(
+      projectId,
+      this.kind,
+      artifactId,
+      versionId,
+      body.status,
+      actorUserId,
+    );
   }
   diagram(projectId: string, id: string) {
     return this.service.getDiagram(projectId, this.kind, id);

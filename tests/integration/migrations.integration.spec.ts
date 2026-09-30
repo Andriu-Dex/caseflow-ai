@@ -2,7 +2,10 @@ import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { Client } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { FIRST_DELIVERABLE_ARTIFACT_TYPE_CODES } from '@caseflow-ai/domain';
+import {
+  CONSTRUCTION_ARTIFACT_TYPE_CODES,
+  FIRST_DELIVERABLE_ARTIFACT_TYPE_CODES,
+} from '@caseflow-ai/domain';
 
 const migrationsDir = join(__dirname, '..', '..', 'prisma', 'migrations');
 
@@ -85,7 +88,9 @@ describe('official Prisma migrations on caseflow_test', () => {
     // left untruncated between test files (see resetTestData), so it is
     // excluded here rather than asserted away.
     const seededCodes = rows.map((row) => row.code).filter((code) => code !== 'GENERIC_TEST_TYPE');
-    expect(seededCodes.sort()).toEqual([...FIRST_DELIVERABLE_ARTIFACT_TYPE_CODES].sort());
+    expect(seededCodes.sort()).toEqual(
+      [...FIRST_DELIVERABLE_ARTIFACT_TYPE_CODES, ...CONSTRUCTION_ARTIFACT_TYPE_CODES].sort(),
+    );
   });
 
   it('keeps the pgvector migration', async () => {

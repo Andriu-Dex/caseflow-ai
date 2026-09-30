@@ -47,6 +47,7 @@ export * from './impact-analysis/impact-analysis.contract';
 export * from './consistency-engine/consistency-engine.contract';
 export * from './baselines/baselines.contract';
 export * from './construction/construction-foundation.contract';
+export * from './construction/design-baseline.contract';
 
 export {
   PROJECT_CONTEXT_COLLECTION_LIMIT,

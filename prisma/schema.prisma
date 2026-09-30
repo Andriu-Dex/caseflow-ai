@@ -88,6 +88,8 @@ enum StructuredAnalysisKind {
   SOFTWARE_ARCHITECTURE
   SYSTEM_ARCHITECTURE
   UI_BLUEPRINT
+  GENERATION_PLAN
+  CONCEPTUAL_DOMAIN_MODEL
 
   @@map("structured_analysis_kind")
 }
@@ -214,6 +216,7 @@ model User {
   auditEvents          AuditEvent[]
   requestedProposals   DependencyProposal[]  @relation("DependencyProposalRequester")
   decidedProposals     DependencyProposal[]  @relation("DependencyProposalDecider")
+  designBaselines      DesignBaseline[]
 
   @@map("users")
 }
@@ -305,6 +308,7 @@ model Project {
   projectBaselines              ProjectBaseline[]
   auditEvents                   AuditEvent[]
   dependencyProposals           DependencyProposal[]
+  designBaselines               DesignBaseline[]
 
   @@index([workspaceId, createdAt, id])
   @@map("projects")
@@ -391,6 +395,7 @@ model ArtifactVersion {
   mockupsSourcedFromHere              MockupDetail[]                       @relation("MockupUiBlueprintSource")
   projectContextSourceLinks           ProjectContextSource[]
   projectBaselineEntries              ProjectBaselineEntry[]
+  designBaselineEntries               DesignBaselineEntry[]
 
   @@unique([artifactId, versionNumber])
   @@unique([id, projectId])
@@ -1329,4 +1334,48 @@ model DependencyProposal {
 
   @@index([projectId, status])
   @@map("dependency_proposals")
+}
+
+// Artifacts a Design Baseline freezes; values equal their artifact type code.
+enum DesignBaselineRole {
+  GENERATION_PLAN
+  CONCEPTUAL_DOMAIN_MODEL
+  NAVIGATION_TREE
+  UI_BLUEPRINT
+  MOCKUP
+  SOFTWARE_ARCHITECTURE
+  SYSTEM_ARCHITECTURE
+
+  @@map("design_baseline_role")
+}
+
+// Approved, frozen design (spec §160, DEC-094): the exact approved versions an
+// official ImplementationPlan and code generation are built from. Creating
+// one is the human Design Gate approval; rows are immutable afterwards.
+model DesignBaseline {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId        String   @map("project_id") @db.Uuid
+  label            String
+  note             String?
+  approvedByUserId String   @map("approved_by_user_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project    Project               @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  approvedBy User                  @relation(fields: [approvedByUserId], references: [id], onDelete: Restrict)
+  entries    DesignBaselineEntry[]
+
+  @@index([projectId, createdAt])
+  @@map("design_baselines")
+}
+
+model DesignBaselineEntry {
+  baselineId        String             @map("baseline_id") @db.Uuid
+  role              DesignBaselineRole
+  artifactVersionId String             @map("artifact_version_id") @db.Uuid
+
+  baseline        DesignBaseline  @relation(fields: [baselineId], references: [id], onDelete: Restrict)
+  artifactVersion ArtifactVersion @relation(fields: [artifactVersionId], references: [id], onDelete: Restrict)
+
+  @@id([baselineId, role])
+  @@map("design_baseline_entries")
 }

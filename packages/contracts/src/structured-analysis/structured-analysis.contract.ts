@@ -3,13 +3,15 @@ import { z } from 'zod';
 // Shared "structured content + candidate-first AI generation + optional
 // deterministic diagram" family (spec §13/§14/§15/§17). Each kind has its
 // own content schema below; the generic envelope (version/provenance) is
-// identical across all four, mirroring the existing Data Model contract.
+// identical across all kinds, mirroring the existing Data Model contract.
 
 export const STRUCTURED_ANALYSIS_KINDS = [
   'NAVIGATION_TREE',
   'SOFTWARE_ARCHITECTURE',
   'SYSTEM_ARCHITECTURE',
   'UI_BLUEPRINT',
+  'GENERATION_PLAN',
+  'CONCEPTUAL_DOMAIN_MODEL',
 ] as const;
 export type StructuredAnalysisKind = (typeof STRUCTURED_ANALYSIS_KINDS)[number];
 
@@ -194,12 +196,151 @@ export const uiBlueprintContentSchema = z
   });
 export type UiBlueprintContent = z.output<typeof uiBlueprintContentSchema>;
 
+// ---- GENERATION_PLAN (spec §156) -------------------------------------------
+// "What system are we going to build?" — reviewed and approved before any
+// official code generation (DEC-090). Conceptual only: no physical types.
+const planModuleSchema = z
+  .object({
+    localId: localId(),
+    name: text(200),
+    purpose: text(1000),
+    entityNames: z.array(text(200)).max(50).default([]),
+    relatedRequirementCodes: z.array(text(40)).max(100).default([]),
+    relatedUseCaseCodes: z.array(text(40)).max(100).default([]),
+    relatedSourceCodes: z.array(text(40)).max(100).optional(),
+  })
+  .strict();
+const planActorSchema = z
+  .object({
+    name: text(200),
+    description: text(1000).optional(),
+    permissions: z.array(text(300)).max(30).default([]),
+  })
+  .strict();
+const planWorkflowSchema = z
+  .object({
+    localId: localId(),
+    name: text(200),
+    steps: z.array(text(500)).min(1).max(30),
+    relatedUseCaseCodes: z.array(text(40)).max(50).default([]),
+    relatedSourceCodes: z.array(text(40)).max(100).optional(),
+  })
+  .strict();
+const planScreenSchema = z
+  .object({
+    name: text(200),
+    moduleLocalId: localId().optional(),
+    purpose: text(1000),
+    relatedSourceCodes: z.array(text(40)).max(100).optional(),
+  })
+  .strict();
+const planIntegrationSchema = z.object({ name: text(200), purpose: text(1000) }).strict();
+const planRiskSchema = z
+  .object({ description: text(1000), mitigation: text(1000).optional() })
+  .strict();
+export const generationPlanContentSchema = z
+  .object({
+    summary: text(2000),
+    modules: z.array(planModuleSchema).min(1).max(50),
+    actors: z.array(planActorSchema).max(30).default([]),
+    workflows: z.array(planWorkflowSchema).max(50).default([]),
+    screens: z.array(planScreenSchema).max(100).default([]),
+    integrations: z.array(planIntegrationSchema).max(20).default([]),
+    authentication: z
+      .object({
+        required: z.boolean(),
+        strategy: text(300).optional(),
+        roles: z.array(text(100)).max(20).default([]),
+      })
+      .strict(),
+    technicalConstraints: z.array(text(500)).max(50).default([]),
+    risks: z.array(planRiskSchema).max(50).default([]),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (!uniqueBy(value.modules, (module) => module.localId))
+      ctx.addIssue({ code: 'custom', message: 'localId debe ser único.', path: ['modules'] });
+    if (!uniqueBy(value.workflows, (workflow) => workflow.localId))
+      ctx.addIssue({ code: 'custom', message: 'localId debe ser único.', path: ['workflows'] });
+    const modules = new Set(value.modules.map((module) => module.localId));
+    value.screens.forEach((screen, index) => {
+      if (screen.moduleLocalId && !modules.has(screen.moduleLocalId))
+        ctx.addIssue({
+          code: 'custom',
+          message: 'La pantalla referencia un módulo inexistente.',
+          path: ['screens', index, 'moduleLocalId'],
+        });
+    });
+  });
+export type GenerationPlanContent = z.output<typeof generationPlanContentSchema>;
+
+// ---- CONCEPTUAL_DOMAIN_MODEL (spec §157) ------------------------------------
+// Entities and relationships only. Deliberately not the physical model: no
+// column types or keys, which are decided after the Design Gate (DEC-096).
+export const CONCEPTUAL_CARDINALITIES = ['ONE_TO_ONE', 'ONE_TO_MANY', 'MANY_TO_MANY'] as const;
+const conceptualAttributeSchema = z
+  .object({
+    name: text(200),
+    description: text(500).optional(),
+    required: z.boolean().default(true),
+  })
+  .strict();
+const conceptualEntitySchema = z
+  .object({
+    localId: localId(),
+    name: text(200),
+    description: text(1000),
+    moduleName: text(200).optional(),
+    attributes: z.array(conceptualAttributeSchema).min(1).max(60),
+    relatedSourceCodes: z.array(text(40)).max(100).optional(),
+  })
+  .strict();
+const conceptualRelationshipSchema = z
+  .object({
+    fromLocalId: localId(),
+    toLocalId: localId(),
+    name: text(200),
+    cardinality: z.enum(CONCEPTUAL_CARDINALITIES),
+    description: text(500).optional(),
+  })
+  .strict();
+export const conceptualDomainModelContentSchema = z
+  .object({
+    entities: z.array(conceptualEntitySchema).min(1).max(100),
+    relationships: z.array(conceptualRelationshipSchema).max(300).default([]),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (!uniqueBy(value.entities, (entity) => entity.localId))
+      ctx.addIssue({ code: 'custom', message: 'localId debe ser único.', path: ['entities'] });
+    value.entities.forEach((entity, index) => {
+      if (!uniqueBy(entity.attributes, (attribute) => attribute.name.toLowerCase()))
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Los atributos de una entidad deben tener nombres distintos.',
+          path: ['entities', index, 'attributes'],
+        });
+    });
+    const known = new Set(value.entities.map((entity) => entity.localId));
+    value.relationships.forEach((relationship, index) => {
+      if (!known.has(relationship.fromLocalId) || !known.has(relationship.toLocalId))
+        ctx.addIssue({
+          code: 'custom',
+          message: 'La relación referencia una entidad inexistente.',
+          path: ['relationships', index],
+        });
+    });
+  });
+export type ConceptualDomainModelContent = z.output<typeof conceptualDomainModelContentSchema>;
+
 // ---- Shared envelope -------------------------------------------------------
 export const STRUCTURED_ANALYSIS_CONTENT_SCHEMAS = {
   NAVIGATION_TREE: navigationTreeContentSchema,
   SOFTWARE_ARCHITECTURE: softwareArchitectureContentSchema,
   SYSTEM_ARCHITECTURE: systemArchitectureContentSchema,
   UI_BLUEPRINT: uiBlueprintContentSchema,
+  GENERATION_PLAN: generationPlanContentSchema,
+  CONCEPTUAL_DOMAIN_MODEL: conceptualDomainModelContentSchema,
 } as const;
 
 const structuredAnalysisContentSchema = z.union([
@@ -207,6 +348,8 @@ const structuredAnalysisContentSchema = z.union([
   softwareArchitectureContentSchema,
   systemArchitectureContentSchema,
   uiBlueprintContentSchema,
+  generationPlanContentSchema,
+  conceptualDomainModelContentSchema,
 ]);
 
 export const structuredAnalysisInputSchema = z

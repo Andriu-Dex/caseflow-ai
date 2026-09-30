@@ -3,7 +3,9 @@
 import { GenerationOverlay } from './generation-overlay';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
+  ConceptualDomainModelContent,
   DiagramResponse,
+  GenerationPlanContent,
   NavigationTreeContent,
   SoftwareArchitectureContent,
   StructuredAnalysisKind,
@@ -26,6 +28,10 @@ import {
   SystemArchitectureManualForm,
   UiBlueprintManualForm,
 } from './structured-manual-forms';
+import {
+  ConceptualDomainModelManualForm,
+  GenerationPlanManualForm,
+} from './construction-manual-forms';
 import { DiagramViewer } from './diagram-viewer';
 import {
   AI_UNAVAILABLE_HINT,
@@ -49,6 +55,8 @@ const MANUAL_FORMS: Record<
   SOFTWARE_ARCHITECTURE: SoftwareArchitectureManualForm,
   SYSTEM_ARCHITECTURE: SystemArchitectureManualForm,
   UI_BLUEPRINT: UiBlueprintManualForm,
+  GENERATION_PLAN: GenerationPlanManualForm,
+  CONCEPTUAL_DOMAIN_MODEL: ConceptualDomainModelManualForm,
 };
 
 type SourceType =
@@ -57,7 +65,9 @@ type SourceType =
   | 'DATA_MODEL'
   | 'NAVIGATION_TREE'
   | 'SOFTWARE_ARCHITECTURE'
-  | 'SYSTEM_ARCHITECTURE';
+  | 'SYSTEM_ARCHITECTURE'
+  | 'UI_BLUEPRINT'
+  | 'GENERATION_PLAN';
 
 // Mirrors the backend's ELIGIBLE_SOURCE_TYPES (structured-analysis.service.ts),
 // which stays the authority: it rejects anything outside this set.
@@ -72,6 +82,16 @@ const ELIGIBLE_SOURCES: Record<StructuredAnalysisKind, SourceType[]> = {
     'SOFTWARE_ARCHITECTURE',
     'SYSTEM_ARCHITECTURE',
   ],
+  GENERATION_PLAN: [
+    'REQUIREMENT',
+    'USE_CASE',
+    'DATA_MODEL',
+    'NAVIGATION_TREE',
+    'SOFTWARE_ARCHITECTURE',
+    'SYSTEM_ARCHITECTURE',
+    'UI_BLUEPRINT',
+  ],
+  CONCEPTUAL_DOMAIN_MODEL: ['GENERATION_PLAN', 'REQUIREMENT', 'USE_CASE', 'DATA_MODEL'],
 };
 
 const SOURCE_LABELS: Record<SourceType, string> = {
@@ -81,7 +101,16 @@ const SOURCE_LABELS: Record<SourceType, string> = {
   NAVIGATION_TREE: 'Navegación',
   SOFTWARE_ARCHITECTURE: 'Arquitectura de software',
   SYSTEM_ARCHITECTURE: 'Arquitectura de sistema',
+  UI_BLUEPRINT: 'Plano de interfaz',
+  GENERATION_PLAN: 'Plan de generación',
 };
+
+// Kinds whose backend renders a diagram (structured-analysis.service KIND_CONFIG).
+const KINDS_WITH_DIAGRAM: ReadonlySet<StructuredAnalysisKind> = new Set([
+  'NAVIGATION_TREE',
+  'SOFTWARE_ARCHITECTURE',
+  'SYSTEM_ARCHITECTURE',
+]);
 
 interface SourceOption {
   versionId: string;
@@ -283,6 +312,153 @@ function renderContentDetail(kind: StructuredAnalysisKind, content: unknown) {
             </li>
           ))}
         </ul>
+      );
+    }
+    case 'GENERATION_PLAN': {
+      const plan = content as GenerationPlanContent;
+      const muted = 'text-muted-foreground';
+      return (
+        <div className="mt-2 flex flex-col gap-3 border-t border-border pt-2 text-sm">
+          <p>{plan.summary}</p>
+          <div>
+            <strong>Módulos</strong>
+            <ul className="mt-1 flex flex-col gap-1">
+              {plan.modules.map((module) => (
+                <li key={module.localId}>
+                  <strong>{module.name}</strong> — {module.purpose}
+                  {module.entityNames.length > 0 ? (
+                    <div className={muted}>Entidades: {module.entityNames.join(', ')}</div>
+                  ) : null}
+                  {module.relatedRequirementCodes.length + module.relatedUseCaseCodes.length > 0 ? (
+                    <div className={muted}>
+                      Trazabilidad:{' '}
+                      {[...module.relatedRequirementCodes, ...module.relatedUseCaseCodes].join(
+                        ', ',
+                      )}
+                    </div>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+          {plan.actors.length > 0 ? (
+            <div>
+              <strong>Actores</strong>
+              <ul className="mt-1">
+                {plan.actors.map((actor) => (
+                  <li key={actor.name}>
+                    {actor.name}
+                    {actor.permissions.length > 0 ? (
+                      <span className={muted}> — {actor.permissions.join(', ')}</span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {plan.workflows.length > 0 ? (
+            <div>
+              <strong>Flujos principales</strong>
+              <ul className="mt-1">
+                {plan.workflows.map((workflow) => (
+                  <li key={workflow.localId}>
+                    {workflow.name}
+                    <span className={muted}> — {workflow.steps.join(' → ')}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {plan.screens.length > 0 ? (
+            <div className={muted}>
+              <strong className="text-foreground">Pantallas:</strong>{' '}
+              {plan.screens.map((screen) => screen.name).join(', ')}
+            </div>
+          ) : null}
+          <div className={muted}>
+            <strong className="text-foreground">Autenticación:</strong>{' '}
+            {plan.authentication.required
+              ? [plan.authentication.strategy, plan.authentication.roles.join(', ')]
+                  .filter(Boolean)
+                  .join(' · ') || 'Requerida'
+              : 'No requerida'}
+          </div>
+          {plan.integrations.length > 0 ? (
+            <div className={muted}>
+              <strong className="text-foreground">Integraciones:</strong>{' '}
+              {plan.integrations.map((integration) => integration.name).join(', ')}
+            </div>
+          ) : null}
+          {plan.technicalConstraints.length > 0 ? (
+            <div className={muted}>
+              <strong className="text-foreground">Restricciones técnicas:</strong>{' '}
+              {plan.technicalConstraints.join('; ')}
+            </div>
+          ) : null}
+          {plan.risks.length > 0 ? (
+            <div>
+              <strong>Riesgos</strong>
+              <ul className="mt-1">
+                {plan.risks.map((risk) => (
+                  <li key={risk.description}>
+                    {risk.description}
+                    {risk.mitigation ? (
+                      <span className={muted}> — Mitigación: {risk.mitigation}</span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      );
+    }
+    case 'CONCEPTUAL_DOMAIN_MODEL': {
+      const { entities, relationships } = content as ConceptualDomainModelContent;
+      const names = new Map(entities.map((entity) => [entity.localId, entity.name]));
+      const CARDINALITY: Record<string, string> = {
+        ONE_TO_ONE: '1 a 1',
+        ONE_TO_MANY: '1 a muchos',
+        MANY_TO_MANY: 'muchos a muchos',
+      };
+      return (
+        <div className="mt-2 flex flex-col gap-3 border-t border-border pt-2 text-sm">
+          <ul className="flex flex-col gap-2">
+            {entities.map((entity) => (
+              <li key={entity.localId}>
+                <strong>{entity.name}</strong>
+                {entity.moduleName ? (
+                  <span className="text-muted-foreground"> · {entity.moduleName}</span>
+                ) : null}{' '}
+                — {entity.description}
+                <div className="text-muted-foreground">
+                  Atributos:{' '}
+                  {entity.attributes
+                    .map(
+                      (attribute) => `${attribute.name}${attribute.required ? '' : ' (opcional)'}`,
+                    )
+                    .join(', ')}
+                </div>
+              </li>
+            ))}
+          </ul>
+          {relationships.length > 0 ? (
+            <div>
+              <strong>Relaciones</strong>
+              <ul className="mt-1 text-muted-foreground">
+                {relationships.map((relationship) => (
+                  <li
+                    key={`${relationship.fromLocalId}-${relationship.toLocalId}-${relationship.name}`}
+                  >
+                    {names.get(relationship.fromLocalId)} {relationship.name}{' '}
+                    {names.get(relationship.toLocalId)} (
+                    {CARDINALITY[relationship.cardinality] ?? relationship.cardinality})
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
       );
     }
   }
@@ -618,7 +794,7 @@ export function StructuredKindPage({
                       {expandedId === item.id ? 'Ocultar detalle' : 'Ver detalle'}
                     </Button>
                     {/* UI Blueprint has no diagram: its visual form is the Mockup step. */}
-                    {kind !== 'UI_BLUEPRINT' ? (
+                    {KINDS_WITH_DIAGRAM.has(kind) ? (
                       <Button
                         variant="ghost"
                         size="sm"

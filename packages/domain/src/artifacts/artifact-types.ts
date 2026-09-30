@@ -19,6 +19,12 @@ export const FIRST_DELIVERABLE_ARTIFACT_TYPE_CODES = [
 export type FirstDeliverableArtifactTypeCode =
   (typeof FIRST_DELIVERABLE_ARTIFACT_TYPE_CODES)[number];
 
+// Artifact types added by the Construction pipeline (spec §194-198).
+export const CONSTRUCTION_ARTIFACT_TYPE_CODES = [
+  'GENERATION_PLAN',
+  'CONCEPTUAL_DOMAIN_MODEL',
+] as const;
+
 // Artifact codes are "<PREFIX>-<number>", e.g. RF-001 (spec §31.4).
 export function formatArtifactCode(prefix: string, sequenceNumber: number): string {
   return `${prefix}-${String(sequenceNumber).padStart(3, '0')}`;

@@ -89,4 +89,72 @@ describe('structured generation provenance checks', () => {
       'UNCOVERED_SOURCE',
     ]);
   });
+
+  it('checks a generation plan cites only selected requirements, use cases and sources', () => {
+    const plan = (module: Record<string, unknown>) => ({
+      summary: 'Sistema de pedidos.',
+      modules: [{ localId: 'orders', name: 'Pedidos', purpose: 'Gestionar pedidos', ...module }],
+      authentication: { required: true },
+    });
+    const sources = [
+      { code: 'RF-001', type: 'REQUIREMENT' },
+      { code: 'CU-001', type: 'USE_CASE' },
+    ];
+    expect(
+      evaluateStructuredGeneration(
+        'GENERATION_PLAN',
+        plan({
+          relatedRequirementCodes: ['RF-001'],
+          relatedUseCaseCodes: ['CU-001'],
+          relatedSourceCodes: ['RF-001', 'CU-001'],
+        }),
+        sources,
+      ),
+    ).toEqual([]);
+    const invented = evaluateStructuredGeneration(
+      'GENERATION_PLAN',
+      plan({
+        relatedRequirementCodes: ['RF-404'],
+        relatedUseCaseCodes: ['CU-404'],
+        relatedSourceCodes: ['RF-001'],
+      }),
+      sources,
+    );
+    expect(invented.filter((f) => f.severity === 'ERROR').map((f) => f.code)).toEqual([
+      'UNKNOWN_USE_CASE',
+      'UNKNOWN_REQUIREMENT',
+    ]);
+  });
+
+  it('flags conceptual entities without provenance or citing unselected sources', () => {
+    const findings = evaluateStructuredGeneration(
+      'CONCEPTUAL_DOMAIN_MODEL',
+      {
+        entities: [
+          {
+            localId: 'order',
+            name: 'Pedido',
+            description: 'Solicitud de compra.',
+            attributes: [{ name: 'fecha' }],
+            relatedSourceCodes: ['PG-001'],
+          },
+          {
+            localId: 'client',
+            name: 'Cliente',
+            description: 'Quien compra.',
+            attributes: [{ name: 'nombre' }],
+          },
+          {
+            localId: 'x',
+            name: 'Inventada',
+            description: 'Sin fuente real.',
+            attributes: [{ name: 'a' }],
+            relatedSourceCodes: ['PG-999'],
+          },
+        ],
+      },
+      [{ code: 'PG-001', type: 'GENERATION_PLAN' }],
+    );
+    expect(findings.map((f) => f.code)).toEqual(['MISSING_PROVENANCE', 'UNKNOWN_SOURCE']);
+  });
 });

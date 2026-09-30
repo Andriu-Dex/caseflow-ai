@@ -2,6 +2,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
   ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -23,6 +24,7 @@ import {
   evaluateStructuredGeneration,
   type GenerationSourceReference,
 } from './structured-generation-quality';
+import { AuditService, type AuditAction } from '../audit/audit.service';
 
 type Tx = Prisma.TransactionClient;
 type Content = Record<string, unknown>;
@@ -32,6 +34,14 @@ const KIND_LABELS: Record<StructuredAnalysisKind, string> = {
   SOFTWARE_ARCHITECTURE: 'Arquitectura de software',
   SYSTEM_ARCHITECTURE: 'Arquitectura de sistema',
   UI_BLUEPRINT: 'Plano de interfaz',
+  GENERATION_PLAN: 'Plan de generación',
+  CONCEPTUAL_DOMAIN_MODEL: 'Modelo conceptual',
+};
+
+// Construction gates whose approval is an audited event (AGENTS.md §35).
+const APPROVAL_AUDIT_ACTIONS: Partial<Record<StructuredAnalysisKind, AuditAction>> = {
+  GENERATION_PLAN: 'GENERATION_PLAN_APPROVED',
+  CONCEPTUAL_DOMAIN_MODEL: 'CONCEPTUAL_DOMAIN_MODEL_APPROVED',
 };
 
 interface KindConfig {
@@ -54,6 +64,18 @@ const ELIGIBLE_SOURCE_TYPES: Record<StructuredAnalysisKind, string[]> = {
     'SOFTWARE_ARCHITECTURE',
     'SYSTEM_ARCHITECTURE',
   ],
+  // spec §156: the plan is derived from the whole approved analysis and design.
+  GENERATION_PLAN: [
+    'REQUIREMENT',
+    'USE_CASE',
+    'DATA_MODEL',
+    'NAVIGATION_TREE',
+    'SOFTWARE_ARCHITECTURE',
+    'SYSTEM_ARCHITECTURE',
+    'UI_BLUEPRINT',
+  ],
+  // spec §157: the conceptual model refines the plan's conceptual entities.
+  CONCEPTUAL_DOMAIN_MODEL: ['GENERATION_PLAN', 'REQUIREMENT', 'USE_CASE', 'DATA_MODEL'],
 };
 
 const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
@@ -114,16 +136,32 @@ const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
     promptVersion: 2,
     maxOutputTokens: 8192,
   },
+  GENERATION_PLAN: {
+    promptKey: 'generation-plan.generate',
+    promptVersion: 1,
+    maxOutputTokens: 8192,
+  },
+  CONCEPTUAL_DOMAIN_MODEL: {
+    promptKey: 'conceptual-domain-model.generate',
+    promptVersion: 1,
+    maxOutputTokens: 8192,
+  },
 };
 
 @Injectable()
 export class StructuredAnalysisService {
+  private readonly audit: AuditService;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly ai: AIOrchestrator,
     private readonly diagrams: DiagramEngine,
     @Inject(DIAGRAM_PROVIDER) private readonly diagramProvider: DiagramProvider,
-  ) {}
+    // Injected by Nest; code constructing the service directly still audits.
+    @Optional() audit?: AuditService,
+  ) {
+    this.audit = audit ?? new AuditService(prisma);
+  }
 
   async create(projectId: string, kind: StructuredAnalysisKind, title: string, content: Content) {
     const diagram = await this.renderDiagramIfApplicable(kind, content);
@@ -468,6 +506,7 @@ export class StructuredAnalysisService {
     artifactId: string,
     id: string,
     status: 'DRAFT' | 'IN_REVIEW' | 'APPROVED' | 'CHANGES_REQUESTED',
+    actorUserId: string | null = null,
   ) {
     const version = await this.prisma.artifactVersion.findFirst({
       where: { id, projectId, artifactId, artifact: { artifactTypeCode: kind } },
@@ -475,13 +514,29 @@ export class StructuredAnalysisService {
     if (!version) throw new NotFoundException('Versión no encontrada.');
     if (!canTransitionArtifactVersionStatus(version.status, status))
       throw new UnprocessableEntityException('Transición de estado no permitida.');
-    return this.prisma.artifactVersion.update({
-      where: { id },
-      data: {
-        status,
-        submittedAt: status === 'IN_REVIEW' ? new Date() : version.submittedAt,
-        approvedAt: status === 'APPROVED' ? new Date() : version.approvedAt,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.artifactVersion.update({
+        where: { id },
+        data: {
+          status,
+          submittedAt: status === 'IN_REVIEW' ? new Date() : version.submittedAt,
+          approvedAt: status === 'APPROVED' ? new Date() : version.approvedAt,
+        },
+      });
+      const approvalAction = APPROVAL_AUDIT_ACTIONS[kind];
+      if (status === 'APPROVED' && approvalAction)
+        await this.audit.record(
+          {
+            projectId,
+            actorUserId,
+            action: approvalAction,
+            entityType: 'ARTIFACT_VERSION',
+            entityId: id,
+            metadata: { artifactId, versionNumber: version.versionNumber },
+          },
+          tx,
+        );
+      return updated;
     });
   }
 
@@ -649,8 +704,8 @@ export class StructuredAnalysisService {
         data: {
           artifactVersionId: versionId,
           // Guarded by `diagramConfig` above: only kinds with a diagram
-          // mapping (never UI_BLUEPRINT) reach this branch.
-          kind: kind as Exclude<StructuredAnalysisKind, 'UI_BLUEPRINT'>,
+          // mapping reach this branch.
+          kind: kind as 'NAVIGATION_TREE' | 'SOFTWARE_ARCHITECTURE' | 'SYSTEM_ARCHITECTURE',
           sourceFormat: diagramConfig.format,
           generatorVersion: diagram.generatorVersion,
           source: diagram.source,

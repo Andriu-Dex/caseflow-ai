@@ -5,6 +5,9 @@ import type { Prisma } from '../generated/prisma/client';
 export const AUDIT_ACTIONS = [
   'DEPENDENCY_PROPOSAL_CREATED',
   'DEPENDENCY_PROPOSAL_DECIDED',
+  'GENERATION_PLAN_APPROVED',
+  'CONCEPTUAL_DOMAIN_MODEL_APPROVED',
+  'DESIGN_BASELINE_APPROVED',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 

@@ -20,7 +20,7 @@ import { Trash2, Plus } from 'lucide-react';
 
 // Creating, or editing (`initial` given): an edit submits a complete new
 // version that starts again as a draft; the previous version stays intact.
-async function save(
+export async function save(
   projectId: string,
   kind: StructuredAnalysisKind,
   initial: StructuredAnalysisResponse | undefined,
@@ -38,10 +38,10 @@ async function save(
 
 // Existing rows keep their original localId so references between them
 // (parent node, dependency, link) stay valid; new rows get a fresh one.
-const rowId = (row: { localId?: string }, prefix: string, i: number) =>
+export const rowId = (row: { localId?: string }, prefix: string, i: number) =>
   row.localId ?? `${prefix}${i + 1}`;
 
-function ManualFormShell({
+export function ManualFormShell({
   title,
   onSubmit,
   submitting,
@@ -80,7 +80,7 @@ function ManualFormShell({
   );
 }
 
-interface FormProps {
+export interface FormProps {
   projectId: string;
   initial?: StructuredAnalysisResponse;
   onCreated: () => void;

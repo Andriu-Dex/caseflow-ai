@@ -1,5 +1,7 @@
 import type {
+  CreateDesignBaselineRequest,
   DataModelInput,
+  DesignBaselineResponse,
   DataModelResponse,
   DiagramResponse,
   FirstDeliverableExport,
@@ -450,6 +452,8 @@ export const api = {
         SOFTWARE_ARCHITECTURE: 'software-architecture',
         SYSTEM_ARCHITECTURE: 'system-architecture',
         UI_BLUEPRINT: 'ui-blueprint',
+        GENERATION_PLAN: 'generation-plan',
+        CONCEPTUAL_DOMAIN_MODEL: 'conceptual-domain-model',
       })[kind],
     list: (projectId: string, kind: StructuredAnalysisKind) =>
       get<{ items: StructuredAnalysisResponse[] }>(
@@ -566,5 +570,11 @@ export const api = {
       `${BASE_URL}/projects/${projectId}/baselines/${id}/export?format=html`,
     exportJsonUrl: (projectId: string, id: string) =>
       `${BASE_URL}/projects/${projectId}/baselines/${id}/export?format=json`,
+  },
+  designBaselines: {
+    list: (projectId: string) =>
+      get<{ items: DesignBaselineResponse[] }>(`/projects/${projectId}/design-baselines`),
+    create: (projectId: string, data: CreateDesignBaselineRequest) =>
+      post<DesignBaselineResponse>(`/projects/${projectId}/design-baselines`, data),
   },
 };
