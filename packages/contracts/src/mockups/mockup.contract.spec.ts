@@ -42,7 +42,15 @@ describe('mockupPreviewResponseSchema', () => {
         generatorKind: 'STITCH',
         svg: null,
         screens: [
-          { id, screenLocalId: 'home', screenName: 'Inicio', imageUrl: '/image', htmlUrl: '/html' },
+          {
+            id,
+            screenLocalId: 'home',
+            screenName: 'Inicio',
+            imageUrl: '/image',
+            htmlUrl: '/html',
+            editable: true,
+            refinementPrompt: null,
+          },
         ],
       }).screens,
     ).toHaveLength(1);

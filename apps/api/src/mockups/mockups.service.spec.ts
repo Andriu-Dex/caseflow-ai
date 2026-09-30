@@ -580,6 +580,134 @@ describe('MockupsService', () => {
     );
   });
 
+  const stitchScreen = (id: string, localId: string, ref: boolean) => ({
+    id,
+    screenLocalId: localId,
+    screenName: localId,
+    imageStorageKey: `${localId}.png`,
+    imageContentType: 'image/png',
+    htmlStorageKey: `${localId}.html`,
+    stitchProjectId: ref ? 'stitch-project' : null,
+    stitchScreenId: ref ? `stitch-${localId}` : null,
+    refinementPrompt: null,
+  });
+  const twoScreenLatest = (ref = true) => ({
+    ...artifact,
+    versions: [
+      {
+        ...version,
+        mockupDetail: {
+          ...mockupDetail,
+          generatorKind: 'STITCH',
+          deviceType: 'DESKTOP',
+          svg: null,
+          screens: [stitchScreen('s-home', 'home', ref), stitchScreen('s-list', 'list', ref)],
+        },
+      },
+    ],
+  });
+
+  it('enqueues a single-screen edit targeting that screen of the latest version', async () => {
+    const { service, prisma } = setup();
+    prisma.artifact.findFirst.mockResolvedValue(twoScreenLatest());
+    await service.refineScreen('project', 'artifact', 's-list', 'Agrega un buscador');
+    expect(prisma.mockupGenerationJob.create).toHaveBeenCalledWith({
+      data: {
+        projectId: 'project',
+        uiBlueprintVersionId: 'blueprint-version',
+        existingMockupId: 'artifact',
+        deviceType: 'DESKTOP',
+        refinementPrompt: 'Agrega un buscador',
+        screenLocalId: 'list',
+      },
+    });
+  });
+
+  it('rejects editing a screen from another version or one without its Stitch identity', async () => {
+    const { service, prisma } = setup();
+    prisma.artifact.findFirst.mockResolvedValueOnce(twoScreenLatest());
+    await expect(
+      service.refineScreen('project', 'artifact', 'old-screen', 'x y z'),
+    ).rejects.toThrow('no encontrada');
+    prisma.artifact.findFirst.mockResolvedValueOnce(twoScreenLatest(false));
+    await expect(service.refineScreen('project', 'artifact', 's-home', 'x y z')).rejects.toThrow(
+      'individualmente',
+    );
+    expect(prisma.mockupGenerationJob.create).not.toHaveBeenCalled();
+  });
+
+  it('edits only the target screen at Stitch and carries the other screens over unchanged', async () => {
+    const editScreen = vi.fn().mockResolvedValue({
+      image: { body: Buffer.from('new'), contentType: 'image/png' },
+      html: '<html>new</html>',
+      providerRef: { projectId: 'stitch-project', screenId: 'stitch-list-v2' },
+    });
+    const generate = vi.fn();
+    const { service, tx, prisma, storage } = setup({ id: 'stitch', generate, editScreen });
+    prisma.artifact.findFirst.mockResolvedValue(twoScreenLatest());
+    tx.$queryRaw.mockResolvedValueOnce([{ id: 'artifact' }]);
+    prisma.mockupGenerationJob.findUniqueOrThrow.mockResolvedValue({
+      id: 'job-1',
+      projectId: 'project',
+      uiBlueprintVersionId: 'blueprint-version',
+      existingMockupId: 'artifact',
+      deviceType: 'DESKTOP',
+      refinementPrompt: 'Agrega un buscador',
+      screenLocalId: 'list',
+    });
+    await service.runJob('job-1');
+
+    expect(generate).not.toHaveBeenCalled();
+    expect(editScreen).toHaveBeenCalledWith(
+      { projectId: 'stitch-project', screenId: 'stitch-list' },
+      'Agrega un buscador',
+      'DESKTOP',
+    );
+    const data = tx.mockupDetail.create.mock.calls[0]![0].data;
+    expect(data.refinementPrompt).toBeNull();
+    const [home, list] = data.screens.create;
+    expect(home).toMatchObject({
+      screenLocalId: 'home',
+      imageStorageKey: 'home.png',
+      stitchScreenId: 'stitch-home',
+      refinementPrompt: null,
+    });
+    expect(list).toMatchObject({
+      screenLocalId: 'list',
+      stitchScreenId: 'stitch-list-v2',
+      refinementPrompt: 'Agrega un buscador',
+    });
+    expect(list.imageStorageKey).not.toBe('list.png');
+    expect(await storage.getObject(list.imageStorageKey)).toEqual(Buffer.from('new'));
+    expect(prisma.mockupGenerationJob.update).toHaveBeenLastCalledWith({
+      where: { id: 'job-1' },
+      data: { status: 'COMPLETED', resultArtifactId: artifact.id },
+    });
+  });
+
+  it('fails a single-screen edit safely when the provider cannot edit', async () => {
+    const { service, tx, prisma } = setup(new FakeMockupProvider());
+    prisma.artifact.findFirst.mockResolvedValue(twoScreenLatest());
+    prisma.mockupGenerationJob.findUniqueOrThrow.mockResolvedValue({
+      id: 'job-1',
+      projectId: 'project',
+      uiBlueprintVersionId: 'blueprint-version',
+      existingMockupId: 'artifact',
+      deviceType: 'DESKTOP',
+      refinementPrompt: 'Agrega un buscador',
+      screenLocalId: 'list',
+    });
+    await service.runJob('job-1');
+    expect(tx.mockupDetail.create).not.toHaveBeenCalled();
+    expect(prisma.mockupGenerationJob.update).toHaveBeenLastCalledWith({
+      where: { id: 'job-1' },
+      data: {
+        status: 'FAILED',
+        errorMessage: 'Stitch no está disponible para editar la pantalla.',
+      },
+    });
+  });
+
   it('fails a refinement job instead of silently storing a wireframe fallback', async () => {
     const { service, tx, prisma } = setup(new FakeMockupProvider());
     prisma.mockupGenerationJob.findUniqueOrThrow.mockResolvedValue({

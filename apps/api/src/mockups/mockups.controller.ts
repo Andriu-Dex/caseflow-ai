@@ -169,6 +169,24 @@ export class MockupsController {
     return this.service.refine(projectId, mockupId, body.prompt);
   }
 
+  @Post(':mockupId/screens/:screenId/refine')
+  @HttpCode(202)
+  @ApiOperation({
+    operationId: 'refineMockupScreen',
+    summary: 'Encolar una nueva versión del boceto editando una sola pantalla',
+  })
+  @ApiZodBody(refineMockupRequestSchema)
+  @ApiZodResponse(202, 'Mockup generation job.', mockupJobResponseSchema)
+  refineScreen(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('mockupId', uuidParamPipe) mockupId: string,
+    @Param('screenId', uuidParamPipe) screenId: string,
+    @Body(new ZodValidationPipe(refineMockupRequestSchema))
+    body: z.output<typeof refineMockupRequestSchema>,
+  ) {
+    return this.service.refineScreen(projectId, mockupId, screenId, body.prompt);
+  }
+
   @Post(':mockupId/versions/:versionId/transition')
   @ApiOperation({ operationId: 'transitionMockupVersion', summary: 'Cambiar estado del mockup' })
   @ApiZodBody(transitionArtifactVersionRequestSchema)
