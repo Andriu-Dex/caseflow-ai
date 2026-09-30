@@ -1,5 +1,6 @@
 'use client';
 
+import { GenerationOverlay } from './generation-overlay';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   DiagramResponse,
@@ -489,6 +490,7 @@ export function StructuredKindPage({
               <Sparkles className="size-4" aria-hidden="true" />
               {generating ? 'Generando…' : 'Generar'}
             </Button>
+            <GenerationOverlay open={generating} />
             <Button
               type="button"
               variant="outline"
