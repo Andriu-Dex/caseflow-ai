@@ -25,6 +25,7 @@ vi.mock('../lib/api', () => ({
     structuredAnalysis: { create: (...args: unknown[]) => structuredCreate(...args) },
   },
   ApiError: class ApiError extends Error {},
+  restoreSession: vi.fn(),
 }));
 
 // Manual-fallback tests (spec: CASEflow must remain functional without a

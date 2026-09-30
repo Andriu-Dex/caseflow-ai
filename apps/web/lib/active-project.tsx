@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { restoreSession } from './api';
 
 const STORAGE_KEY = 'caseflow.activeProjectId';
 
@@ -19,6 +20,10 @@ export function ActiveProjectProvider({ children }: { children: ReactNode }) {
   const [projectId, setProjectIdState] = useState<string | null>(null);
 
   useEffect(() => {
+    // The access token lives only in memory: after a reload, restore it from the
+    // refresh cookie up front (this also arms the proactive refresh timer)
+    // instead of letting every first query hit a 401.
+    void restoreSession();
     try {
       setProjectIdState(window.localStorage.getItem(STORAGE_KEY));
     } catch {

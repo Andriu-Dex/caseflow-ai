@@ -31,6 +31,7 @@ import { QueryState, RequireActiveProject } from '../../../components/query-stat
 import { PageHeading } from '../../../components/page-heading';
 import { StatusBadge } from '../../../components/status-badge';
 import { TrustedDiagram } from '../../../components/trusted-svg';
+import { AuthedDownloadButton, AuthedImage } from '../../../components/authed-media';
 import {
   ApproveAllButton,
   ArchiveButton,
@@ -132,14 +133,14 @@ function MockupPreview({ mockupId, projectId }: { mockupId: string; projectId: s
     <div className="flex flex-col gap-3">
       {screens.length > 0 ? (
         <div className="flex justify-end">
-          <a
-            href={downloadAllUrl}
-            download
+          <AuthedDownloadButton
+            url={downloadAllUrl}
+            filename="bocetos.zip"
             className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm font-medium hover:bg-muted"
           >
             <Download aria-hidden="true" className="size-4" />
             Descargar todas (ZIP)
-          </a>
+          </AuthedDownloadButton>
         </div>
       ) : null}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -154,32 +155,29 @@ function MockupPreview({ mockupId, projectId }: { mockupId: string; projectId: s
               onClick={() => setSelectedScreenIndex(index)}
               className="group flex aspect-[16/10] w-full items-center justify-center overflow-hidden bg-muted/40 p-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             >
-              <img
-                src={api.mockups.screenImageUrl(projectId, mockupId, screen.id)}
+              <AuthedImage
+                url={api.mockups.screenImageUrl(projectId, mockupId, screen.id)}
                 alt={screen.screenName}
-                loading="lazy"
-                decoding="async"
-                draggable={false}
                 className="max-h-full max-w-full object-contain transition-transform group-hover:scale-[1.02]"
               />
             </button>
             <figcaption className="flex items-center justify-between gap-2 border-t border-border px-3 py-2 text-sm">
               <span className="truncate font-medium">{screen.screenName}</span>
               <span className="flex shrink-0 items-center gap-3">
-                <a
-                  href={api.mockups.screenImageUrl(projectId, mockupId, screen.id)}
-                  download
-                  className="text-xs text-primary underline underline-offset-2"
+                <AuthedDownloadButton
+                  url={api.mockups.screenImageUrl(projectId, mockupId, screen.id)}
+                  filename={`${screen.screenName}.png`}
+                  className="inline-flex items-center gap-1 text-xs text-primary underline underline-offset-2"
                 >
                   Descargar PNG
-                </a>
-                <a
-                  href={api.mockups.screenHtmlUrl(projectId, mockupId, screen.id)}
-                  download
-                  className="text-xs text-primary underline underline-offset-2"
+                </AuthedDownloadButton>
+                <AuthedDownloadButton
+                  url={api.mockups.screenHtmlUrl(projectId, mockupId, screen.id)}
+                  filename={`${screen.screenName}.html`}
+                  className="inline-flex items-center gap-1 text-xs text-primary underline underline-offset-2"
                 >
                   Descargar HTML
-                </a>
+                </AuthedDownloadButton>
               </span>
             </figcaption>
           </figure>
@@ -202,14 +200,13 @@ function MockupPreview({ mockupId, projectId }: { mockupId: string; projectId: s
               )
             }
           >
-            <img
-              src={api.mockups.screenImageUrl(
+            <AuthedImage
+              url={api.mockups.screenImageUrl(
                 projectId,
                 mockupId,
                 screens[selectedScreenIndex]!.id,
               )}
               alt={screens[selectedScreenIndex]!.screenName}
-              draggable={false}
               className="max-h-[var(--mockup-image-max-height)] max-w-full object-contain"
             />
           </MockupScreenDialog>

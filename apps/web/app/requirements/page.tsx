@@ -6,7 +6,13 @@ import { Download, Pencil, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@caseflow-ai/ui';
-import { api, ApiError, type ArtifactVersionStatus, type GenerationResult } from '../../lib/api';
+import {
+  api,
+  ApiError,
+  downloadFile,
+  type ArtifactVersionStatus,
+  type GenerationResult,
+} from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { StatusBadge } from '../../components/status-badge';
 import { PageHeading } from '../../components/page-heading';
@@ -25,13 +31,15 @@ import {
 
 const PRIORITY_LABELS: Record<string, string> = { HIGH: 'Alta', MEDIUM: 'Media', LOW: 'Baja' };
 
-function downloadRequirements(projectId: string, format: 'pdf' | 'docx') {
-  const anchor = document.createElement('a');
-  anchor.href = api.requirements.exportUrl(projectId, format);
-  anchor.download = `requisitos-${projectId}.${format}`;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
+async function downloadRequirements(projectId: string, format: 'pdf' | 'docx') {
+  try {
+    await downloadFile(
+      api.requirements.exportUrl(projectId, format),
+      `requisitos-${projectId}.${format}`,
+    );
+  } catch (err) {
+    toast.error(err instanceof ApiError ? err.message : 'No se pudo exportar los requisitos.');
+  }
 }
 
 function RequirementsContent({ projectId }: { projectId: string }) {
