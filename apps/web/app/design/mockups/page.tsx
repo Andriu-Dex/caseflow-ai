@@ -42,7 +42,7 @@ import { PageHeading } from '../../../components/page-heading';
 import { StatusBadge } from '../../../components/status-badge';
 import { TrustedDiagram } from '../../../components/trusted-svg';
 import { AuthedDownloadButton, AuthedImage } from '../../../components/authed-media';
-import { GenerationOverlay } from '../../../components/generation-overlay';
+import { AiOrbitSpinner, GenerationOverlay } from '../../../components/generation-overlay';
 import {
   ApproveAllButton,
   ArchiveButton,
@@ -168,11 +168,15 @@ function ScreenEditDialog({
         </DialogHeader>
         {imageUrl ? (
           <div className="flex aspect-[16/10] items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40 p-2">
-            <AuthedImage
-              url={imageUrl}
-              alt={screen?.screenName ?? ''}
-              className="max-h-full max-w-full object-contain"
-            />
+            {busy ? (
+              <AiOrbitSpinner label="Aplicando los cambios a esta pantalla…" />
+            ) : (
+              <AuthedImage
+                url={imageUrl}
+                alt={screen?.screenName ?? ''}
+                className="max-h-full max-w-full object-contain"
+              />
+            )}
           </div>
         ) : null}
         {screen?.refinementPrompt ? (
