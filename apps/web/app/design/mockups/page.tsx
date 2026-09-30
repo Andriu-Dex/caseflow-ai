@@ -32,6 +32,7 @@ import { PageHeading } from '../../../components/page-heading';
 import { StatusBadge } from '../../../components/status-badge';
 import { TrustedDiagram } from '../../../components/trusted-svg';
 import { AuthedDownloadButton, AuthedImage } from '../../../components/authed-media';
+import { GenerationOverlay } from '../../../components/generation-overlay';
 import {
   ApproveAllButton,
   ArchiveButton,
@@ -554,6 +555,17 @@ function MockupsContent({ projectId }: { projectId: string }) {
         )}
       </section>
 
+      <GenerationOverlay
+        open={creatingVersionId !== null}
+        title={
+          creatingJobStatus === 'SUBMITTING'
+            ? 'Preparando la generación'
+            : creatingJobStatus === 'QUEUED'
+              ? 'Boceto en cola'
+              : 'Generando las pantallas'
+        }
+        description="Puede tardar varios minutos. El estado se actualizará automáticamente."
+      />
       {creatingVersionId ? (
         <div
           role="status"

@@ -1,5 +1,6 @@
 'use client';
 
+import { GenerationOverlay } from '../../components/generation-overlay';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -193,6 +194,7 @@ function ContextForm({
         >
           {generating ? 'Generando…' : 'Generar con IA'}
         </Button>
+        <GenerationOverlay open={generating} />
       </div>
       <label className="flex flex-col gap-1 text-sm">
         Planteamiento del problema

@@ -1,5 +1,6 @@
 'use client';
 
+import { GenerationOverlay } from '../../components/generation-overlay';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Archive, Pencil, Trash2, Upload, X } from 'lucide-react';
 import { useRef, useState } from 'react';
@@ -573,6 +574,7 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
                 >
                   {generatingReport ? 'Generando…' : 'Generar reporte con IA'}
                 </Button>
+                <GenerationOverlay open={generatingReport} />
                 {reportCandidate ? (
                   <div className="rounded-md border border-dashed border-purple-300 bg-purple-50 p-3 text-foreground/80">
                     <p className="mb-2 text-xs font-medium text-purple-700">
