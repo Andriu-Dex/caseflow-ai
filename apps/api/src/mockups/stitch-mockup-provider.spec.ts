@@ -32,9 +32,25 @@ describe('StitchMockupProvider', () => {
     const provider = new StitchMockupProvider({ apiKey: 'test', timeoutMs: 100 });
     const buildPrompt = (
       provider as unknown as {
-        buildPrompt: (screen: unknown, device: 'DESKTOP') => string;
+        buildPrompt: (screen: unknown, device: 'DESKTOP', refinement?: string) => string;
       }
     ).buildPrompt.bind(provider);
+    const screen = {
+      name: 'Pedidos',
+      purpose: 'Registrar un pedido',
+      targetActors: [],
+      sections: [],
+      primaryActions: [],
+      secondaryActions: [],
+      forms: [],
+      principalData: [],
+      states: [],
+      relatedUseCaseCodes: [],
+    };
+    expect(buildPrompt(screen, 'DESKTOP')).not.toContain('Ajustes solicitados');
+    const refined = buildPrompt(screen, 'DESKTOP', 'Usa tonos verdes');
+    expect(refined).toContain('Registrar un pedido');
+    expect(refined.endsWith('Usa tonos verdes')).toBe(true);
     const prompt = buildPrompt(
       {
         name: 'Pedidos',

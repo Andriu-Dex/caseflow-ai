@@ -126,6 +126,7 @@ describe('MockupsService', () => {
         uiBlueprintVersionId: 'blueprint-version',
         existingMockupId: null,
         deviceType: 'DESKTOP',
+        refinementPrompt: null,
       },
     });
     expect(queue.add).toHaveBeenCalledWith('mockup-generation', {
@@ -171,7 +172,7 @@ describe('MockupsService', () => {
     const provider: MockupProvider = { id: 'spy', generate };
     const { tx, createAndRun } = setup(provider);
     await createAndRun('blueprint-version', 'MOBILE');
-    expect(generate).toHaveBeenCalledWith(blueprintContent, 'MOBILE');
+    expect(generate).toHaveBeenCalledWith(blueprintContent, 'MOBILE', undefined);
     expect(tx.mockupDetail.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ deviceType: 'MOBILE' }) }),
     );
@@ -500,9 +501,104 @@ describe('MockupsService', () => {
         uiBlueprintVersionId: 'blueprint-version',
         existingMockupId: 'artifact',
         deviceType: 'DESKTOP',
+        refinementPrompt: null,
       },
     });
     expect(job.status).toBe('QUEUED');
+  });
+
+  const stitchLatest = {
+    ...artifact,
+    versions: [
+      {
+        ...version,
+        mockupDetail: { ...mockupDetail, generatorKind: 'STITCH', deviceType: 'MOBILE' },
+      },
+    ],
+  };
+
+  it('enqueues a refinement as a new version of the same Stitch mockup, keeping blueprint and device', async () => {
+    const { service, prisma } = setup();
+    prisma.artifact.findFirst.mockResolvedValue(stitchLatest);
+    const job = await service.refine('project', 'artifact', 'Usa tonos verdes');
+    expect(prisma.mockupGenerationJob.create).toHaveBeenCalledWith({
+      data: {
+        projectId: 'project',
+        uiBlueprintVersionId: 'blueprint-version',
+        existingMockupId: 'artifact',
+        deviceType: 'MOBILE',
+        refinementPrompt: 'Usa tonos verdes',
+      },
+    });
+    expect(job.status).toBe('QUEUED');
+  });
+
+  it('refuses to refine an internal wireframe, a foreign mockup or one whose blueprint is no longer approved', async () => {
+    const { service, prisma } = setup();
+    prisma.artifact.findFirst.mockResolvedValueOnce({ ...artifact, versions: [version] });
+    await expect(service.refine('project', 'artifact', 'Cambiar')).rejects.toThrow('Stitch');
+
+    prisma.artifact.findFirst.mockResolvedValueOnce(null);
+    await expect(service.refine('other-project', 'artifact', 'Cambiar')).rejects.toThrow(
+      'no encontrado',
+    );
+
+    prisma.artifact.findFirst.mockResolvedValueOnce(stitchLatest);
+    prisma.artifactVersion.findFirst.mockResolvedValueOnce(null);
+    await expect(service.refine('project', 'artifact', 'Cambiar')).rejects.toThrow('APPROVED');
+    expect(prisma.mockupGenerationJob.create).not.toHaveBeenCalled();
+  });
+
+  it('passes the refinement to the provider and records it on the new version', async () => {
+    const generate = vi.fn().mockResolvedValue({
+      kind: 'STITCH',
+      screens: [
+        {
+          screenLocalId: 'home',
+          screenName: 'Inicio',
+          image: { body: Buffer.from('png'), contentType: 'image/png' },
+          html: '<html></html>',
+        },
+      ],
+    });
+    const { service, tx, prisma } = setup({ id: 'spy', generate });
+    tx.$queryRaw.mockResolvedValueOnce([{ id: 'artifact' }]);
+    prisma.mockupGenerationJob.findUniqueOrThrow.mockResolvedValue({
+      id: 'job-1',
+      projectId: 'project',
+      uiBlueprintVersionId: 'blueprint-version',
+      existingMockupId: 'artifact',
+      deviceType: 'DESKTOP',
+      refinementPrompt: 'Usa tonos verdes',
+    });
+    await service.runJob('job-1');
+    expect(generate).toHaveBeenCalledWith(blueprintContent, 'DESKTOP', 'Usa tonos verdes');
+    expect(tx.mockupDetail.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ refinementPrompt: 'Usa tonos verdes' }),
+      }),
+    );
+  });
+
+  it('fails a refinement job instead of silently storing a wireframe fallback', async () => {
+    const { service, tx, prisma } = setup(new FakeMockupProvider());
+    prisma.mockupGenerationJob.findUniqueOrThrow.mockResolvedValue({
+      id: 'job-1',
+      projectId: 'project',
+      uiBlueprintVersionId: 'blueprint-version',
+      existingMockupId: 'artifact',
+      deviceType: 'DESKTOP',
+      refinementPrompt: 'Usa tonos verdes',
+    });
+    await service.runJob('job-1');
+    expect(tx.mockupDetail.create).not.toHaveBeenCalled();
+    expect(prisma.mockupGenerationJob.update).toHaveBeenLastCalledWith({
+      where: { id: 'job-1' },
+      data: {
+        status: 'FAILED',
+        errorMessage: 'Stitch no está disponible; no se pudo aplicar la edición del boceto.',
+      },
+    });
   });
 
   it('creates a new version by re-rendering from a (possibly different) approved blueprint version', async () => {

@@ -1120,6 +1120,8 @@ model MockupDetail {
   generatorKind        MockupGeneratorKind @default(INTERNAL_WIREFRAME) @map("generator_kind")
   deviceType           MockupDeviceType    @default(DESKTOP) @map("device_type")
   svg                  String?
+  // User instruction that produced this version by refining the previous one; null for plain generation.
+  refinementPrompt     String?             @map("refinement_prompt")
 
   artifactVersion    ArtifactVersion      @relation("MockupOwnVersion", fields: [artifactVersionId], references: [id], onDelete: Restrict)
   uiBlueprintVersion ArtifactVersion      @relation("MockupUiBlueprintSource", fields: [uiBlueprintVersionId], references: [id], onDelete: Restrict)
@@ -1189,6 +1191,7 @@ model MockupGenerationJob {
   uiBlueprintVersionId String           @map("ui_blueprint_version_id") @db.Uuid
   existingMockupId     String?          @map("existing_mockup_id") @db.Uuid
   deviceType           MockupDeviceType @default(DESKTOP) @map("device_type")
+  refinementPrompt     String?          @map("refinement_prompt")
   status               MockupJobStatus  @default(QUEUED)
   resultArtifactId     String?          @map("result_artifact_id") @db.Uuid
   errorMessage         String?          @map("error_message")
