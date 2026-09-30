@@ -1,0 +1,36 @@
+import { Global, Injectable, Module } from '@nestjs/common';
+import { PrismaService } from '../database/prisma.service';
+import type { Prisma } from '../generated/prisma/client';
+
+export const AUDIT_ACTIONS = [
+  'DEPENDENCY_PROPOSAL_CREATED',
+  'DEPENDENCY_PROPOSAL_DECIDED',
+] as const;
+export type AuditAction = (typeof AUDIT_ACTIONS)[number];
+
+export interface AuditEventInput {
+  projectId: string;
+  actorUserId: string | null;
+  action: AuditAction;
+  entityType: string;
+  entityId: string;
+  // Non-sensitive context only (AGENTS.md §35): never secrets or raw payloads.
+  metadata?: Prisma.InputJsonObject;
+}
+
+type AuditClient = Pick<Prisma.TransactionClient, 'auditEvent'>;
+
+// Append-only audit trail. Pass the transaction client so the event commits
+// (or rolls back) together with the change it records.
+@Injectable()
+export class AuditService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async record(event: AuditEventInput, client: AuditClient = this.prisma): Promise<void> {
+    await client.auditEvent.create({ data: { ...event, metadata: event.metadata ?? {} } });
+  }
+}
+
+@Global()
+@Module({ providers: [AuditService], exports: [AuditService] })
+export class AuditModule {}

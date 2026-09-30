@@ -46,6 +46,8 @@ import { WorkspacesModule } from '../../../src/workspaces/workspaces.module';
 import { ImpactAnalysisModule } from '../../../src/impact-analysis/impact-analysis.module';
 import { ConsistencyEngineModule } from '../../../src/consistency-engine/consistency-engine.module';
 import { BaselinesModule } from '../../../src/baselines/baselines.module';
+import { AuditModule } from '../../../src/audit/audit.service';
+import { ConstructionModule } from '../../../src/construction/construction.module';
 import { getTestConnectionString, resetTestData } from './test-database';
 import type { CreateProjectRequest, ProjectResponse } from '@caseflow-ai/contracts';
 
@@ -117,6 +119,8 @@ export async function createTestContext(): Promise<TestContext> {
       ImpactAnalysisModule,
       ConsistencyEngineModule,
       BaselinesModule,
+      AuditModule,
+      ConstructionModule,
     ],
   })
     .overrideProvider(DIAGRAM_PROVIDER)

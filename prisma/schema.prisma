@@ -211,6 +211,9 @@ model User {
   workspaceMemberships WorkspaceMembership[]
   projectMemberships   ProjectMembership[]
   projectBaselines     ProjectBaseline[]
+  auditEvents          AuditEvent[]
+  requestedProposals   DependencyProposal[]  @relation("DependencyProposalRequester")
+  decidedProposals     DependencyProposal[]  @relation("DependencyProposalDecider")
 
   @@map("users")
 }
@@ -300,6 +303,8 @@ model Project {
   sourceProcessingJobs          SourceProcessingJob[]
   projectMemberships            ProjectMembership[]
   projectBaselines              ProjectBaseline[]
+  auditEvents                   AuditEvent[]
+  dependencyProposals           DependencyProposal[]
 
   @@index([workspaceId, createdAt, id])
   @@map("projects")
@@ -970,8 +975,8 @@ model SourceDetail {
   artifactVersion ArtifactVersion     @relation(fields: [artifactVersionId], references: [id], onDelete: Restrict)
   report          SourceReportDetail?
 
-  @@map("source_details")
   @@index([contentHash])
+  @@map("source_details")
 }
 
 // One candidate-first AI interpretation attempt for one exact source version.
@@ -1131,13 +1136,13 @@ model MockupDetail {
 }
 
 model MockupScreenDetail {
-  id               String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  mockupVersionId  String @map("mockup_version_id") @db.Uuid
-  screenLocalId    String @map("screen_local_id")
-  screenName       String @map("screen_name")
-  imageStorageKey  String @map("image_storage_key")
-  imageContentType String @map("image_content_type")
-  htmlStorageKey   String @map("html_storage_key")
+  id               String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mockupVersionId  String  @map("mockup_version_id") @db.Uuid
+  screenLocalId    String  @map("screen_local_id")
+  screenName       String  @map("screen_name")
+  imageStorageKey  String  @map("image_storage_key")
+  imageContentType String  @map("image_content_type")
+  htmlStorageKey   String  @map("html_storage_key")
   // Stitch project/screen that produced this image, so the screen can be edited
   // in place later. Null for screens generated before this was recorded.
   stitchProjectId  String? @map("stitch_project_id")
@@ -1256,4 +1261,72 @@ model ProjectBaselineEntry {
 
   @@unique([baselineId, artifactId])
   @@map("project_baseline_entries")
+}
+
+// Append-only domain/security audit trail (AGENTS.md §35). Rows are never
+// updated or deleted: a database trigger rejects both. Distinct from logs.
+model AuditEvent {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId   String   @map("project_id") @db.Uuid
+  // Null for events the system produces on its own (e.g. a background job).
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  action      String
+  entityType  String   @map("entity_type")
+  entityId    String   @map("entity_id") @db.Uuid
+  // Non-sensitive context only; never secrets or provider payloads.
+  metadata    Json     @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  actor   User?   @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, createdAt])
+  @@index([entityType, entityId])
+  @@map("audit_events")
+}
+
+enum DependencyLayer {
+  FRONTEND
+  BACKEND
+  SHARED
+
+  @@map("dependency_layer")
+}
+
+enum DependencyProposalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+
+  @@map("dependency_proposal_status")
+}
+
+// A package a generated project needs that is outside its TargetTemplate's
+// Approved Dependency Catalog (spec §155, DEC-100). An approval is an exception
+// for this project only — the shared template catalog never changes. Decided
+// once: a partial unique index allows one open-or-approved proposal per package.
+model DependencyProposal {
+  id                       String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId                String                   @map("project_id") @db.Uuid
+  targetTemplateIdentifier String                   @map("target_template_identifier")
+  targetTemplateVersion    Int                      @map("target_template_version")
+  packageName              String                   @map("package_name")
+  version                  String
+  layer                    DependencyLayer
+  dev                      Boolean                  @default(false)
+  justification            String
+  status                   DependencyProposalStatus @default(PENDING)
+  // Null when a generation run requested it rather than a person.
+  requestedByUserId        String?                  @map("requested_by_user_id") @db.Uuid
+  decidedByUserId          String?                  @map("decided_by_user_id") @db.Uuid
+  decidedAt                DateTime?                @map("decided_at") @db.Timestamptz(6)
+  decisionNote             String?                  @map("decision_note")
+  createdAt                DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  requestedBy User?   @relation("DependencyProposalRequester", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  decidedBy   User?   @relation("DependencyProposalDecider", fields: [decidedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, status])
+  @@map("dependency_proposals")
 }
