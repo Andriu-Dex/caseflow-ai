@@ -53,6 +53,27 @@ export type {
   ProviderScreenRef,
 } from './mockup-provider';
 
+export {
+  DockerSandboxExecutionProvider,
+  FakeSandboxExecutionProvider,
+  SANDBOX_ERROR_CODES,
+  SandboxExecutionError,
+  dockerRunArgs,
+  isAllowedCommand,
+  sanitizeSandboxOutput,
+  sandboxImageTag,
+  stagePassed,
+} from './sandbox-execution-provider';
+export type {
+  SandboxCommand,
+  SandboxErrorCode,
+  SandboxExecutionProvider,
+  SandboxExecutionRequest,
+  SandboxExecutionResult,
+  SandboxLimits,
+  SandboxStageOutcome,
+} from './sandbox-execution-provider';
+
 export { FakeEmbeddingProvider, DisabledEmbeddingProvider } from './embedding-provider';
 export type { EmbeddingProvider } from './embedding-provider';
 

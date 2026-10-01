@@ -210,15 +210,17 @@ model User {
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   archivedAt   DateTime? @map("archived_at") @db.Timestamptz(6)
 
-  sessions             Session[]
-  workspaceMemberships WorkspaceMembership[]
-  projectMemberships   ProjectMembership[]
-  projectBaselines     ProjectBaseline[]
-  auditEvents          AuditEvent[]
-  requestedProposals   DependencyProposal[]  @relation("DependencyProposalRequester")
-  decidedProposals     DependencyProposal[]  @relation("DependencyProposalDecider")
-  designBaselines      DesignBaseline[]
-  generationRuns       GenerationRun[]
+  sessions                  Session[]
+  workspaceMemberships      WorkspaceMembership[]
+  projectMemberships        ProjectMembership[]
+  projectBaselines          ProjectBaseline[]
+  auditEvents               AuditEvent[]
+  requestedProposals        DependencyProposal[]       @relation("DependencyProposalRequester")
+  decidedProposals          DependencyProposal[]       @relation("DependencyProposalDecider")
+  designBaselines           DesignBaseline[]
+  generationRuns            GenerationRun[]
+  sandboxRuns               SandboxRun[]
+  generatedProjectSnapshots GeneratedProjectSnapshot[]
 
   @@map("users")
 }
@@ -312,6 +314,8 @@ model Project {
   dependencyProposals           DependencyProposal[]
   designBaselines               DesignBaseline[]
   generationRuns                GenerationRun[]
+  sandboxRuns                   SandboxRun[]
+  generatedProjectSnapshots     GeneratedProjectSnapshot[]
 
   @@index([workspaceId, createdAt, id])
   @@map("projects")
@@ -401,6 +405,9 @@ model ArtifactVersion {
   designBaselineEntries               DesignBaselineEntry[]
   generationRuns                      GenerationRun[]
   codeTraceLinks                      CodeTraceLink[]
+  repairFindings                      RepairFinding[]
+  snapshotsAsGenerationPlan           GeneratedProjectSnapshot[]           @relation("SnapshotGenerationPlan")
+  snapshotsAsImplementationPlan       GeneratedProjectSnapshot[]           @relation("SnapshotImplementationPlan")
 
   @@unique([artifactId, versionNumber])
   @@unique([id, projectId])
@@ -1365,10 +1372,11 @@ model DesignBaseline {
   approvedByUserId String   @map("approved_by_user_id") @db.Uuid
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  project        Project               @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  approvedBy     User                  @relation(fields: [approvedByUserId], references: [id], onDelete: Restrict)
+  project        Project                    @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  approvedBy     User                       @relation(fields: [approvedByUserId], references: [id], onDelete: Restrict)
   entries        DesignBaselineEntry[]
   generationRuns GenerationRun[]
+  snapshots      GeneratedProjectSnapshot[]
 
   @@index([projectId, createdAt])
   @@map("design_baselines")
@@ -1438,11 +1446,14 @@ model GenerationRun {
   startedAt                   DateTime?           @map("started_at") @db.Timestamptz(6)
   finishedAt                  DateTime?           @map("finished_at") @db.Timestamptz(6)
 
-  project                   Project         @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  implementationPlanVersion ArtifactVersion @relation(fields: [implementationPlanVersionId], references: [id], onDelete: Restrict)
-  designBaseline            DesignBaseline  @relation(fields: [designBaselineId], references: [id], onDelete: Restrict)
-  createdBy                 User            @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  project                   Project                   @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  implementationPlanVersion ArtifactVersion           @relation(fields: [implementationPlanVersionId], references: [id], onDelete: Restrict)
+  designBaseline            DesignBaseline            @relation(fields: [designBaselineId], references: [id], onDelete: Restrict)
+  createdBy                 User                      @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
   files                     GeneratedFile[]
+  sandboxRuns               SandboxRun[]
+  repairAttempts            AutoRepairAttempt[]
+  snapshot                  GeneratedProjectSnapshot?
 
   @@index([projectId, createdAt])
   @@map("generation_runs")
@@ -1479,4 +1490,162 @@ model CodeTraceLink {
   @@unique([generatedFileId, sourceArtifactVersionId, planElement])
   @@index([sourceArtifactVersionId])
   @@map("code_trace_links")
+}
+
+enum SandboxRunStatus {
+  QUEUED
+  RUNNING
+  READY
+  // This attempt failed and a repaired attempt follows.
+  FAILED
+  // Terminal: validation failed and no further repair is possible.
+  VALIDATION_FAILED
+  // Terminal: the sandbox itself was unavailable; says nothing about the code.
+  ERROR
+
+  @@map("sandbox_run_status")
+}
+
+enum ValidationStage {
+  INSTALL
+  LINT
+  TYPECHECK
+  TEST
+  BUILD
+  STRUCTURE
+  TRACEABILITY
+
+  @@map("validation_stage")
+}
+
+enum AutoRepairStatus {
+  PATCHED
+  NO_PATCH
+  REJECTED
+
+  @@map("auto_repair_status")
+}
+
+// One validation attempt of a generation run inside the sandbox (spec §174-175).
+model SandboxRun {
+  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId       String           @map("project_id") @db.Uuid
+  generationRunId String           @map("generation_run_id") @db.Uuid
+  attemptNumber   Int              @map("attempt_number")
+  status          SandboxRunStatus @default(QUEUED)
+  currentStage    ValidationStage? @map("current_stage")
+  failedStage     ValidationStage? @map("failed_stage")
+  errorMessage    String?          @map("error_message")
+  // Lockfile resolved by the sandbox install; shipped in the snapshot ZIP.
+  lockfile        String?
+  createdByUserId String           @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  startedAt       DateTime?        @map("started_at") @db.Timestamptz(6)
+  finishedAt      DateTime?        @map("finished_at") @db.Timestamptz(6)
+
+  project       Project                   @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  generationRun GenerationRun             @relation(fields: [generationRunId], references: [id], onDelete: Restrict)
+  createdBy     User                      @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  stageResults  SandboxStageResult[]
+  repairAttempt AutoRepairAttempt?
+  snapshot      GeneratedProjectSnapshot?
+
+  @@index([generationRunId, createdAt])
+  @@map("sandbox_runs")
+}
+
+model SandboxStageResult {
+  id           String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sandboxRunId String          @map("sandbox_run_id") @db.Uuid
+  stage        ValidationStage
+  passed       Boolean
+  exitCode     Int?            @map("exit_code")
+  timedOut     Boolean         @default(false) @map("timed_out")
+  durationMs   Int             @map("duration_ms")
+  // Sanitized tail of the stage output.
+  output       String
+
+  sandboxRun SandboxRun @relation(fields: [sandboxRunId], references: [id], onDelete: Restrict)
+
+  @@unique([sandboxRunId, stage])
+  @@map("sandbox_stage_results")
+}
+
+// Bounded repair round (DEC-103, max 3) after a failed attempt.
+model AutoRepairAttempt {
+  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  generationRunId String           @map("generation_run_id") @db.Uuid
+  sandboxRunId    String           @unique @map("sandbox_run_id") @db.Uuid
+  roundNumber     Int              @map("round_number")
+  failedStage     ValidationStage  @map("failed_stage")
+  status          AutoRepairStatus
+  explanation     String
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  generationRun GenerationRun   @relation(fields: [generationRunId], references: [id], onDelete: Restrict)
+  sandboxRun    SandboxRun      @relation(fields: [sandboxRunId], references: [id], onDelete: Restrict)
+  patches       RepairPatch[]
+  findings      RepairFinding[]
+
+  @@unique([generationRunId, roundNumber])
+  @@map("auto_repair_attempts")
+}
+
+model RepairPatch {
+  id                  String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  autoRepairAttemptId String @map("auto_repair_attempt_id") @db.Uuid
+  path                String
+  previousSha256      String @map("previous_sha256")
+  content             String
+  sha256              String
+
+  attempt AutoRepairAttempt @relation(fields: [autoRepairAttemptId], references: [id], onDelete: Restrict)
+
+  @@unique([autoRepairAttemptId, path])
+  @@map("repair_patches")
+}
+
+// An upstream inconsistency a repair found; approved artifacts are never edited.
+model RepairFinding {
+  id                       String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  autoRepairAttemptId      String  @map("auto_repair_attempt_id") @db.Uuid
+  message                  String
+  relatedArtifactVersionId String? @map("related_artifact_version_id") @db.Uuid
+
+  attempt                AutoRepairAttempt @relation(fields: [autoRepairAttemptId], references: [id], onDelete: Restrict)
+  relatedArtifactVersion ArtifactVersion?  @relation(fields: [relatedArtifactVersionId], references: [id], onDelete: Restrict)
+
+  @@index([autoRepairAttemptId])
+  @@map("repair_findings")
+}
+
+// Immutable official result of a validated generation (spec §172, DEC-104/105).
+model GeneratedProjectSnapshot {
+  id                          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId                   String   @map("project_id") @db.Uuid
+  generationRunId             String   @unique @map("generation_run_id") @db.Uuid
+  sandboxRunId                String   @unique @map("sandbox_run_id") @db.Uuid
+  targetTemplateIdentifier    String   @map("target_template_identifier")
+  targetTemplateVersion       Int      @map("target_template_version")
+  generationPlanVersionId     String?  @map("generation_plan_version_id") @db.Uuid
+  designBaselineId            String   @map("design_baseline_id") @db.Uuid
+  implementationPlanVersionId String   @map("implementation_plan_version_id") @db.Uuid
+  fileCount                   Int      @map("file_count")
+  manifestHash                String   @map("manifest_hash")
+  archiveStorageKey           String   @map("archive_storage_key")
+  archiveSha256               String   @map("archive_sha256")
+  archiveSize                 Int      @map("archive_size")
+  createdByUserId             String   @map("created_by_user_id") @db.Uuid
+  createdAt                   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project                   Project          @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  generationRun             GenerationRun    @relation(fields: [generationRunId], references: [id], onDelete: Restrict)
+  sandboxRun                SandboxRun       @relation(fields: [sandboxRunId], references: [id], onDelete: Restrict)
+  generationPlanVersion     ArtifactVersion? @relation("SnapshotGenerationPlan", fields: [generationPlanVersionId], references: [id], onDelete: Restrict)
+  designBaseline            DesignBaseline   @relation(fields: [designBaselineId], references: [id], onDelete: Restrict)
+  implementationPlanVersion ArtifactVersion  @relation("SnapshotImplementationPlan", fields: [implementationPlanVersionId], references: [id], onDelete: Restrict)
+  createdBy                 User             @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, createdAt])
+  @@map("generated_project_snapshots")
 }

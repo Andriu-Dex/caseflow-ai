@@ -2,14 +2,27 @@
 
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, FileCode, Play } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Download,
+  FileCode,
+  Play,
+  ShieldCheck,
+  XCircle,
+} from 'lucide-react';
 import { toast } from 'sonner';
-import type { GenerationRunResponse } from '@caseflow-ai/contracts';
+import type {
+  GenerationRunResponse,
+  SandboxRunResponse,
+  SandboxValidationStage,
+} from '@caseflow-ai/contracts';
 import { Button } from '@caseflow-ai/ui';
 import { api, ApiError } from '../../../lib/api';
 import { PageHeading } from '../../../components/page-heading';
 import { QueryState, RequireActiveProject } from '../../../components/query-state';
 import { EmptyState } from '../../../components/artifact-actions';
+import { AuthedDownloadButton } from '../../../components/authed-media';
 
 const STATUS_LABELS: Record<GenerationRunResponse['status'], string> = {
   QUEUED: 'En cola',
@@ -97,6 +110,161 @@ function RunFiles({ projectId, run }: { projectId: string; run: GenerationRunRes
         )}
       </div>
     </QueryState>
+  );
+}
+
+const SANDBOX_STATUS_LABELS: Record<SandboxRunResponse['status'], string> = {
+  QUEUED: 'En cola',
+  RUNNING: 'Validando',
+  READY: 'Listo',
+  FAILED: 'Falló (se intentó reparar)',
+  VALIDATION_FAILED: 'Validación fallida',
+  ERROR: 'Entorno no disponible',
+};
+
+const STAGE_LABELS: Record<SandboxValidationStage, string> = {
+  INSTALL: 'Instalación',
+  LINT: 'Lint',
+  TYPECHECK: 'Tipos',
+  TEST: 'Pruebas',
+  BUILD: 'Compilación',
+  STRUCTURE: 'Estructura',
+  TRACEABILITY: 'Trazabilidad',
+};
+
+const REPAIR_LABELS = {
+  PATCHED: 'reparación aplicada',
+  NO_PATCH: 'sin reparación',
+  REJECTED: 'propuesta descartada',
+};
+
+const sandboxActive = (r: SandboxRunResponse) => r.status === 'QUEUED' || r.status === 'RUNNING';
+
+// Validation is a separate state from generation (AGENTS.md §25): only READY
+// offers the project for download.
+function RunValidation({ projectId, runId }: { projectId: string; runId: string }) {
+  const queryClient = useQueryClient();
+  const [starting, setStarting] = useState(false);
+  const attempts = useQuery({
+    queryKey: ['sandbox-runs', projectId, runId],
+    queryFn: () => api.generationRuns.sandboxRuns(projectId, runId),
+    refetchInterval: (query) => (query.state.data?.items.some(sandboxActive) ? 3000 : false),
+  });
+  const items = attempts.data?.items ?? [];
+  const last = items.at(-1);
+  const canStart = !last || last.status === 'ERROR';
+
+  async function start() {
+    setStarting(true);
+    try {
+      await api.generationRuns.validate(projectId, runId);
+      toast.success('Validación encolada.');
+      await queryClient.invalidateQueries({ queryKey: ['sandbox-runs', projectId, runId] });
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo iniciar la validación.');
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 flex flex-col gap-3 border-t border-border pt-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">Validación en entorno aislado</h3>
+        {canStart && !attempts.isLoading ? (
+          <Button type="button" size="sm" disabled={starting} onClick={start}>
+            <ShieldCheck className="size-4" aria-hidden="true" />
+            {starting ? 'Iniciando…' : last ? 'Reintentar validación' : 'Validar proyecto'}
+          </Button>
+        ) : null}
+      </div>
+      <QueryState isLoading={attempts.isLoading} error={attempts.error}>
+        {items.length ? (
+          <ol className="flex flex-col gap-3">
+            {items.map((attempt) => (
+              <li key={attempt.id} className="rounded-md border border-border p-3 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <strong>
+                    Intento {attempt.attemptNumber}: {SANDBOX_STATUS_LABELS[attempt.status]}
+                    {attempt.status === 'RUNNING' && attempt.currentStage
+                      ? ` · ${STAGE_LABELS[attempt.currentStage]}`
+                      : ''}
+                  </strong>
+                  {attempt.status === 'READY' && attempt.snapshotId ? (
+                    <AuthedDownloadButton
+                      url={api.generationRuns.snapshotArchiveUrl(projectId, attempt.snapshotId)}
+                      filename={`proyecto-generado-${attempt.snapshotId}.zip`}
+                      className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-50"
+                    >
+                      <Download className="size-4" aria-hidden="true" />
+                      Descargar ZIP
+                    </AuthedDownloadButton>
+                  ) : null}
+                </div>
+                {attempt.stages.length ? (
+                  <ul className="mt-2 flex flex-wrap gap-2" aria-label="Etapas">
+                    {attempt.stages.map((stage) => (
+                      <li
+                        key={stage.stage}
+                        className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs ${
+                          stage.passed
+                            ? 'border-emerald-600/40 text-emerald-700 dark:text-emerald-400'
+                            : 'border-destructive/50 text-destructive'
+                        }`}
+                      >
+                        {stage.passed ? (
+                          <CheckCircle2 className="size-3.5" aria-hidden="true" />
+                        ) : (
+                          <XCircle className="size-3.5" aria-hidden="true" />
+                        )}
+                        {STAGE_LABELS[stage.stage]}
+                        {stage.timedOut ? ' (tiempo agotado)' : ''}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                {attempt.errorMessage ? (
+                  <p className="mt-2 text-muted-foreground">{attempt.errorMessage}</p>
+                ) : null}
+                {attempt.stages
+                  .filter((stage) => !stage.passed)
+                  .map((stage) => (
+                    <details key={stage.stage} className="mt-2">
+                      <summary className="cursor-pointer text-xs">
+                        Evidencia de {STAGE_LABELS[stage.stage].toLowerCase()}
+                      </summary>
+                      <pre className="mt-1 max-h-64 overflow-auto rounded bg-muted p-2 text-xs">
+                        {stage.output}
+                      </pre>
+                    </details>
+                  ))}
+                {attempt.repair ? (
+                  <div className="mt-2 rounded bg-muted/60 p-2 text-xs">
+                    <p>
+                      Ronda de reparación {attempt.repair.roundNumber}:{' '}
+                      {REPAIR_LABELS[attempt.repair.status]}. {attempt.repair.explanation}
+                    </p>
+                    {attempt.repair.patchedPaths.length ? (
+                      <p className="mt-1 font-mono">{attempt.repair.patchedPaths.join(', ')}</p>
+                    ) : null}
+                    {attempt.repair.findings.map((finding) => (
+                      <p key={finding} className="mt-1 text-amber-700 dark:text-amber-400">
+                        Hallazgo: {finding}
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Aún no se ha validado. La validación instala, revisa, prueba y compila el proyecto en un
+            contenedor aislado; solo un proyecto listo se puede descargar.
+          </p>
+        )}
+      </QueryState>
+    </div>
   );
 }
 
@@ -223,6 +391,9 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
                     <div className="mt-3">
                       <RunFiles projectId={projectId} run={run} />
                     </div>
+                  ) : null}
+                  {run.status === 'GENERATED' ? (
+                    <RunValidation projectId={projectId} runId={run.id} />
                   ) : null}
                 </li>
               ))}

@@ -5,6 +5,7 @@ import type {
   GeneratedFileResponse,
   GeneratedFileSummary,
   GenerationRunResponse,
+  SandboxRunResponse,
   ImplementationPlanArtifactsResponse,
   DataModelResponse,
   DiagramResponse,
@@ -604,5 +605,13 @@ export const api = {
       ),
     file: (projectId: string, runId: string, fileId: string) =>
       get<GeneratedFileResponse>(`/projects/${projectId}/generation-runs/${runId}/files/${fileId}`),
+    sandboxRuns: (projectId: string, runId: string) =>
+      get<{ items: SandboxRunResponse[] }>(
+        `/projects/${projectId}/generation-runs/${runId}/sandbox-runs`,
+      ),
+    validate: (projectId: string, runId: string) =>
+      post<SandboxRunResponse>(`/projects/${projectId}/generation-runs/${runId}/sandbox-runs`),
+    snapshotArchiveUrl: (projectId: string, snapshotId: string) =>
+      `${BASE_URL}/projects/${projectId}/generated-project-snapshots/${snapshotId}/archive`,
   },
 };

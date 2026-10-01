@@ -8,17 +8,23 @@ import {
   Param,
   Post,
   Request,
+  Res,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import type { z } from 'zod';
 import { timingSafeEqual } from 'node:crypto';
 import {
   generatedFileListResponseSchema,
+  generatedProjectSnapshotListResponseSchema,
+  generatedProjectSnapshotResponseSchema,
   generatedFileResponseSchema,
   generationRunListResponseSchema,
   generationRunResponseSchema,
+  sandboxRunListResponseSchema,
+  sandboxRunResponseSchema,
   startGenerationRunRequestSchema,
 } from '@caseflow-ai/contracts';
 import { CONSTRUCTION_JOB_TYPES, type ConstructionJobType } from '@caseflow-ai/domain';
@@ -27,7 +33,9 @@ import { ProjectMembershipGuard } from '../identity/project-membership.guard';
 import { uuidParamPipe } from '../common/uuid-param.pipe';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ApiZodBody, ApiZodResponse } from '../openapi/zod-openapi';
+import { GeneratedProjectSnapshotsService } from './generated-project-snapshots.service';
 import { GenerationRunsService } from './generation-runs.service';
+import { SandboxRunsService } from './sandbox-runs.service';
 
 interface AuthenticatedRequest {
   user: { id: string };
@@ -37,7 +45,10 @@ interface AuthenticatedRequest {
 @UseGuards(JwtAuthGuard, ProjectMembershipGuard)
 @Controller('projects/:projectId/generation-runs')
 export class GenerationRunsController {
-  constructor(private readonly service: GenerationRunsService) {}
+  constructor(
+    private readonly service: GenerationRunsService,
+    private readonly sandboxRuns: SandboxRunsService,
+  ) {}
 
   @Post()
   @HttpCode(202)
@@ -93,6 +104,76 @@ export class GenerationRunsController {
   ) {
     return this.service.getFile(projectId, runId, fileId);
   }
+
+  @Post(':runId/sandbox-runs')
+  @HttpCode(202)
+  @ApiOperation({
+    operationId: 'startSandboxRun',
+    summary: 'Encolar la validación del proyecto generado en el entorno aislado',
+  })
+  @ApiZodResponse(202, 'Sandbox run.', sandboxRunResponseSchema)
+  validate(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('runId', uuidParamPipe) runId: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.sandboxRuns.start(projectId, req.user.id, runId);
+  }
+
+  @Get(':runId/sandbox-runs')
+  @ApiOperation({ operationId: 'listSandboxRuns', summary: 'Listar validaciones de una corrida' })
+  @ApiZodResponse(200, 'Sandbox runs.', sandboxRunListResponseSchema)
+  validations(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('runId', uuidParamPipe) runId: string,
+  ) {
+    return this.sandboxRuns.list(projectId, runId);
+  }
+}
+
+@ApiTags('construction')
+@UseGuards(JwtAuthGuard, ProjectMembershipGuard)
+@Controller('projects/:projectId/generated-project-snapshots')
+export class GeneratedProjectSnapshotsController {
+  constructor(private readonly service: GeneratedProjectSnapshotsService) {}
+
+  @Get()
+  @ApiOperation({
+    operationId: 'listGeneratedProjectSnapshots',
+    summary: 'Listar proyectos generados y validados',
+  })
+  @ApiZodResponse(200, 'Snapshots.', generatedProjectSnapshotListResponseSchema)
+  list(@Param('projectId', uuidParamPipe) projectId: string) {
+    return this.service.list(projectId);
+  }
+
+  @Get(':snapshotId')
+  @ApiOperation({ operationId: 'getGeneratedProjectSnapshot', summary: 'Consultar un snapshot' })
+  @ApiZodResponse(200, 'Snapshot.', generatedProjectSnapshotResponseSchema)
+  get(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('snapshotId', uuidParamPipe) snapshotId: string,
+  ) {
+    return this.service.get(projectId, snapshotId);
+  }
+
+  @Get(':snapshotId/archive')
+  @ApiOperation({
+    operationId: 'downloadGeneratedProjectSnapshot',
+    summary: 'Descargar el ZIP del proyecto generado',
+  })
+  async archive(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('snapshotId', uuidParamPipe) snapshotId: string,
+    @Request() req: AuthenticatedRequest,
+    @Res() res: Response,
+  ) {
+    const { body, filename } = await this.service.archive(projectId, snapshotId, req.user.id);
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.send(body);
+  }
 }
 
 // Worker callback (never reachable without the internal jobs secret): runs
@@ -100,7 +181,10 @@ export class GenerationRunsController {
 @ApiTags('internal construction jobs')
 @Controller('projects/:projectId/construction-jobs')
 export class InternalConstructionJobsController {
-  constructor(private readonly generationRuns: GenerationRunsService) {}
+  constructor(
+    private readonly generationRuns: GenerationRunsService,
+    private readonly sandboxRuns: SandboxRunsService,
+  ) {}
 
   @Post(':type/:runId/run')
   @HttpCode(204)
@@ -126,6 +210,10 @@ export class InternalConstructionJobsController {
 
   private async dispatch(type: ConstructionJobType, projectId: string, runId: string) {
     if (type === 'generation-run') return this.generationRuns.runJob(projectId, runId);
-    throw new NotFoundException();
+    // A validation can outlast the worker's HTTP timeout: acknowledge and run
+    // it here. runJob always records a terminal status and never throws.
+    // ponytail: a crash of the API mid-run leaves it RUNNING; add a stale-run
+    // sweeper if that is ever observed.
+    void this.sandboxRuns.runJob(projectId, runId).catch(() => undefined);
   }
 }

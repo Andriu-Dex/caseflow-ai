@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   start: vi.fn(),
   files: vi.fn(),
   file: vi.fn(),
+  sandboxRuns: vi.fn(),
+  validate: vi.fn(),
 }));
 
 vi.mock('../../../lib/api', () => ({
@@ -20,6 +22,9 @@ vi.mock('../../../lib/api', () => ({
       start: (...args: unknown[]) => mocks.start(...args),
       files: (...args: unknown[]) => mocks.files(...args),
       file: (...args: unknown[]) => mocks.file(...args),
+      sandboxRuns: (...args: unknown[]) => mocks.sandboxRuns(...args),
+      validate: (...args: unknown[]) => mocks.validate(...args),
+      snapshotArchiveUrl: (p: string, s: string) => `/api/${p}/${s}.zip`,
     },
     readiness: { get: vi.fn(async () => ({ stages: [] })) },
   },
@@ -39,6 +44,8 @@ const run = {
 };
 
 beforeEach(() => {
+  mocks.sandboxRuns.mockResolvedValue({ items: [] });
+  mocks.validate.mockResolvedValue({});
   window.localStorage.setItem('caseflow.activeProjectId', 'p1');
   mocks.listPlans.mockResolvedValue({
     items: [
@@ -88,5 +95,48 @@ describe('GenerationRunsPage', () => {
     await userEvent.click(await screen.findByRole('button', { name: /main\.ts/ }));
     expect(await screen.findByText('bootstrap();')).toBeInTheDocument();
     expect(screen.getByText(/Configura PI-001 v1/)).toBeInTheDocument();
+  });
+
+  it('starts the sandbox validation of a generated run', async () => {
+    render(<GenerationRunsPage />, { wrapper: TestProviders });
+    await userEvent.click(await screen.findByRole('button', { name: 'Validar proyecto' }));
+    await waitFor(() => expect(mocks.validate).toHaveBeenCalledWith('p1', 'run-1'));
+  });
+
+  it('shows failed stage evidence and repair rounds without a download', async () => {
+    const stage = (name: string, passed: boolean) => ({
+      stage: name,
+      passed,
+      exitCode: passed ? 0 : 2,
+      timedOut: false,
+      durationMs: 1,
+      output: passed ? 'ok' : 'error TS2304',
+    });
+    mocks.sandboxRuns.mockResolvedValue({
+      items: [
+        {
+          id: 's1',
+          attemptNumber: 1,
+          status: 'VALIDATION_FAILED',
+          currentStage: null,
+          errorMessage: 'La etapa TYPECHECK falló.',
+          stages: [stage('INSTALL', true), stage('TYPECHECK', false)],
+          repair: {
+            roundNumber: 1,
+            status: 'NO_PATCH',
+            explanation: 'Sin IA.',
+            patchedPaths: [],
+            findings: ['RF-001 es ambiguo.'],
+          },
+          snapshotId: null,
+        },
+      ],
+    });
+    render(<GenerationRunsPage />, { wrapper: TestProviders });
+    expect(await screen.findByText(/Intento 1: Validación fallida/)).toBeInTheDocument();
+    expect(screen.getByText('error TS2304')).toBeInTheDocument();
+    expect(screen.getByText(/Hallazgo: RF-001 es ambiguo/)).toBeInTheDocument();
+    expect(screen.queryByText('Descargar ZIP')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Validar proyecto/ })).not.toBeInTheDocument();
   });
 });

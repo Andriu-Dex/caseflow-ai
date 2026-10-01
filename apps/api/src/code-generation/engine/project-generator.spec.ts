@@ -113,6 +113,23 @@ describe('generateProject', () => {
       expect(paths.has(path), path).toBe(true);
   });
 
+  // Regression: found by the real sandbox lint stage on a plan without routes.
+  it('emits a home page without unused imports when the plan has no routes', () => {
+    const home = byPath(generateProject(ctx(basePlan({ routes: [] })), {})).get(
+      'apps/web/app/page.tsx',
+    )!;
+    expect(home.content).not.toContain('next/link');
+    expect(home.content).toContain('aún no define pantallas');
+  });
+
+  // Regression: found by following the exported README on a fresh copy.
+  it('builds internal packages before dev and names the first migration', () => {
+    const root = JSON.parse(paths.get('package.json')!.content);
+    expect(root.scripts.dev).toMatch(/^pnpm run build:packages && /);
+    const api = JSON.parse(paths.get('apps/api/package.json')!.content);
+    expect(api.scripts['db:migrate']).toBe('prisma migrate dev --name init');
+  });
+
   it('is deterministic and never emits two files at the same path', () => {
     expect(generateProject(ctx())).toEqual(files);
     expect(new Set(files.map((f) => f.path)).size).toBe(files.length);

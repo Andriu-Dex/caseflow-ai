@@ -650,15 +650,17 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     files.push(
       file(
         'apps/web/app/page.tsx',
-        `import Link from 'next/link';
-
-export default function HomePage() {
+        `${navRoutes.length ? "import Link from 'next/link';\n\n" : ''}export default function HomePage() {
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-2xl font-semibold">${projectName.replace(/[<>{}]/g, '')}</h1>
-      <ul className="grid gap-2 sm:grid-cols-2">
+${
+  navRoutes.length
+    ? `      <ul className="grid gap-2 sm:grid-cols-2">
 ${navRoutes.map((r) => `        <li>\n          <Link className="block rounded-lg border p-4 hover:bg-muted" href="${r.path}">\n            ${r.screenName.replace(/[<>{}]/g, '')}\n          </Link>\n        </li>`).join('\n')}
-      </ul>
+      </ul>`
+    : `      <p className="text-muted-foreground">Este proyecto aún no define pantallas.</p>`
+}
     </div>
   );
 }
