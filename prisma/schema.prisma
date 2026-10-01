@@ -218,6 +218,7 @@ model User {
   requestedProposals   DependencyProposal[]  @relation("DependencyProposalRequester")
   decidedProposals     DependencyProposal[]  @relation("DependencyProposalDecider")
   designBaselines      DesignBaseline[]
+  generationRuns       GenerationRun[]
 
   @@map("users")
 }
@@ -310,6 +311,7 @@ model Project {
   auditEvents                   AuditEvent[]
   dependencyProposals           DependencyProposal[]
   designBaselines               DesignBaseline[]
+  generationRuns                GenerationRun[]
 
   @@index([workspaceId, createdAt, id])
   @@map("projects")
@@ -397,6 +399,8 @@ model ArtifactVersion {
   projectContextSourceLinks           ProjectContextSource[]
   projectBaselineEntries              ProjectBaselineEntry[]
   designBaselineEntries               DesignBaselineEntry[]
+  generationRuns                      GenerationRun[]
+  codeTraceLinks                      CodeTraceLink[]
 
   @@unique([artifactId, versionNumber])
   @@unique([id, projectId])
@@ -1361,9 +1365,10 @@ model DesignBaseline {
   approvedByUserId String   @map("approved_by_user_id") @db.Uuid
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  project    Project               @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  approvedBy User                  @relation(fields: [approvedByUserId], references: [id], onDelete: Restrict)
-  entries    DesignBaselineEntry[]
+  project        Project               @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  approvedBy     User                  @relation(fields: [approvedByUserId], references: [id], onDelete: Restrict)
+  entries        DesignBaselineEntry[]
+  generationRuns GenerationRun[]
 
   @@index([projectId, createdAt])
   @@map("design_baselines")
@@ -1379,4 +1384,99 @@ model DesignBaselineEntry {
 
   @@id([baselineId, role])
   @@map("design_baseline_entries")
+}
+
+enum GenerationRunStatus {
+  QUEUED
+  GENERATING
+  GENERATED
+  FAILED
+
+  @@map("generation_run_status")
+}
+
+enum GeneratedFileOrigin {
+  TEMPLATE
+  DETERMINISTIC
+  AI_ASSISTED
+
+  @@map("generated_file_origin")
+}
+
+enum GeneratedFileKind {
+  SOURCE
+  TEST
+  CONFIG
+  DOCUMENTATION
+
+  @@map("generated_file_kind")
+}
+
+enum CodeTraceLinkType {
+  IMPLEMENTS
+  TESTS
+  CONFIGURES
+
+  @@map("code_trace_link_type")
+}
+
+// One official code generation from an approved Implementation Plan (spec
+// §197). A retry is a new run: finished runs and their files are history.
+model GenerationRun {
+  id                          String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId                   String              @map("project_id") @db.Uuid
+  implementationPlanVersionId String              @map("implementation_plan_version_id") @db.Uuid
+  designBaselineId            String              @map("design_baseline_id") @db.Uuid
+  targetTemplateIdentifier    String              @map("target_template_identifier")
+  targetTemplateVersion       Int                 @map("target_template_version")
+  status                      GenerationRunStatus @default(QUEUED)
+  errorMessage                String?             @map("error_message")
+  // Non-fatal outcomes a reviewer must see (e.g. an action left unimplemented).
+  warnings                    String[]            @default([])
+  createdByUserId             String              @map("created_by_user_id") @db.Uuid
+  createdAt                   DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  startedAt                   DateTime?           @map("started_at") @db.Timestamptz(6)
+  finishedAt                  DateTime?           @map("finished_at") @db.Timestamptz(6)
+
+  project                   Project         @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  implementationPlanVersion ArtifactVersion @relation(fields: [implementationPlanVersionId], references: [id], onDelete: Restrict)
+  designBaseline            DesignBaseline  @relation(fields: [designBaselineId], references: [id], onDelete: Restrict)
+  createdBy                 User            @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  files                     GeneratedFile[]
+
+  @@index([projectId, createdAt])
+  @@map("generation_runs")
+}
+
+model GeneratedFile {
+  id              String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  generationRunId String              @map("generation_run_id") @db.Uuid
+  path            String
+  content         String
+  sha256          String
+  origin          GeneratedFileOrigin
+  kind            GeneratedFileKind
+
+  generationRun GenerationRun   @relation(fields: [generationRunId], references: [id], onDelete: Restrict)
+  traceLinks    CodeTraceLink[]
+
+  @@unique([generationRunId, path])
+  @@map("generated_files")
+}
+
+// Construction traceability (DEC-106): which approved artifact version, and
+// which element of the plan, each generated file implements, tests or configures.
+model CodeTraceLink {
+  id                      String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  generatedFileId         String            @map("generated_file_id") @db.Uuid
+  sourceArtifactVersionId String            @map("source_artifact_version_id") @db.Uuid
+  planElement             String            @map("plan_element")
+  linkType                CodeTraceLinkType @map("link_type")
+
+  generatedFile         GeneratedFile   @relation(fields: [generatedFileId], references: [id], onDelete: Restrict)
+  sourceArtifactVersion ArtifactVersion @relation(fields: [sourceArtifactVersionId], references: [id], onDelete: Restrict)
+
+  @@unique([generatedFileId, sourceArtifactVersionId, planElement])
+  @@index([sourceArtifactVersionId])
+  @@map("code_trace_links")
 }
