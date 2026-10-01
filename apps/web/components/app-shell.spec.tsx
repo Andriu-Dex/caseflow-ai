@@ -62,4 +62,21 @@ describe('AppShell construction group', () => {
     ])
       expect(screen.getByRole('link', { name: new RegExp(label) })).toBeInTheDocument();
   });
+
+  it('places Construction after Trazabilidad, never between two numbered planning steps', async () => {
+    mocks.readinessGet.mockResolvedValue({ ready: true, stages: [] });
+    render(
+      <TestProviders>
+        <AppShell>content</AppShell>
+      </TestProviders>,
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('link', { name: /Generación de código/ })).toBeInTheDocument(),
+    );
+    const links = screen.getAllByRole('link').map((el) => el.textContent ?? '');
+    const traceabilityIndex = links.findIndex((t) => /Trazabilidad/.test(t));
+    const constructionIndex = links.findIndex((t) => /Plan de generación/.test(t));
+    expect(traceabilityIndex).toBeGreaterThan(-1);
+    expect(constructionIndex).toBeGreaterThan(traceabilityIndex);
+  });
 });

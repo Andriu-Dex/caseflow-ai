@@ -53,8 +53,19 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     ],
   },
   {
+    label: '',
+    items: [
+      { href: '/traceability', label: 'Trazabilidad' },
+      { href: '/readiness', label: 'Preparación / Exportar' },
+      { href: '/baselines', label: 'Líneas Base' },
+    ],
+  },
+  {
     // Not numbered readiness steps: construction gates are enforced by the
-    // backend (approved plan → approved design baseline → generation).
+    // backend (approved plan → approved design baseline → generation). Comes
+    // after the numbered 1-11 pipeline (it ends at Trazabilidad), never
+    // between two of its steps — Construction is what follows planning, not
+    // a step within it.
     label: 'Construcción',
     items: [
       { href: '/construction/generation-plan', label: 'Plan de generación' },
@@ -62,14 +73,6 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
       { href: '/construction/design-baseline', label: 'Aprobación de diseño' },
       { href: '/construction/implementation-plan', label: 'Plan de implementación' },
       { href: '/construction/generation-runs', label: 'Generación de código' },
-    ],
-  },
-  {
-    label: '',
-    items: [
-      { href: '/traceability', label: 'Trazabilidad' },
-      { href: '/readiness', label: 'Preparación / Exportar' },
-      { href: '/baselines', label: 'Líneas Base' },
     ],
   },
 ];
