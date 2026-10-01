@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ClipboardCheck, Check, Hammer, Home, Lock, Sparkles } from 'lucide-react';
+import { ChevronRight, ClipboardCheck, Check, Hammer, Home, Lock, Sparkles } from 'lucide-react';
 import type { MouseEvent, ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { Alert, AlertDescription, Separator } from '@caseflow-ai/ui';
@@ -13,6 +13,13 @@ import { computeStepState, PIPELINE_STEPS, ROUTE_STEP_NUMBER } from '../lib/stag
 import { ProjectSwitcher } from './project-switcher';
 
 type NavItem = { href: string; label: string };
+
+// The Construction group (forward engineering, AGENTS.md §10) comes after
+// the 11-step planning pipeline, not alongside it: collapsing it until
+// planning is done keeps the sidebar reading as one stepper instead of two
+// unrelated flows, and avoids the user clicking into a page whose every
+// action the backend would reject anyway (no approved plan yet).
+const CONSTRUCTION_GROUP_LABEL = 'Construcción';
 
 // Order matches the Construction Pipeline (AGENTS.md §10): each group is a
 // consecutive slice of the same linear sequence, numbered (via
@@ -149,80 +156,114 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Alert>
         ) : null}
         <div className="flex flex-col gap-5">
-          {NAV_GROUPS.map((group, i) => (
-            <div key={i}>
-              {group.label ? (
-                <div className="mb-1.5 px-2 text-[11px] font-semibold tracking-widest text-sidebar-foreground/50 uppercase">
-                  {group.label}
+          {NAV_GROUPS.map((group, i) => {
+            const isConstruction = group.label === CONSTRUCTION_GROUP_LABEL;
+            const planningComplete = readiness.data?.ready === true;
+            if (isConstruction && !planningComplete)
+              return (
+                <div key={i}>
+                  <div className="mb-1.5 px-2 text-[11px] font-semibold tracking-widest text-sidebar-foreground/50 uppercase">
+                    {group.label}
+                  </div>
+                  <button
+                    type="button"
+                    title="Complete los 11 pasos de planificación para habilitar la construcción"
+                    onClick={() =>
+                      setLockedMessage(
+                        'Complete los 11 pasos de planificación (Fuentes a Trazabilidad) antes de iniciar la construcción del proyecto.',
+                      )
+                    }
+                    className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-sm font-medium text-sidebar-foreground/40 transition-colors hover:bg-white/5"
+                  >
+                    <Lock className="size-4 shrink-0" aria-hidden="true" />
+                    Construcción
+                    <span className="ml-auto text-[11px] text-sidebar-foreground/30">
+                      bloqueada
+                    </span>
+                    <ChevronRight className="size-3.5 shrink-0" aria-hidden="true" />
+                  </button>
+                  {i < NAV_GROUPS.length - 1 ? (
+                    <Separator className="mt-5 bg-sidebar-border" />
+                  ) : null}
                 </div>
-              ) : null}
-              <ul className="flex flex-col gap-0.5">
-                {group.items.map((item) => {
-                  const active = pathname === item.href;
-                  const step = ROUTE_STEP_NUMBER[item.href];
-                  const state = step ? computeStepState(item.href, stages) : 'unknown';
-                  const locked = Boolean(firstBlockingStep(item.href));
-                  return (
-                    <li key={item.href}>
-                      <Link
-                        href={item.href}
-                        aria-current={active ? 'page' : undefined}
-                        onClick={(e) => handleNavClick(e, item.href)}
-                        title={
-                          locked
-                            ? 'Bloqueado — complete los pasos anteriores primero'
-                            : state === 'next'
-                              ? 'Siguiente paso recomendado'
-                              : undefined
-                        }
-                        className={`flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors ${
-                          active
-                            ? 'bg-sidebar-active text-white shadow-sm'
-                            : locked
-                              ? 'text-sidebar-foreground/40'
-                              : 'text-sidebar-foreground/75 hover:bg-white/5 hover:text-white'
-                        }`}
-                      >
-                        {step ? (
-                          <span
-                            className={`flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${
-                              state === 'satisfied'
-                                ? 'bg-emerald-500 text-white'
-                                : active || state === 'next'
-                                  ? 'bg-white/20 text-white'
-                                  : 'bg-white/10 text-sidebar-foreground/60'
-                            }`}
-                          >
-                            {state === 'satisfied' ? (
-                              <Check className="size-3" aria-hidden="true" />
-                            ) : locked ? (
-                              <Lock className="size-2.5" aria-hidden="true" />
-                            ) : (
-                              step
-                            )}
-                          </span>
-                        ) : item.href === '/readiness' ? (
-                          <ClipboardCheck className="size-4 shrink-0" aria-hidden="true" />
-                        ) : item.href.startsWith('/construction/') ? (
-                          <Hammer className="size-4 shrink-0" aria-hidden="true" />
-                        ) : (
-                          <Home className="size-4 shrink-0" aria-hidden="true" />
-                        )}
-                        {item.label}
-                        {state === 'next' ? (
-                          <span
-                            className="ml-auto size-1.5 shrink-0 rounded-full bg-emerald-400"
-                            aria-label="Siguiente paso recomendado"
-                          />
-                        ) : null}
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-              {i < NAV_GROUPS.length - 1 ? <Separator className="mt-5 bg-sidebar-border" /> : null}
-            </div>
-          ))}
+              );
+            return (
+              <div key={i}>
+                {group.label ? (
+                  <div className="mb-1.5 px-2 text-[11px] font-semibold tracking-widest text-sidebar-foreground/50 uppercase">
+                    {group.label}
+                  </div>
+                ) : null}
+                <ul className="flex flex-col gap-0.5">
+                  {group.items.map((item) => {
+                    const active = pathname === item.href;
+                    const step = ROUTE_STEP_NUMBER[item.href];
+                    const state = step ? computeStepState(item.href, stages) : 'unknown';
+                    const locked = Boolean(firstBlockingStep(item.href));
+                    return (
+                      <li key={item.href}>
+                        <Link
+                          href={item.href}
+                          aria-current={active ? 'page' : undefined}
+                          onClick={(e) => handleNavClick(e, item.href)}
+                          title={
+                            locked
+                              ? 'Bloqueado — complete los pasos anteriores primero'
+                              : state === 'next'
+                                ? 'Siguiente paso recomendado'
+                                : undefined
+                          }
+                          className={`flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors ${
+                            active
+                              ? 'bg-sidebar-active text-white shadow-sm'
+                              : locked
+                                ? 'text-sidebar-foreground/40'
+                                : 'text-sidebar-foreground/75 hover:bg-white/5 hover:text-white'
+                          }`}
+                        >
+                          {step ? (
+                            <span
+                              className={`flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${
+                                state === 'satisfied'
+                                  ? 'bg-emerald-500 text-white'
+                                  : active || state === 'next'
+                                    ? 'bg-white/20 text-white'
+                                    : 'bg-white/10 text-sidebar-foreground/60'
+                              }`}
+                            >
+                              {state === 'satisfied' ? (
+                                <Check className="size-3" aria-hidden="true" />
+                              ) : locked ? (
+                                <Lock className="size-2.5" aria-hidden="true" />
+                              ) : (
+                                step
+                              )}
+                            </span>
+                          ) : item.href === '/readiness' ? (
+                            <ClipboardCheck className="size-4 shrink-0" aria-hidden="true" />
+                          ) : item.href.startsWith('/construction/') ? (
+                            <Hammer className="size-4 shrink-0" aria-hidden="true" />
+                          ) : (
+                            <Home className="size-4 shrink-0" aria-hidden="true" />
+                          )}
+                          {item.label}
+                          {state === 'next' ? (
+                            <span
+                              className="ml-auto size-1.5 shrink-0 rounded-full bg-emerald-400"
+                              aria-label="Siguiente paso recomendado"
+                            />
+                          ) : null}
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+                {i < NAV_GROUPS.length - 1 ? (
+                  <Separator className="mt-5 bg-sidebar-border" />
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       </nav>
       <div className="flex min-w-0 flex-1 flex-col">
