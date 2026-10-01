@@ -16,8 +16,16 @@ type Entity = Plan['entities'][number];
 type Endpoint = Plan['customEndpoints'][number];
 
 // Business-logic bodies for custom endpoints, keyed by endpointKey(); filled
-// by the AI-assisted step, otherwise the endpoint answers 501 honestly.
+// by the business-logic step, otherwise the endpoint answers 501 honestly.
 export type EndpointImplementations = Record<string, string>;
+// Exceptions an implementation body may throw (imported on demand).
+export const HTTP_EXCEPTIONS = [
+  'BadRequestException',
+  'ConflictException',
+  'ForbiddenException',
+  'NotFoundException',
+] as const;
+
 export const endpointKey = (e: Endpoint) => `${e.method} ${e.path}`;
 
 export const actionMethodName = (e: Endpoint) =>
@@ -301,7 +309,15 @@ ${
   }`;
   });
   const anyStub = endpoints.some((e) => !implementations[endpointKey(e)]);
-  return `import { Injectable${anyStub ? ', NotImplementedException' : ''} } from '@nestjs/common';
+  const bodies = endpoints.map((e) => implementations[endpointKey(e)] ?? '').join('\n');
+  // Only the exceptions the provided bodies actually use, so lint stays clean.
+  const exceptions = HTTP_EXCEPTIONS.filter((name) => new RegExp(`\\b${name}\\b`).test(bodies));
+  const nestImports = [
+    'Injectable',
+    ...exceptions,
+    ...(anyStub ? ['NotImplementedException'] : []),
+  ];
+  return `import { ${nestImports.join(', ')} } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()

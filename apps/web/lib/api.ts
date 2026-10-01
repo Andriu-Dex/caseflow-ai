@@ -2,6 +2,9 @@ import type {
   CreateDesignBaselineRequest,
   DataModelInput,
   DesignBaselineResponse,
+  GeneratedFileResponse,
+  GeneratedFileSummary,
+  GenerationRunResponse,
   ImplementationPlanArtifactsResponse,
   DataModelResponse,
   DiagramResponse,
@@ -587,5 +590,19 @@ export const api = {
       get<{ items: DesignBaselineResponse[] }>(`/projects/${projectId}/design-baselines`),
     create: (projectId: string, data: CreateDesignBaselineRequest) =>
       post<DesignBaselineResponse>(`/projects/${projectId}/design-baselines`, data),
+  },
+  generationRuns: {
+    list: (projectId: string) =>
+      get<{ items: GenerationRunResponse[] }>(`/projects/${projectId}/generation-runs`),
+    start: (projectId: string, implementationPlanVersionId: string) =>
+      post<GenerationRunResponse>(`/projects/${projectId}/generation-runs`, {
+        implementationPlanVersionId,
+      }),
+    files: (projectId: string, runId: string) =>
+      get<{ items: GeneratedFileSummary[] }>(
+        `/projects/${projectId}/generation-runs/${runId}/files`,
+      ),
+    file: (projectId: string, runId: string, fileId: string) =>
+      get<GeneratedFileResponse>(`/projects/${projectId}/generation-runs/${runId}/files/${fileId}`),
   },
 };

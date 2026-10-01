@@ -107,6 +107,7 @@ describe('Cross-Project Authorization (Isolation)', () => {
       'AuthController',
       'InternalMockupJobsController',
       'InternalSourceJobsController',
+      'InternalConstructionJobsController',
     ]);
     const unguarded: string[] = [];
     for (const module of ctx.app.get(ModulesContainer).values())

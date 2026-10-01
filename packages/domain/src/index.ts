@@ -17,6 +17,8 @@ export type { FirstDeliverableArtifactTypeCode } from './artifacts/artifact-type
 export { MOCKUP_GENERATION_QUEUE } from './jobs/mockup-generation-job';
 export type { MockupGenerationJobPayload } from './jobs/mockup-generation-job';
 export { SOURCE_PROCESSING_QUEUE } from './jobs/source-processing-job';
+export { CONSTRUCTION_JOB_TYPES, CONSTRUCTION_QUEUE } from './jobs/construction-job';
+export type { ConstructionJobPayload, ConstructionJobType } from './jobs/construction-job';
 export {
   CASEFLOW_STANDARD_WEB_V1,
   CASEFLOW_WEB_TS_V1,
