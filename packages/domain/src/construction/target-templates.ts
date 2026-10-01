@@ -82,6 +82,8 @@ export interface TargetTemplateVersion {
   readonly designSystemProfile: DesignSystemProfile;
   readonly dependencies: readonly CatalogDependency[];
   readonly validationCommands: readonly ValidationCommand[];
+  // Layout every generated project must have (structural validation, AGENTS.md §7).
+  readonly requiredPaths: readonly string[];
   readonly toolchain: ToolchainSettings;
 }
 
@@ -171,6 +173,18 @@ export const CASEFLOW_WEB_TS_V1: TargetTemplateVersion = Object.freeze({
   workspace: 'pnpm workspaces',
   designSystemProfile: CASEFLOW_STANDARD_WEB_V1,
   dependencies: CASEFLOW_WEB_TS_V1_DEPENDENCIES,
+  requiredPaths: Object.freeze([
+    'package.json',
+    'pnpm-workspace.yaml',
+    'README.md',
+    '.env.example',
+    'apps/api/package.json',
+    'apps/web/package.json',
+    'packages/contracts/package.json',
+    'packages/api-client/package.json',
+    'prisma/schema.prisma',
+    'docker/docker-compose.yml',
+  ]),
   validationCommands: Object.freeze(
     (
       [
@@ -223,3 +237,7 @@ export function findCatalogDependency(
 ): CatalogDependency | undefined {
   return template.dependencies.find((d) => d.name === name);
 }
+
+// Repair rounds allowed per validation (DEC-103, AGENTS.md §27); the database
+// enforces the same bound.
+export const MAX_AUTO_REPAIR_ROUNDS = 3;

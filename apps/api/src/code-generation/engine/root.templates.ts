@@ -32,7 +32,7 @@ export function rootFiles(ctx: GenerationContext): GeneratedProjectFile[] {
           test: 'pnpm run build:packages && pnpm -r run test',
           build: 'pnpm -r run build',
           'db:migrate': 'pnpm --filter ./apps/api run db:migrate',
-          dev: 'pnpm -r --parallel run dev',
+          dev: 'pnpm run build:packages && pnpm -r --filter "./apps/*" --parallel run dev',
         },
         devDependencies: dependencies(template, [
           'eslint',

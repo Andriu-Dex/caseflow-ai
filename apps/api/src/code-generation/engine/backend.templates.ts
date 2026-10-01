@@ -357,7 +357,7 @@ export function backendFiles(
           test: 'pnpm run prisma:generate && vitest run',
           start: 'node dist/main.js',
           dev: 'pnpm run build && node dist/main.js',
-          'db:migrate': 'prisma migrate dev',
+          'db:migrate': 'prisma migrate dev --name init',
           ...(auth ? { 'dev-token': 'node dist/auth/dev-token.js' } : {}),
         },
         dependencies: dependencies(

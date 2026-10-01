@@ -7,7 +7,11 @@ import {
   type INestApplication,
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { FakeDiagramProvider, FakeStorageProvider } from '@caseflow-ai/integrations';
+import {
+  FakeDiagramProvider,
+  FakeSandboxExecutionProvider,
+  FakeStorageProvider,
+} from '@caseflow-ai/integrations';
 import { Client } from 'pg';
 import { randomUUID } from 'crypto';
 import cookieParser from 'cookie-parser';
@@ -30,6 +34,7 @@ import { SourcesModule } from '../../../src/sources/sources.module';
 import { SourcesService } from '../../../src/sources/sources.service';
 import { SOURCE_QUEUE } from '../../../src/sources/source-queue.token';
 import { CONSTRUCTION_QUEUE_TOKEN } from '../../../src/construction/construction-queue.token';
+import { SANDBOX_EXECUTION_PROVIDER } from '../../../src/construction/sandbox-provider.token';
 import { STORAGE_PROVIDER } from '../../../src/sources/storage-provider.token';
 import { StructuredAnalysisModule } from '../../../src/structured-analysis/structured-analysis.module';
 import { StructuredAnalysisService } from '../../../src/structured-analysis/structured-analysis.service';
@@ -128,6 +133,8 @@ export async function createTestContext(): Promise<TestContext> {
     .useValue(new FakeDiagramProvider({ svg: FAKE_DIAGRAM_SVG }))
     .overrideProvider(STORAGE_PROVIDER)
     .useValue(new FakeStorageProvider())
+    .overrideProvider(SANDBOX_EXECUTION_PROVIDER)
+    .useValue(new FakeSandboxExecutionProvider())
     .overrideProvider(CONSTRUCTION_QUEUE_TOKEN)
     .useValue({ add: async () => undefined, close: async () => undefined })
     .overrideProvider(SOURCE_QUEUE)

@@ -49,6 +49,7 @@ export * from './baselines/baselines.contract';
 export * from './construction/construction-foundation.contract';
 export * from './construction/design-baseline.contract';
 export * from './construction/generation-run.contract';
+export * from './construction/sandbox-run.contract';
 
 export {
   PROJECT_CONTEXT_COLLECTION_LIMIT,
