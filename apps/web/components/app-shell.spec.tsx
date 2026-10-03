@@ -80,3 +80,21 @@ describe('AppShell construction group', () => {
     expect(constructionIndex).toBeGreaterThan(traceabilityIndex);
   });
 });
+
+describe('AppShell — Entregables group', () => {
+  // Regression: Preparación/Exportar and Líneas Base never get a step
+  // number or a check, unlike Trazabilidad right above them — they used to
+  // share its unlabeled group, reading as two more unfinished steps.
+  it('groups Preparación/Exportar and Líneas Base under their own label, separate from Trazabilidad', async () => {
+    mocks.readinessGet.mockResolvedValue({ ready: false, stages: [] });
+    render(
+      <TestProviders>
+        <AppShell>content</AppShell>
+      </TestProviders>,
+    );
+    await screen.findByRole('link', { name: /Trazabilidad/ });
+    expect(screen.getByText('Entregables')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Preparación / Exportar' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Líneas Base' })).toBeInTheDocument();
+  });
+});

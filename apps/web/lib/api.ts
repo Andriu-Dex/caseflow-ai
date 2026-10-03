@@ -205,6 +205,23 @@ export async function downloadFile(url: string, filename: string): Promise<void>
   URL.revokeObjectURL(blobUrl);
 }
 
+// Opens an authenticated API resource (e.g. a PDF) in a new tab, where the
+// browser's own viewer previews it. The tab is opened synchronously, before
+// the fetch, so pop-up blockers still treat it as a user action.
+export async function openFileInNewTab(url: string): Promise<void> {
+  const tab = window.open('', '_blank');
+  try {
+    const blobUrl = URL.createObjectURL(await fetchBlob(url));
+    if (tab) tab.location.href = blobUrl;
+    else window.location.assign(blobUrl);
+    // The viewer has loaded the blob by then; free it afterwards.
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+  } catch (err) {
+    tab?.close();
+    throw err;
+  }
+}
+
 async function extractErrorMessage(response: Response): Promise<string> {
   try {
     const body = (await response.json()) as { message?: string | string[] };

@@ -53,9 +53,18 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     ],
   },
   {
+    // Step 11, the last of the numbered planning pipeline — stays unlabeled
+    // like the "Inicio" group, continuing the stepper visually instead of
+    // reading as a sibling of the two project-level tools below it.
     label: '',
+    items: [{ href: '/traceability', label: 'Trazabilidad' }],
+  },
+  {
+    // Project-level tools, not pipeline steps: never get a check/number, so
+    // they get their own labeled group instead of sitting unlabeled next to
+    // Trazabilidad, where they used to read as two more unfinished steps.
+    label: 'Entregables',
     items: [
-      { href: '/traceability', label: 'Trazabilidad' },
       { href: '/readiness', label: 'Preparación / Exportar' },
       { href: '/baselines', label: 'Líneas Base' },
     ],

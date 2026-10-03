@@ -71,7 +71,7 @@ export class ConsistencyEngineService {
         issues.push({
           rule: 'Requirement Reference',
           severity: 'WARNING',
-          message: `El Requirement ${req.code} no está referenciado por ningún Use Case.`,
+          message: `El requisito ${req.code} no está referenciado por ningún caso de uso.`,
           affectedArtifactIds: [req.id],
         });
       }
@@ -112,7 +112,7 @@ export class ConsistencyEngineService {
           issues.push({
             rule: 'Mockup Association',
             severity: 'ERROR',
-            message: `La pantalla '${screen.name}' del UI Blueprint ${bp.code} no tiene un Mockup asociado.`,
+            message: `La pantalla '${screen.name}' del plano de interfaz ${bp.code} no tiene un boceto asociado.`,
             affectedArtifactIds: [bp.id],
           });
         }
@@ -131,7 +131,7 @@ export class ConsistencyEngineService {
           issues.push({
             rule: 'Navigation Node Link',
             severity: 'ERROR',
-            message: `El nodo de navegación '${node.label}' en ${nav.code} no tiene una pantalla de UI Blueprint correspondiente.`,
+            message: `El nodo de navegación '${node.label}' en ${nav.code} no tiene una pantalla de plano de interfaz correspondiente.`,
             affectedArtifactIds: [nav.id],
           });
         }
@@ -160,7 +160,7 @@ export class ConsistencyEngineService {
         issues.push({
           rule: 'Unique Use Case Name',
           severity: 'ERROR',
-          message: `El nombre del Use Case está duplicado (${ids.length} ocurrencias).`,
+          message: `El nombre del caso de uso está duplicado (${ids.length} ocurrencias).`,
           affectedArtifactIds: ids,
         });
       }

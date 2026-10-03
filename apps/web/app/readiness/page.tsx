@@ -2,13 +2,14 @@
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { AlertCircle, CheckCircle2, Circle, Download, FileText, Loader2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Circle, Download, Eye, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@caseflow-ai/ui';
 import Link from 'next/link';
 import { api, downloadFile } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { STAGE_LINKS } from '../../lib/stage-links';
+import { HtmlPreviewDialog } from '../../components/html-preview-dialog';
 
 // Rule ids stay as English identifiers in the API contract; only the label is localized.
 const CONSISTENCY_RULE_LABELS: Record<string, string> = {
@@ -18,8 +19,8 @@ const CONSISTENCY_RULE_LABELS: Record<string, string> = {
   'Unique Use Case Name': 'Nombre de caso de uso único',
 };
 
-function downloadExport(projectId: string, format: 'json' | 'html'): Promise<void> {
-  return downloadFile(api.export.url(projectId, format), `proyecto-${projectId}.${format}`);
+function downloadJson(projectId: string): Promise<void> {
+  return downloadFile(api.export.url(projectId, 'json'), `proyecto-${projectId}.json`);
 }
 
 function ReadinessContent({ projectId }: { projectId: string }) {
@@ -33,17 +34,18 @@ function ReadinessContent({ projectId }: { projectId: string }) {
   });
   const done = readiness.data?.stages.filter((s) => s.satisfied).length ?? 0;
   const total = readiness.data?.stages.length ?? 0;
-  const [downloading, setDownloading] = useState<'json' | 'html' | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const nothingApproved = readiness.data !== undefined && done === 0;
 
-  async function handleDownload(format: 'json' | 'html') {
-    setDownloading(format);
+  async function handleDownloadJson() {
+    setDownloading(true);
     try {
-      await downloadExport(projectId, format);
+      await downloadJson(projectId);
     } catch {
       toast.error('No se pudo generar el documento. Intente nuevamente.');
     } finally {
-      setDownloading(null);
+      setDownloading(false);
     }
   }
 
@@ -63,34 +65,37 @@ function ReadinessContent({ projectId }: { projectId: string }) {
           variant="ghost"
           size="sm"
           type="button"
-          disabled={nothingApproved || downloading !== null}
+          disabled={nothingApproved}
           title={nothingApproved ? 'Aún no hay nada aprobado para exportar.' : undefined}
-          onClick={() => handleDownload('html')}
+          onClick={() => setPreviewOpen(true)}
           className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground disabled:opacity-50"
         >
-          {downloading === 'html' ? (
-            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-          ) : (
-            <FileText className="size-4" aria-hidden="true" />
-          )}
-          {downloading === 'html' ? 'Generando…' : 'Documento del proyecto (HTML)'}
+          <Eye className="size-4" aria-hidden="true" />
+          Documento del proyecto (HTML)
         </Button>
         <Button
           variant="ghost"
           size="sm"
           type="button"
-          disabled={nothingApproved || downloading !== null}
+          disabled={nothingApproved || downloading}
           title={nothingApproved ? 'Aún no hay nada aprobado para exportar.' : undefined}
-          onClick={() => handleDownload('json')}
+          onClick={handleDownloadJson}
           className="inline-flex items-center gap-1.5 rounded-md border border-input px-3 py-1.5 text-sm hover:bg-muted/40 disabled:opacity-50"
         >
-          {downloading === 'json' ? (
+          {downloading ? (
             <Loader2 className="size-4 animate-spin" aria-hidden="true" />
           ) : (
             <Download className="size-4" aria-hidden="true" />
           )}
-          {downloading === 'json' ? 'Generando…' : 'Datos estructurados (JSON)'}
+          {downloading ? 'Generando…' : 'Datos estructurados (JSON)'}
         </Button>
+        <HtmlPreviewDialog
+          open={previewOpen}
+          onOpenChange={setPreviewOpen}
+          url={api.export.url(projectId, 'html')}
+          filename={`proyecto-${projectId}.html`}
+          title="Documento del proyecto"
+        />
         {nothingApproved ? (
           <span className="text-xs text-muted-foreground">
             Aún no hay nada aprobado para exportar.
