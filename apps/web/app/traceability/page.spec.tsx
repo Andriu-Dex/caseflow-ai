@@ -43,6 +43,18 @@ const getDiagram = vi.fn().mockResolvedValue({
   sourceFormat: 'MERMAID_FLOWCHART',
   svg: '<svg xmlns="http://www.w3.org/2000/svg"><g/></svg>',
 });
+// Defaults to "nothing stale" (behavior unaffected) unless a test overrides
+// it with mockResolvedValueOnce before rendering.
+const getStaleness = vi.fn().mockResolvedValue({
+  projectId: 'p1',
+  generatedAt: new Date().toISOString(),
+  entries: [],
+});
+const analyzeImpact = vi.fn().mockResolvedValue({
+  directlyAffected: ['v2'],
+  transitivelyAffected: [],
+  recommendedReviewOrder: ['v2'],
+});
 
 vi.mock('../../lib/api', () => ({
   api: {
@@ -51,6 +63,8 @@ vi.mock('../../lib/api', () => ({
       getDiagram: (...args: unknown[]) => getDiagram(...args),
       diagramPngUrl: (projectId: string) => `/projects/${projectId}/traceability/diagram/png`,
     },
+    staleness: { get: (...args: unknown[]) => getStaleness(...args) },
+    impactAnalysis: { analyze: (...args: unknown[]) => analyzeImpact(...args) },
   },
   ApiError: class ApiError extends Error {},
   restoreSession: vi.fn(),
@@ -81,15 +95,13 @@ describe('TraceabilityPage — search and grouping', () => {
   it('groups artifacts by type and filters by code/title, accent- and case-insensitively', async () => {
     const user = userEvent.setup();
     renderPage();
-    await waitFor(() =>
-      expect(screen.getByText('CU-001 — Registrar pedido en el sistema')).toBeInTheDocument(),
-    );
-    expect(screen.getByText(/Requisitos \(1\)/)).toBeInTheDocument();
-    expect(screen.getByText(/Casos de uso \(1\)/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: /CU-001/ })).toBeInTheDocument());
+    expect(screen.getByText('Requisitos')).toBeInTheDocument();
+    expect(screen.getByText('Casos de uso')).toBeInTheDocument();
 
     await user.type(screen.getByLabelText('Buscar artefacto'), 'PEDIDO EN EL SISTEMA');
-    expect(screen.queryByText('RF-001 — Registrar pedido')).not.toBeInTheDocument();
-    expect(screen.getByText('CU-001 — Registrar pedido en el sistema')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /RF-001/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /CU-001/ })).toBeInTheDocument();
   });
 });
 
@@ -97,12 +109,12 @@ describe('TraceabilityPage — related-node navigation', () => {
   it('selects a related node when clicking it in the upstream/downstream lists', async () => {
     const user = userEvent.setup();
     renderPage();
-    await user.click(await screen.findByText('RF-001 — Registrar pedido'));
+    await user.click(await screen.findByRole('button', { name: /RF-001/ }));
     // "Aguas abajo" for RF-001 lists CU-001; clicking it should select CU-001,
     // whose own "Aguas arriba" then lists RF-001 back instead of the "sin
     // conocimiento de origen" placeholder.
     await screen.findByText(/Sin conocimiento\/artefacto de origen registrado/i);
-    const downstreamButtons = screen.getAllByText(/CU-001/);
+    const downstreamButtons = screen.getAllByRole('button', { name: /CU-001/ });
     await user.click(downstreamButtons[downstreamButtons.length - 1]!);
     await waitFor(() =>
       expect(
@@ -116,11 +128,115 @@ describe('TraceabilityPage — diagram view', () => {
   it('only fetches the rendered diagram after switching to the Grafo tab', async () => {
     const user = userEvent.setup();
     renderPage();
-    await screen.findByText('RF-001 — Registrar pedido');
+    await screen.findByRole('button', { name: /RF-001/ });
     expect(getDiagram).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole('button', { name: 'Grafo' }));
+    await user.click(screen.getByRole('tab', { name: 'Grafo' }));
     await waitFor(() => expect(getDiagram).toHaveBeenCalledWith('p1'));
     expect(await screen.findByText('Ver código fuente')).toBeInTheDocument();
+  });
+});
+
+describe('TraceabilityPage — staleness (closes the "verá señalado en cada paso" promise)', () => {
+  it('shows a success banner when nothing is potentially stale', async () => {
+    renderPage();
+    expect(
+      await screen.findByText(/Sin incidencias de trazabilidad pendientes/i),
+    ).toBeInTheDocument();
+  });
+
+  it('flags an affected version, explains why and links to the fix', async () => {
+    getStaleness.mockResolvedValueOnce({
+      projectId: 'p1',
+      generatedAt: new Date().toISOString(),
+      entries: [
+        {
+          artifactId: 'a1',
+          artifactVersionId: 'v1',
+          artifactType: 'REQUIREMENT',
+          code: 'RF-001',
+          versionNumber: 1,
+          status: 'APPROVED',
+          impactState: 'POTENTIALLY_AFFECTED',
+          reasons: [
+            {
+              type: 'CONTEXT_POTENTIALLY_AFFECTED',
+              sourceArtifactId: 'ctx',
+              sourceVersionId: 'v2',
+              message: 'Generado desde CTX-001 v1, que tiene conocimiento más reciente.',
+            },
+          ],
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(
+      await screen.findByText(/Hay 1 versión que podría estar desactualizada/i),
+    ).toBeInTheDocument();
+    const rf001Button = await screen.findByRole('button', { name: /RF-001/ });
+    expect(rf001Button).toHaveAccessibleName(/Posiblemente desactualizado|v1/i);
+
+    await user.click(rf001Button);
+    expect(
+      await screen.findByText(/Generado desde CTX-001 v1, que tiene conocimiento más reciente/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/se resolverá al actualizar y aprobar de nuevo el Contexto del Proyecto/i),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Ir al Contexto del Proyecto' })).toHaveAttribute(
+      'href',
+      '/context',
+    );
+
+    // The reason links to its source node (CU-001, id "v2") when that node
+    // is present in the graph, so the user can jump straight to it.
+    await user.click(
+      screen.getByRole('button', {
+        name: /Generado desde CTX-001 v1, que tiene conocimiento más reciente/i,
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getAllByRole('button', { name: /CU-001/ }).length).toBeGreaterThan(0),
+    );
+  });
+});
+
+describe('TraceabilityPage — impact analysis', () => {
+  // Regression: the reset-on-select effect used to depend on the whole
+  // useMutation() result object, which is a new object every render. That
+  // made the effect rerun — and reset the mutation — on every render,
+  // including the one its own `mutate()` call triggers, so the result (or
+  // even the pending state) never stayed visible long enough to see.
+  it('shows the result after clicking "Analizar impacto de este cambio", and keeps showing it', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: /RF-001/ }));
+    await user.click(screen.getByRole('button', { name: 'Analizar impacto de este cambio' }));
+
+    expect(analyzeImpact).toHaveBeenCalledWith('p1', 'v1');
+    expect(await screen.findByText(/Afectados Directamente/)).toBeInTheDocument();
+    // Give any further scheduled effects a chance to run, then confirm the
+    // result is still there — not reset back to the empty "Analizar" button.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.getByText(/Afectados Directamente/)).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Analizar impacto de este cambio' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('resets the previous result when a different artifact is selected', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: /RF-001/ }));
+    await user.click(screen.getByRole('button', { name: 'Analizar impacto de este cambio' }));
+    await screen.findByText(/Afectados Directamente/);
+
+    await user.click(screen.getAllByRole('button', { name: /CU-001/ })[0]!);
+    expect(screen.queryByText(/Afectados Directamente/)).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Analizar impacto de este cambio' }),
+    ).toBeInTheDocument();
   });
 });

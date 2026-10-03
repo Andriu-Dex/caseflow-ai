@@ -222,6 +222,40 @@ describe('Project Context integration', () => {
     ]);
   });
 
+  it('rejects a context that cites two versions of the same source at once', async () => {
+    const project = await createProject(ctx, 'Sources Duplicate Artifact');
+    const source = await ctx.sources.create(
+      project.id,
+      {
+        title: 'Entrevista',
+        sourceKind: 'NOTES',
+        purpose: 'p',
+        description: 'Contenido de prueba.',
+      },
+      { originalname: 'n.txt', mimetype: 'text/plain', size: 4, buffer: Buffer.from('abcd') },
+    );
+    await ctx.sources.transition(project.id, source.id, source.version.id, 'IN_REVIEW');
+    const v1 = await ctx.sources.transition(project.id, source.id, source.version.id, 'APPROVED');
+    const draftV2 = await ctx.sources.submitManualTranscript(
+      project.id,
+      source.id,
+      'Contenido actualizado',
+    );
+    await ctx.sources.transition(project.id, source.id, draftV2.version.id, 'IN_REVIEW');
+    const v2 = await ctx.sources.transition(project.id, source.id, draftV2.version.id, 'APPROVED');
+
+    // Citing two versions of the same source at once is never meaningful
+    // provenance (v2 supersedes v1) — and it used to make a brand-new
+    // context immediately contradict itself in staleness ("up to date" and
+    // "has a newer version" at once).
+    await expect(
+      service.create(project.id, {
+        ...contextInput(' duplicada'),
+        sourceVersionIds: [v1.id, v2.id],
+      }),
+    ).rejects.toMatchObject({ status: 422 });
+  });
+
   it('rejects a draft (unapproved) or cross-project source as Project Context provenance', async () => {
     const project = await createProject(ctx, 'Sources Reject');
     const draft = await ctx.sources.create(
@@ -342,6 +376,58 @@ describe('Project Context integration', () => {
       expect(
         await ctx.prisma.projectContextCandidate.findUnique({ where: { id: candidate.id } }),
       ).toMatchObject({ projectId: project.id });
+    });
+
+    it('uses only the latest APPROVED version of a source, never an older approved one too', async () => {
+      const project = await createProject(ctx, 'AI Latest Version');
+      const v1 = await createApprovedSource(ctx, project.id, 'Entrevista');
+      const draftV2 = await ctx.sources.submitManualTranscript(
+        project.id,
+        v1.artifactId,
+        'Contenido actualizado',
+      );
+      await ctx.sources.transition(project.id, v1.artifactId, draftV2.version.id, 'IN_REVIEW');
+      const v2 = await ctx.sources.transition(
+        project.id,
+        v1.artifactId,
+        draftV2.version.id,
+        'APPROVED',
+      );
+
+      const content = {
+        problemStatement: 'Problema generado',
+        objective: 'Objetivo generado',
+        actors: [],
+        needs: [],
+        constraints: [],
+        businessRules: [],
+      };
+      const ai = new AIOrchestrator(
+        new FakeAIProvider({
+          provider: 'fake',
+          model: 'fake-v1',
+          payload: content,
+          usage: null,
+          latencyMs: 1,
+        }),
+        new PromptRegistry([
+          {
+            key: 'project-context.generate',
+            version: 1,
+            capability: 'STRUCTURED_OUTPUT',
+            purpose: 'project_context_generation',
+            systemInstructions: 'policy',
+          },
+        ]),
+        new PrismaAIRunRecorder(ctx.prisma),
+      );
+      const service = new ProjectContextService(ctx.prisma, ai);
+
+      const candidate = await service.generate(project.id);
+
+      // Only v2 — v1 is still APPROVED (immutable history), but it is no
+      // longer current knowledge, so it must never be cited alongside v2.
+      expect(candidate.sourceVersionIds).toEqual([v2.id]);
     });
 
     it('rejects generation for a project without any usable approved source', async () => {
