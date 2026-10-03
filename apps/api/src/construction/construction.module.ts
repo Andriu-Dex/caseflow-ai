@@ -31,9 +31,28 @@ import {
 import { GenerationRunsService } from './generation-runs.service';
 import { SandboxRunsService } from './sandbox-runs.service';
 import { SANDBOX_EXECUTION_PROVIDER } from './sandbox-provider.token';
+import { WorkflowRunsController } from './workflow-runs.controller';
+import { WorkflowRunsService } from './workflow-runs.service';
+import { SourcesModule } from '../sources/sources.module';
+import { ProjectContextModule } from '../project-context/project-context.module';
+import { RequirementsModule } from '../requirements/requirements.module';
+import { UseCasesModule } from '../use-cases/use-cases.module';
+import { DataModelsModule } from '../data-models/data-models.module';
+import { StructuredAnalysisModule } from '../structured-analysis/structured-analysis.module';
+import { MockupsModule } from '../mockups/mockups.module';
 
 @Module({
-  imports: [AIModule],
+  imports: [
+    AIModule,
+    // The route orchestrator drives the existing stage services (DEC-116).
+    SourcesModule,
+    ProjectContextModule,
+    RequirementsModule,
+    UseCasesModule,
+    DataModelsModule,
+    StructuredAnalysisModule,
+    MockupsModule,
+  ],
   controllers: [
     TargetTemplatesController,
     DependencyProposalsController,
@@ -41,6 +60,7 @@ import { SANDBOX_EXECUTION_PROVIDER } from './sandbox-provider.token';
     GenerationRunsController,
     GeneratedProjectSnapshotsController,
     InternalConstructionJobsController,
+    WorkflowRunsController,
   ],
   providers: [
     DependencyCatalogService,
@@ -51,6 +71,7 @@ import { SANDBOX_EXECUTION_PROVIDER } from './sandbox-provider.token';
     AutoRepairService,
     SandboxRunsService,
     GeneratedProjectSnapshotsService,
+    WorkflowRunsService,
     {
       // Generated code only ever runs in disposable Docker containers (DEC-101).
       provide: SANDBOX_EXECUTION_PROVIDER,

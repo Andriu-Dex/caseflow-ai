@@ -29,6 +29,7 @@ import type {
   StalenessAnalysisResponse,
   StructuredAnalysisKind,
   WorkflowRoute,
+  WorkflowRunResponse,
   StructuredAnalysisResponse,
   TraceabilityDiagramResponse,
   TraceabilityGraphResponse,
@@ -266,8 +267,12 @@ export const api = {
   },
   projects: {
     list: (workspaceId: string) => get<ProjectListResponse>(`/projects?workspaceId=${workspaceId}`),
-    create: (input: { workspaceId: string; name: string; description?: string }) =>
-      post<ProjectResponse>('/projects', input),
+    create: (input: {
+      workspaceId: string;
+      name: string;
+      description?: string;
+      workflowRoute?: WorkflowRoute;
+    }) => post<ProjectResponse>('/projects', input),
     get: (projectId: string) => get<ProjectResponse>(`/projects/${projectId}`),
     delete: (projectId: string) => del<void>(`/projects/${projectId}`),
     archive: (projectId: string) => post<ProjectResponse>(`/projects/${projectId}/archive`),
@@ -617,6 +622,15 @@ export const api = {
       get<{ items: DesignBaselineResponse[] }>(`/projects/${projectId}/design-baselines`),
     create: (projectId: string, data: CreateDesignBaselineRequest) =>
       post<DesignBaselineResponse>(`/projects/${projectId}/design-baselines`, data),
+  },
+  // Route orchestration from one prompt (BUILD_ONLY, DEC-116).
+  workflowRuns: {
+    list: (projectId: string) =>
+      get<{ items: WorkflowRunResponse[] }>(`/projects/${projectId}/workflow-runs`),
+    start: (projectId: string, prompt: string) =>
+      post<WorkflowRunResponse>(`/projects/${projectId}/workflow-runs`, { prompt }),
+    retry: (projectId: string, runId: string) =>
+      post<WorkflowRunResponse>(`/projects/${projectId}/workflow-runs/${runId}/retry`),
   },
   generationRuns: {
     list: (projectId: string) =>

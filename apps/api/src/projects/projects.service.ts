@@ -250,6 +250,10 @@ export class ProjectsService {
       await tx.$executeRaw`DELETE FROM artifact_versions WHERE project_id = ${p}`;
       await tx.$executeRaw`DELETE FROM artifacts WHERE project_id = ${p}`;
 
+      // Route orchestrations that stopped before anything was approved
+      await tx.$executeRaw`DELETE FROM workflow_run_stages WHERE run_id IN (SELECT id FROM workflow_runs WHERE project_id = ${p})`;
+      await tx.$executeRaw`DELETE FROM workflow_runs WHERE project_id = ${p}`;
+
       // Project-level bookkeeping
       await tx.$executeRaw`DELETE FROM project_code_counters WHERE project_id = ${p}`;
       await tx.$executeRaw`DELETE FROM projects WHERE id = ${p}`;

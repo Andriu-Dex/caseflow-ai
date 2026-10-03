@@ -87,6 +87,15 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   },
 ];
 
+// BUILD_ONLY route (DEC-116): planning is generated and approved by the
+// system, so the sidebar shows the prompt/progress page and the construction
+// results instead of the twelve planning steps.
+const BUILD_ONLY_GROUPS: { label: string; items: NavItem[] }[] = [
+  NAV_GROUPS[0]!,
+  { label: 'Solo construcción', items: [{ href: '/build', label: 'Construcción automática' }] },
+  NAV_GROUPS.find((group) => group.label === CONSTRUCTION_GROUP_LABEL)!,
+];
+
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { projectId } = useActiveProject();
@@ -95,6 +104,13 @@ export function AppShell({ children }: { children: ReactNode }) {
     queryFn: () => api.readiness.get(projectId!),
     enabled: Boolean(projectId) && pathname !== '/login' && pathname !== '/register',
   });
+  const project = useQuery({
+    queryKey: ['project', projectId],
+    queryFn: () => api.projects.get(projectId!),
+    enabled: Boolean(projectId) && pathname !== '/login' && pathname !== '/register',
+  });
+  const buildOnly = project.data?.workflowRoute === 'BUILD_ONLY';
+  const groups = buildOnly ? BUILD_ONLY_GROUPS : NAV_GROUPS;
   const [lockedMessage, setLockedMessage] = useState<string | null>(null);
 
   useEffect(() => setLockedMessage(null), [pathname]);
@@ -169,10 +185,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Alert>
         ) : null}
         <div className="flex flex-col gap-5">
-          {NAV_GROUPS.map((group, i) => {
+          {groups.map((group, i) => {
             const isConstruction = group.label === CONSTRUCTION_GROUP_LABEL;
             const planningComplete = readiness.data?.ready === true;
-            if (isConstruction && !planningComplete)
+            if (isConstruction && !planningComplete && !buildOnly)
               return (
                 <div key={i}>
                   <div className="mb-1.5 px-2 text-[11px] font-semibold tracking-widest text-sidebar-foreground/50 uppercase">
@@ -195,9 +211,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                     </span>
                     <ChevronRight className="size-3.5 shrink-0" aria-hidden="true" />
                   </button>
-                  {i < NAV_GROUPS.length - 1 ? (
-                    <Separator className="mt-5 bg-sidebar-border" />
-                  ) : null}
+                  {i < groups.length - 1 ? <Separator className="mt-5 bg-sidebar-border" /> : null}
                 </div>
               );
             return (
@@ -254,7 +268,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                             </span>
                           ) : item.href === '/readiness' ? (
                             <ClipboardCheck className="size-4 shrink-0" aria-hidden="true" />
-                          ) : item.href.startsWith('/construction/') ? (
+                          ) : item.href.startsWith('/construction/') || item.href === '/build' ? (
                             <Hammer className="size-4 shrink-0" aria-hidden="true" />
                           ) : (
                             <Home className="size-4 shrink-0" aria-hidden="true" />
@@ -271,9 +285,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                     );
                   })}
                 </ul>
-                {i < NAV_GROUPS.length - 1 ? (
-                  <Separator className="mt-5 bg-sidebar-border" />
-                ) : null}
+                {i < groups.length - 1 ? <Separator className="mt-5 bg-sidebar-border" /> : null}
               </div>
             );
           })}

@@ -3,7 +3,8 @@
 // validating them in the sandbox.
 export const CONSTRUCTION_QUEUE = 'construction';
 
-export const CONSTRUCTION_JOB_TYPES = ['generation-run', 'sandbox-run'] as const;
+// 'workflow-run': a route orchestration from one prompt (DEC-116).
+export const CONSTRUCTION_JOB_TYPES = ['generation-run', 'sandbox-run', 'workflow-run'] as const;
 export type ConstructionJobType = (typeof CONSTRUCTION_JOB_TYPES)[number];
 
 export interface ConstructionJobPayload {
