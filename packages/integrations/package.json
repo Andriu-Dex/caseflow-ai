@@ -2,6 +2,7 @@
   "name": "@caseflow-ai/integrations",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
   "description": "CASEFlow AI external integration adapters",
   "type": "commonjs",
   "main": "./dist/index.js",

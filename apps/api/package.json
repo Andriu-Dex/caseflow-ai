@@ -2,6 +2,7 @@
   "name": "@caseflow-ai/api",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
   "description": "CASEFlow AI API application (NestJS foundation)",
   "scripts": {
     "dev": "node --env-file-if-exists=../../.env --watch --require ts-node/register src/main.ts",

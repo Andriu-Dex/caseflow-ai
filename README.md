@@ -189,3 +189,7 @@ If a native PostgreSQL service is running, you will likely need to stop it while
 - **`AGENTS.md`** is the operational contract for AI coding agents working in this repository — stricter and narrower than the spec, but must never contradict it.
 
 When the two disagree, `docs/CASEFLOW_AI_SPEC.md` wins (see `AGENTS.md`'s own instruction-priority rules).
+
+## License
+
+CASEFlow AI is open source under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for attribution.

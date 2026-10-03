@@ -5367,6 +5367,8 @@ Feedback       → consistent toast/alert patterns
 
 No debe convertirse en un prompt libre sin versión.
 
+> **Extendido por DEC-118 / ADR-003 (§221.3):** cada proyecto nuevo define además un tema (claro, oscuro o ambos) y una paleta como artefacto versionado `DESIGN_THEME`, aplicado sobre este perfil base.
+
 ---
 
 # 155. Approved Dependency Catalog
@@ -5613,6 +5615,8 @@ Esta baseline puede contener versiones exactas de:
 - ADR.
 
 La generación oficial debe registrar qué Design Baseline utilizó.
+
+> **Excepción acotada por DEC-116 / ADR-001 (§221.1):** en la ruta de trabajo Solo construcción la Design Baseline se congela automáticamente, sin revisión humana, y queda registrado el origen `AUTOMATIC` de cada aprobación. Las rutas Completa y Exprés conservan esta sección íntegra.
 
 ---
 
@@ -7230,6 +7234,9 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-113 | V1 no implementará sincronización bidireccional automática de cambios externos del código generado | Accepted |
 | DEC-114 | La generalidad de Construction se validará generando software en al menos dos dominios distintos | Accepted |
 | DEC-115 | El calendario inmediato se repriorizó alrededor del Primer Entregable Funcional (§217–§219); Identity/Workspace/RBAC, Knowledge Base, RAG y Construction se difieren, no se cancelan. Supera solo la priorización de calendario de §180 y §182 | Accepted |
+| DEC-116 | Tres rutas de trabajo por proyecto (Completa, Exprés, Solo construcción); solo se sube de ruta; la ruta Solo construcción genera sin revisión humana intermedia pero conserva sandbox, catálogo, generación por etapas y snapshots (ADR-001, §221) | Accepted |
+| DEC-117 | Licencia Apache-2.0; edición de escritorio con Electron; proveedor "ChatGPT" (plan usage de OpenAI) solo en escritorio, sin pagos en ninguna edición (ADR-002, §221) | Accepted |
+| DEC-118 | Tema (claro/oscuro/ambos) y paleta por proyecto como artefacto `DESIGN_THEME`, congelado en la Design Baseline y obligatorio solo en proyectos nuevos (ADR-003, §221) | Accepted |
 
 ---
 
@@ -7663,3 +7670,29 @@ Descriptivo del comportamiento implementado:
   (contexto, requisitos, casos de uso con flujos, modelo de datos,
   arquitecturas, UI Blueprint, bocetos y diagramas), con todo el contenido
   escapado salvo los SVG ya saneados.
+
+---
+
+# 221. Extensiones de V2 (DEC-116, DEC-117, DEC-118)
+
+Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
+
+## 221.1 Rutas de trabajo (DEC-116, ADR-001)
+
+Cada proyecto se crea en una ruta: **Completa** (`FULL`, los 11 pasos con revisión humana), **Exprés** (`EXPRESS`, planificación generada desde un prompt y aprobada en bloque) o **Solo construcción** (`BUILD_ONLY`, planificación oculta y aprobación automática hasta la app validada). Solo se sube de ruta, nunca se baja.
+
+En todas las rutas se mantienen: el prompt inicial como `PROJECT_SOURCE`, la planificación completa y trazable, la generación incremental por etapas (DEC-111), la validación en sandbox (§174–§175), el catálogo de dependencias (§155) y los snapshots inmutables (§172). El origen de cada aprobación (`HUMAN`, `HUMAN_BULK`, `AUTOMATIC`) se registra y nunca se reescribe. La única exención es la de §160 para `BUILD_ONLY`.
+
+## 221.2 Edición de escritorio y proveedor "ChatGPT" (DEC-117, ADR-002)
+
+El proyecto se publica con licencia Apache-2.0, sin pagos en ninguna edición. La edición de escritorio (Electron, `apps/desktop`) incluye PostgreSQL y Redis portables y un `FilesystemStorageProvider`; la construcción sigue exigiendo Docker (§174).
+
+El proveedor "ChatGPT" (plan usage de OpenAI, Responses API) existe solo en la edición de escritorio. Ante cuota agotada (429) avisa y ofrece otro modelo solo con confirmación del usuario; ante falta de elegibilidad (403) explica sin reintentar. La edición web muestra la opción, pero lleva al asistente de instalación de escritorio.
+
+## 221.3 Tema y paleta del proyecto (DEC-118, ADR-003)
+
+Artefacto versionado `DESIGN_THEME` (`TEM-`): modo `LIGHT`, `DARK` o `BOTH` y paleta de tokens semánticos con contraste WCAG AA obligatorio. Rol obligatorio en la Design Baseline solo para proyectos nuevos; las líneas base existentes no se modifican. Lo consumen tanto los bocetos (§159) como el frontend generado (§169).
+
+## 221.4 Fuera de alcance de estas extensiones
+
+Interfaz bilingüe completa (EN/ES) y vista previa en vivo del software generado (§177.2): planificadas para después de cerrar v2.
