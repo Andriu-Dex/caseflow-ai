@@ -53,7 +53,10 @@ describe('ProjectsController (validation and routing)', () => {
 
     expect(ok.status).toBe(201);
     expect(service.create).toHaveBeenCalledTimes(1);
-    expect(service.create).toHaveBeenCalledWith({ workspaceId, name: 'Nuevo' }, 'test-user');
+    expect(service.create).toHaveBeenCalledWith(
+      { workspaceId, name: 'Nuevo', workflowRoute: 'FULL' },
+      'test-user',
+    );
     expect(invalid.status).toBe(400);
     expect(invalid.body.message).toBe('La solicitud no es válida.');
   });

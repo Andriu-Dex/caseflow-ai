@@ -7,6 +7,7 @@ import type { ProjectLanguage } from '@caseflow-ai/contracts';
 import { toast } from 'sonner';
 import { Button, Input } from '@caseflow-ai/ui';
 import { api, ApiError } from '../lib/api';
+import { UpgradeRouteButton, WorkflowRouteBadge } from './workflow-route';
 import { useActiveProject } from '../lib/active-project';
 
 export function ProjectSwitcher() {
@@ -41,6 +42,7 @@ export function ProjectSwitcher() {
   }
 
   const items = projects.data?.items ?? [];
+  const active = items.find((project) => project.id === projectId);
 
   async function handleCreate() {
     if (!name.trim() || !workspaceId) return;
@@ -80,9 +82,22 @@ export function ProjectSwitcher() {
         <ProjectLanguageSelect
           key={projectId}
           projectId={projectId}
-          language={items.find((project) => project.id === projectId)?.language ?? 'ES'}
+          language={active?.language ?? 'ES'}
           onChanged={() => queryClient.invalidateQueries({ queryKey: ['projects', workspaceId] })}
         />
+      ) : null}
+      {active ? (
+        <>
+          <WorkflowRouteBadge route={active.workflowRoute} />
+          <UpgradeRouteButton
+            key={active.id}
+            projectId={active.id}
+            route={active.workflowRoute}
+            onUpgraded={() =>
+              queryClient.invalidateQueries({ queryKey: ['projects', workspaceId] })
+            }
+          />
+        </>
       ) : null}
       {creating ? (
         <span className="flex items-center gap-1">

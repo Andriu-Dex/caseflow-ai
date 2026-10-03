@@ -11,6 +11,7 @@ import {
   projectListResponseSchema,
   projectResponseSchema,
   updateProjectLanguageRequestSchema,
+  upgradeWorkflowRouteRequestSchema,
   type ProjectListResponse,
   type ProjectResponse,
 } from '@caseflow-ai/contracts';
@@ -117,5 +118,25 @@ export class ProjectsController {
     body: z.output<typeof updateProjectLanguageRequestSchema>,
   ): Promise<ProjectResponse> {
     return this.projects.updateLanguage(projectId, body.language);
+  }
+
+  @Post(':projectId/workflow-route')
+  @HttpCode(200)
+  @ApiOperation({
+    operationId: 'upgradeProjectWorkflowRoute',
+    summary: 'Move a project up to a workflow route with more human review',
+  })
+  @ApiUuidParam('projectId', 'Project identifier.')
+  @ApiZodBody(upgradeWorkflowRouteRequestSchema)
+  @ApiZodResponse(200, 'The updated project.', projectResponseSchema)
+  @ApiErrorResponse(404, 'The project does not exist.')
+  @ApiErrorResponse(422, 'The route would move down or stay the same.')
+  upgradeWorkflowRoute(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Body(new ZodValidationPipe(upgradeWorkflowRouteRequestSchema))
+    body: z.output<typeof upgradeWorkflowRouteRequestSchema>,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<ProjectResponse> {
+    return this.projects.upgradeWorkflowRoute(projectId, body.workflowRoute, req.user.id);
   }
 }

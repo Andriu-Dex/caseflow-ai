@@ -287,6 +287,25 @@ model Workspace {
 }
 
 // Main functional unit of the system (spec §3.2). Domain-independent.
+// DEC-116: how much of the planning a person reviews. Only upgrades.
+enum WorkflowRoute {
+  FULL
+  EXPRESS
+  BUILD_ONLY
+
+  @@map("workflow_route")
+}
+
+// Who approved a version: a person, a person in bulk (EXPRESS) or the system
+// (BUILD_ONLY). Set when the version becomes APPROVED and frozen with it.
+enum ApprovalOrigin {
+  HUMAN
+  HUMAN_BULK
+  AUTOMATIC
+
+  @@map("approval_origin")
+}
+
 model Project {
   id                  String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   workspaceId         String          @map("workspace_id") @db.Uuid
@@ -300,6 +319,7 @@ model Project {
   archivedAt          DateTime?       @map("archived_at") @db.Timestamptz(6)
   // DEC-118: projects created before the theme step existed keep the
   // standard design (false); new projects must approve a theme (true).
+  workflowRoute       WorkflowRoute   @default(FULL) @map("workflow_route")
   designThemeRequired Boolean         @default(true) @map("design_theme_required")
 
   workspace                     Workspace                      @relation(fields: [workspaceId], references: [id], onDelete: Restrict, onUpdate: Restrict)
@@ -384,6 +404,8 @@ model ArtifactVersion {
   createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
   submittedAt       DateTime?             @map("submitted_at") @db.Timestamptz(6)
   approvedAt        DateTime?             @map("approved_at") @db.Timestamptz(6)
+  // Defaults to HUMAN in the database when the version is approved.
+  approvalOrigin    ApprovalOrigin?       @map("approval_origin")
 
   artifact                            Artifact                             @relation(fields: [artifactId, projectId], references: [id, projectId], onDelete: Restrict, onUpdate: Restrict)
   projectContextDetail                ProjectContextDetail?

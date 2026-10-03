@@ -23,6 +23,11 @@ export const ARTIFACT_ORIGINS = [
 
 export type ArtifactOrigin = (typeof ARTIFACT_ORIGINS)[number];
 
+// Who approved a version (DEC-116): a person, a person in bulk (EXPRESS route)
+// or the system (BUILD_ONLY route).
+export const APPROVAL_ORIGINS = ['HUMAN', 'HUMAN_BULK', 'AUTOMATIC'] as const;
+export type ApprovalOrigin = (typeof APPROVAL_ORIGINS)[number];
+
 const titleSchema = z
   .string({ error: 'El título es obligatorio.' })
   .trim()

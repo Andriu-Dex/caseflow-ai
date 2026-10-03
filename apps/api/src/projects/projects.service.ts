@@ -1,16 +1,32 @@
-import { Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
-import type {
-  CreateProjectRequest,
-  ProjectListResponse,
-  ProjectResponse,
-  ProjectLanguage,
+import {
+  Injectable,
+  NotFoundException,
+  Optional,
+  UnprocessableEntityException,
+} from '@nestjs/common';
+import {
+  WORKFLOW_ROUTES,
+  type CreateProjectRequest,
+  type WorkflowRoute,
+  type ProjectListResponse,
+  type ProjectResponse,
+  type ProjectLanguage,
 } from '@caseflow-ai/contracts';
+import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../database/prisma.service';
 import { toProjectResponse } from './projects.mapper';
 
 @Injectable()
 export class ProjectsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly audit: AuditService;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    // Injected by Nest; code constructing the service directly still audits.
+    @Optional() audit?: AuditService,
+  ) {
+    this.audit = audit ?? new AuditService(prisma);
+  }
 
   async create(input: CreateProjectRequest, userId: string): Promise<ProjectResponse> {
     const workspace = await this.prisma.workspace.findUnique({
@@ -27,6 +43,7 @@ export class ProjectsService {
           workspaceId: input.workspaceId,
           name: input.name,
           description: input.description ?? null,
+          workflowRoute: input.workflowRoute ?? 'FULL',
         },
       });
       await tx.projectMembership.create({
@@ -101,6 +118,37 @@ export class ProjectsService {
     const updated = await this.prisma.project.update({
       where: { id: projectId },
       data: { archivedAt: new Date() },
+    });
+    return toProjectResponse(updated, await this.hasApprovedArtifacts(projectId));
+  }
+
+  // DEC-116: a route only moves up (BUILD_ONLY -> EXPRESS -> FULL); the
+  // database enforces it too. Every change is audited.
+  async upgradeWorkflowRoute(
+    projectId: string,
+    workflowRoute: WorkflowRoute,
+    userId: string,
+  ): Promise<ProjectResponse> {
+    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) throw new NotFoundException('Proyecto no encontrado.');
+    if (WORKFLOW_ROUTES.indexOf(workflowRoute) <= WORKFLOW_ROUTES.indexOf(project.workflowRoute))
+      throw new UnprocessableEntityException(
+        'La ruta de trabajo solo puede subir: de Solo construcción a Exprés y de Exprés a Completa.',
+      );
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.project.update({ where: { id: projectId }, data: { workflowRoute } });
+      await this.audit.record(
+        {
+          projectId,
+          actorUserId: userId,
+          action: 'PROJECT_WORKFLOW_ROUTE_CHANGED',
+          entityType: 'PROJECT',
+          entityId: projectId,
+          metadata: { from: project.workflowRoute, to: workflowRoute },
+        },
+        tx,
+      );
+      return row;
     });
     return toProjectResponse(updated, await this.hasApprovedArtifacts(projectId));
   }
