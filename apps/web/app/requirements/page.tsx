@@ -3,7 +3,7 @@
 import { GenerationOverlay } from '../../components/generation-overlay';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { RequirementResponse } from '@caseflow-ai/contracts';
-import { Download, Pencil, Sparkles } from 'lucide-react';
+import { Download, ExternalLink, Pencil, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@caseflow-ai/ui';
@@ -11,6 +11,7 @@ import {
   api,
   ApiError,
   downloadFile,
+  openFileInNewTab,
   type ArtifactVersionStatus,
   type GenerationResult,
 } from '../../lib/api';
@@ -32,12 +33,13 @@ import {
 
 const PRIORITY_LABELS: Record<string, string> = { HIGH: 'Alta', MEDIUM: 'Media', LOW: 'Baja' };
 
-async function downloadRequirements(projectId: string, format: 'pdf' | 'docx') {
+// PDF opens in a new tab, where the browser's own viewer previews it; Word
+// has no in-browser preview, so it stays a direct download.
+async function exportRequirements(projectId: string, format: 'pdf' | 'docx') {
   try {
-    await downloadFile(
-      api.requirements.exportUrl(projectId, format),
-      `requisitos-${projectId}.${format}`,
-    );
+    const url = api.requirements.exportUrl(projectId, format);
+    if (format === 'pdf') await openFileInNewTab(url);
+    else await downloadFile(url, `requisitos-${projectId}.docx`);
   } catch (err) {
     toast.error(err instanceof ApiError ? err.message : 'No se pudo exportar los requisitos.');
   }
@@ -174,16 +176,16 @@ function RequirementsContent({ projectId }: { projectId: string }) {
               type="button"
               variant="outline"
               disabled={items.length === 0}
-              onClick={() => downloadRequirements(projectId, 'pdf')}
+              onClick={() => exportRequirements(projectId, 'pdf')}
             >
-              <Download className="size-4" aria-hidden="true" />
+              <ExternalLink className="size-4" aria-hidden="true" />
               Requisitos aprobados (PDF)
             </Button>
             <Button
               type="button"
               variant="outline"
               disabled={items.length === 0}
-              onClick={() => downloadRequirements(projectId, 'docx')}
+              onClick={() => exportRequirements(projectId, 'docx')}
             >
               <Download className="size-4" aria-hidden="true" />
               Requisitos aprobados (Word)

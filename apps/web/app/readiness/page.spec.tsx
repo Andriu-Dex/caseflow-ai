@@ -17,9 +17,11 @@ vi.mock('../../lib/api', () => ({
   ApiError: class ApiError extends Error {},
   restoreSession: vi.fn(),
   downloadFile: (...args: unknown[]) => downloadFile(...args),
+  fetchBlob: (...args: unknown[]) => fetchBlob(...args),
 }));
 
 const downloadFile = vi.fn();
+const fetchBlob = vi.fn();
 
 const oneStageSatisfied = {
   projectId: 'p1',
@@ -96,19 +98,39 @@ describe('ReadinessPage', () => {
         <ReadinessPage />
       </TestProviders>,
     );
-    const button = await screen.findByRole('button', { name: /documento del proyecto \(html\)/i });
+    const button = await screen.findByRole('button', { name: /datos estructurados \(json\)/i });
     await user.click(button);
     expect(await screen.findByText(/generando…/i)).toBeInTheDocument();
 
     expect(downloadFile).toHaveBeenCalledWith(
-      'http://localhost:3001/projects/p1/export?format=html',
-      'proyecto-p1.html',
+      'http://localhost:3001/projects/p1/export?format=json',
+      'proyecto-p1.json',
     );
 
     rejectDownload(new Error('boom'));
     await waitFor(() => expect(button).not.toBeDisabled());
     expect(
-      screen.getByRole('button', { name: /documento del proyecto \(html\)/i }),
+      screen.getByRole('button', { name: /datos estructurados \(json\)/i }),
     ).toBeInTheDocument();
+  });
+
+  it('opens the HTML document in a preview first, without downloading it', async () => {
+    const user = userEvent.setup();
+    // jsdom's Blob lacks text(); browsers implement it.
+    fetchBlob.mockResolvedValue({ text: async () => '<h1>Proyecto</h1>' });
+    render(
+      <TestProviders>
+        <ReadinessPage />
+      </TestProviders>,
+    );
+    await user.click(
+      await screen.findByRole('button', { name: /documento del proyecto \(html\)/i }),
+    );
+    expect(await screen.findByTitle('Documento del proyecto')).toHaveAttribute(
+      'srcdoc',
+      '<h1>Proyecto</h1>',
+    );
+    expect(fetchBlob).toHaveBeenCalledWith('http://localhost:3001/projects/p1/export?format=html');
+    expect(downloadFile).not.toHaveBeenCalled();
   });
 });

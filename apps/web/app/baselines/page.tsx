@@ -3,23 +3,16 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button, Input, Textarea } from '@caseflow-ai/ui';
-import { Download, FileText, Loader2, Plus } from 'lucide-react';
+import { Download, Eye, Loader2, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, ApiError, downloadFile } from '../../lib/api';
 import { RequireActiveProject } from '../../components/query-state';
+import { HtmlPreviewDialog } from '../../components/html-preview-dialog';
 import type { BaselineResponse } from '@caseflow-ai/contracts';
 
-async function downloadExport(
-  projectId: string,
-  id: string,
-  format: 'json' | 'html',
-): Promise<void> {
-  const url =
-    format === 'html'
-      ? api.baselines.exportHtmlUrl(projectId, id)
-      : api.baselines.exportJsonUrl(projectId, id);
+async function downloadJson(projectId: string, id: string): Promise<void> {
   try {
-    await downloadFile(url, `baseline-${id}.${format}`);
+    await downloadFile(api.baselines.exportJsonUrl(projectId, id), `baseline-${id}.json`);
   } catch (err) {
     toast.error(err instanceof ApiError ? err.message : 'No se pudo exportar la línea base.');
   }
@@ -35,6 +28,7 @@ function BaselinesContent({ projectId }: { projectId: string }) {
   const [label, setLabel] = useState('');
   const [description, setDescription] = useState('');
   const [creating, setCreating] = useState(false);
+  const [previewing, setPreviewing] = useState<BaselineResponse | null>(null);
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -60,7 +54,9 @@ function BaselinesContent({ projectId }: { projectId: string }) {
       <div>
         <h1 className="text-xl font-semibold text-foreground">Líneas Base</h1>
         <p className="text-sm text-muted-foreground">
-          Gestione y descargue líneas base (snapshots inmutables) del proyecto.
+          Una captura fija y con nombre de todo lo aprobado hasta hoy — a diferencia de "Preparación
+          / Exportar", que descarga el estado actual, una línea base queda guardada para siempre y
+          puede volver a descargarla cuando quiera.
         </p>
       </div>
 
@@ -115,18 +111,14 @@ function BaselinesContent({ projectId }: { projectId: string }) {
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => downloadExport(projectId, baseline.id, 'html')}
-                  >
-                    <FileText className="size-4 mr-2" />
+                  <Button variant="outline" size="sm" onClick={() => setPreviewing(baseline)}>
+                    <Eye className="size-4 mr-2" />
                     HTML
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => downloadExport(projectId, baseline.id, 'json')}
+                    onClick={() => downloadJson(projectId, baseline.id)}
                   >
                     <Download className="size-4 mr-2" />
                     JSON
@@ -137,6 +129,16 @@ function BaselinesContent({ projectId }: { projectId: string }) {
           </ul>
         )}
       </div>
+
+      {previewing ? (
+        <HtmlPreviewDialog
+          open
+          onOpenChange={(open) => !open && setPreviewing(null)}
+          url={api.baselines.exportHtmlUrl(projectId, previewing.id)}
+          filename={`baseline-${previewing.id}.html`}
+          title={`Línea base ${previewing.label}`}
+        />
+      ) : null}
     </div>
   );
 }

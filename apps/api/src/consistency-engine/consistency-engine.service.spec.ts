@@ -62,6 +62,11 @@ describe('ConsistencyEngineService', () => {
       expect(result.totalArtifacts).toBe(1);
       expect(result.issues.length).toBe(1);
       expect(result.issues[0]?.rule).toBe('Requirement Reference');
+      // User-facing message must stay fully in Spanish (AGENTS.md §29) — the
+      // rule id above is the only place an English identifier belongs.
+      expect(result.issues[0]?.message).toBe(
+        'El requisito REQ-1 no está referenciado por ningún caso de uso.',
+      );
       expect(result.issues[0]?.affectedArtifactIds).toContain('req-1');
     });
 
@@ -95,6 +100,9 @@ describe('ConsistencyEngineService', () => {
       expect(result.totalArtifacts).toBe(1);
       expect(result.issues.length).toBe(1);
       expect(result.issues[0]?.rule).toBe('Mockup Association');
+      expect(result.issues[0]?.message).toBe(
+        "La pantalla 'Home Screen' del plano de interfaz UI-1 no tiene un boceto asociado.",
+      );
       expect(result.issues[0]?.affectedArtifactIds).toContain('ui-1');
     });
 
@@ -123,6 +131,9 @@ describe('ConsistencyEngineService', () => {
       expect(result.totalArtifacts).toBe(1);
       expect(result.issues.length).toBe(1);
       expect(result.issues[0]?.rule).toBe('Navigation Node Link');
+      expect(result.issues[0]?.message).toBe(
+        "El nodo de navegación 'Home Node' en NAV-1 no tiene una pantalla de plano de interfaz correspondiente.",
+      );
       expect(result.issues[0]?.affectedArtifactIds).toContain('nav-1');
     });
 
@@ -163,6 +174,9 @@ describe('ConsistencyEngineService', () => {
       expect(result.totalArtifacts).toBe(2);
       expect(result.issues.length).toBe(1);
       expect(result.issues[0]?.rule).toBe('Unique Use Case Name');
+      expect(result.issues[0]?.message).toBe(
+        'El nombre del caso de uso está duplicado (2 ocurrencias).',
+      );
       expect(result.issues[0]?.affectedArtifactIds).toContain('uc-1');
       expect(result.issues[0]?.affectedArtifactIds).toContain('uc-2');
     });
