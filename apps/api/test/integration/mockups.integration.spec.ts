@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { approved } from './support/construction-fixtures';
 import { createTestContext, createWorkspace, type TestContext } from './support/test-app';
 
 const uiBlueprint = {
@@ -49,6 +50,8 @@ describe('Mockups integration', () => {
       'APPROVED',
     );
     approvedBlueprintVersionId = blueprint.version.id;
+    // New projects paint their mockups with an approved theme (DEC-118).
+    await approved(ctx, projectId, 'DESIGN_THEME');
   });
   afterAll(async () => ctx.close());
 

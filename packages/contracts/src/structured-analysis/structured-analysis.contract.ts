@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { designThemeContentSchema } from './design-theme.contract';
 
 // Shared "structured content + candidate-first AI generation + optional
 // deterministic diagram" family (spec §13/§14/§15/§17). Each kind has its
@@ -13,6 +14,7 @@ export const STRUCTURED_ANALYSIS_KINDS = [
   'GENERATION_PLAN',
   'CONCEPTUAL_DOMAIN_MODEL',
   'IMPLEMENTATION_PLAN',
+  'DESIGN_THEME',
 ] as const;
 export type StructuredAnalysisKind = (typeof STRUCTURED_ANALYSIS_KINDS)[number];
 
@@ -563,6 +565,7 @@ export const STRUCTURED_ANALYSIS_CONTENT_SCHEMAS = {
   GENERATION_PLAN: generationPlanContentSchema,
   CONCEPTUAL_DOMAIN_MODEL: conceptualDomainModelContentSchema,
   IMPLEMENTATION_PLAN: implementationPlanContentSchema,
+  DESIGN_THEME: designThemeContentSchema,
 } as const;
 
 const structuredAnalysisContentSchema = z.union([
@@ -573,6 +576,7 @@ const structuredAnalysisContentSchema = z.union([
   generationPlanContentSchema,
   conceptualDomainModelContentSchema,
   implementationPlanContentSchema,
+  designThemeContentSchema,
 ]);
 
 export const structuredAnalysisInputSchema = z
@@ -606,7 +610,12 @@ export const structuredAnalysisListResponseSchema = z.object({
 });
 
 export const generateStructuredAnalysisRequestSchema = z
-  .object({ sourceVersionIds: z.array(z.uuid()).min(1).max(100) })
+  .object({
+    sourceVersionIds: z.array(z.uuid()).min(1).max(100),
+    // Optional user adjustment (e.g. "más cálida"); treated as data, never as
+    // system instructions.
+    instruction: z.string().trim().min(1).max(500).optional(),
+  })
   .strict();
 export const acceptStructuredAnalysisCandidatesRequestSchema = z
   .object({ candidateIds: z.array(z.uuid()).min(1).max(5) })

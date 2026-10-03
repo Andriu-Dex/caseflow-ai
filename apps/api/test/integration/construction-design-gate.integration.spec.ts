@@ -89,6 +89,7 @@ describe('Construction Design Gate integration', () => {
       'CONCEPTUAL_DOMAIN_MODEL',
       'NAVIGATION_TREE',
       'UI_BLUEPRINT',
+      'DESIGN_THEME',
       'MOCKUP',
     ]);
     for (const entry of res.body.entries)

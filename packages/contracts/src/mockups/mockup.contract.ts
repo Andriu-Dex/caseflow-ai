@@ -51,6 +51,8 @@ export const mockupResponseSchema = z.object({
   projectId: z.uuid(),
   code: z.string(),
   uiBlueprintVersionId: z.uuid(),
+  // Approved theme the mockup was painted with (DEC-118); null = standard design.
+  designThemeVersionId: z.uuid().nullable(),
   deviceType: z.enum(MOCKUP_DEVICE_TYPES),
   version: mockupVersionSchema,
   createdAt: z.iso.datetime(),

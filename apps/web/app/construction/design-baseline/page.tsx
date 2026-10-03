@@ -22,6 +22,7 @@ const ROLE_LABELS: Record<DesignBaselineRole, string> = {
   CONCEPTUAL_DOMAIN_MODEL: 'Modelo conceptual',
   NAVIGATION_TREE: 'Navegación',
   UI_BLUEPRINT: 'Plano de interfaz',
+  DESIGN_THEME: 'Tema y colores',
   MOCKUP: 'Boceto',
   SOFTWARE_ARCHITECTURE: 'Arquitectura de software',
   SYSTEM_ARCHITECTURE: 'Arquitectura de sistema',
@@ -32,6 +33,7 @@ const STRUCTURED_ROLES: StructuredRole[] = [
   'CONCEPTUAL_DOMAIN_MODEL',
   'NAVIGATION_TREE',
   'UI_BLUEPRINT',
+  'DESIGN_THEME',
   'SOFTWARE_ARCHITECTURE',
   'SYSTEM_ARCHITECTURE',
 ];
@@ -79,13 +81,23 @@ function DesignBaselineContent({ projectId }: { projectId: string }) {
     return result;
   }, [structured]);
 
+  // The theme is preselected when there is one: it is mandatory for new
+  // projects (the API enforces it) and optional for older ones.
   const choice = (role: DesignBaselineRole) =>
-    selected[role] ?? (REQUIRED.has(role) ? options[role]?.[0]?.versionId : undefined);
+    role in selected
+      ? selected[role]
+      : REQUIRED.has(role) || role === 'DESIGN_THEME'
+        ? options[role]?.[0]?.versionId
+        : undefined;
   const uiBlueprintVersionId = choice('UI_BLUEPRINT');
-  // The frozen mockup must come from the frozen UI blueprint version.
+  const themeVersionId = choice('DESIGN_THEME') ?? null;
+  // The frozen mockup must come from the frozen UI blueprint and theme versions.
   const mockupOptions: Option[] = (mockups.data?.items ?? [])
     .filter(
-      (m) => m.version.status === 'APPROVED' && m.uiBlueprintVersionId === uiBlueprintVersionId,
+      (m) =>
+        m.version.status === 'APPROVED' &&
+        m.uiBlueprintVersionId === uiBlueprintVersionId &&
+        m.designThemeVersionId === themeVersionId,
     )
     .map((m) => ({ versionId: m.version.id, label: `${m.code} (v${m.version.versionNumber})` }));
   const mockupVersionId =
@@ -131,7 +143,7 @@ function DesignBaselineContent({ projectId }: { projectId: string }) {
       {list.length === 0 && REQUIRED.has(role) ? (
         <span className="text-xs text-amber-600 dark:text-amber-400">
           {role === 'MOCKUP'
-            ? 'No hay un boceto aprobado generado desde el plano de interfaz seleccionado.'
+            ? 'No hay un boceto aprobado generado desde el plano de interfaz y el tema seleccionados.'
             : `Aún no hay una versión aprobada de ${ROLE_LABELS[role].toLowerCase()}.`}
         </span>
       ) : (

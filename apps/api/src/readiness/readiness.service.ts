@@ -49,6 +49,8 @@ export class ReadinessService {
       swResult,
       sysResult,
       blueprintResult,
+      themeResult,
+      project,
     ] = await Promise.all([
       this.sourcesStage(projectId),
       this.contextStage(projectId),
@@ -59,6 +61,11 @@ export class ReadinessService {
       this.snapshot.approvedArtifactVersion(projectId, 'SOFTWARE_ARCHITECTURE'),
       this.snapshot.approvedArtifactVersion(projectId, 'SYSTEM_ARCHITECTURE'),
       this.snapshot.approvedArtifactVersion(projectId, 'UI_BLUEPRINT'),
+      this.snapshot.approvedArtifactVersion(projectId, 'DESIGN_THEME'),
+      this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { designThemeRequired: true },
+      }),
     ]);
 
     const useCaseDiagramStage = await this.useCaseDiagramStage(
@@ -87,7 +94,13 @@ export class ReadinessService {
       'Plano de interfaz',
       blueprintResult,
     );
-    const mockupsStage = await this.mockupsStage(projectId, blueprintResult);
+    const themeRequired = project?.designThemeRequired ?? true;
+    const designThemeStage = this.designThemeStage(themeRequired, themeResult);
+    const mockupsStage = await this.mockupsStage(
+      projectId,
+      blueprintResult,
+      themeRequired && !themeResult ? undefined : themeResult,
+    );
     const impactStage = await this.impactStage(projectId);
 
     const stages: ReadinessStage[] = [
@@ -102,6 +115,7 @@ export class ReadinessService {
       softwareArchitectureStage,
       systemArchitectureStage,
       uiBlueprintStage,
+      designThemeStage,
       mockupsStage,
       impactStage,
     ];
@@ -279,7 +293,7 @@ export class ReadinessService {
   }
 
   private singleArtifactStage(
-    key: 'DATA_MODEL' | 'UI_BLUEPRINT',
+    key: 'DATA_MODEL' | 'UI_BLUEPRINT' | 'DESIGN_THEME',
     label: string,
     result: { code: string; versionId: string } | null,
   ): ReadinessStage {
@@ -295,6 +309,22 @@ export class ReadinessService {
       blockers: satisfied ? [] : [`Falta aprobar: ${label.toLowerCase()}.`],
       nextAction: satisfied ? null : `Aprobar ${label.toLowerCase()}.`,
     });
+  }
+
+  // DEC-118: required for projects created after the theme step existed;
+  // older projects keep the standard design unless they approve a theme.
+  private designThemeStage(
+    required: boolean,
+    theme: { code: string; versionId: string } | null,
+  ): ReadinessStage {
+    if (!theme && !required)
+      return stage({
+        key: 'DESIGN_THEME',
+        label: 'Tema y colores',
+        satisfied: true,
+        summary: 'Este proyecto usa el diseño estándar de CASEFlow.',
+      });
+    return this.singleArtifactStage('DESIGN_THEME', 'Tema y colores', theme);
   }
 
   private async erDiagramStage(
@@ -367,7 +397,18 @@ export class ReadinessService {
   private async mockupsStage(
     projectId: string,
     blueprint: { code: string; versionId: string } | null,
+    // undefined: a required theme is still missing; null: standard design.
+    theme: { code: string; versionId: string } | null | undefined,
   ): Promise<ReadinessStage> {
+    if (blueprint && theme === undefined)
+      return stage({
+        key: 'MOCKUPS',
+        label: 'Bocetos',
+        satisfied: false,
+        summary: 'Aún no hay un tema aprobado con el que pintar los bocetos.',
+        blockers: ['Apruebe el tema y los colores antes de generar los bocetos.'],
+        nextAction: 'Aprobar el tema y los colores.',
+      });
     if (!blueprint)
       return stage({
         key: 'MOCKUPS',
@@ -388,8 +429,11 @@ export class ReadinessService {
         },
       },
     });
+    const themeVersionId = theme?.versionId ?? null;
     const match = mockups.find(
-      (m) => m.versions[0]?.mockupDetail?.uiBlueprintVersionId === blueprint.versionId,
+      (m) =>
+        m.versions[0]?.mockupDetail?.uiBlueprintVersionId === blueprint.versionId &&
+        (m.versions[0].mockupDetail.designThemeVersionId ?? null) === themeVersionId,
     );
     const satisfied = Boolean(match);
     return stage({
@@ -398,7 +442,9 @@ export class ReadinessService {
       satisfied,
       summary: satisfied
         ? `${match!.code} aprobado, derivado exactamente de ${blueprint.code}.`
-        : `Falta aprobar un boceto generado a partir del plano de interfaz ${blueprint.code} vigente.`,
+        : theme
+          ? `Falta aprobar un boceto generado a partir del plano de interfaz ${blueprint.code} y el tema ${theme.code} vigentes.`
+          : `Falta aprobar un boceto generado a partir del plano de interfaz ${blueprint.code} vigente.`,
       evidence: match ? { artifactVersionId: match.versions[0]!.id, code: match.code } : undefined,
       blockers: satisfied
         ? []

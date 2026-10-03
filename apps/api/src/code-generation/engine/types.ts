@@ -1,4 +1,4 @@
-import type { ImplementationPlanContent } from '@caseflow-ai/contracts';
+import type { DesignThemeContent, ImplementationPlanContent } from '@caseflow-ai/contracts';
 import { findCatalogDependency, type TargetTemplateVersion } from '@caseflow-ai/domain';
 import { PlanGenerationError } from '../naming';
 
@@ -22,6 +22,8 @@ export interface GenerationContext {
   projectName: string;
   // npm-safe workspace name, e.g. "tienda-demo".
   slug: string;
+  // The theme the Design Baseline froze (DEC-118); absent = standard design.
+  theme?: { code: string; content: DesignThemeContent };
 }
 
 // Workspace package scope; internal packages are @app/contracts and @app/api-client.

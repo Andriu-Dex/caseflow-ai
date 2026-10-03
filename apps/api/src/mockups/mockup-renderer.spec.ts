@@ -38,6 +38,45 @@ describe('MockupRenderer', () => {
     expect(() => sanitizeDiagramSvg(first)).not.toThrow();
   });
 
+  it('paints the wireframe with the approved theme (DEC-118)', () => {
+    const content = {
+      screens: [
+        {
+          localId: 'home',
+          name: 'Inicio',
+          purpose: 'p',
+          targetActors: [],
+          relatedUseCaseCodes: [],
+          sections: ['Resumen'],
+          primaryActions: ['Crear'],
+          secondaryActions: [],
+          principalData: [],
+          forms: [],
+          states: [],
+        },
+      ],
+    };
+    const dark = {
+      background: '#101010',
+      foreground: '#fafafa',
+      primary: '#0e7490',
+      primaryForeground: '#f0f9ff',
+      secondary: '#262626',
+      secondaryForeground: '#e5e5e5',
+      accent: '#a16207',
+      accentForeground: '#fffbeb',
+      muted: '#171717',
+      mutedForeground: '#a3a3a3',
+      destructive: '#f87171',
+      destructiveForeground: '#101010',
+      border: '#404040',
+    };
+    const svg = renderer.render(content, 'DESKTOP', { name: 'Noche', mode: 'DARK', dark });
+    expect(svg).toContain('fill="#0e7490"');
+    expect(svg).toContain('fill="#171717"');
+    expect(svg).not.toContain('#4f46e5');
+  });
+
   it('escapes unsafe screen/section/action text instead of injecting raw markup', () => {
     const content = {
       screens: [

@@ -4,6 +4,7 @@ import { GenerationOverlay } from './generation-overlay';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   ConceptualDomainModelContent,
+  DesignThemeContent,
   DiagramResponse,
   GenerationPlanContent,
   ImplementationPlanContent,
@@ -34,6 +35,7 @@ import {
   GenerationPlanManualForm,
 } from './construction-manual-forms';
 import { ImplementationPlanManualForm } from './implementation-plan-manual-form';
+import { DesignThemeManualForm, DesignThemePreview } from './design-theme';
 import {
   ImplementationPlanArtifacts,
   ImplementationPlanDetail,
@@ -64,6 +66,7 @@ const MANUAL_FORMS: Record<
   GENERATION_PLAN: GenerationPlanManualForm,
   CONCEPTUAL_DOMAIN_MODEL: ConceptualDomainModelManualForm,
   IMPLEMENTATION_PLAN: ImplementationPlanManualForm,
+  DESIGN_THEME: DesignThemeManualForm,
 };
 
 type SourceType =
@@ -101,6 +104,7 @@ const ELIGIBLE_SOURCES: Record<StructuredAnalysisKind, SourceType[]> = {
   CONCEPTUAL_DOMAIN_MODEL: ['GENERATION_PLAN', 'REQUIREMENT', 'USE_CASE', 'DATA_MODEL'],
   // Sources come from the chosen Design Baseline, not from this picker.
   IMPLEMENTATION_PLAN: [],
+  DESIGN_THEME: ['REQUIREMENT', 'UI_BLUEPRINT'],
 };
 
 const SOURCE_LABELS: Record<SourceType, string> = {
@@ -422,6 +426,8 @@ function renderContentDetail(kind: StructuredAnalysisKind, content: unknown) {
         </div>
       );
     }
+    case 'DESIGN_THEME':
+      return <DesignThemePreview content={content as DesignThemeContent} />;
     case 'IMPLEMENTATION_PLAN':
       return <ImplementationPlanDetail content={content as ImplementationPlanContent} />;
     case 'CONCEPTUAL_DOMAIN_MODEL': {
@@ -512,6 +518,9 @@ export function StructuredKindPage({
   const [editing, setEditing] = useState<StructuredAnalysisResponse | null>(null);
   const [generating, setGenerating] = useState(false);
   const [approvingId, setApprovingId] = useState<string | null>(null);
+  // Optional adjustment the AI applies to every proposal (theme only).
+  const [instruction, setInstruction] = useState('');
+  const isTheme = kind === 'DESIGN_THEME';
   const ManualForm = MANUAL_FORMS[kind];
   // An Implementation Plan starts from an approved Design Baseline (the
   // backend resolves its frozen versions as sources), not a free selection.
@@ -559,7 +568,14 @@ export function StructuredKindPage({
     }
     setGenerating(true);
     try {
-      setGeneration(await api.structuredAnalysis.generate(projectId, kind, selectedIds));
+      setGeneration(
+        await api.structuredAnalysis.generate(
+          projectId,
+          kind,
+          selectedIds,
+          isTheme ? instruction.trim() || undefined : undefined,
+        ),
+      );
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'No se pudo generar la propuesta.');
     } finally {
@@ -717,6 +733,20 @@ export function StructuredKindPage({
               </div>
             </>
           )}
+          {isTheme ? (
+            <label className="mt-3 flex flex-col gap-1 text-sm">
+              <span className="text-xs text-muted-foreground">
+                Ajuste opcional para las tres propuestas:
+              </span>
+              <input
+                className="rounded-md border border-input bg-background px-2 py-1.5"
+                maxLength={500}
+                placeholder="Por ejemplo: más cálida, verde corporativo, tonos sobrios"
+                value={instruction}
+                onChange={(e) => setInstruction(e.target.value)}
+              />
+            </label>
+          ) : null}
           <div className="mt-3 flex flex-wrap gap-2">
             <Button
               type="button"
@@ -768,6 +798,13 @@ export function StructuredKindPage({
         <CandidateReview
           generation={generation}
           describe={(c) => String(c.title ?? c.name ?? c.candidateId)}
+          renderDetail={
+            isTheme
+              ? (c) => <DesignThemePreview content={c.content as DesignThemeContent} />
+              : undefined
+          }
+          // Theme proposals are alternatives: the user keeps one of them.
+          defaultSelected={isTheme ? generation.candidates.slice(0, 1).map((c) => c.id) : undefined}
           onAccept={async (ids) => {
             await api.structuredAnalysis.accept(projectId, kind, generation.id, ids);
             invalidate();
@@ -847,16 +884,18 @@ export function StructuredKindPage({
                         />
                       </div>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      type="button"
-                      onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
-                      aria-expanded={expandedId === item.id}
-                      className="mt-2 text-muted-foreground underline"
-                    >
-                      {expandedId === item.id ? 'Ocultar detalle' : 'Ver detalle'}
-                    </Button>
+                    {isTheme ? null : (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        type="button"
+                        onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
+                        aria-expanded={expandedId === item.id}
+                        className="mt-2 text-muted-foreground underline"
+                      >
+                        {expandedId === item.id ? 'Ocultar detalle' : 'Ver detalle'}
+                      </Button>
+                    )}
                     {/* UI Blueprint has no diagram: its visual form is the Mockup step. */}
                     {KINDS_WITH_DIAGRAM.has(kind) ? (
                       <Button
@@ -874,7 +913,10 @@ export function StructuredKindPage({
                         {diagrams[item.id] ? 'Ocultar diagrama' : 'Ver diagrama'}
                       </Button>
                     ) : null}
-                    {expandedId === item.id ? renderContentDetail(kind, item.content) : null}
+                    {/* A theme is judged by looking at it: its preview is always shown. */}
+                    {expandedId === item.id || isTheme
+                      ? renderContentDetail(kind, item.content)
+                      : null}
                     {expandedId === item.id && kind === 'IMPLEMENTATION_PLAN' ? (
                       <ImplementationPlanArtifacts projectId={projectId} planId={item.id} />
                     ) : null}

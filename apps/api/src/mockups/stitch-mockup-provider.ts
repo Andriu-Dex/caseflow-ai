@@ -1,4 +1,8 @@
-import type { MockupDeviceType, UiBlueprintContent } from '@caseflow-ai/contracts';
+import type {
+  DesignThemeContent,
+  MockupDeviceType,
+  UiBlueprintContent,
+} from '@caseflow-ai/contracts';
 import {
   MockupProviderError,
   type EditedScreen,
@@ -28,9 +32,10 @@ export class StitchMockupProvider implements MockupProvider {
     content: UiBlueprintContent,
     deviceType: MockupDeviceType = 'DESKTOP',
     refinement?: string,
+    theme?: DesignThemeContent,
   ): Promise<MockupGenerationResult> {
     return this.withTimeout(
-      () => this.generateWithSdk(content, deviceType, refinement),
+      () => this.generateWithSdk(content, deviceType, refinement, theme),
       'La generación del boceto excedió el tiempo límite.',
       'El proveedor de bocetos no está disponible.',
     );
@@ -65,6 +70,7 @@ export class StitchMockupProvider implements MockupProvider {
     content: UiBlueprintContent,
     deviceType: MockupDeviceType,
     refinement?: string,
+    theme?: DesignThemeContent,
   ): Promise<MockupGenerationResult> {
     const { Stitch, StitchToolClient } = await importSdk();
     const sdk = new Stitch(
@@ -74,7 +80,7 @@ export class StitchMockupProvider implements MockupProvider {
     const screens = await Promise.all(
       content.screens.map(async (screen): Promise<GeneratedScreen> => {
         const generated = await project.generate(
-          this.buildPrompt(screen, deviceType, refinement),
+          this.buildPrompt(screen, deviceType, refinement, theme),
           deviceType,
         );
         const [imageUrl, htmlUrl] = await Promise.all([generated.getImage(), generated.getHtml()]);
@@ -136,6 +142,20 @@ export class StitchMockupProvider implements MockupProvider {
     return `Modifica solo lo indicado y conserva el resto del diseño, el contenido y la estructura de la pantalla: ${prompt}`;
   }
 
+  // Stitch draws one design: the light palette when the app supports both.
+  private themePrompt(theme: DesignThemeContent): string {
+    const palette = theme.light ?? theme.dark!;
+    return [
+      `Usa exactamente esta paleta de colores (${theme.light ? 'modo claro' : 'modo oscuro'}):`,
+      `fondo ${palette.background}, texto ${palette.foreground},`,
+      `color primario ${palette.primary} con texto ${palette.primaryForeground},`,
+      `secundario ${palette.secondary} con texto ${palette.secondaryForeground},`,
+      `acento ${palette.accent} con texto ${palette.accentForeground},`,
+      `superficies atenuadas ${palette.muted} con texto ${palette.mutedForeground},`,
+      `acciones destructivas ${palette.destructive} y bordes ${palette.border}.`,
+    ].join(' ');
+  }
+
   private fullResolutionImageUrl(
     imageUrl: string,
     screenWidth: unknown,
@@ -195,6 +215,7 @@ export class StitchMockupProvider implements MockupProvider {
     screen: UiBlueprintContent['screens'][number],
     deviceType: MockupDeviceType,
     refinement?: string,
+    theme?: DesignThemeContent,
   ): string {
     return [
       deviceType === 'MOBILE'
@@ -218,6 +239,7 @@ export class StitchMockupProvider implements MockupProvider {
       screen.relatedUseCaseCodes.length
         ? `Casos de uso relacionados: ${screen.relatedUseCaseCodes.join(', ')}.`
         : '',
+      theme ? this.themePrompt(theme) : '',
       // Last, so it adjusts the design without replacing the blueprint above.
       refinement
         ? `Ajustes solicitados por el usuario (aplícalos sin eliminar el contenido anterior): ${refinement}`

@@ -309,6 +309,17 @@ export class TraceabilityService {
         toId: m.artifactVersionId,
       });
 
+    // DESIGN_THEME_SOURCE_FOR_MOCKUP
+    const themedMockups = await this.prisma.mockupDetail.findMany({
+      where: { artifactVersionId: { in: nodeIds }, designThemeVersionId: { in: nodeIds } },
+    });
+    for (const m of themedMockups)
+      edges.push({
+        type: 'DESIGN_THEME_SOURCE_FOR_MOCKUP',
+        fromId: m.designThemeVersionId!,
+        toId: m.artifactVersionId,
+      });
+
     if (edges.length > TRACEABILITY_MAX_EDGES) {
       truncated = true;
       edges.length = TRACEABILITY_MAX_EDGES;

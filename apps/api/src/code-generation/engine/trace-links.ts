@@ -54,7 +54,13 @@ export function planTraceLinks(
         planElement,
         linkType,
       });
-      for (const code of citations.get(planElement) ?? []) {
+      // "design-theme:TEM-001" cites the frozen theme itself.
+      const cited =
+        citations.get(planElement) ??
+        (planElement.startsWith('design-theme:')
+          ? [planElement.slice('design-theme:'.length)]
+          : []);
+      for (const code of cited) {
         const versionId = frozenVersionsByCode.get(code);
         if (versionId)
           add({ path: file.path, sourceArtifactVersionId: versionId, planElement, linkType });

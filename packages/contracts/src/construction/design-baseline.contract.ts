@@ -8,6 +8,7 @@ export const DESIGN_BASELINE_ROLES = [
   'CONCEPTUAL_DOMAIN_MODEL',
   'NAVIGATION_TREE',
   'UI_BLUEPRINT',
+  'DESIGN_THEME',
   'MOCKUP',
   'SOFTWARE_ARCHITECTURE',
   'SYSTEM_ARCHITECTURE',
@@ -32,6 +33,8 @@ export const createDesignBaselineRequestSchema = z
         CONCEPTUAL_DOMAIN_MODEL: z.uuid(),
         NAVIGATION_TREE: z.uuid(),
         UI_BLUEPRINT: z.uuid(),
+        // Required only for projects created after DEC-118 (checked by the API).
+        DESIGN_THEME: z.uuid().optional(),
         MOCKUP: z.uuid(),
         SOFTWARE_ARCHITECTURE: z.uuid().optional(),
         SYSTEM_ARCHITECTURE: z.uuid().optional(),

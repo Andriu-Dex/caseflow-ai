@@ -217,6 +217,54 @@ describe('generateProject', () => {
     expect(paths.get('apps/api/src/sales/order.service.spec.ts')!.kind).toBe('TEST');
   });
 
+  // DEC-118: the frozen theme becomes Tailwind variables; BOTH adds a toggle.
+  it('paints the frontend with the frozen theme and adds a toggle for BOTH', () => {
+    const light = {
+      background: '#ffffff',
+      foreground: '#0f172a',
+      primary: '#4338ca',
+      primaryForeground: '#ffffff',
+      secondary: '#e2e8f0',
+      secondaryForeground: '#1e293b',
+      accent: '#ccfbf1',
+      accentForeground: '#134e4a',
+      muted: '#f1f5f9',
+      mutedForeground: '#475569',
+      destructive: '#b91c1c',
+      destructiveForeground: '#ffffff',
+      border: '#cbd5e1',
+    };
+    const dark = { ...light, background: '#0f172a', foreground: '#f8fafc' };
+    const themed = byPath(
+      generateProject({
+        ...ctx(),
+        theme: { code: 'TEM-001', content: { name: 'Océano', mode: 'BOTH', light, dark } },
+      }),
+    );
+    const css = themed.get('apps/web/app/globals.css')!;
+    expect(css.content).toContain('--color-primary-foreground: #ffffff;');
+    expect(css.content).toMatch(/\.dark \{\n {2}--color-background: #0f172a;/);
+    expect(css.planElements).toEqual(['design-theme:TEM-001']);
+    expect(themed.get('apps/web/components/theme-toggle.tsx')).toBeDefined();
+    expect(themed.get('apps/web/components/theme-toggle.spec.tsx')!.kind).toBe('TEST');
+    expect(themed.get('apps/web/app/layout.tsx')!.content).toContain('<ThemeToggle />');
+
+    const lightOnly = byPath(
+      generateProject({
+        ...ctx(),
+        theme: { code: 'TEM-001', content: { name: 'Claro', mode: 'LIGHT', light } },
+      }),
+    );
+    expect(lightOnly.get('apps/web/app/globals.css')!.content).not.toContain('.dark');
+    expect(lightOnly.get('apps/web/components/theme-toggle.tsx')).toBeUndefined();
+    expect(lightOnly.get('apps/web/app/layout.tsx')!.content).not.toContain('ThemeToggle');
+
+    // Without a theme the standard design is emitted unchanged.
+    expect(paths.get('apps/web/app/globals.css')!.content).toContain(
+      '--color-primary: oklch(0.51 0.2 268);',
+    );
+  });
+
   it('never puts secrets in .env.example', () => {
     const env = paths.get('.env.example')!.content;
     expect(env).toContain('JWT_SECRET=change-me');

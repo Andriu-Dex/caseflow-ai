@@ -17,12 +17,15 @@ import {
   type MockupGenerationJobPayload,
 } from '@caseflow-ai/domain';
 import {
+  designThemeContentSchema,
   uiBlueprintContentSchema,
   type ArtifactVersionStatus,
+  type DesignThemeContent,
   type MockupDeviceType,
   type MockupJobResponse,
 } from '@caseflow-ai/contracts';
 import { PrismaService } from '../database/prisma.service';
+import { FirstDeliverableSnapshotService } from '../first-deliverable/first-deliverable-snapshot.service';
 import type { Prisma } from '../generated/prisma/client';
 import { sanitizeDiagramSvg } from '../data-models/svg-sanitizer';
 import {
@@ -62,8 +65,9 @@ type StoredScreen = {
   stitchScreenId: string | null;
   refinementPrompt: string | null;
 };
-type StoredGeneration =
-  { kind: 'INTERNAL_WIREFRAME'; svg: string } | { kind: 'STITCH'; screens: StoredScreen[] };
+type StoredGeneration = (
+  { kind: 'INTERNAL_WIREFRAME'; svg: string } | { kind: 'STITCH'; screens: StoredScreen[] }
+) & { designThemeVersionId: string | null };
 
 @Injectable()
 export class MockupsService {
@@ -83,6 +87,7 @@ export class MockupsService {
     deviceType: MockupDeviceType = 'DESKTOP',
   ): Promise<MockupJobResponse> {
     await this.assertApprovedBlueprint(projectId, uiBlueprintVersionId);
+    await this.currentTheme(projectId);
     return this.enqueueJob(projectId, uiBlueprintVersionId, null, deviceType);
   }
 
@@ -93,6 +98,7 @@ export class MockupsService {
     deviceType: MockupDeviceType = 'DESKTOP',
   ): Promise<MockupJobResponse> {
     await this.assertApprovedBlueprint(projectId, uiBlueprintVersionId);
+    await this.currentTheme(projectId);
     const exists = await this.prisma.artifact.findFirst({
       where: { id: mockupId, projectId, artifactTypeCode: 'MOCKUP' },
       select: { id: true },
@@ -278,6 +284,35 @@ export class MockupsService {
       );
   }
 
+  // DEC-118: mockups are painted with the project's current approved theme.
+  // Projects that require one cannot generate mockups without it; older
+  // projects without a theme keep the standard design (null).
+  private async currentTheme(
+    projectId: string,
+  ): Promise<{ versionId: string; content: DesignThemeContent } | null> {
+    const [theme, project] = await Promise.all([
+      new FirstDeliverableSnapshotService(this.prisma).approvedArtifactVersion(
+        projectId,
+        'DESIGN_THEME',
+      ),
+      this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { designThemeRequired: true },
+      }),
+    ]);
+    if (!theme) {
+      if (project?.designThemeRequired)
+        throw new UnprocessableEntityException(
+          'Apruebe el tema y los colores antes de generar los bocetos.',
+        );
+      return null;
+    }
+    const detail = await this.prisma.structuredAnalysisDetail.findUniqueOrThrow({
+      where: { artifactVersionId: theme.versionId },
+    });
+    return { versionId: theme.versionId, content: designThemeContentSchema.parse(detail.content) };
+  }
+
   async list(projectId: string) {
     const rows = await this.prisma.artifact.findMany({
       where: { projectId, artifactTypeCode: 'MOCKUP', archivedAt: null },
@@ -441,12 +476,15 @@ export class MockupsService {
         'Se requiere una versión exacta APPROVED de plano de interfaz del mismo proyecto.',
       );
     const content = uiBlueprintContentSchema.parse(source.structuredAnalysisDetail.content);
+    const theme = await this.currentTheme(projectId);
+    const designThemeVersionId = theme?.versionId ?? null;
     let generated: MockupGenerationResult;
     try {
       generated = await this.mockupProvider.generate(
         content,
         deviceType,
         refinementPrompt ?? undefined,
+        theme?.content,
       );
     } catch (error) {
       if (error instanceof MockupProviderError)
@@ -459,7 +497,7 @@ export class MockupsService {
         'Stitch no está disponible; no se pudo aplicar la edición del boceto.',
       );
     if (generated.kind === 'INTERNAL_WIREFRAME')
-      return { kind: generated.kind, svg: sanitizeDiagramSvg(generated.svg) };
+      return { kind: generated.kind, svg: sanitizeDiagramSvg(generated.svg), designThemeVersionId };
     if (
       generated.screens.length !== content.screens.length ||
       new Set(generated.screens.map((screen) => screen.screenLocalId)).size !==
@@ -469,7 +507,11 @@ export class MockupsService {
     const expectedIds = new Set(content.screens.map((screen) => screen.localId));
     if (generated.screens.some((screen) => !expectedIds.has(screen.screenLocalId)))
       throw new ServiceUnavailableException('El proveedor devolvió pantallas inesperadas.');
-    const screens: StoredGeneration & { kind: 'STITCH' } = { kind: 'STITCH', screens: [] };
+    const screens: StoredGeneration & { kind: 'STITCH' } = {
+      kind: 'STITCH',
+      screens: [],
+      designThemeVersionId,
+    };
     for (const screen of generated.screens)
       screens.screens.push({
         screenLocalId: screen.screenLocalId,
@@ -513,6 +555,8 @@ export class MockupsService {
     const assets = await this.storeScreenAssets(projectId, edited.image, edited.html);
     return {
       kind: 'STITCH',
+      // An in-place edit keeps the palette the screens were painted with.
+      designThemeVersionId: detail.designThemeVersionId,
       screens: detail.screens.map((s) =>
         s.id === target.id
           ? {
@@ -637,6 +681,7 @@ export class MockupsService {
         uiBlueprintVersionId,
         deviceType,
         refinementPrompt,
+        designThemeVersionId: generated.designThemeVersionId,
         generatorKind: generated.kind,
         generatorVersion:
           generated.kind === 'STITCH' ? 'stitch-sdk-0.3.5' : MOCKUP_GENERATOR_VERSION,
@@ -749,7 +794,11 @@ export class MockupsService {
       status: string;
       origin: string;
       createdAt: Date;
-      mockupDetail: { uiBlueprintVersionId: string; deviceType: MockupDeviceType } | null;
+      mockupDetail: {
+        uiBlueprintVersionId: string;
+        designThemeVersionId: string | null;
+        deviceType: MockupDeviceType;
+      } | null;
     },
   ) {
     return {
@@ -757,6 +806,7 @@ export class MockupsService {
       projectId: artifact.projectId,
       code: artifact.code,
       uiBlueprintVersionId: version.mockupDetail!.uiBlueprintVersionId,
+      designThemeVersionId: version.mockupDetail!.designThemeVersionId,
       deviceType: version.mockupDetail!.deviceType,
       version: {
         id: version.id,

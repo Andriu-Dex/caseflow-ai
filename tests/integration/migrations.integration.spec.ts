@@ -89,7 +89,11 @@ describe('official Prisma migrations on caseflow_test', () => {
     // excluded here rather than asserted away.
     const seededCodes = rows.map((row) => row.code).filter((code) => code !== 'GENERIC_TEST_TYPE');
     expect(seededCodes.sort()).toEqual(
-      [...FIRST_DELIVERABLE_ARTIFACT_TYPE_CODES, ...CONSTRUCTION_ARTIFACT_TYPE_CODES].sort(),
+      [
+        ...FIRST_DELIVERABLE_ARTIFACT_TYPE_CODES,
+        ...CONSTRUCTION_ARTIFACT_TYPE_CODES,
+        'DESIGN_THEME',
+      ].sort(),
     );
   });
 

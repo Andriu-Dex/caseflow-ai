@@ -71,6 +71,51 @@ describe('StitchMockupProvider', () => {
     expect(prompt).toContain('CU-001');
   });
 
+  it('asks Stitch to use the approved palette (DEC-118)', () => {
+    const provider = new StitchMockupProvider({ apiKey: 'test', timeoutMs: 100 });
+    const buildPrompt = (
+      provider as unknown as {
+        buildPrompt: (
+          screen: unknown,
+          device: 'DESKTOP',
+          refinement?: string,
+          theme?: unknown,
+        ) => string;
+      }
+    ).buildPrompt.bind(provider);
+    const screen = {
+      name: 'Pedidos',
+      purpose: 'Registrar un pedido',
+      targetActors: [],
+      sections: [],
+      primaryActions: [],
+      secondaryActions: [],
+      forms: [],
+      principalData: [],
+      states: [],
+      relatedUseCaseCodes: [],
+    };
+    const dark = {
+      background: '#101010',
+      foreground: '#fafafa',
+      primary: '#0e7490',
+      primaryForeground: '#f0f9ff',
+      secondary: '#262626',
+      secondaryForeground: '#e5e5e5',
+      accent: '#a16207',
+      accentForeground: '#fffbeb',
+      muted: '#171717',
+      mutedForeground: '#a3a3a3',
+      destructive: '#f87171',
+      destructiveForeground: '#101010',
+      border: '#404040',
+    };
+    const prompt = buildPrompt(screen, 'DESKTOP', undefined, { name: 'Noche', mode: 'DARK', dark });
+    expect(prompt).toContain('modo oscuro');
+    expect(prompt).toContain('color primario #0e7490 con texto #f0f9ff');
+    expect(buildPrompt(screen, 'DESKTOP')).not.toContain('paleta');
+  });
+
   it('bounds the overall provider wait so fallback can proceed', async () => {
     const provider = new StitchMockupProvider({ apiKey: 'test', timeoutMs: 5 });
     (

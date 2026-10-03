@@ -47,11 +47,13 @@ beforeEach(() => {
       {
         code: 'MCK-001',
         uiBlueprintVersionId: 'UI_BLUEPRINT-v1',
+        designThemeVersionId: 'DESIGN_THEME-v1',
         version: { id: 'mock-v1', versionNumber: 1, status: 'APPROVED' },
       },
       {
         code: 'MCK-002',
         uiBlueprintVersionId: 'UI_BLUEPRINT-v2',
+        designThemeVersionId: 'DESIGN_THEME-v1',
         version: { id: 'mock-v2', versionNumber: 1, status: 'APPROVED' },
       },
     ],
@@ -86,8 +88,42 @@ describe('DesignBaselinePage', () => {
         CONCEPTUAL_DOMAIN_MODEL: 'CONCEPTUAL_DOMAIN_MODEL-v1',
         NAVIGATION_TREE: 'NAVIGATION_TREE-v1',
         UI_BLUEPRINT: 'UI_BLUEPRINT-v2',
+        DESIGN_THEME: 'DESIGN_THEME-v1',
         MOCKUP: 'mock-v2',
       },
+    });
+  });
+
+  // DEC-118: older projects without a theme keep freezing their unthemed mockup.
+  it('freezes a design without a theme when the project has none', async () => {
+    const user = userEvent.setup();
+    mocks.listStructured.mockImplementation(async (_: string, kind: string) => ({
+      items: kind === 'DESIGN_THEME' || kind.endsWith('ARCHITECTURE') ? [] : [approved(kind, 1)],
+    }));
+    mocks.listMockups.mockResolvedValue({
+      items: [
+        {
+          code: 'MCK-001',
+          uiBlueprintVersionId: 'UI_BLUEPRINT-v1',
+          designThemeVersionId: null,
+          version: { id: 'mock-v1', versionNumber: 1, status: 'APPROVED' },
+        },
+      ],
+    });
+    render(
+      <TestProviders>
+        <DesignBaselinePage />
+      </TestProviders>,
+    );
+    await user.type(await screen.findByPlaceholderText(/Nombre/), 'Diseño v1');
+    await user.click(screen.getByRole('button', { name: /aprobar y congelar/i }));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalled());
+    expect(mocks.create.mock.calls[0]![1].versions).toEqual({
+      GENERATION_PLAN: 'GENERATION_PLAN-v1',
+      CONCEPTUAL_DOMAIN_MODEL: 'CONCEPTUAL_DOMAIN_MODEL-v1',
+      NAVIGATION_TREE: 'NAVIGATION_TREE-v1',
+      UI_BLUEPRINT: 'UI_BLUEPRINT-v1',
+      MOCKUP: 'mock-v1',
     });
   });
 

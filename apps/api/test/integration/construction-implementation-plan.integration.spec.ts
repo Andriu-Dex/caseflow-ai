@@ -142,10 +142,11 @@ describe('Construction Implementation Plan integration', () => {
       baselineId,
     );
     expect(generation.candidates[0]!.content).toMatchObject({ designBaselineId: baselineId });
-    // The mockup has no structured content; every other frozen version is a source.
+    // The mockup has no structured content and the theme only paints the
+    // frontend (read from the baseline); every other frozen version is a source.
     expect(generation.sources.map((s) => s.artifactVersionId).sort()).toEqual(
       Object.entries(frozen)
-        .filter(([role]) => role !== 'MOCKUP')
+        .filter(([role]) => role !== 'MOCKUP' && role !== 'DESIGN_THEME')
         .map(([, id]) => id)
         .sort(),
     );

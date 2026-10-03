@@ -1,5 +1,7 @@
 import {
   conceptualDomainModelContentSchema,
+  designThemeContentSchema,
+  designThemeContrastIssues,
   generationPlanContentSchema,
   implementationPlanContentSchema,
   navigationTreeContentSchema,
@@ -28,6 +30,15 @@ export function evaluateStructuredGeneration(
   content: unknown,
   sources: GenerationSourceReference[],
 ): GenerationQualityFinding[] {
+  // A theme cites no sources; its review concern is accessibility. Low
+  // contrast is a warning here (the candidate can still be fixed after
+  // accepting it) and blocks approval later.
+  if (kind === 'DESIGN_THEME')
+    return designThemeContrastIssues(designThemeContentSchema.parse(content)).map((issue) => ({
+      severity: 'WARNING',
+      code: 'LOW_CONTRAST',
+      message: issue.message,
+    }));
   const findings: GenerationQualityFinding[] = [];
   const allowed = new Set(sources.map((source) => source.code));
   const useCaseCodes = new Set(
