@@ -14,6 +14,7 @@ export const STAGE_LINKS: Record<string, string> = {
   SOFTWARE_ARCHITECTURE: '/design/software-architecture',
   SYSTEM_ARCHITECTURE: '/design/system-architecture',
   UI_BLUEPRINT: '/design/ui-blueprint',
+  DESIGN_THEME: '/design/theme',
   MOCKUPS: '/design/mockups',
   IMPACT: '/traceability',
 };
@@ -30,11 +31,12 @@ export const ROUTE_STAGE_KEYS: Record<string, string[]> = {
   '/design/software-architecture': ['SOFTWARE_ARCHITECTURE'],
   '/design/system-architecture': ['SYSTEM_ARCHITECTURE'],
   '/design/ui-blueprint': ['UI_BLUEPRINT'],
+  '/design/theme': ['DESIGN_THEME'],
   '/design/mockups': ['MOCKUPS'],
   '/traceability': ['IMPACT'],
 };
 
-// Sequential position of each route within the 11-step Construction
+// Sequential position of each route within the 12-step Construction
 // Pipeline shown by the sidebar stepper (Home and Readiness/Export are the
 // map/gate bookends, not numbered steps themselves).
 export const ROUTE_STEP_NUMBER: Record<string, number> = {
@@ -47,11 +49,12 @@ export const ROUTE_STEP_NUMBER: Record<string, number> = {
   '/design/software-architecture': 7,
   '/design/system-architecture': 8,
   '/design/ui-blueprint': 9,
-  '/design/mockups': 10,
-  '/traceability': 11,
+  '/design/theme': 10,
+  '/design/mockups': 11,
+  '/traceability': 12,
 };
 
-export const TOTAL_PIPELINE_STEPS = 11;
+export const TOTAL_PIPELINE_STEPS = 12;
 
 // Ordered pipeline steps (route + label), used to find "the next step" and
 // to determine whether a step is reachable (every earlier step satisfied).
@@ -65,8 +68,9 @@ export const PIPELINE_STEPS: { step: number; href: string; label: string }[] = [
   { step: 7, href: '/design/software-architecture', label: 'Arquitectura de software' },
   { step: 8, href: '/design/system-architecture', label: 'Arquitectura de sistema' },
   { step: 9, href: '/design/ui-blueprint', label: 'Plano de interfaz' },
-  { step: 10, href: '/design/mockups', label: 'Bocetos' },
-  { step: 11, href: '/traceability', label: 'Trazabilidad' },
+  { step: 10, href: '/design/theme', label: 'Tema y colores' },
+  { step: 11, href: '/design/mockups', label: 'Bocetos' },
+  { step: 12, href: '/traceability', label: 'Trazabilidad' },
 ];
 
 export type StepReadiness = 'satisfied' | 'next' | 'pending' | 'unknown';

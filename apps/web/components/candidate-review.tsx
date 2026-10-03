@@ -2,7 +2,7 @@
 
 import { Check, Sparkles, X } from 'lucide-react';
 import { Button } from '@caseflow-ai/ui';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { ApiError, type GenerationCandidate, type GenerationResult } from '../lib/api';
 
@@ -12,15 +12,21 @@ import { ApiError, type GenerationCandidate, type GenerationResult } from '../li
 export function CandidateReview({
   generation,
   describe,
+  renderDetail,
+  defaultSelected,
   onAccept,
   onDismiss,
 }: {
   generation: GenerationResult;
   describe: (candidate: GenerationCandidate) => string;
+  renderDetail?: (candidate: GenerationCandidate) => ReactNode;
+  defaultSelected?: string[];
   onAccept: (candidateIds: string[]) => Promise<void>;
   onDismiss: () => void;
 }) {
-  const [selected, setSelected] = useState<string[]>(generation.candidates.map((c) => c.id));
+  const [selected, setSelected] = useState<string[]>(
+    defaultSelected ?? generation.candidates.map((c) => c.id),
+  );
   const [busy, setBusy] = useState(false);
   const total = generation.candidates.length;
   const allSelected = selected.length === total;
@@ -98,6 +104,7 @@ export function CandidateReview({
                 />
                 <span className="text-foreground">
                   {describe(c)}
+                  {renderDetail?.(c)}
                   {c.qualityFindings?.length ? (
                     <span className="mt-1 block space-y-1 text-xs">
                       {c.qualityFindings.map((finding, index) => (

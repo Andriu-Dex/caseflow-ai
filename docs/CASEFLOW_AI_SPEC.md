@@ -7679,7 +7679,7 @@ Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones
 
 ## 221.1 Rutas de trabajo (DEC-116, ADR-001)
 
-Cada proyecto se crea en una ruta: **Completa** (`FULL`, los 11 pasos con revisión humana), **Exprés** (`EXPRESS`, planificación generada desde un prompt y aprobada en bloque) o **Solo construcción** (`BUILD_ONLY`, planificación oculta y aprobación automática hasta la app validada). Solo se sube de ruta, nunca se baja.
+Cada proyecto se crea en una ruta: **Completa** (`FULL`, los 12 pasos con revisión humana), **Exprés** (`EXPRESS`, planificación generada desde un prompt y aprobada en bloque) o **Solo construcción** (`BUILD_ONLY`, planificación oculta y aprobación automática hasta la app validada). Solo se sube de ruta, nunca se baja.
 
 En todas las rutas se mantienen: el prompt inicial como `PROJECT_SOURCE`, la planificación completa y trazable, la generación incremental por etapas (DEC-111), la validación en sandbox (§174–§175), el catálogo de dependencias (§155) y los snapshots inmutables (§172). El origen de cada aprobación (`HUMAN`, `HUMAN_BULK`, `AUTOMATIC`) se registra y nunca se reescribe. La única exención es la de §160 para `BUILD_ONLY`.
 
@@ -7692,6 +7692,16 @@ El proveedor "ChatGPT" (plan usage de OpenAI, Responses API) existe solo en la e
 ## 221.3 Tema y paleta del proyecto (DEC-118, ADR-003)
 
 Artefacto versionado `DESIGN_THEME` (`TEM-`): modo `LIGHT`, `DARK` o `BOTH` y paleta de tokens semánticos con contraste WCAG AA obligatorio. Rol obligatorio en la Design Baseline solo para proyectos nuevos; las líneas base existentes no se modifican. Lo consumen tanto los bocetos (§159) como el frontend generado (§169).
+
+Implementación:
+
+- **Paso 10 "Tema y colores"** (`/design/theme`), entre Plano de interfaz y Bocetos: la planificación pasa a tener 12 pasos. La etapa de preparación `DESIGN_THEME` se cumple con un tema aprobado o, en proyectos anteriores sin tema, con el diseño estándar.
+- **Proyectos nuevos frente a existentes:** `projects.design_theme_required` es `false` para los proyectos que ya existían al migrar y `true` para todos los nuevos.
+- **Tokens:** `background`, `foreground`, `primary`, `secondary`, `accent`, `muted` y `destructive` (cada uno con su `*Foreground`) más `border`, en hexadecimal `#RRGGBB`.
+- **Contraste:** mínimo 4.5:1 en cada texto sobre su superficie y en `destructive` sobre `background`. Una paleta que no lo cumple se marca en la propuesta y no puede aprobarse.
+- **Generación:** la IA propone tres paletas alternativas (tres candidatos) a partir de los requisitos y el plano de interfaz aprobados, con un ajuste opcional del usuario ("más cálida"). Un cambio a un tema existente es una nueva versión.
+- **Bocetos:** se pintan con el tema aprobado vigente y registran su versión (`mockup_details.design_theme_version_id`, arista de trazabilidad `DESIGN_THEME_SOURCE_FOR_MOCKUP`). La línea base exige que el boceto congelado use el tema congelado.
+- **Frontend generado:** el tema congelado se emite como variables de Tailwind en `globals.css`, trazado al tema. Con `BOTH`, `.dark` redefine los tokens y se agrega un selector de tema con su prueba.
 
 ## 221.4 Fuera de alcance de estas extensiones
 

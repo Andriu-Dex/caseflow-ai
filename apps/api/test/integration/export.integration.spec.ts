@@ -10,6 +10,7 @@ import { renderExportHtml } from '../../src/export/export-html';
 import type { KnowledgeBaseService } from '../../src/knowledge-base/knowledge-base.service';
 import { StructuredAnalysisService } from '../../src/structured-analysis/structured-analysis.service';
 import { UseCasesService } from '../../src/use-cases/use-cases.service';
+import { approved } from './support/construction-fixtures';
 import { createTestContext, createWorkspace, type TestContext } from './support/test-app';
 
 const disabledKb: Pick<KnowledgeBaseService, 'retrieve'> = { retrieve: async () => [] };
@@ -141,7 +142,7 @@ describe('Export (First Deliverable, Phase H)', () => {
 
     const snapshot = await ctx.export.buildSnapshot(projectId);
     expect(snapshot.readiness).toMatchObject({ projectId, ready: false });
-    expect(snapshot.readiness.stages).toHaveLength(13);
+    expect(snapshot.readiness.stages).toHaveLength(14);
     expect(snapshot.stalenessSummary).toMatchObject({ projectId, entries: [] });
     expect(snapshot.traceabilitySummary).toEqual({ nodeCount: 0, edgeCount: 0, truncated: false });
   });
@@ -215,6 +216,9 @@ describe('Export (First Deliverable, Phase H)', () => {
       blueprint.version.id,
       'APPROVED',
     );
+
+    // New projects paint their mockups with an approved theme (DEC-118).
+    await approved(ctx, projectId, 'DESIGN_THEME');
 
     const mockupJob = await ctx.mockups.create(projectId, blueprint.version.id);
     await ctx.mockups.runJob(mockupJob.id);
@@ -579,6 +583,9 @@ describe('Export (First Deliverable, Phase H)', () => {
       'APPROVED',
     );
 
+    // New projects paint their mockups with an approved theme (DEC-118).
+    await approved(ctx, projectId, 'DESIGN_THEME');
+
     const mockupJob = await ctx.mockups.create(projectId, blueprintAccepted.version.id);
     await ctx.mockups.runJob(mockupJob.id);
     const finishedMockupJob = await ctx.mockups.getJob(projectId, mockupJob.id);
@@ -606,7 +613,7 @@ describe('Export (First Deliverable, Phase H)', () => {
     expect(snapshot.mockups).toHaveLength(1);
 
     expect(snapshot.readiness).toBeTruthy();
-    expect(snapshot.readiness.stages).toHaveLength(13);
+    expect(snapshot.readiness.stages).toHaveLength(14);
     expect(snapshot.stalenessSummary).toBeTruthy();
     expect(snapshot.traceabilitySummary.nodeCount).toBeGreaterThan(0);
 

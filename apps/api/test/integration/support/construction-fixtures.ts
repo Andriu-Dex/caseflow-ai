@@ -32,6 +32,40 @@ export const CONTENT: Partial<Record<StructuredAnalysisKind, Record<string, unkn
     decisions: [],
     components: [{ localId: 'api', name: 'API' }],
   },
+  DESIGN_THEME: {
+    name: 'Índigo',
+    mode: 'BOTH',
+    light: {
+      background: '#ffffff',
+      foreground: '#0f172a',
+      primary: '#4338ca',
+      primaryForeground: '#ffffff',
+      secondary: '#e2e8f0',
+      secondaryForeground: '#1e293b',
+      accent: '#ccfbf1',
+      accentForeground: '#134e4a',
+      muted: '#f1f5f9',
+      mutedForeground: '#475569',
+      destructive: '#b91c1c',
+      destructiveForeground: '#ffffff',
+      border: '#cbd5e1',
+    },
+    dark: {
+      background: '#0f172a',
+      foreground: '#f8fafc',
+      primary: '#818cf8',
+      primaryForeground: '#0f172a',
+      secondary: '#1e293b',
+      secondaryForeground: '#f1f5f9',
+      accent: '#134e4a',
+      accentForeground: '#ccfbf1',
+      muted: '#1e293b',
+      mutedForeground: '#94a3b8',
+      destructive: '#f87171',
+      destructiveForeground: '#0f172a',
+      border: '#334155',
+    },
+  },
   SYSTEM_ARCHITECTURE: {
     boundary: 'Tienda',
     links: [],
@@ -61,11 +95,14 @@ export async function approvedMockup(ctx: TestContext, pid: string, uiBlueprintV
 // Approved versions for every required Design Baseline role.
 export async function freezableDesign(ctx: TestContext, pid: string) {
   const ui = await approved(ctx, pid, 'UI_BLUEPRINT');
+  // New projects freeze their theme, and mockups are painted with it (DEC-118).
+  const theme = await approved(ctx, pid, 'DESIGN_THEME');
   return {
     GENERATION_PLAN: (await approved(ctx, pid, 'GENERATION_PLAN')).version.id,
     CONCEPTUAL_DOMAIN_MODEL: (await approved(ctx, pid, 'CONCEPTUAL_DOMAIN_MODEL')).version.id,
     NAVIGATION_TREE: (await approved(ctx, pid, 'NAVIGATION_TREE')).version.id,
     UI_BLUEPRINT: ui.version.id,
+    DESIGN_THEME: theme.version.id,
     MOCKUP: (await approvedMockup(ctx, pid, ui.version.id)).version.id,
   };
 }

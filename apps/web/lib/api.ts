@@ -477,6 +477,7 @@ export const api = {
         GENERATION_PLAN: 'generation-plan',
         CONCEPTUAL_DOMAIN_MODEL: 'conceptual-domain-model',
         IMPLEMENTATION_PLAN: 'implementation-plan',
+        DESIGN_THEME: 'design-theme',
       })[kind],
     list: (projectId: string, kind: StructuredAnalysisKind) =>
       get<{ items: StructuredAnalysisResponse[] }>(
@@ -504,10 +505,15 @@ export const api = {
       ),
     diagramPngUrl: (projectId: string, kind: StructuredAnalysisKind, id: string) =>
       `${BASE_URL}/projects/${projectId}/${api.structuredAnalysis.basePath(kind)}/${id}/diagram/png`,
-    generate: (projectId: string, kind: StructuredAnalysisKind, sourceVersionIds: string[]) =>
+    generate: (
+      projectId: string,
+      kind: StructuredAnalysisKind,
+      sourceVersionIds: string[],
+      instruction?: string,
+    ) =>
       post<GenerationResult>(
         `/projects/${projectId}/${api.structuredAnalysis.basePath(kind)}/generate`,
-        { sourceVersionIds },
+        { sourceVersionIds, ...(instruction ? { instruction } : {}) },
       ),
     // An Implementation Plan is generated from an approved Design Baseline.
     generateImplementationPlan: (projectId: string, designBaselineId: string) =>

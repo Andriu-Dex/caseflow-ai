@@ -6,6 +6,7 @@ import { DataModelsService } from '../../src/data-models/data-models.service';
 import { DiagramEngine } from '../../src/data-models/diagram-engine';
 import { StructuredAnalysisService } from '../../src/structured-analysis/structured-analysis.service';
 import { UseCasesService } from '../../src/use-cases/use-cases.service';
+import { approved } from './support/construction-fixtures';
 import { createTestContext, createWorkspace, type TestContext } from './support/test-app';
 
 const FAKE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><g></g></svg>';
@@ -290,6 +291,9 @@ describe('Traceability graph integration', () => {
       'APPROVED',
     );
 
+    // New projects paint their mockups with an approved theme (DEC-118).
+    const theme = await approved(ctx, projectId, 'DESIGN_THEME');
+
     const mockupJob = await ctx.mockups.create(projectId, blueprintAccepted.version.id);
     await ctx.mockups.runJob(mockupJob.id);
     const finishedMockupJob = await ctx.mockups.getJob(projectId, mockupJob.id);
@@ -375,6 +379,11 @@ describe('Traceability graph integration', () => {
     expect(edges).toContainEqual({
       type: 'UI_BLUEPRINT_SOURCE_FOR_MOCKUP',
       fromId: blueprintNode.id,
+      toId: mockupNode.id,
+    });
+    expect(edges).toContainEqual({
+      type: 'DESIGN_THEME_SOURCE_FOR_MOCKUP',
+      fromId: theme.version.id,
       toId: mockupNode.id,
     });
 

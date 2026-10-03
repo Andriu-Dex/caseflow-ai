@@ -15,7 +15,7 @@ import { ProjectSwitcher } from './project-switcher';
 type NavItem = { href: string; label: string };
 
 // The Construction group (forward engineering, AGENTS.md §10) comes after
-// the 11-step planning pipeline, not alongside it: collapsing it until
+// the 12-step planning pipeline, not alongside it: collapsing it until
 // planning is done keeps the sidebar reading as one stepper instead of two
 // unrelated flows, and avoids the user clicking into a page whose every
 // action the backend would reject anyway (no approved plan yet).
@@ -49,11 +49,12 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
       { href: '/design/software-architecture', label: 'Arquitectura de software' },
       { href: '/design/system-architecture', label: 'Arquitectura de sistema' },
       { href: '/design/ui-blueprint', label: 'Plano de interfaz' },
+      { href: '/design/theme', label: 'Tema y colores' },
       { href: '/design/mockups', label: 'Bocetos' },
     ],
   },
   {
-    // Step 11, the last of the numbered planning pipeline — stays unlabeled
+    // Step 12, the last of the numbered planning pipeline — stays unlabeled
     // like the "Inicio" group, continuing the stepper visually instead of
     // reading as a sibling of the two project-level tools below it.
     label: '',
@@ -72,7 +73,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   {
     // Not numbered readiness steps: construction gates are enforced by the
     // backend (approved plan → approved design baseline → generation). Comes
-    // after the numbered 1-11 pipeline (it ends at Trazabilidad), never
+    // after the numbered 1-12 pipeline (it ends at Trazabilidad), never
     // between two of its steps — Construction is what follows planning, not
     // a step within it.
     label: 'Construcción',
@@ -179,10 +180,10 @@ export function AppShell({ children }: { children: ReactNode }) {
                   </div>
                   <button
                     type="button"
-                    title="Complete los 11 pasos de planificación para habilitar la construcción"
+                    title="Complete los 12 pasos de planificación para habilitar la construcción"
                     onClick={() =>
                       setLockedMessage(
-                        'Complete los 11 pasos de planificación (Fuentes a Trazabilidad) antes de iniciar la construcción del proyecto.',
+                        'Complete los 12 pasos de planificación (Fuentes a Trazabilidad) antes de iniciar la construcción del proyecto.',
                       )
                     }
                     className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-sm font-medium text-sidebar-foreground/40 transition-colors hover:bg-white/5"

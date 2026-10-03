@@ -50,8 +50,10 @@ export abstract class BaseStructuredAnalysisController {
   ) {
     return this.service.version(projectId, this.kind, id, body.title, body.content);
   }
-  generate(projectId: string, body: { sourceVersionIds: string[] }) {
-    return this.service.generate(projectId, this.kind, body.sourceVersionIds);
+  generate(projectId: string, body: { sourceVersionIds: string[]; instruction?: string }) {
+    return this.service.generate(projectId, this.kind, body.sourceVersionIds, {
+      instruction: body.instruction,
+    });
   }
   generation(projectId: string, generationId: string) {
     return this.service.getGeneration(projectId, this.kind, generationId);

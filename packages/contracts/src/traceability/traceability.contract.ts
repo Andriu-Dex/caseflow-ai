@@ -19,6 +19,7 @@ export const TRACEABILITY_ARTIFACT_TYPES = [
   'GENERATION_PLAN',
   'CONCEPTUAL_DOMAIN_MODEL',
   'IMPLEMENTATION_PLAN',
+  'DESIGN_THEME',
 ] as const;
 export type TraceabilityArtifactType = (typeof TRACEABILITY_ARTIFACT_TYPES)[number];
 
@@ -30,6 +31,7 @@ export const TRACEABILITY_EDGE_TYPES = [
   'SOURCE_FOR_DIAGRAM',
   'SOURCE_FOR_STRUCTURED_ANALYSIS',
   'UI_BLUEPRINT_SOURCE_FOR_MOCKUP',
+  'DESIGN_THEME_SOURCE_FOR_MOCKUP',
 ] as const;
 export type TraceabilityEdgeType = (typeof TRACEABILITY_EDGE_TYPES)[number];
 

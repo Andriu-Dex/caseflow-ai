@@ -91,6 +91,7 @@ enum StructuredAnalysisKind {
   GENERATION_PLAN
   CONCEPTUAL_DOMAIN_MODEL
   IMPLEMENTATION_PLAN
+  DESIGN_THEME
 
   @@map("structured_analysis_kind")
 }
@@ -287,16 +288,19 @@ model Workspace {
 
 // Main functional unit of the system (spec §3.2). Domain-independent.
 model Project {
-  id          String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  workspaceId String          @map("workspace_id") @db.Uuid
-  name        String
-  description String?
-  language    ProjectLanguage @default(ES)
-  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                  String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId         String          @map("workspace_id") @db.Uuid
+  name                String
+  description         String?
+  language            ProjectLanguage @default(ES)
+  createdAt           DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   // Archival (spec §87): hides the project from active use once it has
   // approved history and therefore can no longer be hard-deleted.
-  archivedAt  DateTime?       @map("archived_at") @db.Timestamptz(6)
+  archivedAt          DateTime?       @map("archived_at") @db.Timestamptz(6)
+  // DEC-118: projects created before the theme step existed keep the
+  // standard design (false); new projects must approve a theme (true).
+  designThemeRequired Boolean         @default(true) @map("design_theme_required")
 
   workspace                     Workspace                      @relation(fields: [workspaceId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   artifacts                     Artifact[]
@@ -400,6 +404,7 @@ model ArtifactVersion {
   structuredAnalysisGenerationSources StructuredAnalysisGenerationSource[]
   mockupDetail                        MockupDetail?                        @relation("MockupOwnVersion")
   mockupsSourcedFromHere              MockupDetail[]                       @relation("MockupUiBlueprintSource")
+  mockupsThemedFromHere               MockupDetail[]                       @relation("MockupDesignThemeSource")
   projectContextSourceLinks           ProjectContextSource[]
   projectBaselineEntries              ProjectBaselineEntry[]
   designBaselineEntries               DesignBaselineEntry[]
@@ -1144,9 +1149,12 @@ model MockupDetail {
   svg                  String?
   // User instruction that produced this version by refining the previous one; null for plain generation.
   refinementPrompt     String?             @map("refinement_prompt")
+  // Exact approved theme the mockup was painted with; null = standard design.
+  designThemeVersionId String?             @map("design_theme_version_id") @db.Uuid
 
   artifactVersion    ArtifactVersion      @relation("MockupOwnVersion", fields: [artifactVersionId], references: [id], onDelete: Restrict)
   uiBlueprintVersion ArtifactVersion      @relation("MockupUiBlueprintSource", fields: [uiBlueprintVersionId], references: [id], onDelete: Restrict)
+  designThemeVersion ArtifactVersion?     @relation("MockupDesignThemeSource", fields: [designThemeVersionId], references: [id], onDelete: Restrict)
   screens            MockupScreenDetail[]
 
   @@map("mockup_details")
@@ -1354,6 +1362,7 @@ enum DesignBaselineRole {
   CONCEPTUAL_DOMAIN_MODEL
   NAVIGATION_TREE
   UI_BLUEPRINT
+  DESIGN_THEME
   MOCKUP
   SOFTWARE_ARCHITECTURE
   SYSTEM_ARCHITECTURE

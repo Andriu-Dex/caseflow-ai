@@ -1,4 +1,9 @@
-import type { ImplementationPlanContent } from '@caseflow-ai/contracts';
+import {
+  DESIGN_THEME_TOKENS,
+  type DesignThemeContent,
+  type DesignThemePalette,
+  type ImplementationPlanContent,
+} from '@caseflow-ai/contracts';
 import { lowerFirst, pluralize, upperFirst } from '../naming';
 import { createSchemaName, inputRelations } from './contracts.templates';
 import {
@@ -19,6 +24,131 @@ type Route = Plan['routes'][number];
 // Tailwind + shadcn-style primitives, React Hook Form + Zod (the same
 // contracts the API validates with), TanStack Query over the generated
 // OpenAPI client — never hand-written fetch calls per screen (AGENTS.md §20).
+
+const STANDARD_GLOBALS_CSS = `@import 'tailwindcss';
+
+@theme {
+  --color-background: oklch(0.99 0.002 265);
+  --color-foreground: oklch(0.21 0.02 265);
+  --color-muted: oklch(0.96 0.005 265);
+  --color-muted-foreground: oklch(0.5 0.02 265);
+  --color-primary: oklch(0.51 0.2 268);
+  --color-primary-foreground: oklch(0.99 0 0);
+  --color-destructive: oklch(0.58 0.22 27);
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+}
+`;
+
+// "primaryForeground" -> "--color-primary-foreground: #ffffff;"
+const cssVariables = (palette: DesignThemePalette, indent: string) =>
+  DESIGN_THEME_TOKENS.map(
+    (token) =>
+      `${indent}--color-${token.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}: ${palette[token]};`,
+  ).join('\n');
+
+// DEC-118: the approved palette as Tailwind theme variables. With BOTH, the
+// light palette is the default and `.dark` on <html> swaps every token.
+function globalsCss(theme: DesignThemeContent | undefined): string {
+  if (!theme) return STANDARD_GLOBALS_CSS;
+  const base = theme.light ?? theme.dark!;
+  return `@import 'tailwindcss';
+
+@theme {
+${cssVariables(base, '  ')}
+}
+${
+  theme.mode === 'BOTH'
+    ? `
+.dark {
+${cssVariables(theme.dark!, '  ')}
+  color-scheme: dark;
+}
+`
+    : ''
+}
+:root {
+  color-scheme: ${theme.mode === 'DARK' ? 'dark' : 'light'};
+}
+
+*,
+::before,
+::after {
+  border-color: var(--color-border);
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+}
+`;
+}
+
+const THEME_TOGGLE = `'use client';
+
+import { Moon, Sun } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Button } from './ui/button';
+
+const STORAGE_KEY = 'theme';
+
+// Light/dark switch: the saved choice wins, otherwise the system preference.
+export function ThemeToggle() {
+  const [dark, setDark] = useState(false);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem(STORAGE_KEY);
+    const initial = saved
+      ? saved === 'dark'
+      : window.matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.classList.toggle('dark', initial);
+    setDark(initial);
+  }, []);
+
+  const toggle = () => {
+    const next = !dark;
+    document.documentElement.classList.toggle('dark', next);
+    window.localStorage.setItem(STORAGE_KEY, next ? 'dark' : 'light');
+    setDark(next);
+  };
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      onClick={toggle}
+      aria-label={dark ? 'Usar tema claro' : 'Usar tema oscuro'}
+    >
+      {dark ? <Sun className="size-4" aria-hidden /> : <Moon className="size-4" aria-hidden />}
+    </Button>
+  );
+}
+`;
+
+const THEME_TOGGLE_SPEC = `import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { ThemeToggle } from './theme-toggle';
+
+describe('ThemeToggle', () => {
+  afterEach(() => {
+    cleanup();
+    window.localStorage.clear();
+    document.documentElement.classList.remove('dark');
+  });
+
+  it('switches to dark and remembers the choice', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: false });
+    render(<ThemeToggle />);
+    fireEvent.click(screen.getByRole('button', { name: 'Usar tema oscuro' }));
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+    expect(window.localStorage.getItem('theme')).toBe('dark');
+    expect(screen.getByRole('button', { name: 'Usar tema claro' })).toBeTruthy();
+  });
+});
+`;
 
 const labelOf = (name: string) =>
   upperFirst(name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase());
@@ -283,7 +413,8 @@ ${links.map((l) => `        <li>\n          <Link className="block rounded-lg bo
 }
 
 export function frontendFiles(ctx: GenerationContext): GeneratedProjectFile[] {
-  const { plan, template, projectName } = ctx;
+  const { plan, template, projectName, theme } = ctx;
+  const themeToggle = theme?.content.mode === 'BOTH';
   const auth = plan.authentication.required;
   const hasE2E = plan.tests.some((t) => t.kind === 'E2E');
   const entityById = new Map(plan.entities.map((e) => [e.localId, e]));
@@ -392,27 +523,10 @@ export default defineConfig({
 `,
       { kind: 'CONFIG' },
     ),
-    file(
-      'apps/web/app/globals.css',
-      `@import 'tailwindcss';
-
-@theme {
-  --color-background: oklch(0.99 0.002 265);
-  --color-foreground: oklch(0.21 0.02 265);
-  --color-muted: oklch(0.96 0.005 265);
-  --color-muted-foreground: oklch(0.5 0.02 265);
-  --color-primary: oklch(0.51 0.2 268);
-  --color-primary-foreground: oklch(0.99 0 0);
-  --color-destructive: oklch(0.58 0.22 27);
-}
-
-body {
-  background: var(--color-background);
-  color: var(--color-foreground);
-}
-`,
-      { kind: 'SOURCE' },
-    ),
+    file('apps/web/app/globals.css', globalsCss(theme?.content), {
+      kind: 'SOURCE',
+      planElements: theme ? [`design-theme:${theme.code}`] : [],
+    }),
     file(
       'apps/web/lib/utils.ts',
       `import { clsx, type ClassValue } from 'clsx';
@@ -620,7 +734,7 @@ export function Providers({ children }: { children: ReactNode }) {
       `import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { AppNav } from '../components/app-nav';
-import { Providers } from './providers';
+${themeToggle ? "import { ThemeToggle } from '../components/theme-toggle';\n" : ''}import { Providers } from './providers';
 import './globals.css';
 
 export const metadata: Metadata = { title: ${JSON.stringify(projectName)} };
@@ -634,7 +748,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <aside className="border-b p-4 md:w-60 md:border-b-0 md:border-r">
               <p className="mb-4 px-3 font-semibold">${projectName.replace(/[<>{}]/g, '')}</p>
               <AppNav />
-            </aside>
+${themeToggle ? '              <div className="mt-4 px-3">\n                <ThemeToggle />\n              </div>\n' : ''}            </aside>
             <main className="flex-1 p-4 md:p-6">{children}</main>
           </div>
         </Providers>
@@ -645,6 +759,17 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 `,
     ),
   );
+
+  if (themeToggle)
+    files.push(
+      file('apps/web/components/theme-toggle.tsx', THEME_TOGGLE, {
+        planElements: [`design-theme:${theme!.code}`],
+      }),
+      file('apps/web/components/theme-toggle.spec.tsx', THEME_TOGGLE_SPEC, {
+        kind: 'TEST',
+        planElements: [`design-theme:${theme!.code}`],
+      }),
+    );
 
   if (!plan.routes.some((r) => r.path === '/'))
     files.push(

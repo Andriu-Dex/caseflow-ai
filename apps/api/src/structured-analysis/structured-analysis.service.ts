@@ -11,6 +11,9 @@ import { canTransitionArtifactVersionStatus, formatArtifactCode } from '@caseflo
 import { DiagramProviderError, type DiagramProvider } from '@caseflow-ai/integrations';
 import {
   STRUCTURED_ANALYSIS_CONTENT_SCHEMAS,
+  designThemeContentSchema,
+  designThemeContrastIssues,
+  designThemeGenerationOutputSchema,
   implementationPlanBodySchema,
   type StructuredAnalysisKind,
 } from '@caseflow-ai/contracts';
@@ -38,6 +41,7 @@ const KIND_LABELS: Record<StructuredAnalysisKind, string> = {
   GENERATION_PLAN: 'Plan de generación',
   CONCEPTUAL_DOMAIN_MODEL: 'Modelo conceptual',
   IMPLEMENTATION_PLAN: 'Plan de implementación',
+  DESIGN_THEME: 'Tema y colores',
 };
 
 // Construction gates whose approval is an audited event (AGENTS.md §35).
@@ -45,6 +49,7 @@ const APPROVAL_AUDIT_ACTIONS: Partial<Record<StructuredAnalysisKind, AuditAction
   GENERATION_PLAN: 'GENERATION_PLAN_APPROVED',
   CONCEPTUAL_DOMAIN_MODEL: 'CONCEPTUAL_DOMAIN_MODEL_APPROVED',
   IMPLEMENTATION_PLAN: 'IMPLEMENTATION_PLAN_APPROVED',
+  DESIGN_THEME: 'DESIGN_THEME_APPROVED',
 };
 
 interface KindConfig {
@@ -54,6 +59,8 @@ interface KindConfig {
   // What the AI proposes when the system fills part of the content itself.
   aiOutputSchema?: z.ZodType;
   maxContextChars?: number;
+  // Splits one AI answer into several alternative candidates (default: one).
+  candidates?: (data: Content) => Content[];
   diagram?: { format: DiagramFormat; generate: (content: Content) => string };
 }
 
@@ -92,6 +99,8 @@ const ELIGIBLE_SOURCE_TYPES: Record<StructuredAnalysisKind, string[]> = {
     'SOFTWARE_ARCHITECTURE',
     'SYSTEM_ARCHITECTURE',
   ],
+  // DEC-118: the palette follows what the app is for and who uses it.
+  DESIGN_THEME: ['REQUIREMENT', 'UI_BLUEPRINT'],
 };
 
 const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
@@ -168,6 +177,13 @@ const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
     maxOutputTokens: 16384,
     aiOutputSchema: implementationPlanBodySchema,
     maxContextChars: 40_000,
+  },
+  DESIGN_THEME: {
+    promptKey: 'design-theme.generate',
+    promptVersion: 1,
+    maxOutputTokens: 4096,
+    aiOutputSchema: designThemeGenerationOutputSchema,
+    candidates: (data) => data.palettes as Content[],
   },
 };
 
@@ -269,7 +285,7 @@ export class StructuredAnalysisService {
     projectId: string,
     kind: StructuredAnalysisKind,
     sourceVersionIds: string[],
-    options: { designBaselineId?: string } = {},
+    options: { designBaselineId?: string; instruction?: string } = {},
   ) {
     const unique = [...new Set(sourceVersionIds)];
     if (unique.length !== sourceVersionIds.length)
@@ -415,6 +431,14 @@ export class StructuredAnalysisService {
             role: 'user',
             content: serializedContext,
           },
+          ...(options.instruction
+            ? [
+                {
+                  role: 'user' as const,
+                  content: `Ajuste solicitado por el usuario: ${options.instruction}`,
+                },
+              ]
+            : []),
         ],
         outputSchema: (config.aiOutputSchema ??
           STRUCTURED_ANALYSIS_CONTENT_SCHEMAS[kind]) as unknown as z.ZodType<Content>,
@@ -432,15 +456,19 @@ export class StructuredAnalysisService {
             sourceId: source.id,
           })),
         });
-        await tx.structuredAnalysisCandidate.create({
-          data: {
+        const contents = config.candidates?.(result.data) ?? [result.data];
+        await tx.structuredAnalysisCandidate.createMany({
+          data: contents.map((content, index) => ({
             generationId: generation.id,
-            candidateId: 'candidate-1',
-            title: `${KIND_LABELS[kind]} (candidato)`,
+            candidateId: `candidate-${index + 1}`,
+            title:
+              contents.length > 1
+                ? `${KIND_LABELS[kind]} (candidato ${index + 1})`
+                : `${KIND_LABELS[kind]} (candidato)`,
             content: (options.designBaselineId
-              ? { ...result.data, designBaselineId: options.designBaselineId }
-              : result.data) as Prisma.InputJsonValue,
-          },
+              ? { ...content, designBaselineId: options.designBaselineId }
+              : content) as Prisma.InputJsonValue,
+          })),
         });
         return generation.id;
       });
@@ -563,6 +591,7 @@ export class StructuredAnalysisService {
     if (!version) throw new NotFoundException('Versión no encontrada.');
     if (!canTransitionArtifactVersionStatus(version.status, status))
       throw new UnprocessableEntityException('Transición de estado no permitida.');
+    if (kind === 'DESIGN_THEME' && status === 'APPROVED') await this.assertAccessibleTheme(id);
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.artifactVersion.update({
         where: { id },
@@ -716,6 +745,18 @@ export class StructuredAnalysisService {
         'Se requiere una línea base de diseño aprobada del mismo proyecto.',
       );
     return baseline.entries.map((entry) => entry.artifactVersionId);
+  }
+
+  // DEC-118: a palette below WCAG AA cannot be approved.
+  private async assertAccessibleTheme(versionId: string) {
+    const detail = await this.prisma.structuredAnalysisDetail.findUniqueOrThrow({
+      where: { artifactVersionId: versionId },
+    });
+    const issues = designThemeContrastIssues(designThemeContentSchema.parse(detail.content));
+    if (issues.length)
+      throw new UnprocessableEntityException(
+        `La paleta no cumple el contraste mínimo de accesibilidad (WCAG AA). ${issues[0]!.message}`,
+      );
   }
 
   // References inside content that the schema alone cannot check.

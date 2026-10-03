@@ -39,7 +39,7 @@ describe('AppShell construction group', () => {
       </TestProviders>,
     );
     await userEvent.click(await screen.findByRole('button', { name: /Construcción/ }));
-    expect(await screen.findByText(/Complete los 11 pasos de planificación/)).toBeInTheDocument();
+    expect(await screen.findByText(/Complete los 12 pasos de planificación/)).toBeInTheDocument();
   });
 
   it('expands the five Construction links once planning is complete (ready: true)', async () => {

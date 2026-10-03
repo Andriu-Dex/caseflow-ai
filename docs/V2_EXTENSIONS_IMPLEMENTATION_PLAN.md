@@ -6,7 +6,7 @@ Rama: `feat/v2-construction`. Complementa a `docs/V2_CONSTRUCTION_IMPLEMENTATION
 
 Decisiones tomadas con el dueño del proyecto (2026-10-03):
 
-1. **Tres rutas de trabajo**, elegidas al crear el proyecto: **Completa** (los 11 pasos con revisión humana; la ruta formal), **Exprés** (un prompt genera toda la planificación, revisada y aprobada en bloque) y **Solo construcción** (un prompt hasta la app validada, sin revisiones intermedias). Se puede **subir** de ruta (Solo construcción → Exprés → Completa), nunca bajar. Cada proyecto muestra una etiqueta visible con su ruta.
+1. **Tres rutas de trabajo**, elegidas al crear el proyecto: **Completa** (los 12 pasos con revisión humana; la ruta formal), **Exprés** (un prompt genera toda la planificación, revisada y aprobada en bloque) y **Solo construcción** (un prompt hasta la app validada, sin revisiones intermedias). Se puede **subir** de ruta (Solo construcción → Exprés → Completa), nunca bajar. Cada proyecto muestra una etiqueta visible con su ruta.
 2. **La ruta Solo construcción** genera igualmente una planificación mínima oculta (fuente, contexto, requisitos, modelo, navegación, plano de interfaz, planes) para poder subir de ruta después. Conserva sin excepción: sandbox Docker, catálogo de dependencias aprobadas, generación por etapas validada, `GeneratedProjectSnapshot` inmutable y trazabilidad.
 3. **Tema claro/oscuro/ambos y paleta de colores elegible**, congelados en la aprobación de diseño y usados tanto por los bocetos como por el frontend generado.
 4. **Edición de escritorio con Electron**, código abierto (Apache-2.0), sin pagos. La edición web tampoco tiene pagos.
@@ -73,7 +73,7 @@ Decisiones tomadas con el dueño del proyecto (2026-10-03):
 
 - Selector de ruta al crear el proyecto, con una explicación corta de cada una y la recomendación de la Completa para entregables formales.
 - Etiqueta de ruta en el selector de proyectos y en el encabezado.
-- El sidebar se adapta: la ruta Completa muestra los 11 pasos, la Exprés muestra el asistente y luego Construcción, y la de Solo construcción muestra el prompt, el progreso y el resultado. Acción "Subir a ruta…" con confirmación.
+- El sidebar se adapta: la ruta Completa muestra los 12 pasos, la Exprés muestra el asistente y luego Construcción, y la de Solo construcción muestra el prompt, el progreso y el resultado. Acción "Subir a ruta…" con confirmación.
 
 **Pruebas:** trigger de solo subida, orquestador con IA falsa (orden de etapas, parada en la primera falla, no duplica al reintentar), aislamiento entre proyectos, marcas de origen de aprobación, ruta Solo construcción hasta `READY` en Docker real (opcional, fuera de CI), y subir de ruta conservando el historial.
 

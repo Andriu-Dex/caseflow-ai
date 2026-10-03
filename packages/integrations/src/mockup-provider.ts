@@ -1,4 +1,8 @@
-import type { MockupDeviceType, UiBlueprintContent } from '@caseflow-ai/contracts';
+import type {
+  DesignThemeContent,
+  MockupDeviceType,
+  UiBlueprintContent,
+} from '@caseflow-ai/contracts';
 
 export const MOCKUP_PROVIDER_ERROR_CODES = [
   'MOCKUP_NOT_CONFIGURED',
@@ -45,10 +49,12 @@ export interface MockupProvider {
   readonly id: string;
   // `refinement` is an extra user instruction layered on the blueprint; a
   // deterministic provider may ignore it (callers check the result kind).
+  // `theme` is the approved project palette (DEC-118); absent = standard design.
   generate(
     content: UiBlueprintContent,
     deviceType?: MockupDeviceType,
     refinement?: string,
+    theme?: DesignThemeContent,
   ): Promise<MockupGenerationResult>;
   // Optional: edit one previously generated screen in place at the provider.
   // Only providers that keep editable screens (Stitch) implement it.
@@ -73,11 +79,12 @@ export class FallbackMockupProvider implements MockupProvider {
     content: UiBlueprintContent,
     deviceType?: MockupDeviceType,
     refinement?: string,
+    theme?: DesignThemeContent,
   ): Promise<MockupGenerationResult> {
     let lastError: unknown;
     for (const provider of this.providers) {
       try {
-        return await provider.generate(content, deviceType, refinement);
+        return await provider.generate(content, deviceType, refinement, theme);
       } catch (cause) {
         this.onProviderFailure?.(provider.id, cause);
         lastError = cause;

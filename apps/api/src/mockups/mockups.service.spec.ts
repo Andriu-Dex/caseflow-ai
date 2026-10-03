@@ -64,7 +64,10 @@ function setup(provider: MockupProvider = new FakeMockupProvider()) {
   let jobSeq = 0;
   const prisma = {
     $transaction: vi.fn((callback) => callback(tx)),
-    artifact: { findMany: vi.fn(), findFirst: vi.fn() },
+    // A project created before DEC-118 without a theme: the standard design.
+    project: { findUnique: vi.fn().mockResolvedValue({ designThemeRequired: false }) },
+    artifact: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn() },
+    structuredAnalysisDetail: { findUniqueOrThrow: vi.fn() },
     artifactVersion: {
       findFirst: vi.fn().mockResolvedValue({
         id: 'blueprint-version',
@@ -172,10 +175,61 @@ describe('MockupsService', () => {
     const provider: MockupProvider = { id: 'spy', generate };
     const { tx, createAndRun } = setup(provider);
     await createAndRun('blueprint-version', 'MOBILE');
-    expect(generate).toHaveBeenCalledWith(blueprintContent, 'MOBILE', undefined);
+    expect(generate).toHaveBeenCalledWith(blueprintContent, 'MOBILE', undefined, undefined);
     expect(tx.mockupDetail.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ deviceType: 'MOBILE' }) }),
     );
+  });
+
+  // DEC-118: mockups are painted with the current approved theme and record it.
+  it('passes the approved theme to the provider and records its version', async () => {
+    const generate = vi.fn().mockResolvedValue({ kind: 'INTERNAL_WIREFRAME', svg: '<svg/>' });
+    const { tx, prisma, createAndRun } = setup({ id: 'spy', generate });
+    const theme = {
+      name: 'Océano',
+      mode: 'LIGHT',
+      light: Object.fromEntries(
+        [
+          'background',
+          'foreground',
+          'primary',
+          'primaryForeground',
+          'secondary',
+          'secondaryForeground',
+          'accent',
+          'accentForeground',
+          'muted',
+          'mutedForeground',
+          'destructive',
+          'destructiveForeground',
+          'border',
+        ].map((token) => [token, '#123456']),
+      ),
+    };
+    prisma.artifact.findMany.mockResolvedValue([
+      {
+        id: 'theme',
+        code: 'TEM-001',
+        versions: [{ id: 'theme-v1', versionNumber: 1, approvedAt: now, createdAt: now }],
+      },
+    ]);
+    prisma.structuredAnalysisDetail.findUniqueOrThrow.mockResolvedValue({ content: theme });
+    await createAndRun('blueprint-version');
+    expect(generate).toHaveBeenCalledWith(blueprintContent, 'DESKTOP', undefined, theme);
+    expect(tx.mockupDetail.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ designThemeVersionId: 'theme-v1' }),
+      }),
+    );
+  });
+
+  it('refuses to generate mockups for a new project without an approved theme', async () => {
+    const { service, prisma } = setup();
+    prisma.project.findUnique.mockResolvedValue({ designThemeRequired: true });
+    await expect(service.create('project', 'blueprint-version')).rejects.toThrow(
+      'Apruebe el tema y los colores antes de generar los bocetos.',
+    );
+    expect(prisma.mockupGenerationJob.create).not.toHaveBeenCalled();
   });
 
   it('marks the job FAILED instead of throwing when generation fails', async () => {
@@ -572,7 +626,12 @@ describe('MockupsService', () => {
       refinementPrompt: 'Usa tonos verdes',
     });
     await service.runJob('job-1');
-    expect(generate).toHaveBeenCalledWith(blueprintContent, 'DESKTOP', 'Usa tonos verdes');
+    expect(generate).toHaveBeenCalledWith(
+      blueprintContent,
+      'DESKTOP',
+      'Usa tonos verdes',
+      undefined,
+    );
     expect(tx.mockupDetail.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ refinementPrompt: 'Usa tonos verdes' }),

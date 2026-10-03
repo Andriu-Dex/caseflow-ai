@@ -13,6 +13,7 @@ const ROLE_LABELS: Record<DesignBaselineRole, string> = {
   CONCEPTUAL_DOMAIN_MODEL: 'el modelo conceptual',
   NAVIGATION_TREE: 'la navegación',
   UI_BLUEPRINT: 'el plano de interfaz',
+  DESIGN_THEME: 'el tema y los colores',
   MOCKUP: 'el boceto',
   SOFTWARE_ARCHITECTURE: 'la arquitectura de software',
   SYSTEM_ARCHITECTURE: 'la arquitectura de sistema',
@@ -49,6 +50,13 @@ export class DesignBaselinesService {
     approvedByUserId: string,
     input: CreateDesignBaselineRequest,
   ): Promise<DesignBaselineResponse> {
+    // DEC-118: the theme is mandatory only for projects created after it existed.
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { designThemeRequired: true },
+    });
+    if (project?.designThemeRequired && !input.versions.DESIGN_THEME)
+      throw new UnprocessableEntityException('Seleccione el tema aprobado del proyecto.');
     // Role order matters: the database checks the mockup against the UI
     // blueprint entry, so UI_BLUEPRINT is inserted before MOCKUP.
     const entries = DESIGN_BASELINE_ROLES.flatMap((role) => {
@@ -129,7 +137,7 @@ export class DesignBaselinesService {
         id: true,
         status: true,
         artifact: { select: { artifactTypeCode: true } },
-        mockupDetail: { select: { uiBlueprintVersionId: true } },
+        mockupDetail: { select: { uiBlueprintVersionId: true, designThemeVersionId: true } },
       },
     });
     const byId = new Map(versions.map((version) => [version.id, version]));
@@ -153,6 +161,17 @@ export class DesignBaselinesService {
     )
       throw new UnprocessableEntityException(
         'El boceto debe haberse generado a partir de la versión seleccionada del plano de interfaz.',
+      );
+    const theme = entries.find((entry) => entry.role === 'DESIGN_THEME');
+    if (
+      mockup &&
+      (byId.get(mockup.artifactVersionId)?.mockupDetail?.designThemeVersionId ?? null) !==
+        (theme?.artifactVersionId ?? null)
+    )
+      throw new UnprocessableEntityException(
+        theme
+          ? 'El boceto debe haberse generado con la versión seleccionada del tema.'
+          : 'El boceto se generó con un tema: inclúyalo en la línea base.',
       );
   }
 

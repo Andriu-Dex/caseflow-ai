@@ -8,6 +8,7 @@ import type { KnowledgeBaseService } from '../../src/knowledge-base/knowledge-ba
 import { RequirementsService } from '../../src/requirements/requirements.service';
 import { StructuredAnalysisService } from '../../src/structured-analysis/structured-analysis.service';
 import { UseCasesService } from '../../src/use-cases/use-cases.service';
+import { approved } from './support/construction-fixtures';
 import { createTestContext, createWorkspace, type TestContext } from './support/test-app';
 
 const disabledKb: Pick<KnowledgeBaseService, 'retrieve'> = { retrieve: async () => [] };
@@ -413,7 +414,13 @@ describe('Readiness integration', () => {
     );
     result = await ctx.readiness.evaluate(projectId);
     expect(result.stages.find((s) => s.key === 'UI_BLUEPRINT')?.satisfied).toBe(true);
+    expect(result.stages.find((s) => s.key === 'DESIGN_THEME')?.satisfied).toBe(false);
     expect(result.stages.find((s) => s.key === 'MOCKUPS')?.satisfied).toBe(false);
+
+    // New projects paint their mockups with an approved theme (DEC-118).
+    await approved(ctx, projectId, 'DESIGN_THEME');
+    result = await ctx.readiness.evaluate(projectId);
+    expect(result.stages.find((s) => s.key === 'DESIGN_THEME')?.satisfied).toBe(true);
 
     const mockupJob = await ctx.mockups.create(projectId, blueprintAccepted.version.id);
     await ctx.mockups.runJob(mockupJob.id);

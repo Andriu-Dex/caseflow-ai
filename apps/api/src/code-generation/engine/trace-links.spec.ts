@@ -69,6 +69,22 @@ describe('planTraceLinks', () => {
     ]);
   });
 
+  it('links theme files to the frozen theme version (DEC-118)', () => {
+    const themeVersion = '44444444-4444-4444-8444-444444444444';
+    const links = planTraceLinks(
+      [file('apps/web/app/globals.css', 'SOURCE', ['design-theme:TEM-001'])],
+      plan,
+      PLAN_VERSION,
+      new Map([['TEM-001', themeVersion]]),
+    );
+    expect(links).toContainEqual(
+      expect.objectContaining({
+        sourceArtifactVersionId: themeVersion,
+        planElement: 'design-theme:TEM-001',
+      }),
+    );
+  });
+
   it('never duplicates a link', () => {
     const links = planTraceLinks(
       [file('x.ts', 'SOURCE', ['entity:order', 'entity:order'])],

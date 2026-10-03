@@ -13,6 +13,7 @@ import {
   type ConstructionJobPayload,
 } from '@caseflow-ai/domain';
 import {
+  designThemeContentSchema,
   implementationPlanContentSchema,
   type GeneratedFileResponse,
   type GeneratedFileSummary,
@@ -125,7 +126,13 @@ export class GenerationRunsService {
         template,
       );
       const files = generateProject(
-        { plan, template, projectName: run.project.name, slug: projectSlug(run.project.name) },
+        {
+          plan,
+          template,
+          projectName: run.project.name,
+          slug: projectSlug(run.project.name),
+          theme: await this.frozenTheme(projectId, run.designBaselineId),
+        },
         implementations,
       );
       const frozen = await this.frozenVersionsByCode(projectId, run.designBaselineId);
@@ -274,6 +281,17 @@ export class GenerationRunsService {
         'Solo se puede generar código desde un plan de implementación aprobado del proyecto.',
       );
     return implementationPlanContentSchema.parse(version.structuredAnalysisDetail.content);
+  }
+
+  // DEC-118: the frontend is painted with the exact theme the baseline froze.
+  private async frozenTheme(projectId: string, baselineId: string) {
+    const baseline = await this.designBaselines.get(projectId, baselineId);
+    const entry = baseline.entries.find((e) => e.role === 'DESIGN_THEME');
+    if (!entry) return undefined;
+    const detail = await this.prisma.structuredAnalysisDetail.findUniqueOrThrow({
+      where: { artifactVersionId: entry.artifactVersionId },
+    });
+    return { code: entry.code, content: designThemeContentSchema.parse(detail.content) };
   }
 
   private async frozenVersionsByCode(projectId: string, baselineId: string) {

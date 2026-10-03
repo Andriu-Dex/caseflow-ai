@@ -18,6 +18,7 @@ import {
   ListChecks,
   ListTodo,
   Network,
+  Palette,
   Rocket,
   Search,
   Server,
@@ -53,6 +54,7 @@ const ARTIFACT_TYPE_LABELS: Record<TraceabilityNode['artifactType'], string> = {
   GENERATION_PLAN: 'Plan de generación',
   CONCEPTUAL_DOMAIN_MODEL: 'Modelo conceptual',
   IMPLEMENTATION_PLAN: 'Plan de implementación',
+  DESIGN_THEME: 'Tema y colores',
 };
 
 // One icon per artifact type, so the list reads at a glance instead of only
@@ -76,6 +78,7 @@ const ARTIFACT_TYPE_ICONS: Record<
   GENERATION_PLAN: Rocket,
   CONCEPTUAL_DOMAIN_MODEL: Shapes,
   IMPLEMENTATION_PLAN: ListTodo,
+  DESIGN_THEME: Palette,
 };
 
 // Accent-insensitive, case-insensitive substring match — mirrors the same
