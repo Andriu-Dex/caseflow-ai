@@ -28,6 +28,7 @@ import type {
   SourceResponse,
   StalenessAnalysisResponse,
   StructuredAnalysisKind,
+  WorkflowRoute,
   StructuredAnalysisResponse,
   TraceabilityDiagramResponse,
   TraceabilityGraphResponse,
@@ -272,6 +273,8 @@ export const api = {
     archive: (projectId: string) => post<ProjectResponse>(`/projects/${projectId}/archive`),
     updateLanguage: (projectId: string, language: 'ES' | 'EN') =>
       post<ProjectResponse>(`/projects/${projectId}/language`, { language }),
+    upgradeWorkflowRoute: (projectId: string, workflowRoute: WorkflowRoute) =>
+      post<ProjectResponse>(`/projects/${projectId}/workflow-route`, { workflowRoute }),
   },
   artifacts: {
     archive: (projectId: string, artifactId: string) =>

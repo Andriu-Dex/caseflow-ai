@@ -3,6 +3,11 @@ import { z } from 'zod';
 export const PROJECT_LANGUAGES = ['ES', 'EN'] as const;
 export type ProjectLanguage = (typeof PROJECT_LANGUAGES)[number];
 
+// DEC-116: how much of the planning a person reviews. Ordered from least to
+// most review; a project can only move up this list.
+export const WORKFLOW_ROUTES = ['BUILD_ONLY', 'EXPRESS', 'FULL'] as const;
+export type WorkflowRoute = (typeof WORKFLOW_ROUTES)[number];
+
 export const createProjectRequestSchema = z
   .object({
     workspaceId: z.uuid({ error: 'El identificador del workspace no es válido.' }),
@@ -16,6 +21,7 @@ export const createProjectRequestSchema = z
       .trim()
       .max(5000, 'La descripción no puede superar los 5000 caracteres.')
       .nullish(),
+    workflowRoute: z.enum(WORKFLOW_ROUTES).default('FULL'),
   })
   .strict();
 
@@ -37,6 +43,7 @@ export const projectResponseSchema = z.object({
   name: z.string(),
   description: z.string().nullable(),
   language: z.enum(PROJECT_LANGUAGES),
+  workflowRoute: z.enum(WORKFLOW_ROUTES),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
   archivedAt: z.iso.datetime().nullable(),
@@ -59,5 +66,11 @@ export type ProjectListResponse = z.infer<typeof projectListResponseSchema>;
 export const updateProjectLanguageRequestSchema = z
   .object({ language: z.enum(PROJECT_LANGUAGES) })
   .strict();
+
+export const upgradeWorkflowRouteRequestSchema = z
+  .object({ workflowRoute: z.enum(WORKFLOW_ROUTES) })
+  .strict();
+
+export type UpgradeWorkflowRouteRequest = z.input<typeof upgradeWorkflowRouteRequestSchema>;
 
 export type UpdateProjectLanguageRequest = z.input<typeof updateProjectLanguageRequestSchema>;

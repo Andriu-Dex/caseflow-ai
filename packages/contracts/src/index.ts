@@ -13,6 +13,8 @@ export {
   projectResponseSchema,
   PROJECT_LANGUAGES,
   updateProjectLanguageRequestSchema,
+  upgradeWorkflowRouteRequestSchema,
+  WORKFLOW_ROUTES,
 } from './projects/project.contract';
 export type {
   CreateProjectRequest,
@@ -21,9 +23,12 @@ export type {
   ProjectResponse,
   ProjectLanguage,
   UpdateProjectLanguageRequest,
+  UpgradeWorkflowRouteRequest,
+  WorkflowRoute,
 } from './projects/project.contract';
 
 export {
+  APPROVAL_ORIGINS,
   ARTIFACT_ORIGINS,
   ARTIFACT_VERSION_STATUSES,
   artifactResponseSchema,
@@ -31,6 +36,7 @@ export {
   createArtifactRequestSchema,
   createArtifactVersionRequestSchema,
 } from './artifacts/artifact.contract';
+export type { ApprovalOrigin } from './artifacts/artifact.contract';
 export * from './requirements/requirement.contract';
 export * from './use-cases/use-case.contract';
 export * from './data-models/data-model.contract';

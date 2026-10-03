@@ -36,7 +36,7 @@ describe('ProjectsService (rule branches)', () => {
     const result = await service.create({ workspaceId, name: 'P' }, 'user-1');
 
     expect(prisma.project.create).toHaveBeenCalledWith({
-      data: { workspaceId, name: 'P', description: null },
+      data: { workspaceId, name: 'P', description: null, workflowRoute: 'FULL' },
     });
     expect(prisma.projectMembership.create).toHaveBeenCalledWith({
       data: { projectId: projectRow.id, userId: 'user-1', role: 'OWNER' },

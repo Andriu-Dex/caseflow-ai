@@ -11,6 +11,7 @@ export function toProjectResponse(
     name: project.name,
     description: project.description,
     language: project.language,
+    workflowRoute: project.workflowRoute,
     createdAt: project.createdAt.toISOString(),
     updatedAt: project.updatedAt.toISOString(),
     archivedAt: project.archivedAt ? project.archivedAt.toISOString() : null,
