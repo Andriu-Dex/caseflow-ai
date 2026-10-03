@@ -2,13 +2,15 @@
 
 import { GenerationOverlay } from '../../components/generation-overlay';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Archive, Pencil, Trash2, Upload, X } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { AlertTriangle, Archive, FileText, Pencil, Trash2, Upload, X } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { toast } from 'sonner';
 import type {
   ProjectSourceKind,
   SourceReportCandidate,
   SourceResponse,
+  StalenessAnalysisResponse,
 } from '@caseflow-ai/contracts';
 import {
   Badge,
@@ -64,6 +66,24 @@ const EXTRACTION_LABEL: Record<string, string> = {
   UNSUPPORTED: 'No extraído (tipo no soportado automáticamente)',
   FAILED: 'La extracción automática falló',
 };
+
+// A source doesn't become stale itself — it's the authoritative, newer
+// knowledge. What can happen is that something *downstream* (today, only
+// the Project Context) hasn't incorporated it yet. Home and Trazabilidad
+// already point the user at that; this surfaces the same concrete reason
+// right where the source itself lives, instead of leaving this page silent
+// about why there's more than one approved version to begin with.
+function outboundStalenessMessages(
+  staleness: StalenessAnalysisResponse | undefined,
+  sourceArtifactId: string,
+): string[] {
+  if (!staleness) return [];
+  const messages = new Set<string>();
+  for (const entry of staleness.entries)
+    for (const reason of entry.reasons)
+      if (reason.sourceArtifactId === sourceArtifactId) messages.add(reason.message);
+  return [...messages];
+}
 
 function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreated: () => void }) {
   const [title, setTitle] = useState('');
@@ -227,8 +247,20 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
   );
 }
 
-function SourceCard({ source, projectId }: { source: SourceResponse; projectId: string }) {
+function SourceCard({
+  source,
+  projectId,
+  staleness,
+}: {
+  source: SourceResponse;
+  projectId: string;
+  staleness: StalenessAnalysisResponse | undefined;
+}) {
   const [open, setOpen] = useState(false);
+  const outboundMessages = useMemo(
+    () => outboundStalenessMessages(staleness, source.id),
+    [staleness, source.id],
+  );
   const queryClient = useQueryClient();
   const [transcript, setTranscript] = useState('');
   const [manualSummary, setManualSummary] = useState('');
@@ -254,6 +286,8 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['sources', projectId] });
     queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
+    // A source's approved version is exactly what staleness reasons about.
+    queryClient.invalidateQueries({ queryKey: ['staleness', projectId] });
   }
 
   async function transition(status: 'IN_REVIEW' | 'APPROVED' | 'CHANGES_REQUESTED') {
@@ -370,12 +404,24 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
   return (
     <li className="rounded-lg border border-border bg-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <span className="font-mono text-xs text-muted-foreground">{source.code}</span>{' '}
+        <div className="flex items-center gap-1.5">
+          <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <span className="font-mono text-xs text-muted-foreground">
+            {source.code} v{source.version.versionNumber}
+          </span>
           <span className="font-medium text-foreground">{source.source.title}</span>
         </div>
         <div className="flex items-center gap-2">
           {source.archivedAt ? <Badge variant="secondary">Archivada</Badge> : null}
+          {outboundMessages.length ? (
+            <span
+              title="Hay un artefacto que aún no incorpora esta versión aprobada."
+              className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800"
+            >
+              <AlertTriangle className="size-3.5" aria-hidden="true" />
+              Pendiente de incorporar
+            </span>
+          ) : null}
           <StatusBadge status={source.version.status} />
           <Button
             variant="ghost"
@@ -401,31 +447,68 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
       ) : null}
 
       {open ? (
-        <div className="mt-3 flex flex-col gap-3 border-t border-border pt-3 text-sm">
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground">
-            <dt className="font-medium">Propósito</dt>
-            <dd>{source.source.purpose}</dd>
+        <div className="mt-3 flex flex-col gap-4 border-t border-border pt-3 text-sm">
+          {outboundMessages.length ? (
+            <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <div>
+                <p className="font-medium">
+                  Esta versión aprobada aún no está incorporada en todo lo que depende de ella.
+                </p>
+                <ul className="mt-1 flex flex-col gap-0.5">
+                  {outboundMessages.map((message) => (
+                    <li key={message}>{message}</li>
+                  ))}
+                </ul>
+                <p className="mt-1.5">
+                  <Link href="/context" className="underline">
+                    Ir al Contexto del Proyecto
+                  </Link>
+                </p>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <section>
+              <h4 className="mb-0.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                Propósito
+              </h4>
+              <p className="text-foreground/90">{source.source.purpose}</p>
+            </section>
             {source.source.businessArea ? (
-              <>
-                <dt className="font-medium">Área de negocio</dt>
-                <dd>{source.source.businessArea}</dd>
-              </>
+              <section>
+                <h4 className="mb-0.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                  Área de negocio
+                </h4>
+                <p className="text-foreground/90">{source.source.businessArea}</p>
+              </section>
             ) : null}
-            <dt className="font-medium">Archivo original</dt>
-            <dd>
-              {source.source.originalFilename && source.source.sizeBytes != null
-                ? `${source.source.originalFilename} (${source.source.mimeType}, ${Math.ceil(source.source.sizeBytes / 1024)} KB)`
-                : 'Sin archivo — solo contenido escrito'}
-            </dd>
-            <dt className="font-medium">Contenido</dt>
-            <dd>{source.source.description}</dd>
-            <dt className="font-medium">Versión</dt>
-            <dd>v{source.version.versionNumber}</dd>
-          </dl>
+            <section>
+              <h4 className="mb-0.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                Archivo original
+              </h4>
+              <p className="text-foreground/90">
+                {source.source.originalFilename && source.source.sizeBytes != null
+                  ? `${source.source.originalFilename} (${source.source.mimeType}, ${Math.ceil(source.source.sizeBytes / 1024)} KB)`
+                  : 'Sin archivo — solo contenido escrito'}
+              </p>
+            </section>
+          </div>
+
+          <section className="border-l-4 border-primary/30 pl-4">
+            <h4 className="mb-0.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+              Contenido
+            </h4>
+            <p className="whitespace-pre-line text-foreground">{source.source.description}</p>
+          </section>
 
           {source.source.hasExtractedText ? (
-            <div className="rounded-md border border-border p-3">
-              <p className="mb-2 font-medium">Texto extraído para revisión</p>
+            <div className="rounded-md border border-border bg-muted/20 p-3">
+              <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                <FileText className="size-3.5" aria-hidden="true" />
+                Texto extraído para revisión
+              </p>
               {extractedText.isLoading ? <p>Cargando texto…</p> : null}
               {extractedText.isError ? <p>No se pudo cargar el texto.</p> : null}
               {extractedText.data ? (
@@ -488,6 +571,7 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
                 onArchived={() => {
                   queryClient.invalidateQueries({ queryKey: ['sources', projectId] });
                   queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
+                  queryClient.invalidateQueries({ queryKey: ['staleness', projectId] });
                 }}
               />
             ) : (
@@ -498,6 +582,7 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
                 onDeleted={() => {
                   queryClient.invalidateQueries({ queryKey: ['sources', projectId] });
                   queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
+                  queryClient.invalidateQueries({ queryKey: ['staleness', projectId] });
                 }}
               />
             )
@@ -934,6 +1019,10 @@ function SourcesContent({ projectId }: { projectId: string }) {
           : 2500
         : false,
   });
+  const staleness = useQuery({
+    queryKey: ['staleness', projectId],
+    queryFn: () => api.staleness.get(projectId),
+  });
 
   return (
     <div className="flex flex-col gap-6">
@@ -943,6 +1032,7 @@ function SourcesContent({ projectId }: { projectId: string }) {
         onCreated={() => {
           queryClient.invalidateQueries({ queryKey: ['sources', projectId] });
           queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
+          queryClient.invalidateQueries({ queryKey: ['staleness', projectId] });
         }}
       />
       <QueryState isLoading={sources.isLoading} error={sources.error}>
@@ -953,7 +1043,7 @@ function SourcesContent({ projectId }: { projectId: string }) {
         ) : (
           <ul className="flex flex-col gap-3">
             {sources.data?.items.map((s) => (
-              <SourceCard key={s.id} source={s} projectId={projectId} />
+              <SourceCard key={s.id} source={s} projectId={projectId} staleness={staleness.data} />
             ))}
           </ul>
         )}

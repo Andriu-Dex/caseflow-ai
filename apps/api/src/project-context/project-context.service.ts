@@ -184,7 +184,16 @@ export class ProjectContextService {
       include: { artifact: true, sourceDetail: true },
       orderBy: { createdAt: 'asc' },
     });
-    const usable = approvedSources.filter((v) => v.sourceDetail?.extractedText);
+    // A source can have several APPROVED versions over time (the older ones
+    // stay APPROVED — immutable history, never un-approved); only the latest
+    // one is still current knowledge, so only it may back a new context.
+    const latestPerArtifact = new Map<string, (typeof approvedSources)[number]>();
+    for (const version of approvedSources) {
+      const current = latestPerArtifact.get(version.artifactId);
+      if (!current || version.versionNumber > current.versionNumber)
+        latestPerArtifact.set(version.artifactId, version);
+    }
+    const usable = [...latestPerArtifact.values()].filter((v) => v.sourceDetail?.extractedText);
     if (usable.length === 0)
       throw new UnprocessableEntityException(
         'Se requiere al menos una fuente de proyecto APPROVED con conocimiento utilizable.',
@@ -252,11 +261,20 @@ export class ProjectContextService {
           status: 'APPROVED',
           artifact: { artifactTypeCode: 'PROJECT_SOURCE' },
         },
-        select: { id: true },
+        select: { id: true, artifactId: true },
       });
       if (sources.length !== sourceVersionIds.length)
         throw new UnprocessableEntityException(
           'Las fuentes referenciadas deben ser versiones exactas APPROVED de Project Source del mismo proyecto.',
+        );
+      // Exactly one version per source: citing two versions of the same
+      // source at once is never meaningful provenance (the newer one
+      // supersedes the older), and would make staleness permanently
+      // contradict itself — "up to date" and "has a newer version" at once.
+      const artifactIds = sources.map((s) => s.artifactId);
+      if (new Set(artifactIds).size !== artifactIds.length)
+        throw new UnprocessableEntityException(
+          'Cada fuente debe aparecer una sola vez, con su versión aprobada vigente.',
         );
     }
     return tx.artifactVersion.create({

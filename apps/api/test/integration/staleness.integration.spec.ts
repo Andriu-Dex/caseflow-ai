@@ -186,6 +186,43 @@ describe('Staleness / potential-impact integration', () => {
     expect(rfRow.status).toBe('APPROVED');
   });
 
+  it('never reports staleness for a source that is current, even if an older approved version of it is also linked (legacy data)', async () => {
+    const workspace = await createWorkspace(ctx.prisma, 'Staleness Duplicate Links');
+    const projectId = (await ctx.projects.create({ workspaceId: workspace.id, name: 'P' })).id;
+    const sourceV1 = await approveSource(ctx, projectId, 'Notas', 'v1');
+    const v2 = await ctx.sources.submitManualTranscript(
+      projectId,
+      sourceV1.artifactId,
+      'Contenido actualizado',
+    );
+    await ctx.sources.transition(projectId, sourceV1.artifactId, v2.version.id, 'IN_REVIEW');
+    await ctx.sources.transition(projectId, sourceV1.artifactId, v2.version.id, 'APPROVED');
+
+    const context = await ctx.projectContext.create(projectId, {
+      problemStatement: 'p',
+      objective: 'o',
+      scopeItems: [],
+      actors: [{ name: 'Usuario' }],
+      needs: [],
+      constraints: [],
+      businessRules: [],
+      sourceVersionIds: [v2.version.id],
+    });
+    // The write path now rejects linking two versions of the same source at
+    // once (see project-context.service.ts), but data created before that
+    // guard existed must still be read sensibly — reproduce it directly.
+    await ctx.prisma.projectContextSource.create({
+      data: { projectContextVersionId: context.version.id, sourceVersionId: sourceV1.version.id },
+    });
+    await ctx.projectContext.transition(projectId, context.version.id, 'IN_REVIEW');
+    await ctx.projectContext.transition(projectId, context.version.id, 'APPROVED');
+
+    const result = await ctx.staleness.analyzeProject(projectId);
+    const contextEntry = result.entries.find((e) => e.artifactType === 'PROJECT_CONTEXT')!;
+    expect(contextEntry.impactState).toBe('CURRENT');
+    expect(contextEntry.reasons).toEqual([]);
+  });
+
   it('flags a brand-new APPROVED source that the context never linked at all', async () => {
     const workspace = await createWorkspace(ctx.prisma, 'Staleness New Source');
     const projectId = (await ctx.projects.create({ workspaceId: workspace.id, name: 'P' })).id;
