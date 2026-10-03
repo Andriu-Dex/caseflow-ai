@@ -2,6 +2,7 @@
   "name": "caseflow-ai",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
   "description": "CASEFlow AI monorepo",
   "packageManager": "pnpm@11.27.0",
   "engines": {

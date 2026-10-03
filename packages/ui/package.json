@@ -2,6 +2,7 @@
   "name": "@caseflow-ai/ui",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
   "description": "CASEFlow AI shared UI package (shadcn/ui-based DesignSystemProfile components)",
   "type": "module",
   "main": "./src/index.ts",

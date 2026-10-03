@@ -151,6 +151,8 @@ AI Output
 
 Never persist an unvalidated LLM response directly as an approved official artifact.
 
+Exception (DEC-116, `docs/decisions/ADR-001-rutas-de-trabajo.md`): in the `BUILD_ONLY` workflow route the system approves validated artifacts automatically, recording the approval origin `AUTOMATIC`. Schema and domain validation still apply; only the human review step is skipped, and only in that route.
+
 ### 4.6 Manual fallback
 
 Core CASE functionality must remain usable when external AI, Stitch, email, or other external providers are unavailable.
@@ -211,6 +213,8 @@ Do not replace these technologies during a focused task unless explicitly instru
 - **API:** REST + OpenAPI/Swagger.
 - **Workspace/package manager:** pnpm workspaces.
 - **Containers:** Docker / Docker Compose.
+- **Desktop edition:** Electron (`apps/desktop`, DEC-117).
+- **License:** Apache-2.0 (whole monorepo).
 
 Expected high-level repository shape:
 
@@ -364,6 +368,7 @@ Rules:
 - P0 work takes precedence over P1/P2.
 - MUST NOT implement a later feature that depends on an incomplete earlier P0 capability unless explicitly instructed.
 - Construction is a P0 capability.
+- The desktop-only "ChatGPT" plan-usage provider is approved (DEC-117) and is not "advanced BYOK".
 - Do not proactively build Project Assistant, advanced BYOK, custom roles, custom template builder, Figma integration, Kubernetes, Terraform/OpenTofu, real-time collaboration, advanced dashboards, or additional target stacks while V1 P0 work remains incomplete.
 
 Prefer vertical slices that leave the repository runnable.
@@ -475,6 +480,8 @@ Generation must be incremental, auditable, traceable, and validated by stage.
 Each stage should receive explicit structured inputs and produce structured/validated outputs.
 
 A failure in one stage should not trigger uncontrolled regeneration of the entire repository.
+
+This applies to every workflow route (DEC-116), including `BUILD_ONLY`: even when the user only writes one prompt, generation runs stage by stage and is validated at each stage.
 
 ---
 
@@ -598,6 +605,8 @@ The stabilized set is captured by an approved/frozen Design Baseline.
 Official generation must record the exact Design Baseline used.
 
 Do not begin official code generation from an unapproved design when the specification requires the Design Gate.
+
+The Design Gate is required in the `FULL` and `EXPRESS` routes. In `BUILD_ONLY` (DEC-116) the Design Baseline is still captured, but frozen automatically with approval origin `AUTOMATIC`.
 
 ---
 
@@ -1999,6 +2008,8 @@ Do not hide or downgrade these failures to make a demo appear successful.
 ## 63. Explicitly Forbidden Construction Shortcuts
 
 An agent MUST NOT, unless the user explicitly changes the specification:
+
+(The `BUILD_ONLY` workflow route, DEC-116, is such an explicit change: there, GenerationPlan, Design Gate, Design Baseline and ImplementationPlan approvals are automatic and recorded as `AUTOMATIC`. Every other item below still applies to it without exception.)
 
 - implement one-shot whole-repository generation;
 - skip GenerationPlan approval;
