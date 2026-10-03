@@ -7,6 +7,8 @@ import {
   type INestApplication,
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import type { AIProvider } from '@caseflow-ai/ai';
+import { AI_PROVIDER } from '../../../src/ai/ai.module';
 import {
   FakeDiagramProvider,
   FakeSandboxExecutionProvider,
@@ -92,7 +94,10 @@ export interface TestContext {
 }
 
 // Boots the real Nest modules against the isolated test database.
-export async function createTestContext(): Promise<TestContext> {
+// `aiProvider` replaces the configured AI provider (e.g. a scripted fake).
+export async function createTestContext(
+  options: { aiProvider?: AIProvider } = {},
+): Promise<TestContext> {
   const connectionString = getTestConnectionString();
 
   const sql = new Client({ connectionString });
@@ -104,7 +109,7 @@ export async function createTestContext(): Promise<TestContext> {
     prisma?: PrismaService;
     defaultUserId?: string;
   } = {};
-  const moduleRef = await Test.createTestingModule({
+  const builder = Test.createTestingModule({
     imports: [
       DatabaseModule.forRoot({ connectionString }),
       ProjectsModule,
@@ -162,8 +167,12 @@ export async function createTestContext(): Promise<TestContext> {
         request.user = user;
         return true;
       },
-    })
-    .compile();
+    });
+  const moduleRef = await (
+    options.aiProvider
+      ? builder.overrideProvider(AI_PROVIDER).useValue(options.aiProvider)
+      : builder
+  ).compile();
 
   const app = moduleRef.createNestApplication();
   app.use(cookieParser());

@@ -219,6 +219,7 @@ model User {
   requestedProposals        DependencyProposal[]       @relation("DependencyProposalRequester")
   decidedProposals          DependencyProposal[]       @relation("DependencyProposalDecider")
   designBaselines           DesignBaseline[]
+  workflowRuns              WorkflowRun[]
   generationRuns            GenerationRun[]
   sandboxRuns               SandboxRun[]
   generatedProjectSnapshots GeneratedProjectSnapshot[]
@@ -340,6 +341,7 @@ model Project {
   generationRuns                GenerationRun[]
   sandboxRuns                   SandboxRun[]
   generatedProjectSnapshots     GeneratedProjectSnapshot[]
+  workflowRuns                  WorkflowRun[]
 
   @@index([workspaceId, createdAt, id])
   @@map("projects")
@@ -1396,12 +1398,14 @@ enum DesignBaselineRole {
 // official ImplementationPlan and code generation are built from. Creating
 // one is the human Design Gate approval; rows are immutable afterwards.
 model DesignBaseline {
-  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  projectId        String   @map("project_id") @db.Uuid
+  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId        String         @map("project_id") @db.Uuid
   label            String
   note             String?
-  approvedByUserId String   @map("approved_by_user_id") @db.Uuid
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  approvedByUserId String         @map("approved_by_user_id") @db.Uuid
+  // AUTOMATIC in the BUILD_ONLY route (set by a database trigger).
+  approvalOrigin   ApprovalOrigin @default(HUMAN) @map("approval_origin")
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
 
   project        Project                    @relation(fields: [projectId], references: [id], onDelete: Restrict)
   approvedBy     User                       @relation(fields: [approvedByUserId], references: [id], onDelete: Restrict)
@@ -1679,4 +1683,47 @@ model GeneratedProjectSnapshot {
 
   @@index([projectId, createdAt])
   @@map("generated_project_snapshots")
+}
+
+enum WorkflowRunStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+
+  @@map("workflow_run_status")
+}
+
+// One orchestration from the initial prompt through the existing stages
+// (DEC-116, DEC-111): one stage at a time, stopping at the first failure.
+model WorkflowRun {
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId       String            @map("project_id") @db.Uuid
+  prompt          String
+  status          WorkflowRunStatus @default(QUEUED)
+  currentStage    String?           @map("current_stage")
+  errorMessage    String?           @map("error_message")
+  createdByUserId String            @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  startedAt       DateTime?         @map("started_at") @db.Timestamptz(6)
+  finishedAt      DateTime?         @map("finished_at") @db.Timestamptz(6)
+
+  project   Project            @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  createdBy User               @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  stages    WorkflowRunStage[]
+
+  @@index([projectId, createdAt])
+  @@map("workflow_runs")
+}
+
+// A completed stage; a retried run skips it.
+model WorkflowRunStage {
+  runId       String   @map("run_id") @db.Uuid
+  stage       String
+  completedAt DateTime @default(now()) @map("completed_at") @db.Timestamptz(6)
+
+  run WorkflowRun @relation(fields: [runId], references: [id], onDelete: Restrict)
+
+  @@id([runId, stage])
+  @@map("workflow_run_stages")
 }

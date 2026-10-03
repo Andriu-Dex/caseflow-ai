@@ -5,8 +5,9 @@ import { Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { ProjectLanguage } from '@caseflow-ai/contracts';
 import { toast } from 'sonner';
-import { Button, Input } from '@caseflow-ai/ui';
-import { api, ApiError } from '../lib/api';
+import { Button } from '@caseflow-ai/ui';
+import { api } from '../lib/api';
+import { NewProjectDialog } from './new-project-dialog';
 import { UpgradeRouteButton, WorkflowRouteBadge } from './workflow-route';
 import { useActiveProject } from '../lib/active-project';
 
@@ -14,8 +15,6 @@ export function ProjectSwitcher() {
   const { projectId, setProjectId } = useActiveProject();
   const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
-  const [name, setName] = useState('');
-  const [error, setError] = useState<string | null>(null);
 
   const workspaces = useQuery({
     queryKey: ['workspaces'],
@@ -43,20 +42,6 @@ export function ProjectSwitcher() {
 
   const items = projects.data?.items ?? [];
   const active = items.find((project) => project.id === projectId);
-
-  async function handleCreate() {
-    if (!name.trim() || !workspaceId) return;
-    setError(null);
-    try {
-      const created = await api.projects.create({ workspaceId, name: name.trim() });
-      await queryClient.invalidateQueries({ queryKey: ['projects', workspaceId] });
-      setProjectId(created.id);
-      setName('');
-      setCreating(false);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'No se pudo crear el proyecto.');
-    }
-  }
 
   return (
     <div className="flex items-center gap-2">
@@ -94,35 +79,27 @@ export function ProjectSwitcher() {
             projectId={active.id}
             route={active.workflowRoute}
             onUpgraded={() =>
-              queryClient.invalidateQueries({ queryKey: ['projects', workspaceId] })
+              Promise.all([
+                queryClient.invalidateQueries({ queryKey: ['projects', workspaceId] }),
+                queryClient.invalidateQueries({ queryKey: ['project', active.id] }),
+              ])
             }
           />
         </>
       ) : null}
-      {creating ? (
-        <span className="flex items-center gap-1">
-          <Input
-            autoFocus
-            aria-label="Nombre del nuevo proyecto"
-            className="h-9 w-48"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Nombre del proyecto"
-          />
-          <Button type="button" size="sm" onClick={handleCreate}>
-            Crear
-          </Button>
-          <Button type="button" size="sm" variant="ghost" onClick={() => setCreating(false)}>
-            Cancelar
-          </Button>
-        </span>
-      ) : (
-        <Button type="button" size="sm" variant="outline" onClick={() => setCreating(true)}>
-          <Plus className="size-4" aria-hidden="true" />
-          Nuevo proyecto
-        </Button>
-      )}
-      {error ? <span className="text-sm text-destructive">{error}</span> : null}
+      <Button type="button" size="sm" variant="outline" onClick={() => setCreating(true)}>
+        <Plus className="size-4" aria-hidden="true" />
+        Nuevo proyecto
+      </Button>
+      <NewProjectDialog
+        open={creating}
+        onOpenChange={setCreating}
+        workspaceId={workspaceId}
+        onCreated={async (id) => {
+          await queryClient.invalidateQueries({ queryKey: ['projects', workspaceId] });
+          setProjectId(id);
+        }}
+      />
     </div>
   );
 }

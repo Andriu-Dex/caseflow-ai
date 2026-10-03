@@ -91,6 +91,18 @@ export class MockupsService {
     return this.enqueueJob(projectId, uiBlueprintVersionId, null, deviceType);
   }
 
+  // For a route orchestration that already runs as a job (DEC-116): the
+  // generation is recorded like any other job but runs inline, never queued.
+  async generateNow(projectId: string, uiBlueprintVersionId: string): Promise<MockupJobResponse> {
+    await this.assertApprovedBlueprint(projectId, uiBlueprintVersionId);
+    await this.currentTheme(projectId);
+    const job = await this.prisma.mockupGenerationJob.create({
+      data: { projectId, uiBlueprintVersionId, deviceType: 'DESKTOP' },
+    });
+    await this.runJob(job.id);
+    return this.getJob(projectId, job.id);
+  }
+
   async version(
     projectId: string,
     mockupId: string,

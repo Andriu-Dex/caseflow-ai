@@ -36,6 +36,7 @@ import { ApiZodBody, ApiZodResponse } from '../openapi/zod-openapi';
 import { GeneratedProjectSnapshotsService } from './generated-project-snapshots.service';
 import { GenerationRunsService } from './generation-runs.service';
 import { SandboxRunsService } from './sandbox-runs.service';
+import { WorkflowRunsService } from './workflow-runs.service';
 
 interface AuthenticatedRequest {
   user: { id: string };
@@ -184,6 +185,7 @@ export class InternalConstructionJobsController {
   constructor(
     private readonly generationRuns: GenerationRunsService,
     private readonly sandboxRuns: SandboxRunsService,
+    private readonly workflowRuns: WorkflowRunsService,
   ) {}
 
   @Post(':type/:runId/run')
@@ -214,6 +216,11 @@ export class InternalConstructionJobsController {
     // it here. runJob always records a terminal status and never throws.
     // ponytail: a crash of the API mid-run leaves it RUNNING; add a stale-run
     // sweeper if that is ever observed.
-    void this.sandboxRuns.runJob(projectId, runId).catch(() => undefined);
+    if (type === 'sandbox-run') {
+      void this.sandboxRuns.runJob(projectId, runId).catch(() => undefined);
+      return;
+    }
+    // A route orchestration takes many minutes: same acknowledge-and-run.
+    void this.workflowRuns.runJob(projectId, runId).catch(() => undefined);
   }
 }

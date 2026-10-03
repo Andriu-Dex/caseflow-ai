@@ -7683,6 +7683,19 @@ Cada proyecto se crea en una ruta: **Completa** (`FULL`, los 12 pasos con revisi
 
 En todas las rutas se mantienen: el prompt inicial como `PROJECT_SOURCE`, la planificación completa y trazable, la generación incremental por etapas (DEC-111), la validación en sandbox (§174–§175), el catálogo de dependencias (§155) y los snapshots inmutables (§172). El origen de cada aprobación (`HUMAN`, `HUMAN_BULK`, `AUTOMATIC`) se registra y nunca se reescribe. La única exención es la de §160 para `BUILD_ONLY`.
 
+Implementación:
+
+- **Ruta del proyecto:** `projects.workflow_route` vale `FULL` por defecto. Un trigger solo permite subirla, y cada cambio se audita (`PROJECT_WORKFLOW_ROUTE_CHANGED`, `POST /projects/{projectId}/workflow-route`).
+- **Origen de aprobación:** `artifact_versions.approval_origin` y `design_baselines.approval_origin` se fijan al aprobar y quedan congelados con la versión.
+  - Por defecto es `AUTOMATIC` en `BUILD_ONLY` (allí nadie revisa) y `HUMAN` en las demás rutas.
+  - `HUMAN_BULK` solo se admite en `EXPRESS` y `AUTOMATIC` solo en `BUILD_ONLY`.
+  - Las aprobaciones anteriores se registraron como `HUMAN`.
+- **Orquestador (`workflow_runs`, `POST /projects/{projectId}/workflow-runs`):** en `BUILD_ONLY`, un job recorre en orden las etapas de `WORKFLOW_STAGES` con los servicios existentes.
+  - La etapa del tema elige la primera paleta que cumple WCAG AA.
+  - Se detiene en la primera falla con un mensaje por etapa.
+  - Al reintentar, salta las etapas completadas y aprueba lo pendiente en vez de generar de nuevo.
+  - Termina encolando la validación en el sandbox, que se muestra junto al proyecto generado.
+
 ## 221.2 Edición de escritorio y proveedor "ChatGPT" (DEC-117, ADR-002)
 
 El proyecto se publica con licencia Apache-2.0, sin pagos en ninguna edición. La edición de escritorio (Electron, `apps/desktop`) incluye PostgreSQL y Redis portables y un `FilesystemStorageProvider`; la construcción sigue exigiendo Docker (§174).

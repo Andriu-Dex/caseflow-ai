@@ -4,18 +4,41 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppShell } from './app-shell';
 import { TestProviders } from '../lib/test-utils';
 
-const mocks = vi.hoisted(() => ({ readinessGet: vi.fn() }));
+const mocks = vi.hoisted(() => ({ readinessGet: vi.fn(), projectGet: vi.fn() }));
 
 vi.mock('next/navigation', () => ({ usePathname: () => '/' }));
 
 vi.mock('../lib/api', () => ({
-  api: { readiness: { get: (...args: unknown[]) => mocks.readinessGet(...args) } },
+  api: {
+    readiness: { get: (...args: unknown[]) => mocks.readinessGet(...args) },
+    projects: { get: (...args: unknown[]) => mocks.projectGet(...args) },
+  },
   ApiError: class ApiError extends Error {},
   restoreSession: vi.fn(),
 }));
 
 beforeEach(() => {
   window.localStorage.setItem('caseflow.activeProjectId', 'p1');
+  mocks.projectGet.mockResolvedValue({ id: 'p1', workflowRoute: 'FULL' });
+});
+
+// DEC-116: nobody walks the planning steps in the BUILD_ONLY route.
+describe('AppShell in the BUILD_ONLY route', () => {
+  it('shows the automatic build and unlocked construction instead of the twelve steps', async () => {
+    mocks.readinessGet.mockResolvedValue({ ready: false, stages: [] });
+    mocks.projectGet.mockResolvedValue({ id: 'p1', workflowRoute: 'BUILD_ONLY' });
+    render(
+      <TestProviders>
+        <AppShell>content</AppShell>
+      </TestProviders>,
+    );
+    expect(
+      await screen.findByRole('link', { name: /Construcción automática/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Generación de código/ })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Requisitos/ })).not.toBeInTheDocument();
+    expect(screen.queryByText('bloqueada')).not.toBeInTheDocument();
+  });
 });
 
 describe('AppShell construction group', () => {

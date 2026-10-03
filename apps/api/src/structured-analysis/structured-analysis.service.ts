@@ -66,7 +66,7 @@ interface KindConfig {
 
 // One AI/HTTP/DB call per generation stays honest about which project
 // materials are eligible sources for each kind (spec §13.2/§14.2/§15/§17.2).
-const ELIGIBLE_SOURCE_TYPES: Record<StructuredAnalysisKind, string[]> = {
+export const ELIGIBLE_SOURCE_TYPES: Record<StructuredAnalysisKind, string[]> = {
   NAVIGATION_TREE: ['REQUIREMENT', 'USE_CASE', 'DATA_MODEL'],
   SOFTWARE_ARCHITECTURE: ['REQUIREMENT', 'USE_CASE', 'DATA_MODEL', 'NAVIGATION_TREE'],
   SYSTEM_ARCHITECTURE: ['REQUIREMENT', 'USE_CASE', 'DATA_MODEL', 'NAVIGATION_TREE'],
