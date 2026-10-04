@@ -147,7 +147,8 @@ describe('MockupsService', () => {
         where: expect.objectContaining({
           id: 'blueprint-version',
           projectId: 'project',
-          status: 'APPROVED',
+          // Outside EXPRESS only approved versions are sources (DEC-119).
+          status: { in: ['APPROVED'] },
           artifact: { artifactTypeCode: 'UI_BLUEPRINT' },
         }),
       }),

@@ -1,3 +1,5 @@
+import { provenanceGuard } from '../projects/source-statuses';
+import type { ApprovalOrigin } from '@caseflow-ai/contracts';
 import { randomUUID, createHash } from 'node:crypto';
 import { Logger, Optional } from '@nestjs/common';
 import type { Queue } from 'bullmq';
@@ -549,6 +551,9 @@ export class SourcesService {
     artifactId: string,
     id: string,
     status: 'DRAFT' | 'IN_REVIEW' | 'APPROVED' | 'CHANGES_REQUESTED',
+    // HUMAN_BULK for an EXPRESS bulk approval (DEC-116); otherwise the
+    // database records HUMAN, or AUTOMATIC in BUILD_ONLY.
+    approvalOrigin?: ApprovalOrigin,
   ) {
     const version = await this.prisma.artifactVersion.findFirst({
       where: { id, projectId, artifactId, artifact: { artifactTypeCode: 'PROJECT_SOURCE' } },
@@ -561,14 +566,17 @@ export class SourcesService {
       throw new UnprocessableEntityException(
         'La fuente no tiene conocimiento utilizable (texto extraído o transcripción manual).',
       );
-    const updatedVersion = await this.prisma.artifactVersion.update({
-      where: { id },
-      data: {
-        status,
-        submittedAt: status === 'IN_REVIEW' ? new Date() : version.submittedAt,
-        approvedAt: status === 'APPROVED' ? new Date() : version.approvedAt,
-      },
-    });
+    const updatedVersion = await provenanceGuard(
+      this.prisma.artifactVersion.update({
+        where: { id },
+        data: {
+          status,
+          submittedAt: status === 'IN_REVIEW' ? new Date() : version.submittedAt,
+          approvedAt: status === 'APPROVED' ? new Date() : version.approvedAt,
+          approvalOrigin: status === 'APPROVED' ? approvalOrigin : undefined,
+        },
+      }),
+    );
 
     if (status === 'APPROVED') {
       // Run asynchronously without awaiting so the transition is fast

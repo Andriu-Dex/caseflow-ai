@@ -1,3 +1,4 @@
+import type { ApprovalOrigin } from '@caseflow-ai/contracts';
 import {
   Injectable,
   Inject,
@@ -12,6 +13,7 @@ import {
   type RequirementInput,
   type RequirementResponse,
 } from '@caseflow-ai/contracts';
+import { provenanceGuard, sourceStatuses } from '../projects/source-statuses';
 import { PrismaService } from '../database/prisma.service';
 import { getProjectLanguage } from '../projects/project-language';
 import type { Prisma } from '../generated/prisma/client';
@@ -134,7 +136,7 @@ export class RequirementsService {
       where: {
         id: sourceContextVersionId,
         projectId,
-        status: 'APPROVED',
+        status: { in: await sourceStatuses(this.prisma, projectId) },
         artifact: { artifactTypeCode: 'PROJECT_CONTEXT' },
       },
       include: {
@@ -316,19 +318,25 @@ export class RequirementsService {
     artifactId: string,
     id: string,
     status: 'DRAFT' | 'IN_REVIEW' | 'APPROVED' | 'CHANGES_REQUESTED',
+    // HUMAN_BULK for an EXPRESS bulk approval (DEC-116); otherwise the
+    // database records HUMAN, or AUTOMATIC in BUILD_ONLY.
+    approvalOrigin?: ApprovalOrigin,
   ) {
     const v = await this.prisma.artifactVersion.findFirst({ where: { id, projectId, artifactId } });
     if (!v) throw new NotFoundException('Versión no encontrada.');
     if (!canTransitionArtifactVersionStatus(v.status, status))
       throw new UnprocessableEntityException('Transición de estado no permitida.');
-    return this.prisma.artifactVersion.update({
-      where: { id },
-      data: {
-        status,
-        submittedAt: status === 'IN_REVIEW' ? new Date() : v.submittedAt,
-        approvedAt: status === 'APPROVED' ? new Date() : v.approvedAt,
-      },
-    });
+    return provenanceGuard(
+      this.prisma.artifactVersion.update({
+        where: { id },
+        data: {
+          status,
+          submittedAt: status === 'IN_REVIEW' ? new Date() : v.submittedAt,
+          approvedAt: status === 'APPROVED' ? new Date() : v.approvedAt,
+          approvalOrigin: status === 'APPROVED' ? approvalOrigin : undefined,
+        },
+      }),
+    );
   }
   private async createInTx(
     tx: Tx,

@@ -49,6 +49,8 @@ export class DesignBaselinesService {
     projectId: string,
     approvedByUserId: string,
     input: CreateDesignBaselineRequest,
+    // HUMAN_BULK when frozen by an EXPRESS bulk approval (DEC-116).
+    approvalOrigin?: 'HUMAN_BULK',
   ): Promise<DesignBaselineResponse> {
     // DEC-118: the theme is mandatory only for projects created after it existed.
     const project = await this.prisma.project.findUnique({
@@ -67,7 +69,13 @@ export class DesignBaselinesService {
 
     const baseline = await this.prisma.$transaction(async (tx) => {
       const created = await tx.designBaseline.create({
-        data: { projectId, label: input.label, note: input.note ?? null, approvedByUserId },
+        data: {
+          projectId,
+          label: input.label,
+          note: input.note ?? null,
+          approvedByUserId,
+          ...(approvalOrigin ? { approvalOrigin } : {}),
+        },
       });
       for (const entry of entries)
         await tx.designBaselineEntry.create({ data: { baselineId: created.id, ...entry } });

@@ -1,3 +1,4 @@
+import type { ApprovalOrigin } from '@caseflow-ai/contracts';
 import {
   Inject,
   Injectable,
@@ -18,6 +19,7 @@ import {
   type StructuredAnalysisKind,
 } from '@caseflow-ai/contracts';
 import type { z } from 'zod';
+import { provenanceGuard, sourceStatuses } from '../projects/source-statuses';
 import { PrismaService } from '../database/prisma.service';
 import { getProjectLanguage } from '../projects/project-language';
 import type { Prisma } from '../generated/prisma/client';
@@ -309,7 +311,7 @@ export class StructuredAnalysisService {
       where: {
         id: { in: unique },
         projectId,
-        status: 'APPROVED',
+        status: { in: await sourceStatuses(this.prisma, projectId) },
         artifact: { artifactTypeCode: { in: ELIGIBLE_SOURCE_TYPES[kind] } },
       },
       include: {
@@ -584,6 +586,9 @@ export class StructuredAnalysisService {
     id: string,
     status: 'DRAFT' | 'IN_REVIEW' | 'APPROVED' | 'CHANGES_REQUESTED',
     actorUserId: string | null = null,
+    // HUMAN_BULK for an EXPRESS bulk approval (DEC-116); otherwise the
+    // database records HUMAN, or AUTOMATIC in BUILD_ONLY.
+    approvalOrigin?: ApprovalOrigin,
   ) {
     const version = await this.prisma.artifactVersion.findFirst({
       where: { id, projectId, artifactId, artifact: { artifactTypeCode: kind } },
@@ -592,30 +597,33 @@ export class StructuredAnalysisService {
     if (!canTransitionArtifactVersionStatus(version.status, status))
       throw new UnprocessableEntityException('Transición de estado no permitida.');
     if (kind === 'DESIGN_THEME' && status === 'APPROVED') await this.assertAccessibleTheme(id);
-    return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.artifactVersion.update({
-        where: { id },
-        data: {
-          status,
-          submittedAt: status === 'IN_REVIEW' ? new Date() : version.submittedAt,
-          approvedAt: status === 'APPROVED' ? new Date() : version.approvedAt,
-        },
-      });
-      const approvalAction = APPROVAL_AUDIT_ACTIONS[kind];
-      if (status === 'APPROVED' && approvalAction)
-        await this.audit.record(
-          {
-            projectId,
-            actorUserId,
-            action: approvalAction,
-            entityType: 'ARTIFACT_VERSION',
-            entityId: id,
-            metadata: { artifactId, versionNumber: version.versionNumber },
+    return provenanceGuard(
+      this.prisma.$transaction(async (tx) => {
+        const updated = await tx.artifactVersion.update({
+          where: { id },
+          data: {
+            status,
+            submittedAt: status === 'IN_REVIEW' ? new Date() : version.submittedAt,
+            approvedAt: status === 'APPROVED' ? new Date() : version.approvedAt,
+            approvalOrigin: status === 'APPROVED' ? approvalOrigin : undefined,
           },
-          tx,
-        );
-      return updated;
-    });
+        });
+        const approvalAction = APPROVAL_AUDIT_ACTIONS[kind];
+        if (status === 'APPROVED' && approvalAction)
+          await this.audit.record(
+            {
+              projectId,
+              actorUserId,
+              action: approvalAction,
+              entityType: 'ARTIFACT_VERSION',
+              entityId: id,
+              metadata: { artifactId, versionNumber: version.versionNumber },
+            },
+            tx,
+          );
+        return updated;
+      }),
+    );
   }
 
   async getDiagram(projectId: string, kind: StructuredAnalysisKind, id: string) {

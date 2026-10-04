@@ -7237,6 +7237,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-116 | Tres rutas de trabajo por proyecto (Completa, Exprés, Solo construcción); solo se sube de ruta; la ruta Solo construcción genera sin revisión humana intermedia pero conserva sandbox, catálogo, generación por etapas y snapshots (ADR-001, §221) | Accepted |
 | DEC-117 | Licencia Apache-2.0; edición de escritorio con Electron; proveedor "ChatGPT" (plan usage de OpenAI) solo en escritorio, sin pagos en ninguna edición (ADR-002, §221) | Accepted |
 | DEC-118 | Tema (claro/oscuro/ambos) y paleta por proyecto como artefacto `DESIGN_THEME`, congelado en la Design Baseline y obligatorio solo en proyectos nuevos (ADR-003, §221) | Accepted |
+| DEC-119 | En la ruta Exprés la generación puede partir de borradores (fuentes provisionales); la base de datos impide aprobar una versión antes que las versiones de las que se generó, en cualquier ruta (ADR-004, §221.1) | Accepted |
 
 ---
 
@@ -7673,7 +7674,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116, DEC-117, DEC-118)
+# 221. Extensiones de V2 (DEC-116, DEC-117, DEC-118, DEC-119)
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
@@ -7695,6 +7696,10 @@ Implementación:
   - Se detiene en la primera falla con un mensaje por etapa.
   - Al reintentar, salta las etapas completadas y aprueba lo pendiente en vez de generar de nuevo.
   - Termina encolando la validación en el sandbox, que se muestra junto al proyecto generado.
+- **Fuentes provisionales (DEC-119, ADR-004):** en `EXPRESS`, las generaciones pueden usar como fuente la última versión en `DRAFT`, `GENERATED` o `IN_REVIEW`, además de las aprobadas.
+  - Los triggers de procedencia lo aceptan mediante `caseflow_usable_source`.
+  - El trigger `artifact_versions_approved_provenance` impide, en todas las rutas, aprobar una versión mientras alguna versión de la que se generó siga sin aprobar.
+  - La línea base de diseño, el plan de implementación y la construcción siguen exigiendo versiones aprobadas.
 
 ## 221.2 Edición de escritorio y proveedor "ChatGPT" (DEC-117, ADR-002)
 

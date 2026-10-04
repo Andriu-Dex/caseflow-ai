@@ -1,3 +1,4 @@
+import type { ApprovalOrigin } from '@caseflow-ai/contracts';
 import { randomUUID } from 'node:crypto';
 import JSZip from 'jszip';
 import {
@@ -24,6 +25,7 @@ import {
   type MockupDeviceType,
   type MockupJobResponse,
 } from '@caseflow-ai/contracts';
+import { provenanceGuard, sourceStatuses } from '../projects/source-statuses';
 import { PrismaService } from '../database/prisma.service';
 import { FirstDeliverableSnapshotService } from '../first-deliverable/first-deliverable-snapshot.service';
 import type { Prisma } from '../generated/prisma/client';
@@ -285,7 +287,7 @@ export class MockupsService {
       where: {
         id: uiBlueprintVersionId,
         projectId,
-        status: 'APPROVED',
+        status: { in: await sourceStatuses(this.prisma, projectId) },
         artifact: { artifactTypeCode: 'UI_BLUEPRINT' },
       },
       select: { id: true },
@@ -302,16 +304,32 @@ export class MockupsService {
   private async currentTheme(
     projectId: string,
   ): Promise<{ versionId: string; content: DesignThemeContent } | null> {
-    const [theme, project] = await Promise.all([
+    const [approvedTheme, project] = await Promise.all([
       new FirstDeliverableSnapshotService(this.prisma).approvedArtifactVersion(
         projectId,
         'DESIGN_THEME',
       ),
       this.prisma.project.findUnique({
         where: { id: projectId },
-        select: { designThemeRequired: true },
+        select: { designThemeRequired: true, workflowRoute: true },
       }),
     ]);
+    // DEC-119: in EXPRESS the latest theme draft is a provisional source.
+    const theme =
+      approvedTheme ??
+      (project?.workflowRoute === 'EXPRESS'
+        ? await this.prisma.artifactVersion
+            .findFirst({
+              where: {
+                projectId,
+                status: { in: await sourceStatuses(this.prisma, projectId) },
+                artifact: { artifactTypeCode: 'DESIGN_THEME', archivedAt: null },
+              },
+              orderBy: { createdAt: 'desc' },
+              select: { id: true },
+            })
+            .then((version) => (version ? { versionId: version.id } : null))
+        : null);
     if (!theme) {
       if (project?.designThemeRequired)
         throw new UnprocessableEntityException(
@@ -449,6 +467,9 @@ export class MockupsService {
     artifactId: string,
     versionId: string,
     status: ArtifactVersionStatus,
+    // HUMAN_BULK for an EXPRESS bulk approval (DEC-116); otherwise the
+    // database records HUMAN, or AUTOMATIC in BUILD_ONLY.
+    approvalOrigin?: ApprovalOrigin,
   ) {
     const version = await this.prisma.artifactVersion.findFirst({
       where: { id: versionId, projectId, artifactId, artifact: { artifactTypeCode: 'MOCKUP' } },
@@ -456,14 +477,17 @@ export class MockupsService {
     if (!version) throw new NotFoundException('Versión no encontrada.');
     if (!canTransitionArtifactVersionStatus(version.status, status))
       throw new UnprocessableEntityException('Transición de estado no permitida.');
-    return this.prisma.artifactVersion.update({
-      where: { id: versionId },
-      data: {
-        status,
-        submittedAt: status === 'IN_REVIEW' ? new Date() : version.submittedAt,
-        approvedAt: status === 'APPROVED' ? new Date() : version.approvedAt,
-      },
-    });
+    return provenanceGuard(
+      this.prisma.artifactVersion.update({
+        where: { id: versionId },
+        data: {
+          status,
+          submittedAt: status === 'IN_REVIEW' ? new Date() : version.submittedAt,
+          approvedAt: status === 'APPROVED' ? new Date() : version.approvedAt,
+          approvalOrigin: status === 'APPROVED' ? approvalOrigin : undefined,
+        },
+      }),
+    );
   }
 
   // Rendered/sanitized before any transaction opens, matching the established
@@ -478,7 +502,7 @@ export class MockupsService {
       where: {
         id: uiBlueprintVersionId,
         projectId,
-        status: 'APPROVED',
+        status: { in: await sourceStatuses(this.prisma, projectId) },
         artifact: { artifactTypeCode: 'UI_BLUEPRINT' },
       },
       include: { structuredAnalysisDetail: true },

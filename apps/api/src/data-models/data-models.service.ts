@@ -1,3 +1,4 @@
+import type { ApprovalOrigin } from '@caseflow-ai/contracts';
 import {
   Inject,
   Injectable,
@@ -17,6 +18,7 @@ import {
   dataModelGenerationOutputSchema,
   type DataModelInput,
 } from '@caseflow-ai/contracts';
+import { provenanceGuard, sourceStatuses } from '../projects/source-statuses';
 import { PrismaService } from '../database/prisma.service';
 import { getProjectLanguage } from '../projects/project-language';
 import type { DiagramKind, DiagramSourceFormat, Prisma } from '../generated/prisma/client';
@@ -140,6 +142,9 @@ export class DataModelsService {
     artifactId: string,
     versionId: string,
     status: 'DRAFT' | 'IN_REVIEW' | 'APPROVED' | 'CHANGES_REQUESTED',
+    // HUMAN_BULK for an EXPRESS bulk approval (DEC-116); otherwise the
+    // database records HUMAN, or AUTOMATIC in BUILD_ONLY.
+    approvalOrigin?: ApprovalOrigin,
   ) {
     const version = await this.prisma.artifactVersion.findFirst({
       where: { id: versionId, projectId, artifactId, artifact: { artifactTypeCode: 'DATA_MODEL' } },
@@ -147,14 +152,17 @@ export class DataModelsService {
     if (!version) throw new NotFoundException('Versión no encontrada.');
     if (!canTransitionArtifactVersionStatus(version.status, status))
       throw new UnprocessableEntityException('Transición de estado no permitida.');
-    return this.prisma.artifactVersion.update({
-      where: { id: versionId },
-      data: {
-        status,
-        submittedAt: status === 'IN_REVIEW' ? new Date() : version.submittedAt,
-        approvedAt: status === 'APPROVED' ? new Date() : version.approvedAt,
-      },
-    });
+    return provenanceGuard(
+      this.prisma.artifactVersion.update({
+        where: { id: versionId },
+        data: {
+          status,
+          submittedAt: status === 'IN_REVIEW' ? new Date() : version.submittedAt,
+          approvedAt: status === 'APPROVED' ? new Date() : version.approvedAt,
+          approvalOrigin: status === 'APPROVED' ? approvalOrigin : undefined,
+        },
+      }),
+    );
   }
 
   async generate(projectId: string, requirementVersionIds: string[], useCaseVersionIds: string[]) {
@@ -165,7 +173,7 @@ export class DataModelsService {
       where: {
         id: { in: sourceIds },
         projectId,
-        status: 'APPROVED',
+        status: { in: await sourceStatuses(this.prisma, projectId) },
         artifact: { artifactTypeCode: { in: ['REQUIREMENT', 'USE_CASE'] } },
       },
       include: {
@@ -415,7 +423,7 @@ export class DataModelsService {
       where: {
         id: { in: unique },
         projectId,
-        status: 'APPROVED',
+        status: { in: await sourceStatuses(this.prisma, projectId) },
         artifact: { artifactTypeCode: 'USE_CASE' },
       },
       include: {
