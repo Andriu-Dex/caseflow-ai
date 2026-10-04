@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { api, ApiError, downloadFile } from '../../lib/api';
 import { RequireActiveProject } from '../../components/query-state';
 import { HtmlPreviewDialog } from '../../components/html-preview-dialog';
+import { DismissibleHint } from '../../components/dismissible-hint';
 import type { BaselineResponse } from '@caseflow-ai/contracts';
 
 async function downloadJson(projectId: string, id: string): Promise<void> {
@@ -52,12 +53,14 @@ function BaselinesContent({ projectId }: { projectId: string }) {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-xl font-semibold text-foreground">Líneas Base</h1>
-        <p className="text-sm text-muted-foreground">
-          Una captura fija y con nombre de todo lo aprobado hasta hoy — a diferencia de "Preparación
-          / Exportar", que descarga el estado actual, una línea base queda guardada para siempre y
-          puede volver a descargarla cuando quiera.
-        </p>
+        <h1 className="flex items-center gap-1 text-xl font-semibold text-foreground">
+          Líneas Base
+          <DismissibleHint id="baselines-intro" label="¿Qué es una línea base?">
+            Una captura fija y con nombre de todo lo aprobado hasta hoy — a diferencia de
+            "Preparación / Exportar", que descarga el estado actual, una línea base queda guardada
+            para siempre y puede volver a descargarla cuando quiera.
+          </DismissibleHint>
+        </h1>
       </div>
 
       <div className="rounded-lg border border-border bg-card p-4">

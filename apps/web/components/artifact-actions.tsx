@@ -6,6 +6,7 @@ import { Button } from '@caseflow-ai/ui';
 import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { api, ApiError, type ArtifactVersionStatus } from '../lib/api';
+import { DismissibleHint } from './dismissible-hint';
 
 export const isPendingApproval = (status: ArtifactVersionStatus) =>
   status === 'DRAFT' || status === 'GENERATED';
@@ -164,3 +165,15 @@ export function StaleNotice() {
 
 export const AI_UNAVAILABLE_HINT =
   'Si la generación automática no está disponible en este momento, puede crearlo manualmente.';
+
+// Help, not an alert (E3): closed once, it stays closed on every page.
+export function AiUnavailableHint() {
+  return (
+    <span className="mt-2 inline-flex items-center gap-1 text-xs text-muted-foreground">
+      ¿La IA no está disponible?
+      <DismissibleHint id="ai-unavailable" label="Qué hacer si la IA no está disponible">
+        {AI_UNAVAILABLE_HINT}
+      </DismissibleHint>
+    </span>
+  );
+}
