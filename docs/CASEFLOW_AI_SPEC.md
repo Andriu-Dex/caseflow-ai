@@ -7700,6 +7700,11 @@ Implementación:
   - Los triggers de procedencia lo aceptan mediante `caseflow_usable_source`.
   - El trigger `artifact_versions_approved_provenance` impide, en todas las rutas, aprobar una versión mientras alguna versión de la que se generó siga sin aprobar.
   - La línea base de diseño, el plan de implementación y la construcción siguen exigiendo versiones aprobadas.
+- **Ruta Exprés:** el mismo orquestador genera la planificación sin aprobarla y se detiene dos veces (`AWAITING_REVIEW`).
+  - **`PLANNING_REVIEW`:** el usuario revisa todo, agrupado por etapa (`GET …/review`), y lo aprueba en bloque (`POST …/approve`). Las versiones quedan aprobadas en orden de dependencias con origen `HUMAN_BULK`, y se congela la línea base de diseño.
+  - **`IMPLEMENTATION_REVIEW`:** el usuario aprueba el plan de implementación y comienza la construcción.
+  - Si algo no puede aprobarse, se informa el elemento; lo anterior queda aprobado.
+- **Visibilidad:** la web muestra la ruta del proyecto, un menú lateral propio para Exprés y Solo construcción, y una etiqueta con el origen de aprobación en la trazabilidad ("Aprobado en bloque"; "Aprobado automáticamente — pendiente de revisión humana" cuando el proyecto ya subió de ruta).
 
 ## 221.2 Edición de escritorio y proveedor "ChatGPT" (DEC-117, ADR-002)
 

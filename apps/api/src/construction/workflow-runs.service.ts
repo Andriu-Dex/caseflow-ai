@@ -10,8 +10,10 @@ import {
 import type { Queue } from 'bullmq';
 import { CONSTRUCTION_QUEUE, type ConstructionJobPayload } from '@caseflow-ai/domain';
 import {
-  WORKFLOW_STAGES,
+  workflowStagesFor,
+  type ApprovalOrigin,
   type StructuredAnalysisKind,
+  type WorkflowReviewItem,
   type WorkflowRunResponse,
   type WorkflowStage,
 } from '@caseflow-ai/contracts';
@@ -34,12 +36,14 @@ import { CONSTRUCTION_QUEUE_TOKEN } from './construction-queue.token';
 
 const logger = new Logger('WorkflowRunsService');
 
-type Status = 'DRAFT' | 'IN_REVIEW' | 'APPROVED' | 'CHANGES_REQUESTED';
-type Transition = (status: Status) => Promise<unknown>;
-interface LatestVersion {
+type Route = 'EXPRESS' | 'BUILD_ONLY';
+type Status = 'IN_REVIEW' | 'APPROVED';
+interface CurrentVersion {
   artifactId: string;
   code: string;
+  title: string;
   versionId: string;
+  versionNumber: number;
   status: string;
 }
 interface RunContext {
@@ -47,6 +51,7 @@ interface RunContext {
   projectId: string;
   userId: string;
   prompt: string;
+  route: Route;
 }
 
 const STAGE_LABELS: Record<WorkflowStage, string> = {
@@ -64,20 +69,55 @@ const STAGE_LABELS: Record<WorkflowStage, string> = {
   MOCKUP: 'bocetos',
   GENERATION_PLAN: 'plan de generación',
   CONCEPTUAL_DOMAIN_MODEL: 'modelo conceptual',
+  PLANNING_REVIEW: 'revisión de la planificación',
   DESIGN_BASELINE: 'aprobación de diseño',
   IMPLEMENTATION_PLAN: 'plan de implementación',
+  IMPLEMENTATION_REVIEW: 'revisión del plan de implementación',
   CODE_GENERATION: 'generación de código',
   SANDBOX_VALIDATION: 'validación en el entorno aislado',
 };
 
-class StageError extends Error {}
+// What the bulk planning review approves, in dependency order (the database
+// refuses to approve anything before the versions it was generated from).
+const PLANNING_TYPES: { stage: WorkflowStage; type: string }[] = [
+  { stage: 'SOURCE', type: 'PROJECT_SOURCE' },
+  { stage: 'CONTEXT', type: 'PROJECT_CONTEXT' },
+  { stage: 'REQUIREMENTS', type: 'REQUIREMENT' },
+  { stage: 'USE_CASES', type: 'USE_CASE' },
+  { stage: 'DATA_MODEL', type: 'DATA_MODEL' },
+  { stage: 'NAVIGATION_TREE', type: 'NAVIGATION_TREE' },
+  { stage: 'SOFTWARE_ARCHITECTURE', type: 'SOFTWARE_ARCHITECTURE' },
+  { stage: 'SYSTEM_ARCHITECTURE', type: 'SYSTEM_ARCHITECTURE' },
+  { stage: 'UI_BLUEPRINT', type: 'UI_BLUEPRINT' },
+  { stage: 'DESIGN_THEME', type: 'DESIGN_THEME' },
+  { stage: 'MOCKUP', type: 'MOCKUP' },
+  { stage: 'GENERATION_PLAN', type: 'GENERATION_PLAN' },
+  { stage: 'CONCEPTUAL_DOMAIN_MODEL', type: 'CONCEPTUAL_DOMAIN_MODEL' },
+];
+const STRUCTURED_KINDS = new Set<string>([
+  'NAVIGATION_TREE',
+  'SOFTWARE_ARCHITECTURE',
+  'SYSTEM_ARCHITECTURE',
+  'UI_BLUEPRINT',
+  'DESIGN_THEME',
+  'GENERATION_PLAN',
+  'CONCEPTUAL_DOMAIN_MODEL',
+  'IMPLEMENTATION_PLAN',
+]);
 
-// Route orchestration (DEC-116, ADR-001). In BUILD_ONLY one prompt drives the
-// whole existing chain: every stage calls the service that already exists,
-// validates with the same schemas, and the database records each approval as
-// AUTOMATIC. It is never one giant prompt (DEC-111): one stage at a time,
-// stopping at the first failure with a clear message, and a retry resumes
+class StageError extends Error {}
+class AwaitingReview extends Error {}
+
+// Route orchestration (DEC-116, ADR-001). One prompt drives the existing
+// chain: every stage calls the service that already exists and validates with
+// the same schemas. It is never one giant prompt (DEC-111): one stage at a
+// time, stopping at the first failure with a clear message; a retry resumes
 // from that stage instead of generating everything again.
+//
+// BUILD_ONLY approves every stage as it goes (the database records it as
+// AUTOMATIC). EXPRESS generates the planning from provisional drafts
+// (DEC-119) and pauses twice for a bulk human review: before the Design Gate
+// and before construction.
 @Injectable()
 export class WorkflowRunsService {
   constructor(
@@ -99,14 +139,12 @@ export class WorkflowRunsService {
   async start(projectId: string, userId: string, prompt: string): Promise<WorkflowRunResponse> {
     const project = await this.prisma.project.findUnique({ where: { id: projectId } });
     if (!project) throw new NotFoundException('Proyecto no encontrado.');
-    if (project.workflowRoute !== 'BUILD_ONLY')
+    if (project.workflowRoute === 'FULL')
       throw new UnprocessableEntityException(
-        'La construcción automática desde un prompt solo está disponible en la ruta Solo construcción.',
+        'La planificación desde un prompt solo está disponible en las rutas Exprés y Solo construcción.',
       );
     if (await this.prisma.workflowRun.findFirst({ where: { projectId } }))
-      throw new ConflictException(
-        'Este proyecto ya tiene una construcción automática. Reintente la existente.',
-      );
+      throw new ConflictException('Este proyecto ya tiene una ejecución desde su prompt.');
     const run = await this.prisma.$transaction(async (tx) => {
       const created = await tx.workflowRun.create({
         data: { projectId, prompt, createdByUserId: userId },
@@ -135,16 +173,82 @@ export class WorkflowRunsService {
     });
     if (!count) {
       await this.get(projectId, runId);
-      throw new ConflictException('Solo se puede reintentar una construcción que falló.');
+      throw new ConflictException('Solo se puede reintentar una ejecución que falló.');
     }
     await this.enqueue(projectId, runId);
     return this.get(projectId, runId);
   }
 
+  // EXPRESS bulk review (HUMAN_BULK). At the planning review it approves
+  // everything generated, in dependency order, and freezes the design (the
+  // Design Gate); at the implementation review it approves the plan. Either
+  // way the run then continues.
+  async approve(projectId: string, runId: string, userId: string): Promise<WorkflowRunResponse> {
+    const run = await this.prisma.workflowRun.findFirst({ where: { id: runId, projectId } });
+    if (!run) throw new NotFoundException('Ejecución no encontrada.');
+    if (run.status !== 'AWAITING_REVIEW')
+      throw new ConflictException('Esta ejecución no está esperando una revisión.');
+    const stage = run.currentStage as WorkflowStage;
+    const types =
+      stage === 'PLANNING_REVIEW' ? PLANNING_TYPES.map((t) => t.type) : ['IMPLEMENTATION_PLAN'];
+    for (const type of types)
+      for (const item of await this.current(projectId, type)) {
+        if (item.status === 'APPROVED') continue;
+        try {
+          if (item.status !== 'IN_REVIEW')
+            await this.transition(projectId, type, item, 'IN_REVIEW', undefined, userId);
+          await this.transition(projectId, type, item, 'APPROVED', 'HUMAN_BULK', userId);
+        } catch (error) {
+          const message =
+            error instanceof HttpException ? this.httpMessage(error) : 'No se pudo aprobar.';
+          throw new UnprocessableEntityException(
+            `${item.code} no pudo aprobarse: ${message} Lo anterior quedó aprobado; corríjalo y vuelva a aprobar.`,
+          );
+        }
+      }
+    const done: WorkflowStage[] = [stage];
+    if (stage === 'PLANNING_REVIEW') {
+      await this.freezeDesign(projectId, userId, 'HUMAN_BULK');
+      done.push('DESIGN_BASELINE');
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.workflowRunStage.createMany({
+        data: done.map((s) => ({ runId, stage: s })),
+        skipDuplicates: true,
+      });
+      await tx.workflowRun.update({ where: { id: runId }, data: { status: 'QUEUED' } });
+    });
+    await this.enqueue(projectId, runId);
+    return this.get(projectId, runId);
+  }
+
+  // What the current review covers, grouped by the stage that produced it.
+  async reviewItems(projectId: string, runId: string): Promise<{ items: WorkflowReviewItem[] }> {
+    const run = await this.get(projectId, runId);
+    const types =
+      run.currentStage === 'IMPLEMENTATION_REVIEW'
+        ? [{ stage: 'IMPLEMENTATION_PLAN' as const, type: 'IMPLEMENTATION_PLAN' }]
+        : PLANNING_TYPES;
+    const items: WorkflowReviewItem[] = [];
+    for (const { stage, type } of types)
+      for (const item of await this.current(projectId, type))
+        items.push({
+          stage,
+          artifactType: type,
+          artifactId: item.artifactId,
+          versionId: item.versionId,
+          code: item.code,
+          title: item.title,
+          versionNumber: item.versionNumber,
+          status: item.status,
+        });
+    return { items };
+  }
+
   async list(projectId: string): Promise<{ items: WorkflowRunResponse[] }> {
     const rows = await this.prisma.workflowRun.findMany({
       where: { projectId },
-      include: { stages: true },
+      include: { stages: true, project: { select: { workflowRoute: true } } },
       orderBy: { createdAt: 'desc' },
     });
     return { items: rows.map((row) => this.map(row)) };
@@ -153,13 +257,14 @@ export class WorkflowRunsService {
   async get(projectId: string, runId: string): Promise<WorkflowRunResponse> {
     const row = await this.prisma.workflowRun.findFirst({
       where: { id: runId, projectId },
-      include: { stages: true },
+      include: { stages: true, project: { select: { workflowRoute: true } } },
     });
-    if (!row) throw new NotFoundException('Construcción automática no encontrada.');
+    if (!row) throw new NotFoundException('Ejecución no encontrada.');
     return this.map(row);
   }
 
-  // Worker callback. Always ends in a terminal status, so polling never hangs.
+  // Worker callback. Always ends in a terminal or review status, so polling
+  // never hangs.
   async runJob(projectId: string, runId: string): Promise<void> {
     const { count } = await this.prisma.workflowRun.updateMany({
       where: { id: runId, projectId, status: 'QUEUED' },
@@ -168,11 +273,19 @@ export class WorkflowRunsService {
     if (!count) return; // Already picked up by a previous delivery of the job.
     const row = await this.prisma.workflowRun.findUniqueOrThrow({
       where: { id: runId },
-      include: { stages: true },
+      include: { stages: true, project: { select: { workflowRoute: true } } },
     });
+    // Upgrading out of BUILD_ONLY mid-run adds the EXPRESS review pauses.
+    const route: Route = row.project.workflowRoute === 'BUILD_ONLY' ? 'BUILD_ONLY' : 'EXPRESS';
     const done = new Set(row.stages.map((s) => s.stage));
-    const ctx: RunContext = { runId, projectId, userId: row.createdByUserId, prompt: row.prompt };
-    for (const stage of WORKFLOW_STAGES) {
+    const ctx: RunContext = {
+      runId,
+      projectId,
+      userId: row.createdByUserId,
+      prompt: row.prompt,
+      route,
+    };
+    for (const stage of workflowStagesFor(route)) {
       if (done.has(stage)) continue;
       await this.prisma.workflowRun.update({
         where: { id: runId },
@@ -181,6 +294,13 @@ export class WorkflowRunsService {
       try {
         await this.runStage(stage, ctx);
       } catch (error) {
+        if (error instanceof AwaitingReview) {
+          await this.prisma.workflowRun.update({
+            where: { id: runId },
+            data: { status: 'AWAITING_REVIEW' },
+          });
+          return;
+        }
         await this.finish(ctx, 'FAILED', this.failureMessage(stage, error));
         return;
       }
@@ -193,105 +313,71 @@ export class WorkflowRunsService {
     const { projectId: pid } = ctx;
     switch (stage) {
       case 'SOURCE':
-        await this.ensureApproved(
-          pid,
-          'PROJECT_SOURCE',
-          async () => {
-            await this.sources.create(
-              pid,
-              {
-                title: 'Idea inicial del proyecto',
-                sourceKind: 'NOTES',
-                purpose: 'Descripción de la aplicación a construir',
-                description: ctx.prompt,
-              },
-              undefined,
-            );
-          },
-          (item) => (status) =>
-            this.sources.transition(pid, item.artifactId, item.versionId, status),
-        );
-        return;
+        return this.produce(ctx, 'PROJECT_SOURCE', async () => {
+          await this.sources.create(
+            pid,
+            {
+              title: 'Idea inicial del proyecto',
+              sourceKind: 'NOTES',
+              purpose: 'Descripción de la aplicación a construir',
+              description: ctx.prompt,
+            },
+            undefined,
+          );
+        });
       case 'CONTEXT':
-        await this.ensureApproved(
-          pid,
-          'PROJECT_CONTEXT',
-          async () => {
-            const candidate = await this.context.generate(pid);
-            const content = candidate.content;
-            const describe = (items: string[]) => items.map((description) => ({ description }));
-            await this.context.create(pid, {
-              problemStatement: content.problemStatement,
-              objective: content.objective,
-              additionalContext: content.additionalContext,
-              scopeItems: [],
-              actors: content.actors.map((name) => ({ name })),
-              needs: describe(content.needs),
-              constraints: describe(content.constraints),
-              businessRules: describe(content.businessRules),
-              sourceVersionIds: candidate.sourceVersionIds,
-            });
-          },
-          (item) => (status) => this.context.transition(pid, item.versionId, status),
-        );
-        return;
+        return this.produce(ctx, 'PROJECT_CONTEXT', async () => {
+          const candidate = await this.context.generate(pid);
+          const content = candidate.content;
+          const describe = (items: string[]) => items.map((description) => ({ description }));
+          await this.context.create(pid, {
+            problemStatement: content.problemStatement,
+            objective: content.objective,
+            additionalContext: content.additionalContext,
+            scopeItems: [],
+            actors: content.actors.map((name) => ({ name })),
+            needs: describe(content.needs),
+            constraints: describe(content.constraints),
+            businessRules: describe(content.businessRules),
+            sourceVersionIds: candidate.sourceVersionIds,
+          });
+        });
       case 'REQUIREMENTS': {
-        const [contextVersion] = await this.approved(pid, 'PROJECT_CONTEXT');
-        await this.ensureApproved(
-          pid,
-          'REQUIREMENT',
-          async () => {
-            const generation = await this.requirements.generate(pid, contextVersion!);
-            await this.requirements.accept(
-              pid,
-              generation.id,
-              generation.candidates.map((c) => c.id),
-            );
-          },
-          (item) => (status) =>
-            this.requirements.transition(pid, item.artifactId, item.versionId, status),
-        );
-        return;
+        const [context] = await this.versionIds(pid, 'PROJECT_CONTEXT');
+        return this.produce(ctx, 'REQUIREMENT', async () => {
+          const generation = await this.requirements.generate(pid, context!);
+          await this.requirements.accept(
+            pid,
+            generation.id,
+            generation.candidates.map((c) => c.id),
+          );
+        });
       }
       case 'USE_CASES': {
-        const requirements = await this.approved(pid, 'REQUIREMENT');
-        await this.ensureApproved(
-          pid,
-          'USE_CASE',
-          async () => {
-            const generation = await this.useCases.generate(pid, requirements);
-            await this.useCases.accept(
-              pid,
-              generation.id,
-              generation.candidates.map((c) => c.id),
-            );
-          },
-          (item) => (status) =>
-            this.useCases.transition(pid, item.artifactId, item.versionId, status),
-        );
-        return;
+        const requirements = await this.versionIds(pid, 'REQUIREMENT');
+        return this.produce(ctx, 'USE_CASE', async () => {
+          const generation = await this.useCases.generate(pid, requirements);
+          await this.useCases.accept(
+            pid,
+            generation.id,
+            generation.candidates.map((c) => c.id),
+          );
+        });
       }
       case 'USE_CASE_DIAGRAM':
         // System-generated and never approved (spec §6.3): it only has to exist.
-        if (!(await this.latest(pid, 'USE_CASE_DIAGRAM')).length)
-          await this.dataModels.generateUseCaseDiagram(pid, await this.approved(pid, 'USE_CASE'));
+        if (!(await this.current(pid, 'USE_CASE_DIAGRAM')).length)
+          await this.dataModels.generateUseCaseDiagram(pid, await this.versionIds(pid, 'USE_CASE'));
         return;
       case 'DATA_MODEL': {
         const [requirements, useCases] = await Promise.all([
-          this.approved(pid, 'REQUIREMENT'),
-          this.approved(pid, 'USE_CASE'),
+          this.versionIds(pid, 'REQUIREMENT'),
+          this.versionIds(pid, 'USE_CASE'),
         ]);
-        await this.ensureApproved(
-          pid,
-          'DATA_MODEL',
-          async () => {
-            const generation = await this.dataModels.generate(pid, requirements, useCases);
-            await this.dataModels.accept(pid, generation.id, this.first(generation.candidates));
-          },
-          (item) => (status) =>
-            this.dataModels.transition(pid, item.artifactId, item.versionId, status),
-        );
-        return;
+        return this.produce(ctx, 'DATA_MODEL', async () => {
+          const generation = await this.dataModels.generate(pid, requirements, useCases);
+          await this.dataModels.accept(pid, generation.id, this.first(generation.candidates));
+        });
       }
       case 'NAVIGATION_TREE':
       case 'SOFTWARE_ARCHITECTURE':
@@ -300,75 +386,42 @@ export class WorkflowRunsService {
       case 'DESIGN_THEME':
       case 'GENERATION_PLAN':
       case 'CONCEPTUAL_DOMAIN_MODEL':
-        await this.structuredStage(pid, stage);
-        return;
+        return this.structuredStage(ctx, stage);
       case 'MOCKUP': {
-        const [blueprint] = await this.approved(pid, 'UI_BLUEPRINT');
-        await this.ensureApproved(
-          pid,
-          'MOCKUP',
-          async () => {
-            const job = await this.mockups.generateNow(pid, blueprint!);
-            if (job.status !== 'COMPLETED')
-              throw new StageError(job.errorMessage ?? 'No se pudo generar el boceto.');
-          },
-          (item) => (status) =>
-            this.mockups.transition(pid, item.artifactId, item.versionId, status),
-        );
-        return;
-      }
-      case 'DESIGN_BASELINE': {
-        if (await this.prisma.designBaseline.findFirst({ where: { projectId: pid } })) return;
-        const one = async (type: string) => (await this.approved(pid, type))[0];
-        await this.designBaselines.create(pid, ctx.userId, {
-          label: 'Diseño aprobado automáticamente',
-          versions: {
-            GENERATION_PLAN: (await one('GENERATION_PLAN'))!,
-            CONCEPTUAL_DOMAIN_MODEL: (await one('CONCEPTUAL_DOMAIN_MODEL'))!,
-            NAVIGATION_TREE: (await one('NAVIGATION_TREE'))!,
-            UI_BLUEPRINT: (await one('UI_BLUEPRINT'))!,
-            DESIGN_THEME: await one('DESIGN_THEME'),
-            MOCKUP: (await one('MOCKUP'))!,
-            SOFTWARE_ARCHITECTURE: await one('SOFTWARE_ARCHITECTURE'),
-            SYSTEM_ARCHITECTURE: await one('SYSTEM_ARCHITECTURE'),
-          },
+        const [blueprint] = await this.versionIds(pid, 'UI_BLUEPRINT');
+        return this.produce(ctx, 'MOCKUP', async () => {
+          const job = await this.mockups.generateNow(pid, blueprint!);
+          if (job.status !== 'COMPLETED')
+            throw new StageError(job.errorMessage ?? 'No se pudo generar el boceto.');
         });
-        return;
       }
+      case 'PLANNING_REVIEW':
+      case 'IMPLEMENTATION_REVIEW':
+        // Completed by approve(): until then the run waits for the person.
+        throw new AwaitingReview();
+      case 'DESIGN_BASELINE':
+        return this.freezeDesign(pid, ctx.userId);
       case 'IMPLEMENTATION_PLAN': {
         const baseline = await this.prisma.designBaseline.findFirstOrThrow({
           where: { projectId: pid },
           orderBy: { createdAt: 'desc' },
         });
-        await this.ensureApproved(
-          pid,
-          'IMPLEMENTATION_PLAN',
-          async () => {
-            const generation = await this.structured.generateFromDesignBaseline(
-              pid,
-              'IMPLEMENTATION_PLAN',
-              baseline.id,
-            );
-            await this.structured.accept(
-              pid,
-              'IMPLEMENTATION_PLAN',
-              generation.id,
-              this.first(generation.candidates),
-            );
-          },
-          (item) => (status) =>
-            this.structured.transition(
-              pid,
-              'IMPLEMENTATION_PLAN',
-              item.artifactId,
-              item.versionId,
-              status,
-            ),
-        );
-        return;
+        return this.produce(ctx, 'IMPLEMENTATION_PLAN', async () => {
+          const generation = await this.structured.generateFromDesignBaseline(
+            pid,
+            'IMPLEMENTATION_PLAN',
+            baseline.id,
+          );
+          await this.structured.accept(
+            pid,
+            'IMPLEMENTATION_PLAN',
+            generation.id,
+            this.first(generation.candidates),
+          );
+        });
       }
       case 'CODE_GENERATION': {
-        const [planVersionId] = await this.approved(pid, 'IMPLEMENTATION_PLAN');
+        const [planVersionId] = await this.versionIds(pid, 'IMPLEMENTATION_PLAN');
         const existing = await this.prisma.generationRun.findFirst({
           where: { projectId: pid, implementationPlanVersionId: planVersionId },
           orderBy: { createdAt: 'desc' },
@@ -401,81 +454,150 @@ export class WorkflowRunsService {
     }
   }
 
-  private async structuredStage(projectId: string, kind: StructuredAnalysisKind) {
+  private async structuredStage(ctx: RunContext, kind: StructuredAnalysisKind) {
     const sourceIds = (
-      await Promise.all(ELIGIBLE_SOURCE_TYPES[kind].map((type) => this.approved(projectId, type)))
+      await Promise.all(
+        ELIGIBLE_SOURCE_TYPES[kind].map((type) => this.versionIds(ctx.projectId, type)),
+      )
     ).flat();
-    await this.ensureApproved(
+    await this.produce(ctx, kind, async () => {
+      const generation = await this.structured.generate(ctx.projectId, kind, sourceIds);
+      // A theme proposal below WCAG AA could never be approved: take the
+      // first accessible palette of the three.
+      const usable =
+        kind === 'DESIGN_THEME'
+          ? generation.candidates.filter(
+              (c) => !c.qualityFindings.some((f) => f.code === 'LOW_CONTRAST'),
+            )
+          : generation.candidates;
+      if (!usable.length)
+        throw new StageError(
+          'Ninguna de las paletas propuestas cumple el contraste mínimo de accesibilidad.',
+        );
+      await this.structured.accept(ctx.projectId, kind, generation.id, this.first(usable));
+    });
+  }
+
+  // Generates a stage only when it produced nothing yet, so a retry never
+  // duplicates artifacts. BUILD_ONLY then approves what is pending; EXPRESS
+  // leaves it for the bulk review.
+  private async produce(ctx: RunContext, type: string, generate: () => Promise<void>) {
+    let items = await this.current(ctx.projectId, type);
+    if (!items.length) {
+      await generate();
+      items = await this.current(ctx.projectId, type);
+    }
+    if (!items.length) throw new StageError('La IA no propuso ningún elemento.');
+    if (ctx.route === 'EXPRESS') return;
+    for (const item of items) {
+      if (item.status === 'APPROVED') continue;
+      if (item.status !== 'IN_REVIEW')
+        await this.transition(ctx.projectId, type, item, 'IN_REVIEW');
+      await this.transition(ctx.projectId, type, item, 'APPROVED');
+    }
+  }
+
+  private async freezeDesign(projectId: string, userId: string, origin?: 'HUMAN_BULK') {
+    if (await this.prisma.designBaseline.findFirst({ where: { projectId } })) return;
+    const one = async (type: string) =>
+      (await this.current(projectId, type)).find((v) => v.status === 'APPROVED')?.versionId;
+    await this.designBaselines.create(
       projectId,
-      kind,
-      async () => {
-        const generation = await this.structured.generate(projectId, kind, sourceIds);
-        // A theme proposal below WCAG AA could never be approved: take the
-        // first accessible palette of the three.
-        const usable =
-          kind === 'DESIGN_THEME'
-            ? generation.candidates.filter(
-                (c) => !c.qualityFindings.some((f) => f.code === 'LOW_CONTRAST'),
-              )
-            : generation.candidates;
-        if (!usable.length)
-          throw new StageError(
-            'Ninguna de las paletas propuestas cumple el contraste mínimo de accesibilidad.',
-          );
-        await this.structured.accept(projectId, kind, generation.id, this.first(usable));
+      userId,
+      {
+        label: origin ? 'Diseño aprobado en bloque' : 'Diseño aprobado automáticamente',
+        versions: {
+          GENERATION_PLAN: (await one('GENERATION_PLAN'))!,
+          CONCEPTUAL_DOMAIN_MODEL: (await one('CONCEPTUAL_DOMAIN_MODEL'))!,
+          NAVIGATION_TREE: (await one('NAVIGATION_TREE'))!,
+          UI_BLUEPRINT: (await one('UI_BLUEPRINT'))!,
+          DESIGN_THEME: await one('DESIGN_THEME'),
+          MOCKUP: (await one('MOCKUP'))!,
+          SOFTWARE_ARCHITECTURE: await one('SOFTWARE_ARCHITECTURE'),
+          SYSTEM_ARCHITECTURE: await one('SYSTEM_ARCHITECTURE'),
+        },
       },
-      (item) => (status) =>
-        this.structured.transition(projectId, kind, item.artifactId, item.versionId, status),
+      origin,
     );
   }
 
-  // Approves what a previous attempt left pending and only generates when
-  // the stage produced nothing yet, so a retry never duplicates artifacts.
-  private async ensureApproved(
+  // One stage service's transition, by artifact type.
+  private transition(
     projectId: string,
     type: string,
-    generate: () => Promise<void>,
-    transitionFor: (item: LatestVersion) => Transition,
-  ) {
-    let items = await this.latest(projectId, type);
-    if (!items.length) {
-      await generate();
-      items = await this.latest(projectId, type);
-    }
-    if (!items.length) throw new StageError('La IA no propuso ningún elemento.');
-    for (const item of items) {
-      if (item.status === 'APPROVED') continue;
-      const transition = transitionFor(item);
-      if (item.status !== 'IN_REVIEW') await transition('IN_REVIEW');
-      await transition('APPROVED');
+    item: CurrentVersion,
+    status: Status,
+    origin?: ApprovalOrigin,
+    actorUserId: string | null = null,
+  ): Promise<unknown> {
+    if (STRUCTURED_KINDS.has(type))
+      return this.structured.transition(
+        projectId,
+        type as StructuredAnalysisKind,
+        item.artifactId,
+        item.versionId,
+        status,
+        actorUserId,
+        origin,
+      );
+    switch (type) {
+      case 'PROJECT_SOURCE':
+        return this.sources.transition(projectId, item.artifactId, item.versionId, status, origin);
+      case 'PROJECT_CONTEXT':
+        return this.context.transition(projectId, item.versionId, status, origin);
+      case 'REQUIREMENT':
+        return this.requirements.transition(
+          projectId,
+          item.artifactId,
+          item.versionId,
+          status,
+          origin,
+        );
+      case 'USE_CASE':
+        return this.useCases.transition(projectId, item.artifactId, item.versionId, status, origin);
+      case 'DATA_MODEL':
+        return this.dataModels.transition(
+          projectId,
+          item.artifactId,
+          item.versionId,
+          status,
+          origin,
+        );
+      case 'MOCKUP':
+        return this.mockups.transition(projectId, item.artifactId, item.versionId, status, origin);
+      default:
+        throw new StageError(`Tipo de artefacto no soportado: ${type}.`);
     }
   }
 
-  // Latest version of every live artifact of a type in the project.
-  private async latest(projectId: string, type: string): Promise<LatestVersion[]> {
+  // Latest version of every live artifact of a type, except rejected ones.
+  // In BUILD_ONLY each is approved before the next stage; in EXPRESS the
+  // drafts are provisional sources (DEC-119).
+  private async current(projectId: string, type: string): Promise<CurrentVersion[]> {
     const rows = await this.prisma.artifact.findMany({
       where: { projectId, artifactTypeCode: type, archivedAt: null },
       include: { versions: { orderBy: { versionNumber: 'desc' }, take: 1 } },
       orderBy: { code: 'asc' },
     });
-    return rows.flatMap((row) =>
-      row.versions[0]
+    return rows.flatMap((row) => {
+      const version = row.versions[0];
+      return version && version.status !== 'CHANGES_REQUESTED'
         ? [
             {
               artifactId: row.id,
               code: row.code,
-              versionId: row.versions[0].id,
-              status: row.versions[0].status,
+              title: version.title,
+              versionId: version.id,
+              versionNumber: version.versionNumber,
+              status: version.status,
             },
           ]
-        : [],
-    );
+        : [];
+    });
   }
 
-  private async approved(projectId: string, type: string): Promise<string[]> {
-    return (await this.latest(projectId, type))
-      .filter((item) => item.status === 'APPROVED')
-      .map((item) => item.versionId);
+  private async versionIds(projectId: string, type: string): Promise<string[]> {
+    return (await this.current(projectId, type)).map((item) => item.versionId);
   }
 
   private first(candidates: { id: string }[]): string[] {
@@ -483,17 +605,19 @@ export class WorkflowRunsService {
     return [candidates[0].id];
   }
 
+  private httpMessage(error: HttpException): string {
+    const response = error.getResponse();
+    const message =
+      typeof response === 'string'
+        ? response
+        : (response as { message?: string | string[] }).message;
+    return Array.isArray(message) ? message.join(' ') : (message ?? error.message);
+  }
+
   private failureMessage(stage: WorkflowStage, error: unknown): string {
     const prefix = `La etapa «${STAGE_LABELS[stage]}» no se completó`;
     if (error instanceof StageError) return `${prefix}: ${error.message}`;
-    if (error instanceof HttpException) {
-      const response = error.getResponse();
-      const message =
-        typeof response === 'string'
-          ? response
-          : (response as { message?: string | string[] }).message;
-      return `${prefix}: ${Array.isArray(message) ? message.join(' ') : (message ?? error.message)}`;
-    }
+    if (error instanceof HttpException) return `${prefix}: ${this.httpMessage(error)}`;
     logger.warn(
       `Workflow stage ${stage} failed: ${error instanceof Error ? error.message : error}`,
       error instanceof Error ? error.stack : undefined,
@@ -545,15 +669,20 @@ export class WorkflowRunsService {
     startedAt: Date | null;
     finishedAt: Date | null;
     stages: { stage: string }[];
+    project: { workflowRoute: string };
   }): WorkflowRunResponse {
     const done = new Set(row.stages.map((s) => s.stage));
+    const stages = workflowStagesFor(
+      row.project.workflowRoute === 'BUILD_ONLY' ? 'BUILD_ONLY' : 'EXPRESS',
+    );
     return {
       id: row.id,
       projectId: row.projectId,
       prompt: row.prompt,
       status: row.status,
       currentStage: row.currentStage as WorkflowStage | null,
-      completedStages: WORKFLOW_STAGES.filter((stage) => done.has(stage)),
+      stages,
+      completedStages: stages.filter((stage) => done.has(stage)),
       errorMessage: row.errorMessage,
       createdAt: row.createdAt.toISOString(),
       startedAt: row.startedAt?.toISOString() ?? null,

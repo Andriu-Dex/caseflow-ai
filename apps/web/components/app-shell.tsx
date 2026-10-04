@@ -96,6 +96,14 @@ const BUILD_ONLY_GROUPS: { label: string; items: NavItem[] }[] = [
   NAV_GROUPS.find((group) => group.label === CONSTRUCTION_GROUP_LABEL)!,
 ];
 
+// EXPRESS route (DEC-116): the assistant drives planning and its bulk
+// reviews; the planning pages stay reachable from it for editing.
+const EXPRESS_GROUPS: { label: string; items: NavItem[] }[] = [
+  NAV_GROUPS[0]!,
+  { label: 'Exprés', items: [{ href: '/express', label: 'Asistente Exprés' }] },
+  NAV_GROUPS.find((group) => group.label === CONSTRUCTION_GROUP_LABEL)!,
+];
+
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { projectId } = useActiveProject();
@@ -109,8 +117,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     queryFn: () => api.projects.get(projectId!),
     enabled: Boolean(projectId) && pathname !== '/login' && pathname !== '/register',
   });
-  const buildOnly = project.data?.workflowRoute === 'BUILD_ONLY';
-  const groups = buildOnly ? BUILD_ONLY_GROUPS : NAV_GROUPS;
+  const route = project.data?.workflowRoute;
+  // The prompt routes run their own gates server-side: construction is
+  // reachable without walking the twelve planning steps by hand.
+  const buildOnly = route === 'BUILD_ONLY' || route === 'EXPRESS';
+  const groups =
+    route === 'BUILD_ONLY' ? BUILD_ONLY_GROUPS : route === 'EXPRESS' ? EXPRESS_GROUPS : NAV_GROUPS;
   const [lockedMessage, setLockedMessage] = useState<string | null>(null);
 
   useEffect(() => setLockedMessage(null), [pathname]);
@@ -268,7 +280,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                             </span>
                           ) : item.href === '/readiness' ? (
                             <ClipboardCheck className="size-4 shrink-0" aria-hidden="true" />
-                          ) : item.href.startsWith('/construction/') || item.href === '/build' ? (
+                          ) : item.href.startsWith('/construction/') ||
+                            item.href === '/build' ||
+                            item.href === '/express' ? (
                             <Hammer className="size-4 shrink-0" aria-hidden="true" />
                           ) : (
                             <Home className="size-4 shrink-0" aria-hidden="true" />

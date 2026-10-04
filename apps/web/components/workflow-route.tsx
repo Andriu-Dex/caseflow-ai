@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { ArrowUpCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import { WORKFLOW_ROUTES, type WorkflowRoute } from '@caseflow-ai/contracts';
+import { WORKFLOW_ROUTES, type ApprovalOrigin, type WorkflowRoute } from '@caseflow-ai/contracts';
 import {
   Badge,
   Button,
@@ -15,6 +16,7 @@ import {
   DialogTitle,
 } from '@caseflow-ai/ui';
 import { api, ApiError } from '../lib/api';
+import { useActiveProject } from '../lib/active-project';
 
 // Workflow routes (DEC-116): every project shows its route, so a prototype is
 // never mistaken for a reviewed deliverable.
@@ -137,5 +139,34 @@ export function UpgradeRouteButton({
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+// Who approved a version (DEC-116). An automatic approval in a project that
+// has since moved up from BUILD_ONLY still awaits a person's review.
+export function ApprovalOriginBadge({ origin }: { origin: ApprovalOrigin | null }) {
+  const { projectId } = useActiveProject();
+  const project = useQuery({
+    queryKey: ['project', projectId],
+    queryFn: () => api.projects.get(projectId!),
+    enabled: Boolean(projectId) && origin === 'AUTOMATIC',
+  });
+  if (origin !== 'AUTOMATIC' && origin !== 'HUMAN_BULK') return null;
+  const pendingReview = origin === 'AUTOMATIC' && project.data?.workflowRoute !== 'BUILD_ONLY';
+  return (
+    <span
+      className="rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-800 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300"
+      title={
+        origin === 'HUMAN_BULK'
+          ? 'Aprobado por una persona dentro de una revisión en bloque (ruta Exprés).'
+          : 'Aprobado por el sistema, sin revisión humana (ruta Solo construcción).'
+      }
+    >
+      {origin === 'HUMAN_BULK'
+        ? 'Aprobado en bloque'
+        : pendingReview
+          ? 'Aprobado automáticamente — pendiente de revisión humana'
+          : 'Aprobado automáticamente'}
+    </span>
   );
 }

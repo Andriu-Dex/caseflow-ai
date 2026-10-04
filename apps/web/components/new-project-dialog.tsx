@@ -22,8 +22,7 @@ import { WORKFLOW_ROUTE_DESCRIPTIONS, WORKFLOW_ROUTE_LABELS } from './workflow-r
 // later move up, never down.
 const ROUTE_CHOICES: { route: WorkflowRoute; available: boolean }[] = [
   { route: 'FULL', available: true },
-  // ponytail: Exprés needs its bulk-review assistant (E2c); offered then.
-  { route: 'EXPRESS', available: false },
+  { route: 'EXPRESS', available: true },
   { route: 'BUILD_ONLY', available: true },
 ];
 
@@ -44,7 +43,7 @@ export function NewProjectDialog({
   const [prompt, setPrompt] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const needsPrompt = route === 'BUILD_ONLY';
+  const needsPrompt = route !== 'FULL';
 
   async function create(e: React.FormEvent) {
     e.preventDefault();
@@ -71,7 +70,7 @@ export function NewProjectDialog({
       setPrompt('');
       setRoute('FULL');
       onOpenChange(false);
-      if (needsPrompt) router.push('/build');
+      if (needsPrompt) router.push(route === 'EXPRESS' ? '/express' : '/build');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo crear el proyecto.');
     } finally {
@@ -156,7 +155,7 @@ export function NewProjectDialog({
               type="submit"
               disabled={saving || !name.trim() || (needsPrompt && !prompt.trim())}
             >
-              {saving ? 'Creando…' : needsPrompt ? 'Crear y construir' : 'Crear proyecto'}
+              {saving ? 'Creando…' : needsPrompt ? 'Crear y generar' : 'Crear proyecto'}
             </Button>
           </DialogFooter>
         </form>

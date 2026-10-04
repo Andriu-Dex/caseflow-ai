@@ -229,7 +229,58 @@ describe('Workflow runs integration', () => {
       .expect(409);
   });
 
-  it('is only available in the BUILD_ONLY route, once per project and per project', async () => {
+  // DEC-119: EXPRESS plans from provisional drafts, then a person approves in bulk.
+  it('pauses EXPRESS for two bulk reviews and records them as HUMAN_BULK', async () => {
+    const projectId = await project('EXPRESS');
+    const started = await start(projectId).expect(202);
+    await runs.runJob(projectId, started.body.id);
+    let run = await runs.get(projectId, started.body.id);
+    expect(run).toMatchObject({ status: 'AWAITING_REVIEW', currentStage: 'PLANNING_REVIEW' });
+    expect(run.stages).toContain('PLANNING_REVIEW');
+    expect(run.completedStages.at(-1)).toBe('CONCEPTUAL_DOMAIN_MODEL');
+    // The whole planning exists, and nothing is approved before the review.
+    expect(
+      await ctx.prisma.artifactVersion.count({ where: { projectId, status: 'APPROVED' } }),
+    ).toBe(0);
+
+    const review = await http()
+      .get(`/projects/${projectId}/workflow-runs/${started.body.id}/review`)
+      .set(auth)
+      .expect(200);
+    expect(new Set(review.body.items.map((i: { stage: string }) => i.stage)).size).toBe(13);
+
+    await http()
+      .post(`/projects/${projectId}/workflow-runs/${started.body.id}/approve`)
+      .set(auth)
+      .expect(202);
+    const baseline = await ctx.prisma.designBaseline.findFirstOrThrow({ where: { projectId } });
+    expect(baseline.approvalOrigin).toBe('HUMAN_BULK');
+    await runs.runJob(projectId, started.body.id);
+    run = await runs.get(projectId, started.body.id);
+    expect(run).toMatchObject({ status: 'AWAITING_REVIEW', currentStage: 'IMPLEMENTATION_REVIEW' });
+    expect(await ctx.prisma.generationRun.count({ where: { projectId } })).toBe(0);
+
+    await http()
+      .post(`/projects/${projectId}/workflow-runs/${started.body.id}/approve`)
+      .set(auth)
+      .expect(202);
+    await runs.runJob(projectId, started.body.id);
+    expect((await runs.get(projectId, started.body.id)).status).toBe('COMPLETED');
+    const origins = await ctx.prisma.artifactVersion.findMany({
+      where: { projectId, status: 'APPROVED' },
+      select: { approvalOrigin: true },
+    });
+    expect(origins).toHaveLength(14);
+    expect(new Set(origins.map((o) => o.approvalOrigin))).toEqual(new Set(['HUMAN_BULK']));
+    expect(await ctx.prisma.generationRun.count({ where: { projectId } })).toBe(1);
+
+    await http()
+      .post(`/projects/${projectId}/workflow-runs/${started.body.id}/approve`)
+      .set(auth)
+      .expect(409);
+  });
+
+  it('needs a route with a prompt, once per project and per project', async () => {
     const full = await project('FULL');
     const refused = await start(full).expect(422);
     expect(refused.body.message).toContain('Solo construcción');

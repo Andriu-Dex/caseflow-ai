@@ -1688,6 +1688,7 @@ model GeneratedProjectSnapshot {
 enum WorkflowRunStatus {
   QUEUED
   RUNNING
+  AWAITING_REVIEW
   COMPLETED
   FAILED
 

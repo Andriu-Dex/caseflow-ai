@@ -201,6 +201,7 @@ export class TraceabilityService {
       versionNumber: v.versionNumber,
       status: v.status,
       origin: v.origin,
+      approvalOrigin: v.approvalOrigin,
       title: v.title,
       isCurrent: v.versionNumber === maxVersionByArtifact.get(v.artifactId),
       generation: generationByVersion.get(v.id) ?? null,
