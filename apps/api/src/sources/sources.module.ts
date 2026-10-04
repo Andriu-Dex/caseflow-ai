@@ -1,13 +1,9 @@
 import { Inject, Module, type OnModuleDestroy } from '@nestjs/common';
-import { Queue } from 'bullmq';
+import { createJobQueue, createStorageProvider, type JobQueue } from '../common/infrastructure';
 import { SOURCE_PROCESSING_QUEUE, type SourceProcessingJobPayload } from '@caseflow-ai/domain';
-import { loadStorageConfig } from '@caseflow-ai/config';
 import {
-  DisabledStorageProvider,
-  S3StorageProvider,
   DisabledTranscriptionProvider,
   OpenAICompatibleTranscriptionProvider,
-  type StorageProvider,
   type TranscriptionProvider,
 } from '@caseflow-ai/integrations';
 import { AIModule } from '../ai/ai.module';
@@ -45,27 +41,22 @@ import { KnowledgeBaseModule } from '../knowledge-base/knowledge-base.module';
     },
     {
       provide: STORAGE_PROVIDER,
-      useFactory: (): StorageProvider => {
-        const config = loadStorageConfig(process.env);
-        return config.configured ? new S3StorageProvider(config) : new DisabledStorageProvider();
-      },
+      useFactory: createStorageProvider,
     },
     {
       provide: SOURCE_QUEUE,
-      useFactory: (): Queue<SourceProcessingJobPayload> =>
-        new Queue<SourceProcessingJobPayload>(SOURCE_PROCESSING_QUEUE, {
-          connection: {
-            url: process.env.REDIS_URL ?? 'redis://localhost:6379',
-            enableOfflineQueue: false,
-            maxRetriesPerRequest: 1,
-          },
-        }),
+      useFactory: () =>
+        createJobQueue<SourceProcessingJobPayload>(
+          SOURCE_PROCESSING_QUEUE,
+          (job) => `/projects/${job.projectId}/sources/jobs/${job.jobId}/run`,
+          { enableOfflineQueue: false, maxRetriesPerRequest: 1 },
+        ),
     },
   ],
   exports: [SourcesService],
 })
 export class SourcesModule implements OnModuleDestroy {
-  constructor(@Inject(SOURCE_QUEUE) private readonly queue: Queue) {}
+  constructor(@Inject(SOURCE_QUEUE) private readonly queue: JobQueue<unknown>) {}
 
   async onModuleDestroy(): Promise<void> {
     await this.queue.close();

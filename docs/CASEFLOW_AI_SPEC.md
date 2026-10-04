@@ -7238,6 +7238,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-117 | Licencia Apache-2.0; edición de escritorio con Electron; proveedor "ChatGPT" (plan usage de OpenAI) solo en escritorio, sin pagos en ninguna edición (ADR-002, §221) | Accepted |
 | DEC-118 | Tema (claro/oscuro/ambos) y paleta por proyecto como artefacto `DESIGN_THEME`, congelado en la Design Baseline y obligatorio solo en proyectos nuevos (ADR-003, §221) | Accepted |
 | DEC-119 | En la ruta Exprés la generación puede partir de borradores (fuentes provisionales); la base de datos impide aprobar una versión antes que las versiones de las que se generó, en cualquier ruta (ADR-004, §221.1) | Accepted |
+| DEC-120 | La edición de escritorio usa PGlite con pgvector en lugar de PostgreSQL embebido, una cola en proceso en lugar de Redis y almacenamiento en disco (ADR-005, §221.2) | Accepted |
 
 ---
 
@@ -7674,7 +7675,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116, DEC-117, DEC-118, DEC-119)
+# 221. Extensiones de V2 (DEC-116 a DEC-120)
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
@@ -7708,7 +7709,7 @@ Implementación:
 
 ## 221.2 Edición de escritorio y proveedor "ChatGPT" (DEC-117, ADR-002)
 
-El proyecto se publica con licencia Apache-2.0, sin pagos en ninguna edición. La edición de escritorio (Electron, `apps/desktop`) incluye PostgreSQL y Redis portables y un `FilesystemStorageProvider`; la construcción sigue exigiendo Docker (§174).
+El proyecto se publica con licencia Apache-2.0, sin pagos en ninguna edición. La edición de escritorio (Electron, `apps/desktop`) usa PGlite con pgvector expuesto por TCP, una cola en proceso sin Redis (`CASEFLOW_QUEUE_MODE=in-process`) y un `FilesystemStorageProvider` (`STORAGE_DIR`) (DEC-120, ADR-005). La construcción sigue exigiendo Docker (§174).
 
 El proveedor "ChatGPT" (plan usage de OpenAI, Responses API) existe solo en la edición de escritorio. Ante cuota agotada (429) avisa y ofrece otro modelo solo con confirmación del usuario; ante falta de elegibilidad (403) explica sin reintentar. La edición web muestra la opción, pero lleva al asistente de instalación de escritorio.
 
