@@ -46,7 +46,7 @@ describe('NewProjectDialog (DEC-116)', () => {
     );
     await user.type(screen.getByLabelText('Nombre del nuevo proyecto'), 'Prototipo');
     await user.click(screen.getByRole('radio', { name: /Solo construcción/ }));
-    const submit = screen.getByRole('button', { name: 'Crear y construir' });
+    const submit = screen.getByRole('button', { name: 'Crear y generar' });
     expect(submit).toBeDisabled();
     await user.type(screen.getByLabelText(/Qué aplicación quiere construir/), 'Una app de pedidos');
     await user.click(submit);

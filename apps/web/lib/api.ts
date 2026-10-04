@@ -29,6 +29,7 @@ import type {
   StalenessAnalysisResponse,
   StructuredAnalysisKind,
   WorkflowRoute,
+  WorkflowReviewItem,
   WorkflowRunResponse,
   StructuredAnalysisResponse,
   TraceabilityDiagramResponse,
@@ -631,6 +632,10 @@ export const api = {
       post<WorkflowRunResponse>(`/projects/${projectId}/workflow-runs`, { prompt }),
     retry: (projectId: string, runId: string) =>
       post<WorkflowRunResponse>(`/projects/${projectId}/workflow-runs/${runId}/retry`),
+    review: (projectId: string, runId: string) =>
+      get<{ items: WorkflowReviewItem[] }>(`/projects/${projectId}/workflow-runs/${runId}/review`),
+    approve: (projectId: string, runId: string) =>
+      post<WorkflowRunResponse>(`/projects/${projectId}/workflow-runs/${runId}/approve`),
   },
   generationRuns: {
     list: (projectId: string) =>

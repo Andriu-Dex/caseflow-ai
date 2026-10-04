@@ -1,12 +1,25 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { UpgradeRouteButton, WorkflowRouteBadge, upgradeTargets } from './workflow-route';
+import {
+  ApprovalOriginBadge,
+  UpgradeRouteButton,
+  WorkflowRouteBadge,
+  upgradeTargets,
+} from './workflow-route';
+import { TestProviders } from '../lib/test-utils';
 
 const upgrade = vi.fn().mockResolvedValue({});
+const projectGet = vi.fn();
 
 vi.mock('../lib/api', () => ({
-  api: { projects: { upgradeWorkflowRoute: (...args: unknown[]) => upgrade(...args) } },
+  api: {
+    projects: {
+      upgradeWorkflowRoute: (...args: unknown[]) => upgrade(...args),
+      get: (...args: unknown[]) => projectGet(...args),
+    },
+  },
+  restoreSession: vi.fn(),
   ApiError: class ApiError extends Error {},
 }));
 
@@ -34,5 +47,21 @@ describe('workflow routes (DEC-116)', () => {
       <UpgradeRouteButton projectId="p1" route="FULL" onUpgraded={vi.fn()} />,
     );
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('marks automatic approvals as pending human review once the route moved up', async () => {
+    window.localStorage.setItem('caseflow.activeProjectId', 'p1');
+    projectGet.mockResolvedValue({ id: 'p1', workflowRoute: 'EXPRESS' });
+    render(
+      <TestProviders>
+        <ApprovalOriginBadge origin="AUTOMATIC" />
+        <ApprovalOriginBadge origin="HUMAN_BULK" />
+        <ApprovalOriginBadge origin="HUMAN" />
+      </TestProviders>,
+    );
+    expect(
+      await screen.findByText('Aprobado automáticamente — pendiente de revisión humana'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Aprobado en bloque')).toBeInTheDocument();
   });
 });

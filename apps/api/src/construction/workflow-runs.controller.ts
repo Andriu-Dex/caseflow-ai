@@ -3,6 +3,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { z } from 'zod';
 import {
   createWorkflowRunRequestSchema,
+  workflowReviewResponseSchema,
   workflowRunListResponseSchema,
   workflowRunResponseSchema,
 } from '@caseflow-ai/contracts';
@@ -27,7 +28,7 @@ export class WorkflowRunsController {
   @HttpCode(202)
   @ApiOperation({
     operationId: 'startWorkflowRun',
-    summary: 'Encolar la construcción automática desde un prompt (ruta Solo construcción)',
+    summary: 'Encolar la planificación y construcción desde un prompt (Exprés o Solo construcción)',
   })
   @ApiZodBody(createWorkflowRunRequestSchema)
   @ApiZodResponse(202, 'Workflow run.', workflowRunResponseSchema)
@@ -55,6 +56,34 @@ export class WorkflowRunsController {
     @Param('runId', uuidParamPipe) runId: string,
   ) {
     return this.service.get(projectId, runId);
+  }
+
+  @Get(':runId/review')
+  @ApiOperation({
+    operationId: 'getWorkflowRunReview',
+    summary: 'Elementos de la revisión en bloque en curso (ruta Exprés)',
+  })
+  @ApiZodResponse(200, 'Review items.', workflowReviewResponseSchema)
+  review(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('runId', uuidParamPipe) runId: string,
+  ) {
+    return this.service.reviewItems(projectId, runId);
+  }
+
+  @Post(':runId/approve')
+  @HttpCode(202)
+  @ApiOperation({
+    operationId: 'approveWorkflowRunReview',
+    summary: 'Aprobar en bloque la revisión en curso y continuar (ruta Exprés)',
+  })
+  @ApiZodResponse(202, 'Workflow run.', workflowRunResponseSchema)
+  approve(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('runId', uuidParamPipe) runId: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.service.approve(projectId, runId, req.user.id);
   }
 
   @Post(':runId/retry')

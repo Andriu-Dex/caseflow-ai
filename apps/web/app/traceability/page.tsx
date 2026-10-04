@@ -35,6 +35,7 @@ import { api } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { PageHeading } from '../../components/page-heading';
 import { StatusBadge } from '../../components/status-badge';
+import { ApprovalOriginBadge } from '../../components/workflow-route';
 import { DiagramViewer } from '../../components/diagram-viewer';
 import { EmptyState } from '../../components/artifact-actions';
 import { Badge, Button, Tabs, TabsContent, TabsList, TabsTrigger } from '@caseflow-ai/ui';
@@ -118,6 +119,7 @@ function NodeLabel({ node, stale }: { node: TraceabilityNode; stale?: StalenessE
         </span>
       ) : null}
       <StatusBadge status={node.status} />
+      <ApprovalOriginBadge origin={node.approvalOrigin} />
       {isStale ? (
         <span
           title="Podría estar desactualizado: hay conocimiento aprobado más reciente que esta versión no incluye."

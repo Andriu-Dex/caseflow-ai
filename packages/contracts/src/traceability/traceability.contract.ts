@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import { ARTIFACT_ORIGINS, ARTIFACT_VERSION_STATUSES } from '../artifacts/artifact.contract';
+import {
+  APPROVAL_ORIGINS,
+  ARTIFACT_ORIGINS,
+  ARTIFACT_VERSION_STATUSES,
+} from '../artifacts/artifact.contract';
 
 // Project-scoped First Deliverable provenance graph (requirements.md Phase F).
 // Every edge corresponds to a real persisted exact-version relationship —
@@ -62,6 +66,8 @@ export const traceabilityNodeSchema = z.object({
   versionNumber: z.number().int().min(1),
   status: z.enum(ARTIFACT_VERSION_STATUSES),
   origin: z.enum(ARTIFACT_ORIGINS),
+  // Who approved it (DEC-116); null while not approved.
+  approvalOrigin: z.enum(APPROVAL_ORIGINS).nullable(),
   title: z.string(),
   isCurrent: z.boolean(),
   generation: traceabilityGenerationSchema.nullable(),
