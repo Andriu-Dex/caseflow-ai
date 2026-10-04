@@ -1,13 +1,9 @@
 import { Inject, Module, type OnModuleDestroy } from '@nestjs/common';
-import { Queue } from 'bullmq';
+import { createJobQueue, createStorageProvider, type JobQueue } from '../common/infrastructure';
 import { CONSTRUCTION_QUEUE, type ConstructionJobPayload } from '@caseflow-ai/domain';
-import { loadStorageConfig } from '@caseflow-ai/config';
 import {
-  DisabledStorageProvider,
   DockerSandboxExecutionProvider,
-  S3StorageProvider,
   type SandboxExecutionProvider,
-  type StorageProvider,
 } from '@caseflow-ai/integrations';
 import { AIModule } from '../ai/ai.module';
 import { STORAGE_PROVIDER } from '../sources/storage-provider.token';
@@ -79,17 +75,15 @@ import { MockupsModule } from '../mockups/mockups.module';
     },
     {
       provide: STORAGE_PROVIDER,
-      useFactory: (): StorageProvider => {
-        const config = loadStorageConfig(process.env);
-        return config.configured ? new S3StorageProvider(config) : new DisabledStorageProvider();
-      },
+      useFactory: createStorageProvider,
     },
     {
       provide: CONSTRUCTION_QUEUE_TOKEN,
-      useFactory: (): Queue<ConstructionJobPayload> =>
-        new Queue<ConstructionJobPayload>(CONSTRUCTION_QUEUE, {
-          connection: { url: process.env.REDIS_URL ?? 'redis://localhost:6379' },
-        }),
+      useFactory: () =>
+        createJobQueue<ConstructionJobPayload>(
+          CONSTRUCTION_QUEUE,
+          (job) => `/projects/${job.projectId}/construction-jobs/${job.type}/${job.runId}/run`,
+        ),
     },
   ],
   exports: [
@@ -100,7 +94,7 @@ import { MockupsModule } from '../mockups/mockups.module';
   ],
 })
 export class ConstructionModule implements OnModuleDestroy {
-  constructor(@Inject(CONSTRUCTION_QUEUE_TOKEN) private readonly queue: Queue) {}
+  constructor(@Inject(CONSTRUCTION_QUEUE_TOKEN) private readonly queue: JobQueue<unknown>) {}
   async onModuleDestroy(): Promise<void> {
     await this.queue.close();
   }

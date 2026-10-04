@@ -17,7 +17,7 @@ CASEFlow es un proyecto personal, sin pagos, con el repositorio público. Se pub
 1. **Licencia Apache-2.0** para todo el monorepo (la edición de escritorio empaqueta la API y la web, así que no basta licenciar solo `apps/desktop`). Ni la edición web ni la de escritorio incluyen pagos.
 2. **Edición de escritorio con Electron** en `apps/desktop`:
    - Electron (y no Tauri) porque incluye Node.js, el mismo runtime de la API y el worker, que pueden correr como procesos hijos sin cambios.
-   - PostgreSQL embebido con binarios portables; Redis empaquetado como binario portable (sin reescribir el código de colas basado en BullMQ); almacenamiento en disco mediante un `FilesystemStorageProvider`; correo desactivado.
+   - _(Reemplazado por DEC-120, ADR-005: PGlite, cola en proceso y almacenamiento en disco.)_ PostgreSQL embebido con binarios portables; Redis empaquetado como binario portable (sin reescribir el código de colas basado en BullMQ); almacenamiento en disco mediante un `FilesystemStorageProvider`; correo desactivado.
    - **La construcción sigue exigiendo Docker:** el código generado nunca se ejecuta fuera del sandbox (§174). Sin Docker, la planificación funciona y la construcción muestra un asistente interactivo de instalación.
 3. **Proveedor "ChatGPT" solo en la edición de escritorio**, como una implementación más de `AIProvider` sobre la Responses API:
    - OAuth desde el proceso principal de Electron, con un `ext_agent_host_id` persistente por equipo y credenciales cifradas con el almacén seguro del sistema operativo.
