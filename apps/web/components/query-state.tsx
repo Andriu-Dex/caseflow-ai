@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { Skeleton } from '@caseflow-ai/ui';
 import { ApiError } from '../lib/api';
 import { useActiveProject } from '../lib/active-project';
+import { DismissibleHint } from './dismissible-hint';
 
 // Standard loading/empty/error handling for every primary page (spec Phase I
 // "Loading / empty / error states"): translates normalized ApiError into a
@@ -41,6 +42,11 @@ export function NoActiveProject() {
     <div className="flex items-center gap-2 rounded-md border bg-card p-4 text-sm text-muted-foreground">
       <FolderKanban className="size-4 shrink-0" aria-hidden="true" />
       Seleccione o cree un proyecto para continuar.
+      <DismissibleHint id="first-use" label="Primeros pasos">
+        Cree un proyecto con «Nuevo proyecto» y elija su ruta: Completa para un entregable revisado
+        paso a paso, Exprés para revisar en bloque lo generado desde un prompt, o Solo construcción
+        para un prototipo rápido.
+      </DismissibleHint>
     </div>
   );
 }

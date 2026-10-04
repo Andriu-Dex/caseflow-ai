@@ -15,7 +15,7 @@ import { DiagramViewer } from '../../components/diagram-viewer';
 import { UseCaseManualForm } from '../../components/use-case-manual-form';
 import { PageHeading } from '../../components/page-heading';
 import {
-  AI_UNAVAILABLE_HINT,
+  AiUnavailableHint,
   ApproveAllButton,
   ArchiveButton,
   EmptyState,
@@ -242,7 +242,7 @@ function UseCasesContent({ projectId }: { projectId: string }) {
                 Crear manualmente
               </Button>
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">{AI_UNAVAILABLE_HINT}</p>
+            <AiUnavailableHint />
           </div>
         ) : null}
       </section>

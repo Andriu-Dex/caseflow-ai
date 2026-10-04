@@ -90,6 +90,19 @@ function tokenExpiryMs(token: string): number | null {
   }
 }
 
+// The signed-in user's id, read from the access token (no verification: it
+// only keys per-user browser preferences such as dismissed hints).
+export function currentUserId(): string | null {
+  try {
+    const payload = JSON.parse(
+      atob(accessToken!.split('.')[1]!.replace(/-/g, '+').replace(/_/g, '/')),
+    ) as { sub?: unknown };
+    return typeof payload.sub === 'string' ? payload.sub : null;
+  } catch {
+    return null;
+  }
+}
+
 export function setAccessToken(token: string | null) {
   accessToken = token;
   if (refreshTimer) clearTimeout(refreshTimer);

@@ -21,7 +21,7 @@ import { PageHeading } from '../../components/page-heading';
 import { CandidateReview } from '../../components/candidate-review';
 import { RequirementManualForm } from '../../components/requirement-manual-form';
 import {
-  AI_UNAVAILABLE_HINT,
+  AiUnavailableHint,
   ApproveAllButton,
   ArchiveButton,
   EmptyState,
@@ -192,7 +192,7 @@ function RequirementsContent({ projectId }: { projectId: string }) {
             </Button>
           </div>
         </div>
-        <p className="text-xs text-muted-foreground">{AI_UNAVAILABLE_HINT}</p>
+        <AiUnavailableHint />
       </section>
 
       {showManualForm || editing ? (

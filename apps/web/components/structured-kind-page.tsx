@@ -42,7 +42,7 @@ import {
 } from './implementation-plan-detail';
 import { DiagramViewer } from './diagram-viewer';
 import {
-  AI_UNAVAILABLE_HINT,
+  AiUnavailableHint,
   ApproveAllButton,
   ArchiveButton,
   EmptyState,
@@ -773,7 +773,7 @@ export function StructuredKindPage({
               Crear manualmente
             </Button>
           </div>
-          <p className="mt-2 text-xs text-muted-foreground">{AI_UNAVAILABLE_HINT}</p>
+          <AiUnavailableHint />
         </CardContent>
       </Card>
 

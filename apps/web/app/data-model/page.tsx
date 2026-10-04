@@ -15,7 +15,7 @@ import { DataModelManualForm } from '../../components/data-model-manual-form';
 import { DiagramViewer } from '../../components/diagram-viewer';
 import { PageHeading } from '../../components/page-heading';
 import {
-  AI_UNAVAILABLE_HINT,
+  AiUnavailableHint,
   ApproveAllButton,
   ArchiveButton,
   EmptyState,
@@ -153,8 +153,9 @@ function DataModelContent({ projectId }: { projectId: string }) {
           </div>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
-          La IA usa los requisitos y casos de uso aprobados. {AI_UNAVAILABLE_HINT}
+          La IA usa los requisitos y casos de uso aprobados.
         </p>
+        <AiUnavailableHint />
       </section>
 
       {showManualForm || editing ? (

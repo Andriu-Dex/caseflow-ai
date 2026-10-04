@@ -7,6 +7,7 @@ import { Badge, Card, CardContent, CardHeader } from '@caseflow-ai/ui';
 import { api } from '../lib/api';
 import { QueryState, RequireActiveProject } from '../components/query-state';
 import { STAGE_LINKS } from '../lib/stage-links';
+import { DismissibleHint } from '../components/dismissible-hint';
 
 function HomeContent({ projectId }: { projectId: string }) {
   const project = useQuery({
@@ -34,8 +35,13 @@ function HomeContent({ projectId }: { projectId: string }) {
       <Card className="border-t-4 border-t-primary">
         <CardContent>
           <QueryState isLoading={project.isLoading} error={project.error}>
-            <h1 className="text-3xl font-bold tracking-tight text-foreground">
+            <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight text-foreground">
               {project.data?.name}
+              <DismissibleHint id="news-v2-routes-theme" label="Novedades">
+                Novedades: cada proyecto tiene ahora una ruta (Completa, Exprés o Solo
+                construcción), y hay un paso «Tema y colores» antes de los bocetos. Preparación /
+                Exportar y Líneas Base están en su propio grupo «Entregables» del menú.
+              </DismissibleHint>
             </h1>
             {project.data?.description ? (
               <p className="mt-1 text-sm text-muted-foreground">{project.data.description}</p>
