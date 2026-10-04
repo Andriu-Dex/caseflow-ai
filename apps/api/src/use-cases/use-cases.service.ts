@@ -1,3 +1,4 @@
+import type { ApprovalOrigin } from '@caseflow-ai/contracts';
 import {
   Injectable,
   NotFoundException,
@@ -11,6 +12,7 @@ import {
   type UseCaseInput,
   type UseCaseResponse,
 } from '@caseflow-ai/contracts';
+import { provenanceGuard, sourceStatuses } from '../projects/source-statuses';
 import { PrismaService } from '../database/prisma.service';
 import { getProjectLanguage } from '../projects/project-language';
 import type { Prisma } from '../generated/prisma/client';
@@ -267,6 +269,9 @@ export class UseCasesService {
     artifactId: string,
     id: string,
     status: 'DRAFT' | 'IN_REVIEW' | 'APPROVED' | 'CHANGES_REQUESTED',
+    // HUMAN_BULK for an EXPRESS bulk approval (DEC-116); otherwise the
+    // database records HUMAN, or AUTOMATIC in BUILD_ONLY.
+    approvalOrigin?: ApprovalOrigin,
   ) {
     const version = await this.prisma.artifactVersion.findFirst({
       where: { id, projectId, artifactId, artifact: { artifactTypeCode: 'USE_CASE' } },
@@ -274,14 +279,17 @@ export class UseCasesService {
     if (!version) throw new NotFoundException('Versión no encontrada.');
     if (!canTransitionArtifactVersionStatus(version.status, status))
       throw new UnprocessableEntityException('Transición de estado no permitida.');
-    return this.prisma.artifactVersion.update({
-      where: { id },
-      data: {
-        status,
-        submittedAt: status === 'IN_REVIEW' ? new Date() : version.submittedAt,
-        approvedAt: status === 'APPROVED' ? new Date() : version.approvedAt,
-      },
-    });
+    return provenanceGuard(
+      this.prisma.artifactVersion.update({
+        where: { id },
+        data: {
+          status,
+          submittedAt: status === 'IN_REVIEW' ? new Date() : version.submittedAt,
+          approvedAt: status === 'APPROVED' ? new Date() : version.approvedAt,
+          approvalOrigin: status === 'APPROVED' ? approvalOrigin : undefined,
+        },
+      }),
+    );
   }
   async academicValidation(projectId: string) {
     if (!(await this.prisma.project.findUnique({ where: { id: projectId } })))
@@ -372,7 +380,7 @@ export class UseCasesService {
     });
   }
   private async validateRequirements(
-    tx: Pick<Tx, 'artifactVersion'>,
+    tx: Pick<Tx, 'artifactVersion' | 'project'>,
     projectId: string,
     ids: string[],
     approved: boolean,
@@ -382,7 +390,7 @@ export class UseCasesService {
       where: {
         id: { in: unique },
         projectId,
-        ...(approved ? { status: 'APPROVED' as const } : {}),
+        ...(approved ? { status: { in: await sourceStatuses(tx, projectId) } } : {}),
         artifact: { artifactTypeCode: 'REQUIREMENT' },
       },
       include: {

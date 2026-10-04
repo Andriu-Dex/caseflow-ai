@@ -1,3 +1,4 @@
+import type { ApprovalOrigin } from '@caseflow-ai/contracts';
 import {
   ConflictException,
   Injectable,
@@ -14,6 +15,7 @@ import {
   type ProjectContextResponse,
 } from '@caseflow-ai/contracts';
 import { canTransitionArtifactVersionStatus, formatArtifactCode } from '@caseflow-ai/domain';
+import { provenanceGuard, sourceStatuses } from '../projects/source-statuses';
 import { PrismaService } from '../database/prisma.service';
 import type { Prisma } from '../generated/prisma/client';
 
@@ -147,6 +149,9 @@ export class ProjectContextService {
     projectId: string,
     versionId: string,
     status: 'DRAFT' | 'IN_REVIEW' | 'APPROVED' | 'CHANGES_REQUESTED',
+    // HUMAN_BULK for an EXPRESS bulk approval (DEC-116); otherwise the
+    // database records HUMAN, or AUTOMATIC in BUILD_ONLY.
+    approvalOrigin?: ApprovalOrigin,
   ) {
     const version = await this.prisma.artifactVersion.findFirst({
       where: {
@@ -158,14 +163,17 @@ export class ProjectContextService {
     if (!version) throw new NotFoundException('Versión no encontrada.');
     if (!canTransitionArtifactVersionStatus(version.status, status))
       throw new UnprocessableEntityException('Transición de estado no permitida.');
-    return this.prisma.artifactVersion.update({
-      where: { id: versionId },
-      data: {
-        status,
-        submittedAt: status === 'IN_REVIEW' ? new Date() : version.submittedAt,
-        approvedAt: status === 'APPROVED' ? new Date() : version.approvedAt,
-      },
-    });
+    return provenanceGuard(
+      this.prisma.artifactVersion.update({
+        where: { id: versionId },
+        data: {
+          status,
+          submittedAt: status === 'IN_REVIEW' ? new Date() : version.submittedAt,
+          approvedAt: status === 'APPROVED' ? new Date() : version.approvedAt,
+          approvalOrigin: status === 'APPROVED' ? approvalOrigin : undefined,
+        },
+      }),
+    );
   }
 
   // AI-assisted pre-fill (spec §5): drafts a Context candidate from this
@@ -180,7 +188,11 @@ export class ProjectContextService {
     if (!project) throw new NotFoundException('Proyecto no encontrado.');
 
     const approvedSources = await this.prisma.artifactVersion.findMany({
-      where: { projectId, status: 'APPROVED', artifact: { artifactTypeCode: 'PROJECT_SOURCE' } },
+      where: {
+        projectId,
+        status: { in: await sourceStatuses(this.prisma, projectId) },
+        artifact: { artifactTypeCode: 'PROJECT_SOURCE' },
+      },
       include: { artifact: true, sourceDetail: true },
       orderBy: { createdAt: 'asc' },
     });
@@ -258,7 +270,7 @@ export class ProjectContextService {
         where: {
           id: { in: sourceVersionIds },
           projectId,
-          status: 'APPROVED',
+          status: { in: await sourceStatuses(tx, projectId) },
           artifact: { artifactTypeCode: 'PROJECT_SOURCE' },
         },
         select: { id: true, artifactId: true },
