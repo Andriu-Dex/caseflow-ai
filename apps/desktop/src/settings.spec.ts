@@ -2,9 +2,23 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { PORTS, apiEnvironment, parseEnvFile } from './settings.js';
+import { PORTS, apiEnvironment, isAppUrl, isExternalHttpsUrl, parseEnvFile } from './settings.js';
 
 describe('desktop settings (DEC-120)', () => {
+  it('keeps the window on the app origin only', () => {
+    expect(isAppUrl('http://127.0.0.1:4800/requirements')).toBe(true);
+    for (const url of [
+      'http://127.0.0.1:4800.evil.example/login',
+      'http://127.0.0.1:48000/',
+      'http://localhost:4800/',
+      'https://127.0.0.1:4800/',
+      'not a url',
+    ])
+      expect(isAppUrl(url)).toBe(false);
+    expect(isExternalHttpsUrl('https://docs.docker.com/')).toBe(true);
+    expect(isExternalHttpsUrl('file:///C:/Windows/System32/calc.exe')).toBe(false);
+  });
+
   it('reads the user settings file, ignoring comments and quotes', () => {
     expect(
       parseEnvFile('# IA\nAI_PROVIDER=openai_compatible\nAI_MODEL="gpt-x"\n\ninvalid line\n'),

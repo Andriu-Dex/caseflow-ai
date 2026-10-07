@@ -28,6 +28,9 @@ Revisando el código se vio además algo que el plan aprobado no tuvo en cuenta:
 - **En contra:**
   - En escritorio se pierden los reintentos automáticos de BullMQ. Cada trabajo ya registra un estado terminal, y los fallidos se reintentan desde la interfaz.
   - PGlite es más lento que un PostgreSQL nativo; es aceptable para un único usuario local.
+- **Seguridad:** la API, la web y la base de datos escuchan solo en `127.0.0.1`, nunca en la red local.
+  - El socket de PGlite no admite autenticación por contraseña, así que otro proceso del mismo equipo podría conectarse mientras la aplicación está abierta.
+  - Se acepta como riesgo: es el mismo límite que los archivos de la base de datos en la carpeta de datos del usuario.
 - **Pruebas:**
   - `FilesystemStorageProvider` pasa el mismo contrato que el proveedor S3.
   - La cola en proceso tiene prueba unitaria.
