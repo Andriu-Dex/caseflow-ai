@@ -6,6 +6,7 @@ import {
   buildArchive,
   diagnosedFiles,
   manifestHash,
+  planCoverageProblems,
   reviewRepairPatch,
   structuralProblems,
   traceabilityProblems,
@@ -144,5 +145,35 @@ describe('archive and manifest', () => {
     expect(manifestHash(files)).toBe(manifestHash([...files].reverse()));
     const zip = await JSZip.loadAsync(first);
     expect(await zip.file('demo/a.txt')!.async('string')).toBe('a');
+  });
+});
+
+describe('planCoverageProblems (DEC-121)', () => {
+  const plan = {
+    entities: [{ name: 'Order' }, { name: 'Invoice' }],
+    routes: [
+      { path: '/orders', actions: [{ label: 'Nuevo' }, { label: 'Borrar' }] },
+      { path: '/invoices', actions: [] },
+    ],
+  } as unknown as Parameters<typeof planCoverageProblems>[1];
+  const files = [
+    {
+      path: 'prisma/schema.prisma',
+      content: 'model Order {\n  id String @id\n}\n',
+      kind: 'SOURCE',
+    },
+    {
+      path: 'apps/web/app/orders/page.tsx',
+      content: '<Link href="/orders/new" data-action={"Nuevo"}>',
+      kind: 'SOURCE',
+    },
+  ] as const;
+
+  it('reports planned entities, routes and actions missing from the code', () => {
+    expect(planCoverageProblems(files, plan)).toEqual([
+      'La entidad «Invoice» del plan no tiene su modelo en el esquema de Prisma.',
+      'La acción «Borrar» de la ruta /orders no tiene un control en su página.',
+      'La ruta /invoices del plan no tiene su página.',
+    ]);
   });
 });

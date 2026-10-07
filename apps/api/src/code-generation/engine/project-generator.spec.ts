@@ -278,3 +278,67 @@ describe('projectSlug', () => {
     expect(projectSlug('***')).toBe('generated-app');
   });
 });
+
+describe('screen actions (DEC-121)', () => {
+  const plan = basePlan({
+    routes: [
+      {
+        path: '/orders',
+        screenName: 'Pedidos',
+        moduleLocalId: 'sales',
+        kind: 'LIST',
+        entityLocalId: 'order',
+        actions: [
+          { label: 'Registrar pedido', operation: 'CREATE' },
+          { label: 'Editar', operation: 'UPDATE' },
+          { label: 'Confirmar', endpoint: 'POST /orders/:orderId/confirm' },
+        ],
+      },
+      {
+        path: '/orders/[orderId]',
+        screenName: 'Pedido',
+        moduleLocalId: 'sales',
+        kind: 'DETAIL',
+        entityLocalId: 'order',
+        actions: [
+          { label: 'Ver pedido', operation: 'GET' },
+          { label: 'Eliminar', operation: 'DELETE' },
+        ],
+      },
+      {
+        path: '/orders/new',
+        screenName: 'Nuevo pedido',
+        moduleLocalId: 'sales',
+        kind: 'FORM',
+        entityLocalId: 'order',
+        actions: [{ label: 'Registrar pedido', operation: 'CREATE' }],
+      },
+    ],
+  });
+  const pages = byPath(generateProject(ctx(plan)));
+  const page = (path: string) => pages.get(path)!.content;
+
+  it('renders a control for every planned action', () => {
+    const list = page('apps/web/app/orders/page.tsx');
+    expect(list).toContain('<Link href="/orders/new" data-action={"Registrar pedido"}>');
+    expect(list).toContain('href={`/orders/new?id=${row.id}`} data-action={"Editar"}');
+    expect(list).toContain(
+      'data-action={"Confirmar"} run={() => api.postOrdersConfirm({ orderId: row.id }, {})}',
+    );
+    expect(list).not.toContain('<Button>Nuevo</Button>');
+    const detail = page('apps/web/app/orders/[orderId]/page.tsx');
+    expect(detail).toContain('<h1 className="text-xl font-semibold" data-action={"Ver pedido"}>');
+    expect(detail).toContain(
+      'data-action={"Eliminar"} run={() => api.deleteOrder(orderId)} onDone={() => router.push(\'/orders\')}',
+    );
+    expect(page('apps/web/app/orders/new/page.tsx')).toContain(
+      '<Button type="submit" disabled={isSubmitting} data-action={"Registrar pedido"}>',
+    );
+  });
+
+  it('opens the form in edit mode when the entity can be read and updated', () => {
+    const form = page('apps/web/app/orders/new/page.tsx');
+    expect(form).toContain("new URLSearchParams(window.location.search).get('id')");
+    expect(form).toContain('api.updateOrder(editId,');
+  });
+});

@@ -96,18 +96,56 @@ describe('Construction sandbox validation integration', () => {
           moduleLocalId: 'sales',
           classLocalId: 'order',
           fields: [{ name: 'total', type: 'DECIMAL' }],
-          operations: ['LIST', 'CREATE'],
+          operations: ['LIST', 'GET', 'CREATE', 'UPDATE', 'DELETE'],
         },
       ],
+      customEndpoints: [
+        {
+          moduleLocalId: 'sales',
+          method: 'POST',
+          path: '/orders/:orderId/confirm',
+          summary: 'Confirmar pedido',
+          entityLocalId: 'order',
+        },
+      ],
+      // Every kind of screen action (DEC-121) becomes a control the
+      // structural validation finds in the generated pages.
       routes: [
         {
           path: '/orders',
-          screenName: 'Inicio',
+          screenName: 'Pedidos',
           screenLocalId: 'home',
           moduleLocalId: 'sales',
           kind: 'LIST',
           entityLocalId: 'order',
-          actions: [{ label: 'Confirmar pedido', operation: 'CREATE' }],
+          actions: [
+            { label: 'Nuevo pedido', operation: 'CREATE' },
+            { label: 'Ver pedido', operation: 'GET' },
+            { label: 'Editar pedido', operation: 'UPDATE' },
+            { label: 'Eliminar pedido', operation: 'DELETE' },
+          ],
+        },
+        {
+          path: '/orders/new',
+          screenName: 'Nuevo pedido',
+          screenLocalId: 'home',
+          moduleLocalId: 'sales',
+          kind: 'FORM',
+          entityLocalId: 'order',
+          actions: [{ label: 'Nuevo pedido', operation: 'CREATE' }],
+        },
+        {
+          path: '/orders/[orderId]',
+          screenName: 'Pedido',
+          screenLocalId: 'home',
+          moduleLocalId: 'sales',
+          kind: 'DETAIL',
+          entityLocalId: 'order',
+          actions: [
+            { label: 'Ver pedido', operation: 'GET' },
+            { label: 'Confirmar pedido', endpoint: 'POST /orders/:orderId/confirm' },
+            { label: 'Eliminar pedido', operation: 'DELETE' },
+          ],
         },
       ],
     });

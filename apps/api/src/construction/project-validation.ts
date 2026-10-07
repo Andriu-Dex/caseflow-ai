@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import JSZip from 'jszip';
 import type { TargetTemplateVersion } from '@caseflow-ai/domain';
+import type { ImplementationPlanContent } from '@caseflow-ai/contracts';
+import { actionMarker, pagePath } from '../code-generation/engine/frontend.templates';
 
 // Deterministic checks and packaging of a generated project (spec §175, §177).
 // Pure functions: no I/O, so every rule is unit-testable.
@@ -59,6 +61,35 @@ export function structuralProblems(
         if (versions.get(name) !== version)
           problems.push(`«${file.path}» usa «${name}@${version}», fuera del catálogo aprobado.`);
       }
+  }
+  return problems;
+}
+
+// Plan coverage (DEC-121): every planned entity has its Prisma model, every
+// route its page and every screen action its control, also after auto-repair.
+export function planCoverageProblems(
+  files: readonly ProjectFile[],
+  plan: Pick<ImplementationPlanContent, 'entities' | 'routes'>,
+): string[] {
+  const problems: string[] = [];
+  const byPath = new Map(files.map((f) => [f.path, f.content]));
+  const schema = byPath.get('prisma/schema.prisma') ?? '';
+  for (const entity of plan.entities)
+    if (!new RegExp(`^model ${entity.name} \\{`, 'm').test(schema))
+      problems.push(
+        `La entidad «${entity.name}» del plan no tiene su modelo en el esquema de Prisma.`,
+      );
+  for (const route of plan.routes) {
+    const page = byPath.get(pagePath(route.path));
+    if (page === undefined) {
+      problems.push(`La ruta ${route.path} del plan no tiene su página.`);
+      continue;
+    }
+    for (const action of route.actions)
+      if (!page.includes(actionMarker(action.label)))
+        problems.push(
+          `La acción «${action.label}» de la ruta ${route.path} no tiene un control en su página.`,
+        );
   }
   return problems;
 }
