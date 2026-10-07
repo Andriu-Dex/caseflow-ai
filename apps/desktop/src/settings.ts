@@ -5,6 +5,25 @@ import { join } from 'node:path';
 
 export const PORTS = { web: 4800, api: 4801, database: 4802 } as const;
 
+// The window may only show the app itself: compared by exact origin, so
+// 'http://127.0.0.1:4800.example.com' or 'http://127.0.0.1:48000' never pass.
+export function isAppUrl(url: string): boolean {
+  try {
+    return new URL(url).origin === `http://127.0.0.1:${PORTS.web}`;
+  } catch {
+    return false;
+  }
+}
+
+// Only real https pages go to the system browser.
+export function isExternalHttpsUrl(url: string): boolean {
+  try {
+    return new URL(url).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 // Secrets generated on first start and kept in the user's data folder; never
 // shipped with the installer, never shared between machines.
 async function loadSecrets(dataDir: string): Promise<{ jwtSecret: string; jobsSecret: string }> {
@@ -50,6 +69,8 @@ export async function apiEnvironment(
     // Fixed by the desktop edition: the user file cannot override these.
     DATABASE_URL: databaseUrl,
     API_PORT: String(PORTS.api),
+    // Loopback only: never reachable from the local network.
+    API_HOST: '127.0.0.1',
     API_INTERNAL_URL: `http://127.0.0.1:${PORTS.api}`,
     WEB_ORIGIN: `http://127.0.0.1:${PORTS.web}`,
     JWT_SECRET: secrets.jwtSecret,

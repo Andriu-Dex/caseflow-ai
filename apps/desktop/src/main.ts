@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { app, BrowserWindow, dialog, shell } from 'electron';
 import { startDatabase, type DesktopDatabase } from './database.js';
-import { PORTS, apiEnvironment } from './settings.js';
+import { PORTS, apiEnvironment, isAppUrl, isExternalHttpsUrl } from './settings.js';
 
 // CASEFlow AI desktop edition (DEC-117, DEC-120): the same API and web app,
 // on loopback only, over a local PGlite database and an in-process queue.
@@ -71,13 +71,13 @@ async function start(): Promise<void> {
   });
   // Links to other sites (documentation, Docker downloads) open in the browser.
   window.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('https://')) void shell.openExternal(url);
+    if (isExternalHttpsUrl(url)) void shell.openExternal(url);
     return { action: 'deny' };
   });
   window.webContents.on('will-navigate', (event, url) => {
-    if (!url.startsWith(`http://127.0.0.1:${PORTS.web}`)) {
+    if (!isAppUrl(url)) {
       event.preventDefault();
-      if (url.startsWith('https://')) void shell.openExternal(url);
+      if (isExternalHttpsUrl(url)) void shell.openExternal(url);
     }
   });
   await window.loadURL(`http://127.0.0.1:${PORTS.web}`);

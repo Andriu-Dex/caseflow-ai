@@ -18,7 +18,8 @@ async function bootstrap(): Promise<void> {
   // Interactive docs at /docs and JSON at /docs/openapi.json, non-production only.
   setupOpenApi(app);
   const port = Number(process.env.API_PORT ?? 3001);
-  await app.listen(port);
+  // API_HOST=127.0.0.1 keeps the desktop edition's API off the network.
+  await app.listen(port, process.env.API_HOST ?? '0.0.0.0');
 }
 
 void bootstrap();

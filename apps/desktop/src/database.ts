@@ -11,6 +11,10 @@ export interface DesktopDatabase {
 // DEC-120: PostgreSQL (WASM) with pgvector, persisted in the user's data
 // folder and served on loopback only, so the API connects to it exactly as
 // it connects to a real server.
+// Accepted risk (ADR-005): PGlite's socket has no password authentication,
+// so another process on this same machine could connect while the app runs.
+// That is the same boundary as the database files in the user's data folder;
+// it is never reachable from the network.
 export async function startDatabase(options: {
   dataDir: string;
   migrationsDir: string;
