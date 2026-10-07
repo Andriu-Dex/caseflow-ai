@@ -62,7 +62,7 @@ export class ProjectsController {
     query: z.output<typeof listProjectsQuerySchema>,
     @Req() req: AuthenticatedRequest,
   ): Promise<ProjectListResponse> {
-    return this.projects.list(query.workspaceId, query.limit, query.offset, req.user.id);
+    return this.projects.list(query, req.user.id);
   }
 
   @Get(':projectId')
@@ -100,6 +100,16 @@ export class ProjectsController {
   @ApiErrorResponse(422, 'The project is already archived.')
   archive(@Param('projectId', uuidParamPipe) projectId: string): Promise<ProjectResponse> {
     return this.projects.archive(projectId);
+  }
+
+  @Post(':projectId/unarchive')
+  @ApiOperation({ operationId: 'unarchiveProject', summary: 'Restore an archived project' })
+  @ApiUuidParam('projectId', 'Project identifier.')
+  @ApiZodResponse(200, 'The restored project.', projectResponseSchema)
+  @ApiErrorResponse(404, 'The project does not exist.')
+  @ApiErrorResponse(422, 'The project is not archived.')
+  unarchive(@Param('projectId', uuidParamPipe) projectId: string): Promise<ProjectResponse> {
+    return this.projects.unarchive(projectId);
   }
 
   @Post(':projectId/language')

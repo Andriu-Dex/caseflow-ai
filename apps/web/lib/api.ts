@@ -17,6 +17,7 @@ import type {
   ProjectContextCandidate,
   ProjectContextRequest,
   ProjectContextResponse,
+  ListProjectsQuery,
   ProjectListResponse,
   ProjectResponse,
   ReadinessResponse,
@@ -280,7 +281,14 @@ export const api = {
     list: () => get<WorkspaceListResponse>('/workspaces'),
   },
   projects: {
-    list: (workspaceId: string) => get<ProjectListResponse>(`/projects?workspaceId=${workspaceId}`),
+    list: (workspaceId: string, filters: Omit<ListProjectsQuery, 'workspaceId'> = {}) =>
+      get<ProjectListResponse>(
+        `/projects?${new URLSearchParams(
+          Object.entries({ workspaceId, ...filters }).flatMap(([key, value]) =>
+            value === undefined || value === '' ? [] : [[key, String(value)]],
+          ),
+        )}`,
+      ),
     create: (input: {
       workspaceId: string;
       name: string;
@@ -290,6 +298,7 @@ export const api = {
     get: (projectId: string) => get<ProjectResponse>(`/projects/${projectId}`),
     delete: (projectId: string) => del<void>(`/projects/${projectId}`),
     archive: (projectId: string) => post<ProjectResponse>(`/projects/${projectId}/archive`),
+    unarchive: (projectId: string) => post<ProjectResponse>(`/projects/${projectId}/unarchive`),
     updateLanguage: (projectId: string, language: 'ES' | 'EN') =>
       post<ProjectResponse>(`/projects/${projectId}/language`, { language }),
     upgradeWorkflowRoute: (projectId: string, workflowRoute: WorkflowRoute) =>

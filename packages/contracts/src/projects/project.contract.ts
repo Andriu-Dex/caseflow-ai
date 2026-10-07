@@ -27,11 +27,19 @@ export const createProjectRequestSchema = z
 
 export type CreateProjectRequest = z.input<typeof createProjectRequestSchema>;
 
+export const PROJECT_LIST_STATUSES = ['ALL', 'ACTIVE', 'ARCHIVED'] as const;
+export const PROJECT_LIST_SORTS = ['OLDEST', 'RECENT', 'UPDATED', 'NAME'] as const;
+
 export const listProjectsQuerySchema = z
   .object({
     workspaceId: z.uuid({ error: 'El identificador del workspace no es válido.' }),
     limit: z.coerce.number().int().min(1).max(100).default(50),
     offset: z.coerce.number().int().min(0).default(0),
+    // Name or description contains this text (case-insensitive).
+    search: z.string().trim().max(100).optional(),
+    status: z.enum(PROJECT_LIST_STATUSES).default('ALL'),
+    workflowRoute: z.enum(WORKFLOW_ROUTES).optional(),
+    sort: z.enum(PROJECT_LIST_SORTS).default('OLDEST'),
   })
   .strict();
 
@@ -57,6 +65,8 @@ export type ProjectResponse = z.infer<typeof projectResponseSchema>;
 
 export const projectListResponseSchema = z.object({
   items: z.array(projectResponseSchema),
+  // Projects matching the filters, across every page.
+  total: z.number().int(),
   limit: z.number().int(),
   offset: z.number().int(),
 });
