@@ -5,6 +5,7 @@ import {
   type ImplementationPlanContent,
 } from '@caseflow-ai/contracts';
 import { lowerFirst, pluralize, upperFirst } from '../naming';
+import { customEndpointOperationId } from '../openapi.generator';
 import { createSchemaName, inputRelations } from './contracts.templates';
 import {
   SCOPE,
@@ -154,7 +155,7 @@ const labelOf = (name: string) =>
   upperFirst(name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase());
 
 // "/orders/[orderId]" -> "app/orders/[orderId]/page.tsx"
-const pagePath = (routePath: string) =>
+export const pagePath = (routePath: string) =>
   routePath === '/' ? 'apps/web/app/page.tsx' : `apps/web/app${routePath}/page.tsx`;
 // Relative path from a route page back to the apps/web root.
 const toWebRoot = (routePath: string) =>
@@ -173,50 +174,184 @@ function display(field: Field, accessor: string): string {
   }
 }
 
-function listPage(
-  entity: Entity,
-  route: Route,
-  detail: Route | undefined,
-  form: Route | undefined,
-): string {
+// ---- Screen actions (DEC-121) -------------------------------------------------
+// Every action the plan lists for a route becomes a real control carrying
+// data-action={"<label>"}; structural validation looks for that marker, so a
+// planned action without a control keeps the project from READY.
+
+type Action = Route['actions'][number];
+
+export const actionMarker = (label: string) => `data-action={${JSON.stringify(label)}}`;
+
+const pathParams = (path: string) => [...path.matchAll(/:([a-zA-Z0-9]+)/g)].map((m) => m[1]!);
+const customEndpoint = (plan: Plan, action: Action) =>
+  plan.customEndpoints.find((e) => `${e.method} ${e.path}` === action.endpoint);
+const entityRoute = (plan: Plan, entity: Entity, kind: Route['kind']) =>
+  plan.routes.find(
+    (r) =>
+      r.entityLocalId === entity.localId &&
+      r.kind === kind &&
+      (kind !== 'DETAIL' || Boolean(dynamicParam(r.path))),
+  );
+
+// Actions that need one record: they live on list rows and detail pages.
+function isItemAction(plan: Plan, action: Action): boolean {
+  if (action.operation) return ['GET', 'UPDATE', 'DELETE'].includes(action.operation);
+  const endpoint = customEndpoint(plan, action);
+  return Boolean(endpoint && pathParams(endpoint.path).length);
+}
+
+const text = (label: string) => `{${JSON.stringify(label)}}`;
+const linkControl = (label: string, href: string) =>
+  `<Link href=${href} ${actionMarker(label)}>
+  <Button type="button" variant="outline">
+    ${text(label)}
+  </Button>
+</Link>`;
+const buttonControl = (label: string, run: string, onDone?: string, confirm?: string) =>
+  `<ActionButton ${actionMarker(label)} run={${run}}${onDone ? ` onDone={${onDone}}` : ''}${
+    confirm ? ` confirm=${text(confirm)}` : ''
+  } />`;
+const withId = (path: string, idExpr: string) =>
+  `{\`${path.replace(/\[[a-zA-Z0-9]+\]/, `\${${idExpr}}`)}\`}`;
+
+interface ActionTarget {
+  idExpr?: string;
+  onDone?: string;
+  onDelete?: string;
+}
+
+// The control for one action, or null when this template cannot realise it
+// here (structural validation then reports it).
+function actionControl(
+  plan: Plan,
+  entity: Entity | undefined,
+  action: Action,
+  target: ActionTarget,
+): string | null {
+  const { label } = action;
+  const { idExpr } = target;
+  if (action.operation) {
+    if (!entity || !entity.operations.includes(action.operation)) return null;
+    const form = entityRoute(plan, entity, 'FORM');
+    switch (action.operation) {
+      case 'CREATE':
+        return form ? linkControl(label, `"${form.path}"`) : null;
+      case 'LIST': {
+        const list = entityRoute(plan, entity, 'LIST');
+        return list ? linkControl(label, `"${list.path}"`) : null;
+      }
+      case 'GET': {
+        const detail = entityRoute(plan, entity, 'DETAIL');
+        return detail && idExpr ? linkControl(label, withId(detail.path, idExpr)) : null;
+      }
+      case 'UPDATE':
+        return form && idExpr && entity.operations.includes('GET')
+          ? linkControl(label, `{\`${form.path}?id=\${${idExpr}}\`}`)
+          : null;
+      case 'DELETE':
+        return idExpr
+          ? buttonControl(
+              label,
+              `() => api.delete${entity.name}(${idExpr})`,
+              target.onDelete,
+              '¿Eliminar este registro?',
+            )
+          : null;
+    }
+  }
+  const endpoint = customEndpoint(plan, action);
+  if (!endpoint) return null;
+  const params = pathParams(endpoint.path);
+  if (params.length > 1 || (params.length === 1 && !idExpr)) return null;
+  const args = [
+    ...(params.length ? [params[0] === 'id' ? idExpr! : `{ ${params[0]}: ${idExpr} }`] : []),
+    ...(['POST', 'PATCH', 'PUT'].includes(endpoint.method) ? ['{}'] : []),
+  ];
+  return buttonControl(
+    label,
+    `() => api.${customEndpointOperationId(endpoint)}(${args.join(', ')})`,
+    target.onDone,
+  );
+}
+
+const controls = (
+  plan: Plan,
+  entity: Entity | undefined,
+  actions: Action[],
+  target: ActionTarget,
+) =>
+  actions
+    .map((action) => actionControl(plan, entity, action, target))
+    .filter((control): control is string => control !== null);
+
+const indent = (block: string, spaces: number) =>
+  block
+    .split('\n')
+    .map((line) => ' '.repeat(spaces) + line)
+    .join('\n');
+
+// Imports a page needs, read from the JSX it renders.
+function pageImports(body: string, up: string, extra: string[] = []): string {
+  const lines = [
+    body.includes('<Link') ? "import Link from 'next/link';" : '',
+    ...extra,
+    body.includes('<Button') ? `import { Button } from '${up}components/ui/button';` : '',
+    body.includes('<ActionButton')
+      ? `import { ActionButton } from '${up}components/action-button';`
+      : '',
+  ];
+  return lines.filter(Boolean).join('\n');
+}
+
+function listPage(plan: Plan, entity: Entity, route: Route): string {
   const up = toWebRoot(route.path);
   const plural = pluralize(entity.name);
-  const columns = entity.fields.slice(0, 5);
-  const detailHref = detail
-    ? `\`${detail.path.replace(/\[[a-zA-Z0-9]+\]/, '${row.id}')}\``
+  const queryKey = `['${lowerFirst(plural)}']`;
+  const detail = entity.operations.includes('GET')
+    ? entityRoute(plan, entity, 'DETAIL')
     : undefined;
-  return `'use client';
-
-${detail || form ? "import Link from 'next/link';\n" : ''}import { useQuery } from '@tanstack/react-query';
-import { api } from '${up}lib/api';
-import { PageState } from '${up}components/page-state';
-${form ? `import { Button } from '${up}components/ui/button';\n` : ''}
-export default function ${entity.name}ListPage() {
-  const query = useQuery({ queryKey: ['${lowerFirst(plural)}'], queryFn: () => api.list${plural}() });
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-2">
+  const form = entity.operations.includes('CREATE') ? entityRoute(plan, entity, 'FORM') : undefined;
+  const columns = entity.fields.slice(0, 5);
+  const refresh = `() => queryClient.invalidateQueries({ queryKey: ${queryKey} })`;
+  const pageActions = route.actions.filter((a) => !isItemAction(plan, a));
+  const itemActions = route.actions.filter((a) => isItemAction(plan, a));
+  const header = controls(plan, entity, pageActions, { onDone: refresh });
+  // Without a planned create action, the form keeps its generic entry point.
+  if (form && !pageActions.some((a) => a.operation === 'CREATE'))
+    header.unshift(`<Link href="${form.path}">\n  <Button>Nuevo</Button>\n</Link>`);
+  const rowControls = controls(plan, entity, itemActions, {
+    idExpr: 'row.id',
+    onDone: refresh,
+    onDelete: refresh,
+  });
+  const detailHref = detail ? withId(detail.path, 'row.id') : undefined;
+  const cells = columns.map((f, i) =>
+    i === 0 && detailHref
+      ? `<td className="px-3 py-2">\n  <Link className="text-primary underline" href=${detailHref}>\n    {${display(f, `row.${f.name}`)}}\n  </Link>\n</td>`
+      : `<td className="px-3 py-2">{${display(f, `row.${f.name}`)}}</td>`,
+  );
+  if (rowControls.length)
+    cells.push(
+      `<td className="px-3 py-2">\n  <div className="flex flex-wrap gap-2">\n${indent(rowControls.join('\n'), 4)}\n  </div>\n</td>`,
+    );
+  const body = `    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-semibold">${labelOf(plural)}</h1>
-${form ? `        <Link href="${form.path}">\n          <Button>Nuevo</Button>\n        </Link>\n` : ''}      </div>
+${header.length ? `        <div className="flex flex-wrap gap-2">\n${indent(header.join('\n'), 10)}\n        </div>\n` : ''}      </div>
       <PageState query={query} empty="Aún no hay registros.">
         {(rows) => (
           <div className="overflow-x-auto rounded-lg border">
             <table className="w-full text-sm">
               <thead className="bg-muted text-left">
                 <tr>
-${columns.map((f) => `                  <th className="px-3 py-2 font-medium">${labelOf(f.name)}</th>`).join('\n')}
+${columns.map((f) => `                  <th className="px-3 py-2 font-medium">${labelOf(f.name)}</th>`).join('\n')}${rowControls.length ? '\n                  <th className="px-3 py-2 font-medium">Acciones</th>' : ''}
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row) => (
                   <tr key={row.id} className="border-t">
-${columns
-  .map((f, i) =>
-    i === 0 && detailHref
-      ? `                    <td className="px-3 py-2">\n                      <Link className="text-primary underline" href={${detailHref}}>\n                        {${display(f, `row.${f.name}`)}}\n                      </Link>\n                    </td>`
-      : `                    <td className="px-3 py-2">{${display(f, `row.${f.name}`)}}</td>`,
-  )
-  .join('\n')}
+${indent(cells.join('\n'), 20)}
                   </tr>
                 ))}
               </tbody>
@@ -224,30 +359,37 @@ ${columns
           </div>
         )}
       </PageState>
-    </div>
+    </div>`;
+  const usesClient = body.includes('queryClient');
+  return `'use client';
+
+${pageImports(body, up, [`import { ${usesClient ? 'useQueryClient, ' : ''}useQuery } from '@tanstack/react-query';`, `import { api } from '${up}lib/api';`, `import { PageState } from '${up}components/page-state';`])}
+
+export default function ${entity.name}ListPage() {
+  const query = useQuery({ queryKey: ${queryKey}, queryFn: () => api.list${plural}() });${usesClient ? '\n  const queryClient = useQueryClient();' : ''}
+  return (
+${body}
   );
 }
 `;
 }
 
-function detailPage(entity: Entity, route: Route): string {
+function detailPage(plan: Plan, entity: Entity, route: Route): string {
+  const up = toWebRoot(route.path);
   const param = dynamicParam(route.path) ?? 'id';
-  return `'use client';
-
-import { useParams } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
-import { api } from '${toWebRoot(route.path)}lib/api';
-import { PageState } from '${toWebRoot(route.path)}components/page-state';
-
-export default function ${entity.name}DetailPage() {
-  const { ${param} } = useParams<{ ${param}: string }>();
-  const query = useQuery({
-    queryKey: ['${lowerFirst(entity.name)}', ${param}],
-    queryFn: () => api.get${entity.name}(${param}),
+  const list = entityRoute(plan, entity, 'LIST');
+  // The page itself realises a GET action of its own entity.
+  const own = route.actions.find((a) => a.operation === 'GET');
+  const others = route.actions.filter((a) => a !== own);
+  const header = controls(plan, entity, others, {
+    idExpr: param,
+    onDone: '() => query.refetch()',
+    onDelete: `() => router.push('${list?.path ?? '/'}')`,
   });
-  return (
-    <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-semibold">${route.screenName.replace(/[<>{}]/g, '')}</h1>
+  const body = `    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-xl font-semibold"${own ? ` ${actionMarker(own.label)}` : ''}>${route.screenName.replace(/[<>{}]/g, '')}</h1>
+${header.length ? `        <div className="flex flex-wrap gap-2">\n${indent(header.join('\n'), 10)}\n        </div>\n` : ''}      </div>
       <PageState query={query}>
         {(item) => (
           <dl className="grid gap-3 rounded-lg border p-4 sm:grid-cols-2">
@@ -260,15 +402,47 @@ ${entity.fields
           </dl>
         )}
       </PageState>
-    </div>
+    </div>`;
+  const usesRouter = body.includes('router.');
+  return `'use client';
+
+${pageImports(body, up, [`import { ${usesRouter ? 'useRouter, ' : ''}useParams } from 'next/navigation';`, "import { useQuery } from '@tanstack/react-query';", `import { api } from '${up}lib/api';`, `import { PageState } from '${up}components/page-state';`])}
+
+export default function ${entity.name}DetailPage() {
+  const { ${param} } = useParams<{ ${param}: string }>();${usesRouter ? '\n  const router = useRouter();' : ''}
+  const query = useQuery({
+    queryKey: ['${lowerFirst(entity.name)}', ${param}],
+    queryFn: () => api.get${entity.name}(${param}),
+  });
+  return (
+${body}
   );
 }
 `;
 }
 
+// Only the input primitives the form actually renders, so lint stays clean.
+function inputImport(body: string, up: string): string {
+  const names = [
+    body.includes('<Input') ? 'Input' : '',
+    body.includes('{input}') ? 'input' : '',
+  ].filter(Boolean);
+  return names.length ? `import { ${names.join(', ')} } from '${up}components/ui/input';` : '';
+}
+
 function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefined): string {
   const up = toWebRoot(route.path);
   const schema = createSchemaName(entity.name);
+  // Editing reuses the form when the plan exposes reading and updating.
+  const editable = entity.operations.includes('UPDATE') && entity.operations.includes('GET');
+  // The submit button realises the form's own create/update action.
+  const own = route.actions.find((a) => a.operation === 'CREATE' || a.operation === 'UPDATE');
+  const header = controls(
+    plan,
+    entity,
+    route.actions.filter((a) => a !== own && !isItemAction(plan, a)),
+    {},
+  );
   const relationTargets = inputRelations(entity)
     .map((relation) => ({
       relation,
@@ -336,19 +510,43 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
     ({ relation, target }) =>
       `  const ${lowerFirst(relation.name)}Options = useQuery({ queryKey: ['${lowerFirst(pluralize(target.name))}'], queryFn: () => api.list${pluralize(target.name)}() });`,
   );
+  const usesQuery = relationTargets.length > 0 || editable;
+  const save = editable
+    ? `(editId
+        ? api.update${entity.name}(editId, values as Parameters<typeof api.update${entity.name}>[1])
+        : api.create${entity.name}(values as Parameters<typeof api.create${entity.name}>[0]))`
+    : `api.create${entity.name}(values as Parameters<typeof api.create${entity.name}>[0])`;
+  const headerBlock = header.length
+    ? `      <div className="flex flex-wrap gap-2">\n${indent(header.join('\n'), 8)}\n      </div>\n`
+    : '';
+  const extraImports = [
+    "import { useRouter } from 'next/navigation';",
+    editable ? "import { useEffect, useState } from 'react';" : '',
+    "import { useForm } from 'react-hook-form';",
+    "import { zodResolver } from '@hookform/resolvers/zod';",
+    `import { ${usesQuery ? 'useQuery, ' : ''}useQueryClient } from '@tanstack/react-query';`,
+    "import { toast } from 'sonner';",
+    "import type { z } from 'zod';",
+    `import { ${schema} } from '${SCOPE}/contracts';`,
+    `import { api } from '${up}lib/api';`,
+  ].filter(Boolean);
+  const body = `    <div className="flex max-w-xl flex-col gap-4">
+      <h1 className="text-xl font-semibold">${route.screenName.replace(/[<>{}]/g, '')}</h1>
+${headerBlock}      <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4 rounded-lg border p-4">
+${[...inputs, ...relationInputs].join('\n')}
+        <Button type="submit" disabled={isSubmitting}${own ? ` ${actionMarker(own.label)}` : ''}>
+          {isSubmitting ? 'Guardando…' : ${own ? JSON.stringify(own.label) : "'Guardar'"}}
+        </Button>
+      </form>
+    </div>`;
   return `'use client';
 
-import { useRouter } from 'next/navigation';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { ${relationTargets.length ? 'useQuery, ' : ''}useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
-import type { z } from 'zod';
-import { ${schema} } from '${SCOPE}/contracts';
-import { api } from '${up}lib/api';
-import { Button } from '${up}components/ui/button';
-import { Input, input } from '${up}components/ui/input';
-import { FieldError } from '${up}components/field-error';
+${pageImports(body, up, extraImports).replace(
+  `import { Button } from '${up}components/ui/button';`,
+  `import { Button } from '${up}components/ui/button';
+${inputImport(body, up)}
+import { FieldError } from '${up}components/field-error';`,
+)}
 
 type FormInput = z.input<typeof ${schema}>;
 type FormOutput = z.output<typeof ${schema}>;
@@ -356,16 +554,32 @@ type FormOutput = z.output<typeof ${schema}>;
 export default function ${entity.name}FormPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
-${optionQueries.join('\n')}
-  const {
+${optionQueries.join('\n')}${optionQueries.length ? '\n' : ''}  const {
     register,
-    handleSubmit,
+    handleSubmit,${editable ? '\n    reset,' : ''}
     formState: { errors, isSubmitting },
-  } = useForm<FormInput, unknown, FormOutput>({ resolver: zodResolver(${schema}) });
+  } = useForm<FormInput, unknown, FormOutput>({ resolver: zodResolver(${schema}) });${
+    editable
+      ? `
+  // "?id=<record>" opens the form to edit that record.
+  const [editId, setEditId] = useState<string | null>(null);
+  useEffect(() => {
+    setEditId(new URLSearchParams(window.location.search).get('id'));
+  }, []);
+  const existing = useQuery({
+    queryKey: ['${lowerFirst(entity.name)}', editId],
+    queryFn: () => api.get${entity.name}(editId!),
+    enabled: Boolean(editId),
+  });
+  useEffect(() => {
+    if (existing.data) reset(existing.data as unknown as FormInput);
+  }, [existing.data, reset]);`
+      : ''
+  }
 
   async function onSubmit(values: FormOutput) {
     try {
-      await api.create${entity.name}(values as Parameters<typeof api.create${entity.name}>[0]);
+      await ${save};
       await queryClient.invalidateQueries({ queryKey: ['${lowerFirst(pluralize(entity.name))}'] });
       toast.success('Guardado correctamente.');
       ${list ? `router.push('${list.path}');` : 'router.refresh();'}
@@ -375,15 +589,7 @@ ${optionQueries.join('\n')}
   }
 
   return (
-    <div className="flex max-w-xl flex-col gap-4">
-      <h1 className="text-xl font-semibold">${route.screenName.replace(/[<>{}]/g, '')}</h1>
-      <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4 rounded-lg border p-4">
-${[...inputs, ...relationInputs].join('\n')}
-        <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? 'Guardando…' : 'Guardar'}
-        </Button>
-      </form>
-    </div>
+${body}
   );
 }
 `;
@@ -391,26 +597,79 @@ ${[...inputs, ...relationInputs].join('\n')}
 
 function simplePage(plan: Plan, route: Route): string {
   const module = plan.modules.find((m) => m.localId === route.moduleLocalId)!;
+  const entity = plan.entities.find((e) => e.localId === route.entityLocalId);
   const links = plan.routes.filter(
     (r) => r !== route && r.moduleLocalId === route.moduleLocalId && !r.path.includes('['),
   );
-  return `${links.length ? "import Link from 'next/link';\n\n" : ''}export default function ${upperFirst(route.screenName.replace(/[^A-Za-z0-9]/g, '')) || 'Screen'}Page() {
-  return (
-    <div className="flex flex-col gap-4">
+  const header = controls(
+    plan,
+    entity,
+    route.actions.filter((a) => !isItemAction(plan, a)),
+    {},
+  );
+  const body = `    <div className="flex flex-col gap-4">
       <h1 className="text-xl font-semibold">${route.screenName.replace(/[<>{}]/g, '')}</h1>
       <p className="text-sm text-muted-foreground">${module.description.replace(/[<>{}]/g, '')}</p>
-${
-  links.length
-    ? `      <ul className="grid gap-2 sm:grid-cols-2">
+${header.length ? `      <div className="flex flex-wrap gap-2">\n${indent(header.join('\n'), 8)}\n      </div>\n` : ''}${
+    links.length
+      ? `      <ul className="grid gap-2 sm:grid-cols-2">
 ${links.map((l) => `        <li>\n          <Link className="block rounded-lg border p-4 hover:bg-muted" href="${l.path}">\n            ${l.screenName.replace(/[<>{}]/g, '')}\n          </Link>\n        </li>`).join('\n')}
-      </ul>`
-    : ''
-}
-    </div>
+      </ul>
+`
+      : ''
+  }    </div>`;
+  const imports = pageImports(body, toWebRoot(route.path), [
+    body.includes('<ActionButton') ? `import { api } from '${toWebRoot(route.path)}lib/api';` : '',
+  ]);
+  return `${body.includes('<ActionButton') ? "'use client';\n\n" : ''}${imports ? `${imports}\n\n` : ''}export default function ${upperFirst(route.screenName.replace(/[^A-Za-z0-9]/g, '')) || 'Screen'}Page() {
+  return (
+${body}
   );
 }
 `;
 }
+
+const ACTION_BUTTON = `'use client';
+
+import { useState } from 'react';
+import { toast } from 'sonner';
+import { Button } from './ui/button';
+
+// A screen action that calls the API (DEC-121): busy state, optional
+// confirmation and feedback in Spanish.
+export function ActionButton({
+  run,
+  onDone,
+  confirm,
+  ...props
+}: {
+  'data-action': string;
+  run: () => Promise<unknown>;
+  onDone?: () => unknown;
+  confirm?: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const label = props['data-action'];
+  async function handleClick() {
+    if (confirm && !window.confirm(confirm)) return;
+    setBusy(true);
+    try {
+      await run();
+      toast.success('Acción realizada.');
+      await onDone?.();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo completar la acción.');
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Button type="button" variant="outline" disabled={busy} data-action={label} onClick={handleClick}>
+      {busy ? 'Procesando…' : label}
+    </Button>
+  );
+}
+`;
 
 export function frontendFiles(ctx: GenerationContext): GeneratedProjectFile[] {
   const { plan, template, projectName, theme } = ctx;
@@ -624,6 +883,7 @@ export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElem
 }
 `,
     ),
+    file('apps/web/components/action-button.tsx', ACTION_BUTTON),
     file(
       'apps/web/components/page-state.tsx',
       `import type { ReactNode } from 'react';
@@ -855,19 +1115,14 @@ export default function AccessPage() {
       plan.routes.find((r) => r.entityLocalId === route.entityLocalId && r.kind === kind);
     let content: string;
     if (entity && route.kind === 'LIST' && entity.operations.includes('LIST'))
-      content = listPage(
-        entity,
-        route,
-        entity.operations.includes('GET') ? sameEntity('DETAIL') : undefined,
-        entity.operations.includes('CREATE') ? sameEntity('FORM') : undefined,
-      );
+      content = listPage(plan, entity, route);
     else if (
       entity &&
       route.kind === 'DETAIL' &&
       entity.operations.includes('GET') &&
       dynamicParam(route.path)
     )
-      content = detailPage(entity, route);
+      content = detailPage(plan, entity, route);
     else if (entity && route.kind === 'FORM' && entity.operations.includes('CREATE'))
       content = formPage(plan, entity, route, sameEntity('LIST'));
     else content = simplePage(plan, route);

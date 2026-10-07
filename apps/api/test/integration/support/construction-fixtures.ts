@@ -46,6 +46,7 @@ export const CONTENT: Partial<Record<StructuredAnalysisKind, Record<string, unkn
         purpose: 'Ver el panel principal',
         navigationNodeLocalId: 'home',
         primaryActions: ['Confirmar pedido'],
+        secondaryActions: ['Nuevo pedido', 'Ver pedido', 'Editar pedido', 'Eliminar pedido'],
       },
     ],
   },

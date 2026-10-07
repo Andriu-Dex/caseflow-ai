@@ -22,7 +22,11 @@ import {
   type SandboxExecutionProvider,
   type StorageProvider,
 } from '@caseflow-ai/integrations';
-import type { SandboxRunResponse, SandboxValidationStage } from '@caseflow-ai/contracts';
+import type {
+  ImplementationPlanContent,
+  SandboxRunResponse,
+  SandboxValidationStage,
+} from '@caseflow-ai/contracts';
 import type { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -37,6 +41,7 @@ import {
   buildArchive,
   manifestHash,
   sha256,
+  planCoverageProblems,
   structuralProblems,
   traceabilityProblems,
   type ProjectFile,
@@ -283,7 +288,20 @@ export class SandboxRunsService {
         durationMs: 0,
         output: problems.length ? problems.join('\n') : 'Sin observaciones.',
       });
-      stages.push(check('STRUCTURE', structuralProblems(files, template, allowed)));
+      const generation = await this.prisma.generationRun.findUniqueOrThrow({
+        where: { id: generationRunId },
+        select: {
+          implementationPlanVersion: { select: { structuredAnalysisDetail: true } },
+        },
+      });
+      const plan = generation.implementationPlanVersion.structuredAnalysisDetail
+        ?.content as unknown as ImplementationPlanContent;
+      stages.push(
+        check('STRUCTURE', [
+          ...structuralProblems(files, template, allowed),
+          ...planCoverageProblems(files, plan),
+        ]),
+      );
       if (stages.at(-1)!.passed)
         stages.push(
           check(

@@ -64,6 +64,18 @@ function entitySchemas(entity: Entity): Record<string, Schema> {
   };
 }
 
+// "POST /orders/:orderId/confirm" -> "postOrdersConfirm"; the generated
+// frontend calls the API client by this same name.
+export function customEndpointOperationId(endpoint: { method: string; path: string }): string {
+  const words = endpoint.path
+    .split('/')
+    .filter((segment) => segment && !segment.startsWith(':'))
+    .flatMap((segment) => segment.split('-'))
+    .map(upperFirst)
+    .join('');
+  return `${endpoint.method.toLowerCase()}${words}`;
+}
+
 export function generateOpenApi(plan: ImplementationPlanContent, title: string): Schema {
   const modules = new Map(plan.modules.map((m) => [m.localId, m.name]));
   const entities = new Map(plan.entities.map((e) => [e.localId, e]));
@@ -146,16 +158,10 @@ export function generateOpenApi(plan: ImplementationPlanContent, title: string):
       required: true,
       schema: { type: 'string' },
     }));
-    const words = endpoint.path
-      .split('/')
-      .filter((segment) => segment && !segment.startsWith(':'))
-      .flatMap((segment) => segment.split('-'))
-      .map(upperFirst)
-      .join('');
     const entity = endpoint.entityLocalId ? entities.get(endpoint.entityLocalId) : undefined;
     const hasBody = ['POST', 'PATCH', 'PUT'].includes(endpoint.method);
     addOperation(path, endpoint.method.toLowerCase(), {
-      operationId: `${endpoint.method.toLowerCase()}${words}`,
+      operationId: customEndpointOperationId(endpoint),
       tags: [modules.get(endpoint.moduleLocalId)!],
       summary: endpoint.summary,
       ...(params.length ? { parameters: params } : {}),
