@@ -1,6 +1,5 @@
 import {
   classDiagramContentSchema,
-  classDiagramCoverageGaps,
   conceptualDomainModelContentSchema,
   designThemeContentSchema,
   designThemeContrastIssues,
@@ -12,6 +11,7 @@ import {
   uiBlueprintContentSchema,
   type StructuredAnalysisKind,
 } from '@caseflow-ai/contracts';
+import { coherenceGaps, upstreamFromSources } from '../consistency-engine/coherence-rules';
 
 export interface GenerationSourceReference {
   code: string;
@@ -155,19 +155,6 @@ export function evaluateStructuredGeneration(
     const parsed = classDiagramContentSchema.parse(content);
     for (const cls of parsed.classes)
       checkReferences(`La clase «${cls.name}»`, cls.relatedSourceCodes ?? []);
-    const entities = sources
-      .filter((source) => source.type === 'DATA_MODEL')
-      .flatMap(
-        (source) =>
-          (source.content as { entities?: { name: string; attributes: { name: string }[] }[] })
-            ?.entities ?? [],
-      );
-    for (const message of classDiagramCoverageGaps(parsed, entities))
-      findings.push({
-        severity: options.strict === false ? 'WARNING' : 'ERROR',
-        code: 'COVERAGE_GAP',
-        message,
-      });
   } else if (kind === 'CONCEPTUAL_DOMAIN_MODEL') {
     const parsed = conceptualDomainModelContentSchema.parse(content);
     for (const entity of parsed.entities) {
@@ -246,6 +233,14 @@ export function evaluateStructuredGeneration(
         });
     }
   }
+  // DEC-121: coverage against the selected sources; blocking where coherence
+  // is mandatory.
+  for (const gap of coherenceGaps(kind, content, upstreamFromSources(sources)))
+    findings.push({
+      severity: options.strict === false ? 'WARNING' : 'ERROR',
+      code: 'COVERAGE_GAP',
+      message: gap.message,
+    });
   for (const source of sources) {
     if (!referenced.has(source.code))
       findings.push({

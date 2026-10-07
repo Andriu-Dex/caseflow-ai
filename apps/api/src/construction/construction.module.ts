@@ -38,6 +38,8 @@ import { DataModelsModule } from '../data-models/data-models.module';
 import { StructuredAnalysisModule } from '../structured-analysis/structured-analysis.module';
 import { MockupsModule } from '../mockups/mockups.module';
 
+import { ConsistencyEngineModule } from '../consistency-engine/consistency-engine.module';
+
 @Module({
   imports: [
     AIModule,
@@ -49,6 +51,7 @@ import { MockupsModule } from '../mockups/mockups.module';
     DataModelsModule,
     StructuredAnalysisModule,
     MockupsModule,
+    ConsistencyEngineModule,
   ],
   controllers: [
     TargetTemplatesController,

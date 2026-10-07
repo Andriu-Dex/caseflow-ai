@@ -18,6 +18,7 @@ const planBody = (designBaselineId: string, uiCode: string) => ({
       localId: 'order',
       name: 'Order',
       moduleLocalId: 'sales',
+      classLocalId: 'order',
       fields: [{ name: 'total', type: 'DECIMAL' }],
       operations: ['LIST', 'GET', 'CREATE'],
       relatedSourceCodes: [uiCode],
@@ -30,6 +31,17 @@ const planBody = (designBaselineId: string, uiCode: string) => ({
       path: '/orders/:orderId/confirm',
       summary: 'Confirmar pedido',
       entityLocalId: 'order',
+    },
+  ],
+  routes: [
+    {
+      path: '/orders',
+      screenName: 'Inicio',
+      screenLocalId: 'home',
+      moduleLocalId: 'sales',
+      kind: 'LIST',
+      entityLocalId: 'order',
+      actions: [{ label: 'Confirmar pedido', endpoint: 'POST /orders/:orderId/confirm' }],
     },
   ],
 });

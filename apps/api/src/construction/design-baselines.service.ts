@@ -7,6 +7,7 @@ import {
 } from '@caseflow-ai/contracts';
 import { PrismaService } from '../database/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { ConsistencyEngineService } from '../consistency-engine/consistency-engine.service';
 
 const ROLE_LABELS: Record<DesignBaselineRole, string> = {
   GENERATION_PLAN: 'el plan de generación',
@@ -44,6 +45,7 @@ export class DesignBaselinesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly consistency: ConsistencyEngineService,
   ) {}
 
   async create(
@@ -72,6 +74,11 @@ export class DesignBaselinesService {
       return artifactVersionId ? [{ role, artifactVersionId }] : [];
     });
     await this.assertFreezable(projectId, entries);
+    // DEC-121: what is frozen must be coherent with itself and the analysis.
+    await this.consistency.assertDesignCoherent(
+      projectId,
+      entries.map((entry) => entry.artifactVersionId),
+    );
 
     const baseline = await this.prisma.$transaction(async (tx) => {
       const created = await tx.designBaseline.create({

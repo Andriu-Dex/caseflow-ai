@@ -13,9 +13,7 @@ import { HtmlPreviewDialog } from '../../components/html-preview-dialog';
 
 // Rule ids stay as English identifiers in the API contract; only the label is localized.
 const CONSISTENCY_RULE_LABELS: Record<string, string> = {
-  'Requirement Reference': 'Referencia a requisito',
   'Mockup Association': 'Asociación de boceto',
-  'Navigation Node Link': 'Enlace de nodo de navegación',
   'Unique Use Case Name': 'Nombre de caso de uso único',
 };
 

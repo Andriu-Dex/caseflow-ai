@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AIModule } from '../ai/ai.module';
 import { DataModelsModule } from '../data-models/data-models.module';
+import { ConsistencyEngineModule } from '../consistency-engine/consistency-engine.module';
 import {
   NavigationController,
   SoftwareArchitectureController,
@@ -19,7 +20,7 @@ import { ClassDiagramController } from './class-diagram.controller';
 @Module({
   // Reuses DataModelsModule's DiagramEngine/DIAGRAM_PROVIDER wiring — one
   // renderer abstraction, not a parallel one per feature.
-  imports: [AIModule, DataModelsModule],
+  imports: [AIModule, DataModelsModule, ConsistencyEngineModule],
   controllers: [
     NavigationController,
     SoftwareArchitectureController,
