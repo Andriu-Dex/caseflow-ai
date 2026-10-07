@@ -20,6 +20,7 @@ import type {
 import { Button } from '@caseflow-ai/ui';
 import { api, ApiError } from '../../../lib/api';
 import { PageHeading } from '../../../components/page-heading';
+import { DockerSetupAssistant } from '../../../components/docker-setup-assistant';
 import { QueryState, RequireActiveProject } from '../../../components/query-state';
 import { EmptyState } from '../../../components/artifact-actions';
 import { AuthedDownloadButton } from '../../../components/authed-media';
@@ -303,6 +304,7 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
   return (
     <div className="flex flex-col gap-6">
       <PageHeading title="Generación de código" projectId={projectId} />
+      <DockerSetupAssistant />
       <p className="text-sm text-muted-foreground">
         Genere el proyecto web a partir de un plan de implementación aprobado. Cada generación queda
         registrada como historial y cada archivo enlaza a las versiones aprobadas que implementa.

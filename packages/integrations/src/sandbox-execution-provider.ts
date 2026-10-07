@@ -67,6 +67,9 @@ export interface SandboxExecutionResult {
 export interface SandboxExecutionProvider {
   readonly id: string;
   execute(request: SandboxExecutionRequest): Promise<SandboxExecutionResult>;
+  // Whether generated code can be validated right now (the desktop edition
+  // shows the Docker installation assistant when it cannot).
+  isAvailable(): Promise<boolean>;
 }
 
 export const stagePassed = (s: SandboxStageOutcome) => s.exitCode === 0 && !s.timedOut;
@@ -202,6 +205,17 @@ export class DockerSandboxExecutionProvider implements SandboxExecutionProvider 
   readonly id = 'docker';
 
   constructor(private readonly run: Runner = runDocker) {}
+
+  async isAvailable(): Promise<boolean> {
+    try {
+      const result = await this.run(['info', '--format', '{{.ServerVersion}}'], {
+        timeoutMs: 10_000,
+      });
+      return result.exitCode === 0 && !result.timedOut;
+    } catch {
+      return false;
+    }
+  }
 
   async execute(request: SandboxExecutionRequest): Promise<SandboxExecutionResult> {
     for (const command of request.commands)
@@ -349,6 +363,10 @@ export class DockerSandboxExecutionProvider implements SandboxExecutionProvider 
 export class FakeSandboxExecutionProvider implements SandboxExecutionProvider {
   readonly id = 'fake';
   readonly requests: SandboxExecutionRequest[] = [];
+
+  async isAvailable(): Promise<boolean> {
+    return true;
+  }
 
   constructor(
     private readonly behavior: (

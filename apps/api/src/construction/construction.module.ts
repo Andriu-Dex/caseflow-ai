@@ -28,6 +28,7 @@ import { GenerationRunsService } from './generation-runs.service';
 import { SandboxRunsService } from './sandbox-runs.service';
 import { SANDBOX_EXECUTION_PROVIDER } from './sandbox-provider.token';
 import { WorkflowRunsController } from './workflow-runs.controller';
+import { SandboxStatusController } from './sandbox-status.controller';
 import { WorkflowRunsService } from './workflow-runs.service';
 import { SourcesModule } from '../sources/sources.module';
 import { ProjectContextModule } from '../project-context/project-context.module';
@@ -57,6 +58,7 @@ import { MockupsModule } from '../mockups/mockups.module';
     GeneratedProjectSnapshotsController,
     InternalConstructionJobsController,
     WorkflowRunsController,
+    SandboxStatusController,
   ],
   providers: [
     DependencyCatalogService,
