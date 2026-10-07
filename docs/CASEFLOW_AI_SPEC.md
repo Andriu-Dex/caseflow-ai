@@ -7239,6 +7239,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-118 | Tema (claro/oscuro/ambos) y paleta por proyecto como artefacto `DESIGN_THEME`, congelado en la Design Baseline y obligatorio solo en proyectos nuevos (ADR-003, §221) | Accepted |
 | DEC-119 | En la ruta Exprés la generación puede partir de borradores (fuentes provisionales); la base de datos impide aprobar una versión antes que las versiones de las que se generó, en cualquier ruta (ADR-004, §221.1) | Accepted |
 | DEC-120 | La edición de escritorio usa PGlite con pgvector en lugar de PostgreSQL embebido, una cola en proceso en lugar de Redis y almacenamiento en disco (ADR-005, §221.2) | Accepted |
+| DEC-121 | Diagrama de clases de dominio como paso 6 de la planificación, y coherencia obligatoria entre etapas (referencias por identificador y cobertura en ambas direcciones, bloqueante al generar, aprobar y construir) en los proyectos nuevos (ADR-006, §221.5) | Accepted |
 
 ---
 
@@ -7675,7 +7676,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-120)
+# 221. Extensiones de V2 (DEC-116 a DEC-121)
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
@@ -7731,6 +7732,20 @@ Implementación:
 - **Generación:** la IA propone tres paletas alternativas (tres candidatos) a partir de los requisitos y el plano de interfaz aprobados, con un ajuste opcional del usuario ("más cálida"). Un cambio a un tema existente es una nueva versión.
 - **Bocetos:** se pintan con el tema aprobado vigente y registran su versión (`mockup_details.design_theme_version_id`, arista de trazabilidad `DESIGN_THEME_SOURCE_FOR_MOCKUP`). La línea base exige que el boceto congelado use el tema congelado.
 - **Frontend generado:** el tema congelado se emite como variables de Tailwind en `globals.css`, trazado al tema. Con `BOTH`, `.dark` redefine los tokens y se agrega un selector de tema con su prueba.
+
+## 221.5 Diagrama de clases y coherencia obligatoria (DEC-121, ADR-006)
+
+Artefacto `CLASS_DIAGRAM` (`DC-`), paso 6 de la planificación: clases de dominio con atributos, métodos y relaciones con multiplicidad, dibujadas como Mermaid `classDiagram`. Cada clase apunta a su entidad del modelo de datos.
+
+En los proyectos nuevos, la coherencia entre etapas es obligatoria. Cada elemento referencia por identificador al que lo origina, y la cobertura se exige en ambas direcciones:
+
+- requisito → caso de uso → pantalla;
+- entidad ↔ clase ↔ entidad del plan → Prisma;
+- nodo de navegación ↔ pantalla ↔ boceto ↔ ruta ↔ página;
+- acción → endpoint → control;
+- campo → atributo.
+
+Se verifica al generar (la IA recibe la lista de lo que debe cubrir), al aprobar (un artefacto con huecos no puede aprobarse) y al construir (la validación estructural exige que el código implemente el plan). Una matriz de coherencia muestra los huecos. Los proyectos existentes ven las reglas como advertencias.
 
 ## 221.4 Fuera de alcance de estas extensiones
 
