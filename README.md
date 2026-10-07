@@ -206,6 +206,13 @@ Optional settings go in `caseflow.env` inside the app's data folder (`%APPDATA%\
 
 Diagrams are rendered by the public `https://kroki.io` service unless `KROKI_BASE_URL` points to your own Kroki. Secrets are generated on first start and never leave the machine.
 
+**ChatGPT plan (desktop only, DEC-117):** in **Ajustes de IA**, "Continuar con ChatGPT" signs in through the system browser and uses your ChatGPT Plus or Pro plan for AI generation.
+
+- **Credentials:** encrypted with the operating system's secure storage and kept in the Electron main process. The API asks for short-lived access tokens through a loopback broker (port 4803).
+- **Usage limit:** reaching it pauses plan requests. Switching to the provider from `caseflow.env` always requires your confirmation.
+
+In the web edition the same button explains how to install the desktop app.
+
 ## Architecture documentation
 
 - **`docs/CASEFLOW_AI_SPEC.md`** is the authoritative product and architecture specification.

@@ -7711,7 +7711,12 @@ Implementación:
 
 El proyecto se publica con licencia Apache-2.0, sin pagos en ninguna edición. La edición de escritorio (Electron, `apps/desktop`) usa PGlite con pgvector expuesto por TCP, una cola en proceso sin Redis (`CASEFLOW_QUEUE_MODE=in-process`) y un `FilesystemStorageProvider` (`STORAGE_DIR`) (DEC-120, ADR-005). La construcción sigue exigiendo Docker (§174).
 
-El proveedor "ChatGPT" (plan usage de OpenAI, Responses API) existe solo en la edición de escritorio. Ante cuota agotada (429) avisa y ofrece otro modelo solo con confirmación del usuario; ante falta de elegibilidad (403) explica sin reintentar. La edición web muestra la opción, pero lleva al asistente de instalación de escritorio.
+El proveedor "ChatGPT" (plan usage de OpenAI, Responses API) existe solo en la edición de escritorio. Implementación:
+
+- **Inicio de sesión:** OAuth con PKCE y registro dinámico (`dynamic_agent_client`, `ext_agent_host_id` persistente) desde el proceso principal de Electron. Exige el permiso `chatgpt.tokens.use.direct` y verifica el token de identidad.
+- **Credenciales:** se cifran con `safeStorage`. La API recibe tokens de acceso de corta duración desde un broker en loopback con un secreto por sesión (`AI_PROVIDER=chatgpt`), y el proveedor `ChatGPTProvider` usa `store: false` y `stream: true`.
+- **Pausa por límite:** la mantiene el broker y la levanta el usuario. Cambiar al proveedor de `caseflow.env` requiere su confirmación explícita.
+- **Desconexión:** al desconectar se revoca el token de refresco antes de borrar las credenciales locales. Ante cuota agotada (429) avisa y ofrece otro modelo solo con confirmación del usuario; ante falta de elegibilidad (403) explica sin reintentar. La edición web muestra la opción, pero lleva al asistente de instalación de escritorio.
 
 ## 221.3 Tema y paleta del proyecto (DEC-118, ADR-003)
 

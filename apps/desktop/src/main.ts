@@ -1,10 +1,26 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
+import type { Server } from 'node:http';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { app, BrowserWindow, dialog, shell } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  safeStorage,
+  shell,
+  type IpcMainInvokeEvent,
+} from 'electron';
+import { ChatGPTConnection, startBroker } from './chatgpt-connection.js';
 import { startDatabase, type DesktopDatabase } from './database.js';
-import { PORTS, apiEnvironment, isAppUrl, isExternalHttpsUrl } from './settings.js';
+import {
+  PORTS,
+  apiEnvironment,
+  hasConfiguredAIProvider,
+  isAppUrl,
+  isExternalHttpsUrl,
+} from './settings.js';
 
 // CASEFlow AI desktop edition (DEC-117, DEC-120): the same API and web app,
 // on loopback only, over a local PGlite database and an in-process queue.
@@ -20,10 +36,14 @@ const paths = {
   web: app.isPackaged
     ? join(root, 'apps', 'web', 'server.js')
     : join(desktopDir, 'build', 'web', 'server.js'),
+  preload: join(desktopDir, 'dist', 'preload.cjs'),
 };
 
-const children: ChildProcess[] = [];
+const children = new Set<ChildProcess>();
 let database: DesktopDatabase | null = null;
+let api: ChildProcess | null = null;
+let broker: { url: string; secret: string; server: Server } | null = null;
+let chatgpt: ChatGPTConnection | null = null;
 
 // Electron's own Node runs the API and the web server: no separate install.
 function startNode(script: string, env: Record<string, string>): ChildProcess {
@@ -33,7 +53,8 @@ function startNode(script: string, env: Record<string, string>): ChildProcess {
     stdio: 'inherit',
     windowsHide: true,
   });
-  children.push(child);
+  children.add(child);
+  child.on('exit', () => children.delete(child));
   return child;
 }
 
@@ -50,6 +71,59 @@ async function waitFor(url: string, timeoutMs = 90_000): Promise<void> {
   throw new Error(`${url} no respondió a tiempo.`);
 }
 
+// (Re)starts the API with the AI provider the user chose.
+async function startApi(): Promise<void> {
+  if (api) {
+    const stopping = api;
+    await new Promise<void>((resolveExit) => {
+      stopping.once('exit', () => resolveExit());
+      stopping.kill();
+    });
+  }
+  const model = (await chatgpt?.isActive()) ? await chatgpt!.model() : null;
+  api = startNode(
+    paths.api,
+    await apiEnvironment(
+      app.getPath('userData'),
+      database!.url,
+      model && broker ? { model, brokerUrl: broker.url, brokerSecret: broker.secret } : null,
+    ),
+  );
+  await waitFor(`http://127.0.0.1:${PORTS.api}/health/live`);
+}
+
+// The web page may call these, and only the app's own page.
+function handle<T>(channel: string, action: (...args: string[]) => Promise<T>): void {
+  ipcMain.handle(channel, async (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+    if (!isAppUrl(event.senderFrame?.url ?? '')) throw new Error('Origen no permitido.');
+    if (!chatgpt)
+      throw new Error('El almacenamiento seguro del sistema no está disponible en este equipo.');
+    try {
+      return await action(...args.map(String));
+    } catch (error) {
+      // Only the message crosses to the page, never a stack or a credential.
+      // Electron passes only the message to the page, never the cause.
+      throw new Error(error instanceof Error ? error.message : 'No se pudo completar la acción.', {
+        cause: error,
+      });
+    }
+  });
+}
+
+function registerChatGPTBridge(): void {
+  const dataDir = app.getPath('userData');
+  handle('chatgpt:status', async () => ({
+    ...(await chatgpt!.status()),
+    configuredProvider: await hasConfiguredAIProvider(dataDir),
+  }));
+  handle('chatgpt:connect', () => chatgpt!.connect());
+  handle('chatgpt:disconnect', () => chatgpt!.disconnect());
+  handle('chatgpt:models', () => chatgpt!.models());
+  handle('chatgpt:select-model', (slug) => chatgpt!.selectModel(slug!));
+  handle('chatgpt:resume', () => chatgpt!.resume());
+  handle('chatgpt:prefer', (value) => chatgpt!.prefer(value === 'true'));
+}
+
 async function start(): Promise<void> {
   const dataDir = app.getPath('userData');
   await mkdir(dataDir, { recursive: true });
@@ -58,16 +132,35 @@ async function start(): Promise<void> {
     migrationsDir: paths.migrations,
     port: PORTS.database,
   });
-  startNode(paths.api, await apiEnvironment(dataDir, database.url));
+  // Without the OS secure storage the ChatGPT plan is not offered at all:
+  // credentials are never written unencrypted.
+  if (safeStorage.isEncryptionAvailable()) {
+    chatgpt = new ChatGPTConnection(
+      join(dataDir, 'chatgpt.bin'),
+      {
+        encrypt: (plain) => safeStorage.encryptString(plain),
+        decrypt: (data) => safeStorage.decryptString(data),
+      },
+      (url) => shell.openExternal(url),
+      startApi,
+    );
+    broker = await startBroker(chatgpt, PORTS.broker);
+  }
+  registerChatGPTBridge();
+  await startApi();
   startNode(paths.web, { PORT: String(PORTS.web), HOSTNAME: '127.0.0.1' });
-  await waitFor(`http://127.0.0.1:${PORTS.api}/health/live`);
   await waitFor(`http://127.0.0.1:${PORTS.web}/login`);
 
   const window = new BrowserWindow({
     width: 1400,
     height: 900,
     title: 'CASEFlow AI',
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      preload: paths.preload,
+    },
   });
   // Links to other sites (documentation, Docker downloads) open in the browser.
   window.webContents.setWindowOpenHandler(({ url }) => {
@@ -85,6 +178,10 @@ async function start(): Promise<void> {
 
 async function stop(): Promise<void> {
   for (const child of children) child.kill();
+  children.clear();
+  api = null;
+  broker?.server.close();
+  broker = null;
   await database?.stop();
   database = null;
 }
@@ -95,18 +192,15 @@ else {
   app.on('second-instance', () => BrowserWindow.getAllWindows()[0]?.focus());
   app.on('window-all-closed', () => app.quit());
   app.on('will-quit', (event) => {
-    if (!database && !children.length) return;
+    if (!database && !children.size) return;
     event.preventDefault();
-    void stop().finally(() => {
-      children.length = 0;
-      app.quit();
-    });
+    void stop().finally(() => app.quit());
   });
   void app.whenReady().then(() =>
     start().catch((error: unknown) => {
       dialog.showErrorBox(
         'CASEFlow AI no pudo iniciar',
-        `${error instanceof Error ? error.message : String(error)}\n\nRevise que los puertos ${PORTS.web}, ${PORTS.api} y ${PORTS.database} estén libres.`,
+        `${error instanceof Error ? error.message : String(error)}\n\nRevise que los puertos ${PORTS.web}, ${PORTS.api}, ${PORTS.database} y ${PORTS.broker} estén libres.`,
       );
       void stop().finally(() => app.exit(1));
     }),

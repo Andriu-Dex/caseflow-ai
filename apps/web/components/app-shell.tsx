@@ -3,7 +3,16 @@
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ChevronRight, ClipboardCheck, Check, Hammer, Home, Lock, Sparkles } from 'lucide-react';
+import {
+  ChevronRight,
+  ClipboardCheck,
+  Check,
+  Hammer,
+  Home,
+  Lock,
+  Settings,
+  Sparkles,
+} from 'lucide-react';
 import type { MouseEvent, ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { Alert, AlertDescription, Separator } from '@caseflow-ai/ui';
@@ -304,6 +313,19 @@ export function AppShell({ children }: { children: ReactNode }) {
             );
           })}
         </div>
+        <Separator className="mt-5 bg-sidebar-border" />
+        <Link
+          href="/settings/ai"
+          aria-current={pathname === '/settings/ai' ? 'page' : undefined}
+          className={`mt-5 flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors ${
+            pathname === '/settings/ai'
+              ? 'bg-sidebar-active text-white shadow-sm'
+              : 'text-sidebar-foreground/75 hover:bg-white/5 hover:text-white'
+          }`}
+        >
+          <Settings className="size-4 shrink-0" aria-hidden="true" />
+          Ajustes de IA
+        </Link>
       </nav>
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex flex-wrap items-center justify-between gap-2 border-b bg-card px-4 py-3 shadow-sm">
