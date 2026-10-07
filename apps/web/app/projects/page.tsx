@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Archive, FolderKanban, Trash2 } from 'lucide-react';
+import { Archive, FolderKanban, Trash2, CalendarDays } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import type { ProjectResponse } from '@caseflow-ai/contracts';
@@ -146,26 +146,57 @@ function ProjectCard({ project, onDeleted }: { project: ProjectResponse; onDelet
   const archived = project.archivedAt !== null;
 
   return (
-    <Card className={active ? 'border-primary' : undefined}>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <FolderKanban className="size-4 shrink-0 text-primary" aria-hidden="true" />
-          {project.name}
-          {archived ? <Badge variant="secondary">Archivado</Badge> : null}
-        </CardTitle>
+    <Card
+      className={`flex flex-col overflow-hidden transition-all duration-200 ${
+        active
+          ? 'border-primary bg-primary/5 shadow-md dark:bg-primary/10'
+          : 'hover:border-primary/40 hover:shadow-sm'
+      }`}
+    >
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-3">
+          <CardTitle className="flex items-center gap-3 text-base font-semibold leading-tight text-foreground">
+            <div
+              className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${
+                active
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'bg-muted text-muted-foreground'
+              }`}
+            >
+              <FolderKanban className="size-4.5" aria-hidden="true" />
+            </div>
+            <span className="line-clamp-2">{project.name}</span>
+          </CardTitle>
+          {archived ? (
+            <Badge variant="secondary" className="shrink-0 bg-muted/50">
+              Archivado
+            </Badge>
+          ) : null}
+        </div>
       </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        {project.description ? (
-          <p className="text-sm text-muted-foreground">{project.description}</p>
-        ) : null}
-        <p className="text-xs text-muted-foreground">
-          Creado el {new Date(project.createdAt).toLocaleDateString('es')}
-        </p>
-        <div className="flex flex-wrap gap-2">
+      <CardContent className="flex flex-1 flex-col gap-4">
+        <div className="flex flex-1 flex-col gap-3">
+          {project.description ? (
+            <p className="line-clamp-2 text-sm text-muted-foreground">{project.description}</p>
+          ) : null}
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <CalendarDays className="size-3.5 opacity-70" aria-hidden="true" />
+            <span>
+              Creado el{' '}
+              {new Date(project.createdAt).toLocaleDateString('es', {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric',
+              })}
+            </span>
+          </div>
+        </div>
+        <div className="mt-auto flex flex-wrap items-center gap-2 pt-3 border-t border-border/40">
           <Button
             type="button"
-            variant={active ? 'secondary' : 'outline'}
+            variant={active ? 'secondary' : 'default'}
             size="sm"
+            className={active ? 'pointer-events-none font-medium' : 'font-medium'}
             onClick={() => setProjectId(project.id)}
           >
             {active ? 'Proyecto activo' : 'Usar este proyecto'}
@@ -173,7 +204,7 @@ function ProjectCard({ project, onDeleted }: { project: ProjectResponse; onDelet
           {project.hasApprovedArtifacts ? (
             archived ? null : (
               <Button type="button" variant="outline" size="sm" onClick={() => setConfirming(true)}>
-                <Archive className="size-3.5" aria-hidden="true" />
+                <Archive className="size-3.5 text-muted-foreground" aria-hidden="true" />
                 Archivar
               </Button>
             )
@@ -182,7 +213,7 @@ function ProjectCard({ project, onDeleted }: { project: ProjectResponse; onDelet
               type="button"
               variant="outline"
               size="sm"
-              className="border-destructive/40 text-destructive hover:bg-destructive/5"
+              className="border-destructive/30 text-destructive hover:bg-destructive/10 dark:hover:bg-destructive/20"
               onClick={() => setConfirming(true)}
             >
               <Trash2 className="size-3.5" aria-hidden="true" />
