@@ -35,8 +35,26 @@ export type AIProviderSlot = {
   timeoutMs: number;
   schemaDialect: 'strict' | 'narrow';
 };
+// DEC-117: the user's ChatGPT plan, desktop edition only. The desktop main
+// process holds the OAuth credentials and serves short-lived access tokens
+// to the API over loopback (the broker).
+const chatgptSchema = z.object({
+  AI_PROVIDER: z.literal('chatgpt'),
+  AI_MODEL: z.string().min(1),
+  AI_TIMEOUT_MS: z.coerce.number().int().positive().max(300_000).default(120_000),
+  CHATGPT_BROKER_URL: z.url(),
+  CHATGPT_BROKER_SECRET: z.string().min(32),
+});
+
 export type AIConfig =
   | { provider: 'disabled' }
+  | {
+      provider: 'chatgpt';
+      model: string;
+      timeoutMs: number;
+      brokerUrl: string;
+      brokerSecret: string;
+    }
   | {
       provider: 'openai_compatible';
       baseUrl: string;
@@ -55,6 +73,16 @@ export function loadAIConfig(environment: NodeJS.ProcessEnv): AIConfig {
   if (provider === 'disabled') {
     disabledSchema.parse({ AI_PROVIDER: provider });
     return { provider };
+  }
+  if (provider === 'chatgpt') {
+    const parsed = chatgptSchema.parse(environment);
+    return {
+      provider,
+      model: parsed.AI_MODEL,
+      timeoutMs: parsed.AI_TIMEOUT_MS,
+      brokerUrl: parsed.CHATGPT_BROKER_URL,
+      brokerSecret: parsed.CHATGPT_BROKER_SECRET,
+    };
   }
   if (provider === 'fallback') {
     const { AI_TIMEOUT_MS: timeoutMs } = fallbackTimeoutSchema.parse(environment);

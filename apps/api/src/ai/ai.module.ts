@@ -7,7 +7,11 @@ import {
   type AIProvider,
 } from '@caseflow-ai/ai';
 import { loadAIConfig } from '@caseflow-ai/config';
-import { OpenAICompatibleProvider } from '@caseflow-ai/integrations';
+import {
+  ChatGPTProvider,
+  HttpChatGPTBroker,
+  OpenAICompatibleProvider,
+} from '@caseflow-ai/integrations';
 import { PrismaAIRunRecorder } from './ai-run-recorder';
 
 export const AI_PROVIDER = Symbol('AI_PROVIDER');
@@ -20,6 +24,12 @@ export const AI_PROVIDER = Symbol('AI_PROVIDER');
       useFactory: (): AIProvider => {
         const config = loadAIConfig(process.env);
         if (config.provider === 'disabled') return new DisabledAIProvider();
+        if (config.provider === 'chatgpt')
+          return new ChatGPTProvider({
+            model: config.model,
+            timeoutMs: config.timeoutMs,
+            broker: new HttpChatGPTBroker(config.brokerUrl, config.brokerSecret),
+          });
         if (config.provider === 'fallback')
           return new FallbackAIProvider(
             config.chain.map((slot) => new OpenAICompatibleProvider(slot)),
