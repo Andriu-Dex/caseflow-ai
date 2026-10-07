@@ -14,6 +14,33 @@ export const PROJECT_SOURCE_KINDS = [
 ] as const;
 export type ProjectSourceKind = (typeof PROJECT_SOURCE_KINDS)[number];
 
+// FORM and INVOICE were only labels (they were processed like any document);
+// they are no longer offered for new sources but remain valid for existing
+// ones, whose history cannot change.
+export const LEGACY_SOURCE_KINDS = ['FORM', 'INVOICE'] as const satisfies ProjectSourceKind[];
+export const SELECTABLE_SOURCE_KINDS = PROJECT_SOURCE_KINDS.filter(
+  (kind) => !(LEGACY_SOURCE_KINDS as readonly string[]).includes(kind),
+) as Exclude<ProjectSourceKind, (typeof LEGACY_SOURCE_KINDS)[number]>[];
+
+export const SOURCE_FAILURE_REASONS = [
+  'TOO_MANY_PAGES',
+  'TOO_MANY_SCANNED_PAGES',
+  'TEXT_TOO_LONG',
+  'EMPTY',
+  'OCR_UNAVAILABLE',
+  'TRANSCRIPTION_UNAVAILABLE',
+  'UNSUPPORTED_FORMAT',
+  'UNREADABLE',
+] as const;
+export type SourceFailureReason = (typeof SOURCE_FAILURE_REASONS)[number];
+
+// Extraction limits, shared so the UI can explain them before uploading.
+export const SOURCE_LIMITS = {
+  maxPdfPages: 100,
+  maxScannedPdfPages: 10,
+  maxExtractedCharacters: 50_000,
+} as const;
+
 export const SOURCE_EXTRACTION_STATES = [
   'PENDING',
   'EXTRACTED',
@@ -44,6 +71,57 @@ export const ALLOWED_SOURCE_MIME_TYPES = [
   'audio/x-m4a',
 ] as const;
 export const SOURCE_MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
+
+const PDF_TYPES = ['application/pdf'];
+const TEXT_TYPES = [
+  'text/plain',
+  'text/markdown',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+];
+const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+const AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/x-m4a'];
+
+// The file formats each kind accepts: null means any allowed format, an empty
+// list means the kind is typed content only (no file).
+export const SOURCE_KIND_MIME_TYPES: Record<ProjectSourceKind, readonly string[] | null> = {
+  PDF: PDF_TYPES,
+  TEXT: TEXT_TYPES,
+  IMAGE: IMAGE_TYPES,
+  AUDIO: AUDIO_TYPES,
+  NOTES: [],
+  OTHER: null,
+  FORM: null,
+  INVOICE: null,
+};
+
+export function sourceKindAcceptsMimeType(kind: ProjectSourceKind, mimeType: string): boolean {
+  const accepted = SOURCE_KIND_MIME_TYPES[kind];
+  return accepted === null
+    ? (ALLOWED_SOURCE_MIME_TYPES as readonly string[]).includes(mimeType)
+    : accepted.includes(mimeType);
+}
+
+// The kind a file of this format belongs to, or null when it is not allowed.
+export function sourceKindForMimeType(
+  mimeType: string,
+): Exclude<ProjectSourceKind, 'NOTES' | 'OTHER' | 'FORM' | 'INVOICE'> | null {
+  if (PDF_TYPES.includes(mimeType)) return 'PDF';
+  if (TEXT_TYPES.includes(mimeType)) return 'TEXT';
+  if (IMAGE_TYPES.includes(mimeType)) return 'IMAGE';
+  if (AUDIO_TYPES.includes(mimeType)) return 'AUDIO';
+  return null;
+}
+
+// What this installation can extract automatically (GET .../sources/capabilities).
+export const sourceCapabilitiesResponseSchema = z.object({
+  ocr: z.boolean(),
+  transcription: z.boolean(),
+  maxFileSizeBytes: z.number().int(),
+  maxPdfPages: z.number().int(),
+  maxScannedPdfPages: z.number().int(),
+  maxExtractedCharacters: z.number().int(),
+});
+export type SourceCapabilitiesResponse = z.infer<typeof sourceCapabilitiesResponseSchema>;
 
 const text = (max: number) => z.string().trim().min(1, 'El valor es obligatorio.').max(max);
 
@@ -89,6 +167,7 @@ export const sourceResponseSchema = z.object({
       status: z.enum(['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED', 'UNSUPPORTED']),
       processor: z.string(),
       errorMessage: z.string().nullable(),
+      failureReason: z.enum(SOURCE_FAILURE_REASONS).nullable(),
       updatedAt: z.iso.datetime(),
     })
     .nullable(),
@@ -104,6 +183,7 @@ export const sourceResponseSchema = z.object({
     contentHash: z.string().nullable(),
     language: z.string().nullable(),
     extractionState: z.enum(SOURCE_EXTRACTION_STATES),
+    extractionFailureReason: z.enum(SOURCE_FAILURE_REASONS).nullable(),
     hasExtractedText: z.boolean(),
     hasReport: z.boolean(),
   }),

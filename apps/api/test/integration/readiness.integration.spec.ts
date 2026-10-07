@@ -36,7 +36,7 @@ async function approveSource(ctx: TestContext, projectId: string, title = 'Notas
     projectId,
     {
       title,
-      sourceKind: 'NOTES',
+      sourceKind: 'TEXT',
       purpose: 'Conocimiento del proyecto',
       description: 'Contenido de prueba.',
     },
@@ -149,7 +149,7 @@ describe('Readiness integration', () => {
     const projectId = await project('Unapproved Source');
     await ctx.sources.create(
       projectId,
-      { title: 'x', sourceKind: 'NOTES', purpose: 'p', description: 'Contenido de prueba.' },
+      { title: 'x', sourceKind: 'TEXT', purpose: 'p', description: 'Contenido de prueba.' },
       { originalname: 'n.txt', mimetype: 'text/plain', size: 4, buffer: Buffer.from('abcd') },
     );
     const result = await ctx.readiness.evaluate(projectId);

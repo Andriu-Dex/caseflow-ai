@@ -78,6 +78,19 @@ enum SourceExtractionState {
   @@map("source_extraction_state")
 }
 
+enum SourceFailureReason {
+  TOO_MANY_PAGES
+  TOO_MANY_SCANNED_PAGES
+  TEXT_TOO_LONG
+  EMPTY
+  OCR_UNAVAILABLE
+  TRANSCRIPTION_UNAVAILABLE
+  UNSUPPORTED_FORMAT
+  UNREADABLE
+
+  @@map("source_failure_reason")
+}
+
 // Shared discriminator for the "structured content + candidate-first AI
 // generation + optional deterministic diagram" family of First Deliverable
 // analysis artifacts. Mirrors DiagramKind's one-shared-table pattern: the
@@ -1005,23 +1018,24 @@ model UseCaseCandidateSource {
 // live here. Never replaced by a cleaned AI interpretation — that is the
 // separate, optional SourceReportDetail.
 model SourceDetail {
-  artifactVersionId String                @id @map("artifact_version_id") @db.Uuid
-  sourceKind        ProjectSourceKind     @map("source_kind")
+  artifactVersionId       String                @id @map("artifact_version_id") @db.Uuid
+  sourceKind              ProjectSourceKind     @map("source_kind")
   // User-defined meaning/purpose (spec 2.2) — never inferred.
-  purpose           String
-  businessArea      String?               @map("business_area")
+  purpose                 String
+  businessArea            String?               @map("business_area")
   // Required user-entered content; also the sole source of extractedText
   // when no file is uploaded (file upload is optional — spec: a source's
   // knowledge can come from typed content alone).
-  description       String
-  originalFilename  String?               @map("original_filename")
-  mimeType          String?               @map("mime_type")
-  sizeBytes         Int?                  @map("size_bytes")
-  contentHash       String?               @map("content_hash")
-  storageKey        String?               @map("storage_key")
-  language          String?
-  extractionState   SourceExtractionState @map("extraction_state")
-  extractedText     String?               @map("extracted_text")
+  description             String
+  originalFilename        String?               @map("original_filename")
+  mimeType                String?               @map("mime_type")
+  sizeBytes               Int?                  @map("size_bytes")
+  contentHash             String?               @map("content_hash")
+  storageKey              String?               @map("storage_key")
+  language                String?
+  extractionState         SourceExtractionState @map("extraction_state")
+  extractedText           String?               @map("extracted_text")
+  extractionFailureReason SourceFailureReason?  @map("extraction_failure_reason")
 
   artifactVersion ArtifactVersion     @relation(fields: [artifactVersionId], references: [id], onDelete: Restrict)
   report          SourceReportDetail?
@@ -1236,6 +1250,7 @@ model SourceProcessingJob {
   status          SourceProcessingStatus @default(QUEUED)
   processor       String
   errorMessage    String?                @map("error_message")
+  failureReason   SourceFailureReason?   @map("failure_reason")
   createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 

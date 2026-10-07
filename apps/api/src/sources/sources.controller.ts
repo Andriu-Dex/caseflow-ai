@@ -21,6 +21,7 @@ import {
   acceptSourceReportCandidateRequestSchema,
   manualSourceReportInputSchema,
   manualTranscriptInputSchema,
+  sourceCapabilitiesResponseSchema,
   sourceListResponseSchema,
   sourceMetadataInputSchema,
   sourceReportCandidateSchema,
@@ -75,6 +76,17 @@ export class SourcesController {
   @ApiZodResponse(200, 'Project Sources.', sourceListResponseSchema)
   list(@Param('projectId', uuidParamPipe) projectId: string) {
     return this.service.list(projectId);
+  }
+
+  // Declared before ':sourceId' so the literal path is not read as an id.
+  @Get('capabilities')
+  @ApiOperation({
+    operationId: 'getSourceCapabilities',
+    summary: 'Qué puede extraerse automáticamente y con qué límites',
+  })
+  @ApiZodResponse(200, 'Source extraction capabilities.', sourceCapabilitiesResponseSchema)
+  capabilities() {
+    return this.service.capabilities();
   }
 
   @Get(':sourceId')

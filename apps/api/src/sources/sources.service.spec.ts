@@ -43,7 +43,7 @@ function file(overrides: Partial<UploadedSourceFile> = {}): UploadedSourceFile {
 }
 const metadata = {
   title: 'Notas',
-  sourceKind: 'NOTES' as const,
+  sourceKind: 'OTHER' as const,
   purpose: 'Notas de reunión',
   description: 'Contenido de prueba.',
 };
@@ -243,7 +243,11 @@ describe('SourcesService', () => {
       body: Buffer.from('audio'),
       contentType: 'audio/mpeg',
     });
-    const extractor = { extract: vi.fn().mockResolvedValue({ state: 'UNSUPPORTED' }) };
+    const extractor = {
+      extract: vi
+        .fn()
+        .mockResolvedValue({ state: 'UNSUPPORTED', reason: 'TRANSCRIPTION_UNAVAILABLE' }),
+    };
     const service = new SourcesService(
       prisma as unknown as PrismaService,
       ai as unknown as AIOrchestrator,
@@ -280,7 +284,9 @@ describe('SourcesService', () => {
       id: 'artifact',
     });
     expect(prisma.sourceProcessingJob.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { status: 'QUEUED', errorMessage: null } }),
+      expect.objectContaining({
+        data: { status: 'QUEUED', errorMessage: null, failureReason: null },
+      }),
     );
     expect(queue.add).toHaveBeenCalledOnce();
   });

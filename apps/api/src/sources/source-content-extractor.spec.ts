@@ -33,6 +33,7 @@ describe('SourceContentExtractor', () => {
   it('reports FAILED for blank text content, never fabricating a transcript', async () => {
     expect(await extractor.extract('text/plain', Buffer.from('   '))).toEqual({
       state: 'FAILED',
+      reason: 'EMPTY',
     });
   });
 
@@ -44,6 +45,7 @@ describe('SourceContentExtractor', () => {
   it('reports FAILED for a PDF unpdf cannot parse, never fabricating a transcript', async () => {
     expect(await extractor.extract('application/pdf', Buffer.from('not a pdf'))).toEqual({
       state: 'FAILED',
+      reason: 'UNREADABLE',
     });
   });
 
@@ -109,15 +111,25 @@ describe('SourceContentExtractor', () => {
     });
     expect(await extractor.extract('audio/mpeg', Buffer.from('audio'))).toEqual({
       state: 'UNSUPPORTED',
+      reason: 'TRANSCRIPTION_UNAVAILABLE',
     });
   });
 
-  it.each(['image/png', 'audio/mpeg', 'application/octet-stream'])(
-    'reports UNSUPPORTED for %s without any automatic OCR/ASR',
-    async (mimeType) => {
-      expect(await extractor.extract(mimeType, Buffer.from('binary'))).toEqual({
-        state: 'UNSUPPORTED',
-      });
-    },
-  );
+  it.each([
+    ['image/png', 'OCR_UNAVAILABLE'],
+    ['audio/mpeg', 'TRANSCRIPTION_UNAVAILABLE'],
+    ['application/octet-stream', 'UNSUPPORTED_FORMAT'],
+  ])('reports UNSUPPORTED for %s without any automatic OCR/ASR (%s)', async (mimeType, reason) => {
+    expect(await extractor.extract(mimeType, Buffer.from('binary'))).toEqual({
+      state: 'UNSUPPORTED',
+      reason,
+    });
+  });
+
+  it('reports text beyond the limit as too long instead of truncating it', async () => {
+    expect(await extractor.extract('text/plain', Buffer.from('a'.repeat(50_001)))).toEqual({
+      state: 'FAILED',
+      reason: 'TEXT_TOO_LONG',
+    });
+  });
 });

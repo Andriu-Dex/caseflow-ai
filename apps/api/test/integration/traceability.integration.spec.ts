@@ -39,7 +39,7 @@ async function approveSource(ctx: TestContext, projectId: string, title: string)
     projectId,
     {
       title,
-      sourceKind: 'NOTES',
+      sourceKind: 'TEXT',
       purpose: 'Conocimiento del proyecto',
       description: 'Contenido de prueba.',
     },

@@ -7240,6 +7240,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-119 | En la ruta Exprés la generación puede partir de borradores (fuentes provisionales); la base de datos impide aprobar una versión antes que las versiones de las que se generó, en cualquier ruta (ADR-004, §221.1) | Accepted |
 | DEC-120 | La edición de escritorio usa PGlite con pgvector en lugar de PostgreSQL embebido, una cola en proceso en lugar de Redis y almacenamiento en disco (ADR-005, §221.2) | Accepted |
 | DEC-121 | Diagrama de clases de dominio como paso 6 de la planificación, y coherencia obligatoria entre etapas (referencias por identificador y cobertura en ambas direcciones, bloqueante al generar, aprobar y construir) en los proyectos nuevos (ADR-006, §221.5) | Accepted |
+| DEC-122 | Tipos de fuente que siguen al formato del archivo (Factura y Formulario retirados para fuentes nuevas), motivo de fallo de extracción visible y revisión del original junto al texto extraído (§221.6) | Accepted |
 
 ---
 
@@ -7676,7 +7677,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-121)
+# 221. Extensiones de V2 (DEC-116 a DEC-122)
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
@@ -7746,6 +7747,14 @@ En los proyectos nuevos, la coherencia entre etapas es obligatoria. Cada element
 - campo → atributo.
 
 Se verifica al generar (la IA recibe la lista de lo que debe cubrir), al aprobar (un artefacto con huecos no puede aprobarse) y al construir (la validación estructural exige que el código implemente el plan). Una matriz de coherencia muestra los huecos. Los proyectos existentes ven las reglas como advertencias.
+
+## 221.6 Tipos de fuente y revisión del texto extraído (DEC-122)
+
+- **Tipos ofrecidos:** Documento PDF, Texto (.txt, .md, .docx), Imagen, Audio, Notas (sin archivo) y Otro. Factura y Formulario se retiran porque solo eran etiquetas y se procesaban como cualquier documento. Las fuentes que ya los usan los conservan, pero no pueden elegirse para fuentes nuevas.
+- **El tipo sigue al archivo:** cada tipo acepta solo sus formatos. Si el archivo elegido es de otro formato, la interfaz corrige el tipo y lo avisa; la API rechaza combinaciones incoherentes.
+- **Antes de subir**, la interfaz explica qué se hará con el archivo y avisa si el reconocimiento de texto o la transcripción no están disponibles (`GET /projects/{projectId}/sources/capabilities`).
+- **Motivo de fallo:** cuando no se obtiene texto, se registra el motivo (`TOO_MANY_PAGES`, `TOO_MANY_SCANNED_PAGES`, `TEXT_TOO_LONG`, `EMPTY`, `OCR_UNAVAILABLE`, `TRANSCRIPTION_UNAVAILABLE`, `UNSUPPORTED_FORMAT`, `UNREADABLE`) y se muestra en lenguaje claro.
+- **Revisión:** el detalle muestra el archivo original (visor de PDF, imagen o reproductor de audio del navegador, obtenido con la sesión, nunca por URL pública) junto al texto extraído, que se corrige en el mismo lugar. Guardar crea una nueva versión con origen manual; la extracción automática queda en el historial.
 
 ## 221.4 Fuera de alcance de estas extensiones
 
