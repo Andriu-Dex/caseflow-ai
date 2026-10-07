@@ -5,7 +5,14 @@ import { Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { ProjectLanguage } from '@caseflow-ai/contracts';
 import { toast } from 'sonner';
-import { Button } from '@caseflow-ai/ui';
+import {
+  Button,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@caseflow-ai/ui';
 import { api } from '../lib/api';
 import { NewProjectDialog } from './new-project-dialog';
 import { UpgradeRouteButton, WorkflowRouteBadge } from './workflow-route';
@@ -45,24 +52,24 @@ export function ProjectSwitcher() {
 
   return (
     <div className="flex items-center gap-2">
-      <label htmlFor="project-select" className="sr-only">
-        Proyecto activo
-      </label>
-      <select
-        id="project-select"
-        className="h-9 rounded-md border border-input bg-background px-2 text-sm shadow-xs"
-        value={projectId ?? ''}
-        onChange={(e) => setProjectId(e.target.value || null)}
+      <Select
+        value={projectId ?? undefined}
+        onValueChange={(val) => setProjectId(val || null)}
+        disabled={items.length === 0}
       >
-        <option value="" disabled>
-          {items.length ? 'Seleccionar proyecto…' : 'Sin proyectos todavía'}
-        </option>
-        {items.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name}
-          </option>
-        ))}
-      </select>
+        <SelectTrigger className="h-9 w-[220px] bg-background shadow-xs font-medium">
+          <SelectValue
+            placeholder={items.length ? 'Seleccionar proyecto…' : 'Sin proyectos todavía'}
+          />
+        </SelectTrigger>
+        <SelectContent>
+          {items.map((p) => (
+            <SelectItem key={p.id} value={p.id}>
+              {p.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
       {projectId ? (
         <ProjectLanguageSelect
           key={projectId}
@@ -135,20 +142,22 @@ function ProjectLanguageSelect({
 
   return (
     <>
-      <label htmlFor="project-language" className="sr-only">
-        Idioma de generación con IA
-      </label>
-      <select
-        id="project-language"
-        aria-label="Idioma de generación con IA"
-        className="h-9 rounded-md border border-input bg-background px-2 text-sm shadow-xs"
+      <Select
         value={selected}
         disabled={saving}
-        onChange={(event) => void handleChange(event.target.value as ProjectLanguage)}
+        onValueChange={(val) => void handleChange(val as ProjectLanguage)}
       >
-        <option value="ES">Español</option>
-        <option value="EN">English</option>
-      </select>
+        <SelectTrigger
+          aria-label="Idioma de generación con IA"
+          className="h-9 w-[110px] bg-background shadow-xs"
+        >
+          <SelectValue placeholder="Idioma" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="ES">Español</SelectItem>
+          <SelectItem value="EN">English</SelectItem>
+        </SelectContent>
+      </Select>
     </>
   );
 }
