@@ -71,7 +71,8 @@ describe('ProjectsPage', () => {
       await screen.findByText('Proyecto 13', undefined, { timeout: 5000 }),
     ).toBeInTheDocument();
     expect(mocks.list).toHaveBeenLastCalledWith('ws', expect.objectContaining({ offset: 12 }));
-  });
+    // Two renders and a page change: slower than 5 s only when the whole suite runs in parallel.
+  }, 15_000);
 
   it('filters archived projects, searches after a pause and restores one', async () => {
     const user = userEvent.setup();

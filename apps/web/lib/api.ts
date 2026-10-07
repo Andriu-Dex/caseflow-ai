@@ -155,6 +155,12 @@ async function authedFetch(
   const isFormData = typeof FormData !== 'undefined' && init?.body instanceof FormData;
   const isAuthPath = url.startsWith(`${BASE_URL}/auth/`);
   const method = (init?.method ?? 'GET').toUpperCase();
+  // After a reload the token is gone: restore it before sending instead of
+  // sending without one and retrying on the 401. Page queries start before
+  // the provider's restore effect, so this is the one place that sees them
+  // all; concurrent calls share the same refresh.
+  const restored =
+    accessToken !== null || isAuthPath || !allowRefresh ? true : await restoreSession();
   const send = () =>
     fetch(url, {
       ...init,
@@ -181,7 +187,8 @@ async function authedFetch(
     }
   }
   if (response.ok) return response;
-  if (response.status === 401 && allowRefresh && !isAuthPath) {
+  // No retry when the restore just failed: there is no session to refresh.
+  if (response.status === 401 && allowRefresh && restored && !isAuthPath) {
     try {
       await refreshSession();
       return authedFetch(url, init, false);
