@@ -65,7 +65,7 @@ export function ProjectSwitcher() {
             placeholder={items.length ? 'Seleccionar proyecto…' : 'Sin proyectos todavía'}
           />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent position="popper">
           {items.map((p) => (
             <SelectItem key={p.id} value={p.id}>
               {p.name}
@@ -144,23 +144,21 @@ function ProjectLanguageSelect({
   }
 
   return (
-    <>
-      <Select
-        value={selected}
-        disabled={saving}
-        onValueChange={(val) => void handleChange(val as ProjectLanguage)}
+    <Select
+      value={selected}
+      disabled={saving}
+      onValueChange={(val) => void handleChange(val as ProjectLanguage)}
+    >
+      <SelectTrigger
+        aria-label="Idioma de generación con IA"
+        className="h-9 w-[130px] bg-background shadow-xs font-medium"
       >
-        <SelectTrigger
-          aria-label="Idioma de generación con IA"
-          className="h-9 w-[110px] bg-background shadow-xs"
-        >
-          <SelectValue placeholder="Idioma" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="ES">Español</SelectItem>
-          <SelectItem value="EN">English</SelectItem>
-        </SelectContent>
-      </Select>
-    </>
+        <SelectValue placeholder="Idioma" />
+      </SelectTrigger>
+      <SelectContent position="popper">
+        <SelectItem value="ES">Español</SelectItem>
+        <SelectItem value="EN">English</SelectItem>
+      </SelectContent>
+    </Select>
   );
 }
