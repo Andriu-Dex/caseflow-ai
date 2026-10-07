@@ -10,6 +10,7 @@ import {
   ChevronRight,
   FolderKanban,
   Search,
+  Pencil,
   Trash2,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -36,11 +37,90 @@ import {
   DialogTitle,
   Input,
   Label,
+  Textarea,
 } from '@caseflow-ai/ui';
 import { api, ApiError } from '../../lib/api';
 import { QueryState } from '../../components/query-state';
 import { useActiveProject } from '../../lib/active-project';
 import { WORKFLOW_ROUTE_LABELS } from '../../components/workflow-route';
+
+function EditProjectDialog({
+  project,
+  onOpenChange,
+}: {
+  project: ProjectResponse;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState(project.name);
+  const [description, setDescription] = useState(project.description ?? '');
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api.projects.update(project.id, {
+        name: name.trim(),
+        description: description.trim() || null,
+      });
+      // The list, the switcher and the header of the active project.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['projects'] }),
+        queryClient.invalidateQueries({ queryKey: ['project', project.id] }),
+      ]);
+      toast.success('Proyecto actualizado.');
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo actualizar el proyecto.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={onOpenChange}>
+      <DialogContent>
+        <form onSubmit={handleSave} className="flex flex-col gap-4">
+          <DialogHeader>
+            <DialogTitle>Editar proyecto</DialogTitle>
+            <DialogDescription>
+              Cambiar el nombre no afecta a sus artefactos, códigos ni versiones aprobadas.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor={`project-name-${project.id}`}>Nombre</Label>
+            <Input
+              id={`project-name-${project.id}`}
+              required
+              maxLength={200}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor={`project-description-${project.id}`}>Descripción (opcional)</Label>
+            <Textarea
+              id={`project-description-${project.id}`}
+              rows={3}
+              maxLength={5000}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={saving || !name.trim()}>
+              {saving ? 'Guardando…' : 'Guardar'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function DeleteProjectDialog({
   project,
@@ -158,6 +238,7 @@ function ArchiveProjectDialog({
 
 function ProjectCard({ project, onDeleted }: { project: ProjectResponse; onDeleted: () => void }) {
   const [confirming, setConfirming] = useState(false);
+  const [editing, setEditing] = useState(false);
   const { projectId, setProjectId } = useActiveProject();
   const active = projectId === project.id;
   const archived = project.archivedAt !== null;
@@ -184,11 +265,23 @@ function ProjectCard({ project, onDeleted }: { project: ProjectResponse; onDelet
             </div>
             <span className="line-clamp-2">{project.name}</span>
           </CardTitle>
-          {archived ? (
-            <Badge variant="secondary" className="shrink-0 bg-muted/50">
-              Archivado
-            </Badge>
-          ) : null}
+          <div className="flex shrink-0 items-center gap-1">
+            {archived ? (
+              <Badge variant="secondary" className="bg-muted/50">
+                Archivado
+              </Badge>
+            ) : null}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label={`Editar el proyecto ${project.name}`}
+              title="Editar nombre y descripción"
+              onClick={() => setEditing(true)}
+            >
+              <Pencil className="size-3.5 text-muted-foreground" aria-hidden="true" />
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col gap-4">
@@ -251,6 +344,7 @@ function ProjectCard({ project, onDeleted }: { project: ProjectResponse; onDelet
           )}
         </div>
       </CardContent>
+      {editing ? <EditProjectDialog project={project} onOpenChange={setEditing} /> : null}
       {confirming ? (
         project.hasApprovedArtifacts ? (
           <ArchiveProjectDialog

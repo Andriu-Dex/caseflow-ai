@@ -4,6 +4,7 @@ import type { Prisma } from '../generated/prisma/client';
 
 export const AUDIT_ACTIONS = [
   'PROJECT_WORKFLOW_ROUTE_CHANGED',
+  'PROJECT_DETAILS_UPDATED',
   'WORKFLOW_RUN_STARTED',
   'WORKFLOW_RUN_FINISHED',
   'DEPENDENCY_PROPOSAL_CREATED',

@@ -8,24 +8,34 @@ export type ProjectLanguage = (typeof PROJECT_LANGUAGES)[number];
 export const WORKFLOW_ROUTES = ['BUILD_ONLY', 'EXPRESS', 'FULL'] as const;
 export type WorkflowRoute = (typeof WORKFLOW_ROUTES)[number];
 
+const projectName = z
+  .string({ error: 'El nombre es obligatorio.' })
+  .trim()
+  .min(1, 'El nombre es obligatorio.')
+  .max(200, 'El nombre no puede superar los 200 caracteres.');
+const projectDescription = z
+  .string()
+  .trim()
+  .max(5000, 'La descripción no puede superar los 5000 caracteres.')
+  .nullish();
+
 export const createProjectRequestSchema = z
   .object({
     workspaceId: z.uuid({ error: 'El identificador del workspace no es válido.' }),
-    name: z
-      .string({ error: 'El nombre es obligatorio.' })
-      .trim()
-      .min(1, 'El nombre es obligatorio.')
-      .max(200, 'El nombre no puede superar los 200 caracteres.'),
-    description: z
-      .string()
-      .trim()
-      .max(5000, 'La descripción no puede superar los 5000 caracteres.')
-      .nullish(),
+    name: projectName,
+    description: projectDescription,
     workflowRoute: z.enum(WORKFLOW_ROUTES).default('FULL'),
   })
   .strict();
 
 export type CreateProjectRequest = z.input<typeof createProjectRequestSchema>;
+
+// Renaming only changes how the project is shown; its artifacts and history
+// are tied to its id.
+export const updateProjectRequestSchema = z
+  .object({ name: projectName, description: projectDescription })
+  .strict();
+export type UpdateProjectRequest = z.input<typeof updateProjectRequestSchema>;
 
 export const PROJECT_LIST_STATUSES = ['ALL', 'ACTIVE', 'ARCHIVED'] as const;
 export const PROJECT_LIST_SORTS = ['OLDEST', 'RECENT', 'UPDATED', 'NAME'] as const;
