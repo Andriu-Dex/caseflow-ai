@@ -124,7 +124,7 @@ describe('Construction Implementation Plan integration', () => {
         new PromptRegistry([
           {
             key: 'implementation-plan.generate',
-            version: 1,
+            version: 2,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'implementation_plan_generation',
             systemInstructions: 'policy',

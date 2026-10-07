@@ -50,6 +50,9 @@ export function ImplementationPlanDetail({ content }: { content: ImplementationP
               .map((entity) => (
                 <li key={entity.localId}>
                   <span className="font-mono text-xs">{entity.name}</span>
+                  {entity.classLocalId ? (
+                    <span className={muted}> (clase {entity.classLocalId})</span>
+                  ) : null}
                   <span className={muted}>
                     {' '}
                     ·{' '}
@@ -107,6 +110,18 @@ export function ImplementationPlanDetail({ content }: { content: ImplementationP
             {content.routes.map((r) => (
               <li key={r.path}>
                 <span className="font-mono text-xs text-foreground">{r.path}</span> — {r.screenName}
+                {r.screenLocalId ? ` (pantalla ${r.screenLocalId})` : ''}
+                {r.actions.length ? (
+                  <div className="pl-3">
+                    Acciones:{' '}
+                    {r.actions
+                      .map(
+                        (a) =>
+                          `${a.label} → ${a.operation ? OPERATION_LABELS[a.operation] : a.endpoint}`,
+                      )
+                      .join('; ')}
+                  </div>
+                ) : null}
               </li>
             ))}
           </ul>

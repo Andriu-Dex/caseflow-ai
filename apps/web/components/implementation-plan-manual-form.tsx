@@ -11,7 +11,9 @@ import {
   IMPLEMENTATION_RELATION_KINDS,
   IMPLEMENTATION_ROUTE_KINDS,
   IMPLEMENTATION_TEST_KINDS,
+  type ClassDiagramContent,
   type ImplementationPlanContent,
+  type UiBlueprintContent,
 } from '@caseflow-ai/contracts';
 import { Button } from '@caseflow-ai/ui';
 import { api, ApiError } from '../lib/api';
@@ -106,6 +108,7 @@ type EntityRow = {
   localId?: string;
   name: string;
   moduleLocalId: string;
+  classLocalId: string;
   description: string;
   fields: FieldRow[];
   relations: RelationRow[];
@@ -114,6 +117,44 @@ type EntityRow = {
   writeRoles: string;
   sourceCodes: string;
 };
+
+// A route action as edited: "op:CREATE" or "ep:POST /orders/:orderId/confirm".
+type ActionRow = { label: string; target: string };
+type RouteRow = Omit<Plan['routes'][number], 'actions' | 'entityLocalId' | 'screenLocalId'> & {
+  entityLocalId: string;
+  screenLocalId: string;
+  actions: ActionRow[];
+};
+const toActionRow = (action: Plan['routes'][number]['actions'][number]): ActionRow => ({
+  label: action.label,
+  target: action.operation ? `op:${action.operation}` : `ep:${action.endpoint ?? ''}`,
+});
+const fromActionRow = (row: ActionRow): Plan['routes'][number]['actions'][number] =>
+  row.target.startsWith('op:')
+    ? {
+        label: row.label,
+        operation: row.target.slice(3) as (typeof IMPLEMENTATION_CRUD_OPERATIONS)[number],
+      }
+    : { label: row.label, endpoint: row.target.slice(3) };
+
+// DEC-121: suggestions for the references to the approved class diagram and
+// UI blueprint (the API checks them against the frozen design).
+function useApproved(projectId: string, kind: 'CLASS_DIAGRAM' | 'UI_BLUEPRINT') {
+  return useQuery({
+    queryKey: ['structured-analysis', kind, projectId],
+    queryFn: () => api.structuredAnalysis.list(projectId, kind),
+    select: (data) => data.items.filter((item) => item.version.status === 'APPROVED'),
+  });
+}
+function useDesignReferences(projectId: string) {
+  const classes = useApproved(projectId, 'CLASS_DIAGRAM').data?.flatMap(
+    (item) => (item.content as ClassDiagramContent).classes,
+  );
+  const screens = useApproved(projectId, 'UI_BLUEPRINT').data?.flatMap(
+    (item) => (item.content as UiBlueprintContent).screens,
+  );
+  return { classes: classes ?? [], screens: screens ?? [] };
+}
 
 const emptyField = (): FieldRow => ({
   name: '',
@@ -157,6 +198,7 @@ export function ImplementationPlanManualForm({
   onCancel,
 }: FormProps) {
   const p = initial?.content as Plan | undefined;
+  const design = useDesignReferences(projectId);
   const baselines = useQuery({
     queryKey: ['design-baselines', projectId],
     queryFn: () => api.designBaselines.list(projectId),
@@ -175,6 +217,7 @@ export function ImplementationPlanManualForm({
       localId: e.localId,
       name: e.name,
       moduleLocalId: e.moduleLocalId,
+      classLocalId: e.classLocalId ?? '',
       description: e.description ?? '',
       fields: e.fields.map((f) => ({ ...f, enumValues: f.enumValues.join(', ') })),
       relations: e.relations,
@@ -191,8 +234,13 @@ export function ImplementationPlanManualForm({
       roles: e.roles.join(', '),
     })) ?? [],
   );
-  const routes = useRows(
-    p?.routes.map((r) => ({ ...r, entityLocalId: r.entityLocalId ?? '' })) ?? [],
+  const routes = useRows<RouteRow>(
+    p?.routes.map((r) => ({
+      ...r,
+      entityLocalId: r.entityLocalId ?? '',
+      screenLocalId: r.screenLocalId ?? '',
+      actions: r.actions.map(toActionRow),
+    })) ?? [],
   );
   const envVars = useRows(p?.envVars ?? []);
   const tests = useRows(p?.tests ?? []);
@@ -227,6 +275,7 @@ export function ImplementationPlanManualForm({
           localId: entityIds[i]!,
           name: row.name,
           moduleLocalId: row.moduleLocalId,
+          classLocalId: row.classLocalId.trim() || undefined,
           description: row.description || undefined,
           fields: row.fields.map((f) => ({
             name: f.name,
@@ -255,6 +304,8 @@ export function ImplementationPlanManualForm({
           moduleLocalId: r.moduleLocalId,
           kind: r.kind,
           entityLocalId: r.entityLocalId || undefined,
+          screenLocalId: r.screenLocalId.trim() || undefined,
+          actions: r.actions.filter((a) => a.label.trim()).map(fromActionRow),
         })),
         envVars: envVars.rows,
         tests: tests.rows,
@@ -351,6 +402,7 @@ export function ImplementationPlanManualForm({
           entities.add({
             name: '',
             moduleLocalId: '',
+            classLocalId: '',
             description: '',
             fields: [emptyField()],
             relations: [],
@@ -375,6 +427,14 @@ export function ImplementationPlanManualForm({
                 value={entity.moduleLocalId}
                 modules={moduleOptions}
                 onChange={(value) => entities.update(i, { moduleLocalId: value })}
+              />
+              <input
+                placeholder="Clase del diagrama"
+                aria-label="Clase del diagrama de clases"
+                list="plan-class-options"
+                className={`${input} w-44`}
+                value={entity.classLocalId}
+                onChange={(e) => entities.update(i, { classLocalId: e.target.value })}
               />
               <input
                 placeholder="Descripción (opcional)"
@@ -648,6 +708,8 @@ export function ImplementationPlanManualForm({
             moduleLocalId: '',
             kind: 'LIST',
             entityLocalId: '',
+            screenLocalId: '',
+            actions: [],
           })
         }
       >
@@ -699,9 +761,41 @@ export function ImplementationPlanManualForm({
                 </option>
               ))}
             </select>
+            <input
+              placeholder="Pantalla del plano"
+              aria-label="Pantalla del plano de interfaz"
+              list="plan-screen-options"
+              className={`${input} w-44`}
+              value={route.screenLocalId}
+              onChange={(e) => routes.update(i, { screenLocalId: e.target.value })}
+            />
+            <RouteActions
+              route={route}
+              operations={entities.rows[entityIds.indexOf(route.entityLocalId)]?.operations ?? []}
+              endpoints={endpoints.rows.map((e) => `${e.method} ${e.path}`)}
+              screenActions={
+                design.screens.find((screen) => screen.localId === route.screenLocalId)
+                  ?.primaryActions ?? []
+              }
+              onChange={(actions) => routes.update(i, { actions })}
+            />
           </Row>
         ))}
       </Section>
+      <datalist id="plan-class-options">
+        {design.classes.map((cls) => (
+          <option key={cls.localId} value={cls.localId}>
+            {cls.name}
+          </option>
+        ))}
+      </datalist>
+      <datalist id="plan-screen-options">
+        {design.screens.map((screen) => (
+          <option key={screen.localId} value={screen.localId}>
+            {screen.name}
+          </option>
+        ))}
+      </datalist>
 
       <Section
         title="Variables de entorno"
@@ -766,5 +860,84 @@ export function ImplementationPlanManualForm({
         ))}
       </Section>
     </ManualFormShell>
+  );
+}
+
+function RouteActions({
+  route,
+  operations,
+  endpoints,
+  screenActions,
+  onChange,
+}: {
+  route: RouteRow;
+  operations: Plan['entities'][number]['operations'];
+  endpoints: string[];
+  screenActions: string[];
+  onChange: (actions: ActionRow[]) => void;
+}) {
+  const update = (j: number, patch: Partial<ActionRow>) =>
+    onChange(route.actions.map((a, idx) => (idx === j ? { ...a, ...patch } : a)));
+  const listId = `route-actions-${route.path || 'new'}`;
+  return (
+    <div className="flex w-full flex-col gap-1 pl-2">
+      <span className="text-xs font-medium text-muted-foreground">
+        Acciones de la pantalla y qué las atiende
+      </span>
+      {route.actions.map((action, j) => (
+        <div key={j} className="flex flex-wrap items-center gap-2">
+          <input
+            required
+            placeholder="Acción (como en el plano)"
+            list={listId}
+            className={`${input} w-56`}
+            value={action.label}
+            onChange={(e) => update(j, { label: e.target.value })}
+          />
+          <select
+            required
+            aria-label="Operación o endpoint"
+            className={input}
+            value={action.target}
+            onChange={(e) => update(j, { target: e.target.value })}
+          >
+            <option value="">Atendida por…</option>
+            {operations.map((op) => (
+              <option key={op} value={`op:${op}`}>
+                {OPERATION_LABELS[op]}
+              </option>
+            ))}
+            {endpoints.map((endpoint) => (
+              <option key={endpoint} value={`ep:${endpoint}`}>
+                {endpoint}
+              </option>
+            ))}
+          </select>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            type="button"
+            aria-label="Quitar acción"
+            onClick={() => onChange(route.actions.filter((_, k) => k !== j))}
+          >
+            <Trash2 className="size-3" aria-hidden="true" />
+          </Button>
+        </div>
+      ))}
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="self-start"
+        onClick={() => onChange([...route.actions, { label: '', target: '' }])}
+      >
+        <Plus className="size-3" aria-hidden="true" /> Acción
+      </Button>
+      <datalist id={listId}>
+        {screenActions.map((action) => (
+          <option key={action} value={action} />
+        ))}
+      </datalist>
+    </div>
   );
 }

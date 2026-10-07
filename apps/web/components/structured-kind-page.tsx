@@ -510,6 +510,9 @@ function renderContentDetail(kind: StructuredAnalysisKind, content: unknown) {
                 <strong>{entity.name}</strong>
                 {entity.moduleName ? (
                   <span className="text-muted-foreground"> · {entity.moduleName}</span>
+                ) : null}
+                {entity.classLocalId ? (
+                  <span className="text-muted-foreground"> · clase {entity.classLocalId}</span>
                 ) : null}{' '}
                 — {entity.description}
                 <div className="text-muted-foreground">

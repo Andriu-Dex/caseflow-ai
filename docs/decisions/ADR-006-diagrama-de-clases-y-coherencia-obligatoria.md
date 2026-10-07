@@ -28,9 +28,10 @@ Además falta un paso clásico del análisis y diseño: el **diagrama de clases*
 2. **Referencias por identificador, no por nombre.**
    - Cada clase apunta a la entidad del modelo de datos que representa.
    - Las pantallas apuntan a su nodo de navegación y a sus casos de uso.
-   - Las entidades del plan de implementación apuntan a su clase.
-   - Las rutas del frontend apuntan a su pantalla.
-   - Los endpoints personalizados apuntan a la acción de pantalla que los origina.
+   - Las entidades del modelo conceptual y las del plan de implementación apuntan a su clase (`classLocalId`).
+   - Las rutas del frontend apuntan a su pantalla (`screenLocalId`).
+   - Cada ruta enumera las acciones de su pantalla (`actions`) y lo que atiende cada una: una operación CRUD de su entidad o un endpoint personalizado. Así cada endpoint queda vinculado a la acción de pantalla que lo origina.
+   - Una referencia a un elemento que no existe en las fuentes seleccionadas es siempre un error, también en los proyectos existentes.
 3. **Cobertura obligatoria en ambas direcciones.** Lo que se define en una etapa debe aparecer en las siguientes, y lo que aparece abajo debe venir de arriba:
    - requisito funcional → caso de uso → pantalla;
    - entidad del modelo de datos ↔ clase ↔ entidad del plan → modelo de Prisma;
