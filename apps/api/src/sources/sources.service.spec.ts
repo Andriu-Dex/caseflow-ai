@@ -79,6 +79,7 @@ function setup() {
     artifactVersion: { findFirst: vi.fn(), update: vi.fn(), count: vi.fn().mockResolvedValue(0) },
     sourceProcessingJob: {
       findFirst: vi.fn(),
+      findMany: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
@@ -260,6 +261,39 @@ describe('SourcesService', () => {
     expect(prisma.sourceProcessingJob.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'UNSUPPORTED' }) }),
     );
+  });
+
+  it('re-queues on startup the jobs a restart cut off mid-processing', async () => {
+    const { prisma, ai, storage } = setup();
+    const startedAt = new Date('2026-01-01T10:00:00Z');
+    prisma.sourceProcessingJob.findMany.mockResolvedValue([
+      { id: 'cut-off', projectId: 'project' },
+      { id: 'taken-meanwhile', projectId: 'project' },
+    ]);
+    prisma.sourceProcessingJob.updateMany
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+    const queue = { add: vi.fn().mockResolvedValue(undefined) };
+    const service = new SourcesService(
+      prisma as unknown as PrismaService,
+      ai as unknown as AIOrchestrator,
+      new SourceContentExtractor(),
+      storage,
+      {} as never,
+      queue as never,
+    );
+
+    await expect(service.recoverInterruptedJobs(startedAt)).resolves.toBe(1);
+    expect(prisma.sourceProcessingJob.findMany).toHaveBeenCalledWith({
+      where: { status: 'RUNNING', updatedAt: { lt: startedAt } },
+      select: { id: true, projectId: true },
+    });
+    expect(prisma.sourceProcessingJob.updateMany).toHaveBeenCalledWith({
+      where: { id: 'cut-off', status: 'RUNNING' },
+      data: { status: 'QUEUED', errorMessage: null, failureReason: null },
+    });
+    expect(queue.add).toHaveBeenCalledOnce();
+    expect(queue.add.mock.calls[0]![1]).toEqual({ jobId: 'cut-off', projectId: 'project' });
   });
 
   it('allows a stale running job to be retried without replacing the source', async () => {

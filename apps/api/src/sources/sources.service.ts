@@ -1,7 +1,7 @@
 import { provenanceGuard } from '../projects/source-statuses';
 import type { ApprovalOrigin } from '@caseflow-ai/contracts';
 import { randomUUID, createHash } from 'node:crypto';
-import { Logger, Optional } from '@nestjs/common';
+import { Logger, Optional, type OnApplicationBootstrap } from '@nestjs/common';
 import type { Queue } from 'bullmq';
 import { SOURCE_PROCESSING_QUEUE, type SourceProcessingJobPayload } from '@caseflow-ai/domain';
 import {
@@ -70,7 +70,7 @@ function safeStorageKey(projectId: string, mimeType: string): string {
 }
 
 @Injectable()
-export class SourcesService {
+export class SourcesService implements OnApplicationBootstrap {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ai: AIOrchestrator,
@@ -311,19 +311,59 @@ export class SourcesService {
       where: { id: job.id },
       data: { status: 'QUEUED', errorMessage: null, failureReason: null },
     });
+    await this.requeue(job.id, projectId);
+    return this.get(projectId, id);
+  }
+
+  // Sources are processed inside this API process, so a job still RUNNING when
+  // the process starts was cut off by a restart: nothing would ever finish it,
+  // and the queue's redelivery is ignored because the job is no longer QUEUED.
+  // ponytail: assumes one API process; with several, a booting one may also
+  // re-queue a job another is processing. That is harmless (the result is
+  // only stored once, see runProcessingJob) but does the work twice.
+  async onApplicationBootstrap() {
     try {
-      await this.queue.add(
+      const recovered = await this.recoverInterruptedJobs(new Date());
+      if (recovered) logger.warn(`Re-queued ${recovered} interrupted source processing job(s).`);
+    } catch (error) {
+      logger.warn(
+        `Could not recover interrupted source jobs: ${error instanceof Error ? error.message : 'unknown'}`,
+      );
+    }
+  }
+
+  async recoverInterruptedJobs(startedAt: Date): Promise<number> {
+    if (!this.queue) return 0;
+    const jobs = await this.prisma.sourceProcessingJob.findMany({
+      where: { status: 'RUNNING', updatedAt: { lt: startedAt } },
+      select: { id: true, projectId: true },
+    });
+    let recovered = 0;
+    for (const job of jobs) {
+      const reset = await this.prisma.sourceProcessingJob.updateMany({
+        where: { id: job.id, status: 'RUNNING' },
+        data: { status: 'QUEUED', errorMessage: null, failureReason: null },
+      });
+      if (reset.count !== 1) continue;
+      await this.requeue(job.id, job.projectId);
+      recovered++;
+    }
+    return recovered;
+  }
+
+  private async requeue(jobId: string, projectId: string) {
+    try {
+      await this.queue!.add(
         SOURCE_PROCESSING_QUEUE,
-        { jobId: job.id, projectId },
-        { jobId: `${job.id}-${randomUUID()}` },
+        { jobId, projectId },
+        { jobId: `${jobId}-${randomUUID()}` },
       );
     } catch {
       await this.prisma.sourceProcessingJob.update({
-        where: { id: job.id },
+        where: { id: jobId },
         data: { status: 'FAILED', errorMessage: 'No se pudo iniciar el procesamiento.' },
       });
     }
-    return this.get(projectId, id);
   }
 
   async runProcessingJob(projectId: string, jobId: string): Promise<void> {
