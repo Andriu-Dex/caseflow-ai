@@ -234,3 +234,92 @@ describe('class diagram coverage (DEC-121)', () => {
     expect(gaps.every((f) => f.severity === 'WARNING')).toBe(true);
   });
 });
+
+describe('references by identifier across stages (DEC-121)', () => {
+  const classDiagram = {
+    code: 'DC-001',
+    type: 'CLASS_DIAGRAM',
+    content: { classes: [{ localId: 'order', name: 'Pedido' }] },
+  };
+  const blueprint = {
+    code: 'UI-001',
+    type: 'UI_BLUEPRINT',
+    content: {
+      screens: [
+        {
+          localId: 'orders',
+          name: 'Pedidos',
+          purpose: 'Gestionar pedidos',
+          primaryActions: ['Crear pedido'],
+          secondaryActions: ['Exportar'],
+        },
+      ],
+    },
+  };
+  const plan = (patch: { classLocalId: string; screenLocalId: string; label: string }) => ({
+    designBaselineId: '00000000-0000-4000-8000-000000000000',
+    authentication: { required: false },
+    modules: [{ localId: 'sales', name: 'Sales', description: 'Ventas' }],
+    entities: [
+      {
+        localId: 'e',
+        name: 'Order',
+        moduleLocalId: 'sales',
+        classLocalId: patch.classLocalId,
+        fields: [{ name: 'total', type: 'DECIMAL' }],
+        operations: ['CREATE'],
+      },
+    ],
+    routes: [
+      {
+        path: '/orders',
+        screenName: 'Pedidos',
+        screenLocalId: patch.screenLocalId,
+        moduleLocalId: 'sales',
+        kind: 'LIST',
+        entityLocalId: 'e',
+        actions: [{ label: patch.label, operation: 'CREATE' }],
+      },
+    ],
+  });
+  const errors = (content: unknown) =>
+    evaluateStructuredGeneration('IMPLEMENTATION_PLAN', content, [classDiagram, blueprint])
+      .filter((f) => f.severity === 'ERROR')
+      .map((f) => f.code);
+
+  it('accepts entities, routes and actions that point at the selected design', () => {
+    expect(
+      errors(plan({ classLocalId: 'order', screenLocalId: 'orders', label: 'Exportar' })),
+    ).toEqual([]);
+  });
+
+  it('rejects unknown classes, screens and screen actions', () => {
+    expect(
+      errors(plan({ classLocalId: 'ghost', screenLocalId: 'orders', label: 'Borrar' })),
+    ).toEqual(['UNKNOWN_CLASS', 'UNKNOWN_SCREEN_ACTION']);
+    expect(
+      errors(plan({ classLocalId: 'order', screenLocalId: 'ghost', label: 'Crear pedido' })),
+    ).toEqual(['UNKNOWN_SCREEN']);
+  });
+
+  it('checks the class each conceptual entity refines', () => {
+    const findings = evaluateStructuredGeneration(
+      'CONCEPTUAL_DOMAIN_MODEL',
+      {
+        entities: [
+          {
+            localId: 'p',
+            name: 'Pedido',
+            description: 'Compra',
+            classLocalId: 'ghost',
+            attributes: [{ name: 'total' }],
+          },
+        ],
+      },
+      [classDiagram],
+    );
+    expect(findings).toContainEqual(
+      expect.objectContaining({ severity: 'ERROR', code: 'UNKNOWN_CLASS' }),
+    );
+  });
+});

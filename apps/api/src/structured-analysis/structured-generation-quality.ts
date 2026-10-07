@@ -49,6 +49,25 @@ export function evaluateStructuredGeneration(
     sources.filter((source) => source.type === 'USE_CASE').map((source) => source.code),
   );
   const referenced = new Set<string>();
+  // DEC-121: elements of the selected upstream artifacts, referenced by localId.
+  const sourceItems = <T>(type: string, read: (content: unknown) => T[]) =>
+    sources.filter((source) => source.type === type).flatMap((source) => read(source.content));
+  const classes = sourceItems('CLASS_DIAGRAM', (c) => {
+    const parsed = classDiagramContentSchema.safeParse(c);
+    return parsed.success ? parsed.data.classes : [];
+  });
+  const screens = sourceItems('UI_BLUEPRINT', (c) => {
+    const parsed = uiBlueprintContentSchema.safeParse(c);
+    return parsed.success ? parsed.data.screens : [];
+  });
+  const checkClass = (label: string, classLocalId: string | undefined) => {
+    if (classLocalId && !classes.some((cls) => cls.localId === classLocalId))
+      findings.push({
+        severity: 'ERROR',
+        code: 'UNKNOWN_CLASS',
+        message: `${label} representa la clase «${classLocalId}», que no está en el diagrama de clases seleccionado.`,
+      });
+  };
 
   const checkReferences = (label: string, codes: string[]) => {
     if (codes.length === 0) {
@@ -151,21 +170,44 @@ export function evaluateStructuredGeneration(
       });
   } else if (kind === 'CONCEPTUAL_DOMAIN_MODEL') {
     const parsed = conceptualDomainModelContentSchema.parse(content);
-    for (const entity of parsed.entities)
+    for (const entity of parsed.entities) {
       checkReferences(`La entidad «${entity.name}»`, entity.relatedSourceCodes ?? []);
+      checkClass(`La entidad «${entity.name}»`, entity.classLocalId);
+    }
   } else if (kind === 'IMPLEMENTATION_PLAN') {
     const parsed = implementationPlanContentSchema.parse(content);
     for (const module of parsed.modules)
       checkReferences(`El módulo ${module.name}`, module.relatedSourceCodes ?? []);
-    for (const entity of parsed.entities)
+    for (const entity of parsed.entities) {
       checkReferences(`La entidad ${entity.name}`, entity.relatedSourceCodes ?? []);
+      checkClass(`La entidad ${entity.name}`, entity.classLocalId);
+    }
     for (const endpoint of parsed.customEndpoints)
       checkReferences(
         `El endpoint ${endpoint.method} ${endpoint.path}`,
         endpoint.relatedSourceCodes ?? [],
       );
-    for (const route of parsed.routes)
+    for (const route of parsed.routes) {
       checkReferences(`La ruta ${route.path}`, route.relatedSourceCodes ?? []);
+      if (!route.screenLocalId) continue;
+      const screen = screens.find((s) => s.localId === route.screenLocalId);
+      if (!screen) {
+        findings.push({
+          severity: 'ERROR',
+          code: 'UNKNOWN_SCREEN',
+          message: `La ruta ${route.path} muestra la pantalla «${route.screenLocalId}», que no está en el plano de interfaz seleccionado.`,
+        });
+        continue;
+      }
+      const screenActions = new Set([...screen.primaryActions, ...screen.secondaryActions]);
+      for (const action of route.actions)
+        if (!screenActions.has(action.label))
+          findings.push({
+            severity: 'ERROR',
+            code: 'UNKNOWN_SCREEN_ACTION',
+            message: `La ruta ${route.path} atiende la acción «${action.label}», que la pantalla «${screen.name}» no tiene.`,
+          });
+    }
   } else if (kind === 'UI_BLUEPRINT') {
     const parsed = uiBlueprintContentSchema.parse(content);
     const navigationNodes = sources

@@ -296,6 +296,8 @@ const conceptualEntitySchema = z
     name: text(200),
     description: text(1000),
     moduleName: text(200).optional(),
+    // DEC-121: the domain class (class diagram localId) this entity refines.
+    classLocalId: localId().optional(),
     attributes: z.array(conceptualAttributeSchema).min(1).max(60),
     relatedSourceCodes: z.array(text(40)).max(100).optional(),
   })
@@ -405,6 +407,8 @@ const implementationEntitySchema = z
     localId: localId(),
     name: pascalName(),
     moduleLocalId: localId(),
+    // DEC-121: the domain class (class diagram localId) this entity persists.
+    classLocalId: localId().optional(),
     description: text(500).optional(),
     fields: z.array(implementationFieldSchema).min(1).max(60),
     relations: z.array(implementationRelationSchema).max(30).default([]),
@@ -437,6 +441,18 @@ const implementationEndpointSchema = z
     relatedSourceCodes: z.array(text(40)).max(100).optional(),
   })
   .strict();
+// A screen action (as the UI blueprint names it) and what serves it: one of
+// the route entity's CRUD operations or a custom endpoint ("POST /orders/:id/x").
+const implementationRouteActionSchema = z
+  .object({
+    label: text(200),
+    operation: z.enum(IMPLEMENTATION_CRUD_OPERATIONS).optional(),
+    endpoint: text(220).optional(),
+  })
+  .strict()
+  .refine((action) => Boolean(action.operation) !== Boolean(action.endpoint), {
+    message: 'Cada acción la atiende una operación CRUD o un endpoint, exactamente uno.',
+  });
 const implementationRouteSchema = z
   .object({
     path: text(200).regex(
@@ -444,9 +460,12 @@ const implementationRouteSchema = z
       'Use una ruta Next.js en minúsculas, p. ej. /orders/[orderId].',
     ),
     screenName: text(200),
+    // DEC-121: the UI blueprint screen (localId) this route renders.
+    screenLocalId: localId().optional(),
     moduleLocalId: localId(),
     kind: z.enum(IMPLEMENTATION_ROUTE_KINDS),
     entityLocalId: localId().optional(),
+    actions: z.array(implementationRouteActionSchema).max(20).default([]),
     relatedSourceCodes: z.array(text(40)).max(100).optional(),
   })
   .strict();
@@ -495,6 +514,7 @@ export const implementationPlanContentSchema = implementationPlanBodySchema
     const modules = new Set(value.modules.map((m) => m.localId));
     const entities = new Set(value.entities.map((e) => e.localId));
     const roles = new Set(value.authentication.roles);
+    const endpoints = new Set(value.customEndpoints.map((e) => `${e.method} ${e.path}`));
     const checkRoles = (list: string[], path: (string | number)[]) => {
       for (const role of list)
         if (!roles.has(role)) issue(`El rol «${role}» no está declarado en autenticación.`, path);
@@ -546,6 +566,21 @@ export const implementationPlanContentSchema = implementationPlanBodySchema
         issue('La ruta referencia un módulo inexistente.', ['routes', i]);
       if (route.entityLocalId && !entities.has(route.entityLocalId))
         issue('La ruta referencia una entidad inexistente.', ['routes', i]);
+      const entity = value.entities.find((e) => e.localId === route.entityLocalId);
+      route.actions.forEach((action, j) => {
+        if (action.operation && !entity?.operations.includes(action.operation))
+          issue(
+            `La acción «${action.label}» usa la operación ${action.operation}, que la entidad de la ruta no ofrece.`,
+            ['routes', i, 'actions', j],
+          );
+        if (action.endpoint && !endpoints.has(action.endpoint))
+          issue(`La acción «${action.label}» usa el endpoint ${action.endpoint}, que no existe.`, [
+            'routes',
+            i,
+            'actions',
+            j,
+          ]);
+      });
     });
     if (!uniqueBy(value.routes, (r) => r.path))
       issue('Cada ruta del frontend debe ser única.', ['routes']);

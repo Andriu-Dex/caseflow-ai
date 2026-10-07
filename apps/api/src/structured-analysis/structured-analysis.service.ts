@@ -186,12 +186,12 @@ const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
   },
   CONCEPTUAL_DOMAIN_MODEL: {
     promptKey: 'conceptual-domain-model.generate',
-    promptVersion: 1,
+    promptVersion: 2,
     maxOutputTokens: 8192,
   },
   IMPLEMENTATION_PLAN: {
     promptKey: 'implementation-plan.generate',
-    promptVersion: 1,
+    promptVersion: 2,
     maxOutputTokens: 16384,
     aiOutputSchema: implementationPlanBodySchema,
     maxContextChars: 40_000,

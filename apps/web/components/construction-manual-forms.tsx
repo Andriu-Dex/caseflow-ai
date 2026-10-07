@@ -495,6 +495,7 @@ type EntityRow = {
   name: string;
   description: string;
   moduleName: string;
+  classLocalId: string;
   // One attribute per line; a trailing "?" marks it optional (e.g. "nota?").
   attributes: string;
   sourceCodes: string;
@@ -520,9 +521,19 @@ export function ConceptualDomainModelManualForm({
       name: e.name,
       description: e.description,
       moduleName: e.moduleName ?? '',
+      classLocalId: e.classLocalId ?? '',
       attributes: e.attributes.map((a) => `${a.name}${a.required ? '' : '?'}`).join('\n'),
       sourceCodes: e.relatedSourceCodes?.join(', ') ?? '',
-    })) ?? [{ name: '', description: '', moduleName: '', attributes: '', sourceCodes: '' }],
+    })) ?? [
+      {
+        name: '',
+        description: '',
+        moduleName: '',
+        classLocalId: '',
+        attributes: '',
+        sourceCodes: '',
+      },
+    ],
   );
   const relationships = useRows(
     m?.relationships.map((r) => ({ ...r, description: r.description ?? '' })) ?? [],
@@ -540,6 +551,7 @@ export function ConceptualDomainModelManualForm({
           name: row.name,
           description: row.description,
           moduleName: row.moduleName.trim() || undefined,
+          classLocalId: row.classLocalId.trim() || undefined,
           attributes: lines(row.attributes).map((line) => ({
             name: line.replace(/\?$/, '').trim(),
             required: !line.endsWith('?'),
@@ -584,6 +596,7 @@ export function ConceptualDomainModelManualForm({
             name: '',
             description: '',
             moduleName: '',
+            classLocalId: '',
             attributes: '',
             sourceCodes: '',
           })
@@ -606,6 +619,13 @@ export function ConceptualDomainModelManualForm({
               className={`${input} w-40`}
               value={row.moduleName}
               onChange={(e) => entities.update(i, { moduleName: e.target.value })}
+            />
+            <input
+              placeholder="Clase del diagrama (opcional)"
+              aria-label="Clase del diagrama de clases"
+              className={`${input} w-48`}
+              value={row.classLocalId}
+              onChange={(e) => entities.update(i, { classLocalId: e.target.value })}
             />
             <input
               required
