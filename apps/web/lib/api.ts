@@ -255,6 +255,8 @@ async function extractErrorMessage(response: Response): Promise<string> {
 const get = <T>(path: string) => request<T>(path);
 const post = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
+const patch = <T>(path: string, body: unknown) =>
+  request<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
 const del = <T>(path: string) => request<T>(path, { method: 'DELETE' });
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -299,6 +301,8 @@ export const api = {
     delete: (projectId: string) => del<void>(`/projects/${projectId}`),
     archive: (projectId: string) => post<ProjectResponse>(`/projects/${projectId}/archive`),
     unarchive: (projectId: string) => post<ProjectResponse>(`/projects/${projectId}/unarchive`),
+    update: (projectId: string, input: { name: string; description: string | null }) =>
+      patch<ProjectResponse>(`/projects/${projectId}`, input),
     updateLanguage: (projectId: string, language: 'ES' | 'EN') =>
       post<ProjectResponse>(`/projects/${projectId}/language`, { language }),
     upgradeWorkflowRoute: (projectId: string, workflowRoute: WorkflowRoute) =>

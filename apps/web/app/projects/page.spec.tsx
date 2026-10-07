@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ProjectsPage from './page';
 import { TestProviders } from '../../lib/test-utils';
 
-const mocks = vi.hoisted(() => ({ list: vi.fn(), unarchive: vi.fn() }));
+const mocks = vi.hoisted(() => ({ list: vi.fn(), unarchive: vi.fn(), update: vi.fn() }));
 
 vi.mock('../../lib/api', () => ({
   api: {
@@ -12,6 +12,7 @@ vi.mock('../../lib/api', () => ({
     projects: {
       list: (...args: unknown[]) => mocks.list(...args),
       unarchive: (...args: unknown[]) => mocks.unarchive(...args),
+      update: (...args: unknown[]) => mocks.update(...args),
     },
   },
   ApiError: class ApiError extends Error {},
@@ -89,5 +90,23 @@ describe('ProjectsPage', () => {
     );
     await user.click(await screen.findByRole('button', { name: 'Restaurar' }));
     expect(mocks.unarchive).toHaveBeenCalledWith('p1');
+  });
+
+  it('renames a project from the icon button on its card', async () => {
+    const user = userEvent.setup();
+    mocks.update.mockResolvedValue({ ...project(1), name: 'Tienda Norte' });
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: 'Editar el proyecto Proyecto 1' }));
+    const name = screen.getByLabelText('Nombre');
+    await user.clear(name);
+    await user.type(name, '  Tienda Norte ');
+    await user.type(screen.getByLabelText('Descripción (opcional)'), 'Ventas');
+    await user.click(screen.getByRole('button', { name: 'Guardar' }));
+    await waitFor(() =>
+      expect(mocks.update).toHaveBeenCalledWith('p1', {
+        name: 'Tienda Norte',
+        description: 'Ventas',
+      }),
+    );
   });
 });

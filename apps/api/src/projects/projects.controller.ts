@@ -3,7 +3,18 @@ import { JwtAuthGuard } from '../identity/jwt-auth.guard';
 import { ProjectMembershipGuard } from '../identity/project-membership.guard';
 import { WorkspaceMembershipGuard } from '../identity/workspace-membership.guard';
 
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Query, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   createProjectRequestSchema,
@@ -11,6 +22,7 @@ import {
   projectListResponseSchema,
   projectResponseSchema,
   updateProjectLanguageRequestSchema,
+  updateProjectRequestSchema,
   upgradeWorkflowRouteRequestSchema,
   type ProjectListResponse,
   type ProjectResponse,
@@ -100,6 +112,25 @@ export class ProjectsController {
   @ApiErrorResponse(422, 'The project is already archived.')
   archive(@Param('projectId', uuidParamPipe) projectId: string): Promise<ProjectResponse> {
     return this.projects.archive(projectId);
+  }
+
+  @Patch(':projectId')
+  @ApiOperation({
+    operationId: 'updateProject',
+    summary: 'Rename a project or change its description',
+  })
+  @ApiUuidParam('projectId', 'Project identifier.')
+  @ApiZodBody(updateProjectRequestSchema)
+  @ApiZodResponse(200, 'The updated project.', projectResponseSchema)
+  @ApiErrorResponse(400, 'The name or description is invalid.')
+  @ApiErrorResponse(404, 'The project does not exist.')
+  update(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Body(new ZodValidationPipe(updateProjectRequestSchema))
+    body: z.output<typeof updateProjectRequestSchema>,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<ProjectResponse> {
+    return this.projects.update(projectId, body, req.user.id);
   }
 
   @Post(':projectId/unarchive')

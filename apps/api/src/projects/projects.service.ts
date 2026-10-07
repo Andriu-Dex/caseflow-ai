@@ -188,6 +188,38 @@ export class ProjectsService {
     return toProjectResponse(updated, await this.hasApprovedArtifacts(projectId));
   }
 
+  async update(
+    projectId: string,
+    input: { name: string; description?: string | null },
+    userId: string,
+  ): Promise<ProjectResponse> {
+    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) throw new NotFoundException('Proyecto no encontrado.');
+    const description = input.description || null;
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.project.update({
+        where: { id: projectId },
+        data: { name: input.name, description },
+      });
+      await this.audit.record(
+        {
+          projectId,
+          actorUserId: userId,
+          action: 'PROJECT_DETAILS_UPDATED',
+          entityType: 'PROJECT',
+          entityId: projectId,
+          metadata: {
+            from: { name: project.name, description: project.description },
+            to: { name: input.name, description },
+          },
+        },
+        tx,
+      );
+      return row;
+    });
+    return toProjectResponse(updated, await this.hasApprovedArtifacts(projectId));
+  }
+
   async updateLanguage(projectId: string, language: ProjectLanguage): Promise<ProjectResponse> {
     const project = await this.prisma.project.findUnique({ where: { id: projectId } });
     if (!project) throw new NotFoundException('Proyecto no encontrado.');
