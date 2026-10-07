@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
+import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import type { WorkflowRoute } from '@caseflow-ai/contracts';
@@ -20,11 +22,10 @@ import { WORKFLOW_ROUTE_DESCRIPTIONS, WORKFLOW_ROUTE_LABELS } from './workflow-r
 
 // The route is chosen once, when the project is created (DEC-116); it can
 // later move up, never down.
-const ROUTE_CHOICES: { route: WorkflowRoute; available: boolean }[] = [
-  { route: 'FULL', available: true },
-  { route: 'EXPRESS', available: true },
-  { route: 'BUILD_ONLY', available: true },
-];
+// EXPRESS and BUILD_ONLY generate everything with AI from a prompt: without
+// a configured provider they would stop at the first AI stage, so they are
+// offered only when AI is available (FULL also works manually).
+const ROUTES: WorkflowRoute[] = ['FULL', 'EXPRESS', 'BUILD_ONLY'];
 
 export function NewProjectDialog({
   open,
@@ -44,6 +45,12 @@ export function NewProjectDialog({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const needsPrompt = route !== 'FULL';
+  const aiStatus = useQuery({
+    queryKey: ['ai-status'],
+    queryFn: () => api.ai.status(),
+    enabled: open,
+  });
+  const aiAvailable = aiStatus.data?.available === true;
 
   async function create(e: React.FormEvent) {
     e.preventDefault();
@@ -98,32 +105,51 @@ export function NewProjectDialog({
           />
           <fieldset className="flex flex-col gap-2">
             <legend className="mb-1 text-sm font-medium">Ruta de trabajo</legend>
-            {ROUTE_CHOICES.map(({ route: option, available }) => (
-              <label
-                key={option}
-                className={`flex items-start gap-2 rounded-md border border-border p-2 text-sm ${
-                  available ? 'cursor-pointer' : 'opacity-60'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="new-project-route"
-                  className="mt-1 accent-primary"
-                  disabled={!available}
-                  checked={route === option}
-                  onChange={() => setRoute(option)}
-                />
-                <span>
-                  <span className="font-medium">{WORKFLOW_ROUTE_LABELS[option]}</span>
-                  {available ? null : (
-                    <span className="ml-2 text-xs text-muted-foreground">Próximamente</span>
-                  )}
-                  <span className="block text-xs text-muted-foreground">
-                    {WORKFLOW_ROUTE_DESCRIPTIONS[option]}
+            {ROUTES.map((option) => {
+              const available = option === 'FULL' || aiAvailable;
+              return (
+                <label
+                  key={option}
+                  className={`flex items-start gap-2 rounded-md border border-border p-2 text-sm ${
+                    available ? 'cursor-pointer' : 'opacity-60'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="new-project-route"
+                    className="mt-1 accent-primary"
+                    disabled={!available}
+                    checked={route === option}
+                    onChange={() => setRoute(option)}
+                  />
+                  <span>
+                    <span className="font-medium">{WORKFLOW_ROUTE_LABELS[option]}</span>
+                    {available ? null : (
+                      <span className="ml-2 text-xs text-amber-700 dark:text-amber-400">
+                        Requiere IA
+                      </span>
+                    )}
+                    <span className="block text-xs text-muted-foreground">
+                      {WORKFLOW_ROUTE_DESCRIPTIONS[option]}
+                    </span>
                   </span>
-                </span>
-              </label>
-            ))}
+                </label>
+              );
+            })}
+            {aiStatus.data && !aiAvailable ? (
+              <p className="text-xs text-muted-foreground">
+                Exprés y Solo construcción generan todo con IA a partir de un prompt. Conecte
+                ChatGPT o configure un proveedor en{' '}
+                <Link
+                  href="/settings/ai"
+                  className="font-medium underline"
+                  onClick={() => onOpenChange(false)}
+                >
+                  Ajustes de IA
+                </Link>
+                .
+              </p>
+            ) : null}
           </fieldset>
           {needsPrompt ? (
             <label className="flex flex-col gap-1 text-sm">
