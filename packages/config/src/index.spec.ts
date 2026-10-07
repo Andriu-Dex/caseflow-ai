@@ -2,6 +2,27 @@ import { describe, expect, it } from 'vitest';
 import { loadAIConfig, loadDiagramRendererConfig, loadStorageConfig } from './index';
 
 describe('loadAIConfig', () => {
+  // DEC-117: the desktop edition's ChatGPT plan, through the loopback broker.
+  it('reads the ChatGPT plan provider and requires its broker', () => {
+    expect(
+      loadAIConfig({
+        AI_PROVIDER: 'chatgpt',
+        AI_MODEL: 'gpt-x',
+        CHATGPT_BROKER_URL: 'http://127.0.0.1:4803',
+        CHATGPT_BROKER_SECRET: 'x'.repeat(43),
+      }),
+    ).toEqual({
+      provider: 'chatgpt',
+      model: 'gpt-x',
+      timeoutMs: 120_000,
+      brokerUrl: 'http://127.0.0.1:4803',
+      brokerSecret: 'x'.repeat(43),
+    });
+    expect(() =>
+      loadAIConfig({ AI_PROVIDER: 'chatgpt', AI_MODEL: 'gpt-x', CHATGPT_BROKER_SECRET: 'short' }),
+    ).toThrow();
+  });
+
   it('defaults safely to disabled without secrets', () =>
     expect(loadAIConfig({})).toEqual({ provider: 'disabled' }));
   it('validates openai-compatible settings', () =>
