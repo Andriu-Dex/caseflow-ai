@@ -637,6 +637,9 @@ export const api = {
     create: (projectId: string, data: CreateDesignBaselineRequest) =>
       post<DesignBaselineResponse>(`/projects/${projectId}/design-baselines`, data),
   },
+  ai: {
+    status: () => get<{ available: boolean }>('/ai/status'),
+  },
   construction: {
     sandboxStatus: () => get<{ available: boolean }>('/construction/sandbox-status'),
   },

@@ -14,9 +14,12 @@ import {
 } from '@caseflow-ai/integrations';
 import { PrismaAIRunRecorder } from './ai-run-recorder';
 
-export const AI_PROVIDER = Symbol('AI_PROVIDER');
+export { AI_PROVIDER } from './ai-provider.token';
+import { AI_PROVIDER } from './ai-provider.token';
+import { AIStatusController } from './ai-status.controller';
 
 @Module({
+  controllers: [AIStatusController],
   providers: [
     PrismaAIRunRecorder,
     {
