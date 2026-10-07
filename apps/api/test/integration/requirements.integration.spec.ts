@@ -73,7 +73,7 @@ describe('Requirements integration', () => {
       projectId,
       {
         title: 'Notas de proceso',
-        sourceKind: 'NOTES',
+        sourceKind: 'TEXT',
         purpose: 'Notas del proceso manual actual',
         description: 'Contenido de prueba.',
       },

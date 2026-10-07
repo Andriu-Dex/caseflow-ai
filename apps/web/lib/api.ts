@@ -24,6 +24,7 @@ import type {
   RequirementInput,
   RequirementResponse,
   SourceMetadataInput,
+  SourceCapabilitiesResponse,
   SourceReportCandidate,
   SourceReportResponse,
   SourceResponse,
@@ -334,6 +335,10 @@ export const api = {
       get<{ sourceVersionId: string; text: string }>(
         `/projects/${projectId}/sources/${sourceId}/text`,
       ),
+    capabilities: (projectId: string) =>
+      get<SourceCapabilitiesResponse>(`/projects/${projectId}/sources/capabilities`),
+    downloadUrl: (projectId: string, sourceId: string) =>
+      `${BASE_URL}/projects/${projectId}/sources/${sourceId}/download`,
     retryProcessing: (projectId: string, sourceId: string) =>
       post<SourceResponse>(`/projects/${projectId}/sources/${sourceId}/processing/retry`),
     create: (projectId: string, metadata: SourceMetadataInput, file: File | null) => {

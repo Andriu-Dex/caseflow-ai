@@ -16,7 +16,14 @@ import { canTransitionArtifactVersionStatus, formatArtifactCode } from '@caseflo
 import { StorageProviderError, type StorageProvider } from '@caseflow-ai/integrations';
 import {
   ALLOWED_SOURCE_MIME_TYPES,
+  LEGACY_SOURCE_KINDS,
+  SOURCE_LIMITS,
+  SOURCE_MAX_FILE_SIZE_BYTES,
+  sourceKindAcceptsMimeType,
   sourceReportContentSchema,
+  type ProjectSourceKind,
+  type SourceCapabilitiesResponse,
+  type SourceFailureReason,
   type SourceMetadataInput,
   type SourceReportContent,
 } from '@caseflow-ai/contracts';
@@ -80,6 +87,10 @@ export class SourcesService {
   ) {
     if (!file && !metadata.description.trim())
       throw new UnprocessableEntityException('Escriba contenido o adjunte un archivo.');
+    if (isLegacyKind(metadata.sourceKind))
+      throw new UnprocessableEntityException(
+        'Este tipo de fuente ya no está disponible. Use Documento PDF, Imagen u Otro.',
+      );
     let fileFields: {
       originalFilename: string;
       mimeType: string;
@@ -88,6 +99,7 @@ export class SourcesService {
       storageKey: string;
       extractionState: 'EXTRACTED' | 'MANUAL' | 'UNSUPPORTED' | 'FAILED' | 'PENDING';
       extractedText: string | null;
+      extractionFailureReason: SourceFailureReason | null;
     };
 
     let processAsync = Boolean(
@@ -100,6 +112,7 @@ export class SourcesService {
         )
       )
         throw new UnprocessableEntityException('Tipo de archivo no permitido.');
+      assertKindMatchesFile(metadata.sourceKind, file.mimetype);
       if (file.size <= 0) throw new UnprocessableEntityException('El archivo está vacío.');
       if (!(await hasExpectedFileSignature(file)))
         throw new UnprocessableEntityException('El contenido del archivo no coincide con su tipo.');
@@ -139,6 +152,10 @@ export class SourcesService {
         storageKey,
         extractionState: extraction.state === 'EXTRACTED' ? 'EXTRACTED' : extraction.state,
         extractedText: extraction.state === 'EXTRACTED' ? extraction.text : null,
+        extractionFailureReason:
+          extraction.state === 'FAILED' || extraction.state === 'UNSUPPORTED'
+            ? extraction.reason
+            : null,
       };
     } else {
       // No file: the typed content itself is the source's knowledge,
@@ -151,6 +168,7 @@ export class SourcesService {
         storageKey: null as unknown as string,
         extractionState: 'MANUAL',
         extractedText: metadata.description,
+        extractionFailureReason: null,
       };
     }
 
@@ -291,7 +309,7 @@ export class SourcesService {
       throw new UnprocessableEntityException('Esta fuente no tiene un procesamiento reintentable.');
     await this.prisma.sourceProcessingJob.update({
       where: { id: job.id },
-      data: { status: 'QUEUED', errorMessage: null },
+      data: { status: 'QUEUED', errorMessage: null, failureReason: null },
     });
     try {
       await this.queue.add(
@@ -373,7 +391,7 @@ export class SourcesService {
           }
           await tx.sourceProcessingJob.update({
             where: { id: jobId },
-            data: { status: 'COMPLETED', errorMessage: null },
+            data: { status: 'COMPLETED', errorMessage: null, failureReason: null },
           });
         });
         return;
@@ -384,8 +402,9 @@ export class SourcesService {
           status: outcome.state === 'UNSUPPORTED' ? 'UNSUPPORTED' : 'FAILED',
           errorMessage:
             outcome.state === 'UNSUPPORTED'
-              ? 'No hay un transcriptor configurado para este archivo.'
+              ? 'No hay un procesador configurado para este archivo.'
               : 'No se pudo obtener texto legible del archivo.',
+          failureReason: outcome.reason,
         },
       });
     } catch (error) {
@@ -394,7 +413,11 @@ export class SourcesService {
       );
       await this.prisma.sourceProcessingJob.update({
         where: { id: jobId },
-        data: { status: 'FAILED', errorMessage: 'No se pudo procesar el archivo.' },
+        data: {
+          status: 'FAILED',
+          errorMessage: 'No se pudo procesar el archivo.',
+          failureReason: 'UNREADABLE',
+        },
       });
     }
   }
@@ -444,6 +467,12 @@ export class SourcesService {
     const detail = latest.sourceDetail!;
     if (!detail.storageKey && !metadata.description.trim())
       throw new UnprocessableEntityException('El contenido de la fuente no puede estar vacío.');
+    // A retired kind may be kept, never chosen anew.
+    if (isLegacyKind(metadata.sourceKind) && metadata.sourceKind !== detail.sourceKind)
+      throw new UnprocessableEntityException(
+        'Este tipo de fuente ya no está disponible. Use Documento PDF, Imagen u Otro.',
+      );
+    if (detail.mimeType) assertKindMatchesFile(metadata.sourceKind, detail.mimeType);
     if (
       detail.extractionState === 'PENDING' &&
       latest.sourceProcessingJobs.some((job) => ['QUEUED', 'RUNNING'].includes(job.status))
@@ -477,6 +506,7 @@ export class SourcesService {
           language: metadata.language,
           extractionState: detail.extractionState,
           extractedText: detail.storageKey ? detail.extractedText : metadata.description,
+          extractionFailureReason: detail.extractionFailureReason,
         },
       });
       return this.loadAndMap(tx, id, version.id);
@@ -529,6 +559,16 @@ export class SourcesService {
       await tx.$executeRaw`DELETE FROM artifact_versions WHERE artifact_id = ${id}`;
       await tx.$executeRaw`DELETE FROM artifacts WHERE id = ${id}`;
     });
+  }
+
+  capabilities(): SourceCapabilitiesResponse {
+    return {
+      ...this.extractor.capabilities,
+      maxFileSizeBytes: SOURCE_MAX_FILE_SIZE_BYTES,
+      maxPdfPages: SOURCE_LIMITS.maxPdfPages,
+      maxScannedPdfPages: SOURCE_LIMITS.maxScannedPdfPages,
+      maxExtractedCharacters: SOURCE_LIMITS.maxExtractedCharacters,
+    };
   }
 
   async download(projectId: string, id: string) {
@@ -734,6 +774,7 @@ export class SourcesService {
         contentHash: string | null;
         extractionState: string;
         extractedText: string | null;
+        extractionFailureReason: string | null;
         language: string | null;
         report: unknown;
       } | null;
@@ -742,6 +783,7 @@ export class SourcesService {
         status: string;
         processor: string;
         errorMessage: string | null;
+        failureReason: string | null;
         updatedAt: Date;
       }[];
     },
@@ -768,6 +810,7 @@ export class SourcesService {
             status: version.sourceProcessingJobs[0].status,
             processor: version.sourceProcessingJobs[0].processor,
             errorMessage: version.sourceProcessingJobs[0].errorMessage,
+            failureReason: version.sourceProcessingJobs[0].failureReason,
             updatedAt: version.sourceProcessingJobs[0].updatedAt.toISOString(),
           }
         : null,
@@ -783,6 +826,7 @@ export class SourcesService {
         contentHash: detail.contentHash,
         language: detail.language,
         extractionState: detail.extractionState,
+        extractionFailureReason: detail.extractionFailureReason,
         hasExtractedText: Boolean(detail.extractedText),
         hasReport: Boolean(detail.report),
       },
@@ -813,4 +857,16 @@ function sanitizeFilenameForDisplay(name: string): string {
     .filter((char) => char.codePointAt(0)! >= 0x20)
     .join('');
   return printable.slice(0, 255) || 'archivo';
+}
+
+function isLegacyKind(kind: ProjectSourceKind): boolean {
+  return (LEGACY_SOURCE_KINDS as readonly string[]).includes(kind);
+}
+
+// The chosen kind must fit the file (the web corrects it before uploading).
+function assertKindMatchesFile(kind: ProjectSourceKind, mimeType: string) {
+  if (!sourceKindAcceptsMimeType(kind, mimeType))
+    throw new UnprocessableEntityException(
+      'El tipo de fuente no corresponde al formato del archivo.',
+    );
 }

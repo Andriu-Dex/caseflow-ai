@@ -83,7 +83,7 @@ El SVG entregado ahora es un render gráfico real: la fuente Mermaid ER/PlantUML
 
 ## Estado tras los Incrementos 1G–1M (backend)
 
-- **Project Sources** (1G): ingesta de fuentes tipadas (PDF/AUDIO/IMAGE/FORM/INVOICE/TEXT/NOTES/OTHER), extracción local determinística para texto/PDF, transcripción manual como fallback explícito para audio/imagen, interpretación estructurada (Source Report) manual o candidata por IA, aprobación, y vínculo exacto de versiones de fuente al Contexto del Proyecto.
+- **Project Sources** (1G): ingesta de fuentes tipadas (PDF/AUDIO/IMAGE/TEXT/NOTES/OTHER; FORM/INVOICE retirados para fuentes nuevas en DEC-122), extracción local determinística para texto/PDF, transcripción manual como fallback explícito para audio/imagen, interpretación estructurada (Source Report) manual o candidata por IA, aprobación, y vínculo exacto de versiones de fuente al Contexto del Proyecto.
 - **Cross-stage gates** (1H): las etapas posteriores exigen evidencia `APPROVED` exacta de la etapa previa (p. ej. Requisitos exige un Contexto respaldado por fuentes `APPROVED`).
 - **Staleness** (1I): análisis determinístico (sin IA) de impacto potencial cuando existe conocimiento de fuente `APPROVED` más reciente que el usado por un artefacto; estados `CURRENT` / `NEWER_APPROVED_KNOWLEDGE_AVAILABLE` / `POTENTIALLY_AFFECTED`, propagado hasta 2 saltos. No implica invalidez semántica, solo revisión recomendada.
 - **Traceability** (1J): grafo de procedencia exacta por versión (`GET /projects/{projectId}/traceability`), construido únicamente a partir de relaciones persistidas — nunca inferidas por adyacencia de etapa. Acotado a 500 nodos / 1000 aristas con bandera `truncated` explícita, nunca un corte silencioso.

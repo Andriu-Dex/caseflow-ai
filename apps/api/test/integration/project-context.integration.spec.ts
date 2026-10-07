@@ -193,7 +193,7 @@ describe('Project Context integration', () => {
       project.id,
       {
         title: 'Entrevista',
-        sourceKind: 'NOTES',
+        sourceKind: 'TEXT',
         purpose: 'Notas de la entrevista con finanzas',
         description: 'Contenido de prueba.',
       },
@@ -228,7 +228,7 @@ describe('Project Context integration', () => {
       project.id,
       {
         title: 'Entrevista',
-        sourceKind: 'NOTES',
+        sourceKind: 'TEXT',
         purpose: 'p',
         description: 'Contenido de prueba.',
       },
@@ -260,7 +260,7 @@ describe('Project Context integration', () => {
     const project = await createProject(ctx, 'Sources Reject');
     const draft = await ctx.sources.create(
       project.id,
-      { title: 'Borrador', sourceKind: 'NOTES', purpose: 'p', description: 'Contenido de prueba.' },
+      { title: 'Borrador', sourceKind: 'TEXT', purpose: 'p', description: 'Contenido de prueba.' },
       { originalname: 'n.txt', mimetype: 'text/plain', size: 4, buffer: Buffer.from('abcd') },
     );
     await expect(
@@ -273,7 +273,7 @@ describe('Project Context integration', () => {
     const otherProject = await createProject(ctx, 'Sources Other');
     const otherSource = await ctx.sources.create(
       otherProject.id,
-      { title: 'Otro', sourceKind: 'NOTES', purpose: 'p', description: 'Contenido de prueba.' },
+      { title: 'Otro', sourceKind: 'TEXT', purpose: 'p', description: 'Contenido de prueba.' },
       { originalname: 'n.txt', mimetype: 'text/plain', size: 4, buffer: Buffer.from('abcd') },
     );
     await ctx.sources.transition(
@@ -321,7 +321,7 @@ describe('Project Context integration', () => {
     async function createApprovedSource(ctxParam: TestContext, projectId: string, title: string) {
       const source = await ctxParam.sources.create(
         projectId,
-        { title, sourceKind: 'NOTES', purpose: 'Prueba', description: 'Contenido de prueba.' },
+        { title, sourceKind: 'TEXT', purpose: 'Prueba', description: 'Contenido de prueba.' },
         {
           originalname: 'n.txt',
           mimetype: 'text/plain',

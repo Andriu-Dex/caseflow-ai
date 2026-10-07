@@ -66,7 +66,10 @@ describe('ProjectsPage', () => {
     expect(screen.getByText('Página 1 de 3')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /Siguiente/ }));
-    expect(await screen.findByText('Proyecto 13')).toBeInTheDocument();
+    // Under a full parallel run the next page can take longer than the 1 s default.
+    expect(
+      await screen.findByText('Proyecto 13', undefined, { timeout: 5000 }),
+    ).toBeInTheDocument();
     expect(mocks.list).toHaveBeenLastCalledWith('ws', expect.objectContaining({ offset: 12 }));
   });
 

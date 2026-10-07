@@ -2,15 +2,27 @@
 
 import { GenerationOverlay } from '../../components/generation-overlay';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Archive, FileText, Pencil, Trash2, Upload, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  Archive,
+  Download,
+  FileText,
+  Pencil,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import type {
-  ProjectSourceKind,
-  SourceReportCandidate,
-  SourceResponse,
-  StalenessAnalysisResponse,
+import {
+  SELECTABLE_SOURCE_KINDS,
+  sourceKindAcceptsMimeType,
+  sourceKindForMimeType,
+  type ProjectSourceKind,
+  type SourceReportCandidate,
+  type SourceResponse,
+  type StalenessAnalysisResponse,
 } from '@caseflow-ai/contracts';
 import {
   Badge,
@@ -30,42 +42,20 @@ import {
   SelectValue,
   Textarea,
 } from '@caseflow-ai/ui';
-import { api, ApiError } from '../../lib/api';
+import { api, ApiError, downloadFile } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { PageHeading } from '../../components/page-heading';
 import { StatusBadge } from '../../components/status-badge';
-
-const SOURCE_KIND_LABELS: Record<ProjectSourceKind, string> = {
-  PDF: 'Documento PDF',
-  AUDIO: 'Audio',
-  IMAGE: 'Imagen',
-  FORM: 'Formulario',
-  INVOICE: 'Factura',
-  TEXT: 'Texto',
-  NOTES: 'Notas',
-  OTHER: 'Otro',
-};
-
-const SOURCE_KINDS = Object.keys(SOURCE_KIND_LABELS) as ProjectSourceKind[];
-
-// Narrows the file picker to plausible extensions for the selected kind.
-// Advisory only (the backend is the real authority on what it accepts) —
-// TEXT/NOTES/FORM/OTHER stay open-ended since their real-world formats vary.
-const SOURCE_KIND_ACCEPT: Partial<Record<ProjectSourceKind, string>> = {
-  PDF: 'application/pdf,.pdf',
-  AUDIO: 'audio/*',
-  IMAGE: 'image/*',
-  INVOICE: 'application/pdf,.pdf,image/*',
-  TEXT: '.txt,.md,.docx,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-};
-
-const EXTRACTION_LABEL: Record<string, string> = {
-  EXTRACTED: 'Extracción automática',
-  MANUAL: 'Transcripción manual',
-  PENDING: 'Pendiente de extracción',
-  UNSUPPORTED: 'No extraído (tipo no soportado automáticamente)',
-  FAILED: 'La extracción automática falló',
-};
+import {
+  ExtractedTextPanel,
+  SOURCE_KIND_LABELS,
+  SourceKindHint,
+  SourcePreview,
+  SourceStatusBadge,
+  sourceKindAccept,
+  sourceStatus,
+  useSourceCapabilities,
+} from '../../components/source-panels';
 
 // A source doesn't become stale itself — it's the authoritative, newer
 // knowledge. What can happen is that something *downstream* (today, only
@@ -93,6 +83,41 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
   const [description, setDescription] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const capabilities = useSourceCapabilities(projectId);
+
+  function clearFile() {
+    setFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  // The kind follows the file: a file of another format switches the kind
+  // (with a notice) instead of failing on upload.
+  function chooseFile(next: File | null) {
+    if (next && next.type && !sourceKindAcceptsMimeType(sourceKind, next.type)) {
+      const detected = sourceKindForMimeType(next.type);
+      if (!detected) {
+        toast.error('Este formato de archivo no está permitido.');
+        clearFile();
+        return;
+      }
+      setSourceKind(detected);
+      toast.info(`Se cambió el tipo a «${SOURCE_KIND_LABELS[detected]}» según el archivo.`);
+    }
+    setFile(next);
+  }
+
+  function chooseKind(next: ProjectSourceKind) {
+    setSourceKind(next);
+    if (file && !sourceKindAcceptsMimeType(next, file.type)) {
+      clearFile();
+      toast.info(
+        next === 'NOTES'
+          ? 'Las notas no llevan archivo; se quitó el archivo seleccionado.'
+          : `Se quitó el archivo: no corresponde al tipo «${SOURCE_KIND_LABELS[next]}».`,
+      );
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -113,7 +138,7 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
       setPurpose('');
       setBusinessArea('');
       setDescription('');
-      setFile(null);
+      clearFile();
       onCreated();
       toast.success(
         created.processing
@@ -127,8 +152,6 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
     }
   }
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   return (
     <form
       onSubmit={handleSubmit}
@@ -138,12 +161,12 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5 text-sm">
           <Label htmlFor="source-kind">Tipo de fuente</Label>
-          <Select value={sourceKind} onValueChange={(v) => setSourceKind(v as ProjectSourceKind)}>
+          <Select value={sourceKind} onValueChange={(v) => chooseKind(v as ProjectSourceKind)}>
             <SelectTrigger id="source-kind" className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {SOURCE_KINDS.map((k) => (
+              {SELECTABLE_SOURCE_KINDS.map((k) => (
                 <SelectItem key={k} value={k}>
                   {SOURCE_KIND_LABELS[k]}
                 </SelectItem>
@@ -161,6 +184,7 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
           />
         </div>
       </div>
+      <SourceKindHint kind={sourceKind} capabilities={capabilities.data} />
       <div className="flex flex-col gap-1.5 text-sm">
         <Label htmlFor="source-purpose">¿Qué representa esta fuente?</Label>
         <Textarea
@@ -186,9 +210,9 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
             ref={fileInputRef}
             id="source-file"
             type="file"
-            accept={SOURCE_KIND_ACCEPT[sourceKind]}
+            accept={sourceKindAccept(sourceKind)}
             className="sr-only"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            onChange={(e) => chooseFile(e.target.files?.[0] ?? null)}
           />
           <div className="flex gap-1">
             <Button
@@ -206,10 +230,7 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
                 variant="ghost"
                 size="icon"
                 aria-label="Quitar archivo"
-                onClick={() => {
-                  setFile(null);
-                  if (fileInputRef.current) fileInputRef.current.value = '';
-                }}
+                onClick={clearFile}
               >
                 <X className="size-4" aria-hidden="true" />
               </Button>
@@ -234,12 +255,6 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
           onChange={(e) => setDescription(e.target.value)}
         />
       </div>
-      {sourceKind === 'AUDIO' && file ? (
-        <p className="text-xs text-muted-foreground">
-          Si hay un servicio de transcripción configurado, el audio se enviará a ese servicio. Puede
-          registrar la fuente y transcribirla manualmente si el servicio no está disponible.
-        </p>
-      ) : null}
       <Button type="submit" disabled={submitting} className="self-start">
         {submitting ? 'Guardando…' : 'Agregar fuente'}
       </Button>
@@ -262,7 +277,6 @@ function SourceCard({
     [staleness, source.id],
   );
   const queryClient = useQueryClient();
-  const [transcript, setTranscript] = useState('');
   const [manualSummary, setManualSummary] = useState('');
   const [generatingReport, setGeneratingReport] = useState(false);
   const [reportCandidate, setReportCandidate] = useState<SourceReportCandidate | null>(null);
@@ -309,16 +323,6 @@ function SourceCard({
       toast.error(err instanceof ApiError ? err.message : 'No se pudo aprobar la fuente.');
     } finally {
       setApproving(false);
-    }
-  }
-
-  async function submitTranscript() {
-    try {
-      await api.sources.submitManualTranscript(projectId, source.id, transcript);
-      setTranscript('');
-      invalidate();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'No se pudo guardar la transcripción.');
     }
   }
 
@@ -382,24 +386,12 @@ function SourceCard({
   const staleProcessing =
     processing?.status === 'RUNNING' &&
     Date.now() - new Date(processing.updatedAt).getTime() > 15 * 60_000;
-  const processingLabel =
-    processing?.status === 'QUEUED'
-      ? longWait
-        ? 'En cola desde hace varios minutos; puede transcribir manualmente o volver después'
-        : 'En cola'
-      : processing?.status === 'RUNNING'
-        ? staleProcessing
-          ? 'El procesamiento tardó demasiado; puede reintentarlo o transcribirlo manualmente'
-          : processing.processor === 'OCR'
-            ? 'Aplicando OCR'
-            : processing.processor === 'TRANSCRIPTION'
-              ? 'Transcribiendo audio'
-              : 'Extrayendo texto'
-        : processing?.status === 'FAILED'
-          ? 'Procesamiento fallido'
-          : processing?.status === 'UNSUPPORTED'
-            ? 'Procesador no disponible'
-            : EXTRACTION_LABEL[source.source.extractionState];
+  const status = sourceStatus(source);
+  const waitNotice = longWait
+    ? 'Lleva varios minutos en cola; puede escribir la transcripción a mano o volver después.'
+    : staleProcessing
+      ? 'El procesamiento tardó demasiado; puede reintentarlo o escribir la transcripción a mano.'
+      : null;
 
   return (
     <li className="rounded-lg border border-border bg-card p-4">
@@ -434,15 +426,18 @@ function SourceCard({
           </Button>
         </div>
       </div>
-      <p className="mt-1 text-sm text-muted-foreground">
-        {source.source.sourceKind} · {processingLabel}
-      </p>
-      {processing && (['FAILED', 'UNSUPPORTED'].includes(processing.status) || staleProcessing) ? (
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-amber-700">
-          <span>{processing.errorMessage}</span>
-          <Button type="button" variant="outline" size="sm" onClick={retryProcessing}>
-            Reintentar
-          </Button>
+      <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+        <span>{SOURCE_KIND_LABELS[source.source.sourceKind]}</span>
+        <SourceStatusBadge tone={status.tone} label={status.label} />
+      </div>
+      {status.reason || waitNotice ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-amber-700 dark:text-amber-400">
+          <span>{waitNotice ?? status.reason}</span>
+          {status.retryable || staleProcessing ? (
+            <Button type="button" variant="outline" size="sm" onClick={retryProcessing}>
+              Reintentar
+            </Button>
+          ) : null}
         </div>
       ) : null}
 
@@ -503,19 +498,18 @@ function SourceCard({
             <p className="whitespace-pre-line text-foreground">{source.source.description}</p>
           </section>
 
-          {source.source.hasExtractedText ? (
-            <div className="rounded-md border border-border bg-muted/20 p-3">
-              <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                <FileText className="size-3.5" aria-hidden="true" />
-                Texto extraído para revisión
-              </p>
-              {extractedText.isLoading ? <p>Cargando texto…</p> : null}
-              {extractedText.isError ? <p>No se pudo cargar el texto.</p> : null}
-              {extractedText.data ? (
-                <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-xs">
-                  {extractedText.data.text}
-                </pre>
-              ) : null}
+          {source.source.originalFilename ? (
+            // The original next to its text, so a reading or transcription
+            // error can be corrected while looking at the source.
+            <div className="grid gap-3 lg:grid-cols-2">
+              <SourcePreview projectId={projectId} source={source} />
+              <ExtractedTextPanel
+                projectId={projectId}
+                source={source}
+                text={extractedText.data?.text}
+                loading={source.source.hasExtractedText && extractedText.isLoading}
+                onSaved={invalidate}
+              />
             </div>
           ) : null}
 
@@ -524,6 +518,22 @@ function SourceCard({
               <Pencil className="size-3.5" aria-hidden="true" />
               Editar
             </Button>
+            {source.source.originalFilename ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  downloadFile(
+                    api.sources.downloadUrl(projectId, source.id),
+                    source.source.originalFilename!,
+                  ).catch(() => toast.error('No se pudo descargar el archivo.'))
+                }
+              >
+                <Download className="size-3.5" aria-hidden="true" />
+                Descargar original
+              </Button>
+            ) : null}
             {source.hasApprovedHistory ? (
               source.archivedAt ? null : (
                 <Button
@@ -586,44 +596,6 @@ function SourceCard({
                 }}
               />
             )
-          ) : null}
-
-          {canSubmitTranscript ? (
-            <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
-              <p className="mb-2 text-amber-800">
-                {source.source.hasExtractedText
-                  ? 'Revise el texto extraído. Si tiene errores, guarde una versión corregida.'
-                  : 'Puede escribir una transcripción o corrección manual mientras se procesa el archivo.'}
-              </p>
-              {extractedText.data ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setTranscript(extractedText.data!.text)}
-                  className="mb-2"
-                >
-                  Copiar texto extraído para corregir
-                </Button>
-              ) : null}
-              <textarea
-                className="w-full rounded-md border border-input px-2 py-1"
-                rows={3}
-                value={transcript}
-                onChange={(e) => setTranscript(e.target.value)}
-                placeholder="Transcripción manual…"
-              />
-              <Button
-                variant="default"
-                size="sm"
-                type="button"
-                onClick={submitTranscript}
-                disabled={!transcript.trim()}
-                className="mt-2"
-              >
-                Guardar transcripción
-              </Button>
-            </div>
           ) : null}
 
           <div>
@@ -788,6 +760,14 @@ function EditSourceForm({
 }) {
   const [title, setTitle] = useState(source.source.title);
   const [sourceKind, setSourceKind] = useState<ProjectSourceKind>(source.source.sourceKind);
+  // Kinds that fit the source's file; a retired kind stays available only to
+  // the source that already has it.
+  const editableKinds = [
+    ...SELECTABLE_SOURCE_KINDS,
+    ...(SELECTABLE_SOURCE_KINDS.includes(source.source.sourceKind as never)
+      ? []
+      : [source.source.sourceKind]),
+  ].filter((k) => !source.source.mimeType || sourceKindAcceptsMimeType(k, source.source.mimeType));
   const [purpose, setPurpose] = useState(source.source.purpose);
   const [businessArea, setBusinessArea] = useState(source.source.businessArea ?? '');
   const [description, setDescription] = useState(source.source.description);
@@ -829,7 +809,7 @@ function EditSourceForm({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {SOURCE_KINDS.map((k) => (
+              {editableKinds.map((k) => (
                 <SelectItem key={k} value={k}>
                   {SOURCE_KIND_LABELS[k]}
                 </SelectItem>
