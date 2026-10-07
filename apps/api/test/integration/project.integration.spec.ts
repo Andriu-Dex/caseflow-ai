@@ -84,6 +84,34 @@ describe('Project persistence', () => {
     expect(page.items.map((item) => item.id)).toEqual([second.id]);
   });
 
+  it('filters by text, status and route, reports the total and restores archived projects', async () => {
+    const workspace = await createWorkspace(ctx.prisma, 'Filtros');
+    const shop = await ctx.projects.create({ workspaceId: workspace.id, name: 'Tienda Norte' });
+    await ctx.projects.create({
+      workspaceId: workspace.id,
+      name: 'Biblioteca',
+      description: 'Préstamos de la tienda escolar',
+      workflowRoute: 'EXPRESS',
+    });
+    await ctx.projects.create({ workspaceId: workspace.id, name: 'Clínica' });
+    await ctx.projects.archive(shop.id);
+
+    const names = async (filters: Parameters<typeof ctx.projects.list>[3]) =>
+      (await ctx.projects.list(workspace.id, 50, 0, filters)).items.map((p) => p.name);
+    expect(await names({ search: 'TIENDA', sort: 'NAME' })).toEqual(['Biblioteca', 'Tienda Norte']);
+    expect(await names({ status: 'ARCHIVED' })).toEqual(['Tienda Norte']);
+    expect(await names({ status: 'ACTIVE', sort: 'NAME' })).toEqual(['Biblioteca', 'Clínica']);
+    expect(await names({ workflowRoute: 'EXPRESS' })).toEqual(['Biblioteca']);
+
+    const page = await ctx.projects.list(workspace.id, 2, 2, { sort: 'NAME' });
+    expect(page).toMatchObject({ total: 3, limit: 2, offset: 2 });
+    expect(page.items.map((p) => p.name)).toEqual(['Tienda Norte']);
+
+    const restored = await ctx.projects.unarchive(shop.id);
+    expect(restored.archivedAt).toBeNull();
+    await expect(ctx.projects.unarchive(shop.id)).rejects.toThrow('El proyecto no está archivado.');
+  });
+
   describe('deletion', () => {
     it('permanently deletes a project that has nothing approved, cascading its artifacts', async () => {
       const workspace = await createWorkspace(ctx.prisma);

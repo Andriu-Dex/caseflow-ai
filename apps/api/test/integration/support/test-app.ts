@@ -71,7 +71,12 @@ export interface TestContext {
   prisma: PrismaService;
   projects: Omit<ProjectsService, 'create' | 'list'> & {
     create(input: CreateProjectRequest): Promise<ProjectResponse>;
-    list(workspaceId: string, limit: number, offset: number): ReturnType<ProjectsService['list']>;
+    list(
+      workspaceId: string,
+      limit: number,
+      offset: number,
+      filters?: Partial<Parameters<ProjectsService['list']>[0]>,
+    ): ReturnType<ProjectsService['list']>;
   };
   artifacts: ArtifactsService;
   projectContext: ProjectContextService;
@@ -219,12 +224,15 @@ export async function createTestContext(
           };
         }
         if (property === 'list') {
-          return (workspaceId: string, limit: number, offset: number) =>
-            (Reflect.get(target, 'list') as ProjectsService['list']).call(
+          return (
+            workspaceId: string,
+            limit: number,
+            offset: number,
+            filters: Partial<Parameters<ProjectsService['list']>[0]> = {},
+          ) =>
+            (Reflect.get(target, 'list') as unknown as ProjectsService['list']).call(
               target,
-              workspaceId,
-              limit,
-              offset,
+              { workspaceId, limit, offset, status: 'ALL', sort: 'OLDEST', ...filters },
               user.id,
             );
         }

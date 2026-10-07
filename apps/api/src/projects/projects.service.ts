@@ -11,10 +11,15 @@ import {
   type ProjectListResponse,
   type ProjectResponse,
   type ProjectLanguage,
+  type listProjectsQuerySchema,
 } from '@caseflow-ai/contracts';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../database/prisma.service';
 import { toProjectResponse } from './projects.mapper';
+import type { Prisma } from '../generated/prisma/client';
+import type { z } from 'zod';
+
+type ListProjectsQueryOutput = z.output<typeof listProjectsQuerySchema>;
 
 @Injectable()
 export class ProjectsService {
@@ -58,23 +63,40 @@ export class ProjectsService {
     return toProjectResponse(project, false);
   }
 
-  async list(
-    workspaceId: string,
-    limit: number,
-    offset: number,
-    userId: string,
-  ): Promise<ProjectListResponse> {
-    const projects = await this.prisma.project.findMany({
-      where: { workspaceId, projectMemberships: { some: { userId } } },
-      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-      take: limit,
-      skip: offset,
-    });
+  async list(query: ListProjectsQueryOutput, userId: string): Promise<ProjectListResponse> {
+    const { workspaceId, limit, offset, search, status, workflowRoute, sort } = query;
+    const where: Prisma.ProjectWhereInput = {
+      workspaceId,
+      projectMemberships: { some: { userId } },
+      ...(status === 'ACTIVE' ? { archivedAt: null } : {}),
+      ...(status === 'ARCHIVED' ? { archivedAt: { not: null } } : {}),
+      ...(workflowRoute ? { workflowRoute } : {}),
+      ...(search
+        ? {
+            OR: [
+              { name: { contains: search, mode: 'insensitive' } },
+              { description: { contains: search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+    // The id tie-breaker keeps pages stable when sort values repeat.
+    const orderBy: Prisma.ProjectOrderByWithRelationInput[] = {
+      OLDEST: [{ createdAt: 'asc' }, { id: 'asc' }],
+      RECENT: [{ createdAt: 'desc' }, { id: 'desc' }],
+      UPDATED: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      NAME: [{ name: 'asc' }, { id: 'asc' }],
+    }[sort] as Prisma.ProjectOrderByWithRelationInput[];
+    const [projects, total] = await Promise.all([
+      this.prisma.project.findMany({ where, orderBy, take: limit, skip: offset }),
+      this.prisma.project.count({ where }),
+    ]);
     const approvedProjectIds = await this.projectIdsWithApprovedArtifacts(
       projects.map((p) => p.id),
     );
     return {
       items: projects.map((p) => toProjectResponse(p, approvedProjectIds.has(p.id))),
+      total,
       limit,
       offset,
     };
@@ -118,6 +140,19 @@ export class ProjectsService {
     const updated = await this.prisma.project.update({
       where: { id: projectId },
       data: { archivedAt: new Date() },
+    });
+    return toProjectResponse(updated, await this.hasApprovedArtifacts(projectId));
+  }
+
+  // Undoes archive(): the project becomes active again, history untouched.
+  async unarchive(projectId: string): Promise<ProjectResponse> {
+    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) throw new NotFoundException('Proyecto no encontrado.');
+    if (!project.archivedAt)
+      throw new UnprocessableEntityException('El proyecto no está archivado.');
+    const updated = await this.prisma.project.update({
+      where: { id: projectId },
+      data: { archivedAt: null },
     });
     return toProjectResponse(updated, await this.hasApprovedArtifacts(projectId));
   }

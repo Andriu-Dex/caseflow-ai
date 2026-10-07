@@ -30,8 +30,11 @@ export function ProjectSwitcher() {
   const workspaceId = workspaces.data?.items[0]?.id;
 
   const projects = useQuery({
-    queryKey: ['projects', workspaceId],
-    queryFn: () => api.projects.list(workspaceId!),
+    // Only active projects, most recently touched first; the Projects page
+    // has the full, filterable list.
+    queryKey: ['projects', workspaceId, 'switcher'],
+    queryFn: () =>
+      api.projects.list(workspaceId!, { status: 'ACTIVE', sort: 'UPDATED', limit: 100 }),
     enabled: Boolean(workspaceId),
   });
 

@@ -149,6 +149,10 @@ describe('OpenAPI contract', () => {
     expect(params('/projects', 'get').sort()).toEqual([
       'query:limit:false',
       'query:offset:false',
+      'query:search:false',
+      'query:sort:false',
+      'query:status:false',
+      'query:workflowRoute:false',
       'query:workspaceId:true',
     ]);
     const projectId = operation(PROJECT, 'get').parameters[0];
@@ -183,6 +187,7 @@ describe('OpenAPI contract', () => {
     );
     expect(Object.keys(schema('/projects', 'get', '200').properties)).toEqual([
       'items',
+      'total',
       'limit',
       'offset',
     ]);
