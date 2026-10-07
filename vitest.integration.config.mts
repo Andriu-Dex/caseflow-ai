@@ -18,7 +18,14 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['**/*.integration.spec.ts'],
-    exclude: ['**/node_modules/**', '**/dist/**', '**/.next/**'],
+    // apps/desktop/build holds packaging copies of the API and web.
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/.next/**',
+      'apps/desktop/build/**',
+      'apps/desktop/release/**',
+    ],
     // dotenv loads .env; the second setup file then re-points DATABASE_URL at
     // the test database so nothing in an integration run can reach `caseflow`.
     setupFiles: ['dotenv/config', './apps/api/test/integration/support/use-test-database.ts'],

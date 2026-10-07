@@ -1,0 +1,49 @@
+# CASEFlow AI desktop installers (DEC-117). Code signing and automatic
+# updates are out of scope (V2 extensions plan, E4).
+appId: ai.caseflow.desktop
+productName: CASEFlow AI
+copyright: Copyright 2026 Andriu Dex
+directories:
+  output: release
+files:
+  - dist/**
+  - package.json
+  - '!**/*.map'
+# Resolved next to the app at runtime through process.resourcesPath, in the
+# same layout as the repository (see src/main.ts).
+extraResources:
+  - from: ../../prisma/migrations
+    to: prisma/migrations
+  # `pnpm deploy` output: the compiled API with real (not symlinked) modules.
+  - from: build/api
+    to: apps/api
+    filter:
+      - dist/**
+      - package.json
+      - '!**/*.map'
+  # Declared on its own: electron-builder skips node_modules inside a resource.
+  - from: build/api/node_modules
+    to: apps/api/node_modules
+  # scripts/build-web.mjs output: the self-contained web server.
+  - from: build/web
+    to: apps/web
+    filter:
+      - '**/*'
+      - '!node_modules/**'
+  - from: build/web/node_modules
+    to: apps/web/node_modules
+  - from: ../../LICENSE
+    to: LICENSE
+  - from: ../../NOTICE
+    to: NOTICE
+win:
+  target: nsis
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+mac:
+  target: dmg
+  category: public.app-category.developer-tools
+linux:
+  target: AppImage
+  category: Development

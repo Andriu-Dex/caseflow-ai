@@ -637,6 +637,9 @@ export const api = {
     create: (projectId: string, data: CreateDesignBaselineRequest) =>
       post<DesignBaselineResponse>(`/projects/${projectId}/design-baselines`, data),
   },
+  construction: {
+    sandboxStatus: () => get<{ available: boolean }>('/construction/sandbox-status'),
+  },
   // Route orchestration from one prompt (BUILD_ONLY, DEC-116).
   workflowRuns: {
     list: (projectId: string) =>

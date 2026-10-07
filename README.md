@@ -182,6 +182,30 @@ If a native PostgreSQL service is running, you will likely need to stop it while
 
 **Docker Desktop must be running before `pnpm infra:up`.** On Windows, start Docker Desktop and wait for it to report "running" before bringing up infrastructure — `docker compose` commands will fail with a connection error to the Docker API otherwise.
 
+## Desktop edition
+
+`apps/desktop` packages the same API and web app as an Electron application (DEC-117, DEC-120). It runs entirely on loopback:
+
+- **Database:** PGlite (PostgreSQL compiled to WebAssembly, with pgvector), served on port 4802. The official Prisma migrations are applied at startup.
+- **API:** port 4801, with an in-process queue (`CASEFLOW_QUEUE_MODE=in-process`, no Redis or worker) and files stored in the user's data folder.
+- **Web:** port 4800, as a Next.js standalone server.
+
+Docker is only needed to validate generated code. Without it, planning works, and the code generation page shows an installation assistant.
+
+```bash
+pnpm --filter @caseflow-ai/desktop run build:all   # API deploy, web standalone, Electron main
+pnpm --filter @caseflow-ai/desktop start           # run from the repository
+pnpm --filter @caseflow-ai/desktop run package     # installers in apps/desktop/release
+```
+
+Optional settings go in `caseflow.env` inside the app's data folder (`%APPDATA%\CASEFlow AI` on Windows), one `KEY=VALUE` per line. You can set:
+
+- `AI_PROVIDER`, `AI_BASE_URL`, `AI_API_KEY` and `AI_MODEL`;
+- `MOCKUP_PROVIDER`;
+- `KROKI_BASE_URL`.
+
+Diagrams are rendered by the public `https://kroki.io` service unless `KROKI_BASE_URL` points to your own Kroki. Secrets are generated on first start and never leave the machine.
+
 ## Architecture documentation
 
 - **`docs/CASEFLOW_AI_SPEC.md`** is the authoritative product and architecture specification.
