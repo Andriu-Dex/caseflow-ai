@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-export const PORTS = { web: 4800, api: 4801, database: 4802 } as const;
+export const PORTS = { web: 4800, api: 4801, database: 4802, broker: 4803 } as const;
 
 // The window may only show the app itself: compared by exact origin, so
 // 'http://127.0.0.1:4800.example.com' or 'http://127.0.0.1:48000' never pass.
@@ -49,9 +49,20 @@ export function parseEnvFile(text: string): Record<string, string> {
 }
 
 // Environment of the API process in the desktop edition (DEC-120).
+// Whether caseflow.env names its own AI provider (the alternative offered
+// when the ChatGPT plan is paused).
+export async function hasConfiguredAIProvider(dataDir: string): Promise<boolean> {
+  const userFile = join(dataDir, 'caseflow.env');
+  if (!existsSync(userFile)) return false;
+  const provider = parseEnvFile(await readFile(userFile, 'utf8')).AI_PROVIDER;
+  return Boolean(provider && provider !== 'disabled');
+}
+
 export async function apiEnvironment(
   dataDir: string,
   databaseUrl: string,
+  // The ChatGPT plan (DEC-117) when the user connected and chose it.
+  chatgpt: { model: string; brokerUrl: string; brokerSecret: string } | null = null,
 ): Promise<Record<string, string>> {
   await mkdir(join(dataDir, 'objects'), { recursive: true });
   const secrets = await loadSecrets(dataDir);
@@ -66,6 +77,14 @@ export async function apiEnvironment(
     AI_PROVIDER: 'disabled',
     MOCKUP_PROVIDER: 'disabled',
     ...user,
+    ...(chatgpt
+      ? {
+          AI_PROVIDER: 'chatgpt',
+          AI_MODEL: chatgpt.model,
+          CHATGPT_BROKER_URL: chatgpt.brokerUrl,
+          CHATGPT_BROKER_SECRET: chatgpt.brokerSecret,
+        }
+      : {}),
     // Fixed by the desktop edition: the user file cannot override these.
     DATABASE_URL: databaseUrl,
     API_PORT: String(PORTS.api),
