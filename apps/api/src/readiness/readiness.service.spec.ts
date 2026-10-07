@@ -39,7 +39,7 @@ describe('ReadinessService', () => {
     const { service } = setup();
     const result = await service.evaluate('p');
     expect(result.ready).toBe(false);
-    expect(result.stages).toHaveLength(14);
+    expect(result.stages).toHaveLength(15);
     // IMPACT is vacuously satisfied (no staleness detected) even when every
     // other stage is unsatisfied for lack of any artifact at all.
     expect(result.stages.filter((s) => s.key !== 'IMPACT').every((s) => !s.satisfied)).toBe(true);

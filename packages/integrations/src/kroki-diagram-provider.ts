@@ -20,6 +20,7 @@ const KROKI_DIAGRAM_TYPE: Record<DiagramFormat, string> = {
   PLANTUML: 'plantuml',
   PLANTUML_COMPONENT: 'plantuml',
   PLANTUML_DEPLOYMENT: 'plantuml',
+  MERMAID_CLASS: 'mermaid',
 };
 
 // Response bound applied while streaming, independent of any Content-Length

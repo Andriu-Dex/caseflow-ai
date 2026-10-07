@@ -86,6 +86,7 @@ describe('DesignBaselinePage', () => {
       versions: {
         GENERATION_PLAN: 'GENERATION_PLAN-v1',
         CONCEPTUAL_DOMAIN_MODEL: 'CONCEPTUAL_DOMAIN_MODEL-v1',
+        CLASS_DIAGRAM: 'CLASS_DIAGRAM-v1',
         NAVIGATION_TREE: 'NAVIGATION_TREE-v1',
         UI_BLUEPRINT: 'UI_BLUEPRINT-v2',
         DESIGN_THEME: 'DESIGN_THEME-v1',
@@ -94,11 +95,15 @@ describe('DesignBaselinePage', () => {
     });
   });
 
-  // DEC-118: older projects without a theme keep freezing their unthemed mockup.
+  // DEC-118/DEC-121: older projects without a theme or class diagram keep
+  // freezing their unthemed mockup.
   it('freezes a design without a theme when the project has none', async () => {
     const user = userEvent.setup();
     mocks.listStructured.mockImplementation(async (_: string, kind: string) => ({
-      items: kind === 'DESIGN_THEME' || kind.endsWith('ARCHITECTURE') ? [] : [approved(kind, 1)],
+      items:
+        kind === 'DESIGN_THEME' || kind === 'CLASS_DIAGRAM' || kind.endsWith('ARCHITECTURE')
+          ? []
+          : [approved(kind, 1)],
     }));
     mocks.listMockups.mockResolvedValue({
       items: [

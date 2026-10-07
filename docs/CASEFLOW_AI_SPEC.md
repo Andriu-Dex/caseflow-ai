@@ -7682,7 +7682,7 @@ Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones
 
 ## 221.1 Rutas de trabajo (DEC-116, ADR-001)
 
-Cada proyecto se crea en una ruta: **Completa** (`FULL`, los 12 pasos con revisión humana), **Exprés** (`EXPRESS`, planificación generada desde un prompt y aprobada en bloque) o **Solo construcción** (`BUILD_ONLY`, planificación oculta y aprobación automática hasta la app validada). Solo se sube de ruta, nunca se baja.
+Cada proyecto se crea en una ruta: **Completa** (`FULL`, los 13 pasos con revisión humana), **Exprés** (`EXPRESS`, planificación generada desde un prompt y aprobada en bloque) o **Solo construcción** (`BUILD_ONLY`, planificación oculta y aprobación automática hasta la app validada). Solo se sube de ruta, nunca se baja.
 
 En todas las rutas se mantienen: el prompt inicial como `PROJECT_SOURCE`, la planificación completa y trazable, la generación incremental por etapas (DEC-111), la validación en sandbox (§174–§175), el catálogo de dependencias (§155) y los snapshots inmutables (§172). El origen de cada aprobación (`HUMAN`, `HUMAN_BULK`, `AUTOMATIC`) se registra y nunca se reescribe. La única exención es la de §160 para `BUILD_ONLY`.
 

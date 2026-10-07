@@ -33,8 +33,47 @@ export type TraceabilityDiagramModel = {
   nodes: { id: string; code: string; title: string }[];
   edges: { fromId: string; toId: string }[];
 };
+export type ClassDiagramModel = {
+  classes: {
+    localId: string;
+    name: string;
+    stereotype?: string;
+    attributes: { name: string; type: string; visibility?: string }[];
+    methods: {
+      name: string;
+      parameters: { name: string; type: string }[];
+      returnType?: string;
+      visibility?: string;
+    }[];
+  }[];
+  relationships: {
+    fromLocalId: string;
+    toLocalId: string;
+    kind: string;
+    label?: string;
+    fromMultiplicity?: string;
+    toMultiplicity?: string;
+  }[];
+};
 export type DiagramFormat =
-  'MERMAID_ER' | 'PLANTUML' | 'MERMAID_FLOWCHART' | 'PLANTUML_COMPONENT' | 'PLANTUML_DEPLOYMENT';
+  | 'MERMAID_ER'
+  | 'PLANTUML'
+  | 'MERMAID_FLOWCHART'
+  | 'PLANTUML_COMPONENT'
+  | 'PLANTUML_DEPLOYMENT'
+  | 'MERMAID_CLASS';
+const visibilitySymbol: Record<string, string> = { PUBLIC: '+', PRIVATE: '-', PROTECTED: '#' };
+// Mermaid writes generics with '~' (List~Pedido~) and has no room for braces.
+const classText = (value: string) =>
+  quote(value)
+    .replace(/[<>]/g, '~')
+    .replace(/[{}:;]/g, ' ');
+const relationshipArrow: Record<string, string> = {
+  ASSOCIATION: '-->',
+  AGGREGATION: 'o--',
+  COMPOSITION: '*--',
+  DEPENDENCY: '..>',
+};
 const cardinality: Record<string, string> = {
   ONE: '||',
   ZERO_OR_ONE: 'o|',
@@ -210,6 +249,49 @@ export class DiagramEngine {
     return lines.join('\n');
   }
 
+  // Deterministic Mermaid classDiagram from the structured domain class
+  // diagram (DEC-121): same input, byte-identical source.
+  generateClassDiagram(model: ClassDiagramModel): string {
+    const classes = [...model.classes].sort((a, b) => compareOrdinal(a.localId, b.localId));
+    const lines = ['classDiagram'];
+    for (const cls of classes) {
+      lines.push(`  class ${safeId(cls.localId)}["${classText(cls.name)}"] {`);
+      if (cls.stereotype && cls.stereotype !== 'ENTITY')
+        lines.push(
+          `    <<${cls.stereotype === 'VALUE_OBJECT' ? 'value object' : cls.stereotype.toLowerCase()}>>`,
+        );
+      for (const attribute of cls.attributes)
+        lines.push(
+          `    ${visibilitySymbol[attribute.visibility ?? 'PRIVATE'] ?? '-'}${classText(attribute.type)} ${classText(attribute.name)}`,
+        );
+      for (const method of cls.methods)
+        lines.push(
+          `    ${visibilitySymbol[method.visibility ?? 'PUBLIC'] ?? '+'}${classText(method.name)}(${method.parameters
+            .map((parameter) => `${classText(parameter.type)} ${classText(parameter.name)}`)
+            .join(', ')})${method.returnType ? ` ${classText(method.returnType)}` : ''}`,
+        );
+      lines.push('  }');
+    }
+    for (const relationship of model.relationships) {
+      const from = safeId(relationship.fromLocalId);
+      const to = safeId(relationship.toLocalId);
+      const label = relationship.label ? ` : ${classText(relationship.label)}` : '';
+      if (relationship.kind === 'INHERITANCE') {
+        // "from" specializes "to": Parent <|-- Child.
+        lines.push(`  ${to} <|-- ${from}${label}`);
+        continue;
+      }
+      const fromMultiplicity = relationship.fromMultiplicity
+        ? ` "${relationship.fromMultiplicity}"`
+        : '';
+      const toMultiplicity = relationship.toMultiplicity ? `"${relationship.toMultiplicity}" ` : '';
+      lines.push(
+        `  ${from}${fromMultiplicity} ${relationshipArrow[relationship.kind] ?? '-->'} ${toMultiplicity}${to}${label}`,
+      );
+    }
+    return lines.join('\n');
+  }
+
   // Lightweight local pre-validation only: a cheap, fast-fail structural
   // check before the source ever reaches the real renderer. It is NOT a
   // Mermaid/PlantUML grammar and never establishes compatibility on its own —
@@ -218,16 +300,18 @@ export class DiagramEngine {
     const valid =
       format === 'MERMAID_ER'
         ? source.startsWith('erDiagram\n') && !/[<>;]/.test(source)
-        : format === 'MERMAID_FLOWCHART'
-          ? // No '<>;' block here: '>' is required by the flowchart's own
-            // "-->" arrow syntax. As with PLANTUML below, this is a cheap
-            // structural pre-check only — the real renderer + sanitizeDiagramSvg()
-            // are the compatibility/security authority (see class doc comment).
-            source.startsWith('flowchart TD\n')
-          : source.startsWith('@startuml\n') &&
-            source.endsWith('\n@enduml') &&
-            !source.includes('!include') &&
-            !source.includes('!pragma');
+        : format === 'MERMAID_CLASS'
+          ? source.startsWith('classDiagram\n') && !source.includes(';')
+          : format === 'MERMAID_FLOWCHART'
+            ? // No '<>;' block here: '>' is required by the flowchart's own
+              // "-->" arrow syntax. As with PLANTUML below, this is a cheap
+              // structural pre-check only — the real renderer + sanitizeDiagramSvg()
+              // are the compatibility/security authority (see class doc comment).
+              source.startsWith('flowchart TD\n')
+            : source.startsWith('@startuml\n') &&
+              source.endsWith('\n@enduml') &&
+              !source.includes('!include') &&
+              !source.includes('!pragma');
     if (!valid || source.length > 250_000)
       throw new UnprocessableEntityException('Fuente de diagrama no válida.');
   }

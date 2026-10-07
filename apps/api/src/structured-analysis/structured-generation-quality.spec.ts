@@ -191,3 +191,46 @@ describe('structured generation provenance checks', () => {
     ]);
   });
 });
+
+describe('class diagram coverage (DEC-121)', () => {
+  const dataModel = {
+    code: 'MD-001',
+    type: 'DATA_MODEL',
+    content: {
+      entities: [
+        { name: 'Cliente', attributes: [{ name: 'correo' }, { name: 'nombre' }] },
+        { name: 'Pedido', attributes: [{ name: 'total' }] },
+      ],
+    },
+  };
+  const content = {
+    classes: [
+      {
+        localId: 'cliente',
+        name: 'Cliente',
+        dataModelEntityName: 'cliente',
+        attributes: [{ name: 'Correo', type: 'string' }],
+        relatedSourceCodes: ['MD-001'],
+      },
+    ],
+  };
+
+  it('reports missing classes and attributes as errors in strict projects', () => {
+    const gaps = evaluateStructuredGeneration('CLASS_DIAGRAM', content, [dataModel]).filter(
+      (f) => f.code === 'COVERAGE_GAP',
+    );
+    expect(gaps.map((f) => f.severity)).toEqual(['ERROR', 'ERROR']);
+    expect(gaps.map((f) => f.message)).toEqual([
+      expect.stringContaining('«nombre»'),
+      expect.stringContaining('«Pedido»'),
+    ]);
+  });
+
+  it('downgrades gaps to warnings in projects without mandatory coherence', () => {
+    const gaps = evaluateStructuredGeneration('CLASS_DIAGRAM', content, [dataModel], {
+      strict: false,
+    }).filter((f) => f.code === 'COVERAGE_GAP');
+    expect(gaps).toHaveLength(2);
+    expect(gaps.every((f) => f.severity === 'WARNING')).toBe(true);
+  });
+});

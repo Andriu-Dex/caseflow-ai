@@ -500,6 +500,7 @@ export const api = {
         CONCEPTUAL_DOMAIN_MODEL: 'conceptual-domain-model',
         IMPLEMENTATION_PLAN: 'implementation-plan',
         DESIGN_THEME: 'design-theme',
+        CLASS_DIAGRAM: 'class-diagram',
       })[kind],
     list: (projectId: string, kind: StructuredAnalysisKind) =>
       get<{ items: StructuredAnalysisResponse[] }>(

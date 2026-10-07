@@ -417,6 +417,10 @@ describe('Readiness integration', () => {
     expect(result.stages.find((s) => s.key === 'DESIGN_THEME')?.satisfied).toBe(false);
     expect(result.stages.find((s) => s.key === 'MOCKUPS')?.satisfied).toBe(false);
 
+    // New projects require an approved class diagram (DEC-121).
+    expect(result.stages.find((s) => s.key === 'CLASS_DIAGRAM')?.satisfied).toBe(false);
+    await approved(ctx, projectId, 'CLASS_DIAGRAM');
+
     // New projects paint their mockups with an approved theme (DEC-118).
     await approved(ctx, projectId, 'DESIGN_THEME');
     result = await ctx.readiness.evaluate(projectId);

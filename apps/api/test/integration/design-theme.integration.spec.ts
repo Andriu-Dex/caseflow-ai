@@ -91,6 +91,7 @@ describe('Design theme integration', () => {
       GENERATION_PLAN: (await approved(ctx, projectId, 'GENERATION_PLAN')).version.id,
       CONCEPTUAL_DOMAIN_MODEL: (await approved(ctx, projectId, 'CONCEPTUAL_DOMAIN_MODEL')).version
         .id,
+      CLASS_DIAGRAM: (await approved(ctx, projectId, 'CLASS_DIAGRAM')).version.id,
       NAVIGATION_TREE: (await approved(ctx, projectId, 'NAVIGATION_TREE')).version.id,
       UI_BLUEPRINT: ui.version.id,
       MOCKUP: mockup.version.id,
@@ -129,7 +130,7 @@ describe('Design theme integration', () => {
     // What the migration does to every existing row.
     await ctx.prisma.project.update({
       where: { id: projectId },
-      data: { designThemeRequired: false },
+      data: { designThemeRequired: false, coherenceRequired: false },
     });
     const ui = await approved(ctx, projectId, 'UI_BLUEPRINT');
     const mockup = await approvedMockup(ctx, projectId, ui.version.id);

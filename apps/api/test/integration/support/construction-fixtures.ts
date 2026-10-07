@@ -20,6 +20,20 @@ export const CONTENT: Partial<Record<StructuredAnalysisKind, Record<string, unkn
       },
     ],
   },
+  CLASS_DIAGRAM: {
+    classes: [
+      {
+        localId: 'order',
+        name: 'Pedido',
+        attributes: [
+          { name: 'fecha', type: 'Date' },
+          { name: 'total', type: 'number' },
+        ],
+        methods: [],
+      },
+    ],
+    relationships: [],
+  },
   NAVIGATION_TREE: {
     nodes: [{ localId: 'home', label: 'Inicio', viewName: 'Inicio', kind: 'HOME' }],
   },
@@ -100,6 +114,8 @@ export async function freezableDesign(ctx: TestContext, pid: string) {
   return {
     GENERATION_PLAN: (await approved(ctx, pid, 'GENERATION_PLAN')).version.id,
     CONCEPTUAL_DOMAIN_MODEL: (await approved(ctx, pid, 'CONCEPTUAL_DOMAIN_MODEL')).version.id,
+    // New projects freeze their class diagram too (DEC-121).
+    CLASS_DIAGRAM: (await approved(ctx, pid, 'CLASS_DIAGRAM')).version.id,
     NAVIGATION_TREE: (await approved(ctx, pid, 'NAVIGATION_TREE')).version.id,
     UI_BLUEPRINT: ui.version.id,
     DESIGN_THEME: theme.version.id,

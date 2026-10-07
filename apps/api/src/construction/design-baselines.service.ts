@@ -11,6 +11,7 @@ import { AuditService } from '../audit/audit.service';
 const ROLE_LABELS: Record<DesignBaselineRole, string> = {
   GENERATION_PLAN: 'el plan de generación',
   CONCEPTUAL_DOMAIN_MODEL: 'el modelo conceptual',
+  CLASS_DIAGRAM: 'el diagrama de clases',
   NAVIGATION_TREE: 'la navegación',
   UI_BLUEPRINT: 'el plano de interfaz',
   DESIGN_THEME: 'el tema y los colores',
@@ -55,10 +56,15 @@ export class DesignBaselinesService {
     // DEC-118: the theme is mandatory only for projects created after it existed.
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      select: { designThemeRequired: true },
+      select: { designThemeRequired: true, coherenceRequired: true },
     });
     if (project?.designThemeRequired && !input.versions.DESIGN_THEME)
       throw new UnprocessableEntityException('Seleccione el tema aprobado del proyecto.');
+    // DEC-121: the class diagram is part of the frozen design in new projects.
+    if (project?.coherenceRequired && !input.versions.CLASS_DIAGRAM)
+      throw new UnprocessableEntityException(
+        'Seleccione el diagrama de clases aprobado del proyecto.',
+      );
     // Role order matters: the database checks the mockup against the UI
     // blueprint entry, so UI_BLUEPRINT is inserted before MOCKUP.
     const entries = DESIGN_BASELINE_ROLES.flatMap((role) => {

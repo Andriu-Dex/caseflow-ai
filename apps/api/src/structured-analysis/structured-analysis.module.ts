@@ -14,6 +14,7 @@ import {
   ImplementationPlanController,
 } from './construction-kinds.controller';
 import { DesignThemeController } from './design-theme.controller';
+import { ClassDiagramController } from './class-diagram.controller';
 
 @Module({
   // Reuses DataModelsModule's DiagramEngine/DIAGRAM_PROVIDER wiring — one
@@ -25,6 +26,7 @@ import { DesignThemeController } from './design-theme.controller';
     SystemArchitectureController,
     UiBlueprintController,
     DesignThemeController,
+    ClassDiagramController,
     GenerationPlanController,
     ConceptualDomainModelController,
     ImplementationPlanController,

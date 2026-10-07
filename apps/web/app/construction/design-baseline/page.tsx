@@ -20,6 +20,7 @@ type StructuredRole = Exclude<DesignBaselineRole, 'MOCKUP'>;
 const ROLE_LABELS: Record<DesignBaselineRole, string> = {
   GENERATION_PLAN: 'Plan de generación',
   CONCEPTUAL_DOMAIN_MODEL: 'Modelo conceptual',
+  CLASS_DIAGRAM: 'Diagrama de clases',
   NAVIGATION_TREE: 'Navegación',
   UI_BLUEPRINT: 'Plano de interfaz',
   DESIGN_THEME: 'Tema y colores',
@@ -31,6 +32,7 @@ const ROLE_LABELS: Record<DesignBaselineRole, string> = {
 const STRUCTURED_ROLES: StructuredRole[] = [
   'GENERATION_PLAN',
   'CONCEPTUAL_DOMAIN_MODEL',
+  'CLASS_DIAGRAM',
   'NAVIGATION_TREE',
   'UI_BLUEPRINT',
   'DESIGN_THEME',
@@ -81,12 +83,12 @@ function DesignBaselineContent({ projectId }: { projectId: string }) {
     return result;
   }, [structured]);
 
-  // The theme is preselected when there is one: it is mandatory for new
+  // The theme and class diagram are preselected when there is one: they are mandatory for new
   // projects (the API enforces it) and optional for older ones.
   const choice = (role: DesignBaselineRole) =>
     role in selected
       ? selected[role]
-      : REQUIRED.has(role) || role === 'DESIGN_THEME'
+      : REQUIRED.has(role) || role === 'DESIGN_THEME' || role === 'CLASS_DIAGRAM'
         ? options[role]?.[0]?.versionId
         : undefined;
   const uiBlueprintVersionId = choice('UI_BLUEPRINT');

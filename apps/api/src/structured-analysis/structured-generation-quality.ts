@@ -1,4 +1,6 @@
 import {
+  classDiagramContentSchema,
+  classDiagramCoverageGaps,
   conceptualDomainModelContentSchema,
   designThemeContentSchema,
   designThemeContrastIssues,
@@ -29,6 +31,8 @@ export function evaluateStructuredGeneration(
   kind: StructuredAnalysisKind,
   content: unknown,
   sources: GenerationSourceReference[],
+  // DEC-121: in projects with mandatory coherence, coverage gaps are errors.
+  options: { strict?: boolean } = {},
 ): GenerationQualityFinding[] {
   // A theme cites no sources; its review concern is accessibility. Low
   // contrast is a warning here (the candidate can still be fixed after
@@ -128,6 +132,23 @@ export function evaluateStructuredGeneration(
     }
     for (const screen of parsed.screens)
       checkReferences(`La pantalla «${screen.name}»`, screen.relatedSourceCodes ?? []);
+  } else if (kind === 'CLASS_DIAGRAM') {
+    const parsed = classDiagramContentSchema.parse(content);
+    for (const cls of parsed.classes)
+      checkReferences(`La clase «${cls.name}»`, cls.relatedSourceCodes ?? []);
+    const entities = sources
+      .filter((source) => source.type === 'DATA_MODEL')
+      .flatMap(
+        (source) =>
+          (source.content as { entities?: { name: string; attributes: { name: string }[] }[] })
+            ?.entities ?? [],
+      );
+    for (const message of classDiagramCoverageGaps(parsed, entities))
+      findings.push({
+        severity: options.strict === false ? 'WARNING' : 'ERROR',
+        code: 'COVERAGE_GAP',
+        message,
+      });
   } else if (kind === 'CONCEPTUAL_DOMAIN_MODEL') {
     const parsed = conceptualDomainModelContentSchema.parse(content);
     for (const entity of parsed.entities)

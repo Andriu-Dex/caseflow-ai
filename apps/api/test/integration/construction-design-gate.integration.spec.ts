@@ -87,6 +87,7 @@ describe('Construction Design Gate integration', () => {
     expect(res.body.entries.map((e: { role: string }) => e.role)).toEqual([
       'GENERATION_PLAN',
       'CONCEPTUAL_DOMAIN_MODEL',
+      'CLASS_DIAGRAM',
       'NAVIGATION_TREE',
       'UI_BLUEPRINT',
       'DESIGN_THEME',

@@ -4,7 +4,12 @@ import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { Plus, Trash2 } from 'lucide-react';
 import {
+  CLASS_MULTIPLICITIES,
+  CLASS_RELATIONSHIP_KINDS,
+  CLASS_STEREOTYPES,
+  CLASS_VISIBILITIES,
   CONCEPTUAL_CARDINALITIES,
+  type ClassDiagramContent,
   type ConceptualDomainModelContent,
   type GenerationPlanContent,
 } from '@caseflow-ai/contracts';
@@ -681,6 +686,337 @@ export function ConceptualDomainModelManualForm({
                 </option>
               ))}
             </select>
+          </Row>
+        ))}
+      </Section>
+    </ManualFormShell>
+  );
+}
+
+// ---- Class diagram (DEC-121) -------------------------------------------------
+// Members are written one per line in UML notation: "-nombre: Tipo" for an
+// attribute ("?" after the name marks it optional) and "+nombre(p: Tipo): Tipo"
+// for a method. The prefix is the visibility (+ public, - private, # protected).
+
+type ClassContent = ClassDiagramContent['classes'][number];
+type Visibility = (typeof CLASS_VISIBILITIES)[number];
+const VISIBILITY_BY_SYMBOL: Record<string, Visibility> = {
+  '+': 'PUBLIC',
+  '-': 'PRIVATE',
+  '#': 'PROTECTED',
+};
+const SYMBOL_BY_VISIBILITY: Record<Visibility, string> = {
+  PUBLIC: '+',
+  PRIVATE: '-',
+  PROTECTED: '#',
+};
+
+function splitVisibility(line: string, fallback: Visibility): [Visibility, string] {
+  const visibility = VISIBILITY_BY_SYMBOL[line[0]!];
+  return visibility ? [visibility, line.slice(1).trim()] : [fallback, line];
+}
+
+function nameAndType(value: string): [string, string] {
+  const [name, ...type] = value.split(':');
+  return [name!.trim(), type.join(':').trim() || 'string'];
+}
+
+export function parseClassMembers(value: string) {
+  const attributes: ClassContent['attributes'] = [];
+  const methods: ClassContent['methods'] = [];
+  for (const line of lines(value)) {
+    const method = /^(.+?)\((.*)\)\s*(?::\s*(.+))?$/.exec(line);
+    if (method) {
+      const [visibility, name] = splitVisibility(method[1]!.trim(), 'PUBLIC');
+      methods.push({
+        name,
+        visibility,
+        returnType: method[3]?.trim() || undefined,
+        parameters: method[2]!
+          .split(',')
+          .map((parameter) => parameter.trim())
+          .filter(Boolean)
+          .map((parameter) => {
+            const [parameterName, type] = nameAndType(parameter);
+            return { name: parameterName, type };
+          }),
+      });
+      continue;
+    }
+    const [visibility, rest] = splitVisibility(line, 'PRIVATE');
+    const [rawName, type] = nameAndType(rest);
+    attributes.push({
+      name: rawName.replace(/\?$/, '').trim(),
+      type,
+      visibility,
+      required: !rawName.endsWith('?'),
+    });
+  }
+  return { attributes, methods };
+}
+
+export function formatClassMembers(cls: Pick<ClassContent, 'attributes' | 'methods'>): string {
+  return [
+    ...cls.attributes.map(
+      (a) => `${SYMBOL_BY_VISIBILITY[a.visibility]}${a.name}${a.required ? '' : '?'}: ${a.type}`,
+    ),
+    ...cls.methods.map(
+      (m) =>
+        `${SYMBOL_BY_VISIBILITY[m.visibility]}${m.name}(${m.parameters
+          .map((p) => `${p.name}: ${p.type}`)
+          .join(', ')})${m.returnType ? `: ${m.returnType}` : ''}`,
+    ),
+  ].join('\n');
+}
+
+export const CLASS_STEREOTYPE_LABELS: Record<(typeof CLASS_STEREOTYPES)[number], string> = {
+  ENTITY: 'Entidad',
+  VALUE_OBJECT: 'Objeto de valor',
+  ENUMERATION: 'Enumeración',
+  ABSTRACT: 'Abstracta',
+};
+export const CLASS_RELATIONSHIP_LABELS: Record<(typeof CLASS_RELATIONSHIP_KINDS)[number], string> =
+  {
+    ASSOCIATION: 'Asociación',
+    AGGREGATION: 'Agregación',
+    COMPOSITION: 'Composición',
+    INHERITANCE: 'Herencia',
+    DEPENDENCY: 'Dependencia',
+  };
+
+type Multiplicity = (typeof CLASS_MULTIPLICITIES)[number];
+type ClassRow = {
+  localId?: string;
+  name: string;
+  stereotype: (typeof CLASS_STEREOTYPES)[number];
+  dataModelEntityName: string;
+  members: string;
+  sourceCodes: string;
+};
+type ClassRelationshipRow = {
+  fromLocalId: string;
+  toLocalId: string;
+  kind: (typeof CLASS_RELATIONSHIP_KINDS)[number];
+  label: string;
+  fromMultiplicity: Multiplicity | '';
+  toMultiplicity: Multiplicity | '';
+};
+const EMPTY_CLASS: ClassRow = {
+  name: '',
+  stereotype: 'ENTITY',
+  dataModelEntityName: '',
+  members: '',
+  sourceCodes: '',
+};
+
+export function ClassDiagramManualForm({ projectId, initial, onCreated, onCancel }: FormProps) {
+  const m = initial?.content as ClassDiagramContent | undefined;
+  const [title, setTitle] = useState(initial?.title ?? '');
+  const classes = useRows<ClassRow>(
+    m?.classes.map((c) => ({
+      localId: c.localId,
+      name: c.name,
+      stereotype: c.stereotype,
+      dataModelEntityName: c.dataModelEntityName ?? '',
+      members: formatClassMembers(c),
+      sourceCodes: c.relatedSourceCodes?.join(', ') ?? '',
+    })) ?? [EMPTY_CLASS],
+  );
+  const relationships = useRows<ClassRelationshipRow>(
+    m?.relationships.map((r) => ({
+      fromLocalId: r.fromLocalId,
+      toLocalId: r.toLocalId,
+      kind: r.kind,
+      label: r.label ?? '',
+      fromMultiplicity: r.fromMultiplicity ?? '',
+      toMultiplicity: r.toMultiplicity ?? '',
+    })) ?? [],
+  );
+  const [submitting, setSubmitting] = useState(false);
+  const classIds = classes.rows.map((c, i) => rowId(c, 'cls', i));
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      const content: ClassDiagramContent = {
+        classes: classes.rows.map((row, i) => ({
+          localId: classIds[i]!,
+          name: row.name,
+          stereotype: row.stereotype,
+          dataModelEntityName: row.dataModelEntityName.trim() || undefined,
+          ...parseClassMembers(row.members),
+          relatedSourceCodes: csv(row.sourceCodes),
+        })),
+        relationships: relationships.rows
+          .filter((r) => r.fromLocalId && r.toLocalId)
+          .map((r) => ({
+            fromLocalId: r.fromLocalId,
+            toLocalId: r.toLocalId,
+            kind: r.kind,
+            label: r.label.trim() || undefined,
+            fromMultiplicity: r.fromMultiplicity || undefined,
+            toMultiplicity: r.toMultiplicity || undefined,
+          })),
+      };
+      await save(projectId, 'CLASS_DIAGRAM', initial, title, content);
+      onCreated();
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError ? err.message : 'No se pudo guardar el diagrama de clases.',
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <ManualFormShell
+      title={initial ? `Editar ${initial.code}` : 'Nuevo diagrama de clases'}
+      onSubmit={handleSubmit}
+      submitting={submitting}
+      editing={Boolean(initial)}
+      onCancel={onCancel}
+    >
+      <input
+        required
+        placeholder="Título"
+        className={input}
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+      />
+      <Section title="Clases" addLabel="Agregar clase" onAdd={() => classes.add(EMPTY_CLASS)}>
+        {classes.rows.map((row, i) => (
+          <Row
+            key={classIds[i]}
+            onRemove={() => (classes.rows.length > 1 ? classes.remove(i) : undefined)}
+          >
+            <input
+              required
+              placeholder="Clase"
+              className={`${input} w-40`}
+              value={row.name}
+              onChange={(e) => classes.update(i, { name: e.target.value })}
+            />
+            <select
+              aria-label="Estereotipo"
+              className={input}
+              value={row.stereotype}
+              onChange={(e) =>
+                classes.update(i, {
+                  stereotype: e.target.value as (typeof CLASS_STEREOTYPES)[number],
+                })
+              }
+            >
+              {CLASS_STEREOTYPES.map((s) => (
+                <option key={s} value={s}>
+                  {CLASS_STEREOTYPE_LABELS[s]}
+                </option>
+              ))}
+            </select>
+            <input
+              placeholder="Entidad del modelo de datos"
+              className={`${input} w-52`}
+              value={row.dataModelEntityName}
+              onChange={(e) => classes.update(i, { dataModelEntityName: e.target.value })}
+            />
+            <textarea
+              rows={4}
+              placeholder={
+                'Miembros, uno por línea: -nombre: Tipo (atributo; ? tras el nombre si es opcional) o +accion(p: Tipo): Tipo (método)'
+              }
+              className={`${input} w-full font-mono`}
+              value={row.members}
+              onChange={(e) => classes.update(i, { members: e.target.value })}
+            />
+            <TagInput
+              placeholder="Fuentes (códigos)"
+              className="w-56"
+              value={row.sourceCodes}
+              onChange={(val) => classes.update(i, { sourceCodes: val })}
+            />
+          </Row>
+        ))}
+      </Section>
+      <Section
+        title="Relaciones"
+        addLabel="Agregar relación"
+        onAdd={() =>
+          relationships.add({
+            fromLocalId: '',
+            toLocalId: '',
+            kind: 'ASSOCIATION',
+            label: '',
+            fromMultiplicity: '',
+            toMultiplicity: '',
+          })
+        }
+      >
+        {relationships.rows.map((r, i) => (
+          <Row key={i} onRemove={() => relationships.remove(i)}>
+            {(['fromLocalId', 'toLocalId'] as const).map((side) => (
+              <select
+                key={side}
+                required
+                aria-label={side === 'fromLocalId' ? 'Clase origen' : 'Clase destino'}
+                className={input}
+                value={r[side]}
+                onChange={(e) => relationships.update(i, { [side]: e.target.value })}
+              >
+                <option value="">{side === 'fromLocalId' ? 'Origen' : 'Destino'}</option>
+                {classes.rows.map((cls, index) => (
+                  <option key={classIds[index]} value={classIds[index]}>
+                    {cls.name || `Clase ${index + 1}`}
+                  </option>
+                ))}
+              </select>
+            ))}
+            <select
+              aria-label="Tipo de relación"
+              className={input}
+              value={r.kind}
+              onChange={(e) =>
+                relationships.update(i, {
+                  kind: e.target.value as (typeof CLASS_RELATIONSHIP_KINDS)[number],
+                })
+              }
+            >
+              {CLASS_RELATIONSHIP_KINDS.map((k) => (
+                <option key={k} value={k}>
+                  {CLASS_RELATIONSHIP_LABELS[k]}
+                </option>
+              ))}
+            </select>
+            {(['fromMultiplicity', 'toMultiplicity'] as const).map((side) => (
+              <select
+                key={side}
+                aria-label={
+                  side === 'fromMultiplicity'
+                    ? 'Multiplicidad de origen'
+                    : 'Multiplicidad de destino'
+                }
+                className={input}
+                value={r[side]}
+                onChange={(e) =>
+                  relationships.update(i, { [side]: e.target.value as Multiplicity | '' })
+                }
+              >
+                <option value="">
+                  {side === 'fromMultiplicity' ? 'Mult. origen' : 'Mult. destino'}
+                </option>
+                {CLASS_MULTIPLICITIES.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            ))}
+            <input
+              placeholder="Etiqueta (opcional)"
+              className={`${input} w-40`}
+              value={r.label}
+              onChange={(e) => relationships.update(i, { label: e.target.value })}
+            />
           </Row>
         ))}
       </Section>

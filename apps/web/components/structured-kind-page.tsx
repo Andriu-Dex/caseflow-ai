@@ -3,6 +3,7 @@
 import { GenerationOverlay } from './generation-overlay';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
+  ClassDiagramContent,
   ConceptualDomainModelContent,
   DesignThemeContent,
   DiagramResponse,
@@ -31,8 +32,12 @@ import {
   UiBlueprintManualForm,
 } from './structured-manual-forms';
 import {
+  CLASS_RELATIONSHIP_LABELS,
+  CLASS_STEREOTYPE_LABELS,
+  ClassDiagramManualForm,
   ConceptualDomainModelManualForm,
   GenerationPlanManualForm,
+  formatClassMembers,
 } from './construction-manual-forms';
 import { ImplementationPlanManualForm } from './implementation-plan-manual-form';
 import { DesignThemeManualForm, DesignThemePreview } from './design-theme';
@@ -67,12 +72,14 @@ const MANUAL_FORMS: Record<
   CONCEPTUAL_DOMAIN_MODEL: ConceptualDomainModelManualForm,
   IMPLEMENTATION_PLAN: ImplementationPlanManualForm,
   DESIGN_THEME: DesignThemeManualForm,
+  CLASS_DIAGRAM: ClassDiagramManualForm,
 };
 
 type SourceType =
   | 'REQUIREMENT'
   | 'USE_CASE'
   | 'DATA_MODEL'
+  | 'CLASS_DIAGRAM'
   | 'NAVIGATION_TREE'
   | 'SOFTWARE_ARCHITECTURE'
   | 'SYSTEM_ARCHITECTURE'
@@ -96,21 +103,30 @@ const ELIGIBLE_SOURCES: Record<StructuredAnalysisKind, SourceType[]> = {
     'REQUIREMENT',
     'USE_CASE',
     'DATA_MODEL',
+    'CLASS_DIAGRAM',
     'NAVIGATION_TREE',
     'SOFTWARE_ARCHITECTURE',
     'SYSTEM_ARCHITECTURE',
     'UI_BLUEPRINT',
   ],
-  CONCEPTUAL_DOMAIN_MODEL: ['GENERATION_PLAN', 'REQUIREMENT', 'USE_CASE', 'DATA_MODEL'],
+  CONCEPTUAL_DOMAIN_MODEL: [
+    'GENERATION_PLAN',
+    'REQUIREMENT',
+    'USE_CASE',
+    'DATA_MODEL',
+    'CLASS_DIAGRAM',
+  ],
   // Sources come from the chosen Design Baseline, not from this picker.
   IMPLEMENTATION_PLAN: [],
   DESIGN_THEME: ['REQUIREMENT', 'UI_BLUEPRINT'],
+  CLASS_DIAGRAM: ['REQUIREMENT', 'USE_CASE', 'DATA_MODEL'],
 };
 
 const SOURCE_LABELS: Record<SourceType, string> = {
   REQUIREMENT: 'Requisitos',
   USE_CASE: 'Casos de uso',
   DATA_MODEL: 'Modelo de datos',
+  CLASS_DIAGRAM: 'Diagrama de clases',
   NAVIGATION_TREE: 'Navegación',
   SOFTWARE_ARCHITECTURE: 'Arquitectura de software',
   SYSTEM_ARCHITECTURE: 'Arquitectura de sistema',
@@ -120,6 +136,7 @@ const SOURCE_LABELS: Record<SourceType, string> = {
 
 // Kinds whose backend renders a diagram (structured-analysis.service KIND_CONFIG).
 const KINDS_WITH_DIAGRAM: ReadonlySet<StructuredAnalysisKind> = new Set([
+  'CLASS_DIAGRAM',
   'NAVIGATION_TREE',
   'SOFTWARE_ARCHITECTURE',
   'SYSTEM_ARCHITECTURE',
@@ -418,6 +435,53 @@ function renderContentDetail(kind: StructuredAnalysisKind, content: unknown) {
                     {risk.mitigation ? (
                       <span className={muted}> — Mitigación: {risk.mitigation}</span>
                     ) : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      );
+    }
+    case 'CLASS_DIAGRAM': {
+      const { classes, relationships } = content as ClassDiagramContent;
+      const names = new Map(classes.map((cls) => [cls.localId, cls.name]));
+      return (
+        <div className="mt-2 flex flex-col gap-3 border-t border-border pt-2 text-sm">
+          <ul className="flex flex-col gap-2">
+            {classes.map((cls) => (
+              <li key={cls.localId}>
+                <strong>{cls.name}</strong>{' '}
+                <span className="text-muted-foreground">
+                  ({CLASS_STEREOTYPE_LABELS[cls.stereotype]}
+                  {cls.dataModelEntityName ? ` · entidad ${cls.dataModelEntityName}` : ''})
+                </span>
+                {cls.attributes.length + cls.methods.length > 0 ? (
+                  <pre className="mt-1 font-mono text-xs whitespace-pre-wrap text-muted-foreground">
+                    {formatClassMembers(cls)}
+                  </pre>
+                ) : null}
+                {cls.relatedSourceCodes?.length ? (
+                  <div className="text-muted-foreground">
+                    Fuentes: {cls.relatedSourceCodes.join(', ')}
+                  </div>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+          {relationships.length > 0 ? (
+            <div>
+              <strong>Relaciones</strong>
+              <ul className="mt-1 text-muted-foreground">
+                {relationships.map((relationship, i) => (
+                  <li key={i}>
+                    {names.get(relationship.fromLocalId)}
+                    {relationship.fromMultiplicity
+                      ? ` [${relationship.fromMultiplicity}]`
+                      : ''} — {CLASS_RELATIONSHIP_LABELS[relationship.kind]} →{' '}
+                    {names.get(relationship.toLocalId)}
+                    {relationship.toMultiplicity ? ` [${relationship.toMultiplicity}]` : ''}
+                    {relationship.label ? ` (${relationship.label})` : ''}
                   </li>
                 ))}
               </ul>

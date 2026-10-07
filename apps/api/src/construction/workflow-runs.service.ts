@@ -61,6 +61,7 @@ const STAGE_LABELS: Record<WorkflowStage, string> = {
   USE_CASES: 'casos de uso',
   USE_CASE_DIAGRAM: 'diagrama de casos de uso',
   DATA_MODEL: 'modelo de datos',
+  CLASS_DIAGRAM: 'diagrama de clases',
   NAVIGATION_TREE: 'navegación',
   SOFTWARE_ARCHITECTURE: 'arquitectura de software',
   SYSTEM_ARCHITECTURE: 'arquitectura de sistema',
@@ -85,6 +86,7 @@ const PLANNING_TYPES: { stage: WorkflowStage; type: string }[] = [
   { stage: 'REQUIREMENTS', type: 'REQUIREMENT' },
   { stage: 'USE_CASES', type: 'USE_CASE' },
   { stage: 'DATA_MODEL', type: 'DATA_MODEL' },
+  { stage: 'CLASS_DIAGRAM', type: 'CLASS_DIAGRAM' },
   { stage: 'NAVIGATION_TREE', type: 'NAVIGATION_TREE' },
   { stage: 'SOFTWARE_ARCHITECTURE', type: 'SOFTWARE_ARCHITECTURE' },
   { stage: 'SYSTEM_ARCHITECTURE', type: 'SYSTEM_ARCHITECTURE' },
@@ -100,6 +102,7 @@ const STRUCTURED_KINDS = new Set<string>([
   'SYSTEM_ARCHITECTURE',
   'UI_BLUEPRINT',
   'DESIGN_THEME',
+  'CLASS_DIAGRAM',
   'GENERATION_PLAN',
   'CONCEPTUAL_DOMAIN_MODEL',
   'IMPLEMENTATION_PLAN',
@@ -384,6 +387,7 @@ export class WorkflowRunsService {
       case 'SYSTEM_ARCHITECTURE':
       case 'UI_BLUEPRINT':
       case 'DESIGN_THEME':
+      case 'CLASS_DIAGRAM':
       case 'GENERATION_PLAN':
       case 'CONCEPTUAL_DOMAIN_MODEL':
         return this.structuredStage(ctx, stage);
@@ -512,6 +516,7 @@ export class WorkflowRunsService {
           NAVIGATION_TREE: (await one('NAVIGATION_TREE'))!,
           UI_BLUEPRINT: (await one('UI_BLUEPRINT'))!,
           DESIGN_THEME: await one('DESIGN_THEME'),
+          CLASS_DIAGRAM: await one('CLASS_DIAGRAM'),
           MOCKUP: (await one('MOCKUP'))!,
           SOFTWARE_ARCHITECTURE: await one('SOFTWARE_ARCHITECTURE'),
           SYSTEM_ARCHITECTURE: await one('SYSTEM_ARCHITECTURE'),

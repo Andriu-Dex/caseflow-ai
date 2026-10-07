@@ -73,6 +73,17 @@ const ANSWERS: Record<string, (request: AIProviderRequest) => unknown> = {
       },
     ],
   }),
+  // One class per data-model entity, with all its attributes (DEC-121).
+  class_diagram_generation: () => ({
+    classes: [
+      {
+        localId: 'pedido',
+        name: 'Pedido',
+        dataModelEntityName: 'Pedido',
+        attributes: [{ name: 'id', type: 'UUID' }],
+      },
+    ],
+  }),
   navigation_generation: () => CONTENT.NAVIGATION_TREE,
   software_architecture_generation: () => CONTENT.SOFTWARE_ARCHITECTURE,
   system_architecture_generation: () => CONTENT.SYSTEM_ARCHITECTURE,
@@ -162,7 +173,7 @@ describe('Workflow runs integration', () => {
     await runs.runJob(projectId, started.body.id);
     const run = await runs.get(projectId, started.body.id);
     expect(run).toMatchObject({ status: 'COMPLETED', errorMessage: null, currentStage: null });
-    expect(run.completedStages).toHaveLength(18);
+    expect(run.completedStages).toHaveLength(19);
 
     // The prompt is the project's first source, so everything traces back to it.
     const source = await ctx.prisma.sourceDetail.findFirstOrThrow({
@@ -173,9 +184,9 @@ describe('Workflow runs integration', () => {
     const approved = await ctx.prisma.artifactVersion.findMany({
       where: { projectId, status: 'APPROVED' },
     });
-    // Source, context, requirement, use case, data model, five design kinds,
+    // Source, context, requirement, use case, data model, class diagram, five design kinds,
     // mockup, generation plan, conceptual model and implementation plan.
-    expect(approved).toHaveLength(14);
+    expect(approved).toHaveLength(15);
     expect(new Set(approved.map((v) => v.approvalOrigin))).toEqual(new Set(['AUTOMATIC']));
     const baseline = await ctx.prisma.designBaseline.findFirstOrThrow({ where: { projectId } });
     expect(baseline.approvalOrigin).toBe('AUTOMATIC');
@@ -247,7 +258,7 @@ describe('Workflow runs integration', () => {
       .get(`/projects/${projectId}/workflow-runs/${started.body.id}/review`)
       .set(auth)
       .expect(200);
-    expect(new Set(review.body.items.map((i: { stage: string }) => i.stage)).size).toBe(13);
+    expect(new Set(review.body.items.map((i: { stage: string }) => i.stage)).size).toBe(14);
 
     await http()
       .post(`/projects/${projectId}/workflow-runs/${started.body.id}/approve`)
@@ -270,7 +281,7 @@ describe('Workflow runs integration', () => {
       where: { projectId, status: 'APPROVED' },
       select: { approvalOrigin: true },
     });
-    expect(origins).toHaveLength(14);
+    expect(origins).toHaveLength(15);
     expect(new Set(origins.map((o) => o.approvalOrigin))).toEqual(new Set(['HUMAN_BULK']));
     expect(await ctx.prisma.generationRun.count({ where: { projectId } })).toBe(1);
 
