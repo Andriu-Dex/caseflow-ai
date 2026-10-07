@@ -92,6 +92,7 @@ enum StructuredAnalysisKind {
   CONCEPTUAL_DOMAIN_MODEL
   IMPLEMENTATION_PLAN
   DESIGN_THEME
+  CLASS_DIAGRAM
 
   @@map("structured_analysis_kind")
 }
@@ -164,6 +165,7 @@ enum DiagramKind {
   NAVIGATION_TREE
   SOFTWARE_ARCHITECTURE
   SYSTEM_ARCHITECTURE
+  CLASS_DIAGRAM
 
   @@map("diagram_kind")
 }
@@ -174,6 +176,7 @@ enum DiagramSourceFormat {
   MERMAID_FLOWCHART
   PLANTUML_COMPONENT
   PLANTUML_DEPLOYMENT
+  MERMAID_CLASS
 
   @@map("diagram_source_format")
 }
@@ -321,6 +324,8 @@ model Project {
   // DEC-118: projects created before the theme step existed keep the
   // standard design (false); new projects must approve a theme (true).
   workflowRoute       WorkflowRoute   @default(FULL) @map("workflow_route")
+  // DEC-121: projects created before mandatory coherence keep advisory rules.
+  coherenceRequired   Boolean         @default(true) @map("coherence_required")
   designThemeRequired Boolean         @default(true) @map("design_theme_required")
 
   workspace                     Workspace                      @relation(fields: [workspaceId], references: [id], onDelete: Restrict, onUpdate: Restrict)
@@ -1384,6 +1389,7 @@ model DependencyProposal {
 enum DesignBaselineRole {
   GENERATION_PLAN
   CONCEPTUAL_DOMAIN_MODEL
+  CLASS_DIAGRAM
   NAVIGATION_TREE
   UI_BLUEPRINT
   DESIGN_THEME

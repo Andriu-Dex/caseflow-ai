@@ -93,6 +93,7 @@ describe('official Prisma migrations on caseflow_test', () => {
         ...FIRST_DELIVERABLE_ARTIFACT_TYPE_CODES,
         ...CONSTRUCTION_ARTIFACT_TYPE_CODES,
         'DESIGN_THEME',
+        'CLASS_DIAGRAM',
       ].sort(),
     );
   });

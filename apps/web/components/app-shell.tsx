@@ -49,6 +49,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
       { href: '/requirements', label: 'Requisitos' },
       { href: '/use-cases', label: 'Casos de uso' },
       { href: '/data-model', label: 'Modelo de datos' },
+      { href: '/class-diagram', label: 'Diagrama de clases' },
     ],
   },
   {
@@ -63,7 +64,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     ],
   },
   {
-    // Step 12, the last of the numbered planning pipeline — stays unlabeled
+    // Step 13, the last of the numbered planning pipeline — stays unlabeled
     // like the "Inicio" group, continuing the stepper visually instead of
     // reading as a sibling of the two project-level tools below it.
     label: '',
@@ -217,10 +218,10 @@ export function AppShell({ children }: { children: ReactNode }) {
                   </div>
                   <button
                     type="button"
-                    title="Complete los 12 pasos de planificación para habilitar la construcción"
+                    title="Complete los 13 pasos de planificación para habilitar la construcción"
                     onClick={() =>
                       setLockedMessage(
-                        'Complete los 12 pasos de planificación (Fuentes a Trazabilidad) antes de iniciar la construcción del proyecto.',
+                        'Complete los 13 pasos de planificación (Fuentes a Trazabilidad) antes de iniciar la construcción del proyecto.',
                       )
                     }
                     className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-sm font-medium text-sidebar-foreground/40 transition-colors hover:bg-white/5"

@@ -50,6 +50,7 @@ export class ReadinessService {
       sysResult,
       blueprintResult,
       themeResult,
+      classDiagramResult,
       project,
     ] = await Promise.all([
       this.sourcesStage(projectId),
@@ -62,9 +63,10 @@ export class ReadinessService {
       this.snapshot.approvedArtifactVersion(projectId, 'SYSTEM_ARCHITECTURE'),
       this.snapshot.approvedArtifactVersion(projectId, 'UI_BLUEPRINT'),
       this.snapshot.approvedArtifactVersion(projectId, 'DESIGN_THEME'),
+      this.snapshot.approvedArtifactVersion(projectId, 'CLASS_DIAGRAM'),
       this.prisma.project.findUnique({
         where: { id: projectId },
-        select: { designThemeRequired: true },
+        select: { designThemeRequired: true, coherenceRequired: true },
       }),
     ]);
 
@@ -78,6 +80,10 @@ export class ReadinessService {
       dataModelResult,
     );
     const erDiagramStage = await this.erDiagramStage(dataModelResult);
+    const classDiagramStage = this.classDiagramStage(
+      project?.coherenceRequired ?? true,
+      classDiagramResult,
+    );
     const navigationStage = await this.diagramBackedStage('NAVIGATION', 'Navegación', navResult);
     const softwareArchitectureStage = await this.diagramBackedStage(
       'SOFTWARE_ARCHITECTURE',
@@ -111,6 +117,7 @@ export class ReadinessService {
       useCaseDiagramStage,
       dataModelStage,
       erDiagramStage,
+      classDiagramStage,
       navigationStage,
       softwareArchitectureStage,
       systemArchitectureStage,
@@ -293,7 +300,7 @@ export class ReadinessService {
   }
 
   private singleArtifactStage(
-    key: 'DATA_MODEL' | 'UI_BLUEPRINT' | 'DESIGN_THEME',
+    key: 'DATA_MODEL' | 'UI_BLUEPRINT' | 'DESIGN_THEME' | 'CLASS_DIAGRAM',
     label: string,
     result: { code: string; versionId: string } | null,
   ): ReadinessStage {
@@ -325,6 +332,22 @@ export class ReadinessService {
         summary: 'Este proyecto usa el diseño estándar de CASEFlow.',
       });
     return this.singleArtifactStage('DESIGN_THEME', 'Tema y colores', theme);
+  }
+
+  // DEC-121: required for projects created with mandatory coherence; older
+  // projects may skip it.
+  private classDiagramStage(
+    required: boolean,
+    classDiagram: { code: string; versionId: string } | null,
+  ): ReadinessStage {
+    if (!classDiagram && !required)
+      return stage({
+        key: 'CLASS_DIAGRAM',
+        label: 'Diagrama de clases',
+        satisfied: true,
+        summary: 'El diagrama de clases es opcional en este proyecto.',
+      });
+    return this.singleArtifactStage('CLASS_DIAGRAM', 'Diagrama de clases', classDiagram);
   }
 
   private async erDiagramStage(

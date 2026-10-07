@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { designThemeContentSchema } from './design-theme.contract';
+import { classDiagramContentSchema } from './class-diagram.contract';
 
 // Shared "structured content + candidate-first AI generation + optional
 // deterministic diagram" family (spec §13/§14/§15/§17). Each kind has its
@@ -15,6 +16,7 @@ export const STRUCTURED_ANALYSIS_KINDS = [
   'CONCEPTUAL_DOMAIN_MODEL',
   'IMPLEMENTATION_PLAN',
   'DESIGN_THEME',
+  'CLASS_DIAGRAM',
 ] as const;
 export type StructuredAnalysisKind = (typeof STRUCTURED_ANALYSIS_KINDS)[number];
 
@@ -566,6 +568,7 @@ export const STRUCTURED_ANALYSIS_CONTENT_SCHEMAS = {
   CONCEPTUAL_DOMAIN_MODEL: conceptualDomainModelContentSchema,
   IMPLEMENTATION_PLAN: implementationPlanContentSchema,
   DESIGN_THEME: designThemeContentSchema,
+  CLASS_DIAGRAM: classDiagramContentSchema,
 } as const;
 
 const structuredAnalysisContentSchema = z.union([
@@ -577,6 +580,7 @@ const structuredAnalysisContentSchema = z.union([
   conceptualDomainModelContentSchema,
   implementationPlanContentSchema,
   designThemeContentSchema,
+  classDiagramContentSchema,
 ]);
 
 export const structuredAnalysisInputSchema = z

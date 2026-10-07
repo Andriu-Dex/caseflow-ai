@@ -6,6 +6,7 @@ import { z } from 'zod';
 export const DESIGN_BASELINE_ROLES = [
   'GENERATION_PLAN',
   'CONCEPTUAL_DOMAIN_MODEL',
+  'CLASS_DIAGRAM',
   'NAVIGATION_TREE',
   'UI_BLUEPRINT',
   'DESIGN_THEME',
@@ -35,6 +36,8 @@ export const createDesignBaselineRequestSchema = z
         UI_BLUEPRINT: z.uuid(),
         // Required only for projects created after DEC-118 (checked by the API).
         DESIGN_THEME: z.uuid().optional(),
+        // Required for projects with mandatory coherence (DEC-121, checked by the API).
+        CLASS_DIAGRAM: z.uuid().optional(),
         MOCKUP: z.uuid(),
         SOFTWARE_ARCHITECTURE: z.uuid().optional(),
         SYSTEM_ARCHITECTURE: z.uuid().optional(),

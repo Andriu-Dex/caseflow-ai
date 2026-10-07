@@ -23,7 +23,11 @@ import { provenanceGuard, sourceStatuses } from '../projects/source-statuses';
 import { PrismaService } from '../database/prisma.service';
 import { getProjectLanguage } from '../projects/project-language';
 import type { Prisma } from '../generated/prisma/client';
-import { DiagramEngine, type DiagramFormat } from '../data-models/diagram-engine';
+import {
+  DiagramEngine,
+  type ClassDiagramModel,
+  type DiagramFormat,
+} from '../data-models/diagram-engine';
 import { DIAGRAM_PROVIDER } from '../data-models/diagram-provider.token';
 import { sanitizeDiagramSvg } from '../data-models/svg-sanitizer';
 import {
@@ -44,6 +48,7 @@ const KIND_LABELS: Record<StructuredAnalysisKind, string> = {
   CONCEPTUAL_DOMAIN_MODEL: 'Modelo conceptual',
   IMPLEMENTATION_PLAN: 'Plan de implementación',
   DESIGN_THEME: 'Tema y colores',
+  CLASS_DIAGRAM: 'Diagrama de clases',
 };
 
 // Construction gates whose approval is an audited event (AGENTS.md §35).
@@ -52,6 +57,7 @@ const APPROVAL_AUDIT_ACTIONS: Partial<Record<StructuredAnalysisKind, AuditAction
   CONCEPTUAL_DOMAIN_MODEL: 'CONCEPTUAL_DOMAIN_MODEL_APPROVED',
   IMPLEMENTATION_PLAN: 'IMPLEMENTATION_PLAN_APPROVED',
   DESIGN_THEME: 'DESIGN_THEME_APPROVED',
+  CLASS_DIAGRAM: 'CLASS_DIAGRAM_APPROVED',
 };
 
 interface KindConfig {
@@ -84,18 +90,26 @@ export const ELIGIBLE_SOURCE_TYPES: Record<StructuredAnalysisKind, string[]> = {
     'REQUIREMENT',
     'USE_CASE',
     'DATA_MODEL',
+    'CLASS_DIAGRAM',
     'NAVIGATION_TREE',
     'SOFTWARE_ARCHITECTURE',
     'SYSTEM_ARCHITECTURE',
     'UI_BLUEPRINT',
   ],
   // spec §157: the conceptual model refines the plan's conceptual entities.
-  CONCEPTUAL_DOMAIN_MODEL: ['GENERATION_PLAN', 'REQUIREMENT', 'USE_CASE', 'DATA_MODEL'],
+  CONCEPTUAL_DOMAIN_MODEL: [
+    'GENERATION_PLAN',
+    'REQUIREMENT',
+    'USE_CASE',
+    'DATA_MODEL',
+    'CLASS_DIAGRAM',
+  ],
   // spec §161: built from what the approved Design Baseline froze (the mockup
   // itself carries no structured content, its UI blueprint does).
   IMPLEMENTATION_PLAN: [
     'GENERATION_PLAN',
     'CONCEPTUAL_DOMAIN_MODEL',
+    'CLASS_DIAGRAM',
     'NAVIGATION_TREE',
     'UI_BLUEPRINT',
     'SOFTWARE_ARCHITECTURE',
@@ -103,6 +117,8 @@ export const ELIGIBLE_SOURCE_TYPES: Record<StructuredAnalysisKind, string[]> = {
   ],
   // DEC-118: the palette follows what the app is for and who uses it.
   DESIGN_THEME: ['REQUIREMENT', 'UI_BLUEPRINT'],
+  // DEC-121: domain classes from the analysis, one per data-model entity.
+  CLASS_DIAGRAM: ['REQUIREMENT', 'USE_CASE', 'DATA_MODEL'],
 };
 
 const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
@@ -179,6 +195,16 @@ const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
     maxOutputTokens: 16384,
     aiOutputSchema: implementationPlanBodySchema,
     maxContextChars: 40_000,
+  },
+  CLASS_DIAGRAM: {
+    promptKey: 'class-diagram.generate',
+    promptVersion: 1,
+    maxOutputTokens: 12_288,
+    diagram: {
+      format: 'MERMAID_CLASS',
+      generate: (content) =>
+        new DiagramEngine().generateClassDiagram(content as unknown as ClassDiagramModel),
+    },
   },
   DESIGN_THEME: {
     promptKey: 'design-theme.generate',
@@ -493,18 +519,41 @@ export class StructuredAnalysisService {
         id: { in: generation.sources.map((source) => source.artifactVersionId) },
         projectId,
       },
-      include: { artifact: true, structuredAnalysisDetail: true },
+      include: {
+        artifact: true,
+        structuredAnalysisDetail: true,
+        dataModelDetail: { include: { entities: { include: { attributes: true } } } },
+      },
     });
     const references: GenerationSourceReference[] = sourceVersions.map((source) => ({
       code: source.artifact.code,
       type: source.artifact.artifactTypeCode,
-      content: source.structuredAnalysisDetail?.content,
+      content:
+        source.structuredAnalysisDetail?.content ??
+        (source.dataModelDetail
+          ? {
+              entities: source.dataModelDetail.entities.map((entity) => ({
+                name: entity.name,
+                attributes: entity.attributes.map((attribute) => ({ name: attribute.name })),
+              })),
+            }
+          : undefined),
     }));
+    // DEC-121: coverage gaps block a proposal only where coherence is mandatory.
+    const strict =
+      (
+        await this.prisma.project.findUnique({
+          where: { id: projectId },
+          select: { coherenceRequired: true },
+        })
+      )?.coherenceRequired ?? true;
     return {
       ...generation,
       candidates: generation.candidates.map((candidate) => ({
         ...candidate,
-        qualityFindings: evaluateStructuredGeneration(kind, candidate.content, references),
+        qualityFindings: evaluateStructuredGeneration(kind, candidate.content, references, {
+          strict,
+        }),
       })),
     };
   }
@@ -533,7 +582,7 @@ export class StructuredAnalysisService {
       )
     )
       throw new UnprocessableEntityException(
-        'La propuesta contiene referencias inválidas. Corríjala o genere una nueva antes de incorporarla.',
+        'La propuesta contiene referencias inválidas o le falta cubrir elementos obligatorios. Corríjala o genere una nueva antes de incorporarla.',
       );
     // Rendered before the write transaction opens (no network I/O under a
     // DB lock); a render failure aborts the whole batch, nothing is written.
@@ -846,7 +895,8 @@ export class StructuredAnalysisService {
           artifactVersionId: versionId,
           // Guarded by `diagramConfig` above: only kinds with a diagram
           // mapping reach this branch.
-          kind: kind as 'NAVIGATION_TREE' | 'SOFTWARE_ARCHITECTURE' | 'SYSTEM_ARCHITECTURE',
+          kind: kind as
+            'NAVIGATION_TREE' | 'SOFTWARE_ARCHITECTURE' | 'SYSTEM_ARCHITECTURE' | 'CLASS_DIAGRAM',
           sourceFormat: diagramConfig.format,
           generatorVersion: diagram.generatorVersion,
           source: diagram.source,

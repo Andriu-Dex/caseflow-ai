@@ -24,6 +24,7 @@ export const TRACEABILITY_ARTIFACT_TYPES = [
   'CONCEPTUAL_DOMAIN_MODEL',
   'IMPLEMENTATION_PLAN',
   'DESIGN_THEME',
+  'CLASS_DIAGRAM',
 ] as const;
 export type TraceabilityArtifactType = (typeof TRACEABILITY_ARTIFACT_TYPES)[number];
 

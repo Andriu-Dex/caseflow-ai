@@ -158,3 +158,62 @@ describe('DiagramEngine', () => {
     expect(() => engine.validate('PLANTUML_DEPLOYMENT', source)).not.toThrow();
   });
 });
+
+describe('DiagramEngine class diagram', () => {
+  const engine = new DiagramEngine();
+  const model = {
+    classes: [
+      {
+        localId: 'order',
+        name: 'Pedido de compra',
+        attributes: [{ name: 'items', type: 'List<Item>', visibility: 'PUBLIC' }],
+        methods: [
+          { name: 'pay', parameters: [{ name: 'amount', type: 'number' }], returnType: 'void' },
+        ],
+      },
+      { localId: 'person', name: 'Persona', stereotype: 'ABSTRACT', attributes: [], methods: [] },
+      {
+        localId: 'client',
+        name: 'Cliente',
+        attributes: [{ name: 'email', type: 'string' }],
+        methods: [],
+      },
+    ],
+    relationships: [
+      {
+        fromLocalId: 'client',
+        toLocalId: 'order',
+        kind: 'ASSOCIATION',
+        label: 'realiza',
+        fromMultiplicity: '1',
+        toMultiplicity: '*',
+      },
+      { fromLocalId: 'client', toLocalId: 'person', kind: 'INHERITANCE' },
+    ],
+  };
+
+  it('generates deterministic, validated Mermaid class source', () => {
+    const source = engine.generateClassDiagram(model);
+    expect(engine.generateClassDiagram({ ...model, classes: [...model.classes].reverse() })).toBe(
+      source,
+    );
+    expect(() => engine.validate('MERMAID_CLASS', source)).not.toThrow();
+    expect(source).toContain('class order["Pedido de compra"] {');
+    expect(source).toContain('+List~Item~ items');
+    expect(source).toContain('+pay(number amount) void');
+    expect(source).toContain('<<abstract>>');
+    expect(source).toContain('-string email');
+    expect(source).toContain('client "1" --> "*" order : realiza');
+    expect(source).toContain('person <|-- client');
+  });
+
+  it('keeps braces and semicolons out of the source', () => {
+    const source = engine.generateClassDiagram({
+      classes: [
+        { localId: 'x', name: 'A;B', attributes: [{ name: 'c}', type: 'd{' }], methods: [] },
+      ],
+      relationships: [],
+    });
+    expect(() => engine.validate('MERMAID_CLASS', source)).not.toThrow();
+  });
+});

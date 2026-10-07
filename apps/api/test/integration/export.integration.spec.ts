@@ -142,7 +142,7 @@ describe('Export (First Deliverable, Phase H)', () => {
 
     const snapshot = await ctx.export.buildSnapshot(projectId);
     expect(snapshot.readiness).toMatchObject({ projectId, ready: false });
-    expect(snapshot.readiness.stages).toHaveLength(14);
+    expect(snapshot.readiness.stages).toHaveLength(15);
     expect(snapshot.stalenessSummary).toMatchObject({ projectId, entries: [] });
     expect(snapshot.traceabilitySummary).toEqual({ nodeCount: 0, edgeCount: 0, truncated: false });
   });
@@ -613,7 +613,7 @@ describe('Export (First Deliverable, Phase H)', () => {
     expect(snapshot.mockups).toHaveLength(1);
 
     expect(snapshot.readiness).toBeTruthy();
-    expect(snapshot.readiness.stages).toHaveLength(14);
+    expect(snapshot.readiness.stages).toHaveLength(15);
     expect(snapshot.stalenessSummary).toBeTruthy();
     expect(snapshot.traceabilitySummary.nodeCount).toBeGreaterThan(0);
 

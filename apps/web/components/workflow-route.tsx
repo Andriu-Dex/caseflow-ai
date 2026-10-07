@@ -28,7 +28,7 @@ export const WORKFLOW_ROUTE_LABELS: Record<WorkflowRoute, string> = {
 };
 
 export const WORKFLOW_ROUTE_DESCRIPTIONS: Record<WorkflowRoute, string> = {
-  FULL: 'Los 12 pasos de planificación, revisando y aprobando cada artefacto. Recomendada para entregables formales.',
+  FULL: 'Los 13 pasos de planificación, revisando y aprobando cada artefacto. Recomendada para entregables formales.',
   EXPRESS:
     'Un prompt genera toda la planificación; usted la revisa y aprueba en bloque antes de construir.',
   BUILD_ONLY:
