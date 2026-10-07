@@ -555,13 +555,23 @@ describe('Export (First Deliverable, Phase H)', () => {
     const uiBlueprintService = new StructuredAnalysisService(
       ctx.prisma,
       fakeAi(ctx, 'ui-blueprint.generate', 2, {
-        screens: [{ localId: 'home', name: 'Inicio', purpose: 'Ver panel' }],
+        screens: [
+          {
+            localId: 'home',
+            name: 'Inicio',
+            purpose: 'Ver panel',
+            navigationNodeLocalId: 'home',
+            relatedUseCaseCodes: ['CU-001'],
+            relatedSourceCodes: ['CU-001'],
+          },
+        ],
       }),
       new DiagramEngine(),
       new FakeDiagramProvider({ svg: FAKE_SVG }),
     );
     const blueprintGeneration = await uiBlueprintService.generate(projectId, 'UI_BLUEPRINT', [
       navAccepted.version.id,
+      ucAccepted.version.id,
     ]);
     const blueprintAccepted = (
       await uiBlueprintService.accept(projectId, 'UI_BLUEPRINT', blueprintGeneration.id, [

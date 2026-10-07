@@ -403,7 +403,7 @@ describe('StructuredAnalysisService', () => {
     });
 
     tx.auditEvent.create.mockClear();
-    await service.transition('project', 'UI_BLUEPRINT', 'ui', 'version', 'APPROVED', 'user');
+    await service.transition('project', 'NAVIGATION_TREE', 'nav', 'version', 'APPROVED', 'user');
     expect(tx.auditEvent.create).not.toHaveBeenCalled();
   });
 

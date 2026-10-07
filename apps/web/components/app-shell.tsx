@@ -77,6 +77,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     label: 'Entregables',
     items: [
       { href: '/readiness', label: 'Preparación / Exportar' },
+      { href: '/coherence', label: 'Matriz de coherencia' },
       { href: '/baselines', label: 'Líneas Base' },
     ],
   },

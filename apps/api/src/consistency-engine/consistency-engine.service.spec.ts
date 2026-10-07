@@ -1,184 +1,165 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { Test, TestingModule } from '@nestjs/testing';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ConsistencyEngineService } from './consistency-engine.service';
-import { PrismaService } from '../database/prisma.service';
+import type { PrismaService } from '../database/prisma.service';
+
+type Version = Record<string, unknown>;
+
+// An artifact with its latest approved version, as the service loads it.
+function artifact(
+  id: string,
+  artifactTypeCode: string,
+  version: Version = {},
+  approvedAt = new Date('2026-01-01'),
+) {
+  return {
+    id,
+    code: id.toUpperCase(),
+    artifactTypeCode,
+    versions: [
+      {
+        status: 'APPROVED',
+        approvedAt,
+        createdAt: approvedAt,
+        structuredAnalysisDetail: null,
+        dataModelDetail: null,
+        mockupsSourcedFromHere: [],
+        useCaseDetail: null,
+        requirementDetail: null,
+        ...version,
+      },
+    ],
+  };
+}
 
 describe('ConsistencyEngineService', () => {
+  const prisma = {
+    artifact: { findMany: vi.fn() },
+    project: { findUnique: vi.fn() },
+  };
   let service: ConsistencyEngineService;
 
-  const mockPrismaService = {
-    artifact: {
-      findMany: vi.fn(),
-    },
-  };
-
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        ConsistencyEngineService,
-        { provide: PrismaService, useValue: mockPrismaService },
-      ],
-    }).compile();
-
-    service = module.get<ConsistencyEngineService>(ConsistencyEngineService);
-  });
-
-  afterEach(() => {
+  beforeEach(() => {
     vi.clearAllMocks();
+    prisma.project.findUnique.mockResolvedValue({ coherenceRequired: true });
+    service = new ConsistencyEngineService(prisma as unknown as PrismaService);
   });
 
-  it('should be defined', () => {
-    expect(service).toBeDefined();
+  it('reports nothing for an empty project', async () => {
+    prisma.artifact.findMany.mockResolvedValue([]);
+    const result = await service.generateReport('p');
+    expect(result).toMatchObject({ totalArtifacts: 0, coherenceRequired: true, issues: [] });
   });
 
-  describe('generateReport', () => {
-    it('should generate an empty report when there are no issues', async () => {
-      mockPrismaService.artifact.findMany.mockResolvedValue([]);
+  it('reports functional requirements no approved use case realises', async () => {
+    prisma.artifact.findMany.mockResolvedValue([
+      artifact('rf-1', 'REQUIREMENT', { requirementDetail: { requirementType: 'FUNCTIONAL' } }),
+      artifact('rnf-1', 'REQUIREMENT', {
+        requirementDetail: { requirementType: 'NON_FUNCTIONAL' },
+      }),
+    ]);
+    const { issues } = await service.generateReport('p');
+    expect(issues).toEqual([
+      expect.objectContaining({
+        severity: 'ERROR',
+        chain: 'REQUIREMENT_USE_CASE_SCREEN',
+        artifactType: 'REQUIREMENT',
+        message: 'El requisito RF-1 no está cubierto por ningún caso de uso aprobado.',
+        affectedArtifactIds: ['rf-1'],
+      }),
+    ]);
+  });
 
-      const result = await service.generateReport('project-1');
+  it('only warns in projects without mandatory coherence', async () => {
+    prisma.project.findUnique.mockResolvedValue({ coherenceRequired: false });
+    prisma.artifact.findMany.mockResolvedValue([
+      artifact('rf-1', 'REQUIREMENT', { requirementDetail: { requirementType: 'FUNCTIONAL' } }),
+    ]);
+    const result = await service.generateReport('p');
+    expect(result.coherenceRequired).toBe(false);
+    expect(result.issues.map((issue) => issue.severity)).toEqual(['WARNING']);
+  });
 
-      expect(result.totalArtifacts).toBe(0);
-      expect(result.issues).toEqual([]);
-    });
-
-    it('should detect unreferenced requirements (Rule 1)', async () => {
-      mockPrismaService.artifact.findMany.mockResolvedValue([
-        {
-          id: 'req-1',
-          projectId: 'project-1',
-          artifactTypeCode: 'REQUIREMENT',
-          code: 'REQ-1',
-          versions: [
-            {
-              status: 'APPROVED',
-              useCaseRequirementLinks: [], // No references
-            },
-          ],
+  it('checks the UI blueprint against the navigation tree and use cases', async () => {
+    prisma.artifact.findMany.mockResolvedValue([
+      artifact('cu-1', 'USE_CASE', { useCaseDetail: { name: 'Pedir', requirementLinks: [] } }),
+      artifact('nav-1', 'NAVIGATION_TREE', {
+        structuredAnalysisDetail: {
+          content: {
+            nodes: [
+              { localId: 'orders', label: 'Pedidos', viewName: 'Pedidos', kind: 'LIST' },
+              { localId: 'group', label: 'Ventas', viewName: 'Ventas', kind: 'SECTION' },
+            ],
+          },
         },
-      ]);
+      }),
+      artifact('ui-1', 'UI_BLUEPRINT', {
+        structuredAnalysisDetail: {
+          content: { screens: [{ localId: 'home', name: 'Inicio', purpose: 'Ver' }] },
+        },
+        mockupsSourcedFromHere: [{ screens: [{ screenLocalId: 'home' }] }],
+      }),
+    ]);
+    const { issues } = await service.generateReport('p');
+    expect(issues.map((issue) => issue.message)).toEqual([
+      'El nodo de navegación «Pedidos» no tiene una pantalla en el plano de interfaz.',
+      'La pantalla «Inicio» no indica a qué nodo de navegación corresponde.',
+      'El caso de uso CU-1 no aparece en ninguna pantalla del plano de interfaz.',
+    ]);
+  });
 
-      const result = await service.generateReport('project-1');
-
-      expect(result.totalArtifacts).toBe(1);
-      expect(result.issues.length).toBe(1);
-      expect(result.issues[0]?.rule).toBe('Requirement Reference');
-      // User-facing message must stay fully in Spanish (AGENTS.md §29) — the
-      // rule id above is the only place an English identifier belongs.
-      expect(result.issues[0]?.message).toBe(
-        'El requisito REQ-1 no está referenciado por ningún caso de uso.',
+  it('uses only the most recently approved instance of single artifacts', async () => {
+    const blueprint = (id: string, approvedAt: string) =>
+      artifact(
+        id,
+        'UI_BLUEPRINT',
+        {
+          structuredAnalysisDetail: {
+            content: { screens: [{ localId: id, name: id, purpose: 'Ver' }] },
+          },
+        },
+        new Date(approvedAt),
       );
-      expect(result.issues[0]?.affectedArtifactIds).toContain('req-1');
-    });
+    prisma.artifact.findMany.mockResolvedValue([
+      blueprint('old', '2026-01-01'),
+      blueprint('new', '2026-02-01'),
+    ]);
+    const { issues } = await service.generateReport('p');
+    expect(issues.map((issue) => issue.message)).toEqual([
+      "La pantalla 'new' del plano de interfaz NEW no tiene un boceto asociado.",
+    ]);
+  });
 
-    it('should detect UI Blueprint screens without Mockups (Rule 2)', async () => {
-      mockPrismaService.artifact.findMany.mockResolvedValue([
-        {
-          id: 'ui-1',
-          projectId: 'project-1',
-          artifactTypeCode: 'UI_BLUEPRINT',
-          code: 'UI-1',
-          versions: [
-            {
-              status: 'APPROVED',
-              structuredAnalysisDetail: {
-                content: {
-                  screens: [{ localId: 'screen-1', name: 'Home Screen' }],
-                },
-              },
-              mockupsSourcedFromHere: [
-                {
-                  screens: [{ screenLocalId: 'screen-2' }],
-                },
-              ],
-            },
-          ],
-        },
-      ]);
+  it('detects duplicated use case names', async () => {
+    prisma.artifact.findMany.mockResolvedValue([
+      artifact('cu-1', 'USE_CASE', { useCaseDetail: { name: 'Pedir', requirementLinks: [] } }),
+      artifact('cu-2', 'USE_CASE', { useCaseDetail: { name: ' pedir ', requirementLinks: [] } }),
+    ]);
+    const { issues } = await service.generateReport('p');
+    expect(issues).toEqual([
+      expect.objectContaining({
+        rule: 'Unique Use Case Name',
+        affectedArtifactIds: ['cu-1', 'cu-2'],
+      }),
+    ]);
+  });
 
-      const result = await service.generateReport('project-1');
-
-      expect(result.totalArtifacts).toBe(1);
-      expect(result.issues.length).toBe(1);
-      expect(result.issues[0]?.rule).toBe('Mockup Association');
-      expect(result.issues[0]?.message).toBe(
-        "La pantalla 'Home Screen' del plano de interfaz UI-1 no tiene un boceto asociado.",
-      );
-      expect(result.issues[0]?.affectedArtifactIds).toContain('ui-1');
-    });
-
-    it('should detect Navigation nodes without matching UI Blueprint screens (Rule 3)', async () => {
-      mockPrismaService.artifact.findMany.mockResolvedValue([
-        {
-          id: 'nav-1',
-          projectId: 'project-1',
-          artifactTypeCode: 'NAVIGATION_TREE',
-          code: 'NAV-1',
-          versions: [
-            {
-              status: 'APPROVED',
-              structuredAnalysisDetail: {
-                content: {
-                  nodes: [{ localId: 'node-1', label: 'Home Node' }],
-                },
-              },
-            },
-          ],
-        },
-      ]);
-
-      const result = await service.generateReport('project-1');
-
-      expect(result.totalArtifacts).toBe(1);
-      expect(result.issues.length).toBe(1);
-      expect(result.issues[0]?.rule).toBe('Navigation Node Link');
-      expect(result.issues[0]?.message).toBe(
-        "El nodo de navegación 'Home Node' en NAV-1 no tiene una pantalla de plano de interfaz correspondiente.",
-      );
-      expect(result.issues[0]?.affectedArtifactIds).toContain('nav-1');
-    });
-
-    it('should detect duplicated Use Case names (Rule 4)', async () => {
-      mockPrismaService.artifact.findMany.mockResolvedValue([
-        {
-          id: 'uc-1',
-          projectId: 'project-1',
-          artifactTypeCode: 'USE_CASE',
-          code: 'UC-1',
-          versions: [
-            {
-              status: 'APPROVED',
-              useCaseDetail: {
-                name: 'Login',
-              },
-            },
-          ],
-        },
-        {
-          id: 'uc-2',
-          projectId: 'project-1',
-          artifactTypeCode: 'USE_CASE',
-          code: 'UC-2',
-          versions: [
-            {
-              status: 'APPROVED',
-              useCaseDetail: {
-                name: ' Login ',
-              },
-            },
-          ],
-        },
-      ]);
-
-      const result = await service.generateReport('project-1');
-
-      expect(result.totalArtifacts).toBe(2);
-      expect(result.issues.length).toBe(1);
-      expect(result.issues[0]?.rule).toBe('Unique Use Case Name');
-      expect(result.issues[0]?.message).toBe(
-        'El nombre del caso de uso está duplicado (2 ocurrencias).',
-      );
-      expect(result.issues[0]?.affectedArtifactIds).toContain('uc-1');
-      expect(result.issues[0]?.affectedArtifactIds).toContain('uc-2');
-    });
+  it('blocks approving an artifact with gaps only where coherence is mandatory', async () => {
+    prisma.artifact.findMany.mockResolvedValue([
+      artifact('dc-1', 'CLASS_DIAGRAM', {
+        structuredAnalysisDetail: { content: { classes: [{ localId: 'order', name: 'Pedido' }] } },
+      }),
+    ]);
+    const model = {
+      entities: [
+        { localId: 'e', name: 'Venta', description: 'Venta', attributes: [{ name: 'x' }] },
+      ],
+    };
+    await expect(service.assertCoherent('p', 'CONCEPTUAL_DOMAIN_MODEL', model)).rejects.toThrow(
+      'La clase «Pedido» no tiene una entidad en el modelo conceptual.',
+    );
+    prisma.project.findUnique.mockResolvedValue({ coherenceRequired: false });
+    await expect(
+      service.assertCoherent('p', 'CONCEPTUAL_DOMAIN_MODEL', model),
+    ).resolves.toBeUndefined();
   });
 });

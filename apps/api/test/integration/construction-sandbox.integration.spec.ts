@@ -94,8 +94,20 @@ describe('Construction sandbox validation integration', () => {
           localId: 'order',
           name: 'Order',
           moduleLocalId: 'sales',
+          classLocalId: 'order',
           fields: [{ name: 'total', type: 'DECIMAL' }],
           operations: ['LIST', 'CREATE'],
+        },
+      ],
+      routes: [
+        {
+          path: '/orders',
+          screenName: 'Inicio',
+          screenLocalId: 'home',
+          moduleLocalId: 'sales',
+          kind: 'LIST',
+          entityLocalId: 'order',
+          actions: [{ label: 'Confirmar pedido', operation: 'CREATE' }],
         },
       ],
     });

@@ -15,6 +15,7 @@ export const CONTENT: Partial<Record<StructuredAnalysisKind, Record<string, unkn
       {
         localId: 'order',
         name: 'Pedido',
+        classLocalId: 'order',
         description: 'Solicitud de compra de un cliente.',
         attributes: [{ name: 'fecha' }, { name: 'total' }],
       },
@@ -38,7 +39,15 @@ export const CONTENT: Partial<Record<StructuredAnalysisKind, Record<string, unkn
     nodes: [{ localId: 'home', label: 'Inicio', viewName: 'Inicio', kind: 'HOME' }],
   },
   UI_BLUEPRINT: {
-    screens: [{ localId: 'home', name: 'Inicio', purpose: 'Ver el panel principal' }],
+    screens: [
+      {
+        localId: 'home',
+        name: 'Inicio',
+        purpose: 'Ver el panel principal',
+        navigationNodeLocalId: 'home',
+        primaryActions: ['Confirmar pedido'],
+      },
+    ],
   },
   SOFTWARE_ARCHITECTURE: {
     style: 'Monolito modular',

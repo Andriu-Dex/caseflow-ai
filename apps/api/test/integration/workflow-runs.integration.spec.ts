@@ -87,7 +87,16 @@ const ANSWERS: Record<string, (request: AIProviderRequest) => unknown> = {
   navigation_generation: () => CONTENT.NAVIGATION_TREE,
   software_architecture_generation: () => CONTENT.SOFTWARE_ARCHITECTURE,
   system_architecture_generation: () => CONTENT.SYSTEM_ARCHITECTURE,
-  ui_blueprint_generation: () => CONTENT.UI_BLUEPRINT,
+  // Coherent with the navigation, the use case and the plan below (DEC-121).
+  ui_blueprint_generation: () => ({
+    screens: [
+      {
+        ...(CONTENT.UI_BLUEPRINT!.screens as object[])[0],
+        relatedUseCaseCodes: ['CU-001'],
+        relatedSourceCodes: ['CU-001'],
+      },
+    ],
+  }),
   // The first palette fails WCAG AA: the orchestrator must take the second.
   design_theme_generation: () => ({
     palettes: [
@@ -103,7 +112,17 @@ const ANSWERS: Record<string, (request: AIProviderRequest) => unknown> = {
     ],
   }),
   generation_plan_generation: () => CONTENT.GENERATION_PLAN,
-  conceptual_domain_model_generation: () => CONTENT.CONCEPTUAL_DOMAIN_MODEL,
+  conceptual_domain_model_generation: () => ({
+    entities: [
+      {
+        localId: 'pedido',
+        name: 'Pedido',
+        classLocalId: 'pedido',
+        description: 'Solicitud de compra.',
+        attributes: [{ name: 'id' }],
+      },
+    ],
+  }),
   implementation_plan_generation: () => ({
     authentication: { required: false, roles: [] },
     modules: [{ localId: 'sales', name: 'Sales', description: 'Pedidos' }],
@@ -112,11 +131,22 @@ const ANSWERS: Record<string, (request: AIProviderRequest) => unknown> = {
         localId: 'order',
         name: 'Order',
         moduleLocalId: 'sales',
+        classLocalId: 'pedido',
         fields: [{ name: 'total', type: 'DECIMAL' }],
         operations: ['LIST', 'GET', 'CREATE'],
       },
     ],
-    routes: [{ path: '/orders', screenName: 'Pedidos', moduleLocalId: 'sales', kind: 'LIST' }],
+    routes: [
+      {
+        path: '/orders',
+        screenName: 'Pedidos',
+        screenLocalId: 'home',
+        moduleLocalId: 'sales',
+        kind: 'LIST',
+        entityLocalId: 'order',
+        actions: [{ label: 'Confirmar pedido', operation: 'CREATE' }],
+      },
+    ],
   }),
 };
 

@@ -34,6 +34,12 @@ import {
   evaluateStructuredGeneration,
   type GenerationSourceReference,
 } from './structured-generation-quality';
+import { ConsistencyEngineService } from '../consistency-engine/consistency-engine.service';
+import {
+  COHERENCE_KINDS,
+  coherenceChecklist,
+  upstreamFromSources,
+} from '../consistency-engine/coherence-rules';
 import { AuditService, type AuditAction } from '../audit/audit.service';
 
 type Tx = Prisma.TransactionClient;
@@ -218,6 +224,7 @@ const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
 @Injectable()
 export class StructuredAnalysisService {
   private readonly audit: AuditService;
+  private readonly consistency: ConsistencyEngineService;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -226,8 +233,10 @@ export class StructuredAnalysisService {
     @Inject(DIAGRAM_PROVIDER) private readonly diagramProvider: DiagramProvider,
     // Injected by Nest; code constructing the service directly still audits.
     @Optional() audit?: AuditService,
+    @Optional() consistency?: ConsistencyEngineService,
   ) {
     this.audit = audit ?? new AuditService(prisma);
+    this.consistency = consistency ?? new ConsistencyEngineService(prisma);
   }
 
   async create(projectId: string, kind: StructuredAnalysisKind, title: string, content: Content) {
@@ -441,7 +450,13 @@ export class StructuredAnalysisService {
       throw new UnprocessableEntityException(
         'Una fuente seleccionada no tiene contenido estructurado disponible.',
       );
-    const serializedContext = JSON.stringify({ sources: contextSources });
+    // DEC-121: the AI is told exactly what it must cover; the same rules
+    // check the proposal afterwards.
+    const mustCover = coherenceChecklist(kind, upstreamFromSources(contextSources));
+    const serializedContext = JSON.stringify({
+      sources: contextSources,
+      ...(mustCover.length ? { mustCover } : {}),
+    });
     const config = KIND_CONFIG[kind];
     if (serializedContext.length > (config.maxContextChars ?? 18_000))
       throw new UnprocessableEntityException(
@@ -646,6 +661,16 @@ export class StructuredAnalysisService {
     if (!canTransitionArtifactVersionStatus(version.status, status))
       throw new UnprocessableEntityException('Transición de estado no permitida.');
     if (kind === 'DESIGN_THEME' && status === 'APPROVED') await this.assertAccessibleTheme(id);
+    if (status === 'APPROVED' && COHERENCE_KINDS.has(kind))
+      await this.consistency.assertCoherent(
+        projectId,
+        kind,
+        (
+          await this.prisma.structuredAnalysisDetail.findUniqueOrThrow({
+            where: { artifactVersionId: id },
+          })
+        ).content,
+      );
     return provenanceGuard(
       this.prisma.$transaction(async (tx) => {
         const updated = await tx.artifactVersion.update({

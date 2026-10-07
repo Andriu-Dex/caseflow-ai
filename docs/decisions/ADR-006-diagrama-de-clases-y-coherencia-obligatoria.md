@@ -42,7 +42,9 @@ Además falta un paso clásico del análisis y diseño: el **diagrama de clases*
    - **Al generar:** la IA recibe la lista explícita de lo que debe cubrir, y una propuesta con huecos se marca como error y no puede incorporarse.
    - **Al aprobar:** un artefacto con huecos de cobertura no puede aprobarse.
    - **Al construir:** la validación estructural del proyecto generado comprueba que cada entidad, ruta y acción del plan exista en el código, y si falta algo el proyecto no queda `READY`.
-5. **Matriz de coherencia.** Una página muestra cada cadena con sus huecos y un enlace para corregirlos.
+   - **Al congelar el diseño:** las versiones congeladas deben ser coherentes entre sí, y cada requisito funcional y cada caso de uso aprobados deben llegar a una pantalla.
+   - Las reglas viven en el motor de consistencia existente (`consistency-engine`), que reemplaza sus antiguas reglas de requisitos y de navegación por estas cadenas.
+5. **Matriz de coherencia.** Una página (`/coherence`) muestra cada cadena con sus huecos y un enlace para corregirlos.
 6. **Solo proyectos nuevos.** Los proyectos existentes conservan sus aprobaciones; para ellos el diagrama de clases es opcional y las reglas se muestran como advertencias.
 
 ## Consecuencias

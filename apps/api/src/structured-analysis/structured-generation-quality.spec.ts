@@ -284,7 +284,7 @@ describe('references by identifier across stages (DEC-121)', () => {
   });
   const errors = (content: unknown) =>
     evaluateStructuredGeneration('IMPLEMENTATION_PLAN', content, [classDiagram, blueprint])
-      .filter((f) => f.severity === 'ERROR')
+      .filter((f) => f.severity === 'ERROR' && f.code !== 'COVERAGE_GAP')
       .map((f) => f.code);
 
   it('accepts entities, routes and actions that point at the selected design', () => {

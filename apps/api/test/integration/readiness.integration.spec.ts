@@ -199,12 +199,15 @@ describe('Readiness integration', () => {
     expect(result.stages.find((s) => s.key === 'REQUIREMENTS')?.satisfied).toBe(true);
     expect(result.stages.find((s) => s.key === 'USE_CASES')?.satisfied).toBe(false);
 
+    // Every approved use case must reach a screen of the UI blueprint (DEC-121).
+    const useCaseIds: string[] = [];
     for (let i = 0; i < 3; i++) {
-      await approveUseCase(ctx, projectId, requirement.id, `Caso ${i}`);
+      useCaseIds.push((await approveUseCase(ctx, projectId, requirement.id, `Caso ${i}`)).id);
       result = await ctx.readiness.evaluate(projectId);
       expect(result.stages.find((s) => s.key === 'USE_CASES')?.satisfied).toBe(false);
     }
     const lastUseCase = await approveUseCase(ctx, projectId, requirement.id, 'Caso 4');
+    useCaseIds.push(lastUseCase.id);
     result = await ctx.readiness.evaluate(projectId);
     const useCasesStage = result.stages.find((s) => s.key === 'USE_CASES')!;
     expect(useCasesStage.satisfied).toBe(true);
@@ -385,13 +388,23 @@ describe('Readiness integration', () => {
     const uiService = new StructuredAnalysisService(
       ctx.prisma,
       fakeAi(ctx, 'ui-blueprint.generate', 2, {
-        screens: [{ localId: 'home', name: 'Inicio', purpose: 'Ver panel' }],
+        screens: [
+          {
+            localId: 'home',
+            name: 'Inicio',
+            purpose: 'Ver panel',
+            navigationNodeLocalId: 'home',
+            relatedUseCaseCodes: ['CU-001', 'CU-002', 'CU-003', 'CU-004'],
+            relatedSourceCodes: ['CU-001', 'CU-002', 'CU-003', 'CU-004'],
+          },
+        ],
       }),
       new DiagramEngine(),
       new FakeDiagramProvider({ svg: FAKE_SVG }),
     );
     const blueprintGeneration = await uiService.generate(projectId, 'UI_BLUEPRINT', [
       navAccepted.version.id,
+      ...useCaseIds,
     ]);
     const blueprintAccepted = (
       await uiService.accept(projectId, 'UI_BLUEPRINT', blueprintGeneration.id, [
@@ -419,7 +432,27 @@ describe('Readiness integration', () => {
 
     // New projects require an approved class diagram (DEC-121).
     expect(result.stages.find((s) => s.key === 'CLASS_DIAGRAM')?.satisfied).toBe(false);
-    await approved(ctx, projectId, 'CLASS_DIAGRAM');
+    const classDiagram = await ctx.structuredAnalysis.create(projectId, 'CLASS_DIAGRAM', 'Clases', {
+      classes: [
+        {
+          localId: 'order',
+          name: 'Pedido',
+          stereotype: 'ENTITY',
+          dataModelEntityName: 'Pedido',
+          attributes: [{ name: 'id', type: 'UUID', visibility: 'PRIVATE', required: true }],
+          methods: [],
+        },
+      ],
+      relationships: [],
+    });
+    for (const status of ['IN_REVIEW', 'APPROVED'] as const)
+      await ctx.structuredAnalysis.transition(
+        projectId,
+        'CLASS_DIAGRAM',
+        classDiagram.id,
+        classDiagram.version.id,
+        status,
+      );
 
     // New projects paint their mockups with an approved theme (DEC-118).
     await approved(ctx, projectId, 'DESIGN_THEME');
