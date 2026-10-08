@@ -193,7 +193,7 @@ export class ProjectContextService {
         status: { in: await sourceStatuses(this.prisma, projectId) },
         artifact: { artifactTypeCode: 'PROJECT_SOURCE' },
       },
-      include: { artifact: true, sourceDetail: true },
+      include: { artifact: true, sourceDetail: { include: { report: true } } },
       orderBy: { createdAt: 'asc' },
     });
     // A source can have several APPROVED versions over time (the older ones
@@ -216,7 +216,7 @@ export class ProjectContextService {
         projectId,
         language: project.language,
         promptKey: 'project-context.generate',
-        promptVersion: 1,
+        promptVersion: 2,
         messages: [
           {
             role: 'user',
@@ -225,6 +225,9 @@ export class ProjectContextService {
                 code: v.artifact.code,
                 title: v.title,
                 extractedText: v.sourceDetail!.extractedText,
+                // DEC-124: the report of this exact version, as guidance only;
+                // the text above stays authoritative.
+                ...(v.sourceDetail!.report ? { report: v.sourceDetail!.report.content } : {}),
               })),
             ),
           },
@@ -234,12 +237,15 @@ export class ProjectContextService {
         maxOutputTokens: 4096,
       });
       const sourceVersionIds = usable.map((v) => v.id);
+      // Recorded so the proposal can be audited: which reports guided it.
+      const reportSourceVersionIds = usable.filter((v) => v.sourceDetail!.report).map((v) => v.id);
       const candidate = await this.prisma.projectContextCandidate.create({
         data: {
           projectId,
           aiRunId: result.metadata.runId,
           content: result.data,
           sourceVersionIds,
+          reportSourceVersionIds,
         },
       });
       return {
@@ -248,6 +254,7 @@ export class ProjectContextService {
         aiRunId: candidate.aiRunId,
         content: result.data,
         sourceVersionIds,
+        reportSourceVersionIds,
         createdAt: candidate.createdAt.toISOString(),
       };
     } catch (error) {

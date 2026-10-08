@@ -356,7 +356,7 @@ describe('Project Context integration', () => {
         new PromptRegistry([
           {
             key: 'project-context.generate',
-            version: 1,
+            version: 2,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'project_context_generation',
             systemInstructions: 'policy',
@@ -413,7 +413,7 @@ describe('Project Context integration', () => {
         new PromptRegistry([
           {
             key: 'project-context.generate',
-            version: 1,
+            version: 2,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'project_context_generation',
             systemInstructions: 'policy',
@@ -428,6 +428,103 @@ describe('Project Context integration', () => {
       // Only v2 — v1 is still APPROVED (immutable history), but it is no
       // longer current knowledge, so it must never be cited alongside v2.
       expect(candidate.sourceVersionIds).toEqual([v2.id]);
+    });
+
+    // DEC-124: an approved report guides the proposal, only for the exact
+    // version cited, and the candidate records which reports were used.
+    it('passes the report of each exact cited version as guidance and records it', async () => {
+      const project = await createProject(ctx, 'AI With Reports');
+      const report = {
+        summary: 'Reunión con administración',
+        actors: ['Coordinador'],
+        businessConcepts: [],
+        candidateBusinessRules: [],
+        candidateConstraints: [],
+        needs: ['Ver reservas'],
+        importantFacts: [],
+        ambiguities: [],
+      };
+      // With a report on the version that is approved.
+      const draft = await ctx.sources.create(
+        project.id,
+        { title: 'Con reporte', sourceKind: 'TEXT', purpose: 'Prueba', description: '' },
+        { originalname: 'a.txt', mimetype: 'text/plain', size: 4, buffer: Buffer.from('abcd') },
+      );
+      await ctx.sources.submitManualReport(project.id, draft.id, report);
+      await ctx.sources.transition(project.id, draft.id, draft.version.id, 'IN_REVIEW');
+      const reported = await ctx.sources.transition(
+        project.id,
+        draft.id,
+        draft.version.id,
+        'APPROVED',
+      );
+      // A report on an older version: its corrected, approved v2 has none.
+      const old = await ctx.sources.create(
+        project.id,
+        { title: 'Corregida', sourceKind: 'TEXT', purpose: 'Prueba', description: '' },
+        { originalname: 'b.txt', mimetype: 'text/plain', size: 4, buffer: Buffer.from('efgh') },
+      );
+      await ctx.sources.submitManualReport(project.id, old.id, report);
+      await ctx.sources.transition(project.id, old.id, old.version.id, 'IN_REVIEW');
+      await ctx.sources.transition(project.id, old.id, old.version.id, 'APPROVED');
+      const corrected = await ctx.sources.submitManualTranscript(
+        project.id,
+        old.id,
+        'Texto corregido',
+      );
+      await ctx.sources.transition(project.id, old.id, corrected.version.id, 'IN_REVIEW');
+      const v2 = await ctx.sources.transition(project.id, old.id, corrected.version.id, 'APPROVED');
+
+      const content = {
+        problemStatement: 'Problema',
+        objective: 'Objetivo',
+        actors: ['Coordinador'],
+        needs: [],
+        constraints: [],
+        businessRules: [],
+      };
+      const fake = new FakeAIProvider({
+        provider: 'fake',
+        model: 'fake-v1',
+        payload: content,
+        usage: null,
+        latencyMs: 1,
+      });
+      const requests: { messages: { content: string }[] }[] = [];
+      const provider = {
+        id: fake.id,
+        generateStructured: (request: Parameters<typeof fake.generateStructured>[0]) => {
+          requests.push(request as never);
+          return fake.generateStructured(request);
+        },
+      };
+      const ai = new AIOrchestrator(
+        provider as never,
+        new PromptRegistry([
+          {
+            key: 'project-context.generate',
+            version: 2,
+            capability: 'STRUCTURED_OUTPUT',
+            purpose: 'project_context_generation',
+            systemInstructions: 'policy',
+          },
+        ]),
+        new PrismaAIRunRecorder(ctx.prisma),
+      );
+
+      const candidate = await new ProjectContextService(ctx.prisma, ai).generate(project.id);
+
+      const sent = JSON.parse(requests[0]!.messages.at(-1)!.content) as {
+        title: string;
+        report?: unknown;
+      }[];
+      expect(sent.find((s) => s.title === 'Con reporte')?.report).toEqual(report);
+      expect(sent.find((s) => s.title === 'Corregida')).not.toHaveProperty('report');
+      expect(candidate.sourceVersionIds.sort()).toEqual([reported.id, v2.id].sort());
+      expect(candidate.reportSourceVersionIds).toEqual([reported.id]);
+      expect(
+        await ctx.prisma.projectContextCandidate.findUniqueOrThrow({ where: { id: candidate.id } }),
+      ).toMatchObject({ reportSourceVersionIds: [reported.id] });
     });
 
     it('rejects generation for a project without any usable approved source', async () => {
