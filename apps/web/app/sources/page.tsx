@@ -45,6 +45,7 @@ import {
 import { api, ApiError, downloadFile } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { PageHeading } from '../../components/page-heading';
+import { AddSection } from '../../components/add-section';
 import { StatusBadge } from '../../components/status-badge';
 import {
   ExtractedTextPanel,
@@ -75,7 +76,16 @@ function outboundStalenessMessages(
   return [...messages];
 }
 
-function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreated: () => void }) {
+function CreateSourceForm({
+  projectId,
+  onCreated,
+  onClose,
+}: {
+  projectId: string;
+  onCreated: () => void;
+  // Absent while the project has no sources: the form is the page's content.
+  onClose?: () => void;
+}) {
   const [title, setTitle] = useState('');
   const [sourceKind, setSourceKind] = useState<ProjectSourceKind>('NOTES');
   const [purpose, setPurpose] = useState('');
@@ -140,6 +150,7 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
       setDescription('');
       clearFile();
       onCreated();
+      onClose?.();
       toast.success(
         created.processing
           ? 'Fuente guardada. El procesamiento continuará en segundo plano.'
@@ -158,6 +169,12 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
       className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4"
     >
       <h2 className="text-sm font-semibold text-foreground">Agregar fuente de conocimiento</h2>
+      {onClose ? null : (
+        <p className="text-sm text-muted-foreground">
+          Las fuentes son el conocimiento del que parte el proyecto: entrevistas, documentos,
+          normativas o notas. Agregue la primera para comenzar.
+        </p>
+      )}
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5 text-sm">
           <Label htmlFor="source-kind">Tipo de fuente</Label>
@@ -255,9 +272,16 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
           onChange={(e) => setDescription(e.target.value)}
         />
       </div>
-      <Button type="submit" disabled={submitting} className="self-start">
-        {submitting ? 'Guardando…' : 'Agregar fuente'}
-      </Button>
+      <div className="flex gap-2">
+        <Button type="submit" disabled={submitting}>
+          {submitting ? 'Guardando…' : 'Agregar fuente'}
+        </Button>
+        {onClose ? (
+          <Button type="button" variant="ghost" disabled={submitting} onClick={onClose}>
+            Cancelar
+          </Button>
+        ) : null}
+      </div>
     </form>
   );
 }
@@ -1007,14 +1031,22 @@ function SourcesContent({ projectId }: { projectId: string }) {
   return (
     <div className="flex flex-col gap-6">
       <PageHeading title="Fuentes del proyecto" projectId={projectId} />
-      <CreateSourceForm
-        projectId={projectId}
-        onCreated={() => {
-          queryClient.invalidateQueries({ queryKey: ['sources', projectId] });
-          queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
-          queryClient.invalidateQueries({ queryKey: ['staleness', projectId] });
-        }}
-      />
+      <AddSection
+        isEmpty={sources.data ? sources.data.items.length === 0 : undefined}
+        addLabel="Agregar fuente"
+      >
+        {(close) => (
+          <CreateSourceForm
+            projectId={projectId}
+            onClose={close}
+            onCreated={() => {
+              queryClient.invalidateQueries({ queryKey: ['sources', projectId] });
+              queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
+              queryClient.invalidateQueries({ queryKey: ['staleness', projectId] });
+            }}
+          />
+        )}
+      </AddSection>
       <QueryState isLoading={sources.isLoading} error={sources.error}>
         {sources.data && sources.data.items.length === 0 ? (
           <p className="text-sm text-muted-foreground">

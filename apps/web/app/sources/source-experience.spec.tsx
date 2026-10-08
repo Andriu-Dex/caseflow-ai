@@ -105,6 +105,26 @@ describe('Sources — adding a source', () => {
   });
 });
 
+describe('Sources — the creation form', () => {
+  it('folds behind a button once the project has sources', async () => {
+    const user = userEvent.setup();
+    mocks.list.mockResolvedValue({ items: [pdfSource()] });
+    renderPage();
+    const add = await screen.findByRole('button', { name: 'Agregar fuente' });
+    expect(screen.queryByLabelText('Título')).not.toBeInTheDocument();
+    await user.click(add);
+    expect(screen.getByLabelText('Título')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(screen.queryByLabelText('Título')).not.toBeInTheDocument();
+  });
+
+  it('is open with an explanation while there are no sources', async () => {
+    renderPage();
+    expect(await screen.findByText(/Agregue la primera para comenzar/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancelar' })).not.toBeInTheDocument();
+  });
+});
+
 describe('Sources — reviewing a source', () => {
   it('explains why the text could not be obtained', async () => {
     mocks.list.mockResolvedValue({
