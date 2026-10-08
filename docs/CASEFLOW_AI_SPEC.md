@@ -7242,6 +7242,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-121 | Diagrama de clases de dominio como paso 6 de la planificación, y coherencia obligatoria entre etapas (referencias por identificador y cobertura en ambas direcciones, bloqueante al generar, aprobar y construir) en los proyectos nuevos (ADR-006, §221.5) | Accepted |
 | DEC-122 | Tipos de fuente que siguen al formato del archivo (Factura y Formulario retirados para fuentes nuevas), motivo de fallo de extracción visible y revisión del original junto al texto extraído (§221.6) | Accepted |
 | DEC-123 | Trabajos interrumpidos por un reinicio del servidor: se reanudan los que son seguros de repetir (fuentes, rutas de trabajo) y se marcan como interrumpidos, para reintentar, los que tienen costo o historial auditado (bocetos, generación, validación); en Solo construcción la validación se reintenta una vez (§221.7) | Accepted |
+| DEC-124 | El reporte aprobado de una fuente guía la generación del contexto del proyecto: solo el de la versión exacta citada, el texto extraído prevalece ante contradicción y el candidato registra qué reportes se usaron (§221.8) | Accepted |
 
 ---
 
@@ -7678,7 +7679,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-123)
+# 221. Extensiones de V2 (DEC-116 a DEC-124)
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
@@ -7770,6 +7771,16 @@ Los trabajos en segundo plano se ejecutan dentro del proceso de la API. Al arran
 | Validación en el sandbox | Termina como error de entorno con ese mensaje; en Solo construcción se inicia una nueva validación, una sola vez por generación. |
 
 Un trabajo ya marcado nunca se vuelve a ejecutar si la cola lo entrega de nuevo. Cuando la persona está viendo un trabajo que pasa a fallido, la interfaz lo avisa con un aviso emergente; el motivo queda además junto a su botón Reintentar.
+
+## 221.8 El reporte de la fuente como guía del contexto (DEC-124)
+
+El reporte de una fuente (resumen, actores, necesidades, reglas y restricciones candidatas, revisado por una persona) es opcional y no condiciona la aprobación. Cuando existe, la generación del contexto del proyecto lo recibe junto al texto de esa fuente, con tres salvaguardas:
+
+- **Versión exacta:** solo se usa el reporte de la versión de la fuente que el contexto cita; una versión corregida sin reporte no hereda el de una versión anterior.
+- **El texto manda:** el reporte solo orienta; si contradice al texto extraído, prevalece el texto, y la evidencia del contexto sigue siendo la versión de la fuente.
+- **Registro:** el candidato de contexto guarda qué reportes se usaron.
+
+La coherencia obligatoria entre etapas (§221.5) no cambia: empieza en los requisitos y sus reglas son las mismas.
 
 ## 221.4 Fuera de alcance de estas extensiones
 

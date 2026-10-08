@@ -177,6 +177,13 @@ function ContextForm({
       setBusinessRulesText(candidate.content.businessRules.join('\n'));
       setSourceVersionIds(candidate.sourceVersionIds);
       setSourcesPrefilled(true);
+      const reports = candidate.reportSourceVersionIds.length;
+      if (reports)
+        toast.info(
+          reports === 1
+            ? 'La propuesta también se apoyó en el reporte aprobado de una fuente.'
+            : `La propuesta también se apoyó en los reportes aprobados de ${reports} fuentes.`,
+        );
     } catch (err) {
       toast.error(
         err instanceof ApiError

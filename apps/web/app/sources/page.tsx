@@ -679,6 +679,11 @@ function SourceCard({
               </span>
             </summary>
             <div className="border-t border-border px-3 py-3">
+              <p className="mb-2 text-xs text-muted-foreground">
+                Opcional: no es necesario para aprobar la fuente. Si lo registra, la generación del
+                contexto del proyecto lo usa como guía; el texto de la fuente sigue siendo la
+                referencia.
+              </p>
               {source.source.hasReport ? (
                 <QueryState isLoading={report.isLoading} error={null}>
                   {report.data ? (
