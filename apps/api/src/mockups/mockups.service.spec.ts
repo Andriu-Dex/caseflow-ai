@@ -77,6 +77,8 @@ function setup(provider: MockupProvider = new FakeMockupProvider()) {
     },
     mockupScreenDetail: { findFirst: vi.fn() },
     mockupGenerationJob: {
+      // runJob claims a QUEUED job; every job these tests run is queued.
+      updateMany: vi.fn(async () => ({ count: 1 })),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
         id: `job-${++jobSeq}`,
         status: 'QUEUED',
@@ -161,8 +163,9 @@ describe('MockupsService', () => {
         }),
       }),
     );
-    expect(prisma.mockupGenerationJob.update).toHaveBeenCalledWith({
-      where: { id: jobId },
+    // Claimed only while still QUEUED, so a redelivered job never runs twice.
+    expect(prisma.mockupGenerationJob.updateMany).toHaveBeenCalledWith({
+      where: { id: jobId, status: 'QUEUED' },
       data: { status: 'RUNNING' },
     });
     expect(prisma.mockupGenerationJob.update).toHaveBeenLastCalledWith({

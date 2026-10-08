@@ -39,6 +39,7 @@ import { StructuredAnalysisModule } from '../structured-analysis/structured-anal
 import { MockupsModule } from '../mockups/mockups.module';
 
 import { ConsistencyEngineModule } from '../consistency-engine/consistency-engine.module';
+import { InterruptedJobsRecovery } from './interrupted-jobs.recovery';
 
 @Module({
   imports: [
@@ -64,6 +65,7 @@ import { ConsistencyEngineModule } from '../consistency-engine/consistency-engin
     SandboxStatusController,
   ],
   providers: [
+    InterruptedJobsRecovery,
     DependencyCatalogService,
     DependencyProposalsService,
     DesignBaselinesService,

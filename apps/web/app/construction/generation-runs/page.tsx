@@ -1,5 +1,6 @@
 'use client';
 
+import { useFailureToast } from '../../../lib/use-failure-toast';
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -140,6 +141,10 @@ const REPAIR_LABELS = {
 };
 
 const sandboxActive = (r: SandboxRunResponse) => r.status === 'QUEUED' || r.status === 'RUNNING';
+const sandboxActiveStatus = (status: string) => status === 'QUEUED' || status === 'RUNNING';
+const sandboxErrored = (status: string) => status === 'ERROR';
+const generationActive = (status: string) => status === 'QUEUED' || status === 'GENERATING';
+const generationFailed = (status: string) => status === 'FAILED';
 
 // Validation is a separate state from generation (AGENTS.md §25): only READY
 // offers the project for download.
@@ -151,6 +156,12 @@ function RunValidation({ projectId, runId }: { projectId: string; runId: string 
     queryFn: () => api.generationRuns.sandboxRuns(projectId, runId),
     refetchInterval: (query) => (query.state.data?.items.some(sandboxActive) ? 3000 : false),
   });
+  useFailureToast(
+    attempts.data?.items,
+    sandboxActiveStatus,
+    sandboxErrored,
+    'La validación no pudo completarse.',
+  );
   const items = attempts.data?.items ?? [];
   const last = items.at(-1);
   const canStart = !last || last.status === 'ERROR';
@@ -280,6 +291,12 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
     queryFn: () => api.generationRuns.list(projectId),
     refetchInterval: (query) => (query.state.data?.items.some(isActive) ? 2000 : false),
   });
+  useFailureToast(
+    runs.data?.items,
+    generationActive,
+    generationFailed,
+    'No se pudo generar el proyecto.',
+  );
   const approvedPlans = (plans.data?.items ?? []).filter((p) => p.version.status === 'APPROVED');
   const [planVersionId, setPlanVersionId] = useState<string>();
   const [openRunId, setOpenRunId] = useState<string>();

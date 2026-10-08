@@ -1,5 +1,6 @@
 'use client';
 
+import { useFailureToast } from '../lib/use-failure-toast';
 import { useState } from 'react';
 import Link from 'next/link';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -144,6 +145,9 @@ function ReviewSection({
   );
 }
 
+const runActive = (status: string) => status === 'QUEUED' || status === 'RUNNING';
+const runFailed = (status: string) => status === 'FAILED';
+
 // EXPRESS and BUILD_ONLY routes (DEC-116): the prompt, stage-by-stage
 // progress, the EXPRESS bulk reviews and the result.
 export function WorkflowRunPanel({ projectId, title }: { projectId: string; title: string }) {
@@ -156,6 +160,7 @@ export function WorkflowRunPanel({ projectId, title }: { projectId: string; titl
         ? 3000
         : false,
   });
+  useFailureToast(runs.data?.items, runActive, runFailed, 'La ejecución se detuvo.');
   const [prompt, setPrompt] = useState('');
   const [busy, setBusy] = useState(false);
   const run = runs.data?.items[0];

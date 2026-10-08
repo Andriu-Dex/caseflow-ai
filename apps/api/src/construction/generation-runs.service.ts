@@ -1,3 +1,4 @@
+import { INTERRUPTED_BY_RESTART } from '../common/interrupted';
 import { createHash } from 'node:crypto';
 import {
   Inject,
@@ -100,6 +101,40 @@ export class GenerationRunsService {
       projectId,
     });
     return this.map(run);
+  }
+
+  // A run still GENERATING when the API starts was cut off by a restart. It
+  // is not repeated automatically: it is audited history and the person
+  // decides whether to generate again (BUILD_ONLY retries it once through the
+  // workflow run). Its files are written in one transaction at the end, so an
+  // interrupted run left none behind.
+  async markInterrupted(bootedAt: Date): Promise<number> {
+    const runs = await this.prisma.generationRun.findMany({
+      where: { status: 'GENERATING', startedAt: { lt: bootedAt } },
+      select: { id: true, projectId: true },
+    });
+    let marked = 0;
+    for (const run of runs)
+      await this.prisma.$transaction(async (tx) => {
+        const { count } = await tx.generationRun.updateMany({
+          where: { id: run.id, status: 'GENERATING' },
+          data: { status: 'FAILED', errorMessage: INTERRUPTED_BY_RESTART, finishedAt: new Date() },
+        });
+        if (!count) return;
+        marked++;
+        await this.audit.record(
+          {
+            projectId: run.projectId,
+            actorUserId: null,
+            action: 'GENERATION_RUN_FINISHED',
+            entityType: 'GENERATION_RUN',
+            entityId: run.id,
+            metadata: { status: 'FAILED', interrupted: true },
+          },
+          tx,
+        );
+      });
+    return marked;
   }
 
   // Invoked by the worker's authenticated internal callback. Always leaves the

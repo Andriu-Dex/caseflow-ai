@@ -1,3 +1,4 @@
+import { INTERRUPTED_BY_RESTART } from '../common/interrupted';
 import type { ApprovalOrigin } from '@caseflow-ai/contracts';
 import { randomUUID } from 'node:crypto';
 import JSZip from 'jszip';
@@ -198,16 +199,30 @@ export class MockupsService {
     return this.mapJob(job);
   }
 
+  // A mockup still RUNNING when the API starts was cut off by a restart. It is
+  // not repeated automatically (Stitch is slow, has a quota and may already
+  // have produced it): the person generates it again.
+  async markInterrupted(bootedAt: Date): Promise<number> {
+    const { count } = await this.prisma.mockupGenerationJob.updateMany({
+      where: { status: 'RUNNING', updatedAt: { lt: bootedAt } },
+      data: { status: 'FAILED', errorMessage: INTERRUPTED_BY_RESTART },
+    });
+    return count;
+  }
+
   // Invoked only by the worker's authenticated internal callback (never
   // reachable from the browser) — runs the actual generation this job
   // describes and always leaves the job in a terminal status, even on an
   // unexpected failure, so polling never hangs on RUNNING forever.
   async runJob(jobId: string): Promise<void> {
-    const job = await this.prisma.mockupGenerationJob.findUniqueOrThrow({ where: { id: jobId } });
-    await this.prisma.mockupGenerationJob.update({
-      where: { id: jobId },
+    // Only a QUEUED job is picked up: a redelivered job (or one already marked
+    // as interrupted) must not run again behind the user's back.
+    const { count } = await this.prisma.mockupGenerationJob.updateMany({
+      where: { id: jobId, status: 'QUEUED' },
       data: { status: 'RUNNING' },
     });
+    if (!count) return;
+    const job = await this.prisma.mockupGenerationJob.findUniqueOrThrow({ where: { id: jobId } });
     try {
       const screenEdit = Boolean(job.screenLocalId && job.existingMockupId && job.refinementPrompt);
       const generated = screenEdit
