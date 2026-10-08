@@ -62,7 +62,14 @@ export class SourcesController {
     },
   })
   @ApiZodResponse(201, 'Project Source.', sourceResponseSchema)
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: SOURCE_MAX_FILE_SIZE_BYTES } }))
+  // Multer reads multipart file names as latin1 unless told otherwise, which
+  // turned "Estándares.pdf" into "EstÃ¡ndares.pdf".
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: SOURCE_MAX_FILE_SIZE_BYTES },
+      defParamCharset: 'utf8',
+    }),
+  )
   create(
     @Param('projectId', uuidParamPipe) projectId: string,
     @UploadedFile() file: Express.Multer.File | undefined,
@@ -128,7 +135,15 @@ export class SourcesController {
   ) {
     const { body, mimeType, filename } = await this.service.download(projectId, sourceId);
     res.setHeader('Content-Type', mimeType);
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+    // RFC 6266: an ASCII fallback plus the exact UTF-8 name for every browser.
+    const ascii = filename
+      .normalize('NFD')
+      .replace(/[^\x20-\x7e]/g, '')
+      .replace(/["\\]/g, '');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${ascii || 'archivo'}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+    );
     res.send(body);
   }
 

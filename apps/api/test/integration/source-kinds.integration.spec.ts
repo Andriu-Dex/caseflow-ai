@@ -80,6 +80,30 @@ describe('Source kinds and extraction feedback integration', () => {
     });
   });
 
+  it('keeps accented file names intact on upload and download', async () => {
+    const uploaded = await http()
+      .post(`/projects/${projectId}/sources`)
+      .set(auth())
+      .field('title', 'Normas')
+      .field('sourceKind', 'TEXT')
+      .field('purpose', 'Normas del proyecto')
+      .field('description', '')
+      .attach('file', Buffer.from('Calidad y seguridad'), {
+        filename: 'Normas y Estándares.txt',
+        contentType: 'text/plain',
+      })
+      .expect(201);
+    expect(uploaded.body.source.originalFilename).toBe('Normas y Estándares.txt');
+
+    const download = await http()
+      .get(`/projects/${projectId}/sources/${uploaded.body.id}/download`)
+      .set(auth())
+      .expect(200);
+    expect(download.headers['content-disposition']).toBe(
+      `attachment; filename="Normas y Estandares.txt"; filename*=UTF-8''${encodeURIComponent('Normas y Estándares.txt')}`,
+    );
+  });
+
   it('tells members what can be extracted automatically', async () => {
     const response = await http()
       .get(`/projects/${projectId}/sources/capabilities`)

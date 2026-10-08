@@ -618,7 +618,11 @@ export class SourcesService implements OnApplicationBootstrap {
       throw new UnprocessableEntityException('Esta fuente no tiene un archivo; solo contenido.');
     try {
       const body = await this.storage.getObject(detail.storageKey);
-      return { body, mimeType: detail.mimeType!, filename: detail.originalFilename! };
+      return {
+        body,
+        mimeType: detail.mimeType!,
+        filename: repairFilenameEncoding(detail.originalFilename!),
+      };
     } catch (error) {
       if (error instanceof StorageProviderError)
         throw new ServiceUnavailableException({ message: error.message, code: error.code });
@@ -860,7 +864,8 @@ export class SourcesService implements OnApplicationBootstrap {
         purpose: detail.purpose,
         businessArea: detail.businessArea,
         description: detail.description,
-        originalFilename: detail.originalFilename,
+        originalFilename:
+          detail.originalFilename && repairFilenameEncoding(detail.originalFilename),
         mimeType: detail.mimeType,
         sizeBytes: detail.sizeBytes,
         contentHash: detail.contentHash,
@@ -887,6 +892,17 @@ export class SourcesService implements OnApplicationBootstrap {
       createdAt: candidate.createdAt.toISOString(),
     };
   }
+}
+
+// Names stored before uploads were read as UTF-8 came in mis-decoded as
+// latin1 ("EstÃ¡ndares.pdf"). Their history is immutable, so they are
+// repaired when shown: decoding back only when the result is valid UTF-8.
+export function repairFilenameEncoding(name: string): string {
+  // Only a name made of single bytes can be the latin1 reading of UTF-8.
+  if ([...name].some((char) => char.charCodeAt(0) > 0xff)) return name;
+  const decoded = Buffer.from(name, 'latin1').toString('utf8');
+  const invalid = [...decoded].some((char) => char.charCodeAt(0) === 0xfffd);
+  return invalid ? name : decoded;
 }
 
 // Never trusted for storage paths, but still useful/safe to display back to
