@@ -7241,6 +7241,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-120 | La edición de escritorio usa PGlite con pgvector en lugar de PostgreSQL embebido, una cola en proceso en lugar de Redis y almacenamiento en disco (ADR-005, §221.2) | Accepted |
 | DEC-121 | Diagrama de clases de dominio como paso 6 de la planificación, y coherencia obligatoria entre etapas (referencias por identificador y cobertura en ambas direcciones, bloqueante al generar, aprobar y construir) en los proyectos nuevos (ADR-006, §221.5) | Accepted |
 | DEC-122 | Tipos de fuente que siguen al formato del archivo (Factura y Formulario retirados para fuentes nuevas), motivo de fallo de extracción visible y revisión del original junto al texto extraído (§221.6) | Accepted |
+| DEC-123 | Trabajos interrumpidos por un reinicio del servidor: se reanudan los que son seguros de repetir (fuentes, rutas de trabajo) y se marcan como interrumpidos, para reintentar, los que tienen costo o historial auditado (bocetos, generación, validación); en Solo construcción la validación se reintenta una vez (§221.7) | Accepted |
 
 ---
 
@@ -7677,7 +7678,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-122)
+# 221. Extensiones de V2 (DEC-116 a DEC-123)
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
@@ -7755,6 +7756,20 @@ Se verifica al generar (la IA recibe la lista de lo que debe cubrir), al aprobar
 - **Antes de subir**, la interfaz explica qué se hará con el archivo y avisa si el reconocimiento de texto o la transcripción no están disponibles (`GET /projects/{projectId}/sources/capabilities`).
 - **Motivo de fallo:** cuando no se obtiene texto, se registra el motivo (`TOO_MANY_PAGES`, `TOO_MANY_SCANNED_PAGES`, `TEXT_TOO_LONG`, `EMPTY`, `OCR_UNAVAILABLE`, `TRANSCRIPTION_UNAVAILABLE`, `UNSUPPORTED_FORMAT`, `UNREADABLE`) y se muestra en lenguaje claro.
 - **Revisión:** el detalle muestra el archivo original (visor de PDF, imagen o reproductor de audio del navegador, obtenido con la sesión, nunca por URL pública) junto al texto extraído, que se corrige en el mismo lugar. Guardar crea una nueva versión con origen manual; la extracción automática queda en el historial.
+
+## 221.7 Trabajos interrumpidos por un reinicio (DEC-123)
+
+Los trabajos en segundo plano se ejecutan dentro del proceso de la API. Al arrancar, lo que figuraba en curso fue cortado por un reinicio y nunca terminaría solo:
+
+| Trabajo | Al arrancar |
+|---|---|
+| Procesamiento de fuentes | Vuelve a la cola (repetirlo es local e idempotente). |
+| Rutas de trabajo (Exprés, Solo construcción) | Se reanudan desde la etapa en que estaban, sin repetir las terminadas. |
+| Bocetos | Quedan fallidos: «Se interrumpió porque el servidor se reinició. Puede reintentarlo.» |
+| Generación de código | Queda fallida con ese mensaje y la auditoría la registra como interrumpida. |
+| Validación en el sandbox | Termina como error de entorno con ese mensaje; en Solo construcción se inicia una nueva validación, una sola vez por generación. |
+
+Un trabajo ya marcado nunca se vuelve a ejecutar si la cola lo entrega de nuevo. Cuando la persona está viendo un trabajo que pasa a fallido, la interfaz lo avisa con un aviso emergente; el motivo queda además junto a su botón Reintentar.
 
 ## 221.4 Fuera de alcance de estas extensiones
 

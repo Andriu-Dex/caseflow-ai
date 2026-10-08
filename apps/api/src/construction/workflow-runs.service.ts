@@ -168,6 +168,28 @@ export class WorkflowRunsService {
     return this.get(projectId, run.id);
   }
 
+  // A run still RUNNING when the API starts was cut off by a restart. It is
+  // resumed automatically: it continues from the stage it was on and never
+  // repeats finished stages (see produce()). Runs after the generation and
+  // mockup recovery, so an interrupted stage is retried once from scratch.
+  async resumeInterrupted(bootedAt: Date): Promise<number> {
+    const runs = await this.prisma.workflowRun.findMany({
+      where: { status: 'RUNNING', startedAt: { lt: bootedAt } },
+      select: { id: true, projectId: true },
+    });
+    let resumed = 0;
+    for (const run of runs) {
+      const { count } = await this.prisma.workflowRun.updateMany({
+        where: { id: run.id, status: 'RUNNING' },
+        data: { status: 'QUEUED' },
+      });
+      if (!count) continue;
+      await this.enqueue(run.projectId, run.id);
+      resumed++;
+    }
+    return resumed;
+  }
+
   // A failed run resumes from the stage that failed.
   async retry(projectId: string, runId: string): Promise<WorkflowRunResponse> {
     const { count } = await this.prisma.workflowRun.updateMany({

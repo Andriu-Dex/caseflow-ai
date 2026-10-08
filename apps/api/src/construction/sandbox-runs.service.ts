@@ -1,3 +1,4 @@
+import { INTERRUPTED_BY_RESTART } from '../common/interrupted';
 import { randomUUID } from 'node:crypto';
 import {
   ConflictException,
@@ -150,6 +151,36 @@ export class SandboxRunsService {
         include: runInclude,
       }),
     );
+  }
+
+  // An attempt still RUNNING when the API starts was cut off by a restart: it
+  // ends as ERROR (it says nothing about the code) and the person retries the
+  // validation. BUILD_ONLY promises no intervention, so there a fresh
+  // validation starts automatically, once per generation.
+  async markInterrupted(bootedAt: Date): Promise<number> {
+    const runs = await this.prisma.sandboxRun.findMany({
+      where: { status: 'RUNNING', startedAt: { lt: bootedAt } },
+      select: {
+        id: true,
+        projectId: true,
+        generationRunId: true,
+        createdByUserId: true,
+        project: { select: { workflowRoute: true } },
+      },
+    });
+    for (const run of runs) {
+      await this.finish(run.id, run.projectId, {
+        status: 'ERROR',
+        errorMessage: INTERRUPTED_BY_RESTART,
+      });
+      if (run.project.workflowRoute !== 'BUILD_ONLY') continue;
+      const interruptions = await this.prisma.sandboxRun.count({
+        where: { generationRunId: run.generationRunId, errorMessage: INTERRUPTED_BY_RESTART },
+      });
+      if (interruptions === 1)
+        await this.start(run.projectId, run.createdByUserId, run.generationRunId);
+    }
+    return runs.length;
   }
 
   // Worker callback. Always ends in a terminal status, so polling never hangs.
