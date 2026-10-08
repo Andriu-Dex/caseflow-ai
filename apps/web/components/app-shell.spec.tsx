@@ -4,7 +4,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppShell } from './app-shell';
 import { TestProviders } from '../lib/test-utils';
 
-const mocks = vi.hoisted(() => ({ readinessGet: vi.fn(), projectGet: vi.fn() }));
+const mocks = vi.hoisted(() => ({ readinessGet: vi.fn(), projectGet: vi.fn(), warning: vi.fn() }));
+
+vi.mock('sonner', () => ({ toast: { warning: (...args: unknown[]) => mocks.warning(...args) } }));
 
 vi.mock('next/navigation', () => ({ usePathname: () => '/' }));
 
@@ -18,6 +20,8 @@ vi.mock('../lib/api', () => ({
 }));
 
 beforeEach(() => {
+  mocks.warning.mockReset();
+  window.localStorage.removeItem('caseflow.sidebarCollapsed');
   window.localStorage.setItem('caseflow.activeProjectId', 'p1');
   mocks.projectGet.mockResolvedValue({ id: 'p1', workflowRoute: 'FULL' });
 });
@@ -62,7 +66,10 @@ describe('AppShell construction group', () => {
       </TestProviders>,
     );
     await userEvent.click(await screen.findByRole('button', { name: /Construcción/ }));
-    expect(await screen.findByText(/Complete los 13 pasos de planificación/)).toBeInTheDocument();
+    // A warning, so shown as a toast (also visible with the sidebar folded).
+    expect(mocks.warning).toHaveBeenCalledWith(
+      expect.stringMatching(/Complete los 13 pasos de planificación/),
+    );
   });
 
   it('expands the five Construction links once planning is complete (ready: true)', async () => {
@@ -119,5 +126,39 @@ describe('AppShell — Entregables group', () => {
     expect(screen.getByText('Entregables')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Preparación / Exportar' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Líneas Base' })).toBeInTheDocument();
+  });
+});
+
+describe('AppShell sidebar folding', () => {
+  it('folds into an icon rail, keeps labels for screen readers and remembers it', async () => {
+    mocks.readinessGet.mockResolvedValue({ ready: false, stages: [] });
+    render(
+      <TestProviders>
+        <AppShell>content</AppShell>
+      </TestProviders>,
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Plegar menú' }));
+    expect(screen.getByRole('button', { name: 'Expandir menú' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    expect(screen.getByText('Fuentes')).toHaveClass('md:sr-only');
+    expect(screen.getByRole('link', { name: /Fuentes/ })).toHaveAttribute(
+      'title',
+      expect.stringContaining('Fuentes'),
+    );
+    expect(window.localStorage.getItem('caseflow.sidebarCollapsed')).toBe('true');
+  });
+
+  it('toggles with Ctrl+B', async () => {
+    mocks.readinessGet.mockResolvedValue({ ready: false, stages: [] });
+    render(
+      <TestProviders>
+        <AppShell>content</AppShell>
+      </TestProviders>,
+    );
+    await screen.findByRole('button', { name: 'Plegar menú' });
+    await userEvent.keyboard('{Control>}b{/Control}');
+    expect(screen.getByRole('button', { name: 'Expandir menú' })).toBeInTheDocument();
   });
 });
