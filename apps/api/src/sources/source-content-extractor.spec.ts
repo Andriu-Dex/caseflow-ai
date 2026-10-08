@@ -126,6 +126,15 @@ describe('SourceContentExtractor', () => {
     });
   });
 
+  it('keeps plain-text line breaks and never reads its lines as headings', async () => {
+    expect(
+      await extractor.extract('text/plain', Buffer.from('Acta\r\n# 3 asistentes\n- Ana\n\nCierre')),
+    ).toEqual({
+      state: 'EXTRACTED',
+      text: 'Acta  \n\\# 3 asistentes  \n- Ana\n\nCierre',
+    });
+  });
+
   it('reports text beyond the limit as too long instead of truncating it', async () => {
     expect(await extractor.extract('text/plain', Buffer.from('a'.repeat(50_001)))).toEqual({
       state: 'FAILED',

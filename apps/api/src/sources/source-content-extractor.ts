@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import * as mammoth from 'mammoth';
-import { definePDFJSModule, extractText, getDocumentProxy, renderPageAsImage } from 'unpdf';
+import { definePDFJSModule, extractTextItems, getDocumentProxy, renderPageAsImage } from 'unpdf';
 import {
   LOCALLY_EXTRACTABLE_MIME_TYPES,
   SOURCE_LIMITS,
@@ -11,6 +11,7 @@ import {
   type TranscriptionProvider,
 } from '@caseflow-ai/integrations';
 import { DisabledSourceOcrProvider, type SourceOcrProvider } from './source-ocr-provider';
+import { docxHtmlToMarkdown, joinPages, pdfPagesToMarkdown } from './source-structure';
 
 export type ExtractionOutcome =
   | { state: 'EXTRACTED'; text: string }
@@ -59,11 +60,15 @@ export class SourceContentExtractor {
 
   async extract(mimeType: string, buffer: Buffer, filename = 'source'): Promise<ExtractionOutcome> {
     try {
-      if (TEXT_MIME_TYPES.has(mimeType)) return result(buffer.toString('utf-8'));
+      // Extracted text is Markdown (DEC-125): Markdown files as written, plain
+      // text with its line breaks kept and nothing read as markup.
+      if (mimeType === 'text/markdown') return result(buffer.toString('utf-8'));
+      if (TEXT_MIME_TYPES.has(mimeType))
+        return result(plainTextToMarkdown(buffer.toString('utf-8')));
       if (mimeType === 'application/pdf') return await this.extractPdfText(buffer);
       if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-        const extracted = await mammoth.extractRawText({ buffer });
-        return result(extracted.value);
+        const converted = await mammoth.convertToHtml({ buffer });
+        return result(docxHtmlToMarkdown(converted.value));
       }
       if (IMAGE_MIME_TYPES.has(mimeType)) {
         if (!this.ocr.available) return unsupported('OCR_UNAVAILABLE');
@@ -83,8 +88,8 @@ export class SourceContentExtractor {
     const pdf = await getDocumentProxy(new Uint8Array(buffer));
     try {
       if (pdf.numPages > MAX_PDF_PAGES) return failed('TOO_MANY_PAGES');
-      const extracted = await extractText(pdf);
-      const pages = Array.isArray(extracted.text) ? extracted.text : [extracted.text];
+      const { items } = await extractTextItems(pdf);
+      const pages = pdfPagesToMarkdown(items);
       const missingPages = pages.flatMap((page, index) => (page.trim() ? [] : [index + 1]));
       if (missingPages.length > MAX_OCR_PAGES) return failed('TOO_MANY_SCANNED_PAGES');
       if (missingPages.length) {
@@ -100,9 +105,24 @@ export class SourceContentExtractor {
         if (typeof rendered === 'string') return failed('UNREADABLE');
         pages[pageNumber - 1] = await this.ocr.recognize(Buffer.from(rendered));
       }
-      return result(pages.join('\n\n'));
+      return result(joinPages(pages));
     } finally {
       await (pdf as typeof pdf & { destroy?: () => Promise<void> }).destroy?.();
     }
   }
+}
+
+// Plain text has no markup: its line breaks are kept and a line starting with
+// a heading, quote or table symbol is escaped (lists are meant as lists).
+function plainTextToMarkdown(text: string): string {
+  return text
+    .replace(/\r\n?/g, '\n')
+    .split(/\n{2,}/)
+    .map((paragraph) =>
+      paragraph
+        .split('\n')
+        .map((line) => line.trimEnd().replace(/^(\s*)([#>|])/, '$1\\$2'))
+        .join('  \n'),
+    )
+    .join('\n\n');
 }

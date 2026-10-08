@@ -462,6 +462,81 @@ export class SourcesService implements OnApplicationBootstrap {
     }
   }
 
+  // Reads the original file again with the current extractor (structure,
+  // OCR filtering) into a new version; earlier versions stay as they were.
+  // Like an upload, slow formats go through the queue: a pending version
+  // first, then the version with the text.
+  async reExtract(projectId: string, id: string) {
+    const row = await this.findLatest(projectId, id);
+    if (row.archivedAt)
+      throw new UnprocessableEntityException('Una fuente archivada no se puede volver a extraer.');
+    const latest = row.versions[0]!;
+    const detail = latest.sourceDetail!;
+    if (!detail.storageKey || !detail.mimeType)
+      throw new UnprocessableEntityException('Esta fuente no tiene un archivo; solo contenido.');
+    if (latest.sourceProcessingJobs.some((job) => ['QUEUED', 'RUNNING'].includes(job.status)))
+      throw new UnprocessableEntityException('El archivo ya se está procesando.');
+    const async = Boolean(this.queue) && !['text/plain', 'text/markdown'].includes(detail.mimeType);
+    const extraction = async
+      ? ({ state: 'PENDING' } as const)
+      : await this.extractor.extract(
+          detail.mimeType,
+          await this.storage.getObject(detail.storageKey),
+          detail.originalFilename ?? 'source',
+        );
+    let job: { id: string } | undefined;
+    const result = await this.prisma.$transaction(async (tx) => {
+      const version = await tx.artifactVersion.create({
+        data: {
+          artifactId: id,
+          projectId,
+          versionNumber: latest.versionNumber + 1,
+          title: latest.title,
+          status: 'DRAFT',
+          origin: 'SYSTEM_GENERATED',
+        },
+      });
+      await tx.sourceDetail.create({
+        data: {
+          artifactVersionId: version.id,
+          sourceKind: detail.sourceKind,
+          purpose: detail.purpose,
+          businessArea: detail.businessArea,
+          description: detail.description,
+          originalFilename: detail.originalFilename,
+          mimeType: detail.mimeType,
+          sizeBytes: detail.sizeBytes,
+          contentHash: detail.contentHash,
+          storageKey: detail.storageKey,
+          language: detail.language,
+          extractionState: extraction.state,
+          extractedText: extraction.state === 'EXTRACTED' ? extraction.text : null,
+          extractionFailureReason:
+            extraction.state === 'FAILED' || extraction.state === 'UNSUPPORTED'
+              ? extraction.reason
+              : null,
+        },
+      });
+      if (async)
+        job = await tx.sourceProcessingJob.create({
+          data: {
+            projectId,
+            sourceVersionId: version.id,
+            processor: detail.mimeType!.startsWith('audio/')
+              ? 'TRANSCRIPTION'
+              : detail.mimeType!.startsWith('image/')
+                ? 'OCR'
+                : detail.mimeType === 'application/pdf'
+                  ? 'PDF'
+                  : 'DOCUMENT',
+          },
+        });
+      return this.loadAndMap(tx, id, version.id);
+    });
+    if (job) await this.requeue(job.id, projectId);
+    return job ? this.get(projectId, id) : result;
+  }
+
   async submitManualTranscript(projectId: string, id: string, transcript: string) {
     const row = await this.findLatest(projectId, id);
     const latest = row.versions[0]!;

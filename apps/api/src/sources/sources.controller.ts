@@ -126,6 +126,19 @@ export class SourcesController {
     return this.service.retryProcessing(projectId, sourceId);
   }
 
+  @Post(':sourceId/re-extract')
+  @ApiOperation({
+    operationId: 'reExtractSource',
+    summary: 'Volver a extraer el texto del archivo original en una nueva versión',
+  })
+  @ApiZodResponse(201, 'Project Source.', sourceResponseSchema)
+  reExtract(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('sourceId', uuidParamPipe) sourceId: string,
+  ) {
+    return this.service.reExtract(projectId, sourceId);
+  }
+
   @Get(':sourceId/download')
   @ApiOperation({ operationId: 'downloadSource', summary: 'Descargar el archivo original' })
   async download(
