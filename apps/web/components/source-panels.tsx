@@ -264,15 +264,20 @@ export function ExtractedTextPanel({
   text,
   loading,
   onSaved,
+  startEditing = false,
+  onExit,
 }: {
   projectId: string;
   source: SourceResponse;
   text: string | undefined;
   loading: boolean;
   onSaved: () => void;
+  // Opens straight in the editor; onExit runs after saving or discarding.
+  startEditing?: boolean;
+  onExit?: () => void;
 }) {
   const editable = Boolean(source.source.originalFilename) && !source.archivedAt;
-  const [draft, setDraft] = useState<string | null>(null);
+  const [draft, setDraft] = useState<string | null>(startEditing ? (text ?? '') : null);
   const [saving, setSaving] = useState(false);
   const editing = draft !== null;
   const dirty = editing && draft !== (text ?? '');
@@ -286,6 +291,7 @@ export function ExtractedTextPanel({
       toast.success('Texto guardado como nueva versión.');
       setDraft(null);
       onSaved();
+      onExit?.();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'No se pudo guardar el texto.');
     } finally {
@@ -328,7 +334,10 @@ export function ExtractedTextPanel({
                 variant="ghost"
                 size="sm"
                 disabled={saving}
-                onClick={() => setDraft(null)}
+                onClick={() => {
+                  setDraft(null);
+                  onExit?.();
+                }}
               >
                 Descartar
               </Button>

@@ -156,6 +156,11 @@ describe('Sources — reviewing a source', () => {
     renderPage();
     expect(await screen.findByText('Texto extraído')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Ver detalle' }));
+    // The detail opens as a reading view of the text.
+    expect(await screen.findByRole('article', { name: 'el texto de la fuente' })).toHaveTextContent(
+      'Acuerdo 1: compar pan',
+    );
+    await user.click(screen.getByRole('button', { name: 'Ver original lado a lado' }));
 
     expect(await screen.findByTitle('Archivo original: acta.pdf')).toHaveAttribute(
       'src',

@@ -5,8 +5,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   Archive,
+  ChevronRight,
+  Columns2,
   Download,
   FileText,
+  MoreHorizontal,
   Pencil,
   Trash2,
   Upload,
@@ -33,6 +36,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
   Input,
   Label,
   Select,
@@ -46,6 +54,7 @@ import { api, ApiError, downloadFile } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { PageHeading } from '../../components/page-heading';
 import { AddSection } from '../../components/add-section';
+import { ReadableText } from '../../components/readable-text';
 import { StatusBadge } from '../../components/status-badge';
 import {
   ExtractedTextPanel,
@@ -308,6 +317,10 @@ function SourceCard({
   const [approving, setApproving] = useState(false);
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // The detail opens as a reading view; the original side by side and the
+  // text editor are one click away.
+  const [view, setView] = useState<'read' | 'compare' | 'edit'>('read');
+  const hasFile = Boolean(source.source.originalFilename);
 
   const report = useQuery({
     queryKey: ['source-report', projectId, source.id],
@@ -411,6 +424,7 @@ function SourceCard({
     processing?.status === 'RUNNING' &&
     Date.now() - new Date(processing.updatedAt).getTime() > 15 * 60_000;
   const status = sourceStatus(source);
+  const readingText = hasFile ? extractedText.data?.text : source.source.description;
   const waitNotice = longWait
     ? 'Lleva varios minutos en cola; puede escribir la transcripción a mano o volver después.'
     : staleProcessing
@@ -488,41 +502,105 @@ function SourceCard({
             </div>
           ) : null}
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <section>
-              <h4 className="mb-0.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                Propósito
-              </h4>
-              <p className="text-foreground/90">{source.source.purpose}</p>
-            </section>
+          <dl className="flex flex-wrap gap-x-8 gap-y-2 rounded-md bg-muted/40 px-3 py-2">
+            <div>
+              <dt className="text-xs text-muted-foreground">Propósito</dt>
+              <dd className="text-foreground/90">{source.source.purpose}</dd>
+            </div>
             {source.source.businessArea ? (
-              <section>
-                <h4 className="mb-0.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                  Área de negocio
-                </h4>
-                <p className="text-foreground/90">{source.source.businessArea}</p>
-              </section>
+              <div>
+                <dt className="text-xs text-muted-foreground">Área de negocio</dt>
+                <dd className="text-foreground/90">{source.source.businessArea}</dd>
+              </div>
             ) : null}
-            <section>
-              <h4 className="mb-0.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                Archivo original
-              </h4>
-              <p className="text-foreground/90">
-                {source.source.originalFilename && source.source.sizeBytes != null
-                  ? `${source.source.originalFilename} (${source.source.mimeType}, ${Math.ceil(source.source.sizeBytes / 1024)} KB)`
-                  : 'Sin archivo — solo contenido escrito'}
-              </p>
-            </section>
+            <div>
+              <dt className="text-xs text-muted-foreground">Archivo</dt>
+              <dd className="text-foreground/90">
+                {hasFile && source.source.sizeBytes != null
+                  ? `${source.source.originalFilename} · ${Math.ceil(source.source.sizeBytes / 1024)} KB`
+                  : 'Sin archivo — contenido escrito'}
+              </dd>
+            </div>
+            {hasFile && source.source.description ? (
+              <div className="basis-full">
+                <dt className="text-xs text-muted-foreground">Contexto</dt>
+                <dd className="whitespace-pre-line text-foreground/90">
+                  {source.source.description}
+                </dd>
+              </div>
+            ) : null}
+          </dl>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {hasFile ? (
+              <Button
+                type="button"
+                variant={view === 'compare' ? 'secondary' : 'outline'}
+                size="sm"
+                onClick={() => setView((v) => (v === 'compare' ? 'read' : 'compare'))}
+              >
+                <Columns2 className="size-3.5" aria-hidden="true" />
+                {view === 'compare' ? 'Volver a la lectura' : 'Ver original lado a lado'}
+              </Button>
+            ) : null}
+            {hasFile && !source.archivedAt && view === 'read' ? (
+              <Button type="button" variant="outline" size="sm" onClick={() => setView('edit')}>
+                <Pencil className="size-3.5" aria-hidden="true" />
+                {source.source.hasExtractedText ? 'Editar texto' : 'Escribir transcripción'}
+              </Button>
+            ) : null}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="ghost" size="sm" aria-label="Más acciones">
+                  <MoreHorizontal className="size-4" aria-hidden="true" />
+                  Más acciones
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onSelect={() => setEditing(true)}>
+                  <Pencil aria-hidden="true" />
+                  Editar datos de la fuente
+                </DropdownMenuItem>
+                {hasFile ? (
+                  <DropdownMenuItem
+                    onSelect={() =>
+                      downloadFile(
+                        api.sources.downloadUrl(projectId, source.id),
+                        source.source.originalFilename!,
+                      ).catch(() => toast.error('No se pudo descargar el archivo.'))
+                    }
+                  >
+                    <Download aria-hidden="true" />
+                    Descargar original
+                  </DropdownMenuItem>
+                ) : null}
+                {source.hasApprovedHistory ? (
+                  source.archivedAt ? null : (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onSelect={() => setConfirmingDelete(true)}>
+                        <Archive aria-hidden="true" />
+                        Archivar
+                      </DropdownMenuItem>
+                    </>
+                  )
+                ) : (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onSelect={() => setConfirmingDelete(true)}
+                    >
+                      <Trash2 aria-hidden="true" />
+                      Eliminar
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
-          <section className="border-l-4 border-primary/30 pl-4">
-            <h4 className="mb-0.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-              Contenido
-            </h4>
-            <p className="whitespace-pre-line text-foreground">{source.source.description}</p>
-          </section>
-
-          {source.source.originalFilename ? (
+          {view === 'compare' ? (
             // The original next to its text, so a reading or transcription
             // error can be corrected while looking at the source.
             <div className="grid gap-3 lg:grid-cols-2">
@@ -535,54 +613,21 @@ function SourceCard({
                 onSaved={invalidate}
               />
             </div>
-          ) : null}
-
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => setEditing(true)}>
-              <Pencil className="size-3.5" aria-hidden="true" />
-              Editar
-            </Button>
-            {source.source.originalFilename ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  downloadFile(
-                    api.sources.downloadUrl(projectId, source.id),
-                    source.source.originalFilename!,
-                  ).catch(() => toast.error('No se pudo descargar el archivo.'))
-                }
-              >
-                <Download className="size-3.5" aria-hidden="true" />
-                Descargar original
-              </Button>
-            ) : null}
-            {source.hasApprovedHistory ? (
-              source.archivedAt ? null : (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setConfirmingDelete(true)}
-                >
-                  <Archive className="size-3.5" aria-hidden="true" />
-                  Archivar
-                </Button>
-              )
-            ) : (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="border-destructive/40 text-destructive hover:bg-destructive/5"
-                onClick={() => setConfirmingDelete(true)}
-              >
-                <Trash2 className="size-3.5" aria-hidden="true" />
-                Eliminar
-              </Button>
-            )}
-          </div>
+          ) : view === 'edit' || (hasFile && !source.source.hasExtractedText) ? (
+            <ExtractedTextPanel
+              projectId={projectId}
+              source={source}
+              text={extractedText.data?.text}
+              loading={source.source.hasExtractedText && extractedText.isLoading}
+              onSaved={invalidate}
+              startEditing={view === 'edit'}
+              onExit={() => setView('read')}
+            />
+          ) : readingText ? (
+            <ReadableText text={readingText} label="el texto de la fuente" />
+          ) : (
+            <p className="text-muted-foreground">Cargando texto…</p>
+          )}
 
           {editing ? (
             <EditSourceForm
@@ -622,98 +667,109 @@ function SourceCard({
             )
           ) : null}
 
-          <div>
-            <h3 className="mb-1 font-medium text-foreground">Reporte de la fuente</h3>
-            {source.source.hasReport ? (
-              <QueryState isLoading={report.isLoading} error={null}>
-                {report.data ? (
-                  <div className="flex flex-col gap-2 text-foreground/80">
-                    <p>{report.data.content.summary}</p>
-                    {report.data.content.actors.length ? (
-                      <p>
-                        <strong>Actores:</strong> {report.data.content.actors.join(', ')}
-                      </p>
-                    ) : null}
-                    {report.data.content.needs.length ? (
-                      <p>
-                        <strong>Necesidades:</strong> {report.data.content.needs.join(', ')}
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
-              </QueryState>
-            ) : source.source.hasExtractedText || !canSubmitTranscript ? (
-              <div className="flex flex-col gap-2">
-                <p className="text-muted-foreground">Sin reporte todavía.</p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="self-start"
-                  disabled={generatingReport}
-                  onClick={generateReport}
-                >
-                  {generatingReport ? 'Generando…' : 'Generar reporte con IA'}
-                </Button>
-                <GenerationOverlay open={generatingReport} />
-                {reportCandidate ? (
-                  <div className="rounded-md border border-dashed border-purple-300 bg-purple-50 p-3 text-foreground/80">
-                    <p className="mb-2 text-xs font-medium text-purple-700">
-                      Propuesta de IA — revísela antes de incorporarla
-                    </p>
-                    <p>{reportCandidate.content.summary}</p>
-                    {reportCandidate.content.actors.length ? (
-                      <p className="mt-1">
-                        <strong>Actores:</strong> {reportCandidate.content.actors.join(', ')}
-                      </p>
-                    ) : null}
-                    {reportCandidate.content.needs.length ? (
-                      <p className="mt-1">
-                        <strong>Necesidades:</strong> {reportCandidate.content.needs.join(', ')}
-                      </p>
-                    ) : null}
-                    <div className="mt-2 flex gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={acceptingReport}
-                        onClick={acceptReportCandidate}
-                      >
-                        {acceptingReport ? 'Aceptando…' : 'Aceptar como reporte oficial'}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setReportCandidate(null)}
-                      >
-                        Descartar
-                      </Button>
+          <details className="group rounded-md border border-border">
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 font-medium text-foreground select-none">
+              <ChevronRight
+                className="size-4 text-muted-foreground transition-transform group-open:rotate-90"
+                aria-hidden="true"
+              />
+              Reporte de la fuente
+              <span className="text-xs font-normal text-muted-foreground">
+                {source.source.hasReport ? '· Registrado' : '· Opcional'}
+              </span>
+            </summary>
+            <div className="border-t border-border px-3 py-3">
+              {source.source.hasReport ? (
+                <QueryState isLoading={report.isLoading} error={null}>
+                  {report.data ? (
+                    <div className="flex flex-col gap-2 text-foreground/80">
+                      <p>{report.data.content.summary}</p>
+                      {report.data.content.actors.length ? (
+                        <p>
+                          <strong>Actores:</strong> {report.data.content.actors.join(', ')}
+                        </p>
+                      ) : null}
+                      {report.data.content.needs.length ? (
+                        <p>
+                          <strong>Necesidades:</strong> {report.data.content.needs.join(', ')}
+                        </p>
+                      ) : null}
                     </div>
-                  </div>
-                ) : null}
-                <textarea
-                  className="w-full rounded-md border border-input px-2 py-1"
-                  rows={2}
-                  placeholder="O escriba un resumen manual del contenido…"
-                  value={manualSummary}
-                  onChange={(e) => setManualSummary(e.target.value)}
-                />
-                <Button
-                  variant="default"
-                  size="sm"
-                  type="button"
-                  onClick={submitManualReport}
-                  disabled={!manualSummary.trim()}
-                  className="self-start"
-                >
-                  Guardar reporte manual
-                </Button>
-              </div>
-            ) : (
-              <p className="text-muted-foreground">Guarde primero la transcripción manual.</p>
-            )}
-          </div>
+                  ) : null}
+                </QueryState>
+              ) : source.source.hasExtractedText || !canSubmitTranscript ? (
+                <div className="flex flex-col gap-2">
+                  <p className="text-muted-foreground">Sin reporte todavía.</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="self-start"
+                    disabled={generatingReport}
+                    onClick={generateReport}
+                  >
+                    {generatingReport ? 'Generando…' : 'Generar reporte con IA'}
+                  </Button>
+                  <GenerationOverlay open={generatingReport} />
+                  {reportCandidate ? (
+                    <div className="rounded-md border border-dashed border-purple-300 bg-purple-50 p-3 text-foreground/80">
+                      <p className="mb-2 text-xs font-medium text-purple-700">
+                        Propuesta de IA — revísela antes de incorporarla
+                      </p>
+                      <p>{reportCandidate.content.summary}</p>
+                      {reportCandidate.content.actors.length ? (
+                        <p className="mt-1">
+                          <strong>Actores:</strong> {reportCandidate.content.actors.join(', ')}
+                        </p>
+                      ) : null}
+                      {reportCandidate.content.needs.length ? (
+                        <p className="mt-1">
+                          <strong>Necesidades:</strong> {reportCandidate.content.needs.join(', ')}
+                        </p>
+                      ) : null}
+                      <div className="mt-2 flex gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={acceptingReport}
+                          onClick={acceptReportCandidate}
+                        >
+                          {acceptingReport ? 'Aceptando…' : 'Aceptar como reporte oficial'}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setReportCandidate(null)}
+                        >
+                          Descartar
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
+                  <textarea
+                    className="w-full rounded-md border border-input px-2 py-1"
+                    rows={2}
+                    placeholder="O escriba un resumen manual del contenido…"
+                    value={manualSummary}
+                    onChange={(e) => setManualSummary(e.target.value)}
+                  />
+                  <Button
+                    variant="default"
+                    size="sm"
+                    type="button"
+                    onClick={submitManualReport}
+                    disabled={!manualSummary.trim()}
+                    className="self-start"
+                  >
+                    Guardar reporte manual
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-muted-foreground">Guarde primero la transcripción manual.</p>
+              )}
+            </div>
+          </details>
 
           <div className="flex flex-wrap gap-2 border-t border-border pt-2">
             {source.version.status === 'DRAFT' || source.version.status === 'GENERATED' ? (
