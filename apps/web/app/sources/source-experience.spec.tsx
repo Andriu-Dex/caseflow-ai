@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import SourcesPage from './page';
@@ -162,7 +162,12 @@ describe('Sources — reviewing a source', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Ver original lado a lado' }));
 
-    expect(await screen.findByTitle('Archivo original: acta.pdf')).toHaveAttribute(
+    // Full screen: the original and its text in the same dialog.
+    const dialog = await screen.findByRole('dialog', { name: /Acta de reunión/ });
+    expect(
+      within(dialog).getByRole('article', { name: 'el texto de la fuente' }),
+    ).toBeInTheDocument();
+    expect(await within(dialog).findByTitle('Archivo original: acta.pdf')).toHaveAttribute(
       'src',
       'blob:preview',
     );
@@ -181,5 +186,7 @@ describe('Sources — reviewing a source', () => {
         'Acuerdo 1: comprar pan',
       ),
     );
+    await user.click(screen.getByRole('button', { name: 'Cerrar' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 });

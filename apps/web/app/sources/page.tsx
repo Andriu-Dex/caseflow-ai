@@ -61,7 +61,7 @@ import {
   ExtractedTextPanel,
   SOURCE_KIND_LABELS,
   SourceKindHint,
-  SourcePreview,
+  SourceCompareDialog,
   SourceStatusBadge,
   sourceKindAccept,
   sourceStatus,
@@ -549,14 +549,9 @@ function SourceCard({
 
           <div className="flex flex-wrap items-center gap-2">
             {hasFile ? (
-              <Button
-                type="button"
-                variant={view === 'compare' ? 'secondary' : 'outline'}
-                size="sm"
-                onClick={() => setView((v) => (v === 'compare' ? 'read' : 'compare'))}
-              >
+              <Button type="button" variant="outline" size="sm" onClick={() => setView('compare')}>
                 <Columns2 className="size-3.5" aria-hidden="true" />
-                {view === 'compare' ? 'Volver a la lectura' : 'Ver original lado a lado'}
+                Ver original lado a lado
               </Button>
             ) : null}
             {hasFile && !source.archivedAt && view === 'read' ? (
@@ -623,19 +618,19 @@ function SourceCard({
           </div>
 
           {view === 'compare' ? (
-            // The original next to its text, so a reading or transcription
-            // error can be corrected while looking at the source.
-            <div className="grid gap-3 lg:grid-cols-2">
-              <SourcePreview projectId={projectId} source={source} />
-              <ExtractedTextPanel
-                projectId={projectId}
-                source={source}
-                text={extractedText.data?.text}
-                loading={source.source.hasExtractedText && extractedText.isLoading}
-                onSaved={invalidate}
-              />
-            </div>
-          ) : view === 'edit' || (hasFile && !source.source.hasExtractedText) ? (
+            // The original next to its text, over the whole screen, so a
+            // reading or transcription error can be corrected while looking
+            // at the source.
+            <SourceCompareDialog
+              projectId={projectId}
+              source={source}
+              text={extractedText.data?.text}
+              loading={source.source.hasExtractedText && extractedText.isLoading}
+              onSaved={invalidate}
+              onOpenChange={(open) => (open ? undefined : setView('read'))}
+            />
+          ) : null}
+          {view === 'edit' || (hasFile && !source.source.hasExtractedText) ? (
             <ExtractedTextPanel
               projectId={projectId}
               source={source}
