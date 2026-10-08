@@ -11,6 +11,7 @@ import {
   FileText,
   MoreHorizontal,
   Pencil,
+  RefreshCw,
   Trash2,
   Upload,
   X,
@@ -363,6 +364,21 @@ function SourceCard({
     }
   }
 
+  // A new version read with the current extractor; the earlier ones stay.
+  async function reExtract() {
+    try {
+      const updated = await api.sources.reExtract(projectId, source.id);
+      invalidate();
+      toast.info(
+        updated.processing && ['QUEUED', 'RUNNING'].includes(updated.processing.status)
+          ? 'Se está volviendo a extraer el texto en una nueva versión.'
+          : 'Texto extraído de nuevo en una nueva versión.',
+      );
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo volver a extraer el texto.');
+    }
+  }
+
   async function retryProcessing() {
     try {
       await api.sources.retryProcessing(projectId, source.id);
@@ -572,6 +588,12 @@ function SourceCard({
                   >
                     <Download aria-hidden="true" />
                     Descargar original
+                  </DropdownMenuItem>
+                ) : null}
+                {hasFile && !source.archivedAt ? (
+                  <DropdownMenuItem onSelect={reExtract}>
+                    <RefreshCw aria-hidden="true" />
+                    Volver a extraer el texto
                   </DropdownMenuItem>
                 ) : null}
                 {source.hasApprovedHistory ? (

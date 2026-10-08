@@ -7,6 +7,14 @@ import {
   type TestContext,
 } from './support/test-app';
 
+const MINIMAL_PDF = Buffer.from(
+  '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n' +
+    '3 0 obj<</Type/Page/Parent 2 0 R/Resources<</Font<</F1 4 0 R>>>>/MediaBox[0 0 200 200]/Contents 5 0 R>>endobj\n' +
+    '4 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\n5 0 obj<</Length 44>>stream\n' +
+    'BT /F1 24 Tf 10 100 Td (Hello CASEFlow) Tj ET\nendstream\nendobj\nxref\n0 6\n0000000000 65535 f \n' +
+    'trailer<</Size 6/Root 1 0 R>>\nstartxref\n0\n%%EOF',
+);
+
 const textFile = (content: string) => ({
   originalname: 'acta.txt',
   mimetype: 'text/plain',
@@ -101,6 +109,48 @@ describe('Source kinds and extraction feedback integration', () => {
       .expect(200);
     expect(download.headers['content-disposition']).toBe(
       `attachment; filename="Normas y Estandares.txt"; filename*=UTF-8''${encodeURIComponent('Normas y Estándares.txt')}`,
+    );
+  });
+
+  it('reads the original file again into a new version, keeping the earlier ones', async () => {
+    const created = await ctx.sources.create(
+      projectId,
+      metadata('TEXT'),
+      textFile('Acta\n# 3 asistentes'),
+    );
+    const again = await ctx.sources.reExtract(projectId, created.id);
+    expect(again.version).toMatchObject({ versionNumber: 2, origin: 'SYSTEM_GENERATED' });
+    expect((await ctx.sources.getText(projectId, created.id)).text).toBe(
+      'Acta  \n\\# 3 asistentes',
+    );
+    expect(await ctx.prisma.artifactVersion.count({ where: { artifactId: created.id } })).toBe(2);
+
+    // Slow formats go through the queue: a pending version, then the text.
+    const pdf = await ctx.sources.create(projectId, metadata('PDF'), {
+      originalname: 'acta.pdf',
+      mimetype: 'application/pdf',
+      size: MINIMAL_PDF.length,
+      buffer: MINIMAL_PDF,
+    });
+    const job = await ctx.prisma.sourceProcessingJob.findFirstOrThrow({
+      where: { sourceVersionId: pdf.version.id },
+    });
+    await ctx.sources.runProcessingJob(projectId, job.id);
+    const pending = await ctx.sources.reExtract(projectId, pdf.id);
+    expect(pending.processing).toMatchObject({ status: 'QUEUED', processor: 'PDF' });
+    await expect(ctx.sources.reExtract(projectId, pdf.id)).rejects.toThrow(
+      'El archivo ya se está procesando.',
+    );
+    await ctx.sources.runProcessingJob(projectId, pending.processing!.id);
+    expect((await ctx.sources.getText(projectId, pdf.id)).text).toBe('Hello CASEFlow');
+
+    const notes = await ctx.sources.create(
+      projectId,
+      { ...metadata('NOTES'), description: 'Solo notas' },
+      undefined,
+    );
+    await expect(ctx.sources.reExtract(projectId, notes.id)).rejects.toThrow(
+      'Esta fuente no tiene un archivo',
     );
   });
 

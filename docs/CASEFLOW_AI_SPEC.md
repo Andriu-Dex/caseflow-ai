@@ -7243,6 +7243,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-122 | Tipos de fuente que siguen al formato del archivo (Factura y Formulario retirados para fuentes nuevas), motivo de fallo de extracción visible y revisión del original junto al texto extraído (§221.6) | Accepted |
 | DEC-123 | Trabajos interrumpidos por un reinicio del servidor: se reanudan los que son seguros de repetir (fuentes, rutas de trabajo) y se marcan como interrumpidos, para reintentar, los que tienen costo o historial auditado (bocetos, generación, validación); en Solo construcción la validación se reintenta una vez (§221.7) | Accepted |
 | DEC-124 | El reporte aprobado de una fuente guía la generación del contexto del proyecto: solo el de la versión exacta citada, el texto extraído prevalece ante contradicción y el candidato registra qué reportes se usaron (§221.8) | Accepted |
+| DEC-125 | El texto extraído de las fuentes se guarda con su estructura en Markdown (títulos por tamaño de letra en PDF, títulos, listas y tablas de Word, saltos de línea del texto plano) y puede volver a extraerse del original en una versión nueva (§221.9) | Accepted |
 
 ---
 
@@ -7679,7 +7680,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-124)
+# 221. Extensiones de V2 (DEC-116 a DEC-125)
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
@@ -7781,6 +7782,17 @@ El reporte de una fuente (resumen, actores, necesidades, reglas y restricciones 
 - **Registro:** el candidato de contexto guarda qué reportes se usaron.
 
 La coherencia obligatoria entre etapas (§221.5) no cambia: empieza en los requisitos y sus reglas son las mismas.
+
+## 221.9 Texto extraído con estructura (DEC-125)
+
+El texto extraído de un archivo conserva su estructura como Markdown; solo se añaden marcas, las palabras son las de la fuente:
+
+- **PDF con texto:** los títulos se reconocen por su tamaño de letra respecto al cuerpo del documento (tres niveles), las líneas se agrupan en párrafos, las viñetas en listas y las páginas se separan con una línea.
+- **Word:** títulos, párrafos, listas, énfasis, enlaces web y tablas.
+- **Texto plano:** se conservan sus saltos de línea y nada se interpreta como título o tabla. Los archivos Markdown se guardan tal cual.
+- **Imágenes y páginas escaneadas:** párrafos según los bloques del OCR.
+
+La interfaz muestra este texto como documento, sin ejecutar nunca HTML incrustado. «Volver a extraer el texto» lee de nuevo el archivo original con el extractor vigente y crea una versión nueva; las anteriores no cambian.
 
 ## 221.4 Fuera de alcance de estas extensiones
 
