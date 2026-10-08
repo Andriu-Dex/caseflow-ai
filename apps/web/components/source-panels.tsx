@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, CheckCircle2, FileText, Loader2, Pencil, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, FileText, Loader2, Pencil, X, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   ALLOWED_SOURCE_MIME_TYPES,
@@ -13,7 +13,15 @@ import {
   type SourceFailureReason,
   type SourceResponse,
 } from '@caseflow-ai/contracts';
-import { Button, Textarea } from '@caseflow-ai/ui';
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+  Textarea,
+} from '@caseflow-ai/ui';
+import { ReadableText } from './readable-text';
 import { api, ApiError, fetchBlob } from '../lib/api';
 
 // Sources page building blocks: what each kind does with a file, the
@@ -202,9 +210,12 @@ const PREVIEWABLE = (type: string | null) =>
 export function SourcePreview({
   projectId,
   source,
+  fill = false,
 }: {
   projectId: string;
   source: SourceResponse;
+  // Takes the whole height of its container (the side-by-side view).
+  fill?: boolean;
 }) {
   const mimeType = source.source.mimeType;
   const previewable = PREVIEWABLE(mimeType);
@@ -237,7 +248,7 @@ export function SourcePreview({
       <iframe
         title={title}
         src={url}
-        className="h-[28rem] w-full rounded-md border border-border"
+        className={`${fill ? 'h-full' : 'h-[28rem]'} w-full rounded-md border border-border`}
       />
     );
   if (mimeType!.startsWith('image/'))
@@ -245,7 +256,7 @@ export function SourcePreview({
       <img
         src={url}
         alt={title}
-        className="max-h-[28rem] w-full rounded-md border border-border bg-muted/30 object-contain"
+        className={`${fill ? 'h-full' : 'max-h-[28rem]'} w-full rounded-md border border-border bg-muted/30 object-contain`}
       />
     );
   return (
@@ -266,6 +277,7 @@ export function ExtractedTextPanel({
   onSaved,
   startEditing = false,
   onExit,
+  fill = false,
 }: {
   projectId: string;
   source: SourceResponse;
@@ -275,6 +287,8 @@ export function ExtractedTextPanel({
   // Opens straight in the editor; onExit runs after saving or discarding.
   startEditing?: boolean;
   onExit?: () => void;
+  // Takes the whole height of its container (the side-by-side view).
+  fill?: boolean;
 }) {
   const editable = Boolean(source.source.originalFilename) && !source.archivedAt;
   const [draft, setDraft] = useState<string | null>(startEditing ? (text ?? '') : null);
@@ -300,7 +314,9 @@ export function ExtractedTextPanel({
   }
 
   return (
-    <div className="flex flex-col gap-2 rounded-md border border-border bg-muted/20 p-3">
+    <div
+      className={`flex flex-col gap-2 rounded-md border border-border bg-muted/20 p-3 ${fill ? 'h-full min-h-0' : ''}`}
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
           <FileText className="size-3.5" aria-hidden="true" />
@@ -321,7 +337,7 @@ export function ExtractedTextPanel({
             maxLength={limit}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            className="font-mono text-xs"
+            className={`font-mono text-xs ${fill ? 'min-h-0 flex-1 resize-none' : ''}`}
           />
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
             <span>
@@ -355,12 +371,122 @@ export function ExtractedTextPanel({
       ) : loading ? (
         <p className="text-muted-foreground">Cargando texto…</p>
       ) : text !== undefined ? (
-        <pre className="max-h-[28rem] overflow-auto whitespace-pre-wrap text-xs">{text}</pre>
+        <ReadableText
+          text={text}
+          label="el texto de la fuente"
+          className={fill ? 'min-h-0 flex-1' : 'max-h-[28rem]'}
+        />
       ) : (
         <p className="text-muted-foreground">
           Todavía no hay texto. {editable ? 'Puede escribir la transcripción a mano.' : ''}
         </p>
       )}
     </div>
+  );
+}
+
+// The original and its text side by side, over the whole screen: both panes
+// take the same, full height. On narrow screens they become two tabs.
+export function SourceCompareDialog({
+  projectId,
+  source,
+  text,
+  loading,
+  onSaved,
+  onOpenChange,
+}: {
+  projectId: string;
+  source: SourceResponse;
+  text: string | undefined;
+  loading: boolean;
+  onSaved: () => void;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [tab, setTab] = useState<'original' | 'text'>('original');
+  const editable = !source.archivedAt;
+  return (
+    <Dialog open onOpenChange={onOpenChange}>
+      <DialogContent
+        showCloseButton={false}
+        className="top-0 left-0 flex h-dvh w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 rounded-none border-0 p-0 sm:max-w-none"
+      >
+        <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
+          <DialogTitle className="mr-auto truncate text-base">
+            <span className="mr-2 font-mono text-xs text-muted-foreground">{source.code}</span>
+            {source.source.title}
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            Archivo original y texto extraído, lado a lado.
+          </DialogDescription>
+          {editable && !editing ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setEditing(true);
+                setTab('text');
+              }}
+            >
+              <Pencil className="size-3.5" aria-hidden="true" />
+              {text === undefined ? 'Escribir transcripción' : 'Editar texto'}
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-label="Cerrar"
+            onClick={() => onOpenChange(false)}
+          >
+            <X className="size-4" aria-hidden="true" />
+            Cerrar
+          </Button>
+        </div>
+        <div role="tablist" className="flex gap-1 border-b border-border px-4 py-2 lg:hidden">
+          {(['original', 'text'] as const).map((value) => (
+            <Button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={tab === value}
+              variant={tab === value ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setTab(value)}
+            >
+              {value === 'original' ? 'Original' : 'Texto'}
+            </Button>
+          ))}
+        </div>
+        <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] gap-4 p-4 lg:grid-cols-2">
+          <div className={`min-h-0 ${tab === 'original' ? 'block' : 'hidden'} lg:block`}>
+            <SourcePreview projectId={projectId} source={source} fill />
+          </div>
+          <div className={`flex min-h-0 flex-col ${tab === 'text' ? 'flex' : 'hidden'} lg:flex`}>
+            {editing ? (
+              <ExtractedTextPanel
+                projectId={projectId}
+                source={source}
+                text={text}
+                loading={loading}
+                onSaved={onSaved}
+                startEditing
+                onExit={() => setEditing(false)}
+                fill
+              />
+            ) : loading ? (
+              <p className="text-muted-foreground">Cargando texto…</p>
+            ) : text !== undefined ? (
+              <ReadableText text={text} label="el texto de la fuente" className="min-h-0 flex-1" />
+            ) : (
+              <p className="text-muted-foreground">
+                Todavía no hay texto. {editable ? 'Puede escribir la transcripción a mano.' : ''}
+              </p>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
