@@ -9,6 +9,7 @@ import { api, ApiError, downloadFile } from '../../lib/api';
 import { RequireActiveProject } from '../../components/query-state';
 import { HtmlPreviewDialog } from '../../components/html-preview-dialog';
 import { DismissibleHint } from '../../components/dismissible-hint';
+import { AddSection } from '../../components/add-section';
 import type { BaselineResponse } from '@caseflow-ai/contracts';
 
 async function downloadJson(projectId: string, id: string): Promise<void> {
@@ -44,10 +45,10 @@ function BaselinesContent({ projectId }: { projectId: string }) {
     onSettled: () => setCreating(false),
   });
 
-  const handleCreate = (e: React.FormEvent) => {
+  const handleCreate = (e: React.FormEvent, close: (() => void) | undefined) => {
     e.preventDefault();
     setCreating(true);
-    createMutation.mutate();
+    createMutation.mutate(undefined, { onSuccess: () => close?.() });
   };
 
   return (
@@ -63,30 +64,42 @@ function BaselinesContent({ projectId }: { projectId: string }) {
         </h1>
       </div>
 
-      <div className="rounded-lg border border-border bg-card p-4">
-        <h2 className="text-lg font-medium mb-4">Crear nueva línea base</h2>
-        <form onSubmit={handleCreate} className="flex flex-col gap-4 max-w-md">
-          <Input
-            placeholder="Etiqueta (ej: v1.0.0)"
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            required
-          />
-          <Textarea
-            placeholder="Descripción (opcional)"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-          <Button type="submit" disabled={creating || !label}>
-            {creating ? (
-              <Loader2 className="size-4 animate-spin mr-2" />
-            ) : (
-              <Plus className="size-4 mr-2" />
-            )}
-            Crear Línea Base
-          </Button>
-        </form>
-      </div>
+      <AddSection
+        isEmpty={baselines.data ? baselines.data.length === 0 : undefined}
+        addLabel="Crear línea base"
+      >
+        {(close) => (
+          <div className="rounded-lg border border-border bg-card p-4">
+            <h2 className="text-lg font-medium mb-4">Crear nueva línea base</h2>
+            <form onSubmit={(e) => handleCreate(e, close)} className="flex flex-col gap-4 max-w-md">
+              <Input
+                placeholder="Etiqueta (ej: v1.0.0)"
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+                required
+              />
+              <Textarea
+                placeholder="Descripción (opcional)"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+              <Button type="submit" disabled={creating || !label}>
+                {creating ? (
+                  <Loader2 className="size-4 animate-spin mr-2" />
+                ) : (
+                  <Plus className="size-4 mr-2" />
+                )}
+                Crear Línea Base
+              </Button>
+              {close ? (
+                <Button type="button" variant="ghost" disabled={creating} onClick={close}>
+                  Cancelar
+                </Button>
+              ) : null}
+            </form>
+          </div>
+        )}
+      </AddSection>
 
       <div className="flex flex-col gap-4">
         <h2 className="text-lg font-medium">Líneas base existentes</h2>
