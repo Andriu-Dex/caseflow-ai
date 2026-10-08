@@ -10,18 +10,24 @@ import {
   Hammer,
   Home,
   Lock,
+  PanelLeftClose,
+  PanelLeftOpen,
   Settings,
   Sparkles,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import type { MouseEvent, ReactNode } from 'react';
 import { useEffect, useState } from 'react';
-import { Alert, AlertDescription, Separator } from '@caseflow-ai/ui';
+import { Separator } from '@caseflow-ai/ui';
 import { api } from '../lib/api';
 import { useActiveProject } from '../lib/active-project';
 import { computeStepState, PIPELINE_STEPS, ROUTE_STEP_NUMBER } from '../lib/stage-links';
 import { ProjectSwitcher } from './project-switcher';
 
 type NavItem = { href: string; label: string };
+
+// Per-viewer convenience (whether this browser keeps the sidebar folded).
+const COLLAPSED_KEY = 'caseflow.sidebarCollapsed';
 
 // The Construction group (forward engineering, AGENTS.md §10) comes after
 // the 12-step planning pipeline, not alongside it: collapsing it until
@@ -134,9 +140,37 @@ export function AppShell({ children }: { children: ReactNode }) {
   const buildOnly = route === 'BUILD_ONLY' || route === 'EXPRESS';
   const groups =
     route === 'BUILD_ONLY' ? BUILD_ONLY_GROUPS : route === 'EXPRESS' ? EXPRESS_GROUPS : NAV_GROUPS;
-  const [lockedMessage, setLockedMessage] = useState<string | null>(null);
-
-  useEffect(() => setLockedMessage(null), [pathname]);
+  // Folded into an icon rail on wider screens; Ctrl/Cmd+B toggles it.
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    try {
+      setCollapsed(window.localStorage.getItem(COLLAPSED_KEY) === 'true');
+    } catch {
+      // Blocked storage: the sidebar simply starts expanded.
+    }
+  }, []);
+  function toggleCollapsed() {
+    setCollapsed((previous) => {
+      try {
+        window.localStorage.setItem(COLLAPSED_KEY, String(!previous));
+      } catch {
+        // Not remembered, still toggled for this visit.
+      }
+      return !previous;
+    });
+  }
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'b') {
+        event.preventDefault();
+        toggleCollapsed();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+  // Labels stay readable to screen readers when only icons are shown.
+  const label = collapsed ? 'md:sr-only' : '';
 
   if (pathname === '/login' || pathname === '/register') {
     return (
@@ -179,7 +213,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     const blocker = firstBlockingStep(href);
     if (blocker) {
       e.preventDefault();
-      setLockedMessage(`Complete primero "${blocker.label}" antes de continuar con este paso.`);
+      toast.warning(`Complete primero "${blocker.label}" antes de continuar con este paso.`);
     }
   }
 
@@ -193,20 +227,36 @@ export function AppShell({ children }: { children: ReactNode }) {
       </a>
       <nav
         aria-label="Navegación principal"
-        className="w-full shrink-0 border-b border-sidebar-border bg-sidebar p-4 text-sidebar-foreground shadow-lg md:w-64 md:border-b-0 md:border-r"
+        className={`w-full shrink-0 border-b border-sidebar-border bg-sidebar p-4 text-sidebar-foreground shadow-lg transition-[width] duration-200 md:border-b-0 md:border-r ${
+          collapsed ? 'md:w-16 md:px-2' : 'md:w-64'
+        }`}
       >
-        <div className="mb-6 flex items-center gap-2 px-1">
-          <span className="flex size-8 items-center justify-center rounded-lg bg-sidebar-active shadow-sm shadow-sidebar-active/50">
+        <div
+          className={`mb-6 flex items-center gap-2 px-1 ${collapsed ? 'md:flex-col md:px-0' : ''}`}
+        >
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-active shadow-sm shadow-sidebar-active/50">
             <Sparkles className="size-4.5 text-white" aria-hidden="true" />
           </span>
-          <span className="text-lg font-semibold tracking-tight text-white">CASEFlow AI</span>
+          <span className={`text-lg font-semibold tracking-tight text-white ${label}`}>
+            CASEFlow AI
+          </span>
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            aria-label={collapsed ? 'Expandir menú' : 'Plegar menú'}
+            aria-expanded={!collapsed}
+            title={`${collapsed ? 'Expandir' : 'Plegar'} menú (Ctrl+B)`}
+            className={`hidden size-8 items-center justify-center rounded-md text-sidebar-foreground/60 transition-colors hover:bg-white/5 hover:text-white md:inline-flex ${
+              collapsed ? '' : 'ml-auto'
+            }`}
+          >
+            {collapsed ? (
+              <PanelLeftOpen className="size-4" aria-hidden="true" />
+            ) : (
+              <PanelLeftClose className="size-4" aria-hidden="true" />
+            )}
+          </button>
         </div>
-        {lockedMessage ? (
-          <Alert className="mb-4 border-amber-400/40 bg-amber-500/10 text-amber-200 [&_svg]:text-amber-300">
-            <Lock className="size-4" aria-hidden="true" />
-            <AlertDescription className="text-amber-100">{lockedMessage}</AlertDescription>
-          </Alert>
-        ) : null}
         <div className="flex flex-col gap-5">
           {groups.map((group, i) => {
             const isConstruction = group.label === CONSTRUCTION_GROUP_LABEL;
@@ -214,25 +264,34 @@ export function AppShell({ children }: { children: ReactNode }) {
             if (isConstruction && !planningComplete && !buildOnly)
               return (
                 <div key={i}>
-                  <div className="mb-1.5 px-2 text-[11px] font-semibold tracking-widest text-sidebar-foreground/50 uppercase">
+                  <div
+                    className={`mb-1.5 px-2 text-[11px] font-semibold tracking-widest text-sidebar-foreground/50 uppercase ${label}`}
+                  >
                     {group.label}
                   </div>
                   <button
                     type="button"
                     title="Complete los 13 pasos de planificación para habilitar la construcción"
                     onClick={() =>
-                      setLockedMessage(
+                      toast.warning(
                         'Complete los 13 pasos de planificación (Fuentes a Trazabilidad) antes de iniciar la construcción del proyecto.',
                       )
                     }
-                    className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-sm font-medium text-sidebar-foreground/40 transition-colors hover:bg-white/5"
+                    className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-sm font-medium text-sidebar-foreground/40 transition-colors hover:bg-white/5 ${
+                      collapsed ? 'md:justify-center md:px-0' : ''
+                    }`}
                   >
                     <Lock className="size-4 shrink-0" aria-hidden="true" />
-                    Construcción
-                    <span className="ml-auto text-[11px] text-sidebar-foreground/30">
+                    <span className={label}>Construcción</span>
+                    <span
+                      className={`ml-auto text-[11px] text-sidebar-foreground/30 ${collapsed ? 'md:hidden' : ''}`}
+                    >
                       bloqueada
                     </span>
-                    <ChevronRight className="size-3.5 shrink-0" aria-hidden="true" />
+                    <ChevronRight
+                      className={`size-3.5 shrink-0 ${collapsed ? 'md:hidden' : ''}`}
+                      aria-hidden="true"
+                    />
                   </button>
                   {i < groups.length - 1 ? <Separator className="mt-5 bg-sidebar-border" /> : null}
                 </div>
@@ -240,7 +299,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             return (
               <div key={i}>
                 {group.label ? (
-                  <div className="mb-1.5 px-2 text-[11px] font-semibold tracking-widest text-sidebar-foreground/50 uppercase">
+                  <div
+                    className={`mb-1.5 px-2 text-[11px] font-semibold tracking-widest text-sidebar-foreground/50 uppercase ${label}`}
+                  >
                     {group.label}
                   </div>
                 ) : null}
@@ -258,12 +319,16 @@ export function AppShell({ children }: { children: ReactNode }) {
                           onClick={(e) => handleNavClick(e, item.href)}
                           title={
                             locked
-                              ? 'Bloqueado — complete los pasos anteriores primero'
+                              ? `${collapsed ? `${item.label}: b` : 'B'}loqueado — complete los pasos anteriores primero`
                               : state === 'next'
-                                ? 'Siguiente paso recomendado'
-                                : undefined
+                                ? `${collapsed ? `${item.label}: s` : 'S'}iguiente paso recomendado`
+                                : collapsed
+                                  ? item.label
+                                  : undefined
                           }
-                          className={`flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors ${
+                          className={`relative flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors ${
+                            collapsed ? 'md:justify-center md:px-0' : ''
+                          } ${
                             active
                               ? 'bg-sidebar-active text-white shadow-sm'
                               : locked
@@ -298,10 +363,12 @@ export function AppShell({ children }: { children: ReactNode }) {
                           ) : (
                             <Home className="size-4 shrink-0" aria-hidden="true" />
                           )}
-                          {item.label}
+                          <span className={label}>{item.label}</span>
                           {state === 'next' ? (
                             <span
-                              className="ml-auto size-1.5 shrink-0 rounded-full bg-emerald-400"
+                              className={`ml-auto size-1.5 shrink-0 rounded-full bg-emerald-400 ${
+                                collapsed ? 'md:absolute md:top-1 md:right-1 md:ml-0' : ''
+                              }`}
                               aria-label="Siguiente paso recomendado"
                             />
                           ) : null}
@@ -319,14 +386,17 @@ export function AppShell({ children }: { children: ReactNode }) {
         <Link
           href="/settings/ai"
           aria-current={pathname === '/settings/ai' ? 'page' : undefined}
+          title={collapsed ? 'Ajustes de IA' : undefined}
           className={`mt-5 flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors ${
+            collapsed ? 'md:justify-center md:px-0' : ''
+          } ${
             pathname === '/settings/ai'
               ? 'bg-sidebar-active text-white shadow-sm'
               : 'text-sidebar-foreground/75 hover:bg-white/5 hover:text-white'
           }`}
         >
           <Settings className="size-4 shrink-0" aria-hidden="true" />
-          Ajustes de IA
+          <span className={label}>Ajustes de IA</span>
         </Link>
       </nav>
       <div className="flex min-w-0 flex-1 flex-col">
