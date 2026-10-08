@@ -416,14 +416,18 @@ export default function ProjectsPage() {
   const [route, setRoute] = useState<WorkflowRoute | ''>('');
   const [sort, setSort] = useState<(typeof PROJECT_LIST_SORTS)[number]>('RECENT');
   const [page, setPage] = useState(0);
-  // The search waits for a pause in typing instead of querying per keystroke.
+  // The search waits for a pause in typing instead of querying per keystroke,
+  // and only a different search goes back to the first page (on load it is
+  // unchanged, so a quick click on Siguiente is not undone 300 ms later).
   useEffect(() => {
+    const next = searchInput.trim();
+    if (next === search) return;
     const timer = setTimeout(() => {
-      setSearch(searchInput.trim());
+      setSearch(next);
       setPage(0);
     }, 300);
     return () => clearTimeout(timer);
-  }, [searchInput]);
+  }, [searchInput, search]);
   const filters = {
     search: search || undefined,
     status,
