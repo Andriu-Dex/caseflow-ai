@@ -122,7 +122,8 @@ export async function buildArchive(
 ): Promise<Buffer> {
   const zip = new JSZip();
   for (const file of [...files].sort((a, b) => a.path.localeCompare(b.path)))
-    zip.file(`${rootFolder}/${file.path}`, file.content, { date: ZIP_DATE });
+    // Implicit folder entries would carry the current time.
+    zip.file(`${rootFolder}/${file.path}`, file.content, { date: ZIP_DATE, createFolders: false });
   return zip.generateAsync({
     type: 'nodebuffer',
     compression: 'DEFLATE',

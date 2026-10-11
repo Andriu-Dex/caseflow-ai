@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import JSZip from 'jszip';
 import { CASEFLOW_WEB_TS_V1 } from '@caseflow-ai/domain';
 import {
@@ -145,6 +145,17 @@ describe('archive and manifest', () => {
     expect(manifestHash(files)).toBe(manifestHash([...files].reverse()));
     const zip = await JSZip.loadAsync(first);
     expect(await zip.file('demo/a.txt')!.async('string')).toBe('a');
+  });
+  it('does not depend on when it is built', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-01-01T10:00:00Z'));
+      const first = await buildArchive('demo', files);
+      vi.setSystemTime(new Date('2026-01-01T10:00:10Z'));
+      expect((await buildArchive('demo', files)).equals(first)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
