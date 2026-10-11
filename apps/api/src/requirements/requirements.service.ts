@@ -9,7 +9,9 @@ import {
 import { AIError, AIOrchestrator } from '@caseflow-ai/ai';
 import { canTransitionArtifactVersionStatus, formatArtifactCode } from '@caseflow-ai/domain';
 import {
+  isMandatoryContextItem,
   requirementGenerationOutputSchema,
+  type ContextItemRef,
   type RequirementInput,
   type RequirementResponse,
 } from '@caseflow-ai/contracts';
@@ -19,6 +21,13 @@ import { getProjectLanguage } from '../projects/project-language';
 import type { Prisma } from '../generated/prisma/client';
 import { analyzeRequirementQuality } from './requirement-quality';
 import { KnowledgeBaseService } from '../knowledge-base/knowledge-base.service';
+import {
+  candidateFindings,
+  contextItemRef,
+  contextItems,
+  coverage,
+  type ContextDetailRows,
+} from './requirement-context';
 
 type Tx = Prisma.TransactionClient;
 const detailInclude = {
@@ -26,6 +35,18 @@ const detailInclude = {
   preconditions: { orderBy: { position: 'asc' as const } },
   postconditions: { orderBy: { position: 'asc' as const } },
   dependencies: true,
+  contextLinks: { include: { need: true, constraint: true, businessRule: true } },
+};
+const contextDetailInclude = {
+  actors: { orderBy: { position: 'asc' as const } },
+  needs: { orderBy: { position: 'asc' as const } },
+  constraints: { orderBy: { position: 'asc' as const } },
+  businessRules: { orderBy: { position: 'asc' as const } },
+};
+type Origin = Awaited<ReturnType<RequirementsService['resolveOrigin']>>;
+// Programmatic callers may leave a draft's origin out.
+type RequirementDraft = Omit<RequirementInput, 'origin'> & {
+  origin?: RequirementInput['origin'];
 };
 @Injectable()
 export class RequirementsService {
@@ -34,7 +55,7 @@ export class RequirementsService {
     private readonly ai: AIOrchestrator,
     @Inject(KnowledgeBaseService) private readonly knowledgeBase: KnowledgeBaseService,
   ) {}
-  create(projectId: string, input: RequirementInput) {
+  create(projectId: string, input: RequirementDraft) {
     return this.prisma.$transaction((tx) => this.createInTx(tx, projectId, input, 'MANUAL'));
   }
   async list(projectId: string) {
@@ -98,7 +119,7 @@ export class RequirementsService {
     if (!row || !row.versions[0]) throw new NotFoundException('Requisito no encontrado.');
     return this.map(row, row.versions[0]);
   }
-  async version(projectId: string, id: string, input: RequirementInput) {
+  async version(projectId: string, id: string, input: RequirementDraft) {
     return this.prisma.$transaction(async (tx) => {
       const locked = await tx.$queryRaw<
         { id: string }[]
@@ -112,6 +133,7 @@ export class RequirementsService {
       // opens a new DRAFT version that needs its own approval, exactly like
       // Project Context, Data Model and the design artifacts.
       await this.validateDependencies(tx, projectId, id, input.dependencyArtifactIds);
+      const origin = await this.resolveOrigin(tx, projectId, input.origin);
       const v = await tx.artifactVersion.create({
         data: {
           artifactId: id,
@@ -122,7 +144,7 @@ export class RequirementsService {
           origin: 'MANUAL',
         },
       });
-      await this.insertDetail(tx, v.id, input);
+      await this.insertDetail(tx, v.id, input, origin);
       const artifact = await tx.artifact.findUniqueOrThrow({ where: { id } });
       const complete = await tx.artifactVersion.findUniqueOrThrow({
         where: { id: v.id },
@@ -142,10 +164,7 @@ export class RequirementsService {
       include: {
         projectContextDetail: {
           include: {
-            actors: { orderBy: { position: 'asc' } },
-            needs: { orderBy: { position: 'asc' } },
-            constraints: { orderBy: { position: 'asc' } },
-            businessRules: { orderBy: { position: 'asc' } },
+            ...contextDetailInclude,
             scopeItems: { orderBy: { position: 'asc' } },
             sources: true,
           },
@@ -182,21 +201,29 @@ export class RequirementsService {
         language,
         sourceArtifactVersionId: sourceContextVersionId,
         promptKey: 'requirements.generate',
-        // ISO/IEC/IEEE 29148:2018-aligned quality principles (spec §4.4).
-        promptVersion: 2,
+        // ISO/IEC/IEEE 29148:2018-aligned, citing the coded context items
+        // and proposing optional ideas (DEC-126).
+        promptVersion: 3,
         messages: [
-          { role: 'user', content: JSON.stringify(context.projectContextDetail) + ragContext },
+          {
+            role: 'user',
+            content: JSON.stringify(codedContext(context.projectContextDetail)) + ragContext,
+          },
         ],
         outputSchema: requirementGenerationOutputSchema,
         schemaName: 'requirements_generation',
-        maxOutputTokens: 4096,
+        maxOutputTokens: 8192,
       });
       const generationId = await this.prisma.$transaction(async (tx) => {
         const generation = await tx.requirementGeneration.create({
           data: { projectId, sourceContextVersionId, aiRunId: result.metadata.runId },
         });
         const byKey = new Map<string, string>();
-        for (const c of result.data.candidates) {
+        const proposals = [
+          ...result.data.candidates.map((c) => ({ ...c, suggested: false, rationale: null })),
+          ...result.data.suggestions.map((c) => ({ ...c, suggested: true, contextItemCodes: [] })),
+        ];
+        for (const c of proposals) {
           const row = await tx.requirementCandidate.create({
             data: {
               generationId: generation.id,
@@ -208,11 +235,14 @@ export class RequirementsService {
               actors: c.actors,
               preconditions: c.preconditions,
               postconditions: c.postconditions,
+              contextItemCodes: c.contextItemCodes,
+              suggested: c.suggested,
+              rationale: c.rationale,
             },
           });
           byKey.set(c.candidateId, row.id);
         }
-        for (const c of result.data.candidates)
+        for (const c of proposals)
           for (const d of c.dependencyCandidateIds)
             await tx.requirementCandidateDependency.create({
               data: { candidateId: byKey.get(c.candidateId)!, dependsOnCandidateId: byKey.get(d)! },
@@ -234,7 +264,44 @@ export class RequirementsService {
       },
     });
     if (!row) throw new NotFoundException('Generación no encontrada.');
-    return row;
+    const review = await this.reviewContext(this.prisma, projectId, row.sourceContextVersionId);
+    const candidates = row.candidates.map((c) => {
+      const contextItemCodes = c.contextItemCodes as string[];
+      return {
+        ...c,
+        contextItemCodes,
+        qualityFindings: review.findings({ ...c, contextItemCodes }),
+      };
+    });
+    return {
+      ...row,
+      candidates,
+      coverage: coverage(
+        review.items,
+        candidates
+          .filter((c) => !c.suggested)
+          .map((c) => ({ label: c.id, items: review.itemsOf(c.contextItemCodes) })),
+      ),
+    };
+  }
+  // The proposals the automatic routes incorporate (DEC-116): only those
+  // derived from the context, valid, and with everything they depend on.
+  automaticSelection(generation: Awaited<ReturnType<RequirementsService['getGeneration']>>) {
+    const eligible = new Map(
+      generation.candidates
+        .filter((c) => !c.suggested && !c.qualityFindings.some((f) => f.severity === 'ERROR'))
+        .map((c) => [c.id, c]),
+    );
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const [id, c] of eligible)
+        if (c.outgoingDependencies.some((d) => !eligible.has(d.dependsOnCandidateId))) {
+          eligible.delete(id);
+          changed = true;
+        }
+    }
+    return [...eligible.keys()];
   }
   async accept(projectId: string, generationId: string, candidateIds: string[]) {
     return this.prisma.$transaction(async (tx) => {
@@ -253,10 +320,19 @@ export class RequirementsService {
             throw new UnprocessableEntityException(
               'Seleccione también todos los candidatos requeridos.',
             );
+      const review = await this.reviewContext(tx, projectId, generation.sourceContextVersionId);
       const created = new Map<string, RequirementResponse>();
       for (const c of candidates) {
         if (c.acceptedArtifactId)
           throw new UnprocessableEntityException('El candidato ya fue aceptado.');
+        const codes = c.contextItemCodes as string[];
+        const error = review
+          .findings({ ...c, contextItemCodes: codes })
+          .find((f) => f.severity === 'ERROR');
+        if (error)
+          throw new UnprocessableEntityException(
+            `La propuesta «${c.name}» no puede incorporarse. ${error.message}`,
+          );
         const r = await this.createInTx(
           tx,
           projectId,
@@ -269,6 +345,11 @@ export class RequirementsService {
             preconditions: c.preconditions as string[],
             postconditions: c.postconditions as string[],
             dependencyArtifactIds: [],
+            origin: c.suggested
+              ? { kind: 'USER_DECISION', justification: c.rationale! }
+              : codes.length
+                ? { kind: 'CONTEXT', contextItemIds: review.itemsOf(codes).map((i) => i.id) }
+                : null,
           },
           'AI_GENERATED',
           c.id,
@@ -326,6 +407,16 @@ export class RequirementsService {
     if (!v) throw new NotFoundException('Versión no encontrada.');
     if (!canTransitionArtifactVersionStatus(v.status, status))
       throw new UnprocessableEntityException('Transición de estado no permitida.');
+    if (status === 'APPROVED' && (await this.coherenceRequired(this.prisma, projectId))) {
+      const detail = await this.prisma.requirementDetail.findUnique({
+        where: { artifactVersionId: id },
+        select: { originKind: true },
+      });
+      if (!detail?.originKind)
+        throw new UnprocessableEntityException(
+          'Indique el origen del requisito antes de aprobarlo: los elementos del contexto que atiende o por qué se incluye.',
+        );
+    }
     return provenanceGuard(
       this.prisma.artifactVersion.update({
         where: { id },
@@ -341,7 +432,7 @@ export class RequirementsService {
   private async createInTx(
     tx: Tx,
     projectId: string,
-    input: RequirementInput,
+    input: RequirementDraft,
     origin: 'MANUAL' | 'AI_GENERATED',
     candidateId?: string,
     sourceContextVersionId?: string,
@@ -350,6 +441,7 @@ export class RequirementsService {
     if (!(await tx.project.findUnique({ where: { id: projectId } })))
       throw new NotFoundException('Proyecto no encontrado.');
     await this.validateDependencies(tx, projectId, undefined, input.dependencyArtifactIds);
+    const resolvedOrigin = await this.resolveOrigin(tx, projectId, input.origin);
     const prefix = input.requirementType === 'FUNCTIONAL' ? 'RF' : 'RNF';
     const rows = await tx.$queryRaw<
       { last_number: number }[]
@@ -371,7 +463,15 @@ export class RequirementsService {
         origin,
       },
     });
-    await this.insertDetail(tx, v.id, input, candidateId, sourceContextVersionId, aiRunId);
+    await this.insertDetail(
+      tx,
+      v.id,
+      input,
+      resolvedOrigin,
+      candidateId,
+      sourceContextVersionId,
+      aiRunId,
+    );
     return this.map(
       a,
       await tx.artifactVersion.findUniqueOrThrow({
@@ -383,7 +483,8 @@ export class RequirementsService {
   private async insertDetail(
     tx: Tx,
     versionId: string,
-    input: RequirementInput,
+    input: RequirementDraft,
+    origin: Origin,
     candidateId?: string,
     sourceContextVersionId?: string,
     aiRunId?: string,
@@ -398,6 +499,9 @@ export class RequirementsService {
         generationCandidateId: candidateId,
         sourceContextVersionId,
         aiRunId,
+        originKind: origin.kind,
+        originJustification: origin.justification,
+        contextLinks: { create: origin.links },
         actors: { create: input.actors.map((name, position) => ({ position, name })) },
         preconditions: {
           create: input.preconditions.map((description, position) => ({ position, description })),
@@ -412,6 +516,65 @@ export class RequirementsService {
         },
       },
     });
+  }
+  // The context items an origin cites must belong to a usable Project
+  // Context version of this same project.
+  private async resolveOrigin(tx: Tx, projectId: string, origin: RequirementDraft['origin']) {
+    if (!origin) return { kind: null, justification: null, links: [] };
+    if (origin.kind === 'USER_DECISION')
+      return { kind: 'USER_DECISION' as const, justification: origin.justification, links: [] };
+    const where = {
+      id: { in: origin.contextItemIds },
+      context: {
+        artifactVersion: {
+          projectId,
+          status: { in: await sourceStatuses(tx, projectId) },
+          artifact: { artifactTypeCode: 'PROJECT_CONTEXT' },
+        },
+      },
+    };
+    const select = { id: true };
+    const needs = await tx.projectContextNeed.findMany({ where, select });
+    const constraints = await tx.projectContextConstraint.findMany({ where, select });
+    const rules = await tx.projectContextBusinessRule.findMany({ where, select });
+    const links = [
+      ...needs.map((n) => ({ needId: n.id })),
+      ...constraints.map((c) => ({ constraintId: c.id })),
+      ...rules.map((r) => ({ businessRuleId: r.id })),
+    ];
+    if (links.length !== origin.contextItemIds.length)
+      throw new UnprocessableEntityException(
+        'Alguno de los elementos del contexto citados no existe o no está aprobado.',
+      );
+    return { kind: 'CONTEXT' as const, justification: null, links };
+  }
+  private async coherenceRequired(db: Pick<Tx, 'project'>, projectId: string) {
+    const project = await db.project.findUnique({
+      where: { id: projectId },
+      select: { coherenceRequired: true },
+    });
+    return project?.coherenceRequired ?? true;
+  }
+  // What a generation's proposals are checked against: the items and actors
+  // of the exact context version it was generated from.
+  private async reviewContext(
+    db: Pick<Tx, 'project' | 'projectContextDetail'>,
+    projectId: string,
+    contextVersionId: string,
+  ) {
+    const detail = await db.projectContextDetail.findUnique({
+      where: { artifactVersionId: contextVersionId },
+      include: contextDetailInclude,
+    });
+    const items = detail ? contextItems(detail) : [];
+    const actors = detail?.actors.map((a) => a.name) ?? [];
+    const strict = await this.coherenceRequired(db, projectId);
+    return {
+      items,
+      itemsOf: (codes: string[]) => items.filter((item) => codes.includes(item.code)),
+      findings: (c: { suggested: boolean; contextItemCodes: string[]; actors: unknown }) =>
+        candidateFindings({ ...c, actors: c.actors as string[] }, { items, actors }, strict),
+    };
   }
   private async validateDependencies(
     tx: Tx,
@@ -449,6 +612,9 @@ export class RequirementsService {
       preconditions: { description: string }[];
       postconditions: { description: string }[];
       dependencies: { dependsOnArtifactId: string }[];
+      originKind: 'CONTEXT' | 'USER_DECISION' | null;
+      originJustification: string | null;
+      contextLinks: Parameters<typeof contextItemRef>[0][];
     };
     return {
       id: a.id,
@@ -473,7 +639,41 @@ export class RequirementsService {
         dependencyArtifactIds: d.dependencies.map((x) => x.dependsOnArtifactId),
         sourceContextVersionId: d.sourceContextVersionId,
         aiRunId: d.aiRunId,
+        origin: d.originKind
+          ? {
+              kind: d.originKind,
+              justification: d.originJustification,
+              contextItems: d.contextLinks.map(contextItemRef),
+            }
+          : null,
       },
     };
   }
+}
+
+// What the model receives: the context with a code on every need, business
+// rule and constraint, and the codes no requirement may leave unanswered.
+function codedContext(
+  detail: Omit<ContextDetailRows, 'actors'> & {
+    problemStatement: string;
+    objective: string;
+    additionalContext: string | null;
+    actors: { name: string; description: string | null }[];
+    scopeItems: { type: string; description: string }[];
+  },
+) {
+  const items = contextItems(detail);
+  const coded = (kind: ContextItemRef['kind']) =>
+    items.filter((i) => i.kind === kind).map(({ code, description }) => ({ code, description }));
+  return {
+    problemStatement: detail.problemStatement,
+    objective: detail.objective,
+    additionalContext: detail.additionalContext,
+    actors: detail.actors.map(({ name, description }) => ({ name, description })),
+    scope: detail.scopeItems.map(({ type, description }) => ({ type, description })),
+    needs: coded('NEED'),
+    businessRules: coded('BUSINESS_RULE'),
+    constraints: coded('CONSTRAINT'),
+    mustCover: items.filter((i) => isMandatoryContextItem(i.kind)).map((i) => i.code),
+  };
 }

@@ -11,6 +11,7 @@ const requirement = (name: string) => ({
   preconditions: [],
   postconditions: [],
   dependencyArtifactIds: [],
+  origin: { kind: 'USER_DECISION' as const, justification: 'Decisión del equipo.' },
 });
 
 describe('Artifact archive integration', () => {

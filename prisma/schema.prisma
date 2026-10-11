@@ -144,6 +144,15 @@ enum RequirementPriority {
   @@map("requirement_priority")
 }
 
+// Why a requirement exists (DEC-126): it answers items of the approved
+// Project Context, or the user decided to include it and said why.
+enum RequirementOriginKind {
+  CONTEXT
+  USER_DECISION
+
+  @@map("requirement_origin_kind")
+}
+
 enum DataModelKind {
   ER
 
@@ -499,7 +508,8 @@ model ProjectContextNeed {
   position          Int
   description       String
 
-  context ProjectContextDetail @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict, onUpdate: Restrict)
+  context          ProjectContextDetail     @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict, onUpdate: Restrict)
+  requirementLinks RequirementContextLink[]
 
   @@unique([artifactVersionId, position])
   @@map("project_context_needs")
@@ -511,7 +521,8 @@ model ProjectContextConstraint {
   position          Int
   description       String
 
-  context ProjectContextDetail @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict, onUpdate: Restrict)
+  context          ProjectContextDetail     @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict, onUpdate: Restrict)
+  requirementLinks RequirementContextLink[]
 
   @@unique([artifactVersionId, position])
   @@map("project_context_constraints")
@@ -523,7 +534,8 @@ model ProjectContextBusinessRule {
   position          Int
   description       String
 
-  context ProjectContextDetail @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict, onUpdate: Restrict)
+  context          ProjectContextDetail     @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict, onUpdate: Restrict)
+  requirementLinks RequirementContextLink[]
 
   @@unique([artifactVersionId, position])
   @@map("project_context_business_rules")
@@ -755,6 +767,9 @@ model RequirementDetail {
   generationCandidateId  String?                    @unique @map("generation_candidate_id") @db.Uuid
   sourceContextVersionId String?                    @map("source_context_version_id") @db.Uuid
   aiRunId                String?                    @map("ai_run_id") @db.Uuid
+  // Null only for requirements written before DEC-126.
+  originKind             RequirementOriginKind?     @map("origin_kind")
+  originJustification    String?                    @map("origin_justification")
   artifactVersion        ArtifactVersion            @relation(fields: [artifactVersionId], references: [id], onDelete: Restrict)
   sourceContextVersion   ArtifactVersion?           @relation("RequirementSourceContext", fields: [sourceContextVersionId], references: [id], onDelete: Restrict)
   aiRun                  AIRun?                     @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
@@ -762,8 +777,32 @@ model RequirementDetail {
   preconditions          RequirementPrecondition[]
   postconditions         RequirementPostcondition[]
   dependencies           RequirementDependency[]
+  contextLinks           RequirementContextLink[]
 
   @@map("requirement_details")
+}
+
+// The context items a requirement version answers (DEC-126): exactly one of
+// a need, a constraint or a business rule of a Project Context version of
+// the same project. Insert-only, like every other requirement row.
+model RequirementContextLink {
+  id                String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  artifactVersionId String                      @map("artifact_version_id") @db.Uuid
+  needId            String?                     @map("need_id") @db.Uuid
+  constraintId      String?                     @map("constraint_id") @db.Uuid
+  businessRuleId    String?                     @map("business_rule_id") @db.Uuid
+  requirement       RequirementDetail           @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict)
+  need              ProjectContextNeed?         @relation(fields: [needId], references: [id], onDelete: Restrict)
+  constraint        ProjectContextConstraint?   @relation(fields: [constraintId], references: [id], onDelete: Restrict)
+  businessRule      ProjectContextBusinessRule? @relation(fields: [businessRuleId], references: [id], onDelete: Restrict)
+
+  @@unique([artifactVersionId, needId])
+  @@unique([artifactVersionId, constraintId])
+  @@unique([artifactVersionId, businessRuleId])
+  @@index([needId])
+  @@index([constraintId])
+  @@index([businessRuleId])
+  @@map("requirement_context_links")
 }
 
 model RequirementActor {
@@ -833,6 +872,11 @@ model RequirementCandidate {
   actors               Json
   preconditions        Json
   postconditions       Json
+  // Codes (N-1, RES-2, RN-3) of the context items the proposal answers.
+  contextItemCodes     Json                             @default("[]") @map("context_item_codes")
+  // An idea beyond the context, with the reason to consider it (DEC-126).
+  suggested            Boolean                          @default(false)
+  rationale            String?
   acceptedArtifactId   String?                          @map("accepted_artifact_id") @db.Uuid
   generation           RequirementGeneration            @relation(fields: [generationId], references: [id], onDelete: Restrict)
   outgoingDependencies RequirementCandidateDependency[] @relation("CandidateFrom")

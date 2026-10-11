@@ -220,6 +220,8 @@ function RequirementsContent({ projectId }: { projectId: string }) {
       {generation ? (
         <CandidateReview
           generation={generation}
+          // Ideas beyond the context start unselected (DEC-126).
+          defaultSelected={generation.candidates.filter((c) => !c.suggested).map((c) => c.id)}
           describe={(c) =>
             `${c.requirementType === 'FUNCTIONAL' ? 'Funcional' : 'No funcional'} — ${c.name}: ${String(c.description ?? '').slice(0, 160)}`
           }

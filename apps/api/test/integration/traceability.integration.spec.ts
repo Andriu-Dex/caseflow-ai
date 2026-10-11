@@ -70,7 +70,7 @@ describe('Traceability graph integration', () => {
       objective: 'o',
       scopeItems: [],
       actors: [{ name: 'Usuario' }],
-      needs: [],
+      needs: [{ description: 'Registrar datos' }],
       constraints: [],
       businessRules: [],
       sourceVersionIds: [source.version.id],
@@ -78,7 +78,7 @@ describe('Traceability graph integration', () => {
     await ctx.projectContext.transition(projectId, context.version.id, 'IN_REVIEW');
     await ctx.projectContext.transition(projectId, context.version.id, 'APPROVED');
 
-    const requirementsAi = fakeAi(ctx, 'requirements.generate', 2, {
+    const requirementsAi = fakeAi(ctx, 'requirements.generate', 3, {
       candidates: [
         {
           candidateId: 'rc1',
@@ -89,6 +89,7 @@ describe('Traceability graph integration', () => {
           actors: ['Usuario'],
           preconditions: [],
           postconditions: [],
+          contextItemCodes: ['N-1'],
           dependencyCandidateIds: [],
         },
       ],
@@ -404,7 +405,7 @@ describe('Traceability graph integration', () => {
     // Requirement node carries real generation provenance.
     expect(requirementNode.generation).toMatchObject({
       promptKey: 'requirements.generate',
-      promptVersion: 2,
+      promptVersion: 3,
       provider: 'fake',
     });
     // Deterministic diagram node carries generator provenance, not AI.

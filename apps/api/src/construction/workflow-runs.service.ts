@@ -371,11 +371,13 @@ export class WorkflowRunsService {
         const [context] = await this.versionIds(pid, 'PROJECT_CONTEXT');
         return this.produce(ctx, 'REQUIREMENT', async () => {
           const generation = await this.requirements.generate(pid, context!);
-          await this.requirements.accept(
-            pid,
-            generation.id,
-            generation.candidates.map((c) => c.id),
-          );
+          // Ideas beyond the context stay out of the automatic routes.
+          const selection = this.requirements.automaticSelection(generation);
+          if (!selection.length)
+            throw new StageError(
+              'Ningún requisito propuesto cita correctamente el contexto del proyecto.',
+            );
+          await this.requirements.accept(pid, generation.id, selection);
         });
       }
       case 'USE_CASES': {

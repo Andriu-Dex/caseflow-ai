@@ -7244,6 +7244,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-123 | Trabajos interrumpidos por un reinicio del servidor: se reanudan los que son seguros de repetir (fuentes, rutas de trabajo) y se marcan como interrumpidos, para reintentar, los que tienen costo o historial auditado (bocetos, generación, validación); en Solo construcción la validación se reintenta una vez (§221.7) | Accepted |
 | DEC-124 | El reporte aprobado de una fuente guía la generación del contexto del proyecto: solo el de la versión exacta citada, el texto extraído prevalece ante contradicción y el candidato registra qué reportes se usaron (§221.8) | Accepted |
 | DEC-125 | El texto extraído de las fuentes se guarda con su estructura en Markdown (títulos por tamaño de letra en PDF, títulos, listas y tablas de Word, saltos de línea del texto plano) y puede volver a extraerse del original en una versión nueva (§221.9) | Accepted |
+| DEC-126 | Cada requisito declara su origen: los elementos del contexto aprobado que atiende (necesidades N-x, restricciones RES-x, reglas de negocio RN-x) o una decisión del usuario con su justificación. La IA cita esos códigos, debe cubrir todas las necesidades y reglas, y puede proponer hasta 5 ideas adicionales que el usuario decide incluir (§221.10) | Accepted |
 
 ---
 
@@ -7680,7 +7681,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-125)
+# 221. Extensiones de V2 (DEC-116 a DEC-126)
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
@@ -7793,6 +7794,16 @@ El texto extraído de un archivo conserva su estructura como Markdown; solo se a
 - **Imágenes y páginas escaneadas:** párrafos según los bloques del OCR.
 
 La interfaz muestra este texto como documento, sin ejecutar nunca HTML incrustado. «Volver a extraer el texto» lee de nuevo el archivo original con el extractor vigente y crea una versión nueva; las anteriores no cambian.
+
+## 221.10 Requisitos coherentes con el contexto (DEC-126)
+
+Los requisitos responden al contexto aprobado del proyecto, y esa relación es explícita:
+
+- **Códigos del contexto.** Cada necesidad, restricción y regla de negocio de una versión del contexto tiene un código según su posición: N-1, RES-1, RN-1.
+- **Origen del requisito.** Cada versión de un requisito declara su origen: los elementos del contexto que atiende (relaciones `requirement_context_links`, siempre del mismo proyecto) o una decisión del usuario con su justificación escrita. Los requisitos anteriores a esta decisión quedan «Sin origen» y pueden completarse al editarlos.
+- **Generación con IA.** El modelo recibe el contexto con sus códigos y la lista de códigos que debe cubrir (necesidades y reglas). Cada propuesta indica los códigos que atiende; una propuesta que cita un código inexistente no puede incorporarse, y una sin códigos es un error en los proyectos con coherencia obligatoria (una advertencia en los anteriores). Un actor que no aparece en el contexto es una advertencia.
+- **Ideas para mejorar el software.** La IA puede proponer hasta 5 requisitos que el contexto no pide, cada uno con su razón. Llegan sin seleccionar, no cuentan para la cobertura y, si el usuario los incorpora, su origen es una decisión del usuario cuya justificación es esa razón. Las rutas automáticas (DEC-116) no las incorporan.
+- **Aprobación.** En los proyectos con coherencia obligatoria (DEC-121) un requisito sin origen no puede aprobarse.
 
 ## 221.4 Fuera de alcance de estas extensiones
 

@@ -61,7 +61,7 @@ async function approveContext(ctx: TestContext, projectId: string, sourceVersion
     objective: 'o',
     scopeItems: [],
     actors: [{ name: 'Usuario' }],
-    needs: [],
+    needs: [{ description: 'Registrar datos' }],
     constraints: [],
     businessRules: [],
     sourceVersionIds,
@@ -114,7 +114,7 @@ describe('Export (First Deliverable, Phase H)', () => {
       objective: 'o',
       scopeItems: [],
       actors: [{ name: 'Usuario' }],
-      needs: [],
+      needs: [{ description: 'Registrar datos' }],
       constraints: [],
       businessRules: [],
       sourceVersionIds: [source.id],
@@ -340,7 +340,7 @@ describe('Export (First Deliverable, Phase H)', () => {
       await import('../../src/requirements/requirements.service')
     ).RequirementsService(
       ctx.prisma,
-      fakeAi(ctx, 'requirements.generate', 2, {
+      fakeAi(ctx, 'requirements.generate', 3, {
         candidates: [
           {
             candidateId: 'rc1',
@@ -351,6 +351,7 @@ describe('Export (First Deliverable, Phase H)', () => {
             actors: ['Usuario'],
             preconditions: [],
             postconditions: [],
+            contextItemCodes: ['N-1'],
             dependencyCandidateIds: [],
           },
         ],
