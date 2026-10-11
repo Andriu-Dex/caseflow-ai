@@ -142,9 +142,11 @@ function Tile({
 export function RequirementsSummary({
   items,
   coverage,
+  showMissing = true,
 }: {
   items: RequirementResponse[];
   coverage?: RequirementContextCoverageResponse;
+  showMissing?: boolean;
 }) {
   const functional = items.filter((r) => r.requirement.requirementType === 'FUNCTIONAL').length;
   const approved = items.filter((r) => r.version.status === 'APPROVED').length;
@@ -162,12 +164,14 @@ export function RequirementsSummary({
           icon={ListChecks}
           label="Funcionales"
           value={functional}
+          detail="Lo que el sistema debe hacer"
           tone="bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300"
         />
         <Tile
           icon={Gauge}
           label="No funcionales"
           value={items.length - functional}
+          detail="Cómo debe hacerlo: rendimiento, seguridad…"
           tone="bg-teal-100 text-teal-700 dark:bg-teal-950/60 dark:text-teal-300"
         />
         <Tile
@@ -180,6 +184,11 @@ export function RequirementsSummary({
             </>
           }
           progress={items.length ? Math.round((approved / items.length) * 100) : 0}
+          detail={
+            approved === items.length
+              ? 'Todos aprobados'
+              : `${items.length - approved} por aprobar o revisar`
+          }
           tone="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300"
         />
         <Tile
@@ -217,7 +226,9 @@ export function RequirementsSummary({
           tone="bg-primary/15 text-primary"
         />
       </div>
-      {coverage?.context && coverage.items.some((i) => i.mandatory && !i.coveredBy.length) ? (
+      {showMissing &&
+      coverage?.context &&
+      coverage.items.some((i) => i.mandatory && !i.coveredBy.length) ? (
         <ContextCoverageSummary
           subject="Los requisitos actuales"
           items={coverage.items.map((i) => ({ ...i, covered: i.coveredBy.length > 0 }))}
@@ -579,7 +590,7 @@ export function RequirementList({
           <Input
             type="search"
             aria-label="Buscar requisitos"
-            placeholder="Buscar por código, nombre o descripción"
+            placeholder="Buscar requisitos"
             className="pl-8"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
