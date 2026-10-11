@@ -117,6 +117,23 @@ export const requirementCoverageItemSchema = contextItemRefSchema.extend({
   coveredBy: z.array(z.string()),
 });
 export type RequirementCoverageItem = z.infer<typeof requirementCoverageItemSchema>;
+export const requirementContextCoverageResponseSchema = z.object({
+  // The latest approved Project Context version, if any.
+  context: z
+    .object({
+      artifactId: z.uuid(),
+      versionId: z.uuid(),
+      versionNumber: z.number().int(),
+      code: z.string(),
+    })
+    .nullable(),
+  items: z.array(requirementCoverageItemSchema),
+  // Requirements that declare no origin yet (written before DEC-126).
+  withoutOrigin: z.array(z.object({ id: z.uuid(), code: z.string() })),
+});
+export type RequirementContextCoverageResponse = z.infer<
+  typeof requirementContextCoverageResponseSchema
+>;
 export const requirementListResponseSchema = z.object({
   items: z.array(requirementResponseSchema),
 });

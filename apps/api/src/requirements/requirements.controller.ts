@@ -21,6 +21,7 @@ import {
   requirementInputSchema,
   requirementListResponseSchema,
   requirementQualityReportResponseSchema,
+  requirementContextCoverageResponseSchema,
   requirementResponseSchema,
   transitionArtifactVersionRequestSchema,
 } from '@caseflow-ai/contracts';
@@ -66,6 +67,16 @@ export class RequirementsController {
   @ApiZodResponse(200, 'Requirement quality report.', requirementQualityReportResponseSchema)
   qualityReport(@Param('projectId', uuidParamPipe) p: string) {
     return this.service.qualityReport(p);
+  }
+  @Get('context-coverage')
+  @ApiOperation({
+    operationId: 'getRequirementContextCoverage',
+    summary: 'Cobertura del contexto aprobado por los requisitos actuales',
+  })
+  @ApiUuidParam('projectId', 'Project identifier.')
+  @ApiZodResponse(200, 'Context coverage.', requirementContextCoverageResponseSchema)
+  contextCoverage(@Param('projectId', uuidParamPipe) p: string) {
+    return this.service.contextCoverage(p);
   }
   @Get('export')
   @ApiOperation({

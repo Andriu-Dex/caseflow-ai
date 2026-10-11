@@ -21,6 +21,7 @@ import type {
   ProjectListResponse,
   ProjectResponse,
   ReadinessResponse,
+  RequirementContextCoverageResponse,
   RequirementInput,
   RequirementResponse,
   SourceMetadataInput,
@@ -423,6 +424,10 @@ export const api = {
     qualityReport: (projectId: string) =>
       get<{ issues: { requirementId: string; code: string; rule: string; message: string }[] }>(
         `/projects/${projectId}/requirements/quality-report`,
+      ),
+    contextCoverage: (projectId: string) =>
+      get<RequirementContextCoverageResponse>(
+        `/projects/${projectId}/requirements/context-coverage`,
       ),
     create: (projectId: string, input: RequirementInput) =>
       post<RequirementResponse>(`/projects/${projectId}/requirements`, input),
