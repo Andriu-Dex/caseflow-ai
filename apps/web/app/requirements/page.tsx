@@ -3,10 +3,16 @@
 import { GenerationOverlay } from '../../components/generation-overlay';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { RequirementResponse } from '@caseflow-ai/contracts';
-import { Download, ExternalLink, Pencil, Sparkles } from 'lucide-react';
+import { ChevronDown, Download, ExternalLink, FileDown, Plus, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { Button } from '@caseflow-ai/ui';
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@caseflow-ai/ui';
 import {
   api,
   ApiError,
@@ -16,7 +22,6 @@ import {
   type GenerationResult,
 } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
-import { StatusBadge } from '../../components/status-badge';
 import { PageHeading } from '../../components/page-heading';
 import { CandidateReview } from '../../components/candidate-review';
 import {
@@ -26,18 +31,15 @@ import {
 } from '../../components/requirement-candidate-card';
 import { ContextCoverageSummary } from '../../components/context-coverage';
 import { RequirementManualForm } from '../../components/requirement-manual-form';
+import { RequirementList, RequirementsSummary } from '../../components/requirement-list';
 import {
   AiUnavailableHint,
   ApproveAllButton,
-  ArchiveButton,
   EmptyState,
-  StaleNotice,
   approveDirectly,
   isPendingApproval,
   useStaleArtifactIds,
 } from '../../components/artifact-actions';
-
-const PRIORITY_LABELS: Record<string, string> = { HIGH: 'Alta', MEDIUM: 'Media', LOW: 'Baja' };
 
 // PDF opens in a new tab, where the browser's own viewer previews it; Word
 // has no in-browser preview, so it stays a direct download.
@@ -66,10 +68,13 @@ function RequirementsContent({ projectId }: { projectId: string }) {
     queryFn: () => api.context.getCurrent(projectId),
     retry: false,
   });
+  const coverage = useQuery({
+    queryKey: ['requirements-coverage', projectId],
+    queryFn: () => api.requirements.contextCoverage(projectId),
+  });
   const stale = useStaleArtifactIds(projectId);
 
   const [generation, setGeneration] = useState<GenerationResult | null>(null);
-  const [openDetail, setOpenDetail] = useState<string | null>(null);
   const [showManualForm, setShowManualForm] = useState(false);
   const [editing, setEditing] = useState<RequirementResponse | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -80,6 +85,7 @@ function RequirementsContent({ projectId }: { projectId: string }) {
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['requirements', projectId] });
     queryClient.invalidateQueries({ queryKey: ['requirements-quality', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['requirements-coverage', projectId] });
     queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
     queryClient.invalidateQueries({ queryKey: ['staleness', projectId] });
   }
@@ -107,7 +113,8 @@ function RequirementsContent({ projectId }: { projectId: string }) {
   async function approveOne(r: RequirementResponse) {
     setApprovingId(r.id);
     try {
-      await approveDirectly(transitionFor(r));
+      if (r.version.status === 'IN_REVIEW') await transitionFor(r)('APPROVED');
+      else await approveDirectly(transitionFor(r));
       toast.success(`${r.code} aprobado.`);
       invalidate();
     } catch (err) {
@@ -126,10 +133,19 @@ function RequirementsContent({ projectId }: { projectId: string }) {
     }
   }
 
+  async function archive(r: RequirementResponse) {
+    try {
+      await api.artifacts.archive(projectId, r.id);
+      toast.success(`${r.code} archivado.`);
+      invalidate();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo archivar.');
+      throw err;
+    }
+  }
+
   const items = requirements.data?.items ?? [];
   const pending = items.filter((r) => isPendingApproval(r.version.status));
-  const rf = items.filter((r) => r.requirement.requirementType === 'FUNCTIONAL').length;
-  const rnf = items.length - rf;
   const issues = quality.data?.issues ?? [];
   const issuesByRequirement = new Map<string, typeof issues>();
   for (const issue of issues) {
@@ -143,62 +159,56 @@ function RequirementsContent({ projectId }: { projectId: string }) {
     <div className="flex flex-col gap-6">
       <PageHeading title="Requisitos" projectId={projectId} />
 
-      <section className="flex flex-col gap-2 rounded-lg border border-border bg-card p-4 text-sm">
-        <div className="flex flex-wrap items-center gap-4">
-          <span>
-            <strong>{rf}</strong> funcionales
-          </span>
-          <span>
-            <strong>{rnf}</strong> no funcionales
-          </span>
-          {issues.length ? (
-            <span className="text-amber-700 dark:text-amber-400">
-              <strong>{issues.length}</strong>{' '}
-              {issues.length === 1 ? 'sugerencia de calidad' : 'sugerencias de calidad'}
-            </span>
-          ) : null}
-          <div className="ml-auto flex flex-wrap gap-2">
-            <ApproveAllButton
-              pending={pending}
-              approve={(id) => approveDirectly(transitionFor(items.find((r) => r.id === id)!))}
-              onDone={invalidate}
-            />
-            <Button type="button" variant="outline" disabled={generating} onClick={handleGenerate}>
-              <Sparkles className="size-4" aria-hidden="true" />
-              {generating ? 'Generando…' : 'Generar con IA'}
-            </Button>
-            <GenerationOverlay open={generating} />
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setEditing(null);
-                setShowManualForm((v) => !v);
-              }}
-            >
-              Crear manualmente
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={items.length === 0}
-              onClick={() => exportRequirements(projectId, 'pdf')}
-            >
-              <ExternalLink className="size-4" aria-hidden="true" />
-              Requisitos aprobados (PDF)
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={items.length === 0}
-              onClick={() => exportRequirements(projectId, 'docx')}
-            >
-              <Download className="size-4" aria-hidden="true" />
-              Requisitos aprobados (Word)
-            </Button>
-          </div>
+      <section className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" disabled={generating} onClick={handleGenerate}>
+            <Sparkles className="size-4" aria-hidden="true" />
+            {generating ? 'Generando…' : 'Generar con IA'}
+          </Button>
+          <GenerationOverlay open={generating} />
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setEditing(null);
+              setShowManualForm((v) => !v);
+            }}
+          >
+            <Plus className="size-4" aria-hidden="true" />
+            Crear manualmente
+          </Button>
+          <ApproveAllButton
+            pending={pending}
+            approve={(id) => approveDirectly(transitionFor(items.find((r) => r.id === id)!))}
+            onDone={invalidate}
+          />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                className="ml-auto"
+                disabled={items.length === 0}
+              >
+                <FileDown className="size-4" aria-hidden="true" />
+                Exportar aprobados
+                <ChevronDown className="size-3.5" aria-hidden="true" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => exportRequirements(projectId, 'pdf')}>
+                <ExternalLink aria-hidden="true" />
+                Ver en PDF
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => exportRequirements(projectId, 'docx')}>
+                <Download aria-hidden="true" />
+                Descargar Word
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
         <AiUnavailableHint />
+        {items.length ? <RequirementsSummary items={items} coverage={coverage.data} /> : null}
       </section>
 
       {showManualForm || editing ? (
@@ -289,116 +299,21 @@ function RequirementsContent({ projectId }: { projectId: string }) {
               : 'Cuando el Contexto del proyecto esté aprobado podrá generarlos con IA. Mientras tanto, puede crearlos manualmente.'}
           </EmptyState>
         ) : (
-          <ul className="flex flex-col gap-2">
-            {items.map((r) => (
-              <li key={r.id} className="rounded-lg border border-border bg-card p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    type="button"
-                    onClick={() => setOpenDetail(openDetail === r.id ? null : r.id)}
-                    className="justify-start text-left text-sm"
-                  >
-                    <span className="font-mono text-xs text-muted-foreground">{r.code}</span>{' '}
-                    <span className="font-medium text-foreground">{r.requirement.name}</span>{' '}
-                    <span className="text-xs text-muted-foreground">
-                      · Prioridad {PRIORITY_LABELS[r.requirement.priority]?.toLowerCase()}
-                    </span>
-                  </Button>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <StatusBadge status={r.version.status} />
-                    {isPendingApproval(r.version.status) ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        type="button"
-                        onClick={() => approveOne(r)}
-                        disabled={approvingId === r.id}
-                        className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
-                      >
-                        {approvingId === r.id ? 'Aprobando…' : 'Aprobar'}
-                      </Button>
-                    ) : null}
-                    {r.version.status === 'IN_REVIEW' ? (
-                      <>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          type="button"
-                          onClick={() => transition(r, 'APPROVED')}
-                          className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700"
-                        >
-                          Aprobar
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          type="button"
-                          onClick={() => transition(r, 'CHANGES_REQUESTED')}
-                          className="rounded-md border border-destructive/40 px-3 py-1 text-sm text-destructive hover:bg-destructive/5"
-                        >
-                          Solicitar cambios
-                        </Button>
-                      </>
-                    ) : null}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      type="button"
-                      onClick={() => {
-                        setShowManualForm(false);
-                        setEditing(r);
-                      }}
-                      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-muted/40"
-                    >
-                      <Pencil className="size-3.5" aria-hidden="true" />
-                      Editar
-                    </Button>
-                    <ArchiveButton
-                      projectId={projectId}
-                      artifactId={r.id}
-                      code={r.code}
-                      onDone={invalidate}
-                    />
-                  </div>
-                </div>
-                {stale.has(r.id) ? <StaleNotice /> : null}
-                {issuesByRequirement.has(r.id) ? (
-                  <ul className="mt-2 flex flex-col gap-1 border-t border-border pt-2">
-                    {issuesByRequirement.get(r.id)!.map((issue, idx) => (
-                      <li
-                        key={`${issue.code}-${idx}`}
-                        className="text-xs text-amber-700 dark:text-amber-400"
-                      >
-                        Sugerencia: {issue.message}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-                {openDetail === r.id ? (
-                  <div className="mt-2 flex flex-col gap-2 border-t border-border pt-2 text-sm text-foreground/80">
-                    <p>{r.requirement.description}</p>
-                    {r.requirement.actors.length ? (
-                      <p>
-                        <strong>Actores:</strong> {r.requirement.actors.join(', ')}
-                      </p>
-                    ) : null}
-                    {r.requirement.preconditions.length ? (
-                      <p>
-                        <strong>Precondiciones:</strong> {r.requirement.preconditions.join('; ')}
-                      </p>
-                    ) : null}
-                    {r.requirement.postconditions.length ? (
-                      <p>
-                        <strong>Postcondiciones:</strong> {r.requirement.postconditions.join('; ')}
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
-              </li>
-            ))}
-          </ul>
+          <RequirementList
+            items={items}
+            issuesOf={(id) => issuesByRequirement.get(id) ?? []}
+            isStale={(id) => stale.has(id)}
+            approvingId={approvingId}
+            actions={{
+              approve: approveOne,
+              requestChanges: (r) => transition(r, 'CHANGES_REQUESTED'),
+              edit: (r) => {
+                setShowManualForm(false);
+                setEditing(r);
+              },
+              archive,
+            }}
+          />
         )}
       </QueryState>
     </div>
