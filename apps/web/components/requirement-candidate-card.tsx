@@ -6,12 +6,16 @@ import {
   ArrowUp,
   ChevronDown,
   Gauge,
+  Lightbulb,
   Link2,
   ListChecks,
   Minus,
+  Target,
   Users,
 } from 'lucide-react';
+import type { ContextItemKind } from '@caseflow-ai/contracts';
 import type { GenerationCandidate } from '../lib/api';
+import { ContextCode } from './context-coverage';
 
 // One AI-proposed requirement as a card: what it is, how important, who is
 // involved, what it needs first and which other proposals it depends on.
@@ -24,10 +28,38 @@ type Candidate = GenerationCandidate & {
   preconditions?: string[];
   postconditions?: string[];
   outgoingDependencies?: { dependsOnCandidateId: string }[];
+  contextItemCodes?: string[];
+  suggested?: boolean;
+  rationale?: string | null;
 };
+
+export type ContextItemLookup = Map<string, { kind: ContextItemKind; description: string }>;
 
 export const requirementDependencies = (candidate: GenerationCandidate) =>
   ((candidate as Candidate).outgoingDependencies ?? []).map((d) => d.dependsOnCandidateId);
+
+// What starts selected: the valid proposals derived from the context, never
+// an idea beyond it, nor a proposal whose dependencies cannot be selected.
+export function defaultRequirementSelection(candidates: GenerationCandidate[]) {
+  const eligible = new Set(
+    candidates
+      .filter(
+        (c) =>
+          !(c as Candidate).suggested && !c.qualityFindings?.some((f) => f.severity === 'ERROR'),
+      )
+      .map((c) => c.id),
+  );
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const c of candidates)
+      if (eligible.has(c.id) && requirementDependencies(c).some((d) => !eligible.has(d))) {
+        eligible.delete(c.id);
+        changed = true;
+      }
+  }
+  return [...eligible];
+}
 
 const TYPE = {
   FUNCTIONAL: {
@@ -103,10 +135,12 @@ export function RequirementCandidateCard({
   candidate,
   index,
   nameOf,
+  contextItems,
 }: {
   candidate: GenerationCandidate;
   index: number;
   nameOf: (candidateId: string) => string;
+  contextItems?: ContextItemLookup;
 }) {
   const c = candidate as Candidate;
   const [expanded, setExpanded] = useState(false);
@@ -116,6 +150,7 @@ export function RequirementCandidateCard({
   const preconditions = c.preconditions ?? [];
   const postconditions = c.postconditions ?? [];
   const dependencies = requirementDependencies(candidate);
+  const codes = c.contextItemCodes ?? [];
   const hasMore = preconditions.length + postconditions.length > 0;
   // The card sits inside the selection label: its own buttons must not
   // toggle the checkbox.
@@ -139,6 +174,35 @@ export function RequirementCandidateCard({
           className={`text-sm leading-relaxed text-foreground/80 ${expanded ? '' : 'line-clamp-3'}`}
         >
           {c.description}
+        </span>
+      ) : null}
+      {c.suggested && c.rationale ? (
+        <span className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50/70 p-2.5 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+          <Lightbulb className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          <span>
+            <span className="font-semibold">Por qué considerarla: </span>
+            {c.rationale}
+          </span>
+        </span>
+      ) : null}
+      {codes.length ? (
+        <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+          <Target className="size-3.5" aria-hidden="true" />
+          Cubre:
+          {codes.map((code) => {
+            const item = contextItems?.get(code);
+            return item ? (
+              <ContextCode key={code} code={code} kind={item.kind} description={item.description} />
+            ) : (
+              <span
+                key={code}
+                title="Este código no existe en el contexto"
+                className="rounded border border-destructive/40 px-1.5 py-px font-mono text-[11px] font-semibold text-destructive line-through"
+              >
+                {code}
+              </span>
+            );
+          })}
         </span>
       ) : null}
       {actors.length ? (

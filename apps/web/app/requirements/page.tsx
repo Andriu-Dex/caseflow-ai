@@ -21,8 +21,10 @@ import { PageHeading } from '../../components/page-heading';
 import { CandidateReview } from '../../components/candidate-review';
 import {
   RequirementCandidateCard,
+  defaultRequirementSelection,
   requirementDependencies,
 } from '../../components/requirement-candidate-card';
+import { ContextCoverageSummary } from '../../components/context-coverage';
 import { RequirementManualForm } from '../../components/requirement-manual-form';
 import {
   AiUnavailableHint,
@@ -221,7 +223,22 @@ function RequirementsContent({ projectId }: { projectId: string }) {
         <CandidateReview
           generation={generation}
           // Ideas beyond the context start unselected (DEC-126).
-          defaultSelected={generation.candidates.filter((c) => !c.suggested).map((c) => c.id)}
+          defaultSelected={defaultRequirementSelection(generation.candidates)}
+          summary={(selected) => (
+            <ContextCoverageSummary
+              subject="Las propuestas seleccionadas"
+              items={(generation.coverage ?? []).map((item) => ({
+                ...item,
+                covered: item.coveredBy.some((id) => selected.includes(id)),
+              }))}
+            />
+          )}
+          optional={{
+            title: 'Ideas para mejorar tu software',
+            description:
+              'La IA sugiere estas funciones aunque el contexto no las pide. Incorpore solo las que le aporten valor.',
+            matches: (c) => c.suggested === true,
+          }}
           describe={(c) =>
             `${c.requirementType === 'FUNCTIONAL' ? 'Funcional' : 'No funcional'} — ${c.name}: ${String(c.description ?? '').slice(0, 160)}`
           }
@@ -231,6 +248,14 @@ function RequirementsContent({ projectId }: { projectId: string }) {
               index={index}
               nameOf={(id) =>
                 generation.candidates.find((x) => x.id === id)?.name ?? 'otra propuesta'
+              }
+              contextItems={
+                new Map(
+                  (generation.coverage ?? []).map((item) => [
+                    item.code,
+                    { kind: item.kind, description: item.description },
+                  ]),
+                )
               }
             />
           )}

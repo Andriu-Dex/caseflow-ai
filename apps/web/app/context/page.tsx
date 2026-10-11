@@ -1,5 +1,6 @@
 'use client';
 
+import { contextItemCode } from '@caseflow-ai/contracts';
 import { GenerationOverlay } from '../../components/generation-overlay';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
@@ -19,6 +20,7 @@ import type { ProjectContextResponse } from '@caseflow-ai/contracts';
 import { api, ApiError } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { PageHeading } from '../../components/page-heading';
+import { ContextCode } from '../../components/context-coverage';
 import { StatusBadge } from '../../components/status-badge';
 import { Button } from '@caseflow-ai/ui';
 
@@ -609,11 +611,8 @@ function ContextContent({ projectId }: { projectId: string }) {
                   </h3>
                   <ul className="flex flex-col gap-1.5">
                     {context.data.needs.map((n) => (
-                      <li key={n.id} className="flex items-start gap-1.5">
-                        <CheckCircle2
-                          className="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-500"
-                          aria-hidden="true"
-                        />
+                      <li key={n.id} className="flex items-start gap-2">
+                        <ContextCode code={contextItemCode('NEED', n.position)} kind="NEED" />
                         <span className="text-foreground">{n.description}</span>
                       </li>
                     ))}
@@ -628,10 +627,10 @@ function ContextContent({ projectId }: { projectId: string }) {
                   </h3>
                   <ul className="flex flex-col gap-1.5">
                     {context.data.constraints.map((c) => (
-                      <li key={c.id} className="flex items-start gap-1.5">
-                        <ShieldAlert
-                          className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-500"
-                          aria-hidden="true"
+                      <li key={c.id} className="flex items-start gap-2">
+                        <ContextCode
+                          code={contextItemCode('CONSTRAINT', c.position)}
+                          kind="CONSTRAINT"
                         />
                         <span className="text-foreground">{c.description}</span>
                       </li>
@@ -647,10 +646,10 @@ function ContextContent({ projectId }: { projectId: string }) {
                   </h3>
                   <ul className="flex flex-col gap-1.5">
                     {context.data.businessRules.map((b) => (
-                      <li key={b.id} className="flex items-start gap-1.5">
-                        <Scale
-                          className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
-                          aria-hidden="true"
+                      <li key={b.id} className="flex items-start gap-2">
+                        <ContextCode
+                          code={contextItemCode('BUSINESS_RULE', b.position)}
+                          kind="BUSINESS_RULE"
                         />
                         <span className="text-foreground">{b.description}</span>
                       </li>
