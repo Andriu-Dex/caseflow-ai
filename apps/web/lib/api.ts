@@ -22,6 +22,7 @@ import type {
   ProjectResponse,
   ReadinessResponse,
   RequirementContextCoverageResponse,
+  RequirementCoverageItem,
   RequirementInput,
   RequirementResponse,
   SourceMetadataInput,
@@ -61,6 +62,8 @@ export interface GenerationCandidate {
 export interface GenerationResult {
   id: string;
   candidates: GenerationCandidate[];
+  // Requirements only (DEC-126): how the proposals cover the context.
+  coverage?: RequirementCoverageItem[];
 }
 
 // Normalized error shape for the whole app: every non-2xx response, and

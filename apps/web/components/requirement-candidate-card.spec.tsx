@@ -2,7 +2,12 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { CandidateReview } from './candidate-review';
-import { RequirementCandidateCard, requirementDependencies } from './requirement-candidate-card';
+import {
+  RequirementCandidateCard,
+  defaultRequirementSelection,
+  requirementDependencies,
+} from './requirement-candidate-card';
+import { ContextCoverageSummary } from './context-coverage';
 import type { GenerationResult } from '../lib/api';
 
 vi.mock('sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }));
@@ -108,5 +113,97 @@ describe('Requirement proposals as cards', () => {
     await userEvent.click(within(tabs).getByRole('tab', { name: /No funcionales/ }));
     expect(screen.getByText('Responder en menos de 2 s')).toBeInTheDocument();
     expect(screen.queryByText('Iniciar sesión')).not.toBeInTheDocument();
+  });
+});
+
+describe('Requirement proposals against the project context', () => {
+  const item = (code: string, kind: 'NEED' | 'BUSINESS_RULE' | 'CONSTRAINT', id: string) => ({
+    id: `00000000-0000-4000-8000-00000000000${id}`,
+    contextVersionId: '00000000-0000-4000-8000-000000000009',
+    code,
+    kind,
+    description: `Texto de ${code}`,
+    mandatory: kind !== 'CONSTRAINT',
+  });
+  const withContext: GenerationResult = {
+    id: 'batch',
+    candidates: [
+      { ...generation.candidates[0]!, contextItemCodes: ['N-1'] },
+      { ...generation.candidates[2]!, contextItemCodes: ['RES-1'] },
+      {
+        ...generation.candidates[1]!,
+        id: 'idea',
+        name: 'Avisar por correo',
+        suggested: true,
+        rationale: 'Evita llamadas para preguntar por el pedido.',
+        outgoingDependencies: [{ dependsOnCandidateId: 'login' }],
+      },
+    ],
+    coverage: [
+      { ...item('N-1', 'NEED', '1'), coveredBy: ['login'] },
+      { ...item('N-2', 'NEED', '2'), coveredBy: [] },
+      { ...item('RES-1', 'CONSTRAINT', '3'), coveredBy: ['speed'] },
+    ],
+  };
+
+  function renderWithContext() {
+    render(
+      <CandidateReview
+        generation={withContext}
+        describe={(c) => c.name ?? ''}
+        defaultSelected={defaultRequirementSelection(withContext.candidates)}
+        renderCard={(c, index) => (
+          <RequirementCandidateCard
+            candidate={c}
+            index={index}
+            nameOf={() => ''}
+            contextItems={new Map(withContext.coverage!.map((i) => [i.code, i] as const))}
+          />
+        )}
+        summary={(selected) => (
+          <ContextCoverageSummary
+            subject="Las propuestas seleccionadas"
+            items={withContext.coverage!.map((i) => ({
+              ...i,
+              covered: i.coveredBy.some((id) => selected.includes(id)),
+            }))}
+          />
+        )}
+        optional={{
+          title: 'Ideas para mejorar tu software',
+          description: 'Sugerencias',
+          matches: (c) => c.suggested === true,
+        }}
+        dependenciesOf={requirementDependencies}
+        onAccept={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+  }
+
+  it('shows which context items each proposal covers and what is still missing', async () => {
+    renderWithContext();
+    expect(screen.getByTitle('Necesidad: Texto de N-1')).toHaveTextContent('N-1');
+    expect(
+      screen.getByText(/cubren 1 de 2 necesidades; falta cubrir el resto/),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Ver qué falta' }));
+    const missing = screen.getByRole('list', { name: 'Elementos del contexto sin cubrir' });
+    expect(missing).toHaveTextContent('Texto de N-2');
+    expect(missing).not.toHaveTextContent('Texto de N-1');
+
+    // The summary follows the selection.
+    await userEvent.click(screen.getByLabelText('Incorporar Iniciar sesión'));
+    expect(screen.getByText(/cubren 0 de 2 necesidades/)).toBeInTheDocument();
+  });
+
+  it('keeps ideas beyond the context folded and unselected', async () => {
+    renderWithContext();
+    expect(screen.getByText(/y 1 idea adicional/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Incorporar Avisar por correo')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Ideas para mejorar tu software/ }));
+    expect(screen.getByLabelText('Incorporar Avisar por correo')).not.toBeChecked();
+    expect(screen.getByText('Evita llamadas para preguntar por el pedido.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Incorporar 2 de 3/ })).toBeEnabled();
   });
 });

@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, Check, Sparkles, X, XCircle } from 'lucide-react';
+import { AlertTriangle, Check, ChevronDown, Lightbulb, Sparkles, X, XCircle } from 'lucide-react';
 import { Button } from '@caseflow-ai/ui';
 import { useMemo, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
@@ -18,7 +18,9 @@ export interface CandidateFilter {
 //
 // A page shows each proposal either as a line (`describe`) or as a full card
 // (`renderCard`), may offer filters, and may declare which proposals each one
-// depends on so they are selected together.
+// depends on so they are selected together. `summary` follows the selection,
+// and `optional` folds proposals the user may add (ideas beyond what was
+// asked) into their own collapsed section.
 export function CandidateReview({
   generation,
   describe,
@@ -27,6 +29,8 @@ export function CandidateReview({
   filters,
   dependenciesOf,
   defaultSelected,
+  summary,
+  optional,
   onAccept,
   onDismiss,
 }: {
@@ -37,6 +41,12 @@ export function CandidateReview({
   filters?: CandidateFilter[];
   dependenciesOf?: (candidate: GenerationCandidate) => string[];
   defaultSelected?: string[];
+  summary?: (selected: string[]) => ReactNode;
+  optional?: {
+    title: string;
+    description: string;
+    matches: (candidate: GenerationCandidate) => boolean;
+  };
   onAccept: (candidateIds: string[]) => Promise<void>;
   onDismiss: () => void;
 }) {
@@ -45,11 +55,15 @@ export function CandidateReview({
     defaultSelected ?? candidates.map((c) => c.id),
   );
   const [filterId, setFilterId] = useState<string>('all');
+  const [optionalOpen, setOptionalOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const total = candidates.length;
   const byId = useMemo(() => new Map(candidates.map((c) => [c.id, c])), [candidates]);
+  const main = optional ? candidates.filter((c) => !optional.matches(c)) : candidates;
+  const extra = optional ? candidates.filter(optional.matches) : [];
+  const extraSelected = extra.filter((c) => selected.includes(c.id)).length;
   const filter = filters?.find((f) => f.id === filterId);
-  const visible = filter ? candidates.filter(filter.matches) : candidates;
+  const visible = filter ? main.filter(filter.matches) : main;
   const allVisibleSelected = visible.every((c) => selected.includes(c.id));
   const hasInvalidSelection = candidates.some(
     (candidate) =>
@@ -145,6 +159,45 @@ export function CandidateReview({
     }
   }
 
+  function item(c: GenerationCandidate) {
+    const checked = selected.includes(c.id);
+    const index = candidates.indexOf(c);
+    return (
+      <li key={c.id}>
+        <label
+          className={`flex cursor-pointer items-start gap-3 text-sm transition-all ${
+            renderCard
+              ? `rounded-lg border bg-card p-4 shadow-xs hover:shadow-sm ${
+                  checked
+                    ? 'border-primary/60 ring-1 ring-primary/20'
+                    : 'border-border opacity-70 hover:opacity-100'
+                }`
+              : `px-4 py-2.5 hover:bg-muted/40 ${checked ? '' : 'opacity-60'}`
+          }`}
+        >
+          <input
+            type="checkbox"
+            className="mt-1 size-4 shrink-0 accent-primary"
+            checked={checked}
+            onChange={() => toggle(c.id)}
+            aria-label={c.name ? `Incorporar ${c.name}` : undefined}
+          />
+          <span className="min-w-0 flex-1 text-foreground">
+            {renderCard ? (
+              renderCard(c, index)
+            ) : (
+              <>
+                {describe(c)}
+                {renderDetail?.(c)}
+              </>
+            )}
+            {c.qualityFindings?.length ? <QualityFindings candidate={c} /> : null}
+          </span>
+        </label>
+      </li>
+    );
+  }
+
   return (
     <section className="overflow-hidden rounded-xl border border-primary/30 bg-card shadow-sm">
       <header className="flex flex-col gap-3 border-b border-border bg-primary/5 px-4 py-3">
@@ -155,7 +208,10 @@ export function CandidateReview({
             </span>
             <div>
               <h2 className="text-sm font-semibold text-foreground">
-                La IA generó {total} {total === 1 ? 'propuesta' : 'propuestas'}
+                La IA generó {main.length} {main.length === 1 ? 'propuesta' : 'propuestas'}
+                {extra.length
+                  ? ` y ${extra.length} ${extra.length === 1 ? 'idea adicional' : 'ideas adicionales'}`
+                  : ''}
               </h2>
               <p className="text-xs text-muted-foreground">
                 Elija cuáles incorporar al proyecto. Podrá editarlas y aprobarlas después.
@@ -175,7 +231,7 @@ export function CandidateReview({
         {filters?.length ? (
           <div role="tablist" aria-label="Filtrar propuestas" className="flex flex-wrap gap-1.5">
             {[{ id: 'all', label: 'Todas', matches: () => true }, ...filters].map((f) => {
-              const count = candidates.filter(f.matches).length;
+              const count = main.filter(f.matches).length;
               const active = filterId === f.id;
               return (
                 <button
@@ -201,6 +257,7 @@ export function CandidateReview({
             })}
           </div>
         ) : null}
+        {summary?.(selected)}
       </header>
 
       <ul
@@ -208,50 +265,51 @@ export function CandidateReview({
           renderCard ? 'gap-3 bg-muted/30 p-3' : 'divide-y divide-border'
         }`}
       >
-        {visible.map((c) => {
-          const checked = selected.includes(c.id);
-          const index = candidates.indexOf(c);
-          return (
-            <li key={c.id}>
-              <label
-                className={`flex cursor-pointer items-start gap-3 text-sm transition-all ${
-                  renderCard
-                    ? `rounded-lg border bg-card p-4 shadow-xs hover:shadow-sm ${
-                        checked
-                          ? 'border-primary/60 ring-1 ring-primary/20'
-                          : 'border-border opacity-70 hover:opacity-100'
-                      }`
-                    : `px-4 py-2.5 hover:bg-muted/40 ${checked ? '' : 'opacity-60'}`
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  className="mt-1 size-4 shrink-0 accent-primary"
-                  checked={checked}
-                  onChange={() => toggle(c.id)}
-                  aria-label={c.name ? `Incorporar ${c.name}` : undefined}
-                />
-                <span className="min-w-0 flex-1 text-foreground">
-                  {renderCard ? (
-                    renderCard(c, index)
-                  ) : (
-                    <>
-                      {describe(c)}
-                      {renderDetail?.(c)}
-                    </>
-                  )}
-                  {c.qualityFindings?.length ? <QualityFindings candidate={c} /> : null}
-                </span>
-              </label>
-            </li>
-          );
-        })}
+        {visible.map(item)}
         {visible.length === 0 ? (
           <li className="px-4 py-6 text-center text-sm text-muted-foreground">
             No hay propuestas con este filtro.
           </li>
         ) : null}
       </ul>
+
+      {optional && extra.length ? (
+        <div className="border-t border-border">
+          <button
+            type="button"
+            onClick={() => setOptionalOpen((v) => !v)}
+            aria-expanded={optionalOpen}
+            className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40"
+          >
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
+              <Lightbulb className="size-4" aria-hidden="true" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-foreground">{optional.title}</span>
+              <span className="block text-xs text-muted-foreground">{optional.description}</span>
+            </span>
+            <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+              {extraSelected} de {extra.length}
+            </span>
+            <ChevronDown
+              className={`size-4 shrink-0 text-muted-foreground transition-transform ${optionalOpen ? 'rotate-180' : ''}`}
+              aria-hidden="true"
+            />
+          </button>
+          {optionalOpen ? (
+            <ul
+              aria-label={optional.title}
+              className={`flex max-h-[50vh] flex-col overflow-y-auto ${
+                renderCard
+                  ? 'gap-3 bg-amber-50/30 p-3 dark:bg-amber-950/10'
+                  : 'divide-y divide-border'
+              }`}
+            >
+              {extra.map(item)}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* Room on the right for the floating theme toggle. */}
       <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-border px-4 py-3 sm:pr-20">
