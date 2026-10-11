@@ -19,7 +19,12 @@ const structuredCreate = vi.fn().mockResolvedValue({});
 
 vi.mock('../lib/api', () => ({
   api: {
-    requirements: { create: (...args: unknown[]) => requirementsCreate(...args) },
+    requirements: {
+      create: (...args: unknown[]) => requirementsCreate(...args),
+      // No approved context yet: nothing to cite.
+      contextCoverage: vi.fn(async () => ({ context: null, items: [], withoutOrigin: [] })),
+    },
+    context: { getCurrent: vi.fn(async () => Promise.reject(new Error('sin contexto'))) },
     useCases: { create: (...args: unknown[]) => useCasesCreate(...args) },
     dataModels: { create: (...args: unknown[]) => dataModelsCreate(...args) },
     structuredAnalysis: { create: (...args: unknown[]) => structuredCreate(...args) },
@@ -50,6 +55,8 @@ describe('manual non-AI creation fallbacks (behavior 22)', () => {
       screen.getByLabelText(/descripción/i),
       'El sistema debe permitir registrar pedidos',
     );
+    await user.click(screen.getByRole('radio', { name: 'Decisión propia' }));
+    await user.type(screen.getByLabelText('Justificación'), 'Lo pidió el cliente.');
     await user.click(screen.getByRole('button', { name: /crear requisito/i }));
 
     await waitFor(() => expect(requirementsCreate).toHaveBeenCalledTimes(1));
@@ -60,6 +67,7 @@ describe('manual non-AI creation fallbacks (behavior 22)', () => {
         name: 'Registrar pedido',
         description: 'El sistema debe permitir registrar pedidos',
         dependencyArtifactIds: [],
+        origin: { kind: 'USER_DECISION', justification: 'Lo pidió el cliente.' },
       }),
     );
   });
@@ -84,7 +92,10 @@ describe('manual non-AI creation fallbacks (behavior 22)', () => {
     );
     await user.type(screen.getByLabelText(/^nombre$/i), 'Registrar pedido');
     await user.type(screen.getByLabelText(/descripción/i), 'Requiere sesión iniciada');
-    await user.click(screen.getByLabelText(/RF-001 — Autenticar usuario/i));
+    await user.type(screen.getByLabelText('Buscar requisito del que depende'), 'RF-001');
+    await user.click(screen.getByRole('button', { name: /RF-001 Autenticar usuario/i }));
+    await user.click(screen.getByRole('radio', { name: 'Decisión propia' }));
+    await user.type(screen.getByLabelText('Justificación'), 'Necesario para registrar pedidos.');
     await user.click(screen.getByRole('button', { name: /crear requisito/i }));
 
     await waitFor(() => expect(requirementsCreate).toHaveBeenCalledTimes(1));

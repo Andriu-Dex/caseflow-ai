@@ -208,7 +208,14 @@ function RequirementsContent({ projectId }: { projectId: string }) {
           </DropdownMenu>
         </div>
         <AiUnavailableHint />
-        {items.length ? <RequirementsSummary items={items} coverage={coverage.data} /> : null}
+        {items.length ? (
+          <RequirementsSummary
+            items={items}
+            coverage={coverage.data}
+            // While proposals are reviewed, their own summary says what is missing.
+            showMissing={!generation}
+          />
+        ) : null}
       </section>
 
       {showManualForm || editing ? (
