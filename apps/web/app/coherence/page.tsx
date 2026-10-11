@@ -13,6 +13,11 @@ import { PageHeading } from '../../components/page-heading';
 // with what is missing and where it is fixed.
 
 const CHAIN_LABELS: Record<CoherenceChain, { title: string; description: string }> = {
+  CONTEXT_REQUIREMENT: {
+    title: 'Contexto → requisito',
+    description:
+      'Cada necesidad y regla de negocio del contexto aprobado la atiende un requisito aprobado; las restricciones se muestran como observación.',
+  },
   REQUIREMENT_USE_CASE_SCREEN: {
     title: 'Requisito → caso de uso → pantalla',
     description:
@@ -35,6 +40,10 @@ const CHAIN_LABELS: Record<CoherenceChain, { title: string; description: string 
   },
 };
 
+// Chains fixed on a page other than their artifact type's.
+const CHAIN_FIX_PAGES: Partial<Record<CoherenceChain, string>> = {
+  CONTEXT_REQUIREMENT: '/requirements',
+};
 // Where each gap is fixed: the artifact that must change to cover it.
 const FIX_PAGES: Record<string, string> = {
   REQUIREMENT: '/use-cases',
@@ -71,11 +80,12 @@ function CoherenceContent({ projectId }: { projectId: string }) {
             </p>
             {COHERENCE_CHAINS.map((chain) => {
               const gaps = issues.filter((issue) => issue.chain === chain);
+              const open = gaps.filter((gap) => gap.severity !== 'OBSERVATION');
               return (
                 <Card key={chain}>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-base">
-                      {gaps.length ? (
+                      {open.length ? (
                         <AlertCircle className="size-4 text-destructive" aria-hidden="true" />
                       ) : (
                         <CheckCircle2 className="size-4 text-emerald-600" aria-hidden="true" />
@@ -94,14 +104,18 @@ function CoherenceContent({ projectId }: { projectId: string }) {
                     ) : (
                       <ul className="flex flex-col gap-2 text-sm">
                         {gaps.map((gap, i) => {
-                          const href = gap.artifactType ? FIX_PAGES[gap.artifactType] : undefined;
+                          const href =
+                            CHAIN_FIX_PAGES[chain] ??
+                            (gap.artifactType ? FIX_PAGES[gap.artifactType] : undefined);
                           return (
                             <li key={i} className="flex flex-wrap items-baseline gap-2">
                               <span
                                 className={
                                   gap.severity === 'ERROR'
                                     ? 'text-destructive'
-                                    : 'text-amber-700 dark:text-amber-400'
+                                    : gap.severity === 'OBSERVATION'
+                                      ? 'text-muted-foreground'
+                                      : 'text-amber-700 dark:text-amber-400'
                                 }
                               >
                                 {gap.message}

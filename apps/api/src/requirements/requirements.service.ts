@@ -21,6 +21,7 @@ import { getProjectLanguage } from '../projects/project-language';
 import type { Prisma } from '../generated/prisma/client';
 import { analyzeRequirementQuality } from './requirement-quality';
 import { KnowledgeBaseService } from '../knowledge-base/knowledge-base.service';
+import { contextCoverage } from './context-coverage';
 import {
   candidateFindings,
   contextItemRef,
@@ -375,6 +376,11 @@ export class RequirementsService {
       }
       return { items: [...created.values()] };
     });
+  }
+  // How the latest approved context is covered by the current requirements,
+  // drafts included, so the user sees progress as they work (DEC-126).
+  contextCoverage(projectId: string) {
+    return contextCoverage(this.prisma, projectId, { approvedOnly: false });
   }
   // Deterministic ISO/IEC/IEEE 29148:2018-aligned quality check over every
   // current Requirement in the project (spec §4.3). Not a certification

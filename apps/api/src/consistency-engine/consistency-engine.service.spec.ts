@@ -35,6 +35,7 @@ describe('ConsistencyEngineService', () => {
   const prisma = {
     artifact: { findMany: vi.fn() },
     project: { findUnique: vi.fn() },
+    artifactVersion: { findFirst: vi.fn().mockResolvedValue(null) },
   };
   let service: ConsistencyEngineService;
 

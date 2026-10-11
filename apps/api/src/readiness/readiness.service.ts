@@ -3,6 +3,7 @@ import type { ReadinessStage } from '@caseflow-ai/contracts';
 import { PrismaService } from '../database/prisma.service';
 import { FirstDeliverableSnapshotService } from '../first-deliverable/first-deliverable-snapshot.service';
 import { RequirementsService } from '../requirements/requirements.service';
+import { contextCoverage } from '../requirements/context-coverage';
 import { StalenessService } from '../staleness/staleness.service';
 import { TraceabilityService } from '../traceability/traceability.service';
 
@@ -203,20 +204,58 @@ export class ReadinessService {
     const rnf = approved.filter(
       (v) => v.requirementDetail?.requirementType === 'NON_FUNCTIONAL',
     ).length;
-    const satisfied = approved.length >= 1;
-    const quality = satisfied ? await this.requirements.qualityReport(projectId) : null;
+    const quality = approved.length ? await this.requirements.qualityReport(projectId) : null;
+    // DEC-126: every need and business rule of the approved context must be
+    // answered by an approved requirement; it blocks only where coherence is
+    // mandatory.
+    const [covered, project] = await Promise.all([
+      contextCoverage(this.prisma, projectId, { approvedOnly: true }),
+      this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { coherenceRequired: true },
+      }),
+    ]);
+    const mandatory = covered.items.filter((item) => item.mandatory);
+    const uncovered = mandatory.filter((item) => !item.coveredBy.length);
+    const coverageMessages = uncovered.map(
+      (item) =>
+        `${item.code} «${item.description}» del contexto no está cubierto por ningún requisito aprobado.`,
+    );
+    const strict = project?.coherenceRequired ?? true;
+    const blockers = [
+      ...(approved.length ? [] : ['Apruebe al menos un requisito.']),
+      ...(strict ? coverageMessages : []),
+    ];
+    const satisfied = blockers.length === 0;
     return stage({
       key: 'REQUIREMENTS',
       label: 'Requisitos',
       satisfied,
-      summary: satisfied
-        ? `${approved.length} ${approved.length === 1 ? 'requisito aprobado' : 'requisitos aprobados'} (${rf} funcionales, ${rnf} no funcionales).`
+      summary: approved.length
+        ? `${approved.length} ${approved.length === 1 ? 'requisito aprobado' : 'requisitos aprobados'} (${rf} funcionales, ${rnf} no funcionales)${
+            mandatory.length
+              ? `; cubren ${mandatory.length - uncovered.length} de ${mandatory.length} necesidades y reglas del contexto`
+              : ''
+          }.`
         : 'Aún no hay requisitos aprobados.',
-      counts: { approved: approved.length, functional: rf, nonFunctional: rnf },
-      blockers: satisfied ? [] : ['Apruebe al menos un requisito.'],
+      counts: {
+        approved: approved.length,
+        functional: rf,
+        nonFunctional: rnf,
+        contextItemsCovered: mandatory.length - uncovered.length,
+        contextItemsTotal: mandatory.length,
+      },
+      blockers,
       // Quality findings are advisory (spec §4.3): they never block readiness.
-      warnings: quality?.issues.map((i) => `${i.code}: ${i.message}`) ?? [],
-      nextAction: satisfied ? null : 'Aprobar al menos un requisito.',
+      warnings: [
+        ...(strict ? [] : coverageMessages),
+        ...(quality?.issues.map((i) => `${i.code}: ${i.message}`) ?? []),
+      ],
+      nextAction: !approved.length
+        ? 'Aprobar al menos un requisito.'
+        : uncovered.length && strict
+          ? 'Cubrir con requisitos aprobados las necesidades y reglas pendientes del contexto.'
+          : null,
     });
   }
 

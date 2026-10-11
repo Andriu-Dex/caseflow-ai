@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AIOrchestrator, FakeAIProvider, PromptRegistry } from '@caseflow-ai/ai';
 import { PrismaAIRunRecorder } from '../../src/ai/ai-run-recorder';
+import { ConsistencyEngineService } from '../../src/consistency-engine/consistency-engine.service';
 import { RequirementsService } from '../../src/requirements/requirements.service';
 import { createTestContext, createWorkspace, type TestContext } from './support/test-app';
 
@@ -66,6 +67,7 @@ describe('Requirement origin and context coverage', () => {
     contextVersionId = context.version.id;
   });
   afterAll(async () => ctx.close());
+  const consistency = () => ctx.app.get(ConsistencyEngineService);
 
   const service = (payload: unknown) =>
     new RequirementsService(
@@ -221,5 +223,36 @@ describe('Requirement origin and context coverage', () => {
       justification: 'Lo pidió el cliente en la reunión.',
       contextItems: [],
     });
+  });
+
+  it('shows what the context still needs and blocks the Design Gate until it is covered', async () => {
+    // Current requirements (drafts included) show progress as the user works.
+    const current = await ctx.requirements.contextCoverage(projectId);
+    expect(current.context).toMatchObject({ versionId: contextVersionId });
+    const coveredBy = Object.fromEntries(current.items.map((i) => [i.code, i.coveredBy]));
+    expect(coveredBy['N-1']).toHaveLength(1);
+    expect(coveredBy['N-2']).toHaveLength(1);
+
+    // What counts for the report and the gates is what has been approved:
+    // N-1 and RN-1 are answered only by a proposal not yet approved.
+    const report = await consistency().generateReport(projectId);
+    const chain = report.issues.filter((i) => i.chain === 'CONTEXT_REQUIREMENT');
+    expect(chain.map((i) => [i.severity, i.message.split(' «')[0]])).toEqual(
+      expect.arrayContaining([
+        ['ERROR', 'La necesidad N-1'],
+        ['ERROR', 'La regla de negocio RN-1'],
+        ['OBSERVATION', 'La restricción RES-1'],
+      ]),
+    );
+    expect(chain.some((i) => i.message.includes('N-2'))).toBe(false);
+
+    const readiness = await ctx.readiness.evaluate(projectId);
+    const requirementsStage = readiness.stages.find((s) => s.key === 'REQUIREMENTS')!;
+    expect(requirementsStage.satisfied).toBe(false);
+    expect(requirementsStage.blockers.join(' ')).toContain('N-1');
+
+    await expect(consistency().assertDesignCoherent(projectId, [])).rejects.toThrow(
+      'La necesidad N-1',
+    );
   });
 });

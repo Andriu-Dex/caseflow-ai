@@ -12,7 +12,10 @@ function setup() {
       findMany: vi.fn().mockResolvedValue([]),
       findFirst: vi.fn().mockResolvedValue(null),
     },
-    artifactVersion: { findMany: vi.fn().mockResolvedValue([]) },
+    artifactVersion: {
+      findMany: vi.fn().mockResolvedValue([]),
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
     diagramDetail: { findUnique: vi.fn().mockResolvedValue(null) },
     project: { findUnique: vi.fn().mockResolvedValue({ designThemeRequired: true }) },
   };

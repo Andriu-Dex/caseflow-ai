@@ -13,8 +13,12 @@ import {
   type CoherenceGap,
   type CoherenceSource,
 } from './coherence-rules';
+import { contextCoverage } from '../requirements/context-coverage';
+
+const KIND_LABELS = { NEED: 'necesidad', BUSINESS_RULE: 'regla de negocio' } as const;
 
 const RULE_LABELS: Record<CoherenceGap['chain'], string> = {
+  CONTEXT_REQUIREMENT: 'Contexto → requisito',
   REQUIREMENT_USE_CASE_SCREEN: 'Requisito → caso de uso → pantalla',
   ENTITY_CLASS_PLAN: 'Entidad → clase → plan de implementación',
   NAVIGATION_SCREEN_ROUTE: 'Navegación → pantalla → ruta',
@@ -67,6 +71,35 @@ export class ConsistencyEngineService {
     }
     for (const gap of this.requirementGaps(versions))
       issues.push(this.issue(gap.gap, severity, gap.artifact));
+
+    // DEC-126: the approved context reaches the approved requirements.
+    const covered = await contextCoverage(this.prisma, projectId, { approvedOnly: true });
+    if (covered.context) {
+      const context = { id: covered.context.artifactId, artifactTypeCode: 'REQUIREMENT' };
+      for (const gap of contextGaps(covered.items)) issues.push(this.issue(gap, severity, context));
+      for (const item of covered.items.filter((i) => !i.mandatory && !i.coveredBy.length))
+        issues.push(
+          this.issue(
+            {
+              chain: 'CONTEXT_REQUIREMENT',
+              message: `La restricción ${item.code} «${item.description}» no está atendida por ningún requisito aprobado.`,
+            },
+            'OBSERVATION',
+            context,
+          ),
+        );
+      for (const requirement of covered.withoutOrigin)
+        issues.push(
+          this.issue(
+            {
+              chain: 'CONTEXT_REQUIREMENT',
+              message: `El requisito ${requirement.code} no indica qué elementos del contexto atiende ni por qué se incluye.`,
+            },
+            'WARNING',
+            { id: requirement.id, artifactTypeCode: 'REQUIREMENT' },
+          ),
+        );
+    }
 
     // Every approved UI blueprint screen has an approved mockup.
     for (const version of versions.filter((v) => v.artifact.artifactTypeCode === 'UI_BLUEPRINT')) {
@@ -142,7 +175,12 @@ export class ConsistencyEngineService {
         ? coherenceGaps(source.type as StructuredAnalysisKind, source.content, upstream)
         : [],
     );
-    this.throwOnGaps([...this.requirementGaps(approved).map((g) => g.gap), ...gaps]);
+    const covered = await contextCoverage(this.prisma, projectId, { approvedOnly: true });
+    this.throwOnGaps([
+      ...contextGaps(covered.items),
+      ...this.requirementGaps(approved).map((g) => g.gap),
+      ...gaps,
+    ]);
   }
 
   private throwOnGaps(gaps: CoherenceGap[]) {
@@ -176,7 +214,7 @@ export class ConsistencyEngineService {
 
   private issue(
     gap: CoherenceGap,
-    severity: 'ERROR' | 'WARNING',
+    severity: ConsistencyIssue['severity'],
     artifact: { id: string; artifactTypeCode: string },
   ): ConsistencyIssue {
     return {
@@ -261,6 +299,17 @@ export class ConsistencyEngineService {
     });
     return versions.map(toSource);
   }
+}
+
+// Every need and business rule of the approved context answered by some
+// approved requirement (DEC-126).
+function contextGaps(items: Awaited<ReturnType<typeof contextCoverage>>['items']): CoherenceGap[] {
+  return items
+    .filter((item) => item.mandatory && !item.coveredBy.length)
+    .map((item) => ({
+      chain: 'CONTEXT_REQUIREMENT',
+      message: `La ${KIND_LABELS[item.kind as keyof typeof KIND_LABELS]} ${item.code} «${item.description}» del contexto no está cubierta por ningún requisito aprobado.`,
+    }));
 }
 
 type ApprovedVersion = {
