@@ -65,6 +65,12 @@ export function RequirementManualForm({
       preconditions: csv(preconditions),
       postconditions: csv(postconditions),
       dependencyArtifactIds,
+      // An edit keeps the origin of the version it replaces.
+      origin: !r0?.origin
+        ? null
+        : r0.origin.kind === 'CONTEXT'
+          ? { kind: 'CONTEXT' as const, contextItemIds: r0.origin.contextItems.map((i) => i.id) }
+          : { kind: 'USER_DECISION' as const, justification: r0.origin.justification ?? '' },
     };
     try {
       if (initial) {

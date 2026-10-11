@@ -48,6 +48,7 @@ const requirement = {
   preconditions: [],
   postconditions: [],
   dependencyArtifactIds: [],
+  origin: { kind: 'USER_DECISION' as const, justification: 'Decisión del equipo.' },
 };
 
 function fakeAIOrchestrator(

@@ -52,7 +52,7 @@ async function approveContext(ctx: TestContext, projectId: string, sourceVersion
     objective: 'o',
     scopeItems: [],
     actors: [{ name: 'Usuario' }],
-    needs: [],
+    needs: [{ description: 'Registrar datos' }],
     constraints: [],
     businessRules: [],
     sourceVersionIds,
@@ -69,7 +69,7 @@ async function approveRequirement(
 ) {
   const service = new RequirementsService(
     ctx.prisma,
-    fakeAi(ctx, 'requirements.generate', 2, {
+    fakeAi(ctx, 'requirements.generate', 3, {
       candidates: [
         {
           candidateId: `rc-${name}`,
@@ -80,6 +80,7 @@ async function approveRequirement(
           actors: ['Usuario'],
           preconditions: [],
           postconditions: [],
+          contextItemCodes: ['N-1'],
           dependencyCandidateIds: [],
         },
       ],
@@ -173,7 +174,7 @@ describe('Readiness integration', () => {
       objective: 'o',
       scopeItems: [],
       actors: [{ name: 'Usuario' }],
-      needs: [],
+      needs: [{ description: 'Registrar datos' }],
       constraints: [],
       businessRules: [],
     });

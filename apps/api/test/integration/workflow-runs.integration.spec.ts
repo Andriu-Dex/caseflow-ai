@@ -32,6 +32,7 @@ const ANSWERS: Record<string, (request: AIProviderRequest) => unknown> = {
         actors: ['Vendedor'],
         preconditions: [],
         postconditions: [],
+        contextItemCodes: ['N-1'],
         dependencyCandidateIds: [],
       },
     ],

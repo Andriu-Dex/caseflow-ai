@@ -13,6 +13,7 @@ const requirement = (name: string) => ({
   preconditions: [],
   postconditions: [],
   dependencyArtifactIds: [],
+  origin: { kind: 'USER_DECISION' as const, justification: 'Decisión del equipo.' },
 });
 const useCase = (requirementVersionId: string, name = 'Procesar') => ({
   name,

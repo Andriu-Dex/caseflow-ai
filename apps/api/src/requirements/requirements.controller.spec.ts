@@ -25,6 +25,7 @@ describe('RequirementsController', () => {
       preconditions: [],
       postconditions: [],
       dependencyArtifactIds: [],
+      origin: null,
     };
     await c.create('p', body);
     await c.list('p');
