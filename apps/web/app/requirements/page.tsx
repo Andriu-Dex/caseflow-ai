@@ -19,6 +19,10 @@ import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { StatusBadge } from '../../components/status-badge';
 import { PageHeading } from '../../components/page-heading';
 import { CandidateReview } from '../../components/candidate-review';
+import {
+  RequirementCandidateCard,
+  requirementDependencies,
+} from '../../components/requirement-candidate-card';
 import { RequirementManualForm } from '../../components/requirement-manual-form';
 import {
   AiUnavailableHint,
@@ -219,6 +223,29 @@ function RequirementsContent({ projectId }: { projectId: string }) {
           describe={(c) =>
             `${c.requirementType === 'FUNCTIONAL' ? 'Funcional' : 'No funcional'} — ${c.name}: ${String(c.description ?? '').slice(0, 160)}`
           }
+          renderCard={(c, index) => (
+            <RequirementCandidateCard
+              candidate={c}
+              index={index}
+              nameOf={(id) =>
+                generation.candidates.find((x) => x.id === id)?.name ?? 'otra propuesta'
+              }
+            />
+          )}
+          filters={[
+            {
+              id: 'functional',
+              label: 'Funcionales',
+              matches: (c) => c.requirementType === 'FUNCTIONAL',
+            },
+            {
+              id: 'non-functional',
+              label: 'No funcionales',
+              matches: (c) => c.requirementType === 'NON_FUNCTIONAL',
+            },
+            { id: 'high', label: 'Prioridad alta', matches: (c) => c.priority === 'HIGH' },
+          ]}
+          dependenciesOf={requirementDependencies}
           onAccept={async (ids) => {
             await api.requirements.accept(projectId, generation.id, ids);
             invalidate();
