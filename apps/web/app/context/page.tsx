@@ -224,115 +224,199 @@ function ContextForm({
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4"
+      className="flex flex-col gap-6 rounded-xl border border-border bg-card p-6 shadow-sm transition-all duration-200 hover:shadow-md"
     >
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-foreground">
-          {hasExisting ? 'Nueva versión del Contexto' : 'Definir Contexto del Proyecto'}
-        </h2>
-        <Button
-          variant="outline"
-          size="sm"
-          type="button"
-          onClick={handleGenerate}
-          disabled={generating || approvedSources.length === 0}
-          title={
-            approvedSources.length === 0
-              ? 'Primero apruebe al menos una fuente del proyecto.'
-              : 'Completa los campos a partir de las fuentes aprobadas. Revíselos y edítelos antes de guardar.'
-          }
-        >
-          <Sparkles className="size-4" aria-hidden="true" />
-          {generating ? 'Generando…' : 'Generar con IA'}
-        </Button>
-        <GenerationOverlay open={generating} />
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight text-foreground">
+            {hasExisting ? 'Nueva versión del Contexto' : 'Definir Contexto del Proyecto'}
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Complete la información a continuación para establecer la base de su proyecto.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            type="button"
+            onClick={handleGenerate}
+            disabled={generating || approvedSources.length === 0}
+            title={
+              approvedSources.length === 0
+                ? 'Primero apruebe al menos una fuente del proyecto.'
+                : 'Completa los campos a partir de las fuentes aprobadas. Revíselos y edítelos antes de guardar.'
+            }
+            className="group relative overflow-hidden border-primary/20 hover:border-primary/50 hover:bg-primary/5"
+          >
+            <div className="absolute inset-0 bg-gradient-to-r from-primary/10 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
+            <Sparkles
+              className="mr-2 size-4 text-primary group-hover:animate-pulse"
+              aria-hidden="true"
+            />
+            <span className="font-medium text-primary">
+              {generating ? 'Generando…' : 'Generar con IA'}
+            </span>
+          </Button>
+          <GenerationOverlay open={generating} />
+        </div>
       </div>
-      <label className="flex flex-col gap-1 text-sm">
-        Planteamiento del problema
-        <textarea
-          required
-          rows={2}
-          className="rounded-md border border-input px-2 py-1"
-          value={problemStatement}
-          onChange={(e) => setProblemStatement(e.target.value)}
-        />
-      </label>
-      <label className="flex flex-col gap-1 text-sm">
-        Objetivo
-        <textarea
-          required
-          rows={2}
-          className="rounded-md border border-input px-2 py-1"
-          value={objective}
-          onChange={(e) => setObjective(e.target.value)}
-        />
-      </label>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="flex flex-col gap-1 text-sm">
-          Actores (uno por línea)
-          <textarea
-            rows={3}
-            className="rounded-md border border-input px-2 py-1"
-            value={actorsText}
-            onChange={(e) => setActorsText(e.target.value)}
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          Necesidades (una por línea)
-          <textarea
-            rows={3}
-            className="rounded-md border border-input px-2 py-1"
-            value={needsText}
-            onChange={(e) => setNeedsText(e.target.value)}
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          Restricciones (una por línea)
-          <textarea
-            rows={3}
-            className="rounded-md border border-input px-2 py-1"
-            value={constraintsText}
-            onChange={(e) => setConstraintsText(e.target.value)}
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          Reglas de negocio (una por línea)
-          <textarea
-            rows={3}
-            className="rounded-md border border-input px-2 py-1"
-            value={businessRulesText}
-            onChange={(e) => setBusinessRulesText(e.target.value)}
-          />
-        </label>
-      </div>
-      <label className="flex flex-col gap-1 text-sm">
-        Contexto adicional (opcional)
-        <textarea
-          rows={2}
-          className="rounded-md border border-input px-2 py-1"
-          value={additionalContext}
-          onChange={(e) => setAdditionalContext(e.target.value)}
-        />
-      </label>
 
-      <fieldset className="rounded-md border border-border p-2">
-        <legend className="px-1 text-sm font-medium text-foreground/80">
+      <div className="space-y-6">
+        <label className="group flex flex-col gap-2">
+          <span className="flex items-center gap-2 text-sm font-medium text-foreground transition-colors group-focus-within:text-primary">
+            <FileText className="size-4" aria-hidden="true" />
+            Planteamiento del problema
+          </span>
+          <textarea
+            required
+            rows={4}
+            className="rounded-lg border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+            value={problemStatement}
+            onChange={(e) => setProblemStatement(e.target.value)}
+            placeholder="Describa el problema principal que este proyecto busca resolver..."
+          />
+        </label>
+
+        <label className="group flex flex-col gap-2">
+          <span className="flex items-center gap-2 text-sm font-medium text-foreground transition-colors group-focus-within:text-primary">
+            <Target className="size-4" aria-hidden="true" />
+            Objetivo
+          </span>
+          <textarea
+            required
+            rows={3}
+            className="rounded-lg border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+            value={objective}
+            onChange={(e) => setObjective(e.target.value)}
+            placeholder="¿Cuál es el objetivo principal del proyecto?"
+          />
+        </label>
+
+        <div className="grid gap-6 sm:grid-cols-2">
+          <label className="group flex flex-col gap-2">
+            <span className="flex items-center gap-2 text-sm font-medium text-foreground transition-colors group-focus-within:text-primary">
+              <Users className="size-4" aria-hidden="true" />
+              Actores{' '}
+              <span className="ml-auto text-xs font-normal text-muted-foreground">
+                (uno por línea)
+              </span>
+            </span>
+            <textarea
+              rows={4}
+              className="rounded-lg border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+              value={actorsText}
+              onChange={(e) => setActorsText(e.target.value)}
+              placeholder="Ej: Administrador&#10;Cliente&#10;Vendedor"
+            />
+          </label>
+          <label className="group flex flex-col gap-2">
+            <span className="flex items-center gap-2 text-sm font-medium text-foreground transition-colors group-focus-within:text-primary">
+              <CheckCircle2 className="size-4" aria-hidden="true" />
+              Necesidades{' '}
+              <span className="ml-auto text-xs font-normal text-muted-foreground">
+                (una por línea)
+              </span>
+            </span>
+            <textarea
+              rows={4}
+              className="rounded-lg border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+              value={needsText}
+              onChange={(e) => setNeedsText(e.target.value)}
+              placeholder="Ej: Registro rápido de usuarios&#10;Reportes en tiempo real"
+            />
+          </label>
+          <label className="group flex flex-col gap-2">
+            <span className="flex items-center gap-2 text-sm font-medium text-foreground transition-colors group-focus-within:text-primary">
+              <ShieldAlert className="size-4" aria-hidden="true" />
+              Restricciones{' '}
+              <span className="ml-auto text-xs font-normal text-muted-foreground">
+                (una por línea)
+              </span>
+            </span>
+            <textarea
+              rows={4}
+              className="rounded-lg border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+              value={constraintsText}
+              onChange={(e) => setConstraintsText(e.target.value)}
+              placeholder="Ej: Presupuesto limitado&#10;Debe funcionar offline"
+            />
+          </label>
+          <label className="group flex flex-col gap-2">
+            <span className="flex items-center gap-2 text-sm font-medium text-foreground transition-colors group-focus-within:text-primary">
+              <Scale className="size-4" aria-hidden="true" />
+              Reglas de negocio{' '}
+              <span className="ml-auto text-xs font-normal text-muted-foreground">
+                (una por línea)
+              </span>
+            </span>
+            <textarea
+              rows={4}
+              className="rounded-lg border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+              value={businessRulesText}
+              onChange={(e) => setBusinessRulesText(e.target.value)}
+              placeholder="Ej: Usuarios inactivos por 30 días se suspenden"
+            />
+          </label>
+        </div>
+
+        <label className="group flex flex-col gap-2">
+          <span className="flex items-center gap-2 text-sm font-medium text-foreground transition-colors group-focus-within:text-primary">
+            Contexto adicional{' '}
+            <span className="ml-auto text-xs font-normal text-muted-foreground">(opcional)</span>
+          </span>
+          <textarea
+            rows={3}
+            className="rounded-lg border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+            value={additionalContext}
+            onChange={(e) => setAdditionalContext(e.target.value)}
+            placeholder="Cualquier otra información relevante..."
+          />
+        </label>
+      </div>
+
+      <fieldset className="rounded-lg border border-border bg-muted/20 p-4 transition-colors hover:border-border/80">
+        <legend className="flex items-center gap-2 px-2 text-sm font-semibold text-foreground">
+          <FileText className="size-4" aria-hidden="true" />
           Fuentes que respaldan este contexto
         </legend>
         {approvedSources.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Aún no hay fuentes aprobadas.</p>
+          <div className="flex items-center gap-2 px-2 py-2 text-sm text-muted-foreground">
+            <ShieldAlert className="size-4" aria-hidden="true" />
+            <p>
+              Aún no hay fuentes aprobadas. Puede agregar y aprobar fuentes en la sección "Fuentes".
+            </p>
+          </div>
         ) : (
-          <ul className="flex flex-col gap-1">
+          <ul className="mt-2 grid gap-2 sm:grid-cols-2">
             {approvedSources.map((s) => (
-              <li key={s.id} className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  id={`src-${s.id}`}
-                  checked={sourceVersionIds.includes(s.version.id)}
-                  onChange={() => toggleSource(s.version.id)}
-                />
-                <label htmlFor={`src-${s.id}`}>
-                  {s.code} — {s.source.title} (versión {s.version.versionNumber})
+              <li key={s.id} className="relative">
+                <label
+                  htmlFor={`src-${s.id}`}
+                  className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 text-sm transition-all hover:bg-accent ${
+                    sourceVersionIds.includes(s.version.id)
+                      ? 'border-primary bg-primary/5 shadow-sm'
+                      : 'border-border bg-card'
+                  }`}
+                >
+                  <div className="flex h-5 items-center">
+                    <input
+                      type="checkbox"
+                      id={`src-${s.id}`}
+                      aria-label={`${s.code} — ${s.source.title} (versión ${s.version.versionNumber})`}
+                      className="size-4 rounded border-primary text-primary focus:ring-primary"
+                      checked={sourceVersionIds.includes(s.version.id)}
+                      onChange={() => toggleSource(s.version.id)}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <span className="leading-none font-medium text-foreground">
+                      {s.source.title}
+                    </span>
+                    <span className="font-mono text-xs text-muted-foreground">
+                      {s.code} • v{s.version.versionNumber}
+                    </span>
+                  </div>
                 </label>
               </li>
             ))}
@@ -340,15 +424,26 @@ function ContextForm({
         )}
       </fieldset>
 
-      <Button
-        variant="default"
-        size="sm"
-        type="submit"
-        disabled={submitting}
-        className="self-start"
-      >
-        {submitting ? 'Guardando…' : hasExisting ? 'Guardar nueva versión' : 'Crear Contexto'}
-      </Button>
+      <div className="mt-2 flex items-center justify-end border-t border-border pt-4">
+        <Button
+          variant="default"
+          size="default"
+          type="submit"
+          disabled={submitting}
+          className="min-w-[150px] shadow-sm transition-all active:scale-[0.98]"
+        >
+          {submitting ? (
+            <span className="flex items-center gap-2">
+              <span className="size-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
+              Guardando...
+            </span>
+          ) : hasExisting ? (
+            'Guardar nueva versión'
+          ) : (
+            'Crear Contexto'
+          )}
+        </Button>
+      </div>
     </form>
   );
 }
@@ -507,8 +602,8 @@ function ContextContent({ projectId }: { projectId: string }) {
 
             <div className="grid gap-4 sm:grid-cols-2">
               {context.data.needs.length ? (
-                <section className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-3">
-                  <h3 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold tracking-wide text-emerald-800 uppercase">
+                <section className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-3 dark:border-emerald-900/50 dark:bg-emerald-950/20">
+                  <h3 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold tracking-wide text-emerald-800 uppercase dark:text-emerald-400">
                     <CheckCircle2 className="size-3.5" aria-hidden="true" />
                     Necesidades
                   </h3>
@@ -516,18 +611,18 @@ function ContextContent({ projectId }: { projectId: string }) {
                     {context.data.needs.map((n) => (
                       <li key={n.id} className="flex items-start gap-1.5">
                         <CheckCircle2
-                          className="mt-0.5 size-3.5 shrink-0 text-emerald-600"
+                          className="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-500"
                           aria-hidden="true"
                         />
-                        <span>{n.description}</span>
+                        <span className="text-foreground">{n.description}</span>
                       </li>
                     ))}
                   </ul>
                 </section>
               ) : null}
               {context.data.constraints.length ? (
-                <section className="rounded-lg border border-amber-200 bg-amber-50/40 p-3">
-                  <h3 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold tracking-wide text-amber-800 uppercase">
+                <section className="rounded-lg border border-amber-200 bg-amber-50/40 p-3 dark:border-amber-900/50 dark:bg-amber-950/20">
+                  <h3 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold tracking-wide text-amber-800 uppercase dark:text-amber-400">
                     <ShieldAlert className="size-3.5" aria-hidden="true" />
                     Restricciones
                   </h3>
@@ -535,10 +630,10 @@ function ContextContent({ projectId }: { projectId: string }) {
                     {context.data.constraints.map((c) => (
                       <li key={c.id} className="flex items-start gap-1.5">
                         <ShieldAlert
-                          className="mt-0.5 size-3.5 shrink-0 text-amber-600"
+                          className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-500"
                           aria-hidden="true"
                         />
-                        <span>{c.description}</span>
+                        <span className="text-foreground">{c.description}</span>
                       </li>
                     ))}
                   </ul>
@@ -557,7 +652,7 @@ function ContextContent({ projectId }: { projectId: string }) {
                           className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
                           aria-hidden="true"
                         />
-                        <span>{b.description}</span>
+                        <span className="text-foreground">{b.description}</span>
                       </li>
                     ))}
                   </ul>
@@ -574,7 +669,7 @@ function ContextContent({ projectId }: { projectId: string }) {
                         <span
                           className={`mt-0.5 shrink-0 rounded-full border px-1.5 py-0 text-[10px] font-medium ${
                             s.type === 'IN_SCOPE'
-                              ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                              ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-400'
                               : 'border-input text-muted-foreground'
                           }`}
                         >

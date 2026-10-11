@@ -42,11 +42,17 @@ export function PageHeading({ title, projectId }: { title: string; projectId?: s
       {state === 'satisfied' && next ? (
         <Link
           href={next.href}
-          className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-emerald-50 px-2.5 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-100"
+          className="group mt-2.5 inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3.5 py-2 text-sm font-medium text-emerald-800 shadow-xs transition-all hover:border-emerald-400 hover:bg-emerald-100 hover:shadow-sm active:scale-[0.99] dark:border-emerald-600/70 dark:bg-emerald-900/40 dark:text-emerald-200 dark:hover:border-emerald-500 dark:hover:bg-emerald-900/70"
         >
-          <CheckCircle2 className="size-4" aria-hidden="true" />
-          Este paso está completo — continuar a {next.label}
-          <ArrowRight className="size-4" aria-hidden="true" />
+          <CheckCircle2
+            className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+            aria-hidden="true"
+          />
+          <span>Este paso está completo — continuar a {next.label}</span>
+          <ArrowRight
+            className="size-4 shrink-0 text-emerald-600 transition-transform duration-200 group-hover:translate-x-1 dark:text-emerald-400"
+            aria-hidden="true"
+          />
         </Link>
       ) : null}
     </div>
