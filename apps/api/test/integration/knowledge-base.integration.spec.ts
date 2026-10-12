@@ -78,4 +78,49 @@ describe('Knowledge base indexing', () => {
     );
     expect(owners.rows).toEqual([{ project_id: projectId }]);
   });
+
+  it('finds the most relevant fragments of current approved sources, within a budget', async () => {
+    const w = await createWorkspace(ctx.prisma, 'KB3');
+    const projectId = (await ctx.projects.create({ workspaceId: w.id, name: 'Tienda' })).id;
+    const other = (await ctx.projects.create({ workspaceId: w.id, name: 'Otra' })).id;
+    await approvedSource(
+      projectId,
+      '# Pedidos\n\nEl cliente registra pedidos con su dirección de entrega.\n\n# Inventario\n\nEl stock se descuenta al confirmar.\n\n# Horarios\n\nLa tienda abre de lunes a sábado.',
+    );
+    // Another project's source with the same words is never read.
+    await approvedSource(other, '# Pedidos\n\nEl cliente registra pedidos urgentes.');
+
+    const hits = await kb.searchSources(projectId, 'registrar un pedido y descontar stock', 1_000);
+    expect(hits.map((h) => h.section)).toEqual(['Pedidos', 'Inventario']);
+    expect(hits.every((h) => h.sourceCode.startsWith('SRC-'))).toBe(true);
+    expect(hits.some((h) => h.content.includes('urgentes'))).toBe(false);
+
+    // A tight budget keeps only what fits, best first.
+    expect((await kb.searchSources(projectId, 'registrar pedido stock', 30)).length).toBe(1);
+  });
+
+  it('ignores archived sources and versions replaced by a newer approved one', async () => {
+    const w = await createWorkspace(ctx.prisma, 'KB4');
+    const projectId = (await ctx.projects.create({ workspaceId: w.id, name: 'Versiones' })).id;
+    const first = await approvedSource(projectId, '# Pagos\n\nSe paga en efectivo.');
+    const firstSource = await ctx.prisma.artifactVersion.findUniqueOrThrow({
+      where: { id: first },
+    });
+    const corrected = await ctx.sources.submitManualTranscript(
+      projectId,
+      firstSource.artifactId,
+      '# Pagos\n\nSe paga con tarjeta.',
+    );
+    await ctx.sources.transition(projectId, corrected.id, corrected.version.id, 'IN_REVIEW');
+    await ctx.sources.transition(projectId, corrected.id, corrected.version.id, 'APPROVED');
+    await kb.indexSource(projectId, corrected.version.id);
+    const archived = await approvedSource(projectId, '# Pagos\n\nSe paga con cheque.');
+    const archivedSource = await ctx.prisma.artifactVersion.findUniqueOrThrow({
+      where: { id: archived },
+    });
+    await ctx.sources.archive(projectId, archivedSource.artifactId);
+
+    const hits = await kb.searchSources(projectId, 'pagos efectivo tarjeta cheque', 1_000);
+    expect(hits.map((h) => h.content)).toEqual(['Se paga con tarjeta.']);
+  });
 });
