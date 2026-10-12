@@ -351,8 +351,11 @@ describe('FallbackAIProvider routing by capacity (DEC-127)', () => {
     await new AIOrchestrator(provider, new PromptRegistry([prompt]), recorder()).generateStructured(
       { ...input(), messages: [{ role: 'user', content: 'x'.repeat(90_000) }] },
     );
-    expect(provider.lastRequest?.timeoutMs).toBe(120_000);
+    // 30 000 tokens read (+90 s) and up to 4 096 to write (+40 s).
+    expect(provider.lastRequest?.timeoutMs).toBe(160_000);
     expect(scaledTimeoutMs(30_000, 1_000_000)).toBe(180_000);
+    // A long answer needs time to be written, whatever the input size.
+    expect(scaledTimeoutMs(30_000, 3_000, 8_192)).toBe(110_000);
   });
 
   it('counts the time left until midnight in a time zone', () =>

@@ -97,10 +97,17 @@ export const estimateRequestTokens = (request: AIProviderRequest) =>
       JSON.stringify(request.outputSchema),
   );
 
-// Bigger requests take longer: 30 s more per 10 000 tokens, up to 3 minutes.
+// Bigger requests take longer: 30 s more per 10 000 tokens read, and 10 s
+// more per 1 000 tokens the answer may write (writing is the slow part), up
+// to 3 minutes.
 export const MAX_AI_TIMEOUT_MS = 180_000;
-export const scaledTimeoutMs = (baseMs: number, inputTokens: number) =>
-  Math.min(MAX_AI_TIMEOUT_MS, baseMs + Math.floor(inputTokens / 10_000) * 30_000);
+export const scaledTimeoutMs = (baseMs: number, inputTokens: number, maxOutputTokens = 0) =>
+  Math.min(
+    MAX_AI_TIMEOUT_MS,
+    baseMs +
+      Math.floor(inputTokens / 10_000) * 30_000 +
+      Math.floor(maxOutputTokens / 1_000) * 10_000,
+  );
 
 export interface PromptDefinition {
   key: string;
@@ -241,7 +248,9 @@ export class AIOrchestrator {
         model: input.model,
         temperature: input.temperature,
         maxOutputTokens: input.maxOutputTokens,
-        timeoutMs: input.timeoutMs ?? scaledTimeoutMs(this.defaultTimeoutMs, inputTokens),
+        timeoutMs:
+          input.timeoutMs ??
+          scaledTimeoutMs(this.defaultTimeoutMs, inputTokens, input.maxOutputTokens),
       };
       // A model occasionally produces output that fails schema validation
       // (AI_INVALID_OUTPUT) on an otherwise-healthy provider — worth one retry
