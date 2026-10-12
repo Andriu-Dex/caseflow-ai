@@ -263,16 +263,18 @@ describe('SourcesService', () => {
     );
   });
 
-  it('re-queues on startup the jobs a restart cut off mid-processing', async () => {
+  it('re-queues on startup the jobs a restart cut off or left orphaned in the queue', async () => {
     const { prisma, ai, storage } = setup();
     const startedAt = new Date('2026-01-01T10:00:00Z');
     prisma.sourceProcessingJob.findMany.mockResolvedValue([
-      { id: 'cut-off', projectId: 'project' },
-      { id: 'taken-meanwhile', projectId: 'project' },
+      { id: 'cut-off', projectId: 'project', status: 'RUNNING' },
+      { id: 'taken-meanwhile', projectId: 'project', status: 'RUNNING' },
+      { id: 'orphaned', projectId: 'project', status: 'QUEUED' },
     ]);
     prisma.sourceProcessingJob.updateMany
       .mockResolvedValueOnce({ count: 1 })
-      .mockResolvedValueOnce({ count: 0 });
+      .mockResolvedValueOnce({ count: 0 })
+      .mockResolvedValueOnce({ count: 1 });
     const queue = { add: vi.fn().mockResolvedValue(undefined) };
     const service = new SourcesService(
       prisma as unknown as PrismaService,
@@ -283,17 +285,23 @@ describe('SourcesService', () => {
       queue as never,
     );
 
-    await expect(service.recoverInterruptedJobs(startedAt)).resolves.toBe(1);
+    await expect(service.recoverInterruptedJobs(startedAt)).resolves.toBe(2);
     expect(prisma.sourceProcessingJob.findMany).toHaveBeenCalledWith({
-      where: { status: 'RUNNING', updatedAt: { lt: startedAt } },
-      select: { id: true, projectId: true },
+      where: { status: { in: ['RUNNING', 'QUEUED'] }, updatedAt: { lt: startedAt } },
+      select: { id: true, projectId: true, status: true },
     });
     expect(prisma.sourceProcessingJob.updateMany).toHaveBeenCalledWith({
       where: { id: 'cut-off', status: 'RUNNING' },
       data: { status: 'QUEUED', errorMessage: null, failureReason: null },
     });
-    expect(queue.add).toHaveBeenCalledOnce();
-    expect(queue.add.mock.calls[0]![1]).toEqual({ jobId: 'cut-off', projectId: 'project' });
+    expect(prisma.sourceProcessingJob.updateMany).toHaveBeenCalledWith({
+      where: { id: 'orphaned', status: 'QUEUED' },
+      data: { status: 'QUEUED', errorMessage: null, failureReason: null },
+    });
+    expect(queue.add.mock.calls.map((call) => call[1])).toEqual([
+      { jobId: 'cut-off', projectId: 'project' },
+      { jobId: 'orphaned', projectId: 'project' },
+    ]);
   });
 
   it('allows a stale running job to be retried without replacing the source', async () => {

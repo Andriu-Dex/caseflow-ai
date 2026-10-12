@@ -318,6 +318,9 @@ export class SourcesService implements OnApplicationBootstrap {
   // Sources are processed inside this API process, so a job still RUNNING when
   // the process starts was cut off by a restart: nothing would ever finish it,
   // and the queue's redelivery is ignored because the job is no longer QUEUED.
+  // A job still QUEUED from before the start may have lost its queue entry
+  // (the worker could not reach this API while it was down); queueing it
+  // again is harmless, since only one run can claim it.
   // ponytail: assumes one API process; with several, a booting one may also
   // re-queue a job another is processing. That is harmless (the result is
   // only stored once, see runProcessingJob) but does the work twice.
@@ -335,13 +338,13 @@ export class SourcesService implements OnApplicationBootstrap {
   async recoverInterruptedJobs(startedAt: Date): Promise<number> {
     if (!this.queue) return 0;
     const jobs = await this.prisma.sourceProcessingJob.findMany({
-      where: { status: 'RUNNING', updatedAt: { lt: startedAt } },
-      select: { id: true, projectId: true },
+      where: { status: { in: ['RUNNING', 'QUEUED'] }, updatedAt: { lt: startedAt } },
+      select: { id: true, projectId: true, status: true },
     });
     let recovered = 0;
     for (const job of jobs) {
       const reset = await this.prisma.sourceProcessingJob.updateMany({
-        where: { id: job.id, status: 'RUNNING' },
+        where: { id: job.id, status: job.status },
         data: { status: 'QUEUED', errorMessage: null, failureReason: null },
       });
       if (reset.count !== 1) continue;
