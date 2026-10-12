@@ -46,6 +46,11 @@ export async function discover(fetchImpl: typeof fetch = fetch): Promise<Discove
   return data as unknown as Discovery;
 }
 
+// OpenAI expects the host id as a URI: "urn:uuid:" + a UUIDv4. Hosts saved
+// before this was known hold a bare UUID, so they are prefixed here.
+export const hostIdUri = (hostId: string) =>
+  hostId.startsWith('urn:') ? hostId : `urn:uuid:${hostId}`;
+
 export function authorizationUrl(input: {
   discovery: Discovery;
   clientId: string | null;
@@ -67,7 +72,7 @@ export function authorizationUrl(input: {
     nonce: input.nonce,
     code_challenge_method: 'S256',
     code_challenge: createHash('sha256').update(input.verifier).digest('base64url'),
-    ext_agent_host_id: input.hostId,
+    ext_agent_host_id: hostIdUri(input.hostId),
   }).toString();
   if (!input.clientId) url.searchParams.set('agent_name_hint', APP_NAME);
   return url.toString();
