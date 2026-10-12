@@ -160,6 +160,21 @@ describe('OpenAICompatibleProvider', () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
+  it('says so when the answer was cut at its output limit', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          model: 'm',
+          choices: [{ finish_reason: 'length', message: { content: '{"nodes": [{"id": "a"' } }],
+        }),
+      ),
+    );
+    await expect(provider(fetchMock).generateStructured(request)).rejects.toMatchObject({
+      code: 'AI_INVALID_OUTPUT',
+      message: expect.stringContaining('se cortó'),
+    });
+  });
+
   it('tells how long to wait and whether the daily quota is spent', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response('Rate limit reached on tokens per day (TPD)', {

@@ -130,7 +130,7 @@ const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
   NAVIGATION_TREE: {
     promptKey: 'navigation.generate',
     promptVersion: 4,
-    maxOutputTokens: 4096,
+    maxOutputTokens: 8192,
     diagram: {
       format: 'MERMAID_FLOWCHART',
       generate: (content) =>
@@ -148,7 +148,7 @@ const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
   SOFTWARE_ARCHITECTURE: {
     promptKey: 'software-architecture.generate',
     promptVersion: 2,
-    maxOutputTokens: 6144,
+    maxOutputTokens: 8192,
     diagram: {
       format: 'PLANTUML_COMPONENT',
       generate: (content) =>
@@ -165,7 +165,7 @@ const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
   SYSTEM_ARCHITECTURE: {
     promptKey: 'system-architecture.generate',
     promptVersion: 2,
-    maxOutputTokens: 6144,
+    maxOutputTokens: 8192,
     diagram: {
       format: 'PLANTUML_DEPLOYMENT',
       generate: (content) =>
