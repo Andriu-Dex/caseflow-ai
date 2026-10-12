@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { candidateFindings, contextItems, coverage, sameItem } from './requirement-context';
+import {
+  byContextCode,
+  candidateFindings,
+  contextItems,
+  coverage,
+  sameItem,
+} from './requirement-context';
 
 const row = (id: string, position: number, description: string, version = 'v1') => ({
   id: `00000000-0000-4000-8000-00000000000${id}`,
@@ -50,4 +56,12 @@ describe('Requirement ↔ context coherence (DEC-126)', () => {
       ['RES-1', false, ['RNF-001']],
     ]);
   });
+
+  it('orders cited items by kind and number, whatever order they were linked in', () =>
+    expect(
+      [...items]
+        .reverse()
+        .sort(byContextCode)
+        .map((i) => i.code),
+    ).toEqual(['N-1', 'N-2', 'RN-1', 'RES-1']));
 });

@@ -29,6 +29,7 @@ const REQUIREMENTS_PROMPT_RESERVE_TOKENS = 3_000;
 const MAX_FRAGMENT_TOKENS = 2_500;
 import { contextCoverage } from './context-coverage';
 import {
+  byContextCode,
   candidateFindings,
   contextItemRef,
   contextItems,
@@ -669,7 +670,7 @@ export class RequirementsService {
           ? {
               kind: d.originKind,
               justification: d.originJustification,
-              contextItems: d.contextLinks.map(contextItemRef),
+              contextItems: d.contextLinks.map(contextItemRef).sort(byContextCode),
             }
           : null,
       },
