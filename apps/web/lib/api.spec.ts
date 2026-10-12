@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const toast = vi.hoisted(() => ({ loading: vi.fn(), dismiss: vi.fn() }));
+vi.mock('sonner', () => ({ toast }));
+
 // The access token lives in module state: load a fresh module per test.
 async function freshApi() {
   vi.resetModules();
@@ -50,5 +53,60 @@ describe('API client session restore', () => {
 
     const refreshes = fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/auth/refresh'));
     expect(refreshes).toHaveLength(1);
+  });
+});
+
+describe('API client while the server restarts', () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+    vi.stubGlobal('fetch', fetchMock);
+    window.history.pushState({}, '', '/login');
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  const down = () => Promise.reject(new TypeError('Failed to fetch'));
+
+  it('waits for the API to come back, telling the user it is reconnecting', async () => {
+    let attempts = 0;
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith('/auth/refresh')) return json(200, { accessToken: 'header.e30.signature' });
+      attempts += 1;
+      return attempts < 4 ? down() : json(200, { items: [] });
+    });
+    const api = await freshApi();
+    const result = api.workspaces.list();
+    await vi.runAllTimersAsync();
+    await expect(result).resolves.toEqual({ items: [] });
+    expect(toast.loading).toHaveBeenCalledTimes(1);
+    expect(toast.dismiss).toHaveBeenCalled();
+  });
+
+  it('never repeats a write the server may not have received', async () => {
+    fetchMock.mockImplementation(async (url: string) =>
+      url.endsWith('/auth/refresh') ? json(200, { accessToken: 'header.e30.signature' }) : down(),
+    );
+    const api = await freshApi();
+    const err = await api.requirements.create('p1', {} as never).catch((e: unknown) => e);
+    expect(err).toMatchObject({
+      status: 0,
+      message: expect.stringContaining('No se pudo conectar'),
+    });
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/projects/p1/requirements')),
+    ).toHaveLength(1);
+  });
+
+  it('gives up after about 15 seconds', async () => {
+    fetchMock.mockImplementation(down);
+    const api = await freshApi();
+    const result = api.workspaces.list().catch((e: Error) => e);
+    await vi.runAllTimersAsync();
+    expect(await result).toMatchObject({ message: expect.stringContaining('No se pudo conectar') });
   });
 });
