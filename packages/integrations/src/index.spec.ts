@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { OpenAICompatibleProvider } from './index';
+import { OpenAICompatibleProvider, rateLimitDetails } from './index';
 
 const request = {
   capability: 'STRUCTURED_OUTPUT' as const,
@@ -65,7 +65,8 @@ describe('OpenAICompatibleProvider', () => {
 
   it.each([
     [429, 'AI_RATE_LIMITED'],
-    [413, 'AI_RATE_LIMITED'],
+    // One request above the tokens per minute: only a smaller one can pass.
+    [413, 'AI_INPUT_TOO_LARGE'],
     [503, 'AI_PROVIDER_UNAVAILABLE'],
     [400, 'AI_PROVIDER_ERROR'],
   ])('normalizes HTTP %s', async (status, code) => {
@@ -158,4 +159,38 @@ describe('OpenAICompatibleProvider', () => {
     ).rejects.toMatchObject({ code: 'AI_TIMEOUT' });
     expect(fetchMock).toHaveBeenCalledOnce();
   });
+
+  it('tells how long to wait and whether the daily quota is spent', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response('Rate limit reached on tokens per day (TPD)', {
+        status: 429,
+        headers: { 'retry-after': '7.5' },
+      }),
+    );
+    await expect(provider(fetchMock).generateStructured(request)).rejects.toMatchObject({
+      code: 'AI_RATE_LIMITED',
+      quota: 'DAY',
+      retryAfterMs: 7500,
+    });
+  });
+});
+
+describe('rateLimitDetails', () => {
+  it.each([
+    [
+      null,
+      'Rate limit reached for tokens per minute (TPM). Please try again in 7.66s.',
+      { retryAfterMs: 7660, quota: 'MINUTE' },
+    ],
+    ['2', 'tokens per minute', { retryAfterMs: 2000, quota: 'MINUTE' }],
+    [
+      null,
+      'Quota exceeded for metric: generate_content_free_tier_requests, quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier. Please retry in 41.2s.',
+      { retryAfterMs: 41200, quota: 'DAY' },
+    ],
+    [null, 'Please try again in 850ms', { retryAfterMs: 850, quota: 'MINUTE' }],
+    [null, 'Too many requests', { quota: 'MINUTE' }],
+  ])('reads retry-after %s with body %s', (header, body, expected) =>
+    expect(rateLimitDetails(header, body)).toEqual(expected),
+  );
 });

@@ -95,6 +95,30 @@ describe('loadAIConfig', () => {
       }),
     ).toMatchObject({ chain: [{ id: 'provider_1' }] }));
 
+  it('reads what each provider plan accepts (DEC-127)', () => {
+    const slot = {
+      AI_PROVIDER: 'fallback',
+      AI_PROVIDER_1_BASE_URL: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      AI_PROVIDER_1_API_KEY: 'gemini-secret',
+      AI_PROVIDER_1_MODEL: 'gemini-3.8-flash',
+      AI_PROVIDER_1_MAX_INPUT_TOKENS: '1048576',
+      AI_PROVIDER_1_TOKENS_PER_MINUTE: '250000',
+      AI_PROVIDER_1_DAY_RESET_TIMEZONE: 'America/Los_Angeles',
+    };
+    expect(loadAIConfig(slot)).toMatchObject({
+      chain: [
+        {
+          maxInputTokens: 1_048_576,
+          tokensPerMinute: 250_000,
+          dayResetTimeZone: 'America/Los_Angeles',
+        },
+      ],
+    });
+    expect(() =>
+      loadAIConfig({ ...slot, AI_PROVIDER_1_DAY_RESET_TIMEZONE: 'Marte/Olimpo' }),
+    ).toThrow('Zona horaria');
+  });
+
   it('rejects an empty fallback chain', () =>
     expect(() => loadAIConfig({ AI_PROVIDER: 'fallback' })).toThrow());
 });

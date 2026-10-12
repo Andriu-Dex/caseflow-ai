@@ -7,6 +7,8 @@ import {
   FakeAIProvider,
   FallbackAIProvider,
   PromptRegistry,
+  msUntilMidnight,
+  scaledTimeoutMs,
   type AIRunRecorder,
 } from './index';
 
@@ -230,4 +232,131 @@ describe('FallbackAIProvider', () => {
       expect.objectContaining({ provider: 'fake' }),
     );
   });
+});
+
+describe('FallbackAIProvider routing by capacity (DEC-127)', () => {
+  // A provider answering with the given results in order.
+  const scripted = (id: string, ...results: (AIError | 'ok')[]) => {
+    const generateStructured = vi.fn(async () => {
+      const next = results.shift() ?? 'ok';
+      if (next instanceof AIError) throw next;
+      return { ...response, provider: id };
+    });
+    return { id, generateStructured };
+  };
+  const sized = (tokens: number) => ({
+    ...providerRequest,
+    messages: [{ role: 'user' as const, content: 'x'.repeat(tokens * 3) }],
+  });
+  const clock = () => {
+    let now = Date.UTC(2026, 9, 12, 15, 0, 0);
+    return {
+      now: () => now,
+      sleep: vi.fn(async (ms: number) => {
+        now += ms;
+      }),
+      advance: (ms: number) => (now += ms),
+    };
+  };
+
+  it('sends a large request straight to the provider it fits in', async () => {
+    const groq = scripted('groq');
+    const gemini = scripted('gemini');
+    const router = new FallbackAIProvider([
+      { provider: groq, capacity: { tokensPerMinute: 8_000 } },
+      { provider: gemini, capacity: { maxInputTokens: 1_048_576 } },
+    ]);
+    await expect(router.generateStructured(sized(12_000))).resolves.toMatchObject({
+      provider: 'gemini',
+    });
+    expect(groq.generateStructured).not.toHaveBeenCalled();
+    await expect(router.generateStructured(sized(1_000))).resolves.toMatchObject({
+      provider: 'groq',
+    });
+    expect(router.maxInputTokens).toBe(1_048_576);
+  });
+
+  it('asks the caller to split work no provider can take', async () => {
+    const router = new FallbackAIProvider([
+      { provider: scripted('groq'), capacity: { tokensPerMinute: 8_000 } },
+    ]);
+    await expect(router.generateStructured(sized(9_000))).rejects.toMatchObject({
+      code: 'AI_INPUT_TOO_LARGE',
+    });
+  });
+
+  it('stops asking a provider whose daily quota is spent until it resets', async () => {
+    const time = clock();
+    const gemini = scripted(
+      'gemini',
+      new AIError('AI_RATE_LIMITED', 'day', { quota: 'DAY', retryAfterMs: 41_000 }),
+    );
+    const groq = scripted('groq');
+    const router = new FallbackAIProvider(
+      [
+        {
+          provider: gemini,
+          capacity: { maxInputTokens: 1_048_576, dayResetTimeZone: 'America/Los_Angeles' },
+        },
+        { provider: groq, capacity: { tokensPerMinute: 8_000 } },
+      ],
+      time,
+    );
+    await expect(router.generateStructured(sized(100))).resolves.toMatchObject({
+      provider: 'groq',
+    });
+    // Its own "retry in 41 s" is ignored: the quota is spent for the day.
+    time.advance(60_000);
+    await router.generateStructured(sized(100));
+    expect(gemini.generateStructured).toHaveBeenCalledOnce();
+    expect(router.maxInputTokens).toBe(8_000);
+    await expect(router.generateStructured(sized(20_000))).rejects.toMatchObject({
+      code: 'AI_RATE_LIMITED',
+    });
+    // 15:00 UTC is 08:00 in Los Angeles: free again at its midnight.
+    time.advance(16 * 3_600_000);
+    await expect(router.generateStructured(sized(20_000))).resolves.toMatchObject({
+      provider: 'gemini',
+    });
+  });
+
+  it('waits out a per-minute limit when no other provider fits', async () => {
+    const time = clock();
+    const groq = scripted(
+      'groq',
+      new AIError('AI_RATE_LIMITED', 'minute', { quota: 'MINUTE', retryAfterMs: 7_660 }),
+    );
+    const router = new FallbackAIProvider(
+      [{ provider: groq, capacity: { tokensPerMinute: 8_000 } }],
+      time,
+    );
+    await expect(router.generateStructured(sized(5_000))).resolves.toMatchObject({
+      provider: 'groq',
+    });
+    expect(time.sleep).toHaveBeenCalledWith(7_660);
+  });
+
+  it('learns from a provider that rejects a request as too large', async () => {
+    const groq = scripted('groq', new AIError('AI_INPUT_TOO_LARGE', 'too large'));
+    const gemini = scripted('gemini');
+    const router = new FallbackAIProvider([groq, gemini]);
+    await router.generateStructured(sized(6_000));
+    await router.generateStructured(sized(6_000));
+    expect(groq.generateStructured).toHaveBeenCalledOnce();
+    expect(gemini.generateStructured).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives a large request more time', async () => {
+    const provider = new FakeAIProvider(response);
+    await new AIOrchestrator(provider, new PromptRegistry([prompt]), recorder()).generateStructured(
+      { ...input(), messages: [{ role: 'user', content: 'x'.repeat(90_000) }] },
+    );
+    expect(provider.lastRequest?.timeoutMs).toBe(120_000);
+    expect(scaledTimeoutMs(30_000, 1_000_000)).toBe(180_000);
+  });
+
+  it('counts the time left until midnight in a time zone', () =>
+    expect(msUntilMidnight('America/Los_Angeles', new Date(Date.UTC(2026, 9, 12, 15, 0, 0)))).toBe(
+      16 * 3_600_000,
+    ));
 });
