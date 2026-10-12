@@ -102,7 +102,7 @@ async function approveUseCase(
 ) {
   const service = new UseCasesService(
     ctx.prisma,
-    fakeAi(ctx, 'use-cases.generate', 1, {
+    fakeAi(ctx, 'use-cases.generate', 2, {
       candidates: [
         {
           candidateId: `uc-${name}`,

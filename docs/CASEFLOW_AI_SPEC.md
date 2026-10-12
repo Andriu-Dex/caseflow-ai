@@ -7247,6 +7247,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-126 | Cada requisito declara su origen: los elementos del contexto aprobado que atiende (necesidades N-x, restricciones RES-x, reglas de negocio RN-x) o una decisión del usuario con su justificación. La IA cita esos códigos, debe cubrir todas las necesidades y reglas, y puede proponer hasta 5 ideas adicionales que el usuario decide incluir (§221.10) | Accepted |
 | DEC-127 | Cada proveedor de IA declara lo que admite su plan (tamaño máximo por solicitud, tokens por minuto, reinicio de la cuota diaria) y cada solicitud va al primero en que cabe. El texto de una fuente se guarda completo (hasta 500 000 caracteres) y se indexa por secciones con búsqueda de texto completo; el reporte de una fuente larga se genera por partes en segundo plano y el contexto y los requisitos leen una entrada acotada (§221.12) | Accepted |
 | DEC-128 | El instalable (edición de escritorio) es la distribución principal y no hay despliegue web obligatorio. El plan de ChatGPT también puede usarse en desarrollo local con un intermediario propio que guarda las credenciales solo en memoria y solo escucha en 127.0.0.1 (§221.11, ADR-007) | Accepted |
+| DEC-129 | Los casos de uso propuestos por la IA tienen la granularidad de un objetivo concreto de un actor (prompt `use-cases.generate@2`) y un caso de uso registra relaciones «include» y «extend» hacia otros casos del proyecto, que el diagrama dibuja (§221.13, ADR-008) | Accepted |
 
 ---
 
@@ -7445,7 +7446,7 @@ Tras el Incremento 1J se retoma el orden de dependencias de §180: Identity / Wo
 - `data-model.generate@1` recibe identificadores explícitos de versiones `APPROVED` de `REQUIREMENT` y `USE_CASE` del mismo proyecto. Usa `maxOutputTokens=12288`, suficiente para el payload estructurado máximo sin imponer un límite universal al orquestador. La salida persiste primero como `DataModelGeneration → DataModelCandidate`; solo la aceptación humana transaccional crea un `DATA_MODEL` `AI_GENERATED/GENERATED`.
 - La procedencia de generación es `DataModelDetail → DataModelCandidate → DataModelGeneration → AIRun → data-model.generate@1`, y `DataModelGenerationSource → ArtifactVersion` conserva todas las versiones exactas suministradas.
 - El motor determinístico separa modelo estructurado, generación de fuente y validación ligera de render. ER usa `MERMAID_ER`; UML de casos de uso usa `PLANTUML` porque conserva actores, asociaciones y límite de sistema sin degradarlos a flowchart. `DiagramEngine` nunca ejecuta Mermaid, PlantUML, shell ni texto de IA arbitrario; solo genera fuente determinística desde datos ya validados y aplica una validación local ligera (formato, tamaño). **Superseded por el Incremento 1F.1 (§218.8):** en 1F el render real todavía no existía — el "SVG" era una previsualización textual fija (`caseflow-svg-v1`) que mostraba la fuente escapada como texto monoespaciado, sin layout gráfico ni compatibilidad demostrada con motores oficiales.
-- Cada versión de `DATA_MODEL` conserva su fuente/render ER derivado y un vínculo a la misma versión estructurada. Cada generación de `USE_CASE_DIAGRAM` crea un Artifact/ArtifactVersion nuevo con prefijo `DIA` y vínculos exactos a versiones `APPROVED` de `USE_CASE`; no inventa relaciones include/extend. El SVG es derivado y nunca canónico.
+- Cada versión de `DATA_MODEL` conserva su fuente/render ER derivado y un vínculo a la misma versión estructurada. Cada generación de `USE_CASE_DIAGRAM` crea un Artifact/ArtifactVersion nuevo con prefijo `DIA` y vínculos exactos a versiones `APPROVED` de `USE_CASE`; no inventa relaciones include/extend (desde DEC-129, §221.13, dibuja las registradas en los casos de uso). El SVG es derivado y nunca canónico.
 - La persistencia del SVG en `diagram_details` se acepta temporalmente para el Primer Entregable por su tamaño acotado y naturaleza determinística. La migración a `StorageProvider` se evaluará cuando existan exports/objetos binarios; la fuente estructurada y la versión del generador siguen siendo autoritativas.
 
 ## 218.8 Decisiones de implementación del Incremento 1F.1 (Diagram Rendering Stabilization)
@@ -7683,7 +7684,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-128)
+# 221. Extensiones de V2 (DEC-116 a DEC-129)
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
@@ -7825,6 +7826,14 @@ Los planes gratuitos configurados son limitados de formas opuestas (verificado e
 - **Reporte de la fuente:** se genera en segundo plano. Si el texto cabe en el proveedor más capaz disponible, en una sola solicitud; si no, por partes que caben, cada una resumida y luego unidas por lotes. El plan y cada parte se guardan, de modo que un fallo o un reinicio continúa donde quedó. La página muestra el avance por partes.
 - **Propuesta del contexto:** recibe una entrada acotada. Cada fuente conserva su reporte; el espacio para texto se reparte de forma equitativa: las fuentes cortas van completas y las largas como extractos (sus secciones más afines a su reporte). La propuesta registra qué fuentes se leyeron por extractos.
 - **Requisitos:** reciben los fragmentos de las fuentes aprobadas más relevantes para las necesidades y reglas del contexto, dentro del espacio que deja la solicitud.
+
+## 221.13 Granularidad y relaciones de los casos de uso (DEC-129, ADR-008)
+
+- **Granularidad:** `use-cases.generate@2` propone un caso por objetivo concreto de un actor, nombrado con un verbo en infinitivo y su objeto. No usa nombres paraguas («Gestionar…», «Administrar…») ni baja a pasos sueltos, y toma los actores de los requisitos.
+- **Relaciones:** un caso de uso registra relaciones `INCLUDE` (un comportamiento que siempre reutiliza) o `EXTEND` (amplía opcionalmente un caso base) hacia otros casos de uso vigentes del mismo proyecto (`use_case_relations`). Hay como máximo una por par, y forman parte de la versión.
+- **IA:** cada candidato puede relacionarse con otros candidatos de la misma respuesta. Al aceptar, se conservan las relaciones cuyo destino también fue aceptado.
+- **Manual:** el formulario de caso de uso edita las mismas relaciones.
+- **Diagrama:** dibuja las relaciones entre los casos presentes y muestra el nombre del proyecto como límite del sistema. La herencia entre actores sigue fuera de alcance.
 
 ## 221.4 Fuera de alcance de estas extensiones
 

@@ -377,7 +377,7 @@ describe('Export (First Deliverable, Phase H)', () => {
 
     const useCasesService = new UseCasesService(
       ctx.prisma,
-      fakeAi(ctx, 'use-cases.generate', 1, {
+      fakeAi(ctx, 'use-cases.generate', 2, {
         candidates: [
           {
             candidateId: 'uc1',

@@ -34,6 +34,7 @@ const useCase = (requirementVersionId: string, name = 'Procesar') => ({
     },
   ],
   relatedRequirementVersionIds: [requirementVersionId],
+  relations: [],
 });
 describe('Use Cases integration', () => {
   let ctx: TestContext;
@@ -162,7 +163,7 @@ describe('Use Cases integration', () => {
       new PromptRegistry([
         {
           key: 'use-cases.generate',
-          version: 1,
+          version: 2,
           capability: 'STRUCTURED_OUTPUT',
           purpose: 'use_case_generation',
           systemInstructions: 'policy',
@@ -188,7 +189,88 @@ describe('Use Cases integration', () => {
     ).toBe(3);
     expect(
       await ctx.prisma.aIRun.findUniqueOrThrow({ where: { id: generation.aiRunId } }),
-    ).toMatchObject({ promptKey: 'use-cases.generate', promptVersion: 1 });
+    ).toMatchObject({ promptKey: 'use-cases.generate', promptVersion: 2 });
+  });
+  it('keeps include/extend from the AI through acceptance into the diagram', async () => {
+    const w = await createWorkspaceWithOwner(ctx, 'Relaciones');
+    const pid = (await ctx.projects.create({ workspaceId: w.id, name: 'Restaurante' })).id;
+    const r = await ctx.requirements.create(pid, requirement('Vender'));
+    await ctx.requirements.transition(pid, r.id, r.version.id, 'IN_REVIEW');
+    await ctx.requirements.transition(pid, r.id, r.version.id, 'APPROVED');
+    const proposal = (candidateId: string, name: string, relations: unknown[] = []) => ({
+      candidateId,
+      name,
+      objective: name,
+      primaryActor: 'Cajero',
+      mainFlow: [{ actor: 'Cajero', action: name }],
+      relatedRequirementSourceIds: [r.version.id],
+      relations,
+    });
+    const ai = new AIOrchestrator(
+      new FakeAIProvider({
+        provider: 'fake',
+        model: 'fake',
+        payload: {
+          candidates: [
+            proposal('venta', 'Registrar venta', [{ kind: 'INCLUDE', targetCandidateId: 'stock' }]),
+            proposal('stock', 'Descontar existencias'),
+            proposal('descuento', 'Aplicar descuento', [
+              { kind: 'EXTEND', targetCandidateId: 'venta' },
+            ]),
+          ],
+        },
+        usage: null,
+        latencyMs: 1,
+      }),
+      new PromptRegistry([
+        {
+          key: 'use-cases.generate',
+          version: 2,
+          capability: 'STRUCTURED_OUTPUT',
+          purpose: 'use_case_generation',
+          systemInstructions: 'policy',
+        },
+      ]),
+      new PrismaAIRunRecorder(ctx.prisma),
+    );
+    const service = new UseCasesService(ctx.prisma, ai);
+    const generation = await service.generate(pid, [r.version.id]);
+    const id = (candidateId: string) =>
+      generation.candidates.find((c) => c.candidateId === candidateId)!.id;
+    const first = await service.accept(pid, generation.id, [id('venta'), id('stock')]);
+    const byName = (name: string) => first.items.find((u) => u.useCase.name === name);
+    const [venta, stock] = [byName('Registrar venta'), byName('Descontar existencias')];
+    expect(venta!.useCase.relations).toEqual([{ kind: 'INCLUDE', targetUseCaseId: stock!.id }]);
+    // Accepted later, its relation still finds the use case accepted before.
+    const [descuento] = (await service.accept(pid, generation.id, [id('descuento')])).items;
+    expect(descuento!.useCase.relations).toEqual([{ kind: 'EXTEND', targetUseCaseId: venta!.id }]);
+
+    const own = {
+      ...useCase(r.version.id),
+      relations: [{ kind: 'INCLUDE' as const, targetUseCaseId: venta!.id }],
+    };
+    await expect(service.version(pid, venta!.id, own)).rejects.toThrow('otros casos de uso');
+    await expect(
+      service.create(projectId, { ...useCase(approvedVersionId), relations: own.relations }),
+    ).rejects.toThrow('otros casos de uso');
+
+    for (const u of [venta!, stock!, descuento!]) {
+      await service.transition(pid, u.id, u.version.id, 'IN_REVIEW');
+      await service.transition(pid, u.id, u.version.id, 'APPROVED');
+    }
+    // Relations are part of the version, immutable once approved.
+    await expect(
+      ctx.prisma.useCaseRelation.deleteMany({ where: { artifactVersionId: venta!.version.id } }),
+    ).rejects.toThrow();
+    const { source } = await ctx.dataModels.generateUseCaseDiagram(
+      pid,
+      [venta!, stock!, descuento!].map((u) => u.version.id),
+    );
+    expect(source).toContain('rectangle "Restaurante" {');
+    const byCode = [venta!, stock!, descuento!].sort((x, y) => x.code.localeCompare(y.code));
+    const u = (useCase: { id: string }) => `U${byCode.findIndex((x) => x.id === useCase.id) + 1}`;
+    expect(source).toContain(`${u(venta!)} ..> ${u(stock!)} : <<include>>`);
+    expect(source).toContain(`${u(descuento!)} ..> ${u(venta!)} : <<extend>>`);
   });
   it('rejects invented references as AI_INVALID_OUTPUT and persists no batch', async () => {
     const before = await ctx.prisma.useCaseGeneration.count();
@@ -218,7 +300,7 @@ describe('Use Cases integration', () => {
       new PromptRegistry([
         {
           key: 'use-cases.generate',
-          version: 1,
+          version: 2,
           capability: 'STRUCTURED_OUTPUT',
           purpose: 'use_case_generation',
           systemInstructions: 'policy',

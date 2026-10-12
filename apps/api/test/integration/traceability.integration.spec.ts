@@ -115,7 +115,7 @@ describe('Traceability graph integration', () => {
       'APPROVED',
     );
 
-    const useCasesAi = fakeAi(ctx, 'use-cases.generate', 1, {
+    const useCasesAi = fakeAi(ctx, 'use-cases.generate', 2, {
       candidates: [
         {
           candidateId: 'uc1',

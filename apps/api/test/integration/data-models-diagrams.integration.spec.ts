@@ -78,6 +78,7 @@ describe('Data Model + Diagram Engine integration', () => {
       mainFlow: [{ actor: 'Usuario', action: 'Registra' }],
       alternativeFlows: [],
       relatedRequirementVersionIds: [approvedRequirementId],
+      relations: [],
     });
     await ctx.useCases.transition(projectId, useCase.id, useCase.version.id, 'IN_REVIEW');
     await ctx.useCases.transition(projectId, useCase.id, useCase.version.id, 'APPROVED');
@@ -235,6 +236,7 @@ describe('Data Model + Diagram Engine integration', () => {
       mainFlow: [{ actor: 'Usuario', action: 'Registra' }],
       alternativeFlows: [],
       relatedRequirementVersionIds: [req.version.id],
+      relations: [],
     });
     await ctx.useCases.transition(scoped, useCase.id, useCase.version.id, 'IN_REVIEW');
     await ctx.useCases.transition(scoped, useCase.id, useCase.version.id, 'APPROVED');

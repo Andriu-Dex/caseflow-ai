@@ -28,7 +28,9 @@ const detailInclude = {
     include: { steps: { orderBy: { position: 'asc' as const } } },
   },
   requirementLinks: true,
+  relations: { orderBy: { target: { code: 'asc' as const } } },
 };
+type CandidateRelation = { kind: 'INCLUDE' | 'EXTEND'; targetCandidateId: string };
 
 @Injectable()
 export class UseCasesService {
@@ -115,6 +117,7 @@ export class UseCasesService {
       // opens a new DRAFT version that needs its own approval, exactly like
       // Project Context, Data Model and the design artifacts.
       await this.validateRequirements(tx, projectId, input.relatedRequirementVersionIds, false);
+      await this.validateRelations(tx, projectId, id, input.relations);
       const version = await tx.artifactVersion.create({
         data: {
           artifactId: id,
@@ -148,7 +151,7 @@ export class UseCasesService {
         projectId,
         language,
         promptKey: 'use-cases.generate',
-        promptVersion: 1,
+        promptVersion: 2,
         messages: [{ role: 'user', content: JSON.stringify({ requirementSources: sources }) }],
         outputSchema: useCaseGenerationOutputSchema,
         schemaName: 'use_cases_generation',
@@ -188,6 +191,7 @@ export class UseCasesService {
               postconditions: candidate.postconditions,
               mainFlow: candidate.mainFlow,
               alternativeFlows: candidate.alternativeFlows,
+              relations: candidate.relations,
             },
           });
           await tx.useCaseCandidateSource.createMany({
@@ -229,7 +233,7 @@ export class UseCasesService {
       const candidates = generation.candidates.filter((candidate) => selected.has(candidate.id));
       if (candidates.length !== selected.size)
         throw new NotFoundException('Candidato no encontrado.');
-      const items: UseCaseResponse[] = [];
+      const created = new Map<string, { artifactId: string; versionId: string }>();
       for (const candidate of candidates) {
         if (candidate.acceptedArtifactId)
           throw new UnprocessableEntityException('El candidato ya fue aceptado.');
@@ -245,8 +249,9 @@ export class UseCasesService {
           relatedRequirementVersionIds: candidate.sources.map(
             (source) => source.requirementVersionId,
           ),
+          relations: [],
         };
-        const created = await this.createInTx(
+        const useCase = await this.createInTx(
           tx,
           projectId,
           input,
@@ -257,10 +262,34 @@ export class UseCasesService {
         );
         await tx.useCaseCandidate.update({
           where: { id: candidate.id },
-          data: { acceptedArtifactId: created.id },
+          data: { acceptedArtifactId: useCase.id },
         });
-        items.push(created);
+        created.set(candidate.id, { artifactId: useCase.id, versionId: useCase.version.id });
       }
+      // Relations go in once every candidate exists. They keep only the
+      // targets accepted now or in an earlier acceptance of the generation;
+      // a relation to a discarded proposal is dropped with it.
+      const acceptedArtifact = new Map(
+        (
+          await tx.useCaseCandidate.findMany({
+            where: { generationId },
+            select: { candidateId: true, acceptedArtifactId: true },
+          })
+        ).map((c) => [c.candidateId, c.acceptedArtifactId]),
+      );
+      for (const candidate of candidates) {
+        const { versionId } = created.get(candidate.id)!;
+        const data = (candidate.relations as CandidateRelation[]).flatMap(
+          ({ kind, targetCandidateId }) => {
+            const target = acceptedArtifact.get(targetCandidateId);
+            return target ? [{ artifactVersionId: versionId, targetArtifactId: target, kind }] : [];
+          },
+        );
+        if (data.length) await tx.useCaseRelation.createMany({ data });
+      }
+      const items: UseCaseResponse[] = [];
+      for (const { artifactId, versionId } of created.values())
+        items.push(await this.loadAndMap(tx, artifactId, versionId));
       return { items };
     });
   }
@@ -311,6 +340,7 @@ export class UseCasesService {
     if (!(await tx.project.findUnique({ where: { id: projectId } })))
       throw new NotFoundException('Proyecto no encontrado.');
     await this.validateRequirements(tx, projectId, input.relatedRequirementVersionIds, false);
+    await this.validateRelations(tx, projectId, null, input.relations);
     const rows = await tx.$queryRaw<
       { last_number: number }[]
     >`INSERT INTO project_code_counters(project_id,code_prefix,last_number) VALUES(${projectId}::uuid,'CU',1) ON CONFLICT(project_id,code_prefix) DO UPDATE SET last_number=project_code_counters.last_number+1 RETURNING last_number`;
@@ -376,8 +406,31 @@ export class UseCasesService {
             requirementVersionId,
           })),
         },
+        relations: {
+          create: input.relations.map(({ kind, targetUseCaseId }) => ({
+            kind,
+            targetArtifactId: targetUseCaseId,
+          })),
+        },
       },
     });
+  }
+  // Targets must be other, non-archived use cases of the same project.
+  private async validateRelations(
+    tx: Tx,
+    projectId: string,
+    ownArtifactId: string | null,
+    relations: UseCaseInput['relations'],
+  ) {
+    if (!relations.length) return;
+    const ids = relations.map((relation) => relation.targetUseCaseId);
+    const found = await tx.artifact.count({
+      where: { id: { in: ids }, projectId, artifactTypeCode: 'USE_CASE', archivedAt: null },
+    });
+    if (found !== new Set(ids).size || (ownArtifactId && ids.includes(ownArtifactId)))
+      throw new UnprocessableEntityException(
+        'Las relaciones deben apuntar a otros casos de uso vigentes del proyecto.',
+      );
   }
   private async validateRequirements(
     tx: Pick<Tx, 'artifactVersion' | 'project'>,
@@ -448,6 +501,7 @@ export class UseCasesService {
         steps: { actor: string; action: string }[];
       }[];
       requirementLinks: { requirementVersionId: string }[];
+      relations: { kind: 'INCLUDE' | 'EXTEND'; targetArtifactId: string }[];
     };
     return {
       id: artifact.id,
@@ -475,6 +529,10 @@ export class UseCasesService {
           steps: flow.steps.map(({ actor, action }) => ({ actor, action })),
         })),
         relatedRequirementVersionIds: detail.requirementLinks.map((x) => x.requirementVersionId),
+        relations: detail.relations.map((x) => ({
+          kind: x.kind,
+          targetUseCaseId: x.targetArtifactId,
+        })),
         generationId: detail.generationId,
         candidateId: detail.generationCandidateId,
         aiRunId: detail.aiRunId,

@@ -44,6 +44,34 @@ describe('DiagramEngine', () => {
     expect(source).not.toMatch(/include|extend/);
     expect(source.indexOf('Ingresar')).toBeLessThan(source.indexOf('Comprar'));
   });
+  it('draws the recorded include/extend relations, only between use cases in the diagram', () => {
+    const source = engine.generateUseCase({
+      systemName: 'Restaurante',
+      useCases: [
+        {
+          code: 'CU-001',
+          name: 'Registrar venta',
+          actors: ['Cajero'],
+          relations: [
+            { kind: 'INCLUDE', targetCode: 'CU-002' },
+            { kind: 'INCLUDE', targetCode: 'CU-009' },
+          ],
+        },
+        { code: 'CU-002', name: 'Descontar existencias', actors: [] },
+        {
+          code: 'CU-003',
+          name: 'Aplicar descuento',
+          actors: ['Cajero'],
+          relations: [{ kind: 'EXTEND', targetCode: 'CU-001' }],
+        },
+      ],
+    });
+    expect(source).toContain('rectangle "Restaurante" {');
+    expect(source).toContain('U1 ..> U2 : <<include>>');
+    expect(source).toContain('U3 ..> U1 : <<extend>>');
+    expect(source.match(/ \.\.> /g)).toHaveLength(2);
+    expect(() => engine.validate('PLANTUML', source)).not.toThrow();
+  });
   it('deduplicates duplicate actor entries within the same use case', () => {
     // Historical/malformed data: the primary actor repeated in secondaryActors.
     const source = engine.generateUseCase({
