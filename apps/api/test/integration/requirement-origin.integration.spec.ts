@@ -91,7 +91,7 @@ describe('Requirement origin and context coverage', () => {
         ]),
         new PrismaAIRunRecorder(ctx.prisma),
       ),
-      { retrieve: async () => [] } as never,
+      { searchSources: async () => [] } as never,
     );
 
   it('checks every proposal against the coded context and records its origin', async () => {
