@@ -235,6 +235,21 @@ export const sourceReportCandidateSchema = z.object({
 });
 export type SourceReportCandidate = z.infer<typeof sourceReportCandidateSchema>;
 
+// A report generated in the background (DEC-127): its progress, its error,
+// and once done the AI proposal to review.
+export const sourceReportJobSchema = z.object({
+  id: z.uuid(),
+  sourceVersionId: z.uuid(),
+  status: z.enum(['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED', 'UNSUPPORTED']),
+  totalParts: z.number().int().nullable(),
+  completedParts: z.number().int(),
+  errorMessage: z.string().nullable(),
+  candidate: sourceReportCandidateSchema.nullable(),
+  updatedAt: z.iso.datetime(),
+});
+export type SourceReportJob = z.infer<typeof sourceReportJobSchema>;
+export const sourceReportJobResponseSchema = z.object({ job: sourceReportJobSchema.nullable() });
+
 export const manualSourceReportInputSchema = z.object({ content: reportContentSchema }).strict();
 
 export const sourceReportCandidateResponseSchema = z.object({
