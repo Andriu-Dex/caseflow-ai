@@ -6,7 +6,19 @@ import { JwtAuthGuard } from '../identity/jwt-auth.guard';
 import { ApiZodResponse } from '../openapi/zod-openapi';
 import { AI_PROVIDER } from './ai-provider.token';
 
-const aiStatusResponseSchema = z.object({ available: z.boolean() });
+const aiStatusResponseSchema = z.object({
+  available: z.boolean(),
+  // DEC-127: what each configured provider can take now, and any spent quota.
+  providers: z.array(
+    z.object({
+      id: z.string(),
+      maxInputTokens: z.number().int().optional(),
+      unavailableUntil: z.iso.datetime().optional(),
+      quota: z.enum(['MINUTE', 'DAY']).optional(),
+    }),
+  ),
+});
+type AIStatusResponse = z.infer<typeof aiStatusResponseSchema>;
 
 // Whether AI generation is configured at all. The EXPRESS and BUILD_ONLY
 // routes depend on it entirely, so the web warns before creating one.
@@ -19,7 +31,16 @@ export class AIStatusController {
   @Get()
   @ApiOperation({ operationId: 'getAIStatus', summary: 'Disponibilidad de la IA' })
   @ApiZodResponse(200, 'AI status.', aiStatusResponseSchema)
-  status(): { available: boolean } {
-    return { available: this.provider.id !== 'disabled' };
+  status(): AIStatusResponse {
+    if (this.provider.id === 'disabled') return { available: false, providers: [] };
+    return {
+      available: true,
+      providers: this.provider.status?.() ?? [
+        {
+          id: this.provider.id,
+          ...(this.provider.maxInputTokens ? { maxInputTokens: this.provider.maxInputTokens } : {}),
+        },
+      ],
+    };
   }
 }

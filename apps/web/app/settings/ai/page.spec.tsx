@@ -5,7 +5,11 @@ import AISettingsPage from './page';
 import { TestProviders } from '../../../lib/test-utils';
 import type { CaseflowDesktop, ChatGPTStatus } from '../../../lib/desktop';
 
-vi.mock('../../../lib/api', () => ({ restoreSession: vi.fn() }));
+const aiStatus = vi.hoisted(() => vi.fn());
+vi.mock('../../../lib/api', () => ({
+  restoreSession: vi.fn(),
+  api: { ai: { status: () => aiStatus() } },
+}));
 
 const status = (overrides: Partial<ChatGPTStatus> = {}): ChatGPTStatus => ({
   connected: true,
@@ -93,5 +97,41 @@ describe('AI settings', () => {
     await waitFor(() => expect(chatgpt.prefer).toHaveBeenCalledWith(false));
     await user.click(screen.getByRole('button', { name: /Reanudar con ChatGPT/ }));
     await waitFor(() => expect(chatgpt.resume).toHaveBeenCalledOnce());
+  });
+});
+describe('AI settings — providers (DEC-127)', () => {
+  afterEach(() => {
+    delete (window as Window & { caseflowDesktop?: CaseflowDesktop }).caseflowDesktop;
+  });
+
+  it('shows what each provider takes and when a spent quota comes back', async () => {
+    aiStatus.mockResolvedValue({
+      available: true,
+      providers: [
+        { id: 'groq', maxInputTokens: 8000 },
+        {
+          id: 'gemini',
+          maxInputTokens: 1048576,
+          unavailableUntil: '2026-10-13T07:00:00.000Z',
+          quota: 'DAY',
+        },
+      ],
+    });
+    renderPage();
+    expect(await screen.findByText('Groq')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Hasta 8000 tokens por solicitud'.replace('8000', (8000).toLocaleString('es')),
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Disponible')).toBeInTheDocument();
+    expect(screen.getByText(/Cuota diaria agotada; vuelve/)).toBeInTheDocument();
+  });
+
+  it('says the plan runs through the development broker (DEC-128)', async () => {
+    aiStatus.mockResolvedValue({ available: true, providers: [{ id: 'chatgpt' }] });
+    renderPage();
+    expect(await screen.findByText(/intermediario de desarrollo/)).toBeInTheDocument();
+    expect(screen.getByText('Plan de ChatGPT', { selector: 'li span' })).toBeInTheDocument();
   });
 });
