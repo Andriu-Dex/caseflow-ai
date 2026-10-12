@@ -1,3 +1,4 @@
+import { toast } from 'sonner';
 import type {
   CreateDesignBaselineRequest,
   DataModelInput,
@@ -144,6 +145,36 @@ export async function restoreSession(): Promise<boolean> {
   }
 }
 
+// Waits between attempts while the API is unreachable: about 15 s in total,
+// enough for a development restart (node --watch) or a brief network drop.
+export const RECONNECT_DELAYS_MS = [1_000, 2_000, 3_000, 4_000, 5_000];
+const RECONNECT_TOAST_ID = 'api-reconnecting';
+
+// Repeats a request the server never received, telling the user once that
+// the app is reconnecting; the notice closes as soon as the API answers.
+async function withReconnect(send: () => Promise<Response>): Promise<Response> {
+  let notified = false;
+  try {
+    for (const delay of [0, ...RECONNECT_DELAYS_MS]) {
+      if (delay) {
+        if (!notified && typeof window !== 'undefined') {
+          toast.loading('Reconectando con el servidor…', { id: RECONNECT_TOAST_ID });
+          notified = true;
+        }
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+      try {
+        return await send();
+      } catch {
+        // Unreachable: try again after the next delay.
+      }
+    }
+    throw new ApiError(NETWORK_ERROR_MESSAGE, 0);
+  } finally {
+    if (notified) toast.dismiss(RECONNECT_TOAST_ID);
+  }
+}
+
 const NETWORK_ERROR_MESSAGE =
   'No se pudo conectar con el servidor de CASEFlow AI. Verifique que la API esté en ejecución e intente nuevamente.';
 
@@ -175,21 +206,19 @@ async function authedFetch(
         ...init?.headers,
       },
     });
+  // Reads, and the session refresh that precedes them, are safe to repeat
+  // while the API is unreachable (in development it restarts on every file
+  // change). Never repeat other writes: they could duplicate an AI
+  // generation or a created artifact.
+  const repeatable = method === 'GET' || url === `${BASE_URL}/auth/refresh`;
   let response: Response;
-  try {
-    response = await send();
-  } catch {
-    // A GET is safe to repeat once: in development the API restarts on every
-    // file change (node --watch), dropping in-flight requests. Never retry a
-    // POST — it could duplicate an AI generation or a created artifact.
-    if (method !== 'GET') throw new ApiError(NETWORK_ERROR_MESSAGE, 0);
-    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  if (repeatable) response = await withReconnect(send);
+  else
     try {
       response = await send();
     } catch {
       throw new ApiError(NETWORK_ERROR_MESSAGE, 0);
     }
-  }
   if (response.ok) return response;
   // No retry when the restore just failed: there is no session to refresh.
   if (response.status === 401 && allowRefresh && restored && !isAuthPath) {
