@@ -742,8 +742,8 @@ export class SourcesService implements OnApplicationBootstrap {
 
     if (status === 'APPROVED') {
       // Run asynchronously without awaiting so the transition is fast
-      this.knowledgeBase.fragmentAndEmbedSource(projectId, id).catch((err) => {
-        console.error('Failed to embed source:', err);
+      this.knowledgeBase.indexSource(projectId, id).catch((err) => {
+        console.error('Failed to index source:', err);
       });
     }
 
