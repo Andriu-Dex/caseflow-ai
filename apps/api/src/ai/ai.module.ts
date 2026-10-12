@@ -35,7 +35,14 @@ import { AIStatusController } from './ai-status.controller';
           });
         if (config.provider === 'fallback')
           return new FallbackAIProvider(
-            config.chain.map((slot) => new OpenAICompatibleProvider(slot)),
+            config.chain.map((slot) => ({
+              provider: new OpenAICompatibleProvider(slot),
+              capacity: {
+                maxInputTokens: slot.maxInputTokens,
+                tokensPerMinute: slot.tokensPerMinute,
+                dayResetTimeZone: slot.dayResetTimeZone,
+              },
+            })),
           );
         return new OpenAICompatibleProvider(config);
       },

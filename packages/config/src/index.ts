@@ -24,6 +24,20 @@ const fallbackSlotSchema = z.object({
   apiKey: z.string().min(1),
   model: z.string().min(1),
   schemaDialect: z.enum(['strict', 'narrow']).default('strict'),
+  // What the provider's plan accepts (DEC-127); unset means unknown.
+  maxInputTokens: z.coerce.number().int().positive().optional(),
+  tokensPerMinute: z.coerce.number().int().positive().optional(),
+  dayResetTimeZone: z
+    .string()
+    .refine((zone) => {
+      try {
+        new Intl.DateTimeFormat('en-US', { timeZone: zone });
+        return true;
+      } catch {
+        return false;
+      }
+    }, 'Zona horaria no válida.')
+    .optional(),
 });
 const MAX_AI_FALLBACK_PROVIDERS = 5;
 
@@ -34,6 +48,9 @@ export type AIProviderSlot = {
   model: string;
   timeoutMs: number;
   schemaDialect: 'strict' | 'narrow';
+  maxInputTokens?: number;
+  tokensPerMinute?: number;
+  dayResetTimeZone?: string;
 };
 // DEC-117: the user's ChatGPT plan, desktop edition only. The desktop main
 // process holds the OAuth credentials and serves short-lived access tokens
@@ -96,6 +113,9 @@ export function loadAIConfig(environment: NodeJS.ProcessEnv): AIConfig {
         apiKey: environment[`AI_PROVIDER_${index}_API_KEY`],
         model: environment[`AI_PROVIDER_${index}_MODEL`],
         schemaDialect: environment[`AI_PROVIDER_${index}_SCHEMA_DIALECT`],
+        maxInputTokens: environment[`AI_PROVIDER_${index}_MAX_INPUT_TOKENS`] || undefined,
+        tokensPerMinute: environment[`AI_PROVIDER_${index}_TOKENS_PER_MINUTE`] || undefined,
+        dayResetTimeZone: environment[`AI_PROVIDER_${index}_DAY_RESET_TIMEZONE`] || undefined,
       });
       chain.push({ ...slot, timeoutMs });
     }

@@ -125,6 +125,7 @@ enum AIErrorCode {
   AI_RATE_LIMITED
   AI_INVALID_OUTPUT
   AI_PROVIDER_ERROR
+  AI_INPUT_TOO_LARGE
 
   @@map("ai_error_code")
 }
