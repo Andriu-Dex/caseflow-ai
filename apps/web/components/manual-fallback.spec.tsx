@@ -133,9 +133,10 @@ describe('manual non-AI creation fallbacks (behavior 22)', () => {
     await user.click(screen.getByText(/agregar flujo alternativo/i));
     await user.type(screen.getByLabelText(/nombre del flujo alternativo 1/i), 'Pago rechazado');
     await user.type(screen.getByLabelText(/condición del flujo alternativo 1/i), 'El pago falla');
+    await user.type(screen.getByLabelText('Actor del paso 1 del flujo alternativo 1'), 'Sistema');
     await user.type(
-      screen.getByLabelText(/pasos del flujo alternativo 1/i),
-      'Sistema: Notifica el rechazo',
+      screen.getByLabelText('Acción del paso 1 del flujo alternativo 1'),
+      'Notifica el rechazo',
     );
     await user.click(screen.getByLabelText(/RF-001/i));
     await user.click(screen.getByRole('button', { name: /crear caso de uso/i }));
