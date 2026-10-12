@@ -24,6 +24,10 @@ const BULLET = /^(?:[•▪●◦‣·*-]|=>|->|–)\s*/;
 const TOC_LEADERS = /^(.*?\S)\s*(?:[.…·]\s*){3,}(\d{1,4})$/;
 const TOC_NUMBERED = /^(\d+(?:\.\d+)*\.?\s+.*?\S)\s+(\d{1,4})$/;
 
+// Only lines this short are tested: the patterns backtrack on long runs of
+// dots, and no real entry is longer.
+const MAX_TOC_LINE = 300;
+
 // One entry per line, indented by its numbering depth, without the leaders.
 function tocEntry(title: string, page: string): string {
   const number = /^(\d+(?:\.\d+)*)/.exec(title)?.[1];
@@ -104,10 +108,16 @@ export function pdfPagesToMarkdown(pages: readonly (readonly PdfTextItem[])[]): 
     };
     for (const line of lines) {
       const entry =
-        TOC_LEADERS.exec(line.text) ?? (toc.length ? TOC_NUMBERED.exec(line.text) : null);
+        line.text.length > MAX_TOC_LINE
+          ? null
+          : (TOC_LEADERS.exec(line.text) ?? (toc.length ? TOC_NUMBERED.exec(line.text) : null));
       if (entry) {
         // Numbered lines just before the first leaders were entries already.
-        if (!toc.length && paragraph.length && paragraph.every((p) => TOC_NUMBERED.test(p))) {
+        if (
+          !toc.length &&
+          paragraph.length &&
+          paragraph.every((p) => p.length <= MAX_TOC_LINE && TOC_NUMBERED.test(p))
+        ) {
           toc = paragraph.map((p) => {
             const [, title, page] = TOC_NUMBERED.exec(p)!;
             return tocEntry(title!, page!);

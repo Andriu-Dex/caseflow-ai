@@ -69,6 +69,12 @@ describe('pdfPagesToMarkdown', () => {
     );
   });
 
+  it('stays fast on a long line of dots that is not an entry', () => {
+    const started = performance.now();
+    pdfPagesToMarkdown([[line(`Título ${'. '.repeat(20_000)}x`, 11, 700)]]);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
   it('leaves pages without a text layer empty for OCR, and separates pages', () => {
     const pages = pdfPagesToMarkdown([[line('Uno', 11, 700)], [], [line('Tres', 11, 700)]]);
     expect(pages).toEqual(['Uno', '', 'Tres']);
