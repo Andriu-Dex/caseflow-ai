@@ -59,8 +59,15 @@ const chatgptSchema = z.object({
   AI_PROVIDER: z.literal('chatgpt'),
   AI_MODEL: z.string().min(1),
   AI_TIMEOUT_MS: z.coerce.number().int().positive().max(300_000).default(120_000),
-  CHATGPT_BROKER_URL: z.url(),
+  // The broker only ever lives on this machine (ADR-002, DEC-128).
+  CHATGPT_BROKER_URL: z
+    .url()
+    .refine((url) => ['127.0.0.1', 'localhost', '[::1]'].includes(new URL(url).hostname), {
+      message: 'CHATGPT_BROKER_URL debe apuntar a este equipo (127.0.0.1).',
+    }),
   CHATGPT_BROKER_SECRET: z.string().min(32),
+  // The plan's model context, in input tokens (DEC-127); unset means unknown.
+  AI_MAX_INPUT_TOKENS: z.coerce.number().int().positive().optional(),
 });
 
 export type AIConfig =
@@ -69,6 +76,7 @@ export type AIConfig =
       provider: 'chatgpt';
       model: string;
       timeoutMs: number;
+      maxInputTokens?: number;
       brokerUrl: string;
       brokerSecret: string;
     }
@@ -97,6 +105,7 @@ export function loadAIConfig(environment: NodeJS.ProcessEnv): AIConfig {
       provider,
       model: parsed.AI_MODEL,
       timeoutMs: parsed.AI_TIMEOUT_MS,
+      maxInputTokens: parsed.AI_MAX_INPUT_TOKENS,
       brokerUrl: parsed.CHATGPT_BROKER_URL,
       brokerSecret: parsed.CHATGPT_BROKER_SECRET,
     };

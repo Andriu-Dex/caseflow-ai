@@ -3,7 +3,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { authorizationUrl, parseTokens, PLAN_SCOPE, type Discovery } from './chatgpt-oauth.js';
-import { ChatGPTConnection, startBroker, type Encryption } from './chatgpt-connection.js';
+import {
+  ChatGPTConnection,
+  encryptedFileStore,
+  startBroker,
+  type Encryption,
+} from './chatgpt-connection.js';
 
 // Stands in for the OS secure storage: reversible, but never plain text.
 const encryption: Encryption = {
@@ -26,8 +31,7 @@ function connectionWith(state: object, fetchMock = vi.fn()) {
   writeFileSync(file, encryption.encrypt(JSON.stringify(state)));
   const onProviderChange = vi.fn().mockResolvedValue(undefined);
   const connection = new ChatGPTConnection(
-    file,
-    encryption,
+    encryptedFileStore(file, encryption),
     vi.fn(),
     onProviderChange,
     fetchMock as unknown as typeof fetch,

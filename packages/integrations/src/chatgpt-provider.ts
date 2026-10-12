@@ -31,6 +31,7 @@ export interface ChatGPTBroker {
 export interface ChatGPTProviderConfig {
   model: string;
   timeoutMs: number;
+  maxInputTokens?: number;
   broker: ChatGPTBroker;
   fetch?: typeof fetch;
 }
@@ -39,9 +40,11 @@ const RESPONSES_URL = 'https://api.openai.com/v1/responses';
 
 export class ChatGPTProvider implements AIProvider {
   readonly id = 'chatgpt';
+  readonly maxInputTokens?: number;
   private readonly fetchImplementation: typeof fetch;
   constructor(private readonly config: ChatGPTProviderConfig) {
     this.fetchImplementation = config.fetch ?? fetch;
+    this.maxInputTokens = config.maxInputTokens;
   }
 
   async generateStructured(request: AIProviderRequest): Promise<AIProviderResponse> {

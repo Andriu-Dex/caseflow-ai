@@ -9,7 +9,7 @@
     "node": ">=24 <25"
   },
   "scripts": {
-    "dev": "concurrently -n web,api,worker -c blue,green,yellow \"pnpm --filter @caseflow-ai/web run dev\" \"pnpm --filter @caseflow-ai/api run dev\" \"pnpm --filter @caseflow-ai/worker run dev\"",
+    "dev": "concurrently -n web,api,worker,chatgpt -c blue,green,yellow,magenta \"pnpm --filter @caseflow-ai/web run dev\" \"pnpm --filter @caseflow-ai/api run dev\" \"pnpm --filter @caseflow-ai/worker run dev\" \"pnpm --filter @caseflow-ai/desktop run dev:chatgpt\"",
     "dev:web": "pnpm --filter @caseflow-ai/web run dev",
     "dev:api": "pnpm --filter @caseflow-ai/api run dev",
     "dev:worker": "pnpm --filter @caseflow-ai/worker run dev",

@@ -7245,6 +7245,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-124 | El reporte aprobado de una fuente guía la generación del contexto del proyecto: solo el de la versión exacta citada, el texto extraído prevalece ante contradicción y el candidato registra qué reportes se usaron (§221.8) | Accepted |
 | DEC-125 | El texto extraído de las fuentes se guarda con su estructura en Markdown (títulos por tamaño de letra en PDF, títulos, listas y tablas de Word, saltos de línea del texto plano) y puede volver a extraerse del original en una versión nueva (§221.9) | Accepted |
 | DEC-126 | Cada requisito declara su origen: los elementos del contexto aprobado que atiende (necesidades N-x, restricciones RES-x, reglas de negocio RN-x) o una decisión del usuario con su justificación. La IA cita esos códigos, debe cubrir todas las necesidades y reglas, y puede proponer hasta 5 ideas adicionales que el usuario decide incluir (§221.10) | Accepted |
+| DEC-128 | El instalable (edición de escritorio) es la distribución principal y no hay despliegue web obligatorio. El plan de ChatGPT también puede usarse en desarrollo local con un intermediario propio que guarda las credenciales solo en memoria y solo escucha en 127.0.0.1 (§221.11, ADR-007) | Accepted |
 
 ---
 
@@ -7681,7 +7682,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-126)
+# 221. Extensiones de V2 (DEC-116 a DEC-128)
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
@@ -7717,7 +7718,7 @@ Implementación:
 
 El proyecto se publica con licencia Apache-2.0, sin pagos en ninguna edición. La edición de escritorio (Electron, `apps/desktop`) usa PGlite con pgvector expuesto por TCP, una cola en proceso sin Redis (`CASEFLOW_QUEUE_MODE=in-process`) y un `FilesystemStorageProvider` (`STORAGE_DIR`) (DEC-120, ADR-005). La construcción sigue exigiendo Docker (§174).
 
-El proveedor "ChatGPT" (plan usage de OpenAI, Responses API) existe solo en la edición de escritorio. Implementación:
+El proveedor "ChatGPT" (plan usage de OpenAI, Responses API) existe en la edición de escritorio y, desde DEC-128 (§221.11), también en desarrollo local; nunca en una edición web alojada. Implementación:
 
 - **Inicio de sesión:** OAuth con PKCE y registro dinámico (`dynamic_agent_client`, `ext_agent_host_id` persistente) desde el proceso principal de Electron. Exige el permiso `chatgpt.tokens.use.direct` y verifica el token de identidad.
 - **Credenciales:** se cifran con `safeStorage`. La API recibe tokens de acceso de corta duración desde un broker en loopback con un secreto por sesión (`AI_PROVIDER=chatgpt`), y el proveedor `ChatGPTProvider` usa `store: false` y `stream: true`.
@@ -7805,6 +7806,14 @@ Los requisitos responden al contexto aprobado del proyecto, y esa relación es e
 - **Ideas para mejorar el software.** La IA puede proponer hasta 5 requisitos que el contexto no pide, cada uno con su razón. Llegan sin seleccionar, no cuentan para la cobertura y, si el usuario los incorpora, su origen es una decisión del usuario cuya justificación es esa razón. Las rutas automáticas (DEC-116) no las incorporan.
 - **Aprobación.** En los proyectos con coherencia obligatoria (DEC-121) un requisito sin origen no puede aprobarse.
 - **Cobertura.** Toda necesidad y regla de negocio de la última versión aprobada del contexto debe quedar atendida por al menos un requisito aprobado; un vínculo al mismo elemento (mismo tipo y mismo texto) de una versión anterior del contexto también cuenta. Las restricciones sin atender se muestran como observación y no bloquean. La matriz de coherencia incluye la cadena «Contexto → requisito», la etapa de Requisitos de la preparación la muestra y, en los proyectos con coherencia obligatoria, la cobertura incompleta bloquea esa etapa y la congelación de la línea base de diseño; la aprobación individual de un requisito nunca se bloquea por cobertura.
+
+## 221.11 El instalable como distribución principal y ChatGPT en desarrollo (DEC-128, ADR-007)
+
+CASEFlow se distribuye como instalable; la web sigue compilando desde el mismo código, pero no se despliega. En desarrollo, con `AI_PROVIDER=chatgpt`, `pnpm dev` inicia un intermediario propio (`apps/desktop/src/dev-broker.ts`) que reutiliza el inicio de sesión del escritorio:
+
+- **Proceso aparte:** los reinicios de la API al cambiar el código no cierran la sesión.
+- **Credenciales solo en memoria:** en disco solo quedan el identificador del equipo, el del cliente registrado y el modelo (`~/.caseflow/chatgpt-dev.json`), para no registrar una aplicación nueva en cada inicio de sesión.
+- **Salvaguardas:** escucha solo en `127.0.0.1`, la configuración de la API rechaza un intermediario fuera de este equipo y no arranca con `NODE_ENV=production`. Las reglas de pausa y de cambio de proveedor de §221.2 no cambian.
 
 ## 221.4 Fuera de alcance de estas extensiones
 

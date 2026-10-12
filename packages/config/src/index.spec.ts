@@ -119,6 +119,20 @@ describe('loadAIConfig', () => {
     ).toThrow('Zona horaria');
   });
 
+  it('accepts the ChatGPT broker only on this machine (DEC-128)', () => {
+    const chatgpt = {
+      AI_PROVIDER: 'chatgpt',
+      AI_MODEL: 'gpt-x',
+      AI_MAX_INPUT_TOKENS: '200000',
+      CHATGPT_BROKER_URL: 'http://127.0.0.1:47833',
+      CHATGPT_BROKER_SECRET: 'x'.repeat(32),
+    };
+    expect(loadAIConfig(chatgpt)).toMatchObject({ provider: 'chatgpt', maxInputTokens: 200_000 });
+    expect(() =>
+      loadAIConfig({ ...chatgpt, CHATGPT_BROKER_URL: 'https://broker.example.com' }),
+    ).toThrow('este equipo');
+  });
+
   it('rejects an empty fallback chain', () =>
     expect(() => loadAIConfig({ AI_PROVIDER: 'fallback' })).toThrow());
 });

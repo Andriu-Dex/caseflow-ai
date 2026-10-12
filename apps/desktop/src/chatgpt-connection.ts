@@ -11,16 +11,17 @@ import {
   type Tokens,
 } from './chatgpt-oauth.js';
 
-// The user's ChatGPT connection in the desktop edition (DEC-117). Credentials
-// are encrypted with the operating system's secure storage and never leave
-// this process: the API gets short-lived access tokens from the broker.
+// The user's ChatGPT connection (DEC-117, DEC-128). Credentials never leave
+// this process: the API gets short-lived access tokens from the broker. Where
+// the state lives is the store's concern: encrypted with the operating
+// system's secure storage in the desktop edition, in memory in development.
 
 export interface Encryption {
   encrypt(plain: string): Buffer;
   decrypt(data: Buffer): string;
 }
 
-interface State {
+export interface State {
   // Persistent per machine: identifies this installation to OpenAI.
   hostId: string;
   // Issued at the first sign-in, reused afterwards (no new registration).
@@ -42,12 +43,27 @@ export interface ConnectionStatus {
   active: boolean;
 }
 
+export interface ConnectionStore {
+  read(): Promise<State | null>;
+  write(state: State): Promise<void>;
+  remove(): Promise<void>;
+}
+
+// Desktop edition: the whole state, encrypted, in one file.
+export function encryptedFileStore(file: string, encryption: Encryption): ConnectionStore {
+  return {
+    read: async () =>
+      existsSync(file) ? (JSON.parse(encryption.decrypt(await readFile(file))) as State) : null,
+    write: (state) => writeFile(file, encryption.encrypt(JSON.stringify(state)), { mode: 0o600 }),
+    remove: () => rm(file, { force: true }),
+  };
+}
+
 export class ChatGPTConnection {
   private state: State | null = null;
 
   constructor(
-    private readonly file: string,
-    private readonly encryption: Encryption,
+    private readonly store: ConnectionStore,
     private readonly openBrowser: (url: string) => Promise<void>,
     // Called when the API must restart with another AI provider.
     private readonly onProviderChange: () => Promise<void>,
@@ -56,24 +72,20 @@ export class ChatGPTConnection {
 
   private async load(): Promise<State> {
     if (this.state) return this.state;
-    this.state = existsSync(this.file)
-      ? (JSON.parse(this.encryption.decrypt(await readFile(this.file))) as State)
-      : {
-          hostId: randomUUID(),
-          clientId: null,
-          email: null,
-          tokens: null,
-          model: null,
-          paused: false,
-          preferred: true,
-        };
+    this.state = (await this.store.read()) ?? {
+      hostId: randomUUID(),
+      clientId: null,
+      email: null,
+      tokens: null,
+      model: null,
+      paused: false,
+      preferred: true,
+    };
     return this.state;
   }
 
   private async save(): Promise<void> {
-    await writeFile(this.file, this.encryption.encrypt(JSON.stringify(this.state)), {
-      mode: 0o600,
-    });
+    await this.store.write(this.state!);
   }
 
   async status(): Promise<ConnectionStatus> {
@@ -187,7 +199,7 @@ export class ChatGPTConnection {
 
   async forget(): Promise<void> {
     this.state = null;
-    await rm(this.file, { force: true });
+    await this.store.remove();
   }
 }
 
@@ -198,12 +210,12 @@ export class BrokerRefusal extends Error {
 }
 
 // Loopback broker for the API process, authenticated with a secret that
-// changes every launch.
+// changes every launch (development passes the one the API was given).
 export async function startBroker(
   connection: ChatGPTConnection,
   port: number,
+  secret = randomBytes(32).toString('base64url'),
 ): Promise<{ url: string; secret: string; server: Server }> {
-  const secret = randomBytes(32).toString('base64url');
   const expected = Buffer.from(secret);
   const server = createServer((request, response) => {
     const given = Buffer.from(String(request.headers['x-caseflow-broker-secret'] ?? ''));

@@ -31,6 +31,7 @@ import { AIStatusController } from './ai-status.controller';
           return new ChatGPTProvider({
             model: config.model,
             timeoutMs: config.timeoutMs,
+            maxInputTokens: config.maxInputTokens,
             broker: new HttpChatGPTBroker(config.brokerUrl, config.brokerSecret),
           });
         if (config.provider === 'fallback')
