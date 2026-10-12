@@ -75,6 +75,16 @@ export interface AIProvider {
   // when unknown. Callers split longer work into parts that fit.
   readonly maxInputTokens?: number;
   generateStructured(request: AIProviderRequest): Promise<AIProviderResponse>;
+  // What each underlying provider can take right now (DEC-127).
+  status?(): AIProviderStatus[];
+}
+
+export interface AIProviderStatus {
+  id: string;
+  maxInputTokens?: number;
+  // Set while a spent quota keeps it out: when it is expected back.
+  unavailableUntil?: string;
+  quota?: AIQuota;
 }
 
 // Conservative token estimate (about 3 characters per token, below the 3.5-4
@@ -332,6 +342,7 @@ export class FallbackAIProvider implements AIProvider {
     capacity: ProviderCapacity;
     cap: number;
     blockedUntil: number;
+    blockedBy?: AIQuota;
   }[];
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
@@ -348,6 +359,22 @@ export class FallbackAIProvider implements AIProvider {
     });
     this.now = options.now ?? Date.now;
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+  }
+
+  status(): AIProviderStatus[] {
+    return this.slots.map((slot) => {
+      const blocked = slot.blockedUntil > this.now();
+      return {
+        id: slot.provider.id,
+        ...(Number.isFinite(slot.cap) ? { maxInputTokens: slot.cap } : {}),
+        ...(blocked
+          ? {
+              unavailableUntil: new Date(slot.blockedUntil).toISOString(),
+              quota: slot.blockedBy ?? 'MINUTE',
+            }
+          : {}),
+      };
+    });
   }
 
   // The largest request some provider whose daily quota is not spent can take.
@@ -385,8 +412,10 @@ export class FallbackAIProvider implements AIProvider {
           lastError = cause;
           if (!(cause instanceof AIError)) continue;
           if (cause.code === 'AI_INPUT_TOO_LARGE') slot.cap = Math.min(slot.cap, tokens - 1);
-          if (cause.code === 'AI_RATE_LIMITED')
+          if (cause.code === 'AI_RATE_LIMITED') {
             slot.blockedUntil = this.now() + this.blockFor(slot.capacity, cause);
+            slot.blockedBy = cause.quota ?? 'MINUTE';
+          }
         }
       }
       // Only worth waiting when a fitting provider frees up within a minute.

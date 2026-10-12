@@ -360,3 +360,41 @@ describe('FallbackAIProvider routing by capacity (DEC-127)', () => {
       16 * 3_600_000,
     ));
 });
+
+describe('FallbackAIProvider status (DEC-127)', () => {
+  it('reports what each provider takes and when a spent quota comes back', async () => {
+    let now = Date.UTC(2026, 9, 12, 15, 0, 0);
+    const gemini = new FakeAIProvider(
+      new AIError('AI_RATE_LIMITED', 'day', { quota: 'DAY', retryAfterMs: 1_000 }),
+    );
+    const groq = new FakeAIProvider(response);
+    const router = new FallbackAIProvider(
+      [
+        { provider: groq, capacity: { tokensPerMinute: 8_000 } },
+        {
+          provider: gemini,
+          capacity: { maxInputTokens: 1_048_576, dayResetTimeZone: 'America/Los_Angeles' },
+        },
+      ],
+      { now: () => now },
+    );
+    expect(router.status()).toEqual([
+      { id: 'fake', maxInputTokens: 8_000 },
+      { id: 'fake', maxInputTokens: 1_048_576 },
+    ]);
+    await router
+      .generateStructured({
+        ...providerRequest,
+        messages: [{ role: 'user', content: 'x'.repeat(30_000) }],
+      })
+      .catch(() => undefined);
+    expect(router.status()[1]).toEqual({
+      id: 'fake',
+      maxInputTokens: 1_048_576,
+      unavailableUntil: '2026-10-13T07:00:00.000Z',
+      quota: 'DAY',
+    });
+    now += 17 * 3_600_000;
+    expect(router.status()[1]).not.toHaveProperty('unavailableUntil');
+  });
+});

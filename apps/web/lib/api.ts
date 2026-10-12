@@ -60,6 +60,17 @@ export interface GenerationCandidate {
   qualityFindings?: { severity: 'ERROR' | 'WARNING'; code: string; message: string }[];
   [key: string]: unknown;
 }
+// DEC-127: whether AI is configured, and what each provider can take now.
+export interface AIStatus {
+  available: boolean;
+  providers: {
+    id: string;
+    maxInputTokens?: number;
+    unavailableUntil?: string;
+    quota?: 'MINUTE' | 'DAY';
+  }[];
+}
+
 export interface GenerationResult {
   id: string;
   candidates: GenerationCandidate[];
@@ -708,7 +719,7 @@ export const api = {
       post<DesignBaselineResponse>(`/projects/${projectId}/design-baselines`, data),
   },
   ai: {
-    status: () => get<{ available: boolean }>('/ai/status'),
+    status: () => get<AIStatus>('/ai/status'),
   },
   construction: {
     sandboxStatus: () => get<{ available: boolean }>('/construction/sandbox-status'),

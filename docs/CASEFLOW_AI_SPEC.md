@@ -7245,6 +7245,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-124 | El reporte aprobado de una fuente guía la generación del contexto del proyecto: solo el de la versión exacta citada, el texto extraído prevalece ante contradicción y el candidato registra qué reportes se usaron (§221.8) | Accepted |
 | DEC-125 | El texto extraído de las fuentes se guarda con su estructura en Markdown (títulos por tamaño de letra en PDF, títulos, listas y tablas de Word, saltos de línea del texto plano) y puede volver a extraerse del original en una versión nueva (§221.9) | Accepted |
 | DEC-126 | Cada requisito declara su origen: los elementos del contexto aprobado que atiende (necesidades N-x, restricciones RES-x, reglas de negocio RN-x) o una decisión del usuario con su justificación. La IA cita esos códigos, debe cubrir todas las necesidades y reglas, y puede proponer hasta 5 ideas adicionales que el usuario decide incluir (§221.10) | Accepted |
+| DEC-127 | Cada proveedor de IA declara lo que admite su plan (tamaño máximo por solicitud, tokens por minuto, reinicio de la cuota diaria) y cada solicitud va al primero en que cabe. El texto de una fuente se guarda completo (hasta 500 000 caracteres) y se indexa por secciones con búsqueda de texto completo; el reporte de una fuente larga se genera por partes en segundo plano y el contexto y los requisitos leen una entrada acotada (§221.12) | Accepted |
 | DEC-128 | El instalable (edición de escritorio) es la distribución principal y no hay despliegue web obligatorio. El plan de ChatGPT también puede usarse en desarrollo local con un intermediario propio que guarda las credenciales solo en memoria y solo escucha en 127.0.0.1 (§221.11, ADR-007) | Accepted |
 
 ---
@@ -7814,6 +7815,16 @@ CASEFlow se distribuye como instalable; la web sigue compilando desde el mismo c
 - **Proceso aparte:** los reinicios de la API al cambiar el código no cierran la sesión.
 - **Credenciales solo en memoria:** en disco solo quedan el identificador del equipo, el del cliente registrado y el modelo (`~/.caseflow/chatgpt-dev.json`), para no registrar una aplicación nueva en cada inicio de sesión.
 - **Salvaguardas:** escucha solo en `127.0.0.1`, la configuración de la API rechaza un intermediario fuera de este equipo y no arranca con `NODE_ENV=production`. Las reglas de pausa y de cambio de proveedor de §221.2 no cambian.
+
+## 221.12 Fuentes largas y proveedores de IA con capacidad declarada (DEC-127)
+
+Los planes gratuitos configurados son limitados de formas opuestas (verificado en octubre de 2026): Groq rechaza cualquier solicitud de más de 8 000 tokens por minuto, pero admite 1 000 al día; Gemini admite hasta 1 048 576 tokens de entrada, pero solo 20 solicitudes al día, con reinicio a medianoche del Pacífico.
+
+- **Capacidad declarada:** cada proveedor declara `AI_PROVIDER_n_MAX_INPUT_TOKENS`, `AI_PROVIDER_n_TOKENS_PER_MINUTE` y `AI_PROVIDER_n_DAY_RESET_TIMEZONE` (ChatGPT, `AI_MAX_INPUT_TOKENS`). Cada solicitud va, en orden, al primer proveedor en que cabe; uno con la cuota diaria agotada se omite hasta su reinicio; un límite por minuto se espera si ningún otro proveedor sirve. Lo que no cabe en ninguno falla con `AI_INPUT_TOO_LARGE`, para que quien llama lo divida. Las solicitudes grandes tienen más tiempo, hasta 3 minutos. Ajustes de IA muestra el estado de cada proveedor.
+- **Texto completo:** el texto extraído admite hasta 500 000 caracteres (antes 50 000). Al aprobar una fuente se divide en secciones según sus títulos, sin cortar párrafos, listas ni tablas salvo que un bloque solo sea demasiado grande, y cada sección se indexa con búsqueda de texto completo de PostgreSQL en el idioma del proyecto (también en PGlite).
+- **Reporte de la fuente:** se genera en segundo plano. Si el texto cabe en el proveedor más capaz disponible, en una sola solicitud; si no, por partes que caben, cada una resumida y luego unidas por lotes. El plan y cada parte se guardan, de modo que un fallo o un reinicio continúa donde quedó. La página muestra el avance por partes.
+- **Propuesta del contexto:** recibe una entrada acotada. Cada fuente conserva su reporte; el espacio para texto se reparte de forma equitativa: las fuentes cortas van completas y las largas como extractos (sus secciones más afines a su reporte). La propuesta registra qué fuentes se leyeron por extractos.
+- **Requisitos:** reciben los fragmentos de las fuentes aprobadas más relevantes para las necesidades y reglas del contexto, dentro del espacio que deja la solicitud.
 
 ## 221.4 Fuera de alcance de estas extensiones
 
