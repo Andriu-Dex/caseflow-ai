@@ -78,8 +78,10 @@ export function authorizationUrl(input: {
   return url.toString();
 }
 
-// Waits for the single redirect back to 127.0.0.1, validating state.
-async function callbackListener(state: string) {
+// Waits for the single redirect back to 127.0.0.1, validating state. A new
+// registration returns the issued client id; a returning sign-in may omit it
+// and then keeps the one it was started with, never a different one.
+export async function callbackListener(state: string, expectedClientId: string | null) {
   let resolveResult!: (value: { code: string; clientId: string }) => void;
   let rejectResult!: (error: Error) => void;
   const result = new Promise<{ code: string; clientId: string }>((resolve, reject) => {
@@ -104,8 +106,14 @@ async function callbackListener(state: string) {
       return;
     }
     const code = url.searchParams.get('code');
-    const clientId = url.searchParams.get('client_id');
-    if (url.searchParams.has('error') || !code || !clientId) {
+    const returnedClientId = url.searchParams.get('client_id');
+    const clientId = returnedClientId ?? expectedClientId;
+    if (
+      url.searchParams.has('error') ||
+      !code ||
+      !clientId ||
+      (expectedClientId !== null && clientId !== expectedClientId)
+    ) {
       page('No se completó el inicio de sesión.');
       rejectResult(new ChatGPTSignInError('No se completó el inicio de sesión con ChatGPT.'));
       return;
@@ -168,7 +176,7 @@ export async function signIn(options: {
   const state = random();
   const nonce = random();
   const verifier = random();
-  const listener = await callbackListener(state);
+  const listener = await callbackListener(state, options.clientId);
   const timeout = setTimeout(() => listener.close(), 10 * 60_000);
   try {
     await options.openBrowser(
