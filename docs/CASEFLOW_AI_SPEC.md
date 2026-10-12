@@ -7248,6 +7248,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-127 | Cada proveedor de IA declara lo que admite su plan (tamaño máximo por solicitud, tokens por minuto, reinicio de la cuota diaria) y cada solicitud va al primero en que cabe. El texto de una fuente se guarda completo (hasta 500 000 caracteres) y se indexa por secciones con búsqueda de texto completo; el reporte de una fuente larga se genera por partes en segundo plano y el contexto y los requisitos leen una entrada acotada (§221.12) | Accepted |
 | DEC-128 | El instalable (edición de escritorio) es la distribución principal y no hay despliegue web obligatorio. El plan de ChatGPT también puede usarse en desarrollo local con un intermediario propio que guarda las credenciales solo en memoria y solo escucha en 127.0.0.1 (§221.11, ADR-007) | Accepted |
 | DEC-129 | Los casos de uso propuestos por la IA tienen la granularidad de un objetivo concreto de un actor (prompt `use-cases.generate@2`) y un caso de uso registra relaciones «include» y «extend» hacia otros casos del proyecto, que el diagrama dibuja (§221.13, ADR-008) | Accepted |
+| DEC-130 | Convención de cardinalidad del modelo de datos y de multiplicidad del diagrama de clases: cada lado indica cuántas instancias de su entidad corresponden a una del otro lado; los prompts `data-model.generate@2` y `class-diagram.generate@2` la declaran, y los diagramas de arquitectura dibujan capas y protocolos (§221.14) | Accepted |
 
 ---
 
@@ -7684,7 +7685,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-129)
+# 221. Extensiones de V2 (DEC-116 a DEC-130)
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
@@ -7834,6 +7835,14 @@ Los planes gratuitos configurados son limitados de formas opuestas (verificado e
 - **IA:** cada candidato puede relacionarse con otros candidatos de la misma respuesta. Al aceptar, se conservan las relaciones cuyo destino también fue aceptado.
 - **Manual:** el formulario de caso de uso edita las mismas relaciones.
 - **Diagrama:** dibuja las relaciones entre los casos presentes y muestra el nombre del proyecto como límite del sistema. La herencia entre actores sigue fuera de alcance.
+
+## 221.14 Calidad de los diagramas de diseño (DEC-130)
+
+- **Cardinalidad:** en una relación del modelo de datos, `sourceCardinality` indica cuántas instancias de la entidad origen corresponden a una de la entidad destino, y `targetCardinality` lo inverso. Es la convención de pata de gallo con que se dibuja el ER. El diagrama de clases usa la misma convención para `fromMultiplicity` y `toMultiplicity`. `data-model.generate@2` la declara con un ejemplo; la v1 no la definía y devolvía relaciones muchos a uno como uno a uno. El formulario manual muestra cada cardinalidad en notación UML con su explicación.
+- **Diagrama de clases:** `class-diagram.generate@2` propone atributos privados y métodos públicos, etiquetas de asociación legibles y clases de enumeración para conjuntos cerrados de valores.
+- **Diagrama ER:** un atributo clave primaria no se marca además como único.
+- **Arquitectura de software:** un componente que otros nombran como su capa (`layerLocalId`) se dibuja como paquete que los contiene, con un nivel de anidamiento.
+- **Arquitectura de sistema:** cada enlace muestra su protocolo junto a su descripción.
 
 ## 221.4 Fuera de alcance de estas extensiones
 

@@ -26,6 +26,8 @@ import type { Prisma } from '../generated/prisma/client';
 import {
   DiagramEngine,
   type ClassDiagramModel,
+  type SoftwareArchitectureDiagramModel,
+  type SystemArchitectureDiagramModel,
   type DiagramFormat,
 } from '../data-models/diagram-engine';
 import { DIAGRAM_PROVIDER } from '../data-models/diagram-provider.token';
@@ -152,14 +154,9 @@ const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
     diagram: {
       format: 'PLANTUML_COMPONENT',
       generate: (content) =>
-        new DiagramEngine().generateSoftwareComponentDiagram({
-          components: content.components as { localId: string; name: string }[],
-          dependencies: content.dependencies as {
-            fromLocalId: string;
-            toLocalId: string;
-            description?: string;
-          }[],
-        }),
+        new DiagramEngine().generateSoftwareComponentDiagram(
+          content as unknown as SoftwareArchitectureDiagramModel,
+        ),
     },
   },
   SYSTEM_ARCHITECTURE: {
@@ -169,14 +166,9 @@ const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
     diagram: {
       format: 'PLANTUML_DEPLOYMENT',
       generate: (content) =>
-        new DiagramEngine().generateSystemDeploymentDiagram({
-          nodes: content.nodes as { localId: string; name: string; kind: string }[],
-          links: content.links as {
-            fromLocalId: string;
-            toLocalId: string;
-            description?: string;
-          }[],
-        }),
+        new DiagramEngine().generateSystemDeploymentDiagram(
+          content as unknown as SystemArchitectureDiagramModel,
+        ),
     },
   },
   UI_BLUEPRINT: {
@@ -202,7 +194,7 @@ const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
   },
   CLASS_DIAGRAM: {
     promptKey: 'class-diagram.generate',
-    promptVersion: 1,
+    promptVersion: 2,
     maxOutputTokens: 12_288,
     diagram: {
       format: 'MERMAID_CLASS',
