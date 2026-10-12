@@ -71,6 +71,7 @@ const mocks = vi.hoisted(() => ({
   listSources: vi.fn(),
   getStaleness: vi.fn(),
   createVersion: vi.fn(),
+  generate: vi.fn(),
 }));
 
 vi.mock('../../lib/api', () => ({
@@ -78,14 +79,19 @@ vi.mock('../../lib/api', () => ({
     context: {
       getCurrent: (...args: unknown[]) => mocks.getCurrent(...args),
       createVersion: (...args: unknown[]) => mocks.createVersion(...args),
-      generate: vi.fn(),
+      generate: (...args: unknown[]) => mocks.generate(...args),
       transition: vi.fn(),
     },
     sources: { list: (...args: unknown[]) => mocks.listSources(...args) },
     staleness: { get: (...args: unknown[]) => mocks.getStaleness(...args) },
   },
   ApiError: class ApiError extends Error {
-    status?: number;
+    constructor(
+      message: string,
+      readonly status?: number,
+    ) {
+      super(message);
+    }
   },
   restoreSession: vi.fn(),
 }));
@@ -210,5 +216,42 @@ describe('ContextPage — staleness', () => {
     expect(
       await screen.findByDisplayValue('Restaurante Mateos gestiona ventas de forma dispersa.'),
     ).toBeInTheDocument();
+  });
+});
+describe('ContextPage — AI proposal', () => {
+  it('keeps the proposal when the user leaves the page while it is generated', async () => {
+    const { ApiError } = await import('../../lib/api');
+    mocks.getCurrent.mockRejectedValue(new ApiError('No existe', 404));
+    let finish!: (candidate: unknown) => void;
+    mocks.generate.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    const user = userEvent.setup();
+    const first = renderPage();
+    await user.click(await screen.findByRole('button', { name: /Generar con IA/ }));
+    // The user goes to another page before the AI answers.
+    first.unmount();
+    finish({
+      id: 'c1',
+      projectId: 'p1',
+      aiRunId: 'r1',
+      content: {
+        problemStatement: 'Las ventas se anotan en papel.',
+        objective: 'Registrar ventas en línea.',
+        additionalContext: null,
+        actors: ['Cajero'],
+        needs: ['Registrar ventas'],
+        constraints: [],
+        businessRules: [],
+      },
+      sourceVersionIds: [],
+      reportSourceVersionIds: [],
+      partialSourceVersionIds: [],
+      createdAt: new Date().toISOString(),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    renderPage();
+    expect(await screen.findByDisplayValue('Las ventas se anotan en papel.')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Cajero')).toBeInTheDocument();
+    expect(mocks.generate).toHaveBeenCalledOnce();
   });
 });
