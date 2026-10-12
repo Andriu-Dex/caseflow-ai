@@ -4,7 +4,12 @@ import {
   projectContextResponseSchema,
   type ProjectContextRequest,
 } from '@caseflow-ai/contracts';
-import { AIOrchestrator, FakeAIProvider, PromptRegistry } from '@caseflow-ai/ai';
+import {
+  AIOrchestrator,
+  FakeAIProvider,
+  FallbackAIProvider,
+  PromptRegistry,
+} from '@caseflow-ai/ai';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PrismaAIRunRecorder } from '../../src/ai/ai-run-recorder';
@@ -356,7 +361,7 @@ describe('Project Context integration', () => {
         new PromptRegistry([
           {
             key: 'project-context.generate',
-            version: 2,
+            version: 3,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'project_context_generation',
             systemInstructions: 'policy',
@@ -413,7 +418,7 @@ describe('Project Context integration', () => {
         new PromptRegistry([
           {
             key: 'project-context.generate',
-            version: 2,
+            version: 3,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'project_context_generation',
             systemInstructions: 'policy',
@@ -503,7 +508,7 @@ describe('Project Context integration', () => {
         new PromptRegistry([
           {
             key: 'project-context.generate',
-            version: 2,
+            version: 3,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'project_context_generation',
             systemInstructions: 'policy',
@@ -525,6 +530,83 @@ describe('Project Context integration', () => {
       expect(
         await ctx.prisma.projectContextCandidate.findUniqueOrThrow({ where: { id: candidate.id } }),
       ).toMatchObject({ reportSourceVersionIds: [reported.id] });
+    });
+
+    // DEC-127: the proposal reads a bounded input that fits the provider;
+    // a long source is sent as excerpts and recorded as such.
+    it('fits the smallest provider by sending long sources as excerpts', async () => {
+      const project = await createProject(ctx, 'AI Long Sources');
+      const approve = async (title: string, text: string) => {
+        const created = await ctx.sources.create(
+          project.id,
+          { title, sourceKind: 'TEXT', purpose: 'Prueba', description: '' },
+          {
+            originalname: 'fuente.md',
+            mimetype: 'text/markdown',
+            size: Buffer.byteLength(text),
+            buffer: Buffer.from(text),
+          },
+        );
+        await ctx.sources.transition(project.id, created.id, created.version.id, 'IN_REVIEW');
+        return ctx.sources.transition(project.id, created.id, created.version.id, 'APPROVED');
+      };
+      const short = await approve('Corta', 'El cliente registra pedidos.');
+      const long = await approve(
+        'Larga',
+        Array.from(
+          { length: 40 },
+          (_, i) => `# Capítulo ${i + 1}\n\n${'Detalle del proceso de pedidos. '.repeat(40)}`,
+        ).join('\n\n'),
+      );
+      const content = {
+        problemStatement: 'Problema',
+        objective: 'Objetivo',
+        actors: [],
+        needs: [],
+        constraints: [],
+        businessRules: [],
+      };
+      const fake = new FakeAIProvider({
+        provider: 'fake',
+        model: 'fake-v1',
+        payload: content,
+        usage: null,
+        latencyMs: 1,
+      });
+      const ai = new AIOrchestrator(
+        // Groq-sized: the long source alone would not fit.
+        new FallbackAIProvider([{ provider: fake, capacity: { tokensPerMinute: 8_000 } }]),
+        new PromptRegistry([
+          {
+            key: 'project-context.generate',
+            version: 3,
+            capability: 'STRUCTURED_OUTPUT',
+            purpose: 'project_context_generation',
+            systemInstructions: 'policy',
+          },
+        ]),
+        new PrismaAIRunRecorder(ctx.prisma),
+      );
+
+      const candidate = await new ProjectContextService(ctx.prisma, ai).generate(project.id);
+
+      const sent = JSON.parse(fake.lastRequest!.messages[0]!.content) as {
+        title: string;
+        extractedText?: string;
+        partial?: boolean;
+        excerpts?: unknown[];
+      }[];
+      expect(sent.find((s) => s.title === 'Corta')).toMatchObject({
+        extractedText: 'El cliente registra pedidos.',
+      });
+      const excerpted = sent.find((s) => s.title === 'Larga')!;
+      expect(excerpted.partial).toBe(true);
+      expect(excerpted.excerpts!.length).toBeGreaterThan(0);
+      expect(candidate.sourceVersionIds.sort()).toEqual([short.id, long.id].sort());
+      expect(candidate.partialSourceVersionIds).toEqual([long.id]);
+      expect(
+        await ctx.prisma.projectContextCandidate.findUniqueOrThrow({ where: { id: candidate.id } }),
+      ).toMatchObject({ partialSourceVersionIds: [long.id] });
     });
 
     it('rejects generation for a project without any usable approved source', async () => {

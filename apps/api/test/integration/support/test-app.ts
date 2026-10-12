@@ -1,4 +1,6 @@
 import { IdentityModule } from '../../../src/identity/identity.module';
+import type { NestExpressApplication } from '@nestjs/platform-express';
+import { configureBodyLimits } from '../../../src/common/body-limits';
 import { JwtAuthGuard } from '../../../src/identity/jwt-auth.guard';
 import { JwtService } from '@nestjs/jwt';
 import {
@@ -179,7 +181,8 @@ export async function createTestContext(
       : builder
   ).compile();
 
-  const app = moduleRef.createNestApplication();
+  const app = moduleRef.createNestApplication<NestExpressApplication>();
+  configureBodyLimits(app);
   app.use(cookieParser());
   await app.init();
   const jwtService = app.get(JwtService);

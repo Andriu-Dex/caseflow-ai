@@ -18,6 +18,14 @@ import { canTransitionArtifactVersionStatus, formatArtifactCode } from '@caseflo
 import { provenanceGuard, sourceStatuses } from '../projects/source-statuses';
 import { PrismaService } from '../database/prisma.service';
 import type { Prisma } from '../generated/prisma/client';
+import { planContextInput } from './context-input';
+import { DEFAULT_CAPACITY_TOKENS } from '../sources/source-report-plan';
+
+// The context prompt's instructions and schema take about this much; the
+// sources share the rest, up to a ceiling that keeps a very large provider
+// from spending its quota on one proposal.
+const CONTEXT_PROMPT_RESERVE_TOKENS = 2_500;
+const MAX_CONTEXT_INPUT_TOKENS = 100_000;
 
 const PROJECT_CONTEXT_TYPE = 'PROJECT_CONTEXT';
 const PROJECT_CONTEXT_TITLE = 'Contexto del proyecto';
@@ -211,27 +219,28 @@ export class ProjectContextService {
         'Se requiere al menos una fuente de proyecto APPROVED con conocimiento utilizable.',
       );
 
+    // DEC-127: a bounded input. Every source keeps its report (DEC-124,
+    // guidance only); the text is shared fairly, long sources as excerpts.
+    const input = planContextInput(
+      usable.map((v) => ({
+        versionId: v.id,
+        code: v.artifact.code,
+        title: v.title,
+        text: v.sourceDetail!.extractedText!,
+        ...(v.sourceDetail!.report ? { report: v.sourceDetail!.report.content } : {}),
+      })),
+      Math.min(
+        MAX_CONTEXT_INPUT_TOKENS,
+        (this.ai.maxInputTokens ?? DEFAULT_CAPACITY_TOKENS) - CONTEXT_PROMPT_RESERVE_TOKENS,
+      ),
+    );
     try {
       const result = await this.ai.generateStructured({
         projectId,
         language: project.language,
         promptKey: 'project-context.generate',
-        promptVersion: 2,
-        messages: [
-          {
-            role: 'user',
-            content: JSON.stringify(
-              usable.map((v) => ({
-                code: v.artifact.code,
-                title: v.title,
-                extractedText: v.sourceDetail!.extractedText,
-                // DEC-124: the report of this exact version, as guidance only;
-                // the text above stays authoritative.
-                ...(v.sourceDetail!.report ? { report: v.sourceDetail!.report.content } : {}),
-              })),
-            ),
-          },
-        ],
+        promptVersion: 3,
+        messages: [{ role: 'user', content: JSON.stringify(input.entries) }],
         outputSchema: projectContextGenerationContentSchema,
         schemaName: 'project_context_generation',
         maxOutputTokens: 4096,
@@ -246,6 +255,7 @@ export class ProjectContextService {
           content: result.data,
           sourceVersionIds,
           reportSourceVersionIds,
+          partialSourceVersionIds: input.partialVersionIds,
         },
       });
       return {
@@ -255,6 +265,7 @@ export class ProjectContextService {
         content: result.data,
         sourceVersionIds,
         reportSourceVersionIds,
+        partialSourceVersionIds: input.partialVersionIds,
         createdAt: candidate.createdAt.toISOString(),
       };
     } catch (error) {

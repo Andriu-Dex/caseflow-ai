@@ -79,6 +79,8 @@ export const projectContextCandidateSchema = z.object({
   sourceVersionIds: z.array(z.uuid()),
   // DEC-124: the cited sources whose approved report also guided the proposal.
   reportSourceVersionIds: z.array(z.uuid()),
+  // DEC-127: cited sources too long for the budget, read as excerpts.
+  partialSourceVersionIds: z.array(z.uuid()),
   createdAt: z.iso.datetime(),
 });
 export type ProjectContextCandidate = z.infer<typeof projectContextCandidateSchema>;
