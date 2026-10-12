@@ -244,7 +244,6 @@ function ContextForm({
   useEffect(() => {
     const running = pendingGenerations.get(projectId);
     if (running) follow(running);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   function handleGenerate() {
