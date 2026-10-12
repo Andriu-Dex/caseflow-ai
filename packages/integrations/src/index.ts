@@ -270,6 +270,12 @@ function parseResponse(value: unknown): {
   const message = first?.message as Record<string, unknown> | undefined;
   if (typeof body.model !== 'string' || typeof message?.content !== 'string')
     throw new AIError('AI_PROVIDER_ERROR', 'El proveedor devolvió una respuesta incompleta.');
+  // The answer hit its output limit: the JSON is cut, never usable.
+  if (first?.finish_reason === 'length')
+    throw new AIError(
+      'AI_INVALID_OUTPUT',
+      'La respuesta de la IA se cortó por superar su tamaño máximo. Seleccione menos elementos o inténtelo de nuevo.',
+    );
   let payload: unknown;
   try {
     payload = JSON.parse(message.content);
