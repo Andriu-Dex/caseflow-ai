@@ -1,4 +1,5 @@
 import type { ConstructionJobPayload } from '@caseflow-ai/domain';
+import { triggerApiRun } from '../trigger-api-run';
 
 export interface ConstructionJobRunnerConfig {
   apiInternalUrl: string;
@@ -12,12 +13,13 @@ export async function runConstructionJob(
   config: ConstructionJobRunnerConfig,
   fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
-  const response = await fetchImpl(
+  const response = await triggerApiRun(
     `${config.apiInternalUrl}/projects/${payload.projectId}/construction-jobs/${payload.type}/${payload.runId}/run`,
     {
       method: 'POST',
       headers: { 'x-internal-jobs-secret': config.internalJobsSecret },
     },
+    fetchImpl,
   );
   if (!response.ok) {
     throw new Error(

@@ -1,4 +1,5 @@
 import type { MockupGenerationJobPayload } from '@caseflow-ai/domain';
+import { triggerApiRun } from '../trigger-api-run';
 
 export interface MockupJobRunnerConfig {
   apiInternalUrl: string;
@@ -13,12 +14,13 @@ export async function runMockupGenerationJob(
   config: MockupJobRunnerConfig,
   fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
-  const response = await fetchImpl(
+  const response = await triggerApiRun(
     `${config.apiInternalUrl}/projects/${payload.projectId}/mockups/jobs/${payload.jobId}/run`,
     {
       method: 'POST',
       headers: { 'x-internal-jobs-secret': config.internalJobsSecret },
     },
+    fetchImpl,
   );
   if (!response.ok) {
     throw new Error(
