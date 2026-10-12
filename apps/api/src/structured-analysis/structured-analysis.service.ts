@@ -72,7 +72,6 @@ interface KindConfig {
   maxOutputTokens: number;
   // What the AI proposes when the system fills part of the content itself.
   aiOutputSchema?: z.ZodType;
-  maxContextChars?: number;
   // Splits one AI answer into several alternative candidates (default: one).
   candidates?: (data: Content) => Content[];
   diagram?: { format: DiagramFormat; generate: (content: Content) => string };
@@ -200,7 +199,6 @@ const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
     promptVersion: 2,
     maxOutputTokens: 16384,
     aiOutputSchema: implementationPlanBodySchema,
-    maxContextChars: 40_000,
   },
   CLASS_DIAGRAM: {
     promptKey: 'class-diagram.generate',
@@ -458,10 +456,8 @@ export class StructuredAnalysisService {
       ...(mustCover.length ? { mustCover } : {}),
     });
     const config = KIND_CONFIG[kind];
-    if (serializedContext.length > (config.maxContextChars ?? 18_000))
-      throw new UnprocessableEntityException(
-        'Las fuentes seleccionadas exceden el límite de contexto. Seleccione menos versiones para esta generación.',
-      );
+    // DEC-127: whether this fits is the provider router's call, by each
+    // provider's real capacity; a fixed limit here refused what Gemini takes.
     const language = await getProjectLanguage(this.prisma, projectId);
     try {
       const result = await this.ai.generateStructured({
