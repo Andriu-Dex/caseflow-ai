@@ -3,9 +3,12 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { setupOpenApi } from './openapi/openapi';
 import cookieParser from 'cookie-parser';
+import type { NestExpressApplication } from '@nestjs/platform-express';
+import { configureBodyLimits } from './common/body-limits';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  configureBodyLimits(app);
   app.use(cookieParser());
   // Ensures the Prisma client disconnects cleanly on SIGTERM/SIGINT.
   app.enableShutdownHooks();

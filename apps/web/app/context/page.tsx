@@ -186,6 +186,14 @@ function ContextForm({
             ? 'La propuesta también se apoyó en el reporte aprobado de una fuente.'
             : `La propuesta también se apoyó en los reportes aprobados de ${reports} fuentes.`,
         );
+      // DEC-127: a long source is read as its most relevant sections.
+      const partial = candidate.partialSourceVersionIds.length;
+      if (partial)
+        toast.info(
+          partial === 1
+            ? 'Una fuente es larga: la propuesta usó sus secciones más relevantes y su reporte. Revise que no falte nada importante.'
+            : `${partial} fuentes son largas: la propuesta usó sus secciones más relevantes y sus reportes. Revise que no falte nada importante.`,
+        );
     } catch (err) {
       toast.error(
         err instanceof ApiError
