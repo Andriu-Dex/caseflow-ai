@@ -104,7 +104,7 @@ const normalize = (text: string) =>
     .replace(/\p{Diacritic}/gu, '')
     .toLowerCase();
 
-function Tile({
+export function Tile({
   icon: Icon,
   label,
   value,
@@ -285,7 +285,7 @@ function OriginIndicator({ requirement }: { requirement: RequirementResponse['re
   );
 }
 
-function DetailBlock({ title, children }: { title: string; children: ReactNode }) {
+export function DetailBlock({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div>
       <p className="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
@@ -296,7 +296,7 @@ function DetailBlock({ title, children }: { title: string; children: ReactNode }
   );
 }
 
-function ItemList({ items }: { items: string[] }) {
+export function ItemList({ items }: { items: string[] }) {
   return (
     <ul className="ml-4 list-disc space-y-0.5 text-sm text-foreground/85 marker:text-primary">
       {items.map((item, i) => (

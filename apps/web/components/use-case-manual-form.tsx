@@ -1,18 +1,222 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
+import { Check, GitBranch, Plus, Search, Trash2, X } from 'lucide-react';
 import type { RequirementResponse, UseCaseResponse } from '@caseflow-ai/contracts';
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Textarea,
+} from '@caseflow-ai/ui';
 import { api, ApiError } from '../lib/api';
-import { csv, useRows } from '../lib/use-rows';
-import { TagInput } from './tag-input';
-import { Button } from '@caseflow-ai/ui';
-import { Trash2, Plus } from 'lucide-react';
 
-// Manual (non-AI) Use Case creation (spec: "CASEflow remains functional
-// without an AI provider"). Mirrors the AI candidate's field set exactly,
-// but the user fills it in directly; no ArtifactVersion UUID typing —
-// Requirements are offered as selectable cards.
+// Manual (non-AI) Use Case creation, and editing when `initial` is given (an
+// edit opens a new version). A dialog in sections; every list (conditions,
+// flow steps, alternative flows) is edited one row per item, so no separator
+// can split an entry.
+
+type Step = { actor: string; action: string };
+type Flow = { name: string; condition: string; steps: Step[] };
+
+function Section({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description?: string;
+  children: ReactNode;
+}) {
+  return (
+    <fieldset className="flex flex-col gap-3 rounded-lg border border-border p-4">
+      <legend className="px-1 text-sm font-semibold text-foreground">{title}</legend>
+      {description ? <p className="-mt-1 text-xs text-muted-foreground">{description}</p> : null}
+      {children}
+    </fieldset>
+  );
+}
+
+function TextRows({
+  label,
+  addLabel,
+  values,
+  onChange,
+}: {
+  label: string;
+  addLabel: string;
+  values: string[];
+  onChange: (values: string[]) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-sm font-medium text-foreground">{label}</span>
+      {values.map((value, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <span className="w-5 shrink-0 text-right text-xs text-muted-foreground">{i + 1}.</span>
+          <Input
+            aria-label={`${label} ${i + 1}`}
+            value={value}
+            onChange={(e) => onChange(values.map((v, j) => (j === i ? e.target.value : v)))}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="size-8 shrink-0 p-0 text-muted-foreground"
+            aria-label={`Quitar ${label.toLowerCase()} ${i + 1}`}
+            onClick={() => onChange(values.filter((_, j) => j !== i))}
+          >
+            <X className="size-4" aria-hidden="true" />
+          </Button>
+        </div>
+      ))}
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="w-fit text-primary"
+        onClick={() => onChange([...values, ''])}
+      >
+        <Plus className="size-4" aria-hidden="true" />
+        {addLabel}
+      </Button>
+    </div>
+  );
+}
+
+// Numbered steps, each an actor and what it does.
+function StepRows({
+  steps,
+  onChange,
+  suffix = '',
+}: {
+  steps: Step[];
+  onChange: (steps: Step[]) => void;
+  suffix?: string;
+}) {
+  const update = (i: number, patch: Partial<Step>) =>
+    onChange(steps.map((s, j) => (j === i ? { ...s, ...patch } : s)));
+  return (
+    <div className="flex flex-col gap-1.5">
+      {steps.map((step, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+            {i + 1}
+          </span>
+          <Input
+            aria-label={`Actor del paso ${i + 1}${suffix}`}
+            placeholder="Actor"
+            className="w-36 shrink-0"
+            value={step.actor}
+            onChange={(e) => update(i, { actor: e.target.value })}
+          />
+          <Input
+            aria-label={`Acción del paso ${i + 1}${suffix}`}
+            placeholder="Qué hace"
+            value={step.action}
+            onChange={(e) => update(i, { action: e.target.value })}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="size-8 shrink-0 p-0 text-muted-foreground"
+            aria-label={`Quitar el paso ${i + 1}${suffix}`}
+            disabled={steps.length === 1}
+            onClick={() => onChange(steps.filter((_, j) => j !== i))}
+          >
+            <X className="size-4" aria-hidden="true" />
+          </Button>
+        </div>
+      ))}
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="w-fit text-primary"
+        onClick={() => onChange([...steps, { actor: steps.at(-1)?.actor ?? '', action: '' }])}
+      >
+        <Plus className="size-4" aria-hidden="true" />
+        Agregar paso
+      </Button>
+    </div>
+  );
+}
+
+function RequirementPicker({
+  options,
+  selected,
+  onChange,
+}: {
+  options: RequirementResponse[];
+  selected: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const q = query.trim().toLocaleLowerCase('es');
+  const visible = options.filter(
+    (r) => !q || `${r.code} ${r.requirement.name}`.toLocaleLowerCase('es').includes(q),
+  );
+  const toggle = (id: string) =>
+    onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
+  return (
+    <div className="flex flex-col gap-2">
+      {options.length > 6 ? (
+        <div className="relative">
+          <Search
+            className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <Input
+            type="search"
+            aria-label="Buscar requisito"
+            placeholder="Buscar por código o nombre"
+            className="pl-8"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
+      ) : null}
+      <ul className="flex max-h-56 flex-col divide-y divide-border overflow-y-auto rounded-md border border-border">
+        {visible.map((r) => (
+          <li key={r.id}>
+            <label className="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-muted/40">
+              <input
+                type="checkbox"
+                className="size-4 shrink-0 accent-primary"
+                checked={selected.includes(r.version.id)}
+                onChange={() => toggle(r.version.id)}
+                aria-label={`${r.code} ${r.requirement.name}`}
+              />
+              <span className="font-mono text-xs font-semibold text-muted-foreground">
+                {r.code}
+              </span>
+              <span className="text-foreground/90">{r.requirement.name}</span>
+            </label>
+          </li>
+        ))}
+        {visible.length === 0 ? (
+          <li className="px-3 py-4 text-center text-sm text-muted-foreground">
+            {options.length ? 'Nada coincide con la búsqueda.' : 'Aún no hay requisitos aprobados.'}
+          </li>
+        ) : null}
+      </ul>
+      <p className="text-xs text-muted-foreground" aria-live="polite">
+        {selected.length === 0
+          ? 'Seleccione al menos un requisito.'
+          : `${selected.length} ${selected.length === 1 ? 'requisito seleccionado' : 'requisitos seleccionados'}.`}
+      </p>
+    </div>
+  );
+}
+
 export function UseCaseManualForm({
   projectId,
   approvedRequirements,
@@ -30,48 +234,35 @@ export function UseCaseManualForm({
   const [name, setName] = useState(u0?.name ?? '');
   const [objective, setObjective] = useState(u0?.objective ?? '');
   const [primaryActor, setPrimaryActor] = useState(u0?.primaryActor ?? '');
-  const [secondaryActors, setSecondaryActors] = useState(u0?.secondaryActors.join(', ') ?? '');
-  const [preconditions, setPreconditions] = useState(u0?.preconditions.join(', ') ?? '');
-  const [postconditions, setPostconditions] = useState(u0?.postconditions.join(', ') ?? '');
+  const [secondaryActors, setSecondaryActors] = useState<string[]>(u0?.secondaryActors ?? []);
+  const [preconditions, setPreconditions] = useState<string[]>(u0?.preconditions ?? []);
+  const [postconditions, setPostconditions] = useState<string[]>(u0?.postconditions ?? []);
   const [relatedRequirementVersionIds, setRelatedRequirementVersionIds] = useState<string[]>(
     u0?.relatedRequirementVersionIds ?? [],
   );
-  const mainFlow = useRows<{ actor: string; action: string }>(
-    u0?.mainFlow.map((s) => ({ actor: s.actor, action: s.action })) ?? [{ actor: '', action: '' }],
+  const [mainFlow, setMainFlow] = useState<Step[]>(
+    u0?.mainFlow.map(({ actor, action }) => ({ actor, action })) ?? [{ actor: '', action: '' }],
   );
-  const alternativeFlows = useRows<{
-    name: string;
-    condition: string;
-    stepsText: string;
-  }>(
+  const [alternativeFlows, setAlternativeFlows] = useState<Flow[]>(
     u0?.alternativeFlows.map((f) => ({
       name: f.name,
       condition: f.condition,
-      stepsText: f.steps.map((s) => `${s.actor}: ${s.action}`).join('\n'),
+      steps: f.steps.map(({ actor, action }) => ({ actor, action })),
     })) ?? [],
   );
   const [submitting, setSubmitting] = useState(false);
 
-  // Each alternative flow's steps are entered as "actor: acción" per line —
-  // a lighter editor than a fully nested step-by-step table, while still
-  // representing every backend-required field (name/condition/steps).
-  function parseSteps(text: string) {
-    return text
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const [actor, ...rest] = line.split(':');
-        return {
-          actor: (actor ?? '').trim(),
-          action: rest.join(':').trim() || (actor ?? '').trim(),
-        };
-      });
-  }
+  const clean = (values: string[]) => values.map((v) => v.trim()).filter(Boolean);
+  const cleanSteps = (steps: Step[]) =>
+    steps
+      .map((s) => ({ actor: s.actor.trim(), action: s.action.trim() }))
+      .filter((s) => s.actor && s.action);
+  const updateFlow = (i: number, patch: Partial<Flow>) =>
+    setAlternativeFlows((flows) => flows.map((f, j) => (j === i ? { ...f, ...patch } : f)));
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const steps = mainFlow.rows.filter((s) => s.actor.trim() && s.action.trim());
+    const steps = cleanSteps(mainFlow);
     if (!steps.length) {
       toast.error('Agregue al menos un paso del flujo principal.');
       return;
@@ -80,20 +271,24 @@ export function UseCaseManualForm({
       toast.error('Seleccione al menos un requisito relacionado.');
       return;
     }
-    const parsedAlternativeFlows = alternativeFlows.rows
-      .filter((f) => f.name.trim() && f.condition.trim() && f.stepsText.trim())
-      .map((f) => ({ name: f.name, condition: f.condition, steps: parseSteps(f.stepsText) }));
+    const flows = alternativeFlows
+      .map((f) => ({
+        name: f.name.trim(),
+        condition: f.condition.trim(),
+        steps: cleanSteps(f.steps),
+      }))
+      .filter((f) => f.name && f.condition && f.steps.length);
     setSubmitting(true);
     try {
       const input = {
         name,
         objective,
         primaryActor,
-        secondaryActors: csv(secondaryActors),
-        preconditions: csv(preconditions),
-        postconditions: csv(postconditions),
+        secondaryActors: clean(secondaryActors),
+        preconditions: clean(preconditions),
+        postconditions: clean(postconditions),
         mainFlow: steps,
-        alternativeFlows: parsedAlternativeFlows,
+        alternativeFlows: flows,
         relatedRequirementVersionIds,
       };
       if (initial) {
@@ -114,196 +309,162 @@ export function UseCaseManualForm({
   }
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4"
-    >
-      <h2 className="text-sm font-semibold text-foreground">
-        {initial ? `Editar ${initial.code}` : 'Nuevo caso de uso'}
-      </h2>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="flex flex-col gap-1 text-sm">
-          Nombre
-          <input
-            required
-            className="rounded-md border border-input px-2 py-1"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          Actor primario
-          <input
-            required
-            className="rounded-md border border-input px-2 py-1"
-            value={primaryActor}
-            onChange={(e) => setPrimaryActor(e.target.value)}
-          />
-        </label>
-      </div>
-      <label className="flex flex-col gap-1 text-sm">
-        Objetivo
-        <textarea
-          required
-          rows={2}
-          className="rounded-md border border-input px-2 py-1"
-          value={objective}
-          onChange={(e) => setObjective(e.target.value)}
-        />
-      </label>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <label className="flex flex-col gap-1 text-sm">
-          Actores secundarios (separados por coma)
-          <TagInput value={secondaryActors} onChange={setSecondaryActors} />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          Precondiciones (separadas por coma)
-          <TagInput value={preconditions} onChange={setPreconditions} />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          Postcondiciones (separadas por coma)
-          <TagInput value={postconditions} onChange={setPostconditions} />
-        </label>
-      </div>
+    <Dialog open onOpenChange={(open) => (open ? null : onCancel())}>
+      <DialogContent className="max-h-[92vh] gap-0 overflow-hidden p-0 sm:max-w-3xl">
+        <form onSubmit={handleSubmit} className="flex max-h-[92vh] flex-col">
+          <DialogHeader className="border-b border-border px-6 py-4">
+            <DialogTitle>{initial ? `Editar ${initial.code}` : 'Nuevo caso de uso'}</DialogTitle>
+            <DialogDescription>
+              {initial
+                ? `Al guardar se crea la versión ${initial.version.versionNumber + 1}, que necesitará aprobarse de nuevo. La versión actual no cambia.`
+                : 'Describa un proceso que el sistema resuelve, paso a paso. Podrá aprobarlo después.'}
+            </DialogDescription>
+          </DialogHeader>
 
-      <fieldset className="rounded-md border border-border p-2">
-        <legend className="px-1 text-sm font-medium text-foreground/80">Flujo principal</legend>
-        {mainFlow.rows.map((step, i) => (
-          <div key={i} className="mb-1 flex gap-2">
-            <input
-              aria-label={`Actor del paso ${i + 1}`}
-              placeholder="Actor"
-              className="w-1/3 rounded-md border border-input px-2 py-1 text-sm"
-              value={step.actor}
-              onChange={(e) => mainFlow.update(i, { actor: e.target.value })}
-            />
-            <input
-              aria-label={`Acción del paso ${i + 1}`}
-              placeholder="Acción"
-              className="flex-1 rounded-md border border-input px-2 py-1 text-sm"
-              value={step.action}
-              onChange={(e) => mainFlow.update(i, { action: e.target.value })}
-            />
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              type="button"
-              onClick={() => mainFlow.remove(i)}
-              className="mt-1 text-destructive hover:bg-destructive/10 hover:text-destructive"
-              aria-label={`Eliminar paso ${i + 1}`}
-            >
-              <Trash2 className="size-3.5" />
-            </Button>
-          </div>
-        ))}
-        <Button
-          variant="outline"
-          size="sm"
-          type="button"
-          onClick={() => mainFlow.add({ actor: '', action: '' })}
-          className="self-start text-muted-foreground"
-        >
-          <Plus className="mr-2 size-4" /> Agregar paso
-        </Button>
-      </fieldset>
-
-      <fieldset className="rounded-md border border-border p-2">
-        <legend className="px-1 text-sm font-medium text-foreground/80">
-          Flujos alternativos (opcional)
-        </legend>
-        {alternativeFlows.rows.map((flow, i) => (
-          <div key={i} className="mb-2 flex flex-col gap-1 rounded-md border border-border p-2">
-            <div className="flex gap-2">
-              <input
-                aria-label={`Nombre del flujo alternativo ${i + 1}`}
-                placeholder="Nombre"
-                className="w-1/3 rounded-md border border-input px-2 py-1 text-sm"
-                value={flow.name}
-                onChange={(e) => alternativeFlows.update(i, { name: e.target.value })}
-              />
-              <input
-                aria-label={`Condición del flujo alternativo ${i + 1}`}
-                placeholder="Condición"
-                className="flex-1 rounded-md border border-input px-2 py-1 text-sm"
-                value={flow.condition}
-                onChange={(e) => alternativeFlows.update(i, { condition: e.target.value })}
-              />
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                type="button"
-                onClick={() => alternativeFlows.remove(i)}
-                className="mt-1 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                aria-label={`Eliminar flujo alternativo ${i + 1}`}
-              >
-                <Trash2 className="size-3.5" />
-              </Button>
-            </div>
-            <textarea
-              aria-label={`Pasos del flujo alternativo ${i + 1}`}
-              placeholder={'Un paso por línea: Actor: acción'}
-              rows={2}
-              className="rounded-md border border-input px-2 py-1 text-sm"
-              value={flow.stepsText}
-              onChange={(e) => alternativeFlows.update(i, { stepsText: e.target.value })}
-            />
-          </div>
-        ))}
-        <Button
-          variant="outline"
-          size="sm"
-          type="button"
-          onClick={() => alternativeFlows.add({ name: '', condition: '', stepsText: '' })}
-          className="self-start text-muted-foreground"
-        >
-          <Plus className="mr-2 size-4" /> Agregar flujo alternativo
-        </Button>
-      </fieldset>
-
-      <fieldset className="rounded-md border border-border p-2">
-        <legend className="px-1 text-sm font-medium text-foreground/80">
-          Requisitos relacionados
-        </legend>
-        {approvedRequirements.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Aún no hay requisitos aprobados.</p>
-        ) : (
-          <ul className="flex flex-col gap-1 text-sm">
-            {approvedRequirements.map((r) => (
-              <li key={r.id} className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id={`ucreq-${r.id}`}
-                  checked={relatedRequirementVersionIds.includes(r.version.id)}
-                  onChange={() =>
-                    setRelatedRequirementVersionIds((prev) =>
-                      prev.includes(r.version.id)
-                        ? prev.filter((id) => id !== r.version.id)
-                        : [...prev, r.version.id],
-                    )
-                  }
+          <div className="flex flex-col gap-5 overflow-y-auto px-6 py-5">
+            <Section title="Qué logra">
+              <label className="flex flex-col gap-1.5 text-sm font-medium">
+                Nombre
+                <Input
+                  required
+                  maxLength={200}
+                  value={name}
+                  placeholder="Por ejemplo: Registrar un pedido"
+                  onChange={(e) => setName(e.target.value)}
                 />
-                <label htmlFor={`ucreq-${r.id}`}>
-                  {r.code} — {r.requirement.name}
-                </label>
-              </li>
-            ))}
-          </ul>
-        )}
-      </fieldset>
+              </label>
+              <label className="flex flex-col gap-1.5 text-sm font-medium">
+                Objetivo
+                <Textarea
+                  required
+                  rows={3}
+                  value={objective}
+                  placeholder="Qué consigue el actor al terminar"
+                  onChange={(e) => setObjective(e.target.value)}
+                />
+              </label>
+            </Section>
 
-      <div className="flex gap-2">
-        <Button type="submit" disabled={submitting}>
-          {submitting ? 'Guardando…' : initial ? 'Guardar cambios' : 'Crear caso de uso'}
-        </Button>
-        <Button
-          variant="ghost"
-          type="button"
-          onClick={onCancel}
-          className="text-muted-foreground underline"
-        >
-          Cancelar
-        </Button>
-      </div>
-    </form>
+            <Section title="Requisitos que realiza">
+              <RequirementPicker
+                options={approvedRequirements}
+                selected={relatedRequirementVersionIds}
+                onChange={setRelatedRequirementVersionIds}
+              />
+            </Section>
+
+            <Section title="Actores">
+              <label className="flex flex-col gap-1.5 text-sm font-medium">
+                Actor primario
+                <Input
+                  required
+                  value={primaryActor}
+                  placeholder="Quién inicia el caso de uso"
+                  onChange={(e) => setPrimaryActor(e.target.value)}
+                />
+              </label>
+              <TextRows
+                label="Actores secundarios"
+                addLabel="Agregar actor secundario"
+                values={secondaryActors}
+                onChange={setSecondaryActors}
+              />
+            </Section>
+
+            <Section title="Condiciones">
+              <TextRows
+                label="Precondiciones"
+                addLabel="Agregar precondición"
+                values={preconditions}
+                onChange={setPreconditions}
+              />
+              <TextRows
+                label="Postcondiciones"
+                addLabel="Agregar postcondición"
+                values={postconditions}
+                onChange={setPostconditions}
+              />
+            </Section>
+
+            <Section title="Flujo principal" description="Los pasos del camino habitual, en orden.">
+              <StepRows steps={mainFlow} onChange={setMainFlow} />
+            </Section>
+
+            <Section
+              title="Flujos alternativos"
+              description="Qué ocurre cuando algo se desvía del camino habitual (opcional)."
+            >
+              {alternativeFlows.map((flow, i) => (
+                <div
+                  key={i}
+                  className="flex flex-col gap-2 rounded-md border border-dashed border-border p-3"
+                >
+                  <div className="flex items-center gap-2">
+                    <GitBranch
+                      className="size-4 shrink-0 text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                    <Input
+                      aria-label={`Nombre del flujo alternativo ${i + 1}`}
+                      placeholder="Nombre del flujo"
+                      value={flow.name}
+                      onChange={(e) => updateFlow(i, { name: e.target.value })}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="size-8 shrink-0 p-0 text-muted-foreground"
+                      aria-label={`Quitar el flujo alternativo ${i + 1}`}
+                      onClick={() =>
+                        setAlternativeFlows((flows) => flows.filter((_, j) => j !== i))
+                      }
+                    >
+                      <Trash2 className="size-4" aria-hidden="true" />
+                    </Button>
+                  </div>
+                  <Input
+                    aria-label={`Condición del flujo alternativo ${i + 1}`}
+                    placeholder="Cuándo ocurre"
+                    value={flow.condition}
+                    onChange={(e) => updateFlow(i, { condition: e.target.value })}
+                  />
+                  <StepRows
+                    steps={flow.steps}
+                    suffix={` del flujo alternativo ${i + 1}`}
+                    onChange={(steps) => updateFlow(i, { steps })}
+                  />
+                </div>
+              ))}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="w-fit text-primary"
+                onClick={() =>
+                  setAlternativeFlows((flows) => [
+                    ...flows,
+                    { name: '', condition: '', steps: [{ actor: '', action: '' }] },
+                  ])
+                }
+              >
+                <Plus className="size-4" aria-hidden="true" />
+                Agregar flujo alternativo
+              </Button>
+            </Section>
+          </div>
+
+          <DialogFooter className="border-t border-border px-6 py-4">
+            <Button type="button" variant="ghost" onClick={onCancel}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={submitting}>
+              <Check className="size-4" aria-hidden="true" />
+              {submitting ? 'Guardando…' : initial ? 'Guardar cambios' : 'Crear caso de uso'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
