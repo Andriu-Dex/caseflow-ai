@@ -73,7 +73,7 @@ export class ChatGPTConnection {
   private async load(): Promise<State> {
     if (this.state) return this.state;
     this.state = (await this.store.read()) ?? {
-      hostId: randomUUID(),
+      hostId: `urn:uuid:${randomUUID()}`,
       clientId: null,
       email: null,
       tokens: null,

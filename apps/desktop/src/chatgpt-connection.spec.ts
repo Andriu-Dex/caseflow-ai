@@ -72,7 +72,8 @@ describe('ChatGPT sign-in (DEC-117)', () => {
       scope: `openid profile email offline_access resource.invoke ${PLAN_SCOPE}`,
       resource: 'https://api.openai.com/v1',
       code_challenge_method: 'S256',
-      ext_agent_host_id: 'host-1',
+      // A bare saved id is sent as the URI OpenAI requires.
+      ext_agent_host_id: 'urn:uuid:host-1',
       agent_name_hint: 'CASEFlow AI',
     });
     expect(first.searchParams.get('code_challenge')).not.toBe('v');
