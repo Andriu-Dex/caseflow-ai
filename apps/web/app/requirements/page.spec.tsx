@@ -184,4 +184,13 @@ describe('Requirements list', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Archivar' }));
     await waitFor(() => expect(mocks.archive).toHaveBeenCalledWith('p1', 'r2'));
   });
+
+  it('opens a row from its menu too', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const row = (await screen.findByText('Exportar a Excel')).closest('li')!;
+    await user.click(within(row).getByRole('button', { name: 'Más acciones de RF-002' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Ver detalle' }));
+    expect(screen.getByText('Descripción de Exportar a Excel')).toBeInTheDocument();
+  });
 });
