@@ -15,6 +15,8 @@ import {
   Minus,
   MoreHorizontal,
   Pencil,
+  Eye,
+  EyeOff,
   RefreshCw,
   Search,
   Target,
@@ -408,6 +410,10 @@ function RequirementRow({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={onToggle}>
+                {open ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
+                {open ? 'Ocultar detalle' : 'Ver detalle'}
+              </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => actions.edit(r)}>
                 <Pencil aria-hidden="true" />
                 Editar
