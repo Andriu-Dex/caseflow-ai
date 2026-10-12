@@ -16,7 +16,7 @@ import {
   Users,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { ProjectContextResponse } from '@caseflow-ai/contracts';
+import type { ProjectContextCandidate, ProjectContextResponse } from '@caseflow-ai/contracts';
 import { api, ApiError } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { PageHeading } from '../../components/page-heading';
@@ -63,6 +63,59 @@ function writeDraft(projectId: string, draft: ContextDraft) {
     // Private browsing / blocked storage: draft just won't survive a reload.
   }
 }
+const draftFromCandidate = (candidate: ProjectContextCandidate): ContextDraft => ({
+  problemStatement: candidate.content.problemStatement,
+  objective: candidate.content.objective,
+  additionalContext: candidate.content.additionalContext ?? '',
+  actorsText: candidate.content.actors.join('\n'),
+  needsText: candidate.content.needs.join('\n'),
+  constraintsText: candidate.content.constraints.join('\n'),
+  businessRulesText: candidate.content.businessRules.join('\n'),
+  sourceVersionIds: candidate.sourceVersionIds,
+});
+
+// A generation outlives the page: leaving it while the AI works does not lose
+// the proposal. It lands in the form's draft and is announced, and coming
+// back while it runs shows it running.
+const pendingGenerations = new Map<string, Promise<ProjectContextCandidate>>();
+function generateContext(projectId: string): Promise<ProjectContextCandidate> {
+  const running = pendingGenerations.get(projectId);
+  if (running) return running;
+  const generation = api.context
+    .generate(projectId)
+    .then((candidate) => {
+      writeDraft(projectId, draftFromCandidate(candidate));
+      toast.success('La propuesta del contexto está lista. Revísela antes de guardarla.');
+      const reports = candidate.reportSourceVersionIds.length;
+      if (reports)
+        toast.info(
+          reports === 1
+            ? 'La propuesta también se apoyó en el reporte aprobado de una fuente.'
+            : `La propuesta también se apoyó en los reportes aprobados de ${reports} fuentes.`,
+        );
+      // DEC-127: a long source is read as its most relevant sections.
+      const partial = candidate.partialSourceVersionIds.length;
+      if (partial)
+        toast.info(
+          partial === 1
+            ? 'Una fuente es larga: la propuesta usó sus secciones más relevantes y su reporte. Revise que no falte nada importante.'
+            : `${partial} fuentes son largas: la propuesta usó sus secciones más relevantes y sus reportes. Revise que no falte nada importante.`,
+        );
+      return candidate;
+    })
+    .catch((err: unknown) => {
+      toast.error(
+        err instanceof ApiError
+          ? err.message
+          : 'No se pudo generar el contexto con IA en este momento. Puede completarlo manualmente.',
+      );
+      throw err;
+    })
+    .finally(() => pendingGenerations.delete(projectId));
+  pendingGenerations.set(projectId, generation);
+  return generation;
+}
+
 function clearDraft(projectId: string) {
   try {
     window.sessionStorage.removeItem(draftKey(projectId));
@@ -166,43 +219,36 @@ function ContextForm({
     );
   }
 
-  async function handleGenerate() {
+  function applyCandidate(candidate: ProjectContextCandidate) {
+    const next = draftFromCandidate(candidate);
+    setProblemStatement(next.problemStatement);
+    setObjective(next.objective);
+    setAdditionalContext(next.additionalContext);
+    setActorsText(next.actorsText);
+    setNeedsText(next.needsText);
+    setConstraintsText(next.constraintsText);
+    setBusinessRulesText(next.businessRulesText);
+    setSourceVersionIds(next.sourceVersionIds);
+    setSourcesPrefilled(true);
+  }
+
+  function follow(generation: Promise<ProjectContextCandidate>) {
     setGenerating(true);
-    try {
-      const candidate = await api.context.generate(projectId);
-      setProblemStatement(candidate.content.problemStatement);
-      setObjective(candidate.content.objective);
-      setAdditionalContext(candidate.content.additionalContext ?? '');
-      setActorsText(candidate.content.actors.join('\n'));
-      setNeedsText(candidate.content.needs.join('\n'));
-      setConstraintsText(candidate.content.constraints.join('\n'));
-      setBusinessRulesText(candidate.content.businessRules.join('\n'));
-      setSourceVersionIds(candidate.sourceVersionIds);
-      setSourcesPrefilled(true);
-      const reports = candidate.reportSourceVersionIds.length;
-      if (reports)
-        toast.info(
-          reports === 1
-            ? 'La propuesta también se apoyó en el reporte aprobado de una fuente.'
-            : `La propuesta también se apoyó en los reportes aprobados de ${reports} fuentes.`,
-        );
-      // DEC-127: a long source is read as its most relevant sections.
-      const partial = candidate.partialSourceVersionIds.length;
-      if (partial)
-        toast.info(
-          partial === 1
-            ? 'Una fuente es larga: la propuesta usó sus secciones más relevantes y su reporte. Revise que no falte nada importante.'
-            : `${partial} fuentes son largas: la propuesta usó sus secciones más relevantes y sus reportes. Revise que no falte nada importante.`,
-        );
-    } catch (err) {
-      toast.error(
-        err instanceof ApiError
-          ? err.message
-          : 'No se pudo generar el contexto con IA en este momento. Puede completarlo manualmente.',
-      );
-    } finally {
-      setGenerating(false);
-    }
+    generation
+      .then(applyCandidate)
+      .catch(() => undefined)
+      .finally(() => setGenerating(false));
+  }
+
+  // Back on the page while a generation still runs: show it and wait for it.
+  useEffect(() => {
+    const running = pendingGenerations.get(projectId);
+    if (running) follow(running);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
+  function handleGenerate() {
+    follow(generateContext(projectId));
   }
 
   async function handleSubmit(e: React.FormEvent) {
