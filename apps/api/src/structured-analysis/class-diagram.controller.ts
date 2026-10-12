@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Post, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Request, Res, UseGuards } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { z } from 'zod';
 import {
@@ -120,5 +121,27 @@ export class ClassDiagramController extends BaseStructuredAnalysisController {
     @Request() req: AuthenticatedRequest,
   ) {
     return this.transition(projectId, artifactId, versionId, body, req.user.id);
+  }
+  // The rendered diagram, like the other diagram-backed kinds; without these
+  // routes "Ver diagrama" answered 404.
+  @Get(':classDiagramId/diagram')
+  @ApiOperation({ operationId: 'getClassDiagramDiagram', summary: 'Obtener el diagrama de clases' })
+  override diagram(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('classDiagramId', uuidParamPipe) id: string,
+  ) {
+    return super.diagram(projectId, id);
+  }
+  @Get(':classDiagramId/diagram/png')
+  @ApiOperation({
+    operationId: 'getClassDiagramDiagramPng',
+    summary: 'Obtener el diagrama de clases en PNG',
+  })
+  override diagramPng(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('classDiagramId', uuidParamPipe) id: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    return super.diagramPng(projectId, id, response);
   }
 }
