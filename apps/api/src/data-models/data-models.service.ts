@@ -210,7 +210,7 @@ export class DataModelsService {
         projectId,
         language,
         promptKey: 'data-model.generate',
-        promptVersion: 1,
+        promptVersion: 2,
         messages: [
           {
             role: 'user',

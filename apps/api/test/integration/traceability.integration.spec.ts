@@ -141,7 +141,7 @@ describe('Traceability graph integration', () => {
 
     const dataModelsService = new DataModelsService(
       ctx.prisma,
-      fakeAi(ctx, 'data-model.generate', 1, {
+      fakeAi(ctx, 'data-model.generate', 2, {
         candidates: [
           {
             candidateId: 'dm1',

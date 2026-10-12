@@ -17,6 +17,12 @@ type AttributeType = ConceptualAttributeType;
 type Cardinality = DataModelCardinality;
 const ATTRIBUTE_TYPES = CONCEPTUAL_ATTRIBUTE_TYPES;
 const CARDINALITIES = DATA_MODEL_CARDINALITIES;
+const CARDINALITY_LABELS: Record<Cardinality, string> = {
+  ONE: '1 (exactamente uno)',
+  ZERO_OR_ONE: '0..1 (cero o uno)',
+  ONE_OR_MORE: '1..* (uno o más)',
+  ZERO_OR_MORE: '0..* (cero o más)',
+};
 
 interface Attribute {
   name: string;
@@ -286,6 +292,11 @@ export function DataModelManualForm({
         <legend className="px-1 text-sm font-medium text-foreground/80">
           Relaciones (opcional)
         </legend>
+        <p className="mb-2 text-xs text-muted-foreground">
+          Cada cardinalidad indica cuántos de su lado corresponden a uno del otro lado. Por ejemplo,
+          Cliente 1 → Pedido 0..*: cada pedido es de un cliente y un cliente tiene cero o más
+          pedidos.
+        </p>
         {relationships.map((rel, ri) => (
           <div key={ri} className="mb-1 flex flex-wrap items-center gap-2 text-sm">
             <select
@@ -306,6 +317,7 @@ export function DataModelManualForm({
             </select>
             <select
               className="rounded-md border border-input px-2 py-1"
+              aria-label={`Cardinalidad de origen de la relación ${ri + 1}`}
               value={rel.sourceCardinality}
               onChange={(e) =>
                 setRelationships((prev) =>
@@ -317,7 +329,7 @@ export function DataModelManualForm({
             >
               {CARDINALITIES.map((c) => (
                 <option key={c} value={c}>
-                  {c}
+                  {CARDINALITY_LABELS[c]}
                 </option>
               ))}
             </select>
@@ -340,6 +352,7 @@ export function DataModelManualForm({
             </select>
             <select
               className="rounded-md border border-input px-2 py-1"
+              aria-label={`Cardinalidad de destino de la relación ${ri + 1}`}
               value={rel.targetCardinality}
               onChange={(e) =>
                 setRelationships((prev) =>
@@ -351,7 +364,7 @@ export function DataModelManualForm({
             >
               {CARDINALITIES.map((c) => (
                 <option key={c} value={c}>
-                  {c}
+                  {CARDINALITY_LABELS[c]}
                 </option>
               ))}
             </select>

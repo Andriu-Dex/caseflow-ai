@@ -30,6 +30,8 @@ describe('DiagramEngine', () => {
     const first = engine.generateER(model);
     expect(engine.generateER(model)).toBe(first);
     expect(first).toContain('user ||--o{ order');
+    // A primary key is not also marked unique.
+    expect(first).toContain('uuid id PK\n');
     expect(() => engine.validate('MERMAID_ER', first)).not.toThrow();
   });
   it('deduplicates the diagram-wide actor list and never invents include/extend', () => {
@@ -165,6 +167,46 @@ describe('DiagramEngine', () => {
     expect(source).toContain('web --> api : "calls"');
     expect(source).toContain('web --> api\n');
     expect(() => engine.validate('PLANTUML_COMPONENT', source)).not.toThrow();
+  });
+
+  it('draws each layer as a package holding its components', () => {
+    const source = engine.generateSoftwareComponentDiagram({
+      components: [
+        { localId: 'backend', name: 'Capa de aplicación' },
+        { localId: 'sales', name: 'Ventas', layerLocalId: 'backend' },
+        { localId: 'stock', name: 'Inventario', layerLocalId: 'backend' },
+        { localId: 'web', name: 'Web' },
+      ],
+      dependencies: [{ fromLocalId: 'web', toLocalId: 'backend' }],
+    });
+    expect(source).toBe(
+      [
+        '@startuml',
+        'package "Capa de aplicación" as backend {',
+        '  component "Ventas" as sales',
+        '  component "Inventario" as stock',
+        '}',
+        'component "Web" as web',
+        'web --> backend',
+        '@enduml',
+      ].join('\n'),
+    );
+  });
+
+  it('labels each link with its protocol and description', () => {
+    const source = engine.generateSystemDeploymentDiagram({
+      nodes: [
+        { localId: 'api', name: 'API', kind: 'RUNTIME' },
+        { localId: 'db', name: 'DB', kind: 'DATABASE' },
+        { localId: 'ocr', name: 'OCR', kind: 'EXTERNAL_SERVICE' },
+      ],
+      links: [
+        { fromLocalId: 'api', toLocalId: 'db', protocol: 'TCP', description: 'Consultas' },
+        { fromLocalId: 'api', toLocalId: 'ocr', protocol: 'HTTPS' },
+      ],
+    });
+    expect(source).toContain('api --> db : "TCP — Consultas"');
+    expect(source).toContain('api --> ocr : "HTTPS"');
   });
 
   it('generates a deterministic PlantUML deployment diagram, with and without a link description', () => {

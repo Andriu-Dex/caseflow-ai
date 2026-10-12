@@ -119,7 +119,7 @@ describe('Data Model + Diagram Engine integration', () => {
       new PromptRegistry([
         {
           key: 'data-model.generate',
-          version: 1,
+          version: 2,
           capability: 'STRUCTURED_OUTPUT',
           purpose: 'conceptual_data_model_generation',
           systemInstructions: 'policy',
@@ -307,7 +307,7 @@ describe('Data Model + Diagram Engine integration', () => {
       new PromptRegistry([
         {
           key: 'data-model.generate',
-          version: 1,
+          version: 2,
           capability: 'STRUCTURED_OUTPUT',
           purpose: 'conceptual_data_model_generation',
           systemInstructions: 'policy',

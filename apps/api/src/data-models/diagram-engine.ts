@@ -28,12 +28,14 @@ export type NavigationDiagramModel = {
   nodes: { localId: string; label: string; parentLocalId?: string }[];
 };
 export type SoftwareArchitectureDiagramModel = {
-  components: { localId: string; name: string }[];
+  // A component whose localId other components name as their layer is drawn
+  // as a package that contains them.
+  components: { localId: string; name: string; layerLocalId?: string }[];
   dependencies: { fromLocalId: string; toLocalId: string; description?: string }[];
 };
 export type SystemArchitectureDiagramModel = {
   nodes: { localId: string; name: string; kind: string }[];
-  links: { fromLocalId: string; toLocalId: string; description?: string }[];
+  links: { fromLocalId: string; toLocalId: string; protocol?: string; description?: string }[];
 };
 export type TraceabilityDiagramModel = {
   nodes: { id: string; code: string; title: string }[];
@@ -131,9 +133,8 @@ export class DiagramEngine {
     for (const entity of model.entities) {
       lines.push(`  ${safeId(entity.localId)}["${quote(entity.name)}"] {`);
       for (const attribute of entity.attributes) {
-        const flags = [attribute.primaryKey ? 'PK' : '', attribute.unique ? 'UK' : '']
-          .filter(Boolean)
-          .join(',');
+        // A primary key is unique already: "PK,UK" only repeats it.
+        const flags = attribute.primaryKey ? 'PK' : attribute.unique ? 'UK' : '';
         lines.push(
           `    ${attribute.type.toLowerCase()} ${safeId(attribute.name)}${flags ? ` ${flags}` : ''}`,
         );
@@ -227,9 +228,22 @@ export class DiagramEngine {
   // Architecture (spec §14.3).
   generateSoftwareComponentDiagram(model: SoftwareArchitectureDiagramModel): string {
     const components = [...model.components].sort((a, b) => compareOrdinal(a.localId, b.localId));
+    const layers = [
+      ...new Set(components.flatMap((c) => (c.layerLocalId ? [c.layerLocalId] : []))),
+    ].sort(compareOrdinal);
     const lines = ['@startuml'];
+    // ponytail: one level of layers; a layer inside another layer is drawn flat.
+    for (const layer of layers) {
+      const name = components.find((c) => c.localId === layer)?.name ?? layer;
+      lines.push(`package "${quote(name)}" as ${safeId(layer)} {`);
+      for (const component of components)
+        if (component.layerLocalId === layer && !layers.includes(component.localId))
+          lines.push(`  component "${quote(component.name)}" as ${safeId(component.localId)}`);
+      lines.push('}');
+    }
     for (const component of components)
-      lines.push(`component "${quote(component.name)}" as ${safeId(component.localId)}`);
+      if (!component.layerLocalId && !layers.includes(component.localId))
+        lines.push(`component "${quote(component.name)}" as ${safeId(component.localId)}`);
     for (const dependency of model.dependencies)
       lines.push(
         `${safeId(dependency.fromLocalId)} --> ${safeId(dependency.toLocalId)}${
@@ -257,12 +271,14 @@ export class DiagramEngine {
       lines.push(
         `${nodeKeyword[node.kind] ?? 'node'} "${quote(node.name)}" as ${safeId(node.localId)}`,
       );
-    for (const link of model.links)
+    for (const link of model.links) {
+      const label = [link.protocol, link.description].filter(Boolean).map((x) => quote(x!));
       lines.push(
         `${safeId(link.fromLocalId)} --> ${safeId(link.toLocalId)}${
-          link.description ? ` : "${quote(link.description)}"` : ''
+          label.length ? ` : "${label.join(' — ')}"` : ''
         }`,
       );
+    }
     lines.push('@enduml');
     return lines.join('\n');
   }

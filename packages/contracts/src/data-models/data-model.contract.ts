@@ -48,8 +48,18 @@ const relationshipSchema = z
     sourceEntityId: text(80),
     targetEntityId: text(80),
     name: text(120).optional(),
-    sourceCardinality: z.enum(DATA_MODEL_CARDINALITIES),
-    targetCardinality: z.enum(DATA_MODEL_CARDINALITIES),
+    // Crow's foot convention, as the ER diagram draws it (DEC-130): each side
+    // says how many of its own entity relate to ONE instance of the other.
+    sourceCardinality: z
+      .enum(DATA_MODEL_CARDINALITIES)
+      .describe(
+        'Cuántas instancias de la entidad origen se relacionan con UNA de la entidad destino.',
+      ),
+    targetCardinality: z
+      .enum(DATA_MODEL_CARDINALITIES)
+      .describe(
+        'Cuántas instancias de la entidad destino se relacionan con UNA de la entidad origen.',
+      ),
     description: text(1000).optional(),
   })
   .strict();

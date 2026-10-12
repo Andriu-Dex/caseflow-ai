@@ -403,7 +403,7 @@ describe('Export (First Deliverable, Phase H)', () => {
 
     const dataModelsService = new DataModelsService(
       ctx.prisma,
-      fakeAi(ctx, 'data-model.generate', 1, {
+      fakeAi(ctx, 'data-model.generate', 2, {
         candidates: [
           {
             candidateId: 'dm1',
