@@ -1344,7 +1344,11 @@ model SourceFragment {
   speaker         String?
   timestamp       String?
   embedding       Unsupported("vector(1536)")?
+  // Full-text search in the project's language (DEC-127), GIN-indexed.
+  searchVector    Unsupported("tsvector")?          @map("search_vector")
 
+  @@index([projectId, sourceVersionId])
+  @@index([searchVector], type: Gin)
   @@map("source_fragments")
 }
 

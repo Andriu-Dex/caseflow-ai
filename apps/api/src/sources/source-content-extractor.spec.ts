@@ -1,3 +1,4 @@
+import { SOURCE_LIMITS } from '@caseflow-ai/contracts';
 import { describe, expect, it, vi } from 'vitest';
 import { Document, Packer, Paragraph } from 'docx';
 import PDFDocument from 'pdfkit';
@@ -136,7 +137,12 @@ describe('SourceContentExtractor', () => {
   });
 
   it('reports text beyond the limit as too long instead of truncating it', async () => {
-    expect(await extractor.extract('text/plain', Buffer.from('a'.repeat(50_001)))).toEqual({
+    const limit = SOURCE_LIMITS.maxExtractedCharacters;
+    // A long document fits whole (DEC-127); only beyond the limit it fails.
+    expect(await extractor.extract('text/plain', Buffer.from('a '.repeat(100_000)))).toMatchObject({
+      state: 'EXTRACTED',
+    });
+    expect(await extractor.extract('text/plain', Buffer.from('a'.repeat(limit + 1)))).toEqual({
       state: 'FAILED',
       reason: 'TEXT_TOO_LONG',
     });

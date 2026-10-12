@@ -1,10 +1,16 @@
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable, Inject, Logger, type OnApplicationBootstrap } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { RetrievalStrategy } from '@caseflow-ai/contracts';
 import { EmbeddingProvider } from '@caseflow-ai/integrations';
+import { getProjectLanguage } from '../projects/project-language';
+import { splitIntoSections } from './source-sections';
+
+const logger = new Logger('KnowledgeBaseService');
+// PostgreSQL text search configuration for each project language.
+export const SEARCH_CONFIG = { ES: 'spanish', EN: 'english' } as const;
 
 @Injectable()
-export class KnowledgeBaseService {
+export class KnowledgeBaseService implements OnApplicationBootstrap {
   constructor(
     private readonly prisma: PrismaService,
     @Inject('EMBEDDING_PROVIDER') private readonly embeddingProvider: EmbeddingProvider,
@@ -131,48 +137,64 @@ export class KnowledgeBaseService {
   }
 
   /**
-   * Fragments a PROJECT_SOURCE version and stores its embeddings.
-   * This should be called asynchronously after a source is approved.
+   * Splits an approved PROJECT_SOURCE version into sections (DEC-127) with a
+   * full-text search vector in the project's language. Runs asynchronously
+   * after a source is approved; running it again rebuilds the same fragments.
    */
-  async fragmentAndEmbedSource(projectId: string, sourceVersionId: string): Promise<void> {
+  async indexSource(projectId: string, sourceVersionId: string): Promise<void> {
     const version = await this.prisma.artifactVersion.findFirst({
       where: { id: sourceVersionId, projectId },
       include: { sourceDetail: true },
     });
+    if (!version?.sourceDetail?.extractedText) return;
+    const config = SEARCH_CONFIG[await getProjectLanguage(this.prisma, projectId)];
+    const sections = splitIntoSections(version.sourceDetail.extractedText);
+    await this.prisma.$transaction(async (tx) => {
+      // One rebuild at a time per version (approval and startup may overlap).
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${sourceVersionId}))`;
+      await tx.$executeRaw`
+        DELETE FROM "source_fragments"
+        WHERE "project_id" = ${projectId}::uuid AND "source_version_id" = ${sourceVersionId}::uuid`;
+      for (const [index, section] of sections.entries())
+        await tx.$executeRaw`
+          INSERT INTO "source_fragments"
+            ("id", "source_version_id", "project_id", "sequence", "section", "content", "search_vector")
+          VALUES (
+            gen_random_uuid(),
+            ${sourceVersionId}::uuid,
+            ${projectId}::uuid,
+            ${index + 1},
+            ${section.heading},
+            ${section.content},
+            setweight(to_tsvector(${config}::regconfig, coalesce(${section.heading}, '')), 'A') ||
+              to_tsvector(${config}::regconfig, ${section.content})
+          )`;
+    });
+  }
 
-    if (!version || !version.sourceDetail?.extractedText) {
-      return;
-    }
-
-    // A very simple chunking strategy: split by paragraphs
-    const paragraphs = version.sourceDetail.extractedText
-      .split(/\n\s*\n/)
-      .filter((p: string) => p.trim().length > 0);
-    if (paragraphs.length === 0) return;
-
-    // Generate embeddings
-    const embeddings = await this.embeddingProvider.embed(paragraphs);
-
-    // Save to database
-    // Assuming SourceFragment Prisma model is generated
-    // Sequence starts at 1
-    for (let i = 0; i < paragraphs.length; i++) {
-      const paragraph = paragraphs[i];
-      const embeddingArray = embeddings[i];
-      if (!embeddingArray) continue;
-      const embeddingString = `[${embeddingArray.join(',')}]`;
-
-      await this.prisma.$executeRaw`
-        INSERT INTO "source_fragments" ("id", "source_version_id", "project_id", "sequence", "content", "embedding")
-        VALUES (
-          gen_random_uuid(), 
-          ${sourceVersionId}::uuid, 
-          ${projectId}::uuid, 
-          ${i + 1}, 
-          ${paragraph}, 
-          ${embeddingString}::vector
-        )
-      `;
+  // Approved sources indexed before DEC-127 (paragraphs, no search vector)
+  // are rebuilt once, at startup.
+  async onApplicationBootstrap() {
+    try {
+      const pending = await this.prisma.$queryRaw<{ project_id: string; id: string }[]>`
+        SELECT version.project_id, version.id
+        FROM "artifact_versions" AS version
+        JOIN "artifacts" AS artifact
+          ON artifact.id = version.artifact_id AND artifact.project_id = version.project_id
+        JOIN "source_details" AS detail ON detail.artifact_version_id = version.id
+        WHERE artifact.artifact_type_code = 'PROJECT_SOURCE'
+          AND version.status = 'APPROVED'
+          AND detail.extracted_text IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM "source_fragments" AS fragment
+            WHERE fragment.source_version_id = version.id AND fragment.search_vector IS NOT NULL
+          )`;
+      for (const version of pending) await this.indexSource(version.project_id, version.id);
+      if (pending.length) logger.log(`Indexed ${pending.length} approved source(s) by sections.`);
+    } catch (error) {
+      logger.warn(
+        `Could not index approved sources: ${error instanceof Error ? error.message : 'unknown'}`,
+      );
     }
   }
 }

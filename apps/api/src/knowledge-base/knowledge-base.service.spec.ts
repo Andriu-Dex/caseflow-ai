@@ -105,29 +105,7 @@ describe('KnowledgeBaseService', () => {
     });
   });
 
-  describe('fragmentAndEmbedSource', () => {
-    it('should fragment text into paragraphs and store embeddings', async () => {
-      db.artifactVersion.findFirst.mockResolvedValue({
-        id: 'ver-1',
-        projectId: 'proj-1',
-        sourceDetail: { extractedText: 'Para 1\n\nPara 2' },
-      });
-      db.$executeRaw.mockResolvedValue(undefined);
-
-      await service.fragmentAndEmbedSource('proj-1', 'ver-1');
-
-      expect(db.$executeRaw).toHaveBeenCalledTimes(2);
-
-      // Check first paragraph insert
-      const call1 = db.$executeRaw.mock.calls[0] as unknown[];
-      expect((call1[0] as string[]).join('?')).toContain('INSERT INTO "source_fragments"');
-      expect(call1[4]).toBe('Para 1');
-
-      // Check second paragraph insert
-      const call2 = db.$executeRaw.mock.calls[1] as unknown[];
-      expect(call2[4]).toBe('Para 2');
-    });
-
+  describe('indexSource', () => {
     it('should do nothing if no extracted text', async () => {
       db.artifactVersion.findFirst.mockResolvedValue({
         id: 'ver-1',
@@ -135,7 +113,7 @@ describe('KnowledgeBaseService', () => {
         sourceDetail: null,
       });
 
-      await service.fragmentAndEmbedSource('proj-1', 'ver-1');
+      await service.indexSource('proj-1', 'ver-1');
       expect(db.$executeRaw).not.toHaveBeenCalled();
     });
   });
