@@ -1,4 +1,4 @@
-import type { SourceProcessingJobPayload } from '@caseflow-ai/domain';
+import { sourceJobRunPath, type SourceProcessingJobPayload } from '@caseflow-ai/domain';
 import { triggerApiRun } from '../trigger-api-run';
 
 export async function runSourceProcessingJob(
@@ -7,7 +7,7 @@ export async function runSourceProcessingJob(
   fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
   const response = await triggerApiRun(
-    `${config.apiInternalUrl}/projects/${payload.projectId}/sources/jobs/${payload.jobId}/run`,
+    `${config.apiInternalUrl}${sourceJobRunPath(payload)}`,
     {
       method: 'POST',
       headers: { 'x-internal-jobs-secret': config.internalJobsSecret },

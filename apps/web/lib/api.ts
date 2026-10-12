@@ -28,7 +28,7 @@ import type {
   RequirementResponse,
   SourceMetadataInput,
   SourceCapabilitiesResponse,
-  SourceReportCandidate,
+  SourceReportJob,
   SourceReportResponse,
   SourceResponse,
   StalenessAnalysisResponse,
@@ -418,8 +418,13 @@ export const api = {
       }),
     getReport: (projectId: string, sourceId: string) =>
       get<SourceReportResponse>(`/projects/${projectId}/sources/${sourceId}/report`),
+    // DEC-127: starts (or resumes) the report in the background.
     generateReport: (projectId: string, sourceId: string) =>
-      post<SourceReportCandidate>(`/projects/${projectId}/sources/${sourceId}/report/generate`),
+      post<{ job: SourceReportJob | null }>(
+        `/projects/${projectId}/sources/${sourceId}/report/generate`,
+      ),
+    reportJob: (projectId: string, sourceId: string) =>
+      get<{ job: SourceReportJob | null }>(`/projects/${projectId}/sources/${sourceId}/report-job`),
     acceptReport: (projectId: string, sourceId: string, candidateId: string) =>
       post(`/projects/${projectId}/sources/${sourceId}/report/accept`, { candidateId }),
     submitManualReport: (projectId: string, sourceId: string, summary: string) =>

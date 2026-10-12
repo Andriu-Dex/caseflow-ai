@@ -11,7 +11,7 @@ import {
   ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { AIError, AIOrchestrator } from '@caseflow-ai/ai';
+import { AIError, AIOrchestrator, estimateTokens } from '@caseflow-ai/ai';
 import { canTransitionArtifactVersionStatus, formatArtifactCode } from '@caseflow-ai/domain';
 import { StorageProviderError, type StorageProvider } from '@caseflow-ai/integrations';
 import {
@@ -35,6 +35,8 @@ import { STORAGE_PROVIDER } from './storage-provider.token';
 import { SOURCE_QUEUE } from './source-queue.token';
 import { hasExpectedFileSignature } from './source-file-validation';
 import { KnowledgeBaseService } from '../knowledge-base/knowledge-base.service';
+import { splitIntoSections } from '../knowledge-base/source-sections';
+import { MAX_REPORT_PARTS, inputBudget, mergeBatches, planReportParts } from './source-report-plan';
 
 type Tx = Prisma.TransactionClient;
 const SOURCE_REPORT_MAX_OUTPUT_TOKENS = 4096;
@@ -311,7 +313,7 @@ export class SourcesService implements OnApplicationBootstrap {
       where: { id: job.id },
       data: { status: 'QUEUED', errorMessage: null, failureReason: null },
     });
-    await this.requeue(job.id, projectId);
+    await this.enqueue({ jobId: job.id, projectId });
     return this.get(projectId, id);
   }
 
@@ -348,24 +350,39 @@ export class SourcesService implements OnApplicationBootstrap {
         data: { status: 'QUEUED', errorMessage: null, failureReason: null },
       });
       if (reset.count !== 1) continue;
-      await this.requeue(job.id, job.projectId);
+      await this.enqueue({ jobId: job.id, projectId: job.projectId });
+      recovered++;
+    }
+    // Report jobs (DEC-127) resume with the parts they already have.
+    const reports = await this.prisma.sourceReportJob.findMany({
+      where: { status: { in: ['RUNNING', 'QUEUED'] }, updatedAt: { lt: startedAt } },
+      select: { id: true, projectId: true, status: true },
+    });
+    for (const job of reports) {
+      const reset = await this.prisma.sourceReportJob.updateMany({
+        where: { id: job.id, status: job.status },
+        data: { status: 'QUEUED', errorMessage: null },
+      });
+      if (reset.count !== 1) continue;
+      await this.enqueue({ jobId: job.id, projectId: job.projectId, kind: 'REPORT' });
       recovered++;
     }
     return recovered;
   }
 
-  private async requeue(jobId: string, projectId: string) {
+  private async enqueue(job: SourceProcessingJobPayload) {
     try {
-      await this.queue!.add(
-        SOURCE_PROCESSING_QUEUE,
-        { jobId, projectId },
-        { jobId: `${jobId}-${randomUUID()}` },
-      );
-    } catch {
-      await this.prisma.sourceProcessingJob.update({
-        where: { id: jobId },
-        data: { status: 'FAILED', errorMessage: 'No se pudo iniciar el procesamiento.' },
+      await this.queue!.add(SOURCE_PROCESSING_QUEUE, job, {
+        jobId: `${job.jobId}-${randomUUID()}`,
       });
+    } catch {
+      const data = {
+        status: 'FAILED' as const,
+        errorMessage: 'No se pudo iniciar el procesamiento.',
+      };
+      if (job.kind === 'REPORT')
+        await this.prisma.sourceReportJob.update({ where: { id: job.jobId }, data });
+      else await this.prisma.sourceProcessingJob.update({ where: { id: job.jobId }, data });
     }
   }
 
@@ -536,7 +553,7 @@ export class SourcesService implements OnApplicationBootstrap {
         });
       return this.loadAndMap(tx, id, version.id);
     });
-    if (job) await this.requeue(job.id, projectId);
+    if (job) await this.enqueue({ jobId: job.id, projectId });
     return job ? this.get(projectId, id) : result;
   }
 
@@ -750,41 +767,206 @@ export class SourcesService implements OnApplicationBootstrap {
     return updatedVersion;
   }
 
+  // Generates the report in this request. The background job (DEC-127) runs
+  // the same algorithm, keeping each part so it can resume.
   async generateReport(projectId: string, id: string) {
     const row = await this.findLatest(projectId, id);
     const version = row.versions[0]!;
-    const detail = version.sourceDetail!;
-    if (!detail.extractedText)
+    const text = version.sourceDetail!.extractedText;
+    if (!text)
       throw new UnprocessableEntityException(
         'La fuente no tiene texto extraído ni transcripción manual.',
       );
-    const language = await getProjectLanguage(this.prisma, projectId);
     try {
-      const result = await this.ai.generateStructured({
-        projectId,
-        language,
-        sourceArtifactVersionId: version.id,
-        promptKey: 'source-report.generate',
-        promptVersion: 1,
-        messages: [{ role: 'user', content: JSON.stringify({ sourceText: detail.extractedText }) }],
-        outputSchema: sourceReportContentSchema,
-        schemaName: 'source_report',
-        maxOutputTokens: SOURCE_REPORT_MAX_OUTPUT_TOKENS,
-      });
-      const candidate = await this.prisma.sourceReportCandidate.create({
-        data: {
-          projectId,
-          sourceVersionId: version.id,
-          aiRunId: result.metadata.runId,
-          content: result.data,
-        },
-      });
-      return this.mapCandidate(candidate);
+      return this.mapCandidate(await this.buildReport(projectId, version.id, text, null));
     } catch (error) {
       if (error instanceof AIError)
         throw new ServiceUnavailableException({ message: error.message, code: error.code });
       throw error;
     }
+  }
+
+  // Starts (or resumes, after a failure) the report of the latest version.
+  async requestReport(projectId: string, id: string) {
+    if (!this.queue) throw new ServiceUnavailableException('El procesamiento no está disponible.');
+    const row = await this.findLatest(projectId, id);
+    const version = row.versions[0]!;
+    if (!version.sourceDetail!.extractedText)
+      throw new UnprocessableEntityException(
+        'La fuente no tiene texto extraído ni transcripción manual.',
+      );
+    if (version.sourceDetail!.report)
+      throw new UnprocessableEntityException('Esta versión ya tiene un informe.');
+    const latest = await this.prisma.sourceReportJob.findFirst({
+      where: { projectId, sourceVersionId: version.id },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (latest?.status === 'QUEUED' || latest?.status === 'RUNNING')
+      return this.reportJob(projectId, id);
+    // A failed job resumes with the parts it already has.
+    const job =
+      latest?.status === 'FAILED'
+        ? await this.prisma.sourceReportJob.update({
+            where: { id: latest.id },
+            data: { status: 'QUEUED', errorMessage: null },
+          })
+        : await this.prisma.sourceReportJob.create({
+            data: { projectId, sourceVersionId: version.id },
+          });
+    await this.enqueue({ jobId: job.id, projectId, kind: 'REPORT' });
+    return this.reportJob(projectId, id);
+  }
+
+  async reportJob(projectId: string, id: string) {
+    const row = await this.findLatest(projectId, id);
+    const job = await this.prisma.sourceReportJob.findFirst({
+      where: { projectId, sourceVersionId: row.versions[0]!.id },
+      orderBy: { createdAt: 'desc' },
+      include: { candidate: true },
+    });
+    return {
+      job: job
+        ? {
+            id: job.id,
+            sourceVersionId: job.sourceVersionId,
+            status: job.status,
+            totalParts: job.totalParts,
+            completedParts: job.completedParts,
+            errorMessage: job.errorMessage,
+            candidate: job.candidate ? this.mapCandidate(job.candidate) : null,
+            updatedAt: job.updatedAt.toISOString(),
+          }
+        : null,
+    };
+  }
+
+  async runReportJob(projectId: string, jobId: string): Promise<void> {
+    const job = await this.prisma.sourceReportJob.findFirst({
+      where: { id: jobId, projectId },
+      include: { sourceVersion: { include: { sourceDetail: true } } },
+    });
+    if (!job) throw new NotFoundException('Trabajo no encontrado.');
+    const claimed = await this.prisma.sourceReportJob.updateMany({
+      where: { id: jobId, projectId, status: 'QUEUED' },
+      data: { status: 'RUNNING' },
+    });
+    if (claimed.count !== 1) return;
+    try {
+      const text = job.sourceVersion.sourceDetail?.extractedText;
+      if (!text)
+        throw new UnprocessableEntityException(
+          'La fuente no tiene texto extraído ni transcripción manual.',
+        );
+      const candidate = await this.buildReport(projectId, job.sourceVersionId, text, job.id);
+      await this.prisma.sourceReportJob.update({
+        where: { id: jobId },
+        data: { status: 'COMPLETED', candidateId: candidate.id },
+      });
+    } catch (error) {
+      const known = error instanceof AIError || error instanceof UnprocessableEntityException;
+      if (!known)
+        logger.warn(
+          `Source report job "${jobId}" failed: ${error instanceof Error ? error.message : error}`,
+        );
+      await this.prisma.sourceReportJob.update({
+        where: { id: jobId },
+        data: {
+          status: 'FAILED',
+          errorMessage: known
+            ? (error as Error).message
+            : 'No se pudo generar el reporte. Intente de nuevo.',
+        },
+      });
+    }
+  }
+
+  // DEC-127: a text that fits the most capable available provider is read
+  // in one request; a longer one part by part, then merged. With a job, the
+  // plan and every finished part are stored, so it resumes after a failure.
+  private async buildReport(
+    projectId: string,
+    sourceVersionId: string,
+    text: string,
+    jobId: string | null,
+  ) {
+    const language = await getProjectLanguage(this.prisma, projectId);
+    const job = jobId
+      ? await this.prisma.sourceReportJob.findUniqueOrThrow({
+          where: { id: jobId },
+          include: { parts: { orderBy: { position: 'asc' } } },
+        })
+      : null;
+    const budget = inputBudget(this.ai.maxInputTokens);
+    const ask = async (promptKey: string, content: unknown) => {
+      const result = await this.ai.generateStructured({
+        projectId,
+        language,
+        sourceArtifactVersionId: sourceVersionId,
+        promptKey,
+        promptVersion: 1,
+        messages: [{ role: 'user', content: JSON.stringify(content) }],
+        outputSchema: sourceReportContentSchema,
+        schemaName: 'source_report',
+        maxOutputTokens: SOURCE_REPORT_MAX_OUTPUT_TOKENS,
+      });
+      return { data: result.data, runId: result.metadata.runId };
+    };
+    const progress = (data: Prisma.SourceReportJobUpdateInput) =>
+      jobId ? this.prisma.sourceReportJob.update({ where: { id: jobId }, data }) : undefined;
+
+    let report: { data: SourceReportContent; runId: string };
+    if (!job?.partTokens && estimateTokens(JSON.stringify({ sourceText: text })) <= budget) {
+      await progress({ totalParts: 1 });
+      report = await ask('source-report.generate', { sourceText: text });
+      await progress({ completedParts: 1 });
+    } else {
+      const partTokens = job?.partTokens ?? budget;
+      const parts = planReportParts(splitIntoSections(text), partTokens);
+      if (parts.length > MAX_REPORT_PARTS)
+        throw new UnprocessableEntityException(
+          `La fuente es demasiado larga para los proveedores de IA disponibles: se necesitarían ${parts.length} partes y el máximo es ${MAX_REPORT_PARTS}. Divídala en varias fuentes.`,
+        );
+      if (!job?.partTokens) await progress({ partTokens, totalParts: parts.length });
+      const done = new Map(
+        (job?.parts ?? []).map((part) => [
+          part.position,
+          { data: part.content as SourceReportContent, runId: part.aiRunId },
+        ]),
+      );
+      for (const [position, sections] of parts.entries()) {
+        if (done.has(position)) continue;
+        const result = await ask('source-report.summarize-part', {
+          part: position + 1,
+          totalParts: parts.length,
+          sections,
+        });
+        done.set(position, result);
+        if (jobId)
+          await this.prisma.$transaction([
+            this.prisma.sourceReportJobPart.create({
+              data: { jobId, position, content: result.data, aiRunId: result.runId },
+            }),
+            this.prisma.sourceReportJob.update({
+              where: { id: jobId },
+              data: { completedParts: done.size },
+            }),
+          ]);
+      }
+      // Merged in batches that fit one request, until one report remains.
+      let level = parts.map((_, position) => done.get(position)!);
+      while (level.length > 1) {
+        const merged: typeof level = [];
+        for (const batch of mergeBatches(level, budget))
+          merged.push(
+            await ask('source-report.merge', { partialReports: batch.map((item) => item.data) }),
+          );
+        level = merged;
+      }
+      report = level[0]!;
+    }
+    return this.prisma.sourceReportCandidate.create({
+      data: { projectId, sourceVersionId, aiRunId: report.runId, content: report.data },
+    });
   }
 
   async acceptReport(projectId: string, id: string, candidateId: string) {

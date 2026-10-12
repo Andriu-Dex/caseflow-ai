@@ -1,6 +1,10 @@
 import { Inject, Module, type OnModuleDestroy } from '@nestjs/common';
 import { createJobQueue, createStorageProvider, type JobQueue } from '../common/infrastructure';
-import { SOURCE_PROCESSING_QUEUE, type SourceProcessingJobPayload } from '@caseflow-ai/domain';
+import {
+  SOURCE_PROCESSING_QUEUE,
+  sourceJobRunPath,
+  type SourceProcessingJobPayload,
+} from '@caseflow-ai/domain';
 import {
   DisabledTranscriptionProvider,
   OpenAICompatibleTranscriptionProvider,
@@ -13,12 +17,19 @@ import { SourcesService } from './sources.service';
 import { STORAGE_PROVIDER } from './storage-provider.token';
 import { SOURCE_QUEUE } from './source-queue.token';
 import { TesseractSourceOcrProvider } from './source-ocr-provider';
-import { InternalSourceJobsController } from './internal-source-jobs.controller';
+import {
+  InternalSourceJobsController,
+  InternalSourceReportJobsController,
+} from './internal-source-jobs.controller';
 import { KnowledgeBaseModule } from '../knowledge-base/knowledge-base.module';
 
 @Module({
   imports: [AIModule, KnowledgeBaseModule],
-  controllers: [SourcesController, InternalSourceJobsController],
+  controllers: [
+    SourcesController,
+    InternalSourceJobsController,
+    InternalSourceReportJobsController,
+  ],
   providers: [
     SourcesService,
     {
@@ -46,11 +57,10 @@ import { KnowledgeBaseModule } from '../knowledge-base/knowledge-base.module';
     {
       provide: SOURCE_QUEUE,
       useFactory: () =>
-        createJobQueue<SourceProcessingJobPayload>(
-          SOURCE_PROCESSING_QUEUE,
-          (job) => `/projects/${job.projectId}/sources/jobs/${job.jobId}/run`,
-          { enableOfflineQueue: false, maxRetriesPerRequest: 1 },
-        ),
+        createJobQueue<SourceProcessingJobPayload>(SOURCE_PROCESSING_QUEUE, sourceJobRunPath, {
+          enableOfflineQueue: false,
+          maxRetriesPerRequest: 1,
+        }),
     },
   ],
   exports: [SourcesService],

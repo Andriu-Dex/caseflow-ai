@@ -1,6 +1,5 @@
 'use client';
 
-import { GenerationOverlay } from '../../components/generation-overlay';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -15,8 +14,9 @@ import {
   Trash2,
   Upload,
   X,
+  Loader2,
 } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import {
@@ -24,7 +24,7 @@ import {
   sourceKindAcceptsMimeType,
   sourceKindForMimeType,
   type ProjectSourceKind,
-  type SourceReportCandidate,
+  type SourceReportJob,
   type SourceResponse,
   type StalenessAnalysisResponse,
 } from '@caseflow-ai/contracts';
@@ -312,8 +312,8 @@ function SourceCard({
   );
   const queryClient = useQueryClient();
   const [manualSummary, setManualSummary] = useState('');
-  const [generatingReport, setGeneratingReport] = useState(false);
-  const [reportCandidate, setReportCandidate] = useState<SourceReportCandidate | null>(null);
+  const [requestingReport, setRequestingReport] = useState(false);
+  const [dismissedCandidateId, setDismissedCandidateId] = useState<string | null>(null);
   const [acceptingReport, setAcceptingReport] = useState(false);
   const [approving, setApproving] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -329,6 +329,29 @@ function SourceCard({
     enabled: open && source.source.hasReport,
     retry: false,
   });
+  // DEC-127: the report is generated in the background; its progress is
+  // polled while it runs.
+  const reportJobKey = ['source-report-job', projectId, source.id];
+  const reportJob = useQuery({
+    queryKey: reportJobKey,
+    queryFn: () => api.sources.reportJob(projectId, source.id),
+    enabled: open && !source.source.hasReport && source.source.hasExtractedText,
+    refetchInterval: (query) =>
+      ['QUEUED', 'RUNNING'].includes(query.state.data?.job?.status ?? '') ? 2_000 : false,
+  });
+  const job = reportJob.data?.job ?? null;
+  const reportRunning = job?.status === 'QUEUED' || job?.status === 'RUNNING';
+  const reportCandidate =
+    job?.candidate && job.candidate.id !== dismissedCandidateId ? job.candidate : null;
+  // The outcome is announced once, when it changes while the user waits.
+  const previousStatus = useRef(job?.status);
+  useEffect(() => {
+    const was = previousStatus.current;
+    previousStatus.current = job?.status;
+    if (was !== 'QUEUED' && was !== 'RUNNING') return;
+    if (job?.status === 'FAILED') toast.error(job.errorMessage ?? 'No se pudo generar el reporte.');
+    if (job?.status === 'COMPLETED') toast.success('El reporte está listo para revisar.');
+  }, [job?.status, job?.errorMessage]);
   const extractedText = useQuery({
     queryKey: ['source-text', projectId, source.id, source.version.id],
     queryFn: () => api.sources.getText(projectId, source.id),
@@ -391,10 +414,12 @@ function SourceCard({
   }
 
   async function generateReport() {
-    setGeneratingReport(true);
+    setRequestingReport(true);
     try {
-      const candidate = await api.sources.generateReport(projectId, source.id);
-      setReportCandidate(candidate);
+      queryClient.setQueryData(
+        reportJobKey,
+        await api.sources.generateReport(projectId, source.id),
+      );
     } catch (err) {
       toast.error(
         err instanceof ApiError
@@ -402,7 +427,7 @@ function SourceCard({
           : 'No se pudo generar el reporte con IA en este momento. Puede redactar el resumen manualmente.',
       );
     } finally {
-      setGeneratingReport(false);
+      setRequestingReport(false);
     }
   }
 
@@ -411,7 +436,7 @@ function SourceCard({
     setAcceptingReport(true);
     try {
       await api.sources.acceptReport(projectId, source.id, reportCandidate.id);
-      setReportCandidate(null);
+      queryClient.invalidateQueries({ queryKey: reportJobKey });
       queryClient.invalidateQueries({ queryKey: ['source-report', projectId, source.id] });
       invalidate();
     } catch (err) {
@@ -722,17 +747,32 @@ function SourceCard({
               ) : source.source.hasExtractedText || !canSubmitTranscript ? (
                 <div className="flex flex-col gap-2">
                   <p className="text-muted-foreground">Sin reporte todavía.</p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="self-start"
-                    disabled={generatingReport}
-                    onClick={generateReport}
-                  >
-                    {generatingReport ? 'Generando…' : 'Generar reporte con IA'}
-                  </Button>
-                  <GenerationOverlay open={generatingReport} />
+                  {reportRunning ? (
+                    <ReportProgress job={job!} />
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="self-start"
+                      disabled={requestingReport}
+                      onClick={generateReport}
+                    >
+                      {requestingReport
+                        ? 'Iniciando…'
+                        : job?.status === 'FAILED'
+                          ? 'Reintentar el reporte'
+                          : 'Generar reporte con IA'}
+                    </Button>
+                  )}
+                  {job?.status === 'FAILED' && job.errorMessage ? (
+                    <p className="text-xs text-destructive">
+                      No se pudo generar el reporte: {job.errorMessage}
+                      {job.totalParts && job.totalParts > 1
+                        ? ` Al reintentar continuará desde la parte ${job.completedParts + 1}.`
+                        : ''}
+                    </p>
+                  ) : null}
                   {reportCandidate ? (
                     <div className="rounded-md border border-dashed border-purple-300 bg-purple-50 p-3 text-foreground/80">
                       <p className="mb-2 text-xs font-medium text-purple-700">
@@ -762,7 +802,7 @@ function SourceCard({
                           type="button"
                           variant="ghost"
                           size="sm"
-                          onClick={() => setReportCandidate(null)}
+                          onClick={() => setDismissedCandidateId(reportCandidate.id)}
                         >
                           Descartar
                         </Button>
@@ -1024,6 +1064,44 @@ function DeleteSourceDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// DEC-127: a long source is read part by part in the background, so the
+// user can keep working meanwhile.
+function ReportProgress({ job }: { job: SourceReportJob }) {
+  const parts = job.totalParts ?? 0;
+  const current = Math.min(job.completedParts + 1, parts);
+  const percent = parts ? Math.round((job.completedParts / parts) * 100) : 0;
+  return (
+    <div className="flex flex-col gap-1.5" role="status" aria-live="polite">
+      <p className="flex items-center gap-2 text-sm text-foreground">
+        <Loader2 className="size-4 animate-spin text-primary" aria-hidden="true" />
+        {parts > 1
+          ? `Generando el reporte por partes: parte ${current} de ${parts}…`
+          : 'Generando el reporte…'}
+      </p>
+      {parts > 1 ? (
+        <div
+          role="progressbar"
+          aria-label="Avance del reporte"
+          aria-valuenow={percent}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          className="h-1.5 overflow-hidden rounded-full bg-muted"
+        >
+          <div
+            className="h-full rounded-full bg-primary transition-all"
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+      ) : null}
+      <p className="text-xs text-muted-foreground">
+        {parts > 1
+          ? 'La fuente es larga: se resume por partes y después se unen. Puede seguir trabajando mientras tanto.'
+          : 'Puede seguir trabajando mientras tanto.'}
+      </p>
+    </div>
   );
 }
 
