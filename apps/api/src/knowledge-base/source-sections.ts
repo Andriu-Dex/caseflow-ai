@@ -19,7 +19,10 @@ const isTable = (block: string) => block.startsWith('|');
 // its header row in every piece so each one still reads as a table.
 function splitBlock(block: string, max: number): string[] {
   const lines = block.split('\n');
-  const header = isTable(block) && lines.length > 2 ? lines.slice(0, 2) : [];
+  // A header is repeated only while it leaves room for rows: a header as large
+  // as a whole part would leave none, and the cut below could never advance.
+  const tableHeader = isTable(block) && lines.length > 2 ? lines.slice(0, 2) : [];
+  const header = tableHeader.join('\n').length <= max / 2 ? tableHeader : [];
   const body = lines.slice(header.length);
   const pieces: string[] = [];
   let current: string[] = [];
@@ -33,7 +36,7 @@ function splitBlock(block: string, max: number): string[] {
     // last space before it.
     let rest = line;
     while (size([rest]) > max) {
-      const room = max - size(['']);
+      const room = Math.max(1, max - size(['']));
       const cut = rest.lastIndexOf(' ', room) > room / 2 ? rest.lastIndexOf(' ', room) : room;
       pieces.push([...header, rest.slice(0, cut).trimEnd()].join('\n'));
       rest = rest.slice(cut).trimStart();

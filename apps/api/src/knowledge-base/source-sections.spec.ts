@@ -63,4 +63,15 @@ describe('splitIntoSections (DEC-127)', () => {
     expect(sections.every((s) => s.content.length <= 300)).toBe(true);
     expect(sections.flatMap((s) => s.content.split(/\s+/))).toEqual(words);
   });
+
+  it('cuts a table whose header alone is larger than a part, instead of hanging', () => {
+    const header = `| ${'Columna '.repeat(60)} |`;
+    const rows = Array.from({ length: 20 }, (_, i) => `| fila ${i} |`);
+    const sections = splitIntoSections([header, '| --- |', ...rows].join('\n'), {
+      target: 200,
+      max: 300,
+    });
+    expect(sections.every((s) => s.content.length <= 300)).toBe(true);
+    expect(sections.map((s) => s.content).join(' ')).toContain('fila 19');
+  });
 });
