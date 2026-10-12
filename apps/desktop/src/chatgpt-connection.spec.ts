@@ -2,7 +2,13 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { authorizationUrl, parseTokens, PLAN_SCOPE, type Discovery } from './chatgpt-oauth.js';
+import {
+  authorizationUrl,
+  callbackListener,
+  parseTokens,
+  PLAN_SCOPE,
+  type Discovery,
+} from './chatgpt-oauth.js';
 import {
   ChatGPTConnection,
   encryptedFileStore,
@@ -163,5 +169,31 @@ describe('ChatGPT broker', () => {
     expect(await (await call('GET', '/token')).json()).toEqual({ accessToken: 'access-1' });
     expect((await call('POST', '/usage-limit')).status).toBe(204);
     expect((await call('GET', '/token')).status).toBe(409);
+  });
+});
+
+describe('ChatGPT sign-in callback', () => {
+  const callback = async (expected: string | null, query: string) => {
+    const listener = await callbackListener('st', expected);
+    const outcome = listener.result.then(
+      (value) => value,
+      (error: Error) => error.message,
+    );
+    await fetch(`${listener.redirectUri}?state=st&${query}`);
+    listener.close();
+    return outcome;
+  };
+
+  it('keeps the registered client when a returning sign-in omits it', async () => {
+    expect(await callback('client-1', 'code=c')).toEqual({ code: 'c', clientId: 'client-1' });
+    expect(await callback(null, 'code=c&client_id=client-9')).toEqual({
+      code: 'c',
+      clientId: 'client-9',
+    });
+  });
+
+  it('rejects another client, and a new registration without its client id', async () => {
+    expect(await callback('client-1', 'code=c&client_id=client-2')).toMatch('No se completó');
+    expect(await callback(null, 'code=c')).toMatch('No se completó');
   });
 });
