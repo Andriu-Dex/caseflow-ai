@@ -40,6 +40,35 @@ describe('pdfPagesToMarkdown', () => {
     );
   });
 
+  it('keeps a table of contents one entry per line, without dot leaders', () => {
+    const [page] = pdfPagesToMarkdown([
+      [
+        line('Índice', 20, 720),
+        line('1 Resumen ejecutivo y decisiones de alcance 4', 11, 690),
+        line('1.1 Necesidad de negocio . . . . . . . . . . . 4', 11, 676),
+        line('1.7 Suposiciones a validar antes de', 11, 662),
+        line('desarrollar . . . . . . . . . 5', 11, 648),
+        line('2 Actores y autorizaciones 5', 11, 634),
+        line('2.1 Perfiles funcionales ........ 5', 11, 620),
+        line('El documento describe la venta en 12', 11, 560),
+      ],
+    ]);
+    expect(page).toBe(
+      [
+        '# Índice',
+        [
+          '- 1 Resumen ejecutivo y decisiones de alcance — 4',
+          '  - 1.1 Necesidad de negocio — 4',
+          '  - 1.7 Suposiciones a validar antes de desarrollar — 5',
+          '- 2 Actores y autorizaciones — 5',
+          '  - 2.1 Perfiles funcionales — 5',
+        ].join('\n'),
+        // Ordinary text ending in a number is not an entry.
+        'El documento describe la venta en 12',
+      ].join('\n\n'),
+    );
+  });
+
   it('leaves pages without a text layer empty for OCR, and separates pages', () => {
     const pages = pdfPagesToMarkdown([[line('Uno', 11, 700)], [], [line('Tres', 11, 700)]]);
     expect(pages).toEqual(['Uno', '', 'Tres']);

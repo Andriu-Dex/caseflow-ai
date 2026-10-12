@@ -13,6 +13,7 @@ import {
   LogOut,
   MessageSquare,
   Play,
+  ShieldCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -110,40 +111,92 @@ function DesktopInstallAssistant() {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button type="button" onClick={() => setOpen(true)}>
+      <Button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="gap-2 shadow-xs transition-all hover:shadow-sm"
+      >
         <MessageSquare className="size-4" aria-hidden="true" />
         Continuar con ChatGPT
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Use su plan de ChatGPT desde la aplicación de escritorio</DialogTitle>
-            <DialogDescription>
-              OpenAI solo permite usar el plan de ChatGPT en aplicaciones que se ejecutan en su
-              propio equipo. La edición web, alojada en un servidor, no puede ofrecerlo.
-            </DialogDescription>
-          </DialogHeader>
-          <ol className="flex list-decimal flex-col gap-1 pl-5 text-sm">
-            <li>Descargue el instalador de CASEFlow AI para su sistema.</li>
-            <li>Instálelo y ábralo: sus proyectos se guardan en su equipo.</li>
-            <li>
-              En «Ajustes de IA», elija «Continuar con ChatGPT» e inicie sesión con su cuenta Plus o
-              Pro.
-            </li>
-          </ol>
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
+        <DialogContent className="overflow-hidden p-0 sm:max-w-lg border-border/80 shadow-2xl">
+          <div className="relative border-b border-border/50 bg-gradient-to-b from-primary/10 via-primary/5 to-transparent p-6 pb-5">
+            <div className="flex items-start gap-4">
+              <div className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-background text-primary shadow-xs">
+                <Laptop className="size-5" aria-hidden="true" />
+              </div>
+              <div className="space-y-1.5 pr-6">
+                <DialogTitle className="text-base font-semibold tracking-tight text-foreground sm:text-lg">
+                  Use su plan de ChatGPT desde la aplicación de escritorio
+                </DialogTitle>
+                <DialogDescription className="text-xs leading-relaxed text-muted-foreground sm:text-sm">
+                  OpenAI solo permite usar el plan de ChatGPT en aplicaciones que se ejecutan en su
+                  propio equipo. La edición web, alojada en un servidor, no puede ofrecerlo.
+                </DialogDescription>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4 p-6 pt-5">
+            <div className="space-y-2.5">
+              <div className="flex items-start gap-3 rounded-lg border border-border/60 bg-muted/30 p-3 transition-colors hover:bg-muted/50 dark:bg-muted/20">
+                <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
+                  1
+                </div>
+                <div className="text-xs leading-relaxed sm:text-sm">
+                  <span className="font-medium text-foreground">Descargue el instalador:</span>{' '}
+                  <span className="text-muted-foreground">
+                    Obtenga CASEFlow AI para su sistema operativo (Windows, macOS o Linux).
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3 rounded-lg border border-border/60 bg-muted/30 p-3 transition-colors hover:bg-muted/50 dark:bg-muted/20">
+                <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
+                  2
+                </div>
+                <div className="text-xs leading-relaxed sm:text-sm">
+                  <span className="font-medium text-foreground">Instalación local:</span>{' '}
+                  <span className="text-muted-foreground">
+                    Instálelo y ábralo en su equipo; sus proyectos y datos se guardan localmente.
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3 rounded-lg border border-border/60 bg-muted/30 p-3 transition-colors hover:bg-muted/50 dark:bg-muted/20">
+                <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
+                  3
+                </div>
+                <div className="text-xs leading-relaxed sm:text-sm">
+                  <span className="font-medium text-foreground">Vincular cuenta:</span>{' '}
+                  <span className="text-muted-foreground">
+                    En «Ajustes de IA», elija «Continuar con ChatGPT» e inicie sesión con su cuenta
+                    Plus o Pro.
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-2.5 rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground dark:border-primary/25 dark:bg-primary/10">
+              <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+              <p className="leading-relaxed">
+                Ejecución local y privada: sus credenciales y sesiones de ChatGPT nunca pasan por un
+                servidor web externo.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="border-t border-border/60 bg-muted/20 px-6 py-4 sm:flex-row sm:justify-end sm:gap-3">
+            <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)}>
               Cerrar
             </Button>
-            <a
-              href={DESKTOP_RELEASES_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-            >
-              <Download className="size-4" aria-hidden="true" />
-              Descargar la aplicación de escritorio
-            </a>
+            <Button asChild size="sm" className="gap-2 shadow-xs transition-all hover:shadow-sm">
+              <a href={DESKTOP_RELEASES_URL} target="_blank" rel="noreferrer">
+                <Download className="size-4" aria-hidden="true" />
+                Descargar la aplicación de escritorio
+              </a>
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
