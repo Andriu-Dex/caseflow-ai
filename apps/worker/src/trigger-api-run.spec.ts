@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { triggerApiRun } from './trigger-api-run';
+import { stopWaitingForApi, triggerApiRun } from './trigger-api-run';
 
 const refused = () =>
   Promise.reject(new TypeError('fetch failed', { cause: { code: 'ECONNREFUSED' } }));
@@ -32,5 +32,15 @@ describe('triggerApiRun', () => {
     const fetchImpl = vi.fn().mockImplementation(refused);
     await expect(triggerApiRun('http://api/run', init, fetchImpl, [0, 0])).rejects.toThrow();
     expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  // Last: shutting down is final for the whole process.
+  it('stops waiting as soon as the worker shuts down', async () => {
+    const fetchImpl = vi.fn().mockImplementation(refused);
+    const run = triggerApiRun('http://api/run', init, fetchImpl, [60_000]);
+    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledOnce());
+    stopWaitingForApi();
+    await expect(run).rejects.toThrow('fetch failed');
+    expect(fetchImpl).toHaveBeenCalledOnce();
   });
 });
