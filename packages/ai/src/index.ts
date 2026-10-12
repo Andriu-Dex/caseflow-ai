@@ -409,7 +409,7 @@ export class FallbackAIProvider implements AIProvider {
     if (fitting.length === 0)
       throw new AIError(
         'AI_INPUT_TOO_LARGE',
-        'La solicitud es demasiado grande para los proveedores de IA configurados.',
+        'La información seleccionada es demasiado grande para los proveedores de IA disponibles ahora. Si el de mayor capacidad agotó su cuota diaria (vea Ajustes de IA), inténtelo cuando se reinicie o seleccione menos elementos.',
       );
     let lastError: unknown;
     for (let wait = 0; ; wait += 1) {
