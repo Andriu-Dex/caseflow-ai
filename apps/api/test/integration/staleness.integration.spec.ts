@@ -32,6 +32,7 @@ const useCase = (requirementVersionId: string) => ({
   mainFlow: [{ actor: 'Usuario', action: 'Registra' }],
   alternativeFlows: [],
   relatedRequirementVersionIds: [requirementVersionId],
+  relations: [],
 });
 
 describe('Staleness / potential-impact integration', () => {

@@ -408,6 +408,7 @@ model Artifact {
   acceptedDataModelCandidates          DataModelCandidate[]
   acceptedStructuredAnalysisCandidates StructuredAnalysisCandidate[]
   projectBaselineEntries               ProjectBaselineEntry[]
+  useCaseRelationTargets               UseCaseRelation[]
 
   // Project-scoped, never-reused codes (spec §31.4).
   @@unique([projectId, code])
@@ -917,6 +918,7 @@ model UseCaseDetail {
   mainFlowSteps         UseCaseMainFlowStep[]
   alternativeFlows      UseCaseAlternativeFlow[]
   requirementLinks      UseCaseRequirementLink[]
+  relations             UseCaseRelation[]
 
   @@map("use_case_details")
 }
@@ -1001,6 +1003,26 @@ model UseCaseRequirementLink {
   @@map("use_case_requirement_links")
 }
 
+// UML include/extend from one use case version to another use case (DEC-129).
+// The target is the logical artifact, so the relation survives new versions
+// of the target.
+model UseCaseRelation {
+  artifactVersionId String              @map("artifact_version_id") @db.Uuid
+  targetArtifactId  String              @map("target_artifact_id") @db.Uuid
+  kind              UseCaseRelationKind
+  useCase           UseCaseDetail       @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict)
+  target            Artifact            @relation(fields: [targetArtifactId], references: [id], onDelete: Restrict)
+
+  @@id([artifactVersionId, targetArtifactId])
+  @@index([targetArtifactId])
+  @@map("use_case_relations")
+}
+
+enum UseCaseRelationKind {
+  INCLUDE
+  EXTEND
+}
+
 model UseCaseGeneration {
   id              String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   projectId       String                    @map("project_id") @db.Uuid
@@ -1040,6 +1062,8 @@ model UseCaseCandidate {
   postconditions     Json
   mainFlow           Json                     @map("main_flow")
   alternativeFlows   Json                     @map("alternative_flows")
+  // [{ kind, targetCandidateId }] towards other candidates of the generation.
+  relations          Json                     @default("[]")
   acceptedArtifactId String?                  @map("accepted_artifact_id") @db.Uuid
   generation         UseCaseGeneration        @relation(fields: [generationId], references: [id], onDelete: Restrict)
   sources            UseCaseCandidateSource[]

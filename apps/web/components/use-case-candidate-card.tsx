@@ -2,6 +2,7 @@
 
 import { useState, type MouseEvent } from 'react';
 import { ChevronDown, Link2, User, Users } from 'lucide-react';
+import { UseCaseRelationChips } from './use-case-relations';
 import type { GenerationCandidate } from '../lib/api';
 import { AlternativeFlows, FlowSteps, type AlternativeFlow, type FlowStep } from './use-case-flow';
 
@@ -17,6 +18,7 @@ type Candidate = GenerationCandidate & {
   mainFlow?: FlowStep[];
   alternativeFlows?: AlternativeFlow[];
   sources?: { requirementVersionId: string }[];
+  relations?: { kind: 'INCLUDE' | 'EXTEND'; targetCandidateId: string }[];
 };
 
 export const useCaseRequirementIds = (candidate: GenerationCandidate) =>
@@ -26,10 +28,13 @@ export function UseCaseCandidateCard({
   candidate,
   index,
   requirementCode,
+  candidateName = () => undefined,
 }: {
   candidate: GenerationCandidate;
   index: number;
   requirementCode: (versionId: string) => { code: string; name: string } | undefined;
+  // Name of another proposal of the same generation, for its relations.
+  candidateName?: (candidateId: string) => string | undefined;
 }) {
   const c = candidate as Candidate;
   const [expanded, setExpanded] = useState(false);
@@ -81,6 +86,12 @@ export function UseCaseCandidateCard({
           })}
         </span>
       ) : null}
+      <UseCaseRelationChips
+        relations={(c.relations ?? []).map((r) => ({
+          kind: r.kind,
+          label: candidateName(r.targetCandidateId) ?? r.targetCandidateId,
+        }))}
+      />
       {(c.secondaryActors ?? []).length ? (
         <span className="flex flex-wrap items-center gap-1.5">
           <Users className="size-3.5 text-muted-foreground" aria-label="Actores secundarios" />

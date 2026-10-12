@@ -317,6 +317,7 @@ function UseCasesContent({ projectId }: { projectId: string }) {
           key={editing?.id ?? 'new'}
           projectId={projectId}
           approvedRequirements={approvedRequirements}
+          useCases={items}
           initial={editing ?? undefined}
           onCreated={() => {
             invalidate();
@@ -342,6 +343,9 @@ function UseCasesContent({ projectId }: { projectId: string }) {
                 const r = lookup.get(versionId);
                 return r ? { code: r.code, name: r.requirement.name } : undefined;
               }}
+              candidateName={(candidateId) =>
+                generation.candidates.find((other) => other.candidateId === candidateId)?.name
+              }
             />
           )}
           onAccept={async (ids) => {

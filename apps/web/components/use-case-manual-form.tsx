@@ -24,6 +24,88 @@ import { api, ApiError } from '../lib/api';
 
 type Step = { actor: string; action: string };
 type Flow = { name: string; condition: string; steps: Step[] };
+type Relation = UseCaseResponse['useCase']['relations'][number];
+
+const selectClass = 'h-9 rounded-md border border-input bg-background px-2 text-sm';
+const RELATION_LABELS: Record<Relation['kind'], string> = {
+  INCLUDE: 'Incluye siempre a',
+  EXTEND: 'Extiende a (opcional)',
+};
+
+// «include» and «extend» towards other use cases of the project.
+function RelationRows({
+  relations,
+  options,
+  onChange,
+}: {
+  relations: Relation[];
+  options: UseCaseResponse[];
+  onChange: (relations: Relation[]) => void;
+}) {
+  const update = (i: number, patch: Partial<Relation>) =>
+    onChange(relations.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const free = options.filter((o) => !relations.some((r) => r.targetUseCaseId === o.id));
+  return (
+    <div className="flex flex-col gap-1.5">
+      {relations.map((relation, i) => (
+        <div key={i} className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
+          <select
+            aria-label={`Tipo de la relación ${i + 1}`}
+            className={`${selectClass} w-48 shrink-0`}
+            value={relation.kind}
+            onChange={(e) => update(i, { kind: e.target.value as Relation['kind'] })}
+          >
+            {(Object.keys(RELATION_LABELS) as Relation['kind'][]).map((kind) => (
+              <option key={kind} value={kind}>
+                {RELATION_LABELS[kind]}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label={`Caso de uso de la relación ${i + 1}`}
+            className={`${selectClass} min-w-0 flex-1`}
+            value={relation.targetUseCaseId}
+            onChange={(e) => update(i, { targetUseCaseId: e.target.value })}
+          >
+            {options
+              .filter((o) => o.id === relation.targetUseCaseId || free.includes(o))
+              .map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.code} {o.useCase.name}
+                </option>
+              ))}
+          </select>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="size-8 shrink-0 p-0 text-muted-foreground"
+            aria-label={`Quitar la relación ${i + 1}`}
+            onClick={() => onChange(relations.filter((_, j) => j !== i))}
+          >
+            <X className="size-4" aria-hidden="true" />
+          </Button>
+        </div>
+      ))}
+      {free.length ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="w-fit text-primary"
+          onClick={() =>
+            onChange([...relations, { kind: 'INCLUDE', targetUseCaseId: free[0]!.id }])
+          }
+        >
+          <Plus className="size-4" aria-hidden="true" />
+          Agregar relación
+        </Button>
+      ) : relations.length ? null : (
+        <p className="text-xs text-muted-foreground">Aún no hay otros casos de uso.</p>
+      )}
+    </div>
+  );
+}
 
 function Section({
   title,
@@ -220,12 +302,15 @@ function RequirementPicker({
 export function UseCaseManualForm({
   projectId,
   approvedRequirements,
+  useCases = [],
   initial,
   onCreated,
   onCancel,
 }: {
   projectId: string;
   approvedRequirements: RequirementResponse[];
+  // The project's use cases, candidates for «include» / «extend».
+  useCases?: UseCaseResponse[];
   initial?: UseCaseResponse;
   onCreated: () => void;
   onCancel: () => void;
@@ -250,6 +335,7 @@ export function UseCaseManualForm({
       steps: f.steps.map(({ actor, action }) => ({ actor, action })),
     })) ?? [],
   );
+  const [relations, setRelations] = useState<Relation[]>(u0?.relations ?? []);
   const [submitting, setSubmitting] = useState(false);
 
   const clean = (values: string[]) => values.map((v) => v.trim()).filter(Boolean);
@@ -290,6 +376,7 @@ export function UseCaseManualForm({
         mainFlow: steps,
         alternativeFlows: flows,
         relatedRequirementVersionIds,
+        relations,
       };
       if (initial) {
         await api.useCases.createVersion(projectId, initial.id, input);
@@ -383,6 +470,17 @@ export function UseCaseManualForm({
                 addLabel="Agregar postcondición"
                 values={postconditions}
                 onChange={setPostconditions}
+              />
+            </Section>
+
+            <Section
+              title="Relaciones con otros casos de uso"
+              description="«Incluye» un comportamiento que siempre ocurre; «extiende» otro caso con un comportamiento opcional (opcional)."
+            >
+              <RelationRows
+                relations={relations}
+                options={useCases.filter((u) => u.id !== initial?.id)}
+                onChange={setRelations}
               />
             </Section>
 

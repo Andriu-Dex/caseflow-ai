@@ -72,6 +72,7 @@ const useCase = {
       },
     ],
     relatedRequirementVersionIds: ['rv1'],
+    relations: [],
     generationId: null,
     candidateId: null,
     aiRunId: null,

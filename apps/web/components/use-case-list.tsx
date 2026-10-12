@@ -38,6 +38,7 @@ import { StatusBadge } from './status-badge';
 import { StaleNotice, isPendingApproval } from './artifact-actions';
 import { DetailBlock, ItemList, Tile } from './requirement-list';
 import { AlternativeFlows, FlowSteps } from './use-case-flow';
+import { UseCaseRelationChips } from './use-case-relations';
 
 // The project's use cases at a glance: a summary with how the approved
 // functional requirements are realised, search and status filter, and
@@ -209,6 +210,7 @@ export interface UseCaseRowActions {
 
 function UseCaseRow({
   useCase: u,
+  useCases,
   open,
   onToggle,
   stale,
@@ -217,6 +219,7 @@ function UseCaseRow({
   actions,
 }: {
   useCase: UseCaseResponse;
+  useCases: UseCaseResponse[];
   open: boolean;
   onToggle: () => void;
   stale: boolean;
@@ -349,6 +352,21 @@ function UseCaseRow({
               </DetailBlock>
             ) : null}
           </div>
+          {uc.relations.length ? (
+            <DetailBlock title="Relaciones">
+              <UseCaseRelationChips
+                relations={uc.relations.map((r) => {
+                  const target = useCases.find((other) => other.id === r.targetUseCaseId);
+                  return {
+                    kind: r.kind,
+                    label: target
+                      ? `${target.code} ${target.useCase.name}`
+                      : 'Caso de uso archivado',
+                  };
+                })}
+              />
+            </DetailBlock>
+          ) : null}
           <DetailBlock title="Flujo principal">
             <FlowSteps steps={uc.mainFlow} />
           </DetailBlock>
@@ -458,6 +476,7 @@ export function UseCaseList({
             <UseCaseRow
               key={u.id}
               useCase={u}
+              useCases={items}
               open={open === u.id}
               onToggle={() => setOpen(open === u.id ? null : u.id)}
               stale={isStale(u.id)}

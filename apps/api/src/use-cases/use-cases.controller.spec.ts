@@ -27,6 +27,7 @@ describe('UseCasesController', () => {
       mainFlow: [{ actor: 'U', action: 'A' }],
       alternativeFlows: [],
       relatedRequirementVersionIds: ['r'],
+      relations: [],
     };
     await controller.create('p', body);
     await controller.list('p');

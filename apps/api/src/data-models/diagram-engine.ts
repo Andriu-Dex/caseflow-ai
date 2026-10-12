@@ -16,7 +16,13 @@ export type ERDiagramModel = {
 };
 export type UseCaseDiagramModel = {
   systemName: string;
-  useCases: { code: string; name: string; actors: string[] }[];
+  useCases: {
+    code: string;
+    name: string;
+    actors: string[];
+    // Codes of other use cases; one outside the diagram is left out.
+    relations?: { kind: 'INCLUDE' | 'EXTEND'; targetCode: string }[];
+  }[];
 };
 export type NavigationDiagramModel = {
   nodes: { localId: string; label: string; parentLocalId?: string }[];
@@ -168,6 +174,18 @@ export class DiagramEngine {
       useCase.actors.forEach((actor) =>
         lines.push(`A${actors.indexOf(actor) + 1} -- U${useCaseIndex + 1}`),
       ),
+    );
+    const codes = sortedUseCases.map((useCase) => useCase.code);
+    sortedUseCases.forEach((useCase, useCaseIndex) =>
+      [...(useCase.relations ?? [])]
+        .sort((a, b) => compareOrdinal(a.targetCode, b.targetCode))
+        .forEach(({ kind, targetCode }) => {
+          const target = codes.indexOf(targetCode);
+          if (target >= 0)
+            lines.push(
+              `U${useCaseIndex + 1} ..> U${target + 1} : <<${kind === 'INCLUDE' ? 'include' : 'extend'}>>`,
+            );
+        }),
     );
     lines.push('@enduml');
     return lines.join('\n');

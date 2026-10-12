@@ -15,6 +15,7 @@ const detail = {
   mainFlowSteps: [{ actor: 'U', action: 'A' }],
   alternativeFlows: [],
   requirementLinks: [{ requirementVersionId: 'r' }],
+  relations: [],
 };
 const version = {
   id: 'v',
@@ -42,6 +43,7 @@ describe('UseCasesService', () => {
     mainFlow: [{ actor: 'U', action: 'A' }],
     alternativeFlows: [],
     relatedRequirementVersionIds: ['r'],
+    relations: [],
   };
   const requirementVersion = {
     id: 'r',
@@ -66,7 +68,12 @@ describe('UseCasesService', () => {
       useCaseDetail: { create: vi.fn().mockResolvedValue({}) },
       useCaseGeneration: { create: vi.fn(), findFirst: vi.fn() },
       useCaseGenerationSource: { createMany: vi.fn() },
-      useCaseCandidate: { create: vi.fn(), update: vi.fn() },
+      useCaseCandidate: {
+        create: vi.fn(),
+        update: vi.fn(),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      useCaseRelation: { createMany: vi.fn() },
       useCaseCandidateSource: { createMany: vi.fn() },
       $queryRaw: vi.fn().mockResolvedValue([{ last_number: 1 }]),
     };
@@ -181,6 +188,7 @@ describe('UseCasesService', () => {
       mainFlow: [{ actor: 'U', action: 'A' }],
       alternativeFlows: [],
       sources: [{ requirementVersionId: 'r' }],
+      relations: [],
     };
     tx.useCaseGeneration.findFirst.mockResolvedValue({
       id: 'g',
