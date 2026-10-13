@@ -69,6 +69,8 @@ export {
   PROJECT_CONTEXT_SCOPE_TYPES,
   projectContextActorInputSchema,
   projectContextCandidateSchema,
+  projectContextGenerationJobSchema,
+  latestProjectContextGenerationJobSchema,
   projectContextGenerationContentSchema,
   projectContextRequestSchema,
   projectContextResponseSchema,
@@ -76,6 +78,7 @@ export {
 } from './project-context/project-context.contract';
 export type {
   ProjectContextCandidate,
+  ProjectContextGenerationJob,
   ProjectContextGenerationContent,
   ProjectContextRequest,
   ProjectContextResponse,

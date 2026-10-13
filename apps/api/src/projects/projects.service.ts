@@ -269,6 +269,7 @@ export class ProjectsService {
       await tx.$executeRaw`DELETE FROM use_case_postconditions WHERE artifact_version_id IN (SELECT id FROM artifact_versions WHERE project_id = ${p})`;
       await tx.$executeRaw`DELETE FROM use_case_preconditions WHERE artifact_version_id IN (SELECT id FROM artifact_versions WHERE project_id = ${p})`;
       await tx.$executeRaw`DELETE FROM use_case_secondary_actors WHERE artifact_version_id IN (SELECT id FROM artifact_versions WHERE project_id = ${p})`;
+      await tx.$executeRaw`DELETE FROM use_case_relations WHERE artifact_version_id IN (SELECT id FROM artifact_versions WHERE project_id = ${p})`;
       await tx.$executeRaw`DELETE FROM use_case_details WHERE artifact_version_id IN (SELECT id FROM artifact_versions WHERE project_id = ${p})`;
       await tx.$executeRaw`DELETE FROM use_case_candidates WHERE generation_id IN (SELECT id FROM use_case_generations WHERE project_id = ${p})`;
       await tx.$executeRaw`DELETE FROM use_case_generation_sources WHERE generation_id IN (SELECT id FROM use_case_generations WHERE project_id = ${p})`;
@@ -309,6 +310,9 @@ export class ProjectsService {
       await tx.$executeRaw`DELETE FROM project_context_business_rules WHERE artifact_version_id IN (SELECT id FROM artifact_versions WHERE project_id = ${p})`;
       await tx.$executeRaw`DELETE FROM project_context_scope_items WHERE artifact_version_id IN (SELECT id FROM artifact_versions WHERE project_id = ${p})`;
       await tx.$executeRaw`DELETE FROM project_context_details WHERE artifact_version_id IN (SELECT id FROM artifact_versions WHERE project_id = ${p})`;
+
+      await tx.$executeRaw`DELETE FROM context_generation_jobs WHERE project_id = ${p}`;
+      await tx.$executeRaw`DELETE FROM project_context_candidates WHERE project_id = ${p}`;
 
       // AI runs (referenced by many of the tables already cleared above)
       await tx.$executeRaw`DELETE FROM ai_runs WHERE project_id = ${p}`;

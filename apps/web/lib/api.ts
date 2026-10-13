@@ -16,6 +16,7 @@ import type {
   MockupPreviewResponse,
   MockupResponse,
   ProjectContextCandidate,
+  ProjectContextGenerationJob,
   ProjectContextRequest,
   ProjectContextResponse,
   ListProjectsQuery,
@@ -461,6 +462,13 @@ export const api = {
       post<ProjectContextResponse>(`/projects/${projectId}/context/versions`, input),
     generate: (projectId: string) =>
       post<ProjectContextCandidate>(`/projects/${projectId}/context/generate`),
+    // DEC-132: the proposal is generated in the background and followed here.
+    startGeneration: (projectId: string) =>
+      post<ProjectContextGenerationJob>(`/projects/${projectId}/context/generation-jobs`),
+    latestGeneration: (projectId: string) =>
+      get<{ job: ProjectContextGenerationJob | null }>(
+        `/projects/${projectId}/context/generation-jobs/latest`,
+      ),
     transition: (projectId: string, versionId: string, status: ArtifactVersionStatus) =>
       post(`/projects/${projectId}/context/versions/${versionId}/transition`, { status }),
   },

@@ -361,6 +361,7 @@ model Project {
   structuredAnalysisGenerations StructuredAnalysisGeneration[]
   projectContextCandidates      ProjectContextCandidate[]
   mockupGenerationJobs          MockupGenerationJob[]
+  contextGenerationJobs         ContextGenerationJob[]
   sourceProcessingJobs          SourceProcessingJob[]
   projectMemberships            ProjectMembership[]
   projectBaselines              ProjectBaseline[]
@@ -1153,10 +1154,35 @@ model ProjectContextCandidate {
   partialSourceVersionIds Json     @default("[]") @map("partial_source_version_ids")
   createdAt               DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  aiRun   AIRun   @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+  project Project               @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  aiRun   AIRun                 @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+  job     ContextGenerationJob?
 
   @@map("project_context_candidates")
+}
+
+// A context proposal generated in the background (DEC-132): it survives a
+// page reload, and reports how much the AI has written against what earlier
+// proposals took, so a long generation never looks frozen.
+model ContextGenerationJob {
+  id                   String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId            String                 @map("project_id") @db.Uuid
+  status               SourceProcessingStatus @default(QUEUED)
+  // Characters of the answer received so far (streamed providers only).
+  outputChars          Int                    @default(0) @map("output_chars")
+  // What recent successful proposals took; null before the first one.
+  expectedOutputTokens Int?                   @map("expected_output_tokens")
+  expectedDurationMs   Int?                   @map("expected_duration_ms")
+  errorMessage         String?                @map("error_message")
+  candidateId          String?                @unique @map("candidate_id") @db.Uuid
+  createdAt            DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project   Project                  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  candidate ProjectContextCandidate? @relation(fields: [candidateId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, createdAt])
+  @@map("context_generation_jobs")
 }
 
 // Structured interpretation of a source's extracted content (spec §8):

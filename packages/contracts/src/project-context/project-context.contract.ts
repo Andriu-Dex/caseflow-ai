@@ -93,6 +93,25 @@ export const projectContextCandidateSchema = z.object({
 });
 export type ProjectContextCandidate = z.infer<typeof projectContextCandidateSchema>;
 
+// DEC-132: a proposal generated in the background, with its progress.
+export const projectContextGenerationJobSchema = z.object({
+  id: z.uuid(),
+  status: z.enum(['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED']),
+  // Characters of the answer the AI has written so far (streamed providers).
+  outputChars: z.number().int().min(0),
+  // What recent successful proposals took; null before the first one.
+  expectedOutputTokens: z.number().int().positive().nullable(),
+  expectedDurationMs: z.number().int().positive().nullable(),
+  errorMessage: z.string().nullable(),
+  candidate: projectContextCandidateSchema.nullable(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+export type ProjectContextGenerationJob = z.infer<typeof projectContextGenerationJobSchema>;
+export const latestProjectContextGenerationJobSchema = z.object({
+  job: projectContextGenerationJobSchema.nullable(),
+});
+
 export const projectContextResponseSchema = z.object({
   artifactId: z.uuid(),
   projectId: z.uuid(),
