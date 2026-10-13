@@ -139,7 +139,7 @@ function DeleteProjectDialog({
     if (!matches) return;
     setDeleting(true);
     try {
-      await api.projects.delete(project.id);
+      await api.projects.delete(project.id, confirmText);
       onDeleted();
       onOpenChange(false);
     } catch (err) {
@@ -155,9 +155,11 @@ function DeleteProjectDialog({
         <DialogHeader>
           <DialogTitle>Eliminar proyecto</DialogTitle>
           <DialogDescription>
-            Esta acción es <strong>permanente e irreversible</strong>: se borrarán todas las
-            fuentes, el contexto, los requisitos y cualquier otro artefacto de este proyecto. Solo
-            es posible mientras el proyecto no tenga nada aprobado.
+            Esta acción es <strong>permanente e irreversible</strong>: se borrarán las fuentes y sus
+            archivos, el contexto, los requisitos, los diseños, las líneas base, el código generado
+            y todo el historial del proyecto, también lo aprobado. Si solo quiere dejar de usarlo,
+            archívelo. Solo pueden eliminarlo su propietario y el propietario o los administradores
+            del espacio de trabajo.
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-1.5 text-sm">
@@ -219,8 +221,8 @@ function ArchiveProjectDialog({
         <DialogHeader>
           <DialogTitle>Archivar proyecto</DialogTitle>
           <DialogDescription>
-            Este proyecto tiene artefactos aprobados, así que no puede eliminarse. Archivarlo lo
-            marca como inactivo sin borrar su historial.
+            Archivarlo lo marca como inactivo sin borrar nada de su historial. Podrá restaurarlo
+            cuando quiera.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -237,7 +239,7 @@ function ArchiveProjectDialog({
 }
 
 function ProjectCard({ project, onDeleted }: { project: ProjectResponse; onDeleted: () => void }) {
-  const [confirming, setConfirming] = useState(false);
+  const [confirming, setConfirming] = useState<'archive' | 'delete' | null>(null);
   const [editing, setEditing] = useState(false);
   const { projectId, setProjectId } = useActiveProject();
   const active = projectId === project.id;
@@ -323,42 +325,43 @@ function ProjectCard({ project, onDeleted }: { project: ProjectResponse; onDelet
           </Button>
           {archived ? (
             <RestoreProjectButton project={project} onRestored={onDeleted} />
-          ) : project.hasApprovedArtifacts ? (
-            archived ? null : (
-              <Button type="button" variant="outline" size="sm" onClick={() => setConfirming(true)}>
-                <Archive className="size-3.5 text-muted-foreground" aria-hidden="true" />
-                Archivar
-              </Button>
-            )
           ) : (
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="border-destructive/30 text-destructive hover:bg-destructive/10 dark:hover:bg-destructive/20"
-              onClick={() => setConfirming(true)}
+              onClick={() => setConfirming('archive')}
             >
-              <Trash2 className="size-3.5" aria-hidden="true" />
-              Eliminar
+              <Archive className="size-3.5 text-muted-foreground" aria-hidden="true" />
+              Archivar
             </Button>
           )}
+          {/* DEC-134: any project can be deleted, approved history included. */}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="border-destructive/30 text-destructive hover:bg-destructive/10 dark:hover:bg-destructive/20"
+            onClick={() => setConfirming('delete')}
+          >
+            <Trash2 className="size-3.5" aria-hidden="true" />
+            Eliminar
+          </Button>
         </div>
       </CardContent>
       {editing ? <EditProjectDialog project={project} onOpenChange={setEditing} /> : null}
-      {confirming ? (
-        project.hasApprovedArtifacts ? (
-          <ArchiveProjectDialog
-            project={project}
-            onOpenChange={setConfirming}
-            onArchived={onDeleted}
-          />
-        ) : (
-          <DeleteProjectDialog
-            project={project}
-            onOpenChange={setConfirming}
-            onDeleted={onDeleted}
-          />
-        )
+      {confirming === 'archive' ? (
+        <ArchiveProjectDialog
+          project={project}
+          onOpenChange={(open) => setConfirming(open ? 'archive' : null)}
+          onArchived={onDeleted}
+        />
+      ) : confirming === 'delete' ? (
+        <DeleteProjectDialog
+          project={project}
+          onOpenChange={(open) => setConfirming(open ? 'delete' : null)}
+          onDeleted={onDeleted}
+        />
       ) : null}
     </Card>
   );

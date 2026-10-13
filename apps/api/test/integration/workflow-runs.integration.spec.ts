@@ -9,6 +9,8 @@ import {
 import { WorkflowRunsService } from '../../src/construction/workflow-runs.service';
 import { createTestContext, createWorkspaceWithOwner, type TestContext } from './support/test-app';
 import { CONTENT } from './support/construction-fixtures';
+import type { FakeStorageProvider } from '@caseflow-ai/integrations';
+import { STORAGE_PROVIDER } from '../../src/sources/storage-provider.token';
 
 // One canned answer per prompt; the use cases cite the requirement versions
 // they were given, like a real model must.
@@ -239,6 +241,74 @@ describe('Workflow runs integration', () => {
     // A second delivery of the same job does nothing.
     await runs.runJob(projectId, started.body.id);
     expect(await ctx.prisma.generationRun.count({ where: { projectId } })).toBe(1);
+  });
+
+  // DEC-134: deleting a fully built project leaves nothing of it behind.
+  it('deletes a fully built project: every row and every stored file', async () => {
+    const projectId = await project('BUILD_ONLY');
+    const started = await start(projectId).expect(202);
+    await runs.runJob(projectId, started.body.id);
+    expect((await runs.get(projectId, started.body.id)).status).toBe('COMPLETED');
+
+    // Every table that names a project, found from the schema itself, so a
+    // table added later is checked too.
+    const tables = (
+      await ctx.prisma.$queryRaw<{ table_name: string }[]>`
+        SELECT table_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND column_name = 'project_id'
+          AND table_name <> 'project_deletions'`
+    ).map((row) => row.table_name);
+    const remaining = async () => {
+      const counts: Record<string, number> = {};
+      for (const table of tables) {
+        const [row] = await ctx.prisma.$queryRawUnsafe<{ count: bigint }[]>(
+          `SELECT count(*) AS count FROM "${table}" WHERE project_id = $1::uuid`,
+          projectId,
+        );
+        if (row!.count > 0n) counts[table] = Number(row!.count);
+      }
+      return counts;
+    };
+    const before = await remaining();
+    // The chain really built history: approved versions, a frozen baseline,
+    // a generation and its validation, and the audit trail.
+    expect(Object.keys(before)).toEqual(
+      expect.arrayContaining([
+        'artifact_versions',
+        'design_baselines',
+        'generation_runs',
+        'sandbox_runs',
+        'audit_events',
+      ]),
+    );
+    const storage = ctx.app.get<FakeStorageProvider>(STORAGE_PROVIDER, { strict: false });
+    const archives = await ctx.prisma.generatedProjectSnapshot.findMany({
+      where: { projectId },
+      select: { archiveStorageKey: true },
+    });
+    for (const { archiveStorageKey } of archives)
+      await storage.putObject({
+        key: archiveStorageKey,
+        body: Buffer.from('zip'),
+        contentType: 'application/zip',
+      });
+
+    // Through the API, with the exact name the page asks for.
+    await http()
+      .delete(`/projects/${projectId}`)
+      .set(auth)
+      .send({ confirmName: 'Proyecto equivocado' })
+      .expect(422);
+    await http()
+      .delete(`/projects/${projectId}`)
+      .set(auth)
+      .send({ confirmName: 'Proyecto BUILD_ONLY' })
+      .expect(204);
+
+    expect(await remaining()).toEqual({});
+    for (const { archiveStorageKey } of archives)
+      expect(storage.has(archiveStorageKey)).toBe(false);
+    expect(await ctx.prisma.projectDeletion.count({ where: { projectId } })).toBe(1);
   });
 
   it('stops at the first failure and resumes there without duplicating work', async () => {

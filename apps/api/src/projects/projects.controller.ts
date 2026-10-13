@@ -18,6 +18,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   createProjectRequestSchema,
+  deleteProjectRequestSchema,
   listProjectsQuerySchema,
   projectListResponseSchema,
   projectResponseSchema,
@@ -91,20 +92,27 @@ export class ProjectsController {
   @HttpCode(204)
   @ApiOperation({
     operationId: 'deleteProject',
-    summary: 'Permanently delete a project that has never had anything approved',
+    summary: 'Permanently delete a project and all its history, after typing its exact name',
   })
   @ApiUuidParam('projectId', 'Project identifier.')
   @ApiErrorResponse(400, 'The project identifier is invalid.')
   @ApiErrorResponse(404, 'The project does not exist.')
-  @ApiErrorResponse(422, 'The project has approved history and cannot be deleted.')
-  delete(@Param('projectId', uuidParamPipe) projectId: string): Promise<void> {
-    return this.projects.delete(projectId);
+  @ApiZodBody(deleteProjectRequestSchema)
+  @ApiErrorResponse(403, 'Only the project owner or a workspace owner or admin may delete it.')
+  @ApiErrorResponse(422, 'The typed name does not match the project name.')
+  delete(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Body(new ZodValidationPipe(deleteProjectRequestSchema))
+    body: z.output<typeof deleteProjectRequestSchema>,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<void> {
+    return this.projects.delete(projectId, body.confirmName, req.user.id);
   }
 
   @Post(':projectId/archive')
   @ApiOperation({
     operationId: 'archiveProject',
-    summary: 'Archive a project that has approved history (alternative to deletion)',
+    summary: 'Archive a project: hidden from active use, history kept (alternative to deletion)',
   })
   @ApiUuidParam('projectId', 'Project identifier.')
   @ApiZodResponse(200, 'The archived project.', projectResponseSchema)

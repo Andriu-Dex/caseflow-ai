@@ -32,6 +32,8 @@ export interface StorageProvider {
   readonly id: string;
   putObject(input: PutObjectInput): Promise<void>;
   getObject(key: string): Promise<Buffer>;
+  // Removes an object; one that does not exist is not an error (DEC-134).
+  deleteObject(key: string): Promise<void>;
 }
 
 export class DisabledStorageProvider implements StorageProvider {
@@ -48,6 +50,8 @@ export class DisabledStorageProvider implements StorageProvider {
       'El almacenamiento de objetos no está configurado.',
     );
   }
+  // Nothing was ever stored.
+  async deleteObject(): Promise<void> {}
 }
 
 // For unit/integration tests that must not depend on a live object store.
@@ -61,5 +65,11 @@ export class FakeStorageProvider implements StorageProvider {
     const object = this.objects.get(key);
     if (!object) throw new StorageProviderError('STORAGE_OBJECT_NOT_FOUND', 'El objeto no existe.');
     return object;
+  }
+  async deleteObject(key: string): Promise<void> {
+    this.objects.delete(key);
+  }
+  has(key: string): boolean {
+    return this.objects.has(key);
   }
 }

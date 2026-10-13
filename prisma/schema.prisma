@@ -249,6 +249,7 @@ model User {
   generationRuns            GenerationRun[]
   sandboxRuns               SandboxRun[]
   generatedProjectSnapshots GeneratedProjectSnapshot[]
+  projectDeletions          ProjectDeletion[]
 
   @@map("users")
 }
@@ -307,8 +308,9 @@ model Workspace {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  projects    Project[]
-  memberships WorkspaceMembership[]
+  projects         Project[]
+  memberships      WorkspaceMembership[]
+  projectDeletions ProjectDeletion[]
 
   @@map("workspaces")
 }
@@ -1894,4 +1896,23 @@ model WorkflowRunStage {
 
   @@id([runId, stage])
   @@map("workflow_run_stages")
+}
+
+// Who deleted which project, and when (DEC-134). The project and its own
+// audit trail are deleted with it, so this record lives outside it and is
+// append-only.
+model ProjectDeletion {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId     String   @map("workspace_id") @db.Uuid
+  // No foreign key: the project no longer exists.
+  projectId       String   @map("project_id") @db.Uuid
+  projectName     String   @map("project_name")
+  deletedByUserId String   @map("deleted_by_user_id") @db.Uuid
+  deletedAt       DateTime @default(now()) @map("deleted_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  deletedBy User      @relation(fields: [deletedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, deletedAt])
+  @@map("project_deletions")
 }

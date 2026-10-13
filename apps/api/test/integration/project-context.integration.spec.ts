@@ -490,7 +490,7 @@ describe('Project Context integration', () => {
       await ctx.prisma.contextGenerationJob.create({
         data: { projectId: draft.id, status: 'COMPLETED', candidateId: candidate.id },
       });
-      await ctx.projects.delete(draft.id);
+      await ctx.projects.delete(draft.id, 'AI Background Delete', ctx.userId);
       expect(await ctx.prisma.project.findUnique({ where: { id: draft.id } })).toBeNull();
     });
 

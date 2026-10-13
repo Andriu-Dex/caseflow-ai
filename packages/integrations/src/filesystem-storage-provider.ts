@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 import {
   StorageProviderError,
@@ -41,6 +41,17 @@ export class FilesystemStorageProvider implements StorageProvider {
           cause,
         });
       throw new StorageProviderError('STORAGE_PROVIDER_ERROR', 'No se pudo leer el archivo.', {
+        cause,
+      });
+    }
+  }
+
+  async deleteObject(key: string): Promise<void> {
+    try {
+      // force: a missing file is not an error.
+      await rm(this.pathFor(key), { force: true });
+    } catch (cause) {
+      throw new StorageProviderError('STORAGE_PROVIDER_ERROR', 'No se pudo eliminar el archivo.', {
         cause,
       });
     }

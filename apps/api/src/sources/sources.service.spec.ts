@@ -427,6 +427,7 @@ describe('SourcesService', () => {
         .fn()
         .mockRejectedValue(new StorageProviderError('STORAGE_PROVIDER_UNAVAILABLE', 'down')),
       getObject: vi.fn(),
+      deleteObject: vi.fn(),
     };
     const service = new SourcesService(
       prisma as unknown as PrismaService,

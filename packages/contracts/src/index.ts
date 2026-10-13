@@ -16,6 +16,7 @@ export {
   PROJECT_LIST_STATUSES,
   updateProjectLanguageRequestSchema,
   updateProjectRequestSchema,
+  deleteProjectRequestSchema,
   upgradeWorkflowRouteRequestSchema,
   WORKFLOW_ROUTES,
 } from './projects/project.contract';
@@ -27,6 +28,7 @@ export type {
   ProjectLanguage,
   UpdateProjectLanguageRequest,
   UpdateProjectRequest,
+  DeleteProjectRequest,
   UpgradeWorkflowRouteRequest,
   WorkflowRoute,
 } from './projects/project.contract';
