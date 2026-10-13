@@ -310,7 +310,11 @@ const post = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
 const patch = <T>(path: string, body: unknown) =>
   request<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
-const del = <T>(path: string) => request<T>(path, { method: 'DELETE' });
+const del = <T>(path: string, body?: unknown) =>
+  request<T>(path, {
+    method: 'DELETE',
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export const api = {
@@ -351,7 +355,9 @@ export const api = {
       workflowRoute?: WorkflowRoute;
     }) => post<ProjectResponse>('/projects', input),
     get: (projectId: string) => get<ProjectResponse>(`/projects/${projectId}`),
-    delete: (projectId: string) => del<void>(`/projects/${projectId}`),
+    // DEC-134: the server checks the typed name too.
+    delete: (projectId: string, confirmName: string) =>
+      del<void>(`/projects/${projectId}`, { confirmName }),
     archive: (projectId: string) => post<ProjectResponse>(`/projects/${projectId}/archive`),
     unarchive: (projectId: string) => post<ProjectResponse>(`/projects/${projectId}/unarchive`),
     update: (projectId: string, input: { name: string; description: string | null }) =>

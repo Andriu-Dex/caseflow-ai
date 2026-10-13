@@ -37,6 +37,11 @@ export const updateProjectRequestSchema = z
   .strict();
 export type UpdateProjectRequest = z.input<typeof updateProjectRequestSchema>;
 
+// DEC-134: deleting a project requires typing its exact name; the server
+// checks it, not only the page.
+export const deleteProjectRequestSchema = z.object({ confirmName: z.string().max(200) }).strict();
+export type DeleteProjectRequest = z.input<typeof deleteProjectRequestSchema>;
+
 export const PROJECT_LIST_STATUSES = ['ALL', 'ACTIVE', 'ARCHIVED'] as const;
 export const PROJECT_LIST_SORTS = ['OLDEST', 'RECENT', 'UPDATED', 'NAME'] as const;
 

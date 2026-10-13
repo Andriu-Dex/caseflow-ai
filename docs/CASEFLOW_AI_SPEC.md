@@ -1560,7 +1560,7 @@ Esto permite recalcular embeddings con otro modelo sin perder los anteriores.
 
 ## 31.2 Versiones históricas
 
-Las versiones históricas no deben eliminarse físicamente desde la aplicación.
+Las versiones históricas no deben eliminarse físicamente desde la aplicación. La única excepción es la eliminación del proyecto completo (§87, DEC-134).
 
 ## 31.3 Baselines
 
@@ -3338,7 +3338,9 @@ Las reglas internas permanecen:
 
 Sin embargo, debe distinguirse esto del derecho operacional a eliminar un proyecto/workspace completo.
 
-La arquitectura debe permitir posteriormente:
+**Implementado (DEC-134, ADR-009):** un proyecto puede eliminarse definitivamente, aunque tenga historial aprobado. Pueden hacerlo su propietario o el propietario o un administrador del espacio de trabajo, escribiendo el nombre exacto del proyecto, que el servidor comprueba. Se borran todas sus filas, incluida su auditoría, y sus archivos. Quién lo eliminó y cuándo queda en `project_deletions`, fuera del proyecto y de solo añadir. Las protecciones de la base de datos solo dejan borrar historial dentro de esa transacción. Archivar sigue siendo la forma de dejar de usar un proyecto sin perder nada.
+
+Pendiente, como evolución futura: la arquitectura debe permitir
 
 ```text
 DeletionRequest
@@ -7252,6 +7254,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-131 | Cada tarea de IA declara el mínimo de salida que necesita y cada proveedor puede declarar cuánto puede escribir (`AI_MAX_OUTPUT_TOKENS`, `AI_PROVIDER_n_MAX_OUTPUT_TOKENS`); se usa el mayor. `AI_TIMEOUT_MS` es siempre el mínimo de espera. La propuesta del contexto conserva el detalle de la fuente e incluye alcance y descripción de actores (§221.15) | Accepted |
 | DEC-132 | La propuesta del contexto se genera en segundo plano y sobrevive a salir o recargar la página; muestra su avance real (lo que la IA lleva escrito frente a lo que tomaron las anteriores) y el tiempo transcurrido. El aviso de carga de las demás generaciones muestra el tiempo transcurrido y avisa de las esperas largas (§221.16) | Accepted |
 | DEC-133 | La propuesta del contexto describe el producto, no el proyecto: solo actores que interactúan con el software, y lo del proyecto (fases, capacitación, piloto, proceso de desarrollo) va resumido en el contexto adicional; el prompt no contiene frases sobre la propia propuesta (`project-context.generate@5`, §221.15) | Accepted |
+| DEC-134 | Un proyecto puede eliminarse definitivamente, también con historial aprobado: solo su propietario o el propietario o un administrador del espacio de trabajo, y tras escribir su nombre exacto, comprobado en el servidor. Se borran sus filas y archivos y queda constancia en `project_deletions` (§87, ADR-009) | Accepted |
 
 ---
 
@@ -7688,7 +7691,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-133)
+# 221. Extensiones de V2 (DEC-116 a DEC-134)
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
