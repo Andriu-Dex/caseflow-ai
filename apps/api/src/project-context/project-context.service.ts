@@ -379,7 +379,7 @@ export class ProjectContextService implements OnApplicationBootstrap {
         projectId,
         language: project.language,
         promptKey: CONTEXT_PROMPT_KEY,
-        promptVersion: 4,
+        promptVersion: 5,
         messages: [{ role: 'user', content: JSON.stringify(input.entries) }],
         outputSchema: projectContextGenerationContentSchema,
         schemaName: 'project_context_generation',

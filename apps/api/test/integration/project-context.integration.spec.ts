@@ -363,7 +363,7 @@ describe('Project Context integration', () => {
         new PromptRegistry([
           {
             key: 'project-context.generate',
-            version: 4,
+            version: 5,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'project_context_generation',
             systemInstructions: 'policy',
@@ -413,7 +413,7 @@ describe('Project Context integration', () => {
         new PromptRegistry([
           {
             key: 'project-context.generate',
-            version: 4,
+            version: 5,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'project_context_generation',
             systemInstructions: 'policy',
@@ -472,7 +472,7 @@ describe('Project Context integration', () => {
           capability: 'STRUCTURED_OUTPUT',
           purpose: 'project_context_generation',
           promptKey: 'project-context.generate',
-          promptVersion: 4,
+          promptVersion: 5,
           inputHash: 'a'.repeat(64),
           status: 'SUCCEEDED',
           completedAt: new Date(),
@@ -529,7 +529,7 @@ describe('Project Context integration', () => {
         new PromptRegistry([
           {
             key: 'project-context.generate',
-            version: 4,
+            version: 5,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'project_context_generation',
             systemInstructions: 'policy',
@@ -619,7 +619,7 @@ describe('Project Context integration', () => {
         new PromptRegistry([
           {
             key: 'project-context.generate',
-            version: 4,
+            version: 5,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'project_context_generation',
             systemInstructions: 'policy',
@@ -690,7 +690,7 @@ describe('Project Context integration', () => {
         new PromptRegistry([
           {
             key: 'project-context.generate',
-            version: 4,
+            version: 5,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'project_context_generation',
             systemInstructions: 'policy',

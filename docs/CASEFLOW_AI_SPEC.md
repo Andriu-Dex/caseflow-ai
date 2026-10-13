@@ -7251,6 +7251,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-130 | Convención de cardinalidad del modelo de datos y de multiplicidad del diagrama de clases: cada lado indica cuántas instancias de su entidad corresponden a una del otro lado; los prompts `data-model.generate@2` y `class-diagram.generate@2` la declaran, y los diagramas de arquitectura dibujan capas y protocolos (§221.14) | Accepted |
 | DEC-131 | Cada tarea de IA declara el mínimo de salida que necesita y cada proveedor puede declarar cuánto puede escribir (`AI_MAX_OUTPUT_TOKENS`, `AI_PROVIDER_n_MAX_OUTPUT_TOKENS`); se usa el mayor. `AI_TIMEOUT_MS` es siempre el mínimo de espera. La propuesta del contexto conserva el detalle de la fuente e incluye alcance y descripción de actores (§221.15) | Accepted |
 | DEC-132 | La propuesta del contexto se genera en segundo plano y sobrevive a salir o recargar la página; muestra su avance real (lo que la IA lleva escrito frente a lo que tomaron las anteriores) y el tiempo transcurrido. El aviso de carga de las demás generaciones muestra el tiempo transcurrido y avisa de las esperas largas (§221.16) | Accepted |
+| DEC-133 | La propuesta del contexto describe el producto, no el proyecto: solo actores que interactúan con el software, y lo del proyecto (fases, capacitación, piloto, proceso de desarrollo) va resumido en el contexto adicional; el prompt no contiene frases sobre la propia propuesta (`project-context.generate@5`, §221.15) | Accepted |
 
 ---
 
@@ -7687,7 +7688,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-132)
+# 221. Extensiones de V2 (DEC-116 a DEC-133)
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
@@ -7850,7 +7851,7 @@ Los planes gratuitos configurados son limitados de formas opuestas (verificado e
 
 - **Salida:** cada tarea fija en el código el mínimo de tokens de salida que necesita. Cada proveedor puede declarar cuánto puede escribir por respuesta (`AI_MAX_OUTPUT_TOKENS` para ChatGPT o un proveedor único, `AI_PROVIDER_n_MAX_OUTPUT_TOKENS` en la cadena). Se le permite el mayor de los dos, de modo que un proveedor más capaz no queda limitado por los valores pensados para los planes gratuitos. Sin valor declarado, se usa el de la tarea.
 - **Tiempo de espera:** `AI_TIMEOUT_MS` es el mínimo de espera en todos los proveedores. El plazo crece con lo que el proveedor puede escribir, a no menos de 20 tokens por segundo (un modelo con razonamiento midió unos 27), porque una respuesta larga tarda lo que tarda en escribirse. Una conexión sin datos durante 5 minutos se corta igualmente (`bodyTimeout` de `fetch`).
-- **Contexto:** `project-context.generate@4` pide conservar el nivel de detalle de las fuentes: una necesidad por capacidad, una regla por regla, cada atributo de calidad como restricción, el alcance (dentro y fuera) en su lista propia, la descripción de cada actor y las suposiciones pendientes en el contexto adicional. Su salida mínima pasa de 4096 a 16 384 tokens. El formulario edita el alcance y la descripción de los actores («Nombre: responsabilidades»), y una versión nueva conserva el alcance de la anterior.
+- **Contexto:** `project-context.generate@4` (desde DEC-133, `@5`) pide conservar el nivel de detalle de las fuentes: una necesidad por capacidad, una regla por regla, cada atributo de calidad como restricción, el alcance (dentro y fuera) en su lista propia, la descripción de cada actor y las suposiciones pendientes en el contexto adicional. Su salida mínima pasa de 4096 a 16 384 tokens. La v5 separa el producto del proyecto: actores son solo los roles y sistemas externos que interactúan con el software; fases, hitos, capacitación, piloto, carga inicial, selección de proveedores, soporte y proceso de desarrollo no son necesidades, reglas ni restricciones y se resumen en el contexto adicional. El prompt no incluye frases sobre la propuesta que el modelo pueda copiar. El formulario edita el alcance y la descripción de los actores («Nombre: responsabilidades»), y una versión nueva conserva el alcance de la anterior.
 
 ## 221.16 Generación del contexto en segundo plano y avance visible (DEC-132)
 
