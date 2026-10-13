@@ -1,6 +1,7 @@
 import {
   AIError,
   outputAllowance,
+  writingTimeoutMs,
   type AIProvider,
   type AIProviderRequest,
   type AIProviderResponse,
@@ -109,14 +110,15 @@ export class OpenAICompatibleProvider implements AIProvider {
   async generateStructured(request: AIProviderRequest): Promise<AIProviderResponse> {
     const started = Date.now();
     const controller = new AbortController();
-    // The configured timeout is the floor; a larger request may ask for more.
+    const maxOutputTokens = outputAllowance(request.maxOutputTokens, this.config.maxOutputTokens);
+    // The configured timeout is the floor; a larger request, or a longer answer
+    // the provider may write (DEC-131), may need more.
     const timeout = setTimeout(
       () => controller.abort(),
-      Math.max(request.timeoutMs, this.config.timeoutMs),
+      Math.max(request.timeoutMs, this.config.timeoutMs, writingTimeoutMs(maxOutputTokens)),
     );
     const abort = () => controller.abort();
     request.signal?.addEventListener('abort', abort, { once: true });
-    const maxOutputTokens = outputAllowance(request.maxOutputTokens, this.config.maxOutputTokens);
     try {
       const response = await this.fetchImplementation(
         `${this.config.baseUrl.replace(/\/$/, '')}/chat/completions`,

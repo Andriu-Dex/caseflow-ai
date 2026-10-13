@@ -177,8 +177,13 @@ describe('OpenAICompatibleProvider', () => {
           ),
         ),
     ) as unknown as typeof fetch;
+    // No output budget: the deadline is only the configured 100 ms (DEC-131).
     await expect(
-      provider(fetchMock).generateStructured({ ...request, timeoutMs: 1 }),
+      provider(fetchMock).generateStructured({
+        ...request,
+        timeoutMs: 1,
+        maxOutputTokens: undefined,
+      }),
     ).rejects.toMatchObject({ code: 'AI_TIMEOUT' });
     expect(fetchMock).toHaveBeenCalledOnce();
   });

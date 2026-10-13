@@ -107,6 +107,16 @@ export const MAX_AI_TIMEOUT_MS = 180_000;
 // declared ceiling gets exactly what the task asks for.
 export const outputAllowance = (requested: number | undefined, ceiling: number | undefined) =>
   ceiling === undefined ? requested : Math.max(ceiling, requested ?? 0);
+
+// A long answer takes as long as it writes. The deadline therefore grows with
+// what the provider may write, at no less than 20 tokens per second (a
+// reasoning model measured about 27, reasoning included). A stalled
+// connection is still cut after 5 minutes without data by fetch itself
+// (undici bodyTimeout), so a large allowance never means waiting on a dead one.
+// ponytail: one fixed rate for every model; per-provider rates if one is slower.
+export const MIN_OUTPUT_TOKENS_PER_SECOND = 20;
+export const writingTimeoutMs = (outputTokens: number | undefined) =>
+  outputTokens ? Math.ceil(outputTokens / MIN_OUTPUT_TOKENS_PER_SECOND) * 1000 : 0;
 export const scaledTimeoutMs = (baseMs: number, inputTokens: number, maxOutputTokens = 0) =>
   Math.min(
     MAX_AI_TIMEOUT_MS,
