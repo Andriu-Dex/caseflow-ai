@@ -83,7 +83,7 @@ describe('ChatGPTProvider', () => {
     });
   });
 
-  it('writes up to the plan model ceiling and honours a longer configured timeout (DEC-131)', async () => {
+  it('writes up to the plan model ceiling and waits as long as that answer takes (DEC-131)', async () => {
     vi.useFakeTimers();
     try {
       const fetchMock = vi.fn(
@@ -106,10 +106,11 @@ describe('ChatGPTProvider', () => {
       const outcome = provider.generateStructured(request).catch((error: Error) => error);
       await vi.advanceTimersByTimeAsync(0);
       expect(JSON.parse(String(fetchMock.mock.calls[0]![1].body)).max_output_tokens).toBe(64_000);
-      // The request asked for 30 s, but the configured 5 minutes win.
-      await vi.advanceTimersByTimeAsync(31_000);
+      // Neither the request's 30 s nor the configured 5 minutes cut it: 64 000
+      // tokens at 20 per second take 3 200 s.
+      await vi.advanceTimersByTimeAsync(301_000);
       expect(fetchMock.mock.calls[0]![1].signal!.aborted).toBe(false);
-      await vi.advanceTimersByTimeAsync(300_000);
+      await vi.advanceTimersByTimeAsync(2_900_000);
       expect(fetchMock.mock.calls[0]![1].signal!.aborted).toBe(true);
       await outcome;
     } finally {

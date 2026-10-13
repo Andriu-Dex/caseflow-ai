@@ -9,6 +9,7 @@ import {
   PromptRegistry,
   msUntilMidnight,
   outputAllowance,
+  writingTimeoutMs,
   scaledTimeoutMs,
   type AIRunRecorder,
 } from './index';
@@ -365,6 +366,9 @@ describe('FallbackAIProvider routing by capacity (DEC-127)', () => {
     expect(outputAllowance(4_096, 64_000)).toBe(64_000);
     expect(outputAllowance(16_384, 8_000)).toBe(16_384);
     expect(outputAllowance(undefined, 64_000)).toBe(64_000);
+    // Long enough to write it at 20 tokens per second.
+    expect(writingTimeoutMs(16_384)).toBe(820_000);
+    expect(writingTimeoutMs(undefined)).toBe(0);
   });
 
   it('counts the time left until midnight in a time zone', () =>

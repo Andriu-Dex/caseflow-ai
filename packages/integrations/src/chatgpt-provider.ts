@@ -1,6 +1,7 @@
 import {
   AIError,
   outputAllowance,
+  writingTimeoutMs,
   type AIProvider,
   type AIProviderRequest,
   type AIProviderResponse,
@@ -54,16 +55,17 @@ export class ChatGPTProvider implements AIProvider {
     const started = Date.now();
     const token = await this.config.broker.accessToken();
     const controller = new AbortController();
-    // The configured timeout is the floor; a larger request may ask for more.
+    const maxOutputTokens = outputAllowance(request.maxOutputTokens, this.config.maxOutputTokens);
+    // The configured timeout is the floor; a larger request, or a longer answer
+    // the provider may write (DEC-131), may need more.
     const timeout = setTimeout(
       () => controller.abort(),
-      Math.max(request.timeoutMs, this.config.timeoutMs),
+      Math.max(request.timeoutMs, this.config.timeoutMs, writingTimeoutMs(maxOutputTokens)),
     );
     const abort = () => controller.abort();
     request.signal?.addEventListener('abort', abort, { once: true });
     try {
       const model = request.model ?? this.config.model;
-      const maxOutputTokens = outputAllowance(request.maxOutputTokens, this.config.maxOutputTokens);
       const response = await this.fetchImplementation(RESPONSES_URL, {
         method: 'POST',
         headers: {
