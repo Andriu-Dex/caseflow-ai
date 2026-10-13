@@ -118,6 +118,19 @@ describe('ChatGPTProvider', () => {
     }
   });
 
+  it('reports how much of the answer has arrived while it streams (DEC-132)', async () => {
+    const { provider } = setup(
+      sse(
+        { type: 'response.output_text.delta', delta: '{"nodes":' },
+        { type: 'response.output_text.delta', delta: '[]}' },
+        { type: 'response.completed', response: {} },
+      ),
+    );
+    const onProgress = vi.fn();
+    await provider.generateStructured({ ...request, onProgress });
+    expect(onProgress.mock.calls).toEqual([[9], [12]]);
+  });
+
   it('pauses the plan on its usage limit and never retries elsewhere', async () => {
     const { provider, broker } = setup(
       new Response(

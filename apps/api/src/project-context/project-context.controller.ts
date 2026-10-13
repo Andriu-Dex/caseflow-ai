@@ -5,11 +5,14 @@ import { ProjectMembershipGuard } from '../identity/project-membership.guard';
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
+  latestProjectContextGenerationJobSchema,
   projectContextCandidateSchema,
+  projectContextGenerationJobSchema,
   projectContextRequestSchema,
   projectContextResponseSchema,
   transitionArtifactVersionRequestSchema,
   type ProjectContextCandidate,
+  type ProjectContextGenerationJob,
   type ProjectContextRequest,
   type ProjectContextResponse,
 } from '@caseflow-ai/contracts';
@@ -68,6 +71,37 @@ export class ProjectContextController {
   @ApiErrorResponse(503, 'The AI provider is unavailable or rejected the request.')
   generate(@Param('projectId', uuidParamPipe) projectId: string): Promise<ProjectContextCandidate> {
     return this.projectContext.generate(projectId);
+  }
+
+  @Post('generation-jobs')
+  @ApiOperation({
+    operationId: 'startProjectContextGeneration',
+    summary: 'Generate the context proposal in the background, returning the job to follow',
+  })
+  @ApiUuidParam('projectId', 'Project identifier.')
+  @ApiZodResponse(
+    201,
+    'The running (or already running) generation.',
+    projectContextGenerationJobSchema,
+  )
+  @ApiErrorResponse(404, 'The project does not exist.')
+  startGeneration(
+    @Param('projectId', uuidParamPipe) projectId: string,
+  ): Promise<ProjectContextGenerationJob> {
+    return this.projectContext.startGeneration(projectId);
+  }
+
+  @Get('generation-jobs/latest')
+  @ApiOperation({
+    operationId: 'getLatestProjectContextGeneration',
+    summary: 'Get the latest background context generation and its progress',
+  })
+  @ApiUuidParam('projectId', 'Project identifier.')
+  @ApiZodResponse(200, 'The latest generation, or null.', latestProjectContextGenerationJobSchema)
+  latestGeneration(
+    @Param('projectId', uuidParamPipe) projectId: string,
+  ): Promise<{ job: ProjectContextGenerationJob | null }> {
+    return this.projectContext.latestGeneration(projectId);
   }
 
   @Post('versions')

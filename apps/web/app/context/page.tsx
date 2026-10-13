@@ -1,7 +1,7 @@
 'use client';
 
 import { contextItemCode } from '@caseflow-ai/contracts';
-import { GenerationOverlay } from '../../components/generation-overlay';
+import { GenerationProgress } from '../../components/generation-progress';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -16,7 +16,11 @@ import {
   Users,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { ProjectContextCandidate, ProjectContextResponse } from '@caseflow-ai/contracts';
+import type {
+  ProjectContextCandidate,
+  ProjectContextGenerationJob,
+  ProjectContextResponse,
+} from '@caseflow-ai/contracts';
 import { api, ApiError } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { PageHeading } from '../../components/page-heading';
@@ -95,46 +99,43 @@ const draftFromCandidate = (candidate: ProjectContextCandidate): ContextDraft =>
   sourceVersionIds: candidate.sourceVersionIds,
 });
 
-// A generation outlives the page: leaving it while the AI works does not lose
-// the proposal. It lands in the form's draft and is announced, and coming
-// back while it runs shows it running.
-const pendingGenerations = new Map<string, Promise<ProjectContextCandidate>>();
-function generateContext(projectId: string): Promise<ProjectContextCandidate> {
-  const running = pendingGenerations.get(projectId);
-  if (running) return running;
-  const generation = api.context
-    .generate(projectId)
-    .then((candidate) => {
-      writeDraft(projectId, draftFromCandidate(candidate));
-      toast.success('La propuesta del contexto está lista. Revísela antes de guardarla.');
-      const reports = candidate.reportSourceVersionIds.length;
-      if (reports)
-        toast.info(
-          reports === 1
-            ? 'La propuesta también se apoyó en el reporte aprobado de una fuente.'
-            : `La propuesta también se apoyó en los reportes aprobados de ${reports} fuentes.`,
-        );
-      // DEC-127: a long source is read as its most relevant sections.
-      const partial = candidate.partialSourceVersionIds.length;
-      if (partial)
-        toast.info(
-          partial === 1
-            ? 'Una fuente es larga: la propuesta usó sus secciones más relevantes y su reporte. Revise que no falte nada importante.'
-            : `${partial} fuentes son largas: la propuesta usó sus secciones más relevantes y sus reportes. Revise que no falte nada importante.`,
-        );
-      return candidate;
-    })
-    .catch((err: unknown) => {
-      toast.error(
-        err instanceof ApiError
-          ? err.message
-          : 'No se pudo generar el contexto con IA en este momento. Puede completarlo manualmente.',
-      );
-      throw err;
-    })
-    .finally(() => pendingGenerations.delete(projectId));
-  pendingGenerations.set(projectId, generation);
-  return generation;
+// DEC-132: the proposal is generated in the background, so leaving or
+// reloading the page loses nothing. The page follows the latest job while it
+// runs and, when it finishes, puts the proposal in the form's draft once.
+const appliedKey = (projectId: string) => `caseflow.context-applied.${projectId}`;
+const isRunning = (job: ProjectContextGenerationJob | null | undefined) =>
+  job?.status === 'QUEUED' || job?.status === 'RUNNING';
+function wasApplied(projectId: string, candidateId: string) {
+  try {
+    return window.sessionStorage.getItem(appliedKey(projectId)) === candidateId;
+  } catch {
+    return false;
+  }
+}
+function markApplied(projectId: string, candidateId: string) {
+  try {
+    window.sessionStorage.setItem(appliedKey(projectId), candidateId);
+  } catch {
+    // Private browsing: the proposal may be offered again after a reload.
+  }
+}
+function announceCandidate(candidate: ProjectContextCandidate) {
+  toast.success('La propuesta del contexto está lista. Revísela antes de guardarla.');
+  const reports = candidate.reportSourceVersionIds.length;
+  if (reports)
+    toast.info(
+      reports === 1
+        ? 'La propuesta también se apoyó en el reporte aprobado de una fuente.'
+        : `La propuesta también se apoyó en los reportes aprobados de ${reports} fuentes.`,
+    );
+  // DEC-127: a long source is read as its most relevant sections.
+  const partial = candidate.partialSourceVersionIds.length;
+  if (partial)
+    toast.info(
+      partial === 1
+        ? 'Una fuente es larga: la propuesta usó sus secciones más relevantes y su reporte. Revise que no falte nada importante.'
+        : `${partial} fuentes son largas: la propuesta usó sus secciones más relevantes y sus reportes. Revise que no falte nada importante.`,
+    );
 }
 
 function clearDraft(projectId: string) {
@@ -150,10 +151,15 @@ function ContextForm({
   onSaved,
   hasExisting,
   initial,
+  generating,
+  onGenerate,
 }: {
   projectId: string;
   onSaved: () => void;
   hasExisting: boolean;
+  // A background generation is running (DEC-132); its progress shows above.
+  generating: boolean;
+  onGenerate: () => void;
   // The current approved/current version, so "Crear nueva versión" starts
   // from what is already approved instead of a blank form — otherwise the
   // user loses their existing problem statement, objective, actors, etc.
@@ -215,7 +221,6 @@ function ContextForm({
   }, [sourcesPrefilled, initial, sources.isLoading, approvedSources]);
 
   const [submitting, setSubmitting] = useState(false);
-  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
     writeDraft(projectId, {
@@ -248,39 +253,6 @@ function ContextForm({
     setSourceVersionIds((prev) =>
       prev.includes(versionId) ? prev.filter((id) => id !== versionId) : [...prev, versionId],
     );
-  }
-
-  function applyCandidate(candidate: ProjectContextCandidate) {
-    const next = draftFromCandidate(candidate);
-    setProblemStatement(next.problemStatement);
-    setObjective(next.objective);
-    setAdditionalContext(next.additionalContext);
-    setActorsText(next.actorsText);
-    setInScopeText(next.inScopeText ?? '');
-    setOutOfScopeText(next.outOfScopeText ?? '');
-    setNeedsText(next.needsText);
-    setConstraintsText(next.constraintsText);
-    setBusinessRulesText(next.businessRulesText);
-    setSourceVersionIds(next.sourceVersionIds);
-    setSourcesPrefilled(true);
-  }
-
-  function follow(generation: Promise<ProjectContextCandidate>) {
-    setGenerating(true);
-    generation
-      .then(applyCandidate)
-      .catch(() => undefined)
-      .finally(() => setGenerating(false));
-  }
-
-  // Back on the page while a generation still runs: show it and wait for it.
-  useEffect(() => {
-    const running = pendingGenerations.get(projectId);
-    if (running) follow(running);
-  }, [projectId]);
-
-  function handleGenerate() {
-    follow(generateContext(projectId));
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -331,7 +303,7 @@ function ContextForm({
             variant="outline"
             size="sm"
             type="button"
-            onClick={handleGenerate}
+            onClick={onGenerate}
             disabled={generating || approvedSources.length === 0}
             title={
               approvedSources.length === 0
@@ -349,7 +321,6 @@ function ContextForm({
               {generating ? 'Generando…' : 'Generar con IA'}
             </span>
           </Button>
-          <GenerationOverlay open={generating} />
         </div>
       </div>
 
@@ -587,6 +558,55 @@ function ContextContent({ projectId }: { projectId: string }) {
   );
   const [showForm, setShowForm] = useState(false);
   const [approving, setApproving] = useState(false);
+  // Remounts the form so it reads a draft the generation just wrote.
+  const [formRevision, setFormRevision] = useState(0);
+
+  const generation = useQuery({
+    queryKey: ['context-generation', projectId],
+    queryFn: () => api.context.latestGeneration(projectId),
+    refetchInterval: (query) => (isRunning(query.state.data?.job) ? 2000 : false),
+  });
+  const job = generation.data?.job ?? null;
+  const running = isRunning(job);
+  // A job seen running here is announced when it ends, even after a reload.
+  const [followedJobId, setFollowedJobId] = useState<string | null>(null);
+  useEffect(() => {
+    if (running && job) setFollowedJobId(job.id);
+  }, [running, job]);
+  useEffect(() => {
+    if (!job || running || generation.isFetching) return;
+    if (job.status === 'COMPLETED' && job.candidate) {
+      // Never brings back a proposal older than the context already saved.
+      const newerThanContext =
+        !context.data || new Date(job.updatedAt) > new Date(context.data.version.createdAt);
+      if (wasApplied(projectId, job.candidate.id) || !newerThanContext) return;
+      markApplied(projectId, job.candidate.id);
+      writeDraft(projectId, draftFromCandidate(job.candidate));
+      announceCandidate(job.candidate);
+      setFormRevision((revision) => revision + 1);
+      setShowForm(true);
+    } else if (job.status === 'FAILED' && followedJobId === job.id) {
+      setFollowedJobId(null);
+      toast.error(
+        job.errorMessage ??
+          'No se pudo generar el contexto con IA en este momento. Puede completarlo manualmente.',
+      );
+    }
+  }, [job, running, generation.isFetching, followedJobId, projectId, context.data]);
+
+  async function startGeneration() {
+    try {
+      const started = await api.context.startGeneration(projectId);
+      setFollowedJobId(started.id);
+      queryClient.setQueryData(['context-generation', projectId], { job: started });
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError
+          ? err.message
+          : 'No se pudo generar el contexto con IA en este momento. Puede completarlo manualmente.',
+      );
+    }
+  }
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['context', projectId] });
@@ -875,12 +895,25 @@ function ContextContent({ projectId }: { projectId: string }) {
         </div>
       ) : null}
 
+      {running && job ? (
+        <GenerationProgress
+          title="Generando la propuesta del contexto"
+          startedAt={job.createdAt}
+          outputChars={job.outputChars}
+          expectedOutputTokens={job.expectedOutputTokens}
+          expectedDurationMs={job.expectedDurationMs}
+        />
+      ) : null}
+
       {showForm || (!context.data && notFound) ? (
         <ContextForm
+          key={formRevision}
           projectId={projectId}
           onSaved={invalidate}
           hasExisting={Boolean(context.data)}
           initial={context.data ?? undefined}
+          generating={running}
+          onGenerate={startGeneration}
         />
       ) : null}
     </div>

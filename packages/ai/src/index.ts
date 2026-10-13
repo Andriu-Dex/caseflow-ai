@@ -60,6 +60,10 @@ export interface AIProviderRequest {
   maxOutputTokens?: number;
   timeoutMs: number;
   signal?: AbortSignal;
+  // Called as a streamed answer arrives, with the characters written so far,
+  // so a long generation can show real progress (DEC-132). Providers that
+  // answer in one piece never call it.
+  onProgress?: (outputChars: number) => void;
 }
 export interface AIProviderResponse {
   provider: string;
@@ -199,6 +203,7 @@ export interface StructuredGenerationInput<T> {
   temperature?: number;
   maxOutputTokens?: number;
   timeoutMs?: number;
+  onProgress?: (outputChars: number) => void;
 }
 
 export class AIOrchestrator {
@@ -264,6 +269,7 @@ export class AIOrchestrator {
         model: input.model,
         temperature: input.temperature,
         maxOutputTokens: input.maxOutputTokens,
+        onProgress: input.onProgress,
         timeoutMs:
           input.timeoutMs ??
           scaledTimeoutMs(this.defaultTimeoutMs, inputTokens, input.maxOutputTokens),

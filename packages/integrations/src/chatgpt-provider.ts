@@ -93,7 +93,7 @@ export class ChatGPTProvider implements AIProvider {
         }),
       });
       if (!response.ok) throw await this.failure(response.status, await response.text());
-      const { text, usage } = await this.readStream(response);
+      const { text, usage } = await this.readStream(response, request.onProgress);
       let payload: unknown;
       try {
         payload = JSON.parse(text);
@@ -150,7 +150,7 @@ export class ChatGPTProvider implements AIProvider {
   }
 
   // Server-sent events: text deltas until response.completed.
-  private async readStream(response: Response) {
+  private async readStream(response: Response, onProgress?: (outputChars: number) => void) {
     if (!response.body)
       throw new AIError('AI_PROVIDER_ERROR', 'El proveedor devolvió una respuesta no válida.');
     const reader = response.body.getReader();
@@ -167,9 +167,10 @@ export class ChatGPTProvider implements AIProvider {
       } catch {
         throw new AIError('AI_PROVIDER_ERROR', 'El proveedor devolvió una respuesta no válida.');
       }
-      if (event.type === 'response.output_text.delta' && typeof event.delta === 'string')
+      if (event.type === 'response.output_text.delta' && typeof event.delta === 'string') {
         text += event.delta;
-      else if (event.type === 'response.completed') {
+        onProgress?.(text.length);
+      } else if (event.type === 'response.completed') {
         completed = true;
         const raw = event.response?.usage as
           { input_tokens?: number; output_tokens?: number; total_tokens?: number } | undefined;

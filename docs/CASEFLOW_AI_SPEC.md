@@ -7250,6 +7250,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-129 | Los casos de uso propuestos por la IA tienen la granularidad de un objetivo concreto de un actor (prompt `use-cases.generate@2`) y un caso de uso registra relaciones «include» y «extend» hacia otros casos del proyecto, que el diagrama dibuja (§221.13, ADR-008) | Accepted |
 | DEC-130 | Convención de cardinalidad del modelo de datos y de multiplicidad del diagrama de clases: cada lado indica cuántas instancias de su entidad corresponden a una del otro lado; los prompts `data-model.generate@2` y `class-diagram.generate@2` la declaran, y los diagramas de arquitectura dibujan capas y protocolos (§221.14) | Accepted |
 | DEC-131 | Cada tarea de IA declara el mínimo de salida que necesita y cada proveedor puede declarar cuánto puede escribir (`AI_MAX_OUTPUT_TOKENS`, `AI_PROVIDER_n_MAX_OUTPUT_TOKENS`); se usa el mayor. `AI_TIMEOUT_MS` es siempre el mínimo de espera. La propuesta del contexto conserva el detalle de la fuente e incluye alcance y descripción de actores (§221.15) | Accepted |
+| DEC-132 | La propuesta del contexto se genera en segundo plano y sobrevive a salir o recargar la página; muestra su avance real (lo que la IA lleva escrito frente a lo que tomaron las anteriores) y el tiempo transcurrido. El aviso de carga de las demás generaciones muestra el tiempo transcurrido y avisa de las esperas largas (§221.16) | Accepted |
 
 ---
 
@@ -7686,7 +7687,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-131)
+# 221. Extensiones de V2 (DEC-116 a DEC-132)
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
@@ -7850,6 +7851,13 @@ Los planes gratuitos configurados son limitados de formas opuestas (verificado e
 - **Salida:** cada tarea fija en el código el mínimo de tokens de salida que necesita. Cada proveedor puede declarar cuánto puede escribir por respuesta (`AI_MAX_OUTPUT_TOKENS` para ChatGPT o un proveedor único, `AI_PROVIDER_n_MAX_OUTPUT_TOKENS` en la cadena). Se le permite el mayor de los dos, de modo que un proveedor más capaz no queda limitado por los valores pensados para los planes gratuitos. Sin valor declarado, se usa el de la tarea.
 - **Tiempo de espera:** `AI_TIMEOUT_MS` es el mínimo de espera en todos los proveedores. El plazo crece con lo que el proveedor puede escribir, a no menos de 20 tokens por segundo (un modelo con razonamiento midió unos 27), porque una respuesta larga tarda lo que tarda en escribirse. Una conexión sin datos durante 5 minutos se corta igualmente (`bodyTimeout` de `fetch`).
 - **Contexto:** `project-context.generate@4` pide conservar el nivel de detalle de las fuentes: una necesidad por capacidad, una regla por regla, cada atributo de calidad como restricción, el alcance (dentro y fuera) en su lista propia, la descripción de cada actor y las suposiciones pendientes en el contexto adicional. Su salida mínima pasa de 4096 a 16 384 tokens. El formulario edita el alcance y la descripción de los actores («Nombre: responsabilidades»), y una versión nueva conserva el alcance de la anterior.
+
+## 221.16 Generación del contexto en segundo plano y avance visible (DEC-132)
+
+- **Trabajo:** «Generar con IA» en el contexto crea un trabajo (`context_generation_jobs`) que corre dentro de la API sin retener la petición. Hay uno por proyecto a la vez; pedirlo de nuevo devuelve el que está en curso. Uno abierto cuando la API arranca se cierra como interrumpido por reinicio.
+- **Avance real:** un proveedor que responde por partes (ChatGPT) informa de los caracteres escritos, y el trabajo los guarda cada 1,5 s. Al crearse, el trabajo registra lo que tomaron las últimas cinco propuestas correctas (tokens de salida y duración).
+- **Página:** consulta el último trabajo mientras está en curso y muestra la fase (leyendo y pensando, o escribiendo ~N de ~M tokens), una barra que no pasa del 95 % antes de terminar, el tiempo transcurrido y lo que suele tardar. Al terminar, la propuesta llena el borrador del formulario una sola vez, también tras una recarga, y nunca si ya se guardó una versión posterior.
+- **Demás generaciones:** el aviso de carga muestra el tiempo transcurrido y, pasados 20 s, que la IA sigue trabajando y que las propuestas extensas pueden tardar varios minutos.
 
 ## 221.4 Fuera de alcance de estas extensiones
 
