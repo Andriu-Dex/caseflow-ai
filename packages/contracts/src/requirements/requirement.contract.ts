@@ -40,7 +40,7 @@ export const requirementOriginInputSchema = z.discriminatedUnion('kind', [
       contextItemIds: z
         .array(z.uuid())
         .min(1, 'Seleccione al menos un elemento del contexto.')
-        .max(25),
+        .max(300),
     })
     .strict(),
   z
@@ -169,69 +169,135 @@ export const generationSuggestionSchema = z
   })
   .strict();
 export const MAX_REQUIREMENT_SUGGESTIONS = 5;
-export const requirementGenerationOutputSchema = z
-  .object({
-    candidates: z.array(generationCandidateSchema).min(1).max(20),
-    suggestions: z.array(generationSuggestionSchema).max(MAX_REQUIREMENT_SUGGESTIONS).default([]),
-  })
-  .strict()
-  .superRefine((output, c) => {
-    const suggested = new Set(output.suggestions.map((x) => x.candidateId));
-    const v = { candidates: [...output.candidates, ...output.suggestions] };
-    const ids = new Set(v.candidates.map((x) => x.candidateId));
-    if (ids.size !== v.candidates.length)
-      c.addIssue({ code: 'custom', message: 'candidateId debe ser único.', path: ['candidates'] });
-    // A requirement derived from the context never needs an optional idea.
-    output.candidates.forEach((x, i) => {
-      if (x.dependencyCandidateIds.some((d) => suggested.has(d)))
+export const MAX_GENERATED_REQUIREMENTS = 500;
+const generationOutput = (limit: number) =>
+  z
+    .object({
+      candidates: z
+        .array(
+          generationCandidateSchema.extend({
+            contextItemCodes: z.array(text(20)).max(300).default([]),
+          }),
+        )
+        .min(1)
+        .max(limit),
+      suggestions: z.array(generationSuggestionSchema).max(MAX_REQUIREMENT_SUGGESTIONS).default([]),
+    })
+    .strict()
+    .superRefine((output, c) => {
+      const suggested = new Set(output.suggestions.map((x) => x.candidateId));
+      const v = { candidates: [...output.candidates, ...output.suggestions] };
+      const ids = new Set(v.candidates.map((x) => x.candidateId));
+      if (ids.size !== v.candidates.length)
         c.addIssue({
           code: 'custom',
-          message: 'Un requisito no puede depender de una sugerencia.',
-          path: ['candidates', i],
+          message: 'candidateId debe ser único.',
+          path: ['candidates'],
+        });
+      // A requirement derived from the context never needs an optional idea.
+      output.candidates.forEach((x, i) => {
+        if (x.dependencyCandidateIds.some((d) => suggested.has(d)))
+          c.addIssue({
+            code: 'custom',
+            message: 'Un requisito no puede depender de una sugerencia.',
+            path: ['candidates', i],
+          });
+      });
+      v.candidates.forEach((x, i) => {
+        if (new Set(x.dependencyCandidateIds).size !== x.dependencyCandidateIds.length)
+          c.addIssue({
+            code: 'custom',
+            message: 'Dependencia duplicada.',
+            path: ['candidates', i],
+          });
+        for (const d of x.dependencyCandidateIds) {
+          if (d === x.candidateId)
+            c.addIssue({
+              code: 'custom',
+              message: 'Autodependencia no permitida.',
+              path: ['candidates', i],
+            });
+          else if (!ids.has(d))
+            c.addIssue({
+              code: 'custom',
+              message: 'Dependencia inexistente.',
+              path: ['candidates', i],
+            });
+        }
+      });
+      const graph = new Map(v.candidates.map((x) => [x.candidateId, x.dependencyCandidateIds]));
+      const visiting = new Set<string>();
+      const visited = new Set<string>();
+      const cyclic = (id: string): boolean => {
+        if (visiting.has(id)) return true;
+        if (visited.has(id)) return false;
+        visiting.add(id);
+        for (const next of graph.get(id) ?? []) if (cyclic(next)) return true;
+        visiting.delete(id);
+        visited.add(id);
+        return false;
+      };
+      if (v.candidates.some((x) => cyclic(x.candidateId)))
+        c.addIssue({
+          code: 'custom',
+          message: 'Las dependencias no pueden formar ciclos.',
+          path: ['candidates'],
         });
     });
-    v.candidates.forEach((x, i) => {
-      if (new Set(x.dependencyCandidateIds).size !== x.dependencyCandidateIds.length)
-        c.addIssue({ code: 'custom', message: 'Dependencia duplicada.', path: ['candidates', i] });
-      for (const d of x.dependencyCandidateIds) {
-        if (d === x.candidateId)
-          c.addIssue({
-            code: 'custom',
-            message: 'Autodependencia no permitida.',
-            path: ['candidates', i],
-          });
-        else if (!ids.has(d))
-          c.addIssue({
-            code: 'custom',
-            message: 'Dependencia inexistente.',
-            path: ['candidates', i],
-          });
-      }
-    });
-    const graph = new Map(v.candidates.map((x) => [x.candidateId, x.dependencyCandidateIds]));
-    const visiting = new Set<string>();
-    const visited = new Set<string>();
-    const cyclic = (id: string): boolean => {
-      if (visiting.has(id)) return true;
-      if (visited.has(id)) return false;
-      visiting.add(id);
-      for (const next of graph.get(id) ?? []) if (cyclic(next)) return true;
-      visiting.delete(id);
-      visited.add(id);
-      return false;
-    };
-    if (v.candidates.some((x) => cyclic(x.candidateId)))
-      c.addIssue({
-        code: 'custom',
-        message: 'Las dependencias no pueden formar ciclos.',
-        path: ['candidates'],
-      });
-  });
+// The historical single-response contract remains bounded to twenty.
+export const requirementGenerationOutputSchema = generationOutput(20);
+export const completeRequirementGenerationOutputSchema = generationOutput(
+  MAX_GENERATED_REQUIREMENTS,
+);
+export const requirementBatchOutputSchema = z
+  .object({
+    candidates: z.array(generationCandidateSchema).max(20),
+    suggestions: z.array(generationSuggestionSchema).max(MAX_REQUIREMENT_SUGGESTIONS).default([]),
+    coverageUpdates: z
+      .array(
+        z
+          .object({
+            candidateId: text(80),
+            contextItemCodes: z.array(text(20)).min(1).max(15),
+            description: text(4000),
+          })
+          .strict(),
+      )
+      .max(20)
+      .default([]),
+  })
+  .strict();
+export const requirementDependencyOutputSchema = z
+  .object({
+    dependencies: z
+      .array(z.object({ candidateId: text(80), dependsOnCandidateId: text(80) }).strict())
+      .max(2000),
+  })
+  .strict();
+export const requirementGenerationJobSchema = z.object({
+  id: z.uuid(),
+  projectId: z.uuid(),
+  sourceContextVersionId: z.uuid(),
+  status: z.enum(['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED']),
+  completedBatches: z.number().int().nonnegative(),
+  totalBatches: z.number().int().nonnegative(),
+  outputChars: z.number().int().nonnegative(),
+  generationId: z.uuid().nullable(),
+  errorMessage: z.string().nullable(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+export type RequirementGenerationJob = z.infer<typeof requirementGenerationJobSchema>;
 export const generateRequirementsRequestSchema = z
   .object({ sourceContextVersionId: z.uuid() })
   .strict();
 export const acceptRequirementsRequestSchema = z
-  .object({ candidateIds: z.array(z.uuid()).min(1).max(20) })
+  .object({
+    candidateIds: z
+      .array(z.uuid())
+      .min(1)
+      .max(MAX_GENERATED_REQUIREMENTS + MAX_REQUIREMENT_SUGGESTIONS),
+  })
   .strict();
 export const transitionArtifactVersionRequestSchema = z
   .object({ status: z.enum(['DRAFT', 'IN_REVIEW', 'APPROVED', 'CHANGES_REQUESTED']) })

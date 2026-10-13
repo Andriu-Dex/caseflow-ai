@@ -17,6 +17,7 @@ import type {
   MockupResponse,
   ProjectContextCandidate,
   ProjectContextGenerationJob,
+  RequirementGenerationJob,
   ProjectContextRequest,
   ProjectContextResponse,
   ListProjectsQuery,
@@ -511,6 +512,16 @@ export const api = {
       post<GenerationResult>(`/projects/${projectId}/requirements/generate`, {
         sourceContextVersionId,
       }),
+    startGeneration: (projectId: string, sourceContextVersionId: string) =>
+      post<RequirementGenerationJob>(`/projects/${projectId}/requirements/generation-jobs`, {
+        sourceContextVersionId,
+      }),
+    latestGeneration: (projectId: string) =>
+      get<{ job: RequirementGenerationJob | null }>(
+        `/projects/${projectId}/requirements/generation-jobs/latest`,
+      ),
+    generation: (projectId: string, generationId: string) =>
+      get<GenerationResult>(`/projects/${projectId}/requirements/generations/${generationId}`),
     accept: (projectId: string, generationId: string, candidateIds: string[]) =>
       post(`/projects/${projectId}/requirements/generations/${generationId}/accept`, {
         candidateIds,

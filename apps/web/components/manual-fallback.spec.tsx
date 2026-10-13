@@ -20,6 +20,9 @@ const structuredCreate = vi.fn().mockResolvedValue({});
 vi.mock('../lib/api', () => ({
   api: {
     requirements: {
+      latestGeneration: vi.fn(async () => ({ job: null })),
+      startGeneration: vi.fn(),
+      generation: vi.fn(),
       create: (...args: unknown[]) => requirementsCreate(...args),
       // No approved context yet: nothing to cite.
       contextCoverage: vi.fn(async () => ({ context: null, items: [], withoutOrigin: [] })),

@@ -18,6 +18,10 @@ export { AI_PROVIDER } from './ai-provider.token';
 import { AI_PROVIDER } from './ai-provider.token';
 import { AIStatusController } from './ai-status.controller';
 import { PROJECT_CONTEXT_PROMPT_V5 } from '../project-context/context-prompt';
+import {
+  REQUIREMENTS_BATCH_PROMPT,
+  REQUIREMENTS_DEPENDENCY_PROMPT,
+} from '../requirements/requirements-prompt';
 
 @Module({
   controllers: [AIStatusController],
@@ -54,6 +58,20 @@ import { PROJECT_CONTEXT_PROMPT_V5 } from '../project-context/context-prompt';
       provide: PromptRegistry,
       useFactory: () =>
         new PromptRegistry([
+          {
+            key: 'requirements.generate',
+            version: 4,
+            capability: 'STRUCTURED_OUTPUT',
+            purpose: 'requirements_generation',
+            systemInstructions: REQUIREMENTS_BATCH_PROMPT,
+          },
+          {
+            key: 'requirements.dependencies',
+            version: 1,
+            capability: 'STRUCTURED_OUTPUT',
+            purpose: 'requirements_dependency_review',
+            systemInstructions: REQUIREMENTS_DEPENDENCY_PROMPT,
+          },
           {
             key: 'project-context.generate',
             version: 1,
