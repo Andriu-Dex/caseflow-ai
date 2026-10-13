@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { localWebUrl } from './chatgpt-oauth.js';
 import {
   ChatGPTConnection,
   startBroker,
@@ -47,7 +48,7 @@ export function developmentStore(file: string): ConnectionStore {
 // beyond this machine.
 export function developmentBrokerSettings(
   environment: NodeJS.ProcessEnv,
-): { port: number; secret: string } | { skip: string } | { error: string } {
+): { port: number; secret: string; webUrl?: string } | { skip: string } | { error: string } {
   if (environment.AI_PROVIDER !== 'chatgpt')
     return { skip: 'AI_PROVIDER no es "chatgpt": el intermediario de ChatGPT no se inicia.' };
   if (environment.NODE_ENV === 'production')
@@ -58,7 +59,12 @@ export function developmentBrokerSettings(
   const secret = environment.CHATGPT_BROKER_SECRET ?? '';
   if (secret.length < 32)
     return { error: 'CHATGPT_BROKER_SECRET debe tener al menos 32 caracteres.' };
-  return { port: Number(url.port), secret };
+  try {
+    const webUrl = localWebUrl(environment.CASEFLOW_WEB_URL);
+    return { port: Number(url.port), secret, ...(webUrl ? { webUrl } : {}) };
+  } catch {
+    return { error: 'CASEFLOW_WEB_URL debe ser una URL HTTP de localhost o 127.0.0.1.' };
+  }
 }
 
 function openBrowser(url: string): Promise<void> {
@@ -85,6 +91,8 @@ async function main() {
     developmentStore(join(homedir(), '.caseflow', 'chatgpt-dev.json')),
     openBrowser,
     async () => {},
+    fetch,
+    settings.webUrl,
   );
   await startBroker(connection, settings.port, settings.secret);
   console.log('Abriendo el navegador para conectar su cuenta de ChatGPT…');

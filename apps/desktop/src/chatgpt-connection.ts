@@ -68,6 +68,7 @@ export class ChatGPTConnection {
     // Called when the API must restart with another AI provider.
     private readonly onProviderChange: () => Promise<void>,
     private readonly fetchImpl: typeof fetch = fetch,
+    private readonly webUrl?: string,
   ) {}
 
   private async load(): Promise<State> {
@@ -116,6 +117,7 @@ export class ChatGPTConnection {
       hostId: state.hostId,
       openBrowser: this.openBrowser,
       fetchImpl: this.fetchImpl,
+      webUrl: this.webUrl,
     });
     state.clientId = result.clientId;
     state.tokens = result.tokens;

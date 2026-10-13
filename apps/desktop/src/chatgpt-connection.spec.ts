@@ -173,6 +173,47 @@ describe('ChatGPT broker', () => {
 });
 
 describe('ChatGPT sign-in callback', () => {
+  it('serves an accessible success page with local return link and security headers', async () => {
+    const listener = await callbackListener('st', 'client-1', 'http://localhost:3000');
+    try {
+      const response = await fetch(`${listener.redirectUri}?state=st&code=c`);
+      const html = await response.text();
+      expect(html).toContain('Cuenta de ChatGPT conectada');
+      expect(html).toContain('window.close');
+      expect(html).toContain('http://localhost:3000/');
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(response.headers.get('content-security-policy')).toContain("default-src 'none'");
+      await listener.result;
+    } finally {
+      listener.close();
+    }
+  });
+
+  it('does not echo invalid callback data or close the error page', async () => {
+    const listener = await callbackListener('st', 'client-1');
+    const outcome = listener.result.catch((error: Error) => error.message);
+    try {
+      const response = await fetch(
+        `${listener.redirectUri}?state=${encodeURIComponent('<script>alert(1)</script>')}&code=c`,
+      );
+      const html = await response.text();
+      expect(html).toContain('No se completó la conexión');
+      expect(html).not.toContain('window.close');
+      expect(html).not.toContain('<script>');
+      expect(await outcome).toContain('no es válida');
+    } finally {
+      listener.close();
+    }
+  });
+
+  it('rejects non-local return links', async () => {
+    await expect(callbackListener('st', null, 'https://example.com')).rejects.toThrow(
+      'CASEFLOW_WEB_URL',
+    );
+    await expect(callbackListener('st', null, 'http://localhost.example.com')).rejects.toThrow(
+      'CASEFLOW_WEB_URL',
+    );
+  });
   const callback = async (expected: string | null, query: string) => {
     const listener = await callbackListener('st', expected);
     const outcome = listener.result.then(
