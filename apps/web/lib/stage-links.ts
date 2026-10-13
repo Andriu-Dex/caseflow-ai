@@ -2,6 +2,8 @@
 // source of truth shared by Home (readiness overview) and AppShell (sidebar
 // stepper), so both agree on where each stage of the Construction Pipeline
 // (AGENTS.md §10) actually lives.
+import { PIPELINE_ORDER } from '@caseflow-ai/contracts';
+
 export const STAGE_LINKS: Record<string, string> = {
   SOURCES: '/sources',
   CONTEXT: '/context',
@@ -77,21 +79,28 @@ export const PIPELINE_STEPS: { step: number; href: string; label: string }[] = [
   { step: 13, href: '/traceability', label: 'Trazabilidad' },
 ];
 
-export type StepReadiness = 'satisfied' | 'next' | 'pending' | 'unknown';
+export type StepReadiness = 'satisfied' | 'next' | 'pending' | 'unknown' | 'outdated' | 'blocked';
 
 // Shared readiness->per-route state computation, so the sidebar stepper and
 // any in-page "next step" CTA never disagree about what's satisfied, next,
 // or still pending.
 export function computeStepState(
   href: string,
-  stages: { key: string; satisfied: boolean }[] | undefined,
+  stages:
+    | { key: string; satisfied: boolean; currency?: 'CURRENT' | 'OUTDATED' | 'BLOCKED' }[]
+    | undefined,
 ): StepReadiness {
   if (!stages) return 'unknown';
   const keys = ROUTE_STAGE_KEYS[href];
   if (!keys) return 'unknown';
   const relevant = stages.filter((s) => keys.includes(s.key));
+  if (relevant.some((s) => s.currency === 'OUTDATED')) return 'outdated';
+  if (relevant.some((s) => s.currency === 'BLOCKED')) return 'blocked';
   if (relevant.length && relevant.every((s) => s.satisfied)) return 'satisfied';
-  const nextStage = stages.find((s) => !s.satisfied);
+  const ordered = [...PIPELINE_ORDER, 'IMPACT'].flatMap((key) =>
+    stages.filter((s) => s.key === key),
+  );
+  const nextStage = ordered.find((s) => !s.satisfied);
   if (nextStage && keys.includes(nextStage.key)) return 'next';
   return 'pending';
 }

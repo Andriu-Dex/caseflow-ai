@@ -250,6 +250,7 @@ model User {
   sandboxRuns               SandboxRun[]
   generatedProjectSnapshots GeneratedProjectSnapshot[]
   projectDeletions          ProjectDeletion[]
+  stageConfirmations        StageConfirmation[]
 
   @@map("users")
 }
@@ -374,6 +375,7 @@ model Project {
   sandboxRuns                   SandboxRun[]
   generatedProjectSnapshots     GeneratedProjectSnapshot[]
   workflowRuns                  WorkflowRun[]
+  stageConfirmations            StageConfirmation[]
 
   @@index([workspaceId, createdAt, id])
   @@map("projects")
@@ -1898,9 +1900,22 @@ model WorkflowRunStage {
   @@map("workflow_run_stages")
 }
 
-// Who deleted which project, and when (DEC-134). The project and its own
-// audit trail are deleted with it, so this record lives outside it and is
-// append-only.
+// Append-only review of a pipeline stage after approved upstream changes (DEC-136).
+model StageConfirmation {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId         String   @map("project_id") @db.Uuid
+  stage             String
+  confirmedByUserId String   @map("confirmed_by_user_id") @db.Uuid
+  confirmedAt       DateTime @default(now()) @map("confirmed_at") @db.Timestamptz(6)
+  note              String?
+  project           Project  @relation(fields: [projectId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  confirmedBy       User     @relation(fields: [confirmedByUserId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([projectId, stage, confirmedAt])
+  @@map("stage_confirmations")
+}
+
+// The project and its own audit are deleted; this append-only record survives (DEC-134).
 model ProjectDeletion {
   id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   workspaceId     String   @map("workspace_id") @db.Uuid

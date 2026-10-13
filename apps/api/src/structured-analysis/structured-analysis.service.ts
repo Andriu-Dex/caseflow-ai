@@ -32,6 +32,7 @@ import {
 } from '../data-models/diagram-engine';
 import { DIAGRAM_PROVIDER } from '../data-models/diagram-provider.token';
 import { sanitizeDiagramSvg } from '../data-models/svg-sanitizer';
+import { StageCurrencyService } from '../readiness/stage-currency';
 import {
   evaluateStructuredGeneration,
   type GenerationSourceReference,
@@ -224,12 +225,15 @@ export class StructuredAnalysisService {
     // Injected by Nest; code constructing the service directly still audits.
     @Optional() audit?: AuditService,
     @Optional() consistency?: ConsistencyEngineService,
+    @Optional() private readonly currency?: StageCurrencyService,
   ) {
     this.audit = audit ?? new AuditService(prisma);
     this.consistency = consistency ?? new ConsistencyEngineService(prisma);
   }
 
   async create(projectId: string, kind: StructuredAnalysisKind, title: string, content: Content) {
+    if (['GENERATION_PLAN', 'CONCEPTUAL_DOMAIN_MODEL', 'IMPLEMENTATION_PLAN'].includes(kind))
+      await this.currency?.assertCurrent(projectId);
     await this.assertContentReferences(projectId, kind, content);
     const diagram = await this.renderDiagramIfApplicable(kind, content);
     return this.prisma.$transaction((tx) =>
@@ -283,6 +287,8 @@ export class StructuredAnalysisService {
     title: string,
     content: Content,
   ) {
+    if (['GENERATION_PLAN', 'CONCEPTUAL_DOMAIN_MODEL', 'IMPLEMENTATION_PLAN'].includes(kind))
+      await this.currency?.assertCurrent(projectId);
     await this.assertContentReferences(projectId, kind, content);
     const diagram = await this.renderDiagramIfApplicable(kind, content);
     return this.prisma.$transaction(async (tx) => {
@@ -314,6 +320,8 @@ export class StructuredAnalysisService {
     sourceVersionIds: string[],
     options: { designBaselineId?: string; instruction?: string } = {},
   ) {
+    if (['GENERATION_PLAN', 'CONCEPTUAL_DOMAIN_MODEL', 'IMPLEMENTATION_PLAN'].includes(kind))
+      await this.currency?.assertCurrent(projectId);
     const unique = [...new Set(sourceVersionIds)];
     if (unique.length !== sourceVersionIds.length)
       throw new UnprocessableEntityException('Las versiones fuente no pueden repetirse.');
@@ -567,6 +575,8 @@ export class StructuredAnalysisService {
     generationId: string,
     candidateIds: string[],
   ) {
+    if (['GENERATION_PLAN', 'CONCEPTUAL_DOMAIN_MODEL', 'IMPLEMENTATION_PLAN'].includes(kind))
+      await this.currency?.assertCurrent(projectId);
     const selected = new Set(candidateIds);
     const preview = await this.prisma.structuredAnalysisGeneration.findFirst({
       where: { id: generationId, projectId, kind },

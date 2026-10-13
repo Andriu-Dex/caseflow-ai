@@ -13,6 +13,11 @@ import { PageHeading } from '../../components/page-heading';
 // with what is missing and where it is fixed.
 
 const CHAIN_LABELS: Record<CoherenceChain, { title: string; description: string }> = {
+  QUALITY_REQUIREMENT_DESIGN: {
+    title: 'Requisito no funcional → diseño',
+    description:
+      'Revise dónde se atienden los atributos de calidad. Una referencia identifica cobertura declarada; compruebe que las responsabilidades y decisiones realmente cumplan el requisito.',
+  },
   CONTEXT_REQUIREMENT: {
     title: 'Contexto → requisito',
     description:
@@ -42,6 +47,7 @@ const CHAIN_LABELS: Record<CoherenceChain, { title: string; description: string 
 
 // Chains fixed on a page other than their artifact type's.
 const CHAIN_FIX_PAGES: Partial<Record<CoherenceChain, string>> = {
+  QUALITY_REQUIREMENT_DESIGN: '/design/software-architecture',
   CONTEXT_REQUIREMENT: '/requirements',
 };
 // Where each gap is fixed: the artifact that must change to cover it.

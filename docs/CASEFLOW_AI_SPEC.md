@@ -7256,6 +7256,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-133 | La propuesta del contexto describe el producto, no el proyecto: solo actores que interactúan con el software, y lo del proyecto (fases, capacitación, piloto, proceso de desarrollo) va resumido en el contexto adicional; el prompt no contiene frases sobre la propia propuesta (`project-context.generate@5`, §221.15) | Accepted |
 | DEC-134 | Un proyecto puede eliminarse definitivamente, también con historial aprobado: solo su propietario o el propietario o un administrador del espacio de trabajo, y tras escribir su nombre exacto, comprobado en el servidor. Se borran sus filas y archivos y queda constancia en `project_deletions` (§87, ADR-009) | Accepted |
 | DEC-135 | El retorno de conexión de ChatGPT usa una página local accesible con modo oscuro, cabeceras de seguridad y enlace opcional de regreso a CASEFlow en desarrollo (§221.11) | Accepted |
+| DEC-136 | Al aprobar un cambio se revisan en orden los pasos posteriores; el primero pendiente puede rehacerse o confirmarse vigente con auditoría. Los pendientes bloquean congelar diseño y construir (§221.17, ADR-010) | Accepted |
 
 ---
 
@@ -7865,6 +7866,14 @@ Los planes gratuitos configurados son limitados de formas opuestas (verificado e
 - **Avance real:** un proveedor que responde por partes (ChatGPT) informa de los caracteres escritos, y el trabajo los guarda cada 1,5 s. Al crearse, el trabajo registra lo que tomaron las últimas cinco propuestas correctas (tokens de salida y duración).
 - **Página:** consulta el último trabajo mientras está en curso y muestra la fase (leyendo y pensando, o escribiendo ~N de ~M tokens), una barra que no pasa del 95 % antes de terminar, el tiempo transcurrido y lo que suele tardar. Al terminar, la propuesta llena el borrador del formulario una sola vez, también tras una recarga, y nunca si ya se guardó una versión posterior.
 - **Demás generaciones:** el aviso de carga muestra el tiempo transcurrido y, pasados 20 s, que la IA sigue trabajando y que las propuestas extensas pueden tardar varios minutos.
+
+## 221.17 Vigencia y revisión ordenada del flujo (DEC-136, ADR-010)
+
+Al aprobar un cambio, las etapas posteriores con evidencia anterior quedan por revisar. API y web usan `PIPELINE_ORDER`: Fuentes, Contexto, Requisitos, Casos de uso, su diagrama, Modelo de datos, ER, Diagrama de clases, Navegación, Arquitecturas, Plano de interfaz, Tema y Bocetos. El primero pendiente es accionable; los siguientes están bloqueados. Los pasos vacíos mantienen sus reglas de preparación. Crear un borrador no invalida el flujo.
+
+Se resuelve cada pendiente mediante una aprobación posterior o «Confirmar que sigue vigente» (OWNER, EDITOR o REVIEWER, nota opcional hasta 500 caracteres). Las confirmaciones se conservan en `stage_confirmations`, con auditoría; no cambian versiones aprobadas ni permiten ocultar errores de coherencia. El diagrama de casos de uso debe representar todos los casos aprobados y su vigencia usa la fecha de generación; ER comparte la versión y revisión del modelo.
+
+El servidor bloquea congelar diseño y construir mientras quedan pasos por rehacer. La excepción interna de la orquestación ordenada EXPRESS/BUILD_ONLY no puede activarse desde la API pública. La matriz de coherencia avisa de RNF sin cobertura explícita en componentes, nodos o pantallas, sin exigir que cada requisito aparezca en todos los diagramas ni considerar una referencia prueba semántica de cumplimiento.
 
 ## 221.4 Fuera de alcance de estas extensiones
 
