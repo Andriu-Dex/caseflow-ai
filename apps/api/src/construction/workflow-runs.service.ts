@@ -5,9 +5,11 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import type { Queue } from 'bullmq';
+import { StageCurrencyService, withOrderedStageRebuild } from '../readiness/stage-currency';
 import { CONSTRUCTION_QUEUE, type ConstructionJobPayload } from '@caseflow-ai/domain';
 import {
   workflowStagesFor,
@@ -137,9 +139,11 @@ export class WorkflowRunsService {
     private readonly generationRuns: GenerationRunsService,
     private readonly sandboxRuns: SandboxRunsService,
     @Inject(CONSTRUCTION_QUEUE_TOKEN) private readonly queue: Queue<ConstructionJobPayload>,
+    @Optional() private readonly currency?: StageCurrencyService,
   ) {}
 
   async start(projectId: string, userId: string, prompt: string): Promise<WorkflowRunResponse> {
+    await this.currency?.assertCurrent(projectId);
     const project = await this.prisma.project.findUnique({ where: { id: projectId } });
     if (!project) throw new NotFoundException('Proyecto no encontrado.');
     if (project.workflowRoute === 'FULL')
@@ -216,7 +220,7 @@ export class WorkflowRunsService {
     const stage = run.currentStage as WorkflowStage;
     const types =
       stage === 'PLANNING_REVIEW' ? PLANNING_TYPES.map((t) => t.type) : ['IMPLEMENTATION_PLAN'];
-    for (const type of types)
+    for (const type of types) {
       for (const item of await this.current(projectId, type)) {
         if (item.status === 'APPROVED') continue;
         try {
@@ -231,9 +235,17 @@ export class WorkflowRunsService {
           );
         }
       }
+      if (type === 'USE_CASE' && stage === 'PLANNING_REVIEW')
+        await this.dataModels.generateUseCaseDiagram(
+          projectId,
+          await this.versionIds(projectId, 'USE_CASE'),
+        );
+    }
     const done: WorkflowStage[] = [stage];
     if (stage === 'PLANNING_REVIEW') {
-      await this.freezeDesign(projectId, userId, 'HUMAN_BULK');
+      await withOrderedStageRebuild(projectId, () =>
+        this.freezeDesign(projectId, userId, 'HUMAN_BULK'),
+      );
       done.push('DESIGN_BASELINE');
     }
     await this.prisma.$transaction(async (tx) => {
@@ -317,7 +329,7 @@ export class WorkflowRunsService {
         data: { currentStage: stage },
       });
       try {
-        await this.runStage(stage, ctx);
+        await withOrderedStageRebuild(projectId, () => this.runStage(stage, ctx));
       } catch (error) {
         if (error instanceof AwaitingReview) {
           await this.prisma.workflowRun.update({

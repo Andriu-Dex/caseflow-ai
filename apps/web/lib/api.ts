@@ -254,6 +254,13 @@ async function authedFetch(
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await authedFetch(`${BASE_URL}${path}`, init);
+  if (
+    typeof window !== 'undefined' &&
+    init?.method &&
+    init.method !== 'GET' &&
+    path.startsWith('/projects/')
+  )
+    window.dispatchEvent(new CustomEvent('caseflow:readiness-changed'));
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
@@ -373,6 +380,8 @@ export const api = {
   },
   readiness: {
     get: (projectId: string) => get<ReadinessResponse>(`/projects/${projectId}/readiness`),
+    confirm: (projectId: string, stage: string, note?: string) =>
+      post<ReadinessResponse>(`/projects/${projectId}/stages/${stage}/confirm`, { note }),
   },
   staleness: {
     get: (projectId: string) => get<StalenessAnalysisResponse>(`/projects/${projectId}/staleness`),

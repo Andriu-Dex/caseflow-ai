@@ -382,6 +382,7 @@ export class ProjectsService {
         // Project-level bookkeeping
         await tx.$executeRaw`DELETE FROM project_code_counters WHERE project_id = ${p}`;
         await tx.$executeRaw`DELETE FROM project_memberships WHERE project_id = ${p}`;
+        await tx.$executeRaw`DELETE FROM stage_confirmations WHERE project_id = ${p}`;
         await tx.$executeRaw`DELETE FROM projects WHERE id = ${p}`;
 
         await tx.projectDeletion.create({

@@ -5,9 +5,11 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import type { Queue } from 'bullmq';
+import { StageCurrencyService } from '../readiness/stage-currency';
 import {
   CONSTRUCTION_QUEUE,
   findTargetTemplate,
@@ -60,6 +62,7 @@ export class GenerationRunsService {
     private readonly designBaselines: DesignBaselinesService,
     private readonly businessLogic: BusinessLogicService,
     @Inject(CONSTRUCTION_QUEUE_TOKEN) private readonly queue: Queue<ConstructionJobPayload>,
+    @Optional() private readonly currency?: StageCurrencyService,
   ) {}
 
   async start(
@@ -67,6 +70,7 @@ export class GenerationRunsService {
     userId: string,
     implementationPlanVersionId: string,
   ): Promise<GenerationRunResponse> {
+    await this.currency?.assertCurrent(projectId);
     const plan = await this.approvedPlan(projectId, implementationPlanVersionId);
     await this.designBaselines.assertApproved(projectId, plan.designBaselineId);
     const template = findTargetTemplate(TEMPLATE_IDENTIFIER)!;

@@ -16,11 +16,12 @@ import {
 } from './construction-kinds.controller';
 import { DesignThemeController } from './design-theme.controller';
 import { ClassDiagramController } from './class-diagram.controller';
+import { StageCurrencyModule } from '../readiness/stage-currency';
 
 @Module({
   // Reuses DataModelsModule's DiagramEngine/DIAGRAM_PROVIDER wiring — one
   // renderer abstraction, not a parallel one per feature.
-  imports: [AIModule, DataModelsModule, ConsistencyEngineModule],
+  imports: [AIModule, DataModelsModule, ConsistencyEngineModule, StageCurrencyModule],
   controllers: [
     NavigationController,
     SoftwareArchitectureController,

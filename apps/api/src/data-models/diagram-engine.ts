@@ -30,11 +30,23 @@ export type NavigationDiagramModel = {
 export type SoftwareArchitectureDiagramModel = {
   // A component whose localId other components name as their layer is drawn
   // as a package that contains them.
-  components: { localId: string; name: string; layerLocalId?: string }[];
+  components: {
+    localId: string;
+    name: string;
+    layerLocalId?: string;
+    responsibilities?: string[];
+    relatedSourceCodes?: string[];
+  }[];
   dependencies: { fromLocalId: string; toLocalId: string; description?: string }[];
 };
 export type SystemArchitectureDiagramModel = {
-  nodes: { localId: string; name: string; kind: string }[];
+  nodes: {
+    localId: string;
+    name: string;
+    kind: string;
+    responsibilities?: string[];
+    relatedSourceCodes?: string[];
+  }[];
   links: { fromLocalId: string; toLocalId: string; protocol?: string; description?: string }[];
 };
 export type TraceabilityDiagramModel = {
@@ -250,6 +262,18 @@ export class DiagramEngine {
           dependency.description ? ` : "${quote(dependency.description)}"` : ''
         }`,
       );
+    for (const component of components) {
+      const details = [
+        ...(component.responsibilities ?? []),
+        ...(component.relatedSourceCodes?.length
+          ? [`Fuentes: ${component.relatedSourceCodes.join(', ')}`]
+          : []),
+      ];
+      if (details.length)
+        lines.push(
+          `note right of ${safeId(component.localId)} : ${details.map((detail) => quote(detail).replace(/[<>]/g, '')).join('\\n')}`,
+        );
+    }
     lines.push('@enduml');
     return lines.join('\n');
   }
@@ -278,6 +302,18 @@ export class DiagramEngine {
           label.length ? ` : "${label.join(' — ')}"` : ''
         }`,
       );
+    }
+    for (const node of nodes) {
+      const details = [
+        ...(node.responsibilities ?? []),
+        ...(node.relatedSourceCodes?.length
+          ? [`Fuentes: ${node.relatedSourceCodes.join(', ')}`]
+          : []),
+      ];
+      if (details.length)
+        lines.push(
+          `note right of ${safeId(node.localId)} : ${details.map((detail) => quote(detail).replace(/[<>]/g, '')).join('\\n')}`,
+        );
     }
     lines.push('@enduml');
     return lines.join('\n');

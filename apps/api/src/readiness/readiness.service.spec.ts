@@ -92,7 +92,11 @@ describe('ReadinessService', () => {
               versions: [
                 {
                   ...approvedVersion(1),
-                  diagramDetail: { sources: [{ sourceArtifactVersionId: 'uc-v1' }] },
+                  diagramDetail: {
+                    sources: Array.from({ length: 4 }, (_, i) => ({
+                      sourceArtifactVersionId: `uc-v${i}`,
+                    })),
+                  },
                 },
               ],
             },
