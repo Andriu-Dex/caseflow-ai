@@ -14,7 +14,7 @@
     "build:all": "node scripts/build-web.mjs && pnpm run build && pnpm run build:api",
     "start": "pnpm run build && node scripts/start.mjs",
     "package": "pnpm run build:all && electron-builder --config electron-builder.yml",
-    "build:api": "pnpm --filter @caseflow-ai/api run build && pnpm --filter @caseflow-ai/api deploy --prod --legacy --config.node-linker=hoisted build/api && pnpm install --config.confirm-modules-purge=false"
+    "build:api": "node scripts/build-api.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "0.5.8",
