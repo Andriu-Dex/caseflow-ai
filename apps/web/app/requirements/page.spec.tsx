@@ -14,6 +14,9 @@ vi.mock('sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.f
 vi.mock('../../lib/api', () => ({
   api: {
     requirements: {
+      latestGeneration: vi.fn(async () => ({ job: null })),
+      startGeneration: vi.fn(),
+      generation: vi.fn(),
       list: (...args: unknown[]) => mocks.list(...args),
       transition: (...args: unknown[]) => mocks.transition(...args),
       qualityReport: vi.fn(async () => ({

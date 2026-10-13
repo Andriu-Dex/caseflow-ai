@@ -3,6 +3,8 @@ import { PrismaService } from '../database/prisma.service';
 import type { Prisma } from '../generated/prisma/client';
 
 export const AUDIT_ACTIONS = [
+  'REQUIREMENT_GENERATION_STARTED',
+  'REQUIREMENT_GENERATION_FINISHED',
   'STAGE_CONFIRMED_CURRENT',
   'PROJECT_WORKFLOW_ROUTE_CHANGED',
   'PROJECT_DETAILS_UPDATED',

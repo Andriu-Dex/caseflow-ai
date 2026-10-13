@@ -4,11 +4,16 @@ import { RequirementsController } from './requirements.controller';
 import { RequirementsService } from './requirements.service';
 import { RequirementDocumentExportService } from './requirement-document-export.service';
 import { KnowledgeBaseModule } from '../knowledge-base/knowledge-base.module';
+import { RequirementGenerationJobsService } from './requirement-generation-jobs.service';
 
 @Module({
   imports: [AIModule, KnowledgeBaseModule],
   controllers: [RequirementsController],
-  providers: [RequirementsService, RequirementDocumentExportService],
+  providers: [
+    RequirementsService,
+    RequirementDocumentExportService,
+    RequirementGenerationJobsService,
+  ],
   exports: [RequirementsService],
 })
 export class RequirementsModule {}
