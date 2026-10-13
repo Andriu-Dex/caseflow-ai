@@ -7255,6 +7255,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-132 | La propuesta del contexto se genera en segundo plano y sobrevive a salir o recargar la página; muestra su avance real (lo que la IA lleva escrito frente a lo que tomaron las anteriores) y el tiempo transcurrido. El aviso de carga de las demás generaciones muestra el tiempo transcurrido y avisa de las esperas largas (§221.16) | Accepted |
 | DEC-133 | La propuesta del contexto describe el producto, no el proyecto: solo actores que interactúan con el software, y lo del proyecto (fases, capacitación, piloto, proceso de desarrollo) va resumido en el contexto adicional; el prompt no contiene frases sobre la propia propuesta (`project-context.generate@5`, §221.15) | Accepted |
 | DEC-134 | Un proyecto puede eliminarse definitivamente, también con historial aprobado: solo su propietario o el propietario o un administrador del espacio de trabajo, y tras escribir su nombre exacto, comprobado en el servidor. Se borran sus filas y archivos y queda constancia en `project_deletions` (§87, ADR-009) | Accepted |
+| DEC-135 | El retorno de conexión de ChatGPT usa una página local accesible con modo oscuro, cabeceras de seguridad y enlace opcional de regreso a CASEFlow en desarrollo (§221.11) | Accepted |
 
 ---
 
@@ -7691,7 +7692,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-134)
+# 221. Extensiones de V2 (DEC-116 a DEC-136)
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
@@ -7817,6 +7818,8 @@ Los requisitos responden al contexto aprobado del proyecto, y esa relación es e
 - **Cobertura.** Toda necesidad y regla de negocio de la última versión aprobada del contexto debe quedar atendida por al menos un requisito aprobado; un vínculo al mismo elemento (mismo tipo y mismo texto) de una versión anterior del contexto también cuenta. Las restricciones sin atender se muestran como observación y no bloquean. La matriz de coherencia incluye la cadena «Contexto → requisito», la etapa de Requisitos de la preparación la muestra y, en los proyectos con coherencia obligatoria, la cobertura incompleta bloquea esa etapa y la congelación de la línea base de diseño; la aprobación individual de un requisito nunca se bloquea por cobertura.
 
 ## 221.11 El instalable como distribución principal y ChatGPT en desarrollo (DEC-128, ADR-007)
+
+DEC-135: el retorno del inicio de sesión de ChatGPT muestra una página local accesible, con modo oscuro, resultado y enlace opcional a `CASEFLOW_WEB_URL` (solo HTTP localhost/127.0.0.1 en desarrollo). No muestra credenciales ni parámetros del callback; usa CSP y `no-store`.
 
 CASEFlow se distribuye como instalable; la web sigue compilando desde el mismo código, pero no se despliega. En desarrollo, con `AI_PROVIDER=chatgpt`, `pnpm dev` inicia un intermediario propio (`apps/desktop/src/dev-broker.ts`) que reutiliza el inicio de sesión del escritorio:
 
