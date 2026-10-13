@@ -38,5 +38,17 @@ describe('FilesystemStorageProvider', () => {
     await expect(storage.getObject('../../secret')).rejects.toMatchObject({
       code: 'STORAGE_PROVIDER_ERROR',
     });
+    await expect(storage.deleteObject('../escape.txt')).rejects.toMatchObject({
+      code: 'STORAGE_PROVIDER_ERROR',
+    });
+  });
+
+  it('deletes an object, and a missing one without error (DEC-134)', async () => {
+    await storage.putObject({ key: 'm/a.png', body: Buffer.from('x'), contentType: 'image/png' });
+    await storage.deleteObject('m/a.png');
+    await expect(storage.getObject('m/a.png')).rejects.toMatchObject({
+      code: 'STORAGE_OBJECT_NOT_FOUND',
+    });
+    await expect(storage.deleteObject('m/a.png')).resolves.toBeUndefined();
   });
 });

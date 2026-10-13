@@ -1,5 +1,6 @@
 import { Inject, Logger, Module, type OnModuleDestroy } from '@nestjs/common';
 import { Worker } from 'bullmq';
+import { stopWaitingForApi } from '../trigger-api-run';
 import { CONSTRUCTION_QUEUE, type ConstructionJobPayload } from '@caseflow-ai/domain';
 import { runConstructionJob } from './process-construction-job';
 
@@ -33,6 +34,7 @@ const logger = new Logger('ConstructionJobsModule');
 export class ConstructionJobsModule implements OnModuleDestroy {
   constructor(@Inject(CONSTRUCTION_WORKER) private readonly worker: Worker) {}
   async onModuleDestroy(): Promise<void> {
+    stopWaitingForApi();
     await this.worker.close();
   }
 }

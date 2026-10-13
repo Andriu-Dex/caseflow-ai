@@ -4,7 +4,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ProjectsPage from './page';
 import { TestProviders } from '../../lib/test-utils';
 
-const mocks = vi.hoisted(() => ({ list: vi.fn(), unarchive: vi.fn(), update: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  list: vi.fn(),
+  unarchive: vi.fn(),
+  update: vi.fn(),
+  remove: vi.fn(),
+}));
 
 vi.mock('../../lib/api', () => ({
   api: {
@@ -13,6 +18,7 @@ vi.mock('../../lib/api', () => ({
       list: (...args: unknown[]) => mocks.list(...args),
       unarchive: (...args: unknown[]) => mocks.unarchive(...args),
       update: (...args: unknown[]) => mocks.update(...args),
+      delete: (...args: unknown[]) => mocks.remove(...args),
     },
   },
   ApiError: class ApiError extends Error {},
@@ -48,6 +54,21 @@ describe('ProjectsPage', () => {
       limit: 12,
       offset: filters.offset,
     }));
+  });
+
+  // DEC-134: approved history no longer prevents deleting a project.
+  it('deletes a project with approved history once its exact name is typed', async () => {
+    mocks.remove.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: 'Eliminar' }));
+    const confirm = screen.getByRole('button', { name: 'Eliminar definitivamente' });
+    expect(confirm).toBeDisabled();
+    await user.type(screen.getByLabelText(/escriba el nombre exacto/), 'Proyecto');
+    expect(confirm).toBeDisabled();
+    await user.type(screen.getByLabelText(/escriba el nombre exacto/), ' 1');
+    await user.click(confirm);
+    await waitFor(() => expect(mocks.remove).toHaveBeenCalledWith('p1', 'Proyecto 1'));
   });
 
   it('shows active projects first and pages through the rest', async () => {

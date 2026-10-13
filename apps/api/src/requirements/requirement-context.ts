@@ -41,6 +41,13 @@ export function contextItems(detail: ContextDetailRows): ContextItemRef[] {
   ];
 }
 
+// Links have no order of their own: show needs, then rules, then
+// constraints, each by number (N-1 before N-2).
+const KIND_ORDER = { NEED: 0, BUSINESS_RULE: 1, CONSTRAINT: 2 } as const;
+export const byContextCode = (a: ContextItemRef, b: ContextItemRef) =>
+  KIND_ORDER[a.kind] - KIND_ORDER[b.kind] ||
+  Number(a.code.split('-')[1]) - Number(b.code.split('-')[1]);
+
 export function contextItemRef(link: {
   need: Row | null;
   constraint: Row | null;

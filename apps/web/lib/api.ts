@@ -16,6 +16,7 @@ import type {
   MockupPreviewResponse,
   MockupResponse,
   ProjectContextCandidate,
+  ProjectContextGenerationJob,
   ProjectContextRequest,
   ProjectContextResponse,
   ListProjectsQuery,
@@ -28,7 +29,7 @@ import type {
   RequirementResponse,
   SourceMetadataInput,
   SourceCapabilitiesResponse,
-  SourceReportCandidate,
+  SourceReportJob,
   SourceReportResponse,
   SourceResponse,
   StalenessAnalysisResponse,
@@ -60,6 +61,17 @@ export interface GenerationCandidate {
   qualityFindings?: { severity: 'ERROR' | 'WARNING'; code: string; message: string }[];
   [key: string]: unknown;
 }
+// DEC-127: whether AI is configured, and what each provider can take now.
+export interface AIStatus {
+  available: boolean;
+  providers: {
+    id: string;
+    maxInputTokens?: number;
+    unavailableUntil?: string;
+    quota?: 'MINUTE' | 'DAY';
+  }[];
+}
+
 export interface GenerationResult {
   id: string;
   candidates: GenerationCandidate[];
@@ -242,6 +254,13 @@ async function authedFetch(
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await authedFetch(`${BASE_URL}${path}`, init);
+  if (
+    typeof window !== 'undefined' &&
+    init?.method &&
+    init.method !== 'GET' &&
+    path.startsWith('/projects/')
+  )
+    window.dispatchEvent(new CustomEvent('caseflow:readiness-changed'));
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
@@ -298,7 +317,11 @@ const post = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
 const patch = <T>(path: string, body: unknown) =>
   request<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
-const del = <T>(path: string) => request<T>(path, { method: 'DELETE' });
+const del = <T>(path: string, body?: unknown) =>
+  request<T>(path, {
+    method: 'DELETE',
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export const api = {
@@ -339,7 +362,9 @@ export const api = {
       workflowRoute?: WorkflowRoute;
     }) => post<ProjectResponse>('/projects', input),
     get: (projectId: string) => get<ProjectResponse>(`/projects/${projectId}`),
-    delete: (projectId: string) => del<void>(`/projects/${projectId}`),
+    // DEC-134: the server checks the typed name too.
+    delete: (projectId: string, confirmName: string) =>
+      del<void>(`/projects/${projectId}`, { confirmName }),
     archive: (projectId: string) => post<ProjectResponse>(`/projects/${projectId}/archive`),
     unarchive: (projectId: string) => post<ProjectResponse>(`/projects/${projectId}/unarchive`),
     update: (projectId: string, input: { name: string; description: string | null }) =>
@@ -355,6 +380,8 @@ export const api = {
   },
   readiness: {
     get: (projectId: string) => get<ReadinessResponse>(`/projects/${projectId}/readiness`),
+    confirm: (projectId: string, stage: string, note?: string) =>
+      post<ReadinessResponse>(`/projects/${projectId}/stages/${stage}/confirm`, { note }),
   },
   staleness: {
     get: (projectId: string) => get<StalenessAnalysisResponse>(`/projects/${projectId}/staleness`),
@@ -418,8 +445,13 @@ export const api = {
       }),
     getReport: (projectId: string, sourceId: string) =>
       get<SourceReportResponse>(`/projects/${projectId}/sources/${sourceId}/report`),
+    // DEC-127: starts (or resumes) the report in the background.
     generateReport: (projectId: string, sourceId: string) =>
-      post<SourceReportCandidate>(`/projects/${projectId}/sources/${sourceId}/report/generate`),
+      post<{ job: SourceReportJob | null }>(
+        `/projects/${projectId}/sources/${sourceId}/report/generate`,
+      ),
+    reportJob: (projectId: string, sourceId: string) =>
+      get<{ job: SourceReportJob | null }>(`/projects/${projectId}/sources/${sourceId}/report-job`),
     acceptReport: (projectId: string, sourceId: string, candidateId: string) =>
       post(`/projects/${projectId}/sources/${sourceId}/report/accept`, { candidateId }),
     submitManualReport: (projectId: string, sourceId: string, summary: string) =>
@@ -445,6 +477,13 @@ export const api = {
       post<ProjectContextResponse>(`/projects/${projectId}/context/versions`, input),
     generate: (projectId: string) =>
       post<ProjectContextCandidate>(`/projects/${projectId}/context/generate`),
+    // DEC-132: the proposal is generated in the background and followed here.
+    startGeneration: (projectId: string) =>
+      post<ProjectContextGenerationJob>(`/projects/${projectId}/context/generation-jobs`),
+    latestGeneration: (projectId: string) =>
+      get<{ job: ProjectContextGenerationJob | null }>(
+        `/projects/${projectId}/context/generation-jobs/latest`,
+      ),
     transition: (projectId: string, versionId: string, status: ArtifactVersionStatus) =>
       post(`/projects/${projectId}/context/versions/${versionId}/transition`, { status }),
   },
@@ -703,7 +742,7 @@ export const api = {
       post<DesignBaselineResponse>(`/projects/${projectId}/design-baselines`, data),
   },
   ai: {
-    status: () => get<{ available: boolean }>('/ai/status'),
+    status: () => get<AIStatus>('/ai/status'),
   },
   construction: {
     sandboxStatus: () => get<{ available: boolean }>('/construction/sandbox-status'),

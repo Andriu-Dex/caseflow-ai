@@ -2,8 +2,19 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { authorizationUrl, parseTokens, PLAN_SCOPE, type Discovery } from './chatgpt-oauth.js';
-import { ChatGPTConnection, startBroker, type Encryption } from './chatgpt-connection.js';
+import {
+  authorizationUrl,
+  callbackListener,
+  parseTokens,
+  PLAN_SCOPE,
+  type Discovery,
+} from './chatgpt-oauth.js';
+import {
+  ChatGPTConnection,
+  encryptedFileStore,
+  startBroker,
+  type Encryption,
+} from './chatgpt-connection.js';
 
 // Stands in for the OS secure storage: reversible, but never plain text.
 const encryption: Encryption = {
@@ -26,8 +37,7 @@ function connectionWith(state: object, fetchMock = vi.fn()) {
   writeFileSync(file, encryption.encrypt(JSON.stringify(state)));
   const onProviderChange = vi.fn().mockResolvedValue(undefined);
   const connection = new ChatGPTConnection(
-    file,
-    encryption,
+    encryptedFileStore(file, encryption),
     vi.fn(),
     onProviderChange,
     fetchMock as unknown as typeof fetch,
@@ -68,7 +78,8 @@ describe('ChatGPT sign-in (DEC-117)', () => {
       scope: `openid profile email offline_access resource.invoke ${PLAN_SCOPE}`,
       resource: 'https://api.openai.com/v1',
       code_challenge_method: 'S256',
-      ext_agent_host_id: 'host-1',
+      // A bare saved id is sent as the URI OpenAI requires.
+      ext_agent_host_id: 'urn:uuid:host-1',
       agent_name_hint: 'CASEFlow AI',
     });
     expect(first.searchParams.get('code_challenge')).not.toBe('v');
@@ -158,5 +169,72 @@ describe('ChatGPT broker', () => {
     expect(await (await call('GET', '/token')).json()).toEqual({ accessToken: 'access-1' });
     expect((await call('POST', '/usage-limit')).status).toBe(204);
     expect((await call('GET', '/token')).status).toBe(409);
+  });
+});
+
+describe('ChatGPT sign-in callback', () => {
+  it('serves an accessible success page with local return link and security headers', async () => {
+    const listener = await callbackListener('st', 'client-1', 'http://localhost:3000');
+    try {
+      const response = await fetch(`${listener.redirectUri}?state=st&code=c`);
+      const html = await response.text();
+      expect(html).toContain('Cuenta de ChatGPT conectada');
+      expect(html).toContain('window.close');
+      expect(html).toContain('http://localhost:3000/');
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(response.headers.get('content-security-policy')).toContain("default-src 'none'");
+      await listener.result;
+    } finally {
+      listener.close();
+    }
+  });
+
+  it('does not echo invalid callback data or close the error page', async () => {
+    const listener = await callbackListener('st', 'client-1');
+    const outcome = listener.result.catch((error: Error) => error.message);
+    try {
+      const response = await fetch(
+        `${listener.redirectUri}?state=${encodeURIComponent('<script>alert(1)</script>')}&code=c`,
+      );
+      const html = await response.text();
+      expect(html).toContain('No se completó la conexión');
+      expect(html).not.toContain('window.close');
+      expect(html).not.toContain('<script>');
+      expect(await outcome).toContain('no es válida');
+    } finally {
+      listener.close();
+    }
+  });
+
+  it('rejects non-local return links', async () => {
+    await expect(callbackListener('st', null, 'https://example.com')).rejects.toThrow(
+      'CASEFLOW_WEB_URL',
+    );
+    await expect(callbackListener('st', null, 'http://localhost.example.com')).rejects.toThrow(
+      'CASEFLOW_WEB_URL',
+    );
+  });
+  const callback = async (expected: string | null, query: string) => {
+    const listener = await callbackListener('st', expected);
+    const outcome = listener.result.then(
+      (value) => value,
+      (error: Error) => error.message,
+    );
+    await fetch(`${listener.redirectUri}?state=st&${query}`);
+    listener.close();
+    return outcome;
+  };
+
+  it('keeps the registered client when a returning sign-in omits it', async () => {
+    expect(await callback('client-1', 'code=c')).toEqual({ code: 'c', clientId: 'client-1' });
+    expect(await callback(null, 'code=c&client_id=client-9')).toEqual({
+      code: 'c',
+      clientId: 'client-9',
+    });
+  });
+
+  it('rejects another client, and a new registration without its client id', async () => {
+    expect(await callback('client-1', 'code=c&client_id=client-2')).toMatch('No se completó');
+    expect(await callback(null, 'code=c')).toMatch('No se completó');
   });
 });

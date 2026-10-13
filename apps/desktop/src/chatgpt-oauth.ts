@@ -46,6 +46,11 @@ export async function discover(fetchImpl: typeof fetch = fetch): Promise<Discove
   return data as unknown as Discovery;
 }
 
+// OpenAI expects the host id as a URI: "urn:uuid:" + a UUIDv4. Hosts saved
+// before this was known hold a bare UUID, so they are prefixed here.
+export const hostIdUri = (hostId: string) =>
+  hostId.startsWith('urn:') ? hostId : `urn:uuid:${hostId}`;
+
 export function authorizationUrl(input: {
   discovery: Discovery;
   clientId: string | null;
@@ -67,14 +72,42 @@ export function authorizationUrl(input: {
     nonce: input.nonce,
     code_challenge_method: 'S256',
     code_challenge: createHash('sha256').update(input.verifier).digest('base64url'),
-    ext_agent_host_id: input.hostId,
+    ext_agent_host_id: hostIdUri(input.hostId),
   }).toString();
   if (!input.clientId) url.searchParams.set('agent_name_hint', APP_NAME);
   return url.toString();
 }
 
-// Waits for the single redirect back to 127.0.0.1, validating state.
-async function callbackListener(state: string) {
+// Waits for the single redirect back to 127.0.0.1, validating state. A new
+// registration returns the issued client id; a returning sign-in may omit it
+// and then keeps the one it was started with, never a different one.
+export function localWebUrl(value?: string): string | undefined {
+  if (!value) return undefined;
+  const url = new URL(value);
+  if (
+    url.protocol !== 'http:' ||
+    !['127.0.0.1', 'localhost'].includes(url.hostname) ||
+    url.username ||
+    url.password
+  )
+    throw new Error('CASEFLOW_WEB_URL debe ser una URL HTTP de localhost o 127.0.0.1.');
+  return url.toString();
+}
+
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+export async function callbackListener(
+  state: string,
+  expectedClientId: string | null,
+  webUrl?: string,
+) {
+  const returnUrl = localWebUrl(webUrl);
   let resolveResult!: (value: { code: string; clientId: string }) => void;
   let rejectResult!: (error: Error) => void;
   const result = new Promise<{ code: string; clientId: string }>((resolve, reject) => {
@@ -89,23 +122,46 @@ async function callbackListener(state: string) {
     }
     const returned = Buffer.from(url.searchParams.get('state') ?? '');
     const expected = Buffer.from(state);
-    const page = (message: string) =>
-      response
-        .writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-        .end(`<p style="font-family:sans-serif">${message} Puede volver a CASEFlow AI.</p>`);
+    const page = ({ ok, title, message }: { ok: boolean; title: string; message: string }) =>
+      response.writeHead(200, {
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'no-store',
+        'content-security-policy':
+          "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:",
+      })
+        .end(`<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>CASEFlow AI</title><style>
+          :root{color-scheme:light dark;--bg:#ffffff;--card:#f8fafc;--text:#0f172a;--muted:#475569;--primary:#4f6bff;--status:${ok ? '#10b981' : '#ef4444'}}
+          @media(prefers-color-scheme:dark){:root{--bg:#0f172a;--card:#1e293b;--text:#f8fafc;--muted:#cbd5e1}}
+          *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:var(--bg);color:var(--text);font-family:system-ui,sans-serif}
+          main{width:min(100%,480px);padding:36px;border-radius:20px;background:var(--card);text-align:center;box-shadow:0 12px 40px #0001}svg{width:64px;height:64px;color:var(--status)}h1{font-size:24px;line-height:1.3}p{color:var(--muted);line-height:1.6}a{display:inline-block;margin-top:16px;padding:12px 20px;border-radius:10px;background:var(--primary);color:white;text-decoration:none;font-weight:600}a:focus-visible{outline:3px solid var(--text);outline-offset:4px}
+          </style></head><body><main><svg viewBox="0 0 64 64" role="img" aria-label="${ok ? 'Éxito' : 'Error'}"><circle cx="32" cy="32" r="30" fill="currentColor"/>${ok ? '<path d="m18 32 9 9 19-19" fill="none" stroke="white" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>' : '<path d="M32 17v19m0 9v1" stroke="white" stroke-width="5" stroke-linecap="round"/>'}</svg><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p><p>${ok ? 'Ya puede volver a CASEFlow AI. Esta pestaña se puede cerrar.' : 'Vuelva a CASEFlow AI e inténtelo de nuevo.'}</p>${returnUrl ? `<a href="${escapeHtml(returnUrl)}">Volver a CASEFlow</a>` : ''}</main>${ok ? '<script>setTimeout(() => window.close(), 3000)</script>' : ''}</body></html>`);
     if (returned.length !== expected.length || !timingSafeEqual(returned, expected)) {
-      page('La respuesta de inicio de sesión no es válida.');
+      page({
+        ok: false,
+        title: 'No se completó la conexión',
+        message: 'La respuesta de inicio de sesión no es válida.',
+      });
       rejectResult(new ChatGPTSignInError('La respuesta de inicio de sesión no es válida.'));
       return;
     }
     const code = url.searchParams.get('code');
-    const clientId = url.searchParams.get('client_id');
-    if (url.searchParams.has('error') || !code || !clientId) {
-      page('No se completó el inicio de sesión.');
+    const returnedClientId = url.searchParams.get('client_id');
+    const clientId = returnedClientId ?? expectedClientId;
+    if (
+      url.searchParams.has('error') ||
+      !code ||
+      !clientId ||
+      (expectedClientId !== null && clientId !== expectedClientId)
+    ) {
+      page({
+        ok: false,
+        title: 'No se completó la conexión',
+        message: 'No se completó el inicio de sesión.',
+      });
       rejectResult(new ChatGPTSignInError('No se completó el inicio de sesión con ChatGPT.'));
       return;
     }
-    page('Conexión completada.');
+    page({ ok: true, title: 'Cuenta de ChatGPT conectada', message: 'Conexión completada.' });
     resolveResult({ code, clientId });
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -157,13 +213,14 @@ export async function signIn(options: {
   hostId: string;
   openBrowser: (url: string) => Promise<void>;
   fetchImpl?: typeof fetch;
+  webUrl?: string;
 }): Promise<{ clientId: string; tokens: Tokens; email: string | null }> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const discovery = await discover(fetchImpl);
   const state = random();
   const nonce = random();
   const verifier = random();
-  const listener = await callbackListener(state);
+  const listener = await callbackListener(state, options.clientId, options.webUrl);
   const timeout = setTimeout(() => listener.close(), 10 * 60_000);
   try {
     await options.openBrowser(

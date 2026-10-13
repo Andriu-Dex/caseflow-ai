@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -10,6 +10,7 @@ import {
   Hammer,
   Home,
   Lock,
+  RefreshCw,
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
@@ -21,7 +22,14 @@ import { useEffect, useState } from 'react';
 import { Separator } from '@caseflow-ai/ui';
 import { api } from '../lib/api';
 import { useActiveProject } from '../lib/active-project';
-import { computeStepState, PIPELINE_STEPS, ROUTE_STEP_NUMBER } from '../lib/stage-links';
+import {
+  computeStepState,
+  PIPELINE_STEPS,
+  ROUTE_STEP_NUMBER,
+  ROUTE_STAGE_KEYS,
+  STAGE_LINKS,
+} from '../lib/stage-links';
+import { StageOutdatedBanner } from './stage-outdated-banner';
 import { ProjectSwitcher } from './project-switcher';
 
 type NavItem = { href: string; label: string };
@@ -124,6 +132,14 @@ const EXPRESS_GROUPS: { label: string; items: NavItem[] }[] = [
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { projectId } = useActiveProject();
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    const changed = () => {
+      if (projectId) void queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
+    };
+    window.addEventListener('caseflow:readiness-changed', changed);
+    return () => window.removeEventListener('caseflow:readiness-changed', changed);
+  }, [projectId, queryClient]);
   const readiness = useQuery({
     queryKey: ['readiness', projectId],
     queryFn: () => api.readiness.get(projectId!),
@@ -184,6 +200,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   const stages = readiness.data?.stages;
+  const firstOutdated = stages?.find((stage) => stage.currency === 'OUTDATED');
+  const upstreamLabel = stages?.find(
+    (stage) => stage.key === firstOutdated?.outdatedSince?.stage,
+  )?.label;
 
   // A step is reachable only once every earlier step in the pipeline is
   // satisfied — this is a navigation affordance, not a validation rule: the
@@ -192,6 +212,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   function firstBlockingStep(href: string): { label: string } | null {
     const target = ROUTE_STEP_NUMBER[href];
     if (!target || !stages) return null;
+    const state = computeStepState(href, stages);
+    if (state === 'outdated') return null;
+    if (state === 'blocked' && firstOutdated) return { label: firstOutdated.label };
     // Once the project has already progressed to this step (or past it), an
     // upstream edit must never re-lock it: the user fixes the earlier step
     // and keeps working where they were, seeing what may need review.
@@ -258,6 +281,18 @@ export function AppShell({ children }: { children: ReactNode }) {
           </button>
         </div>
         <div className="flex flex-col gap-5">
+          {firstOutdated ? (
+            <Link
+              href={STAGE_LINKS[firstOutdated.key] ?? '/readiness'}
+              title={`Cambió ${upstreamLabel ?? 'un paso anterior'}. Rehaga desde ${firstOutdated.label}.`}
+              className="flex items-start gap-2 rounded-md border border-amber-700/50 bg-amber-950/30 p-2 text-xs text-amber-200"
+            >
+              <RefreshCw className="size-4 shrink-0" aria-hidden="true" />
+              <span className={label}>
+                Cambió {upstreamLabel ?? 'un paso anterior'}. Rehaga desde {firstOutdated.label}.
+              </span>
+            </Link>
+          ) : null}
           {groups.map((group, i) => {
             const isConstruction = group.label === CONSTRUCTION_GROUP_LABEL;
             const planningComplete = readiness.data?.ready === true;
@@ -320,11 +355,13 @@ export function AppShell({ children }: { children: ReactNode }) {
                           title={
                             locked
                               ? `${collapsed ? `${item.label}: b` : 'B'}loqueado — complete los pasos anteriores primero`
-                              : state === 'next'
-                                ? `${collapsed ? `${item.label}: s` : 'S'}iguiente paso recomendado`
-                                : collapsed
-                                  ? item.label
-                                  : undefined
+                              : state === 'outdated'
+                                ? 'Por rehacer'
+                                : state === 'next'
+                                  ? `${collapsed ? `${item.label}: s` : 'S'}iguiente paso recomendado`
+                                  : collapsed
+                                    ? item.label
+                                    : undefined
                           }
                           className={`relative flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors ${
                             collapsed ? 'md:justify-center md:px-0' : ''
@@ -339,14 +376,18 @@ export function AppShell({ children }: { children: ReactNode }) {
                           {step ? (
                             <span
                               className={`flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${
-                                state === 'satisfied'
-                                  ? 'bg-emerald-500 text-white'
-                                  : active || state === 'next'
-                                    ? 'bg-white/20 text-white'
-                                    : 'bg-white/10 text-sidebar-foreground/60'
+                                state === 'outdated'
+                                  ? 'bg-amber-500/20 text-amber-300'
+                                  : state === 'satisfied'
+                                    ? 'bg-emerald-500 text-white'
+                                    : active || state === 'next'
+                                      ? 'bg-white/20 text-white'
+                                      : 'bg-white/10 text-sidebar-foreground/60'
                               }`}
                             >
-                              {state === 'satisfied' ? (
+                              {state === 'outdated' ? (
+                                <RefreshCw className="size-3" aria-hidden="true" />
+                              ) : state === 'satisfied' ? (
                                 <Check className="size-3" aria-hidden="true" />
                               ) : locked ? (
                                 <Lock className="size-2.5" aria-hidden="true" />
@@ -364,6 +405,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                             <Home className="size-4 shrink-0" aria-hidden="true" />
                           )}
                           <span className={label}>{item.label}</span>
+                          {state === 'outdated' && !collapsed ? (
+                            <span className="ml-auto text-[10px] text-amber-300">Por rehacer</span>
+                          ) : null}
                           {state === 'next' ? (
                             <span
                               className={`ml-auto size-1.5 shrink-0 rounded-full bg-emerald-400 ${
@@ -404,7 +448,23 @@ export function AppShell({ children }: { children: ReactNode }) {
           <ProjectSwitcher />
         </header>
         <main id="main-content" className="min-w-0 flex-1 bg-background p-4 md:p-6">
-          {children}
+          {projectId
+            ? (ROUTE_STAGE_KEYS[pathname] ?? []).map((stage) => (
+                <StageOutdatedBanner key={stage} stage={stage} projectId={projectId} />
+              ))
+            : null}
+          {computeStepState(pathname, stages) === 'blocked' && firstOutdated ? (
+            <p className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+              Primero rehaga{' '}
+              <Link className="underline" href={STAGE_LINKS[firstOutdated.key] ?? '/readiness'}>
+                {firstOutdated.label}
+              </Link>
+              .
+            </p>
+          ) : null}
+          <div inert={computeStepState(pathname, stages) === 'blocked' || undefined}>
+            {children}
+          </div>
         </main>
       </div>
     </div>

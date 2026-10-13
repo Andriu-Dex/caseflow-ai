@@ -35,10 +35,13 @@ export const SOURCE_FAILURE_REASONS = [
 export type SourceFailureReason = (typeof SOURCE_FAILURE_REASONS)[number];
 
 // Extraction limits, shared so the UI can explain them before uploading.
+// The text is kept whole (DEC-127): what reaches the AI is bounded by the
+// provider's capacity, not by how much is stored. 500 000 characters only
+// guards against absurd files.
 export const SOURCE_LIMITS = {
   maxPdfPages: 100,
   maxScannedPdfPages: 10,
-  maxExtractedCharacters: 50_000,
+  maxExtractedCharacters: 500_000,
 } as const;
 
 export const SOURCE_EXTRACTION_STATES = [
@@ -139,7 +142,9 @@ export const sourceMetadataInputSchema = z
   .strict();
 export type SourceMetadataInput = z.output<typeof sourceMetadataInputSchema>;
 
-export const manualTranscriptInputSchema = z.object({ transcript: text(50_000) }).strict();
+export const manualTranscriptInputSchema = z
+  .object({ transcript: text(SOURCE_LIMITS.maxExtractedCharacters) })
+  .strict();
 export type ManualTranscriptInput = z.output<typeof manualTranscriptInputSchema>;
 
 const versionSchema = z.object({
@@ -229,6 +234,21 @@ export const sourceReportCandidateSchema = z.object({
   createdAt: z.string(),
 });
 export type SourceReportCandidate = z.infer<typeof sourceReportCandidateSchema>;
+
+// A report generated in the background (DEC-127): its progress, its error,
+// and once done the AI proposal to review.
+export const sourceReportJobSchema = z.object({
+  id: z.uuid(),
+  sourceVersionId: z.uuid(),
+  status: z.enum(['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED', 'UNSUPPORTED']),
+  totalParts: z.number().int().nullable(),
+  completedParts: z.number().int(),
+  errorMessage: z.string().nullable(),
+  candidate: sourceReportCandidateSchema.nullable(),
+  updatedAt: z.iso.datetime(),
+});
+export type SourceReportJob = z.infer<typeof sourceReportJobSchema>;
+export const sourceReportJobResponseSchema = z.object({ job: sourceReportJobSchema.nullable() });
 
 export const manualSourceReportInputSchema = z.object({ content: reportContentSchema }).strict();
 

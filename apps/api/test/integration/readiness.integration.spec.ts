@@ -8,10 +8,11 @@ import type { KnowledgeBaseService } from '../../src/knowledge-base/knowledge-ba
 import { RequirementsService } from '../../src/requirements/requirements.service';
 import { StructuredAnalysisService } from '../../src/structured-analysis/structured-analysis.service';
 import { UseCasesService } from '../../src/use-cases/use-cases.service';
-import { approved } from './support/construction-fixtures';
+import { approved, freezableDesign } from './support/construction-fixtures';
 import { createTestContext, createWorkspace, type TestContext } from './support/test-app';
+import { DesignBaselinesService } from '../../src/construction/design-baselines.service';
 
-const disabledKb: Pick<KnowledgeBaseService, 'retrieve'> = { retrieve: async () => [] };
+const disabledKb: Pick<KnowledgeBaseService, 'searchSources'> = { searchSources: async () => [] };
 
 const FAKE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><g></g></svg>';
 
@@ -102,7 +103,7 @@ async function approveUseCase(
 ) {
   const service = new UseCasesService(
     ctx.prisma,
-    fakeAi(ctx, 'use-cases.generate', 1, {
+    fakeAi(ctx, 'use-cases.generate', 2, {
       candidates: [
         {
           candidateId: `uc-${name}`,
@@ -144,6 +145,88 @@ describe('Readiness integration', () => {
     const result = await ctx.readiness.evaluate(projectId);
     expect(result.ready).toBe(false);
     expect(result.stages.find((s) => s.key === 'SOURCES')?.satisfied).toBe(false);
+  });
+
+  it('counts identities once and diagrams only the latest approved use-case versions', async () => {
+    const projectId = await project('Versioned use cases');
+    const source = await approveSource(ctx, projectId);
+    const context = await approveContext(ctx, projectId, [source.id]);
+    const requirement = await approveRequirement(ctx, projectId, context.id, 'Registrar datos');
+    const first = await approveUseCase(ctx, projectId, requirement.id, 'Registrar datos');
+    const identity = await ctx.prisma.artifactVersion.findUniqueOrThrow({
+      where: { id: first.id },
+    });
+    const edited = await ctx.useCases.version(projectId, identity.artifactId, {
+      name: 'Registrar datos revisado',
+      objective: 'Registrar datos',
+      primaryActor: 'Usuario',
+      secondaryActors: [],
+      preconditions: [],
+      postconditions: [],
+      mainFlow: [{ actor: 'Usuario', action: 'Registra los datos' }],
+      alternativeFlows: [],
+      relatedRequirementVersionIds: [requirement.id],
+      relations: [],
+    });
+    await ctx.useCases.transition(projectId, edited.id, edited.version.id, 'IN_REVIEW');
+    await ctx.useCases.transition(projectId, edited.id, edited.version.id, 'APPROVED');
+    await ctx.dataModels.generateUseCaseDiagram(projectId, [edited.version.id]);
+    const result = await ctx.readiness.evaluate(projectId);
+    expect(result.stages.find((stage) => stage.key === 'USE_CASES')?.counts?.approved).toBe(1);
+    expect(result.stages.find((stage) => stage.key === 'USE_CASE_DIAGRAM')?.satisfied).toBe(true);
+  });
+
+  it('reviews changes in order, audits confirmations and blocks construction', async () => {
+    const projectId = await project('Ordered review');
+    const source = await approveSource(ctx, projectId);
+    const context = await approveContext(ctx, projectId, [source.id]);
+    const requirement = await approveRequirement(ctx, projectId, context.id, 'Registrar datos');
+    await approveUseCase(ctx, projectId, requirement.id, 'Registrar datos');
+    const original = await ctx.readiness.evaluate(projectId);
+    expect(original.stages.every((stage) => stage.currency === 'CURRENT')).toBe(true);
+    await approveSource(ctx, projectId, 'Nueva fuente');
+    const changed = await ctx.readiness.evaluate(projectId);
+    expect(changed.stages.find((s) => s.key === 'CONTEXT')?.currency).toBe('OUTDATED');
+    expect(changed.stages.find((s) => s.key === 'REQUIREMENTS')?.currency).toBe('BLOCKED');
+    await expect(
+      ctx.readiness.confirmCurrent(projectId, 'REQUIREMENTS', ctx.userId),
+    ).rejects.toThrow('Primero revise');
+    const designProject = await project('Stale design gate');
+    const designVersions = await freezableDesign(ctx, designProject);
+    await approveSource(ctx, designProject, 'Cambio aprobado posterior al diseño');
+    await expect(
+      ctx.app
+        .get(DesignBaselinesService)
+        .create(designProject, ctx.userId, { label: 'Obsoleto', versions: designVersions }),
+    ).rejects.toThrow('pasos por rehacer');
+    await expect(
+      ctx.readiness.confirmCurrent(projectId, 'CONTEXT', '00000000-0000-4000-8000-000000000001'),
+    ).rejects.toThrow('permiso');
+    await ctx.readiness.confirmCurrent(projectId, 'CONTEXT', ctx.userId, 'Fuentes revisadas');
+    const next = await ctx.readiness.evaluate(projectId);
+    expect(next.stages.find((s) => s.key === 'CONTEXT')?.currency).toBe('CURRENT');
+    expect(next.stages.find((s) => s.key === 'IMPACT')?.satisfied).toBe(true);
+    expect(next.stages.find((s) => s.key === 'REQUIREMENTS')?.currency).toBe('OUTDATED');
+    await ctx.readiness.confirmCurrent(projectId, 'REQUIREMENTS', ctx.userId);
+    const following = await ctx.readiness.evaluate(projectId);
+    expect(following.stages.find((s) => s.key === 'USE_CASES')?.currency).toBe('OUTDATED');
+    const event = await ctx.prisma.auditEvent.findFirst({
+      where: { projectId, action: 'STAGE_CONFIRMED_CURRENT' },
+    });
+    expect(event?.metadata).toMatchObject({
+      stage: 'CONTEXT',
+      upstreamStage: 'SOURCES',
+      note: 'Fuentes revisadas',
+    });
+    const confirmation = await ctx.prisma.stageConfirmation.findFirstOrThrow({
+      where: { projectId },
+    });
+    await expect(
+      ctx.sql.query('UPDATE stage_confirmations SET note = $1 WHERE id = $2', [
+        'changed',
+        confirmation.id,
+      ]),
+    ).rejects.toMatchObject({ code: '23001' });
   });
 
   it('blocks on an uploaded but unapproved source', async () => {
@@ -217,7 +300,7 @@ describe('Readiness integration', () => {
 
     const dataModelsService = new DataModelsService(
       ctx.prisma,
-      fakeAi(ctx, 'data-model.generate', 1, {
+      fakeAi(ctx, 'data-model.generate', 2, {
         candidates: [
           {
             candidateId: 'dm1',
@@ -247,6 +330,9 @@ describe('Readiness integration', () => {
     );
     await dataModelsService.generateUseCaseDiagram(projectId, [lastUseCase.id]);
     result = await ctx.readiness.evaluate(projectId);
+    expect(result.stages.find((s) => s.key === 'USE_CASE_DIAGRAM')?.satisfied).toBe(false);
+    await dataModelsService.generateUseCaseDiagram(projectId, useCaseIds);
+    result = await ctx.readiness.evaluate(projectId);
     expect(result.stages.find((s) => s.key === 'USE_CASE_DIAGRAM')?.satisfied).toBe(true);
     expect(result.stages.find((s) => s.key === 'DATA_MODEL')?.satisfied).toBe(false);
 
@@ -272,6 +358,30 @@ describe('Readiness integration', () => {
     expect(result.stages.find((s) => s.key === 'DATA_MODEL')?.satisfied).toBe(true);
     expect(result.stages.find((s) => s.key === 'ER_DIAGRAM')?.satisfied).toBe(true);
     expect(result.stages.find((s) => s.key === 'NAVIGATION')?.satisfied).toBe(false);
+
+    // Follow the canonical pipeline: classes precede navigation and design.
+    expect(result.stages.find((s) => s.key === 'CLASS_DIAGRAM')?.satisfied).toBe(false);
+    const classDiagram = await ctx.structuredAnalysis.create(projectId, 'CLASS_DIAGRAM', 'Clases', {
+      classes: [
+        {
+          localId: 'order',
+          name: 'Pedido',
+          stereotype: 'ENTITY',
+          dataModelEntityName: 'Pedido',
+          attributes: [{ name: 'id', type: 'UUID', visibility: 'PRIVATE', required: true }],
+          methods: [],
+        },
+      ],
+      relationships: [],
+    });
+    for (const status of ['IN_REVIEW', 'APPROVED'] as const)
+      await ctx.structuredAnalysis.transition(
+        projectId,
+        'CLASS_DIAGRAM',
+        classDiagram.id,
+        classDiagram.version.id,
+        status,
+      );
 
     const structuredAnalysisService = new StructuredAnalysisService(
       ctx.prisma,
@@ -430,30 +540,6 @@ describe('Readiness integration', () => {
     expect(result.stages.find((s) => s.key === 'UI_BLUEPRINT')?.satisfied).toBe(true);
     expect(result.stages.find((s) => s.key === 'DESIGN_THEME')?.satisfied).toBe(false);
     expect(result.stages.find((s) => s.key === 'MOCKUPS')?.satisfied).toBe(false);
-
-    // New projects require an approved class diagram (DEC-121).
-    expect(result.stages.find((s) => s.key === 'CLASS_DIAGRAM')?.satisfied).toBe(false);
-    const classDiagram = await ctx.structuredAnalysis.create(projectId, 'CLASS_DIAGRAM', 'Clases', {
-      classes: [
-        {
-          localId: 'order',
-          name: 'Pedido',
-          stereotype: 'ENTITY',
-          dataModelEntityName: 'Pedido',
-          attributes: [{ name: 'id', type: 'UUID', visibility: 'PRIVATE', required: true }],
-          methods: [],
-        },
-      ],
-      relationships: [],
-    });
-    for (const status of ['IN_REVIEW', 'APPROVED'] as const)
-      await ctx.structuredAnalysis.transition(
-        projectId,
-        'CLASS_DIAGRAM',
-        classDiagram.id,
-        classDiagram.version.id,
-        status,
-      );
 
     // New projects paint their mockups with an approved theme (DEC-118).
     await approved(ctx, projectId, 'DESIGN_THEME');

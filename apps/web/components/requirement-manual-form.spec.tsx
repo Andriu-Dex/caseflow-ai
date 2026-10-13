@@ -143,8 +143,8 @@ describe('Requirement form', () => {
   it('edits into a new version keeping the declared origin', async () => {
     const user = userEvent.setup();
     renderForm(existing);
-    expect(screen.getByRole('dialog', { name: 'Editar RF-001' })).toHaveTextContent(
-      'se crea la versión 2',
+    expect(screen.getByRole('dialog', { name: 'Editar requisito' })).toHaveTextContent(
+      'se creará la versión 2',
     );
     expect(screen.getByLabelText('Justificación')).toHaveValue('Lo pidió el cliente.');
     await user.click(screen.getByRole('button', { name: 'Guardar cambios' }));

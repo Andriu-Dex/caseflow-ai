@@ -80,6 +80,41 @@ describe('ConsistencyEngineService', () => {
     expect(result.issues.map((issue) => issue.severity)).toEqual(['WARNING']);
   });
 
+  it('reports RNF with no declared design coverage without forcing them into use cases', async () => {
+    prisma.artifact.findMany.mockResolvedValue([
+      artifact('rnf-1', 'REQUIREMENT', {
+        requirementDetail: { requirementType: 'NON_FUNCTIONAL' },
+      }),
+      artifact('sw-1', 'SOFTWARE_ARCHITECTURE', {
+        structuredAnalysisDetail: {
+          content: {
+            components: [{ localId: 'audit', name: 'Auditoría', relatedSourceCodes: [] }],
+          },
+        },
+      }),
+    ]);
+    expect((await service.generateReport('p')).issues).toContainEqual(
+      expect.objectContaining({
+        chain: 'QUALITY_REQUIREMENT_DESIGN',
+        severity: 'WARNING',
+        message: expect.stringContaining('RNF-1'),
+      }),
+    );
+    prisma.artifact.findMany.mockResolvedValue([
+      artifact('rnf-1', 'REQUIREMENT', {
+        requirementDetail: { requirementType: 'NON_FUNCTIONAL' },
+      }),
+      artifact('sw-1', 'SOFTWARE_ARCHITECTURE', {
+        structuredAnalysisDetail: {
+          content: {
+            components: [{ localId: 'audit', name: 'Auditoría', relatedSourceCodes: ['RNF-1'] }],
+          },
+        },
+      }),
+    ]);
+    expect((await service.generateReport('p')).issues).toEqual([]);
+  });
+
   it('checks the UI blueprint against the navigation tree and use cases', async () => {
     prisma.artifact.findMany.mockResolvedValue([
       artifact('cu-1', 'USE_CASE', { useCaseDetail: { name: 'Pedir', requirementLinks: [] } }),

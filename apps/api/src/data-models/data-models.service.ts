@@ -210,7 +210,7 @@ export class DataModelsService {
         projectId,
         language,
         promptKey: 'data-model.generate',
-        promptVersion: 1,
+        promptVersion: 2,
         messages: [
           {
             role: 'user',
@@ -428,7 +428,12 @@ export class DataModelsService {
       },
       include: {
         artifact: true,
-        useCaseDetail: { include: { secondaryActors: { orderBy: { position: 'asc' } } } },
+        useCaseDetail: {
+          include: {
+            secondaryActors: { orderBy: { position: 'asc' } },
+            relations: { include: { target: { select: { code: true } } } },
+          },
+        },
       },
       orderBy: { artifact: { code: 'asc' } },
     });
@@ -436,8 +441,9 @@ export class DataModelsService {
       throw new UnprocessableEntityException(
         'Se requieren versiones exactas APPROVED de casos de uso del mismo proyecto.',
       );
+    const project = await this.prisma.project.findUniqueOrThrow({ where: { id: projectId } });
     const source = this.diagrams.generateUseCase({
-      systemName: 'Sistema',
+      systemName: project.name,
       useCases: sources.map((item) => ({
         code: item.artifact.code,
         name: item.useCaseDetail!.name,
@@ -445,6 +451,10 @@ export class DataModelsService {
           item.useCaseDetail!.primaryActor,
           ...item.useCaseDetail!.secondaryActors.map((actor) => actor.name),
         ],
+        relations: item.useCaseDetail!.relations.map((relation) => ({
+          kind: relation.kind,
+          targetCode: relation.target.code,
+        })),
       })),
     });
     const diagram = await this.renderDiagram('PLANTUML', source);

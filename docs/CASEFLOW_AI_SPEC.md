@@ -1560,7 +1560,7 @@ Esto permite recalcular embeddings con otro modelo sin perder los anteriores.
 
 ## 31.2 Versiones históricas
 
-Las versiones históricas no deben eliminarse físicamente desde la aplicación.
+Las versiones históricas no deben eliminarse físicamente desde la aplicación. La única excepción es la eliminación del proyecto completo (§87, DEC-134).
 
 ## 31.3 Baselines
 
@@ -3338,7 +3338,9 @@ Las reglas internas permanecen:
 
 Sin embargo, debe distinguirse esto del derecho operacional a eliminar un proyecto/workspace completo.
 
-La arquitectura debe permitir posteriormente:
+**Implementado (DEC-134, ADR-009):** un proyecto puede eliminarse definitivamente, aunque tenga historial aprobado. Pueden hacerlo su propietario o el propietario o un administrador del espacio de trabajo, escribiendo el nombre exacto del proyecto, que el servidor comprueba. Se borran todas sus filas, incluida su auditoría, y sus archivos. Quién lo eliminó y cuándo queda en `project_deletions`, fuera del proyecto y de solo añadir. Las protecciones de la base de datos solo dejan borrar historial dentro de esa transacción. Archivar sigue siendo la forma de dejar de usar un proyecto sin perder nada.
+
+Pendiente, como evolución futura: la arquitectura debe permitir
 
 ```text
 DeletionRequest
@@ -7245,6 +7247,16 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-124 | El reporte aprobado de una fuente guía la generación del contexto del proyecto: solo el de la versión exacta citada, el texto extraído prevalece ante contradicción y el candidato registra qué reportes se usaron (§221.8) | Accepted |
 | DEC-125 | El texto extraído de las fuentes se guarda con su estructura en Markdown (títulos por tamaño de letra en PDF, títulos, listas y tablas de Word, saltos de línea del texto plano) y puede volver a extraerse del original en una versión nueva (§221.9) | Accepted |
 | DEC-126 | Cada requisito declara su origen: los elementos del contexto aprobado que atiende (necesidades N-x, restricciones RES-x, reglas de negocio RN-x) o una decisión del usuario con su justificación. La IA cita esos códigos, debe cubrir todas las necesidades y reglas, y puede proponer hasta 5 ideas adicionales que el usuario decide incluir (§221.10) | Accepted |
+| DEC-127 | Cada proveedor de IA declara lo que admite su plan (tamaño máximo por solicitud, tokens por minuto, reinicio de la cuota diaria) y cada solicitud va al primero en que cabe. El texto de una fuente se guarda completo (hasta 500 000 caracteres) y se indexa por secciones con búsqueda de texto completo; el reporte de una fuente larga se genera por partes en segundo plano y el contexto y los requisitos leen una entrada acotada (§221.12) | Accepted |
+| DEC-128 | El instalable (edición de escritorio) es la distribución principal y no hay despliegue web obligatorio. El plan de ChatGPT también puede usarse en desarrollo local con un intermediario propio que guarda las credenciales solo en memoria y solo escucha en 127.0.0.1 (§221.11, ADR-007) | Accepted |
+| DEC-129 | Los casos de uso propuestos por la IA tienen la granularidad de un objetivo concreto de un actor (prompt `use-cases.generate@2`) y un caso de uso registra relaciones «include» y «extend» hacia otros casos del proyecto, que el diagrama dibuja (§221.13, ADR-008) | Accepted |
+| DEC-130 | Convención de cardinalidad del modelo de datos y de multiplicidad del diagrama de clases: cada lado indica cuántas instancias de su entidad corresponden a una del otro lado; los prompts `data-model.generate@2` y `class-diagram.generate@2` la declaran, y los diagramas de arquitectura dibujan capas y protocolos (§221.14) | Accepted |
+| DEC-131 | Cada tarea de IA declara el mínimo de salida que necesita y cada proveedor puede declarar cuánto puede escribir (`AI_MAX_OUTPUT_TOKENS`, `AI_PROVIDER_n_MAX_OUTPUT_TOKENS`); se usa el mayor. `AI_TIMEOUT_MS` es siempre el mínimo de espera. La propuesta del contexto conserva el detalle de la fuente e incluye alcance y descripción de actores (§221.15) | Accepted |
+| DEC-132 | La propuesta del contexto se genera en segundo plano y sobrevive a salir o recargar la página; muestra su avance real (lo que la IA lleva escrito frente a lo que tomaron las anteriores) y el tiempo transcurrido. El aviso de carga de las demás generaciones muestra el tiempo transcurrido y avisa de las esperas largas (§221.16) | Accepted |
+| DEC-133 | La propuesta del contexto describe el producto, no el proyecto: solo actores que interactúan con el software, y lo del proyecto (fases, capacitación, piloto, proceso de desarrollo) va resumido en el contexto adicional; el prompt no contiene frases sobre la propia propuesta (`project-context.generate@5`, §221.15) | Accepted |
+| DEC-134 | Un proyecto puede eliminarse definitivamente, también con historial aprobado: solo su propietario o el propietario o un administrador del espacio de trabajo, y tras escribir su nombre exacto, comprobado en el servidor. Se borran sus filas y archivos y queda constancia en `project_deletions` (§87, ADR-009) | Accepted |
+| DEC-135 | El retorno de conexión de ChatGPT usa una página local accesible con modo oscuro, cabeceras de seguridad y enlace opcional de regreso a CASEFlow en desarrollo (§221.11) | Accepted |
+| DEC-136 | Al aprobar un cambio se revisan en orden los pasos posteriores; el primero pendiente puede rehacerse o confirmarse vigente con auditoría. Los pendientes bloquean congelar diseño y construir (§221.17, ADR-010) | Accepted |
 
 ---
 
@@ -7443,7 +7455,7 @@ Tras el Incremento 1J se retoma el orden de dependencias de §180: Identity / Wo
 - `data-model.generate@1` recibe identificadores explícitos de versiones `APPROVED` de `REQUIREMENT` y `USE_CASE` del mismo proyecto. Usa `maxOutputTokens=12288`, suficiente para el payload estructurado máximo sin imponer un límite universal al orquestador. La salida persiste primero como `DataModelGeneration → DataModelCandidate`; solo la aceptación humana transaccional crea un `DATA_MODEL` `AI_GENERATED/GENERATED`.
 - La procedencia de generación es `DataModelDetail → DataModelCandidate → DataModelGeneration → AIRun → data-model.generate@1`, y `DataModelGenerationSource → ArtifactVersion` conserva todas las versiones exactas suministradas.
 - El motor determinístico separa modelo estructurado, generación de fuente y validación ligera de render. ER usa `MERMAID_ER`; UML de casos de uso usa `PLANTUML` porque conserva actores, asociaciones y límite de sistema sin degradarlos a flowchart. `DiagramEngine` nunca ejecuta Mermaid, PlantUML, shell ni texto de IA arbitrario; solo genera fuente determinística desde datos ya validados y aplica una validación local ligera (formato, tamaño). **Superseded por el Incremento 1F.1 (§218.8):** en 1F el render real todavía no existía — el "SVG" era una previsualización textual fija (`caseflow-svg-v1`) que mostraba la fuente escapada como texto monoespaciado, sin layout gráfico ni compatibilidad demostrada con motores oficiales.
-- Cada versión de `DATA_MODEL` conserva su fuente/render ER derivado y un vínculo a la misma versión estructurada. Cada generación de `USE_CASE_DIAGRAM` crea un Artifact/ArtifactVersion nuevo con prefijo `DIA` y vínculos exactos a versiones `APPROVED` de `USE_CASE`; no inventa relaciones include/extend. El SVG es derivado y nunca canónico.
+- Cada versión de `DATA_MODEL` conserva su fuente/render ER derivado y un vínculo a la misma versión estructurada. Cada generación de `USE_CASE_DIAGRAM` crea un Artifact/ArtifactVersion nuevo con prefijo `DIA` y vínculos exactos a versiones `APPROVED` de `USE_CASE`; no inventa relaciones include/extend (desde DEC-129, §221.13, dibuja las registradas en los casos de uso). El SVG es derivado y nunca canónico.
 - La persistencia del SVG en `diagram_details` se acepta temporalmente para el Primer Entregable por su tamaño acotado y naturaleza determinística. La migración a `StorageProvider` se evaluará cuando existan exports/objetos binarios; la fuente estructurada y la versión del generador siguen siendo autoritativas.
 
 ## 218.8 Decisiones de implementación del Incremento 1F.1 (Diagram Rendering Stabilization)
@@ -7681,7 +7693,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-126)
+# 221. Extensiones de V2 (DEC-116 a DEC-136)
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
@@ -7717,7 +7729,7 @@ Implementación:
 
 El proyecto se publica con licencia Apache-2.0, sin pagos en ninguna edición. La edición de escritorio (Electron, `apps/desktop`) usa PGlite con pgvector expuesto por TCP, una cola en proceso sin Redis (`CASEFLOW_QUEUE_MODE=in-process`) y un `FilesystemStorageProvider` (`STORAGE_DIR`) (DEC-120, ADR-005). La construcción sigue exigiendo Docker (§174).
 
-El proveedor "ChatGPT" (plan usage de OpenAI, Responses API) existe solo en la edición de escritorio. Implementación:
+El proveedor "ChatGPT" (plan usage de OpenAI, Responses API) existe en la edición de escritorio y, desde DEC-128 (§221.11), también en desarrollo local; nunca en una edición web alojada. Implementación:
 
 - **Inicio de sesión:** OAuth con PKCE y registro dinámico (`dynamic_agent_client`, `ext_agent_host_id` persistente) desde el proceso principal de Electron. Exige el permiso `chatgpt.tokens.use.direct` y verifica el token de identidad.
 - **Credenciales:** se cifran con `safeStorage`. La API recibe tokens de acceso de corta duración desde un broker en loopback con un secreto por sesión (`AI_PROVIDER=chatgpt`), y el proveedor `ChatGPTProvider` usa `store: false` y `stream: true`.
@@ -7805,6 +7817,63 @@ Los requisitos responden al contexto aprobado del proyecto, y esa relación es e
 - **Ideas para mejorar el software.** La IA puede proponer hasta 5 requisitos que el contexto no pide, cada uno con su razón. Llegan sin seleccionar, no cuentan para la cobertura y, si el usuario los incorpora, su origen es una decisión del usuario cuya justificación es esa razón. Las rutas automáticas (DEC-116) no las incorporan.
 - **Aprobación.** En los proyectos con coherencia obligatoria (DEC-121) un requisito sin origen no puede aprobarse.
 - **Cobertura.** Toda necesidad y regla de negocio de la última versión aprobada del contexto debe quedar atendida por al menos un requisito aprobado; un vínculo al mismo elemento (mismo tipo y mismo texto) de una versión anterior del contexto también cuenta. Las restricciones sin atender se muestran como observación y no bloquean. La matriz de coherencia incluye la cadena «Contexto → requisito», la etapa de Requisitos de la preparación la muestra y, en los proyectos con coherencia obligatoria, la cobertura incompleta bloquea esa etapa y la congelación de la línea base de diseño; la aprobación individual de un requisito nunca se bloquea por cobertura.
+
+## 221.11 El instalable como distribución principal y ChatGPT en desarrollo (DEC-128, ADR-007)
+
+DEC-135: el retorno del inicio de sesión de ChatGPT muestra una página local accesible, con modo oscuro, resultado y enlace opcional a `CASEFLOW_WEB_URL` (solo HTTP localhost/127.0.0.1 en desarrollo). No muestra credenciales ni parámetros del callback; usa CSP y `no-store`.
+
+CASEFlow se distribuye como instalable; la web sigue compilando desde el mismo código, pero no se despliega. En desarrollo, con `AI_PROVIDER=chatgpt`, `pnpm dev` inicia un intermediario propio (`apps/desktop/src/dev-broker.ts`) que reutiliza el inicio de sesión del escritorio:
+
+- **Proceso aparte:** los reinicios de la API al cambiar el código no cierran la sesión.
+- **Credenciales solo en memoria:** en disco solo quedan el identificador del equipo, el del cliente registrado y el modelo (`~/.caseflow/chatgpt-dev.json`), para no registrar una aplicación nueva en cada inicio de sesión.
+- **Salvaguardas:** escucha solo en `127.0.0.1`, la configuración de la API rechaza un intermediario fuera de este equipo y no arranca con `NODE_ENV=production`. Las reglas de pausa y de cambio de proveedor de §221.2 no cambian.
+
+## 221.12 Fuentes largas y proveedores de IA con capacidad declarada (DEC-127)
+
+Los planes gratuitos configurados son limitados de formas opuestas (verificado en octubre de 2026): Groq rechaza cualquier solicitud de más de 8 000 tokens por minuto, pero admite 1 000 al día; Gemini admite hasta 1 048 576 tokens de entrada, pero solo 20 solicitudes al día, con reinicio a medianoche del Pacífico.
+
+- **Capacidad declarada:** cada proveedor declara `AI_PROVIDER_n_MAX_INPUT_TOKENS`, `AI_PROVIDER_n_TOKENS_PER_MINUTE` y `AI_PROVIDER_n_DAY_RESET_TIMEZONE` (ChatGPT, `AI_MAX_INPUT_TOKENS`). Cada solicitud va, en orden, al primer proveedor en que cabe; uno con la cuota diaria agotada se omite hasta su reinicio; un límite por minuto se espera si ningún otro proveedor sirve. Lo que no cabe en ninguno falla con `AI_INPUT_TOO_LARGE`, para que quien llama lo divida. Las solicitudes grandes tienen más tiempo, hasta 3 minutos. Ajustes de IA muestra el estado de cada proveedor.
+- **Texto completo:** el texto extraído admite hasta 500 000 caracteres (antes 50 000). Al aprobar una fuente se divide en secciones según sus títulos, sin cortar párrafos, listas ni tablas salvo que un bloque solo sea demasiado grande, y cada sección se indexa con búsqueda de texto completo de PostgreSQL en el idioma del proyecto (también en PGlite).
+- **Reporte de la fuente:** se genera en segundo plano. Si el texto cabe en el proveedor más capaz disponible, en una sola solicitud; si no, por partes que caben, cada una resumida y luego unidas por lotes. El plan y cada parte se guardan, de modo que un fallo o un reinicio continúa donde quedó. La página muestra el avance por partes.
+- **Propuesta del contexto:** recibe una entrada acotada. Cada fuente conserva su reporte; el espacio para texto se reparte de forma equitativa: las fuentes cortas van completas y las largas como extractos (sus secciones más afines a su reporte). La propuesta registra qué fuentes se leyeron por extractos.
+- **Requisitos:** reciben los fragmentos de las fuentes aprobadas más relevantes para las necesidades y reglas del contexto, dentro del espacio que deja la solicitud.
+
+## 221.13 Granularidad y relaciones de los casos de uso (DEC-129, ADR-008)
+
+- **Granularidad:** `use-cases.generate@2` propone un caso por objetivo concreto de un actor, nombrado con un verbo en infinitivo y su objeto. No usa nombres paraguas («Gestionar…», «Administrar…») ni baja a pasos sueltos, y toma los actores de los requisitos.
+- **Relaciones:** un caso de uso registra relaciones `INCLUDE` (un comportamiento que siempre reutiliza) o `EXTEND` (amplía opcionalmente un caso base) hacia otros casos de uso vigentes del mismo proyecto (`use_case_relations`). Hay como máximo una por par, y forman parte de la versión.
+- **IA:** cada candidato puede relacionarse con otros candidatos de la misma respuesta. Al aceptar, se conservan las relaciones cuyo destino también fue aceptado.
+- **Manual:** el formulario de caso de uso edita las mismas relaciones.
+- **Diagrama:** dibuja las relaciones entre los casos presentes y muestra el nombre del proyecto como límite del sistema. La herencia entre actores sigue fuera de alcance.
+
+## 221.14 Calidad de los diagramas de diseño (DEC-130)
+
+- **Cardinalidad:** en una relación del modelo de datos, `sourceCardinality` indica cuántas instancias de la entidad origen corresponden a una de la entidad destino, y `targetCardinality` lo inverso. Es la convención de pata de gallo con que se dibuja el ER. El diagrama de clases usa la misma convención para `fromMultiplicity` y `toMultiplicity`. `data-model.generate@2` la declara con un ejemplo; la v1 no la definía y devolvía relaciones muchos a uno como uno a uno. El formulario manual muestra cada cardinalidad en notación UML con su explicación.
+- **Diagrama de clases:** `class-diagram.generate@2` propone atributos privados y métodos públicos, etiquetas de asociación legibles y clases de enumeración para conjuntos cerrados de valores.
+- **Diagrama ER:** un atributo clave primaria no se marca además como único.
+- **Arquitectura de software:** un componente que otros nombran como su capa (`layerLocalId`) se dibuja como paquete que los contiene, con un nivel de anidamiento.
+- **Arquitectura de sistema:** cada enlace muestra su protocolo junto a su descripción.
+
+## 221.15 Salida de la IA según el proveedor y contexto completo (DEC-131)
+
+- **Salida:** cada tarea fija en el código el mínimo de tokens de salida que necesita. Cada proveedor puede declarar cuánto puede escribir por respuesta (`AI_MAX_OUTPUT_TOKENS` para ChatGPT o un proveedor único, `AI_PROVIDER_n_MAX_OUTPUT_TOKENS` en la cadena). Se le permite el mayor de los dos, de modo que un proveedor más capaz no queda limitado por los valores pensados para los planes gratuitos. Sin valor declarado, se usa el de la tarea.
+- **Tiempo de espera:** `AI_TIMEOUT_MS` es el mínimo de espera en todos los proveedores. El plazo crece con lo que el proveedor puede escribir, a no menos de 20 tokens por segundo (un modelo con razonamiento midió unos 27), porque una respuesta larga tarda lo que tarda en escribirse. Una conexión sin datos durante 5 minutos se corta igualmente (`bodyTimeout` de `fetch`).
+- **Contexto:** `project-context.generate@4` (desde DEC-133, `@5`) pide conservar el nivel de detalle de las fuentes: una necesidad por capacidad, una regla por regla, cada atributo de calidad como restricción, el alcance (dentro y fuera) en su lista propia, la descripción de cada actor y las suposiciones pendientes en el contexto adicional. Su salida mínima pasa de 4096 a 16 384 tokens. La v5 separa el producto del proyecto: actores son solo los roles y sistemas externos que interactúan con el software; fases, hitos, capacitación, piloto, carga inicial, selección de proveedores, soporte y proceso de desarrollo no son necesidades, reglas ni restricciones y se resumen en el contexto adicional. El prompt no incluye frases sobre la propuesta que el modelo pueda copiar. El formulario edita el alcance y la descripción de los actores («Nombre: responsabilidades»), y una versión nueva conserva el alcance de la anterior.
+
+## 221.16 Generación del contexto en segundo plano y avance visible (DEC-132)
+
+- **Trabajo:** «Generar con IA» en el contexto crea un trabajo (`context_generation_jobs`) que corre dentro de la API sin retener la petición. Hay uno por proyecto a la vez; pedirlo de nuevo devuelve el que está en curso. Uno abierto cuando la API arranca se cierra como interrumpido por reinicio.
+- **Avance real:** un proveedor que responde por partes (ChatGPT) informa de los caracteres escritos, y el trabajo los guarda cada 1,5 s. Al crearse, el trabajo registra lo que tomaron las últimas cinco propuestas correctas (tokens de salida y duración).
+- **Página:** consulta el último trabajo mientras está en curso y muestra la fase (leyendo y pensando, o escribiendo ~N de ~M tokens), una barra que no pasa del 95 % antes de terminar, el tiempo transcurrido y lo que suele tardar. Al terminar, la propuesta llena el borrador del formulario una sola vez, también tras una recarga, y nunca si ya se guardó una versión posterior.
+- **Demás generaciones:** el aviso de carga muestra el tiempo transcurrido y, pasados 20 s, que la IA sigue trabajando y que las propuestas extensas pueden tardar varios minutos.
+
+## 221.17 Vigencia y revisión ordenada del flujo (DEC-136, ADR-010)
+
+Al aprobar un cambio, las etapas posteriores con evidencia anterior quedan por revisar. API y web usan `PIPELINE_ORDER`: Fuentes, Contexto, Requisitos, Casos de uso, su diagrama, Modelo de datos, ER, Diagrama de clases, Navegación, Arquitecturas, Plano de interfaz, Tema y Bocetos. El primero pendiente es accionable; los siguientes están bloqueados. Los pasos vacíos mantienen sus reglas de preparación. Crear un borrador no invalida el flujo.
+
+Se resuelve cada pendiente mediante una aprobación posterior o «Confirmar que sigue vigente» (OWNER, EDITOR o REVIEWER, nota opcional hasta 500 caracteres). Las confirmaciones se conservan en `stage_confirmations`, con auditoría; no cambian versiones aprobadas ni permiten ocultar errores de coherencia. El diagrama de casos de uso debe representar todos los casos aprobados y su vigencia usa la fecha de generación; ER comparte la versión y revisión del modelo.
+
+El servidor bloquea congelar diseño y construir mientras quedan pasos por rehacer. La excepción interna de la orquestación ordenada EXPRESS/BUILD_ONLY no puede activarse desde la API pública. La matriz de coherencia avisa de RNF sin cobertura explícita en componentes, nodos o pantallas, sin exigir que cada requisito aparezca en todos los diagramas ni considerar una referencia prueba semántica de cumplimiento.
 
 ## 221.4 Fuera de alcance de estas extensiones
 

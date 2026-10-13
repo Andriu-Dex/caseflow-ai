@@ -1,7 +1,7 @@
 'use client';
 
 import { contextItemCode } from '@caseflow-ai/contracts';
-import { GenerationOverlay } from '../../components/generation-overlay';
+import { GenerationProgress } from '../../components/generation-progress';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -16,7 +16,11 @@ import {
   Users,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { ProjectContextResponse } from '@caseflow-ai/contracts';
+import type {
+  ProjectContextCandidate,
+  ProjectContextGenerationJob,
+  ProjectContextResponse,
+} from '@caseflow-ai/contracts';
 import { api, ApiError } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { PageHeading } from '../../components/page-heading';
@@ -34,6 +38,23 @@ const linesToItems = (text: string) =>
     .filter(Boolean)
     .map((description) => ({ description }));
 
+// One actor per line as "Nombre: responsabilidades"; the description is optional.
+const actorLine = (actor: { name: string; description?: string | null }) =>
+  actor.description ? `${actor.name}: ${actor.description}` : actor.name;
+const linesToActors = (text: string) =>
+  linesToItems(text).map(({ description: line }) => {
+    const colon = line.indexOf(':');
+    const name = (colon > 0 ? line.slice(0, colon) : line).trim();
+    const description = colon > 0 ? line.slice(colon + 1).trim() : '';
+    return description ? { name, description } : { name };
+  });
+type ScopeType = 'IN_SCOPE' | 'OUT_OF_SCOPE';
+const scopeLines = (items: { type: ScopeType; description: string }[], type: ScopeType) =>
+  items
+    .filter((item) => item.type === type)
+    .map((item) => item.description)
+    .join('\n');
+
 // Per-tab unsent-draft convenience (not backend state): recovers an
 // in-progress Context form after the browser discards/reloads a
 // backgrounded tab. Never a substitute for actually saving the form.
@@ -42,6 +63,8 @@ interface ContextDraft {
   objective: string;
   additionalContext: string;
   actorsText: string;
+  inScopeText?: string;
+  outOfScopeText?: string;
   needsText: string;
   constraintsText: string;
   businessRulesText: string;
@@ -63,6 +86,58 @@ function writeDraft(projectId: string, draft: ContextDraft) {
     // Private browsing / blocked storage: draft just won't survive a reload.
   }
 }
+const draftFromCandidate = (candidate: ProjectContextCandidate): ContextDraft => ({
+  problemStatement: candidate.content.problemStatement,
+  objective: candidate.content.objective,
+  additionalContext: candidate.content.additionalContext ?? '',
+  actorsText: candidate.content.actors.map(actorLine).join('\n'),
+  inScopeText: scopeLines(candidate.content.scopeItems, 'IN_SCOPE'),
+  outOfScopeText: scopeLines(candidate.content.scopeItems, 'OUT_OF_SCOPE'),
+  needsText: candidate.content.needs.join('\n'),
+  constraintsText: candidate.content.constraints.join('\n'),
+  businessRulesText: candidate.content.businessRules.join('\n'),
+  sourceVersionIds: candidate.sourceVersionIds,
+});
+
+// DEC-132: the proposal is generated in the background, so leaving or
+// reloading the page loses nothing. The page follows the latest job while it
+// runs and, when it finishes, puts the proposal in the form's draft once.
+const appliedKey = (projectId: string) => `caseflow.context-applied.${projectId}`;
+const isRunning = (job: ProjectContextGenerationJob | null | undefined) =>
+  job?.status === 'QUEUED' || job?.status === 'RUNNING';
+function wasApplied(projectId: string, candidateId: string) {
+  try {
+    return window.sessionStorage.getItem(appliedKey(projectId)) === candidateId;
+  } catch {
+    return false;
+  }
+}
+function markApplied(projectId: string, candidateId: string) {
+  try {
+    window.sessionStorage.setItem(appliedKey(projectId), candidateId);
+  } catch {
+    // Private browsing: the proposal may be offered again after a reload.
+  }
+}
+function announceCandidate(candidate: ProjectContextCandidate) {
+  toast.success('La propuesta del contexto está lista. Revísela antes de guardarla.');
+  const reports = candidate.reportSourceVersionIds.length;
+  if (reports)
+    toast.info(
+      reports === 1
+        ? 'La propuesta también se apoyó en el reporte aprobado de una fuente.'
+        : `La propuesta también se apoyó en los reportes aprobados de ${reports} fuentes.`,
+    );
+  // DEC-127: a long source is read as its most relevant sections.
+  const partial = candidate.partialSourceVersionIds.length;
+  if (partial)
+    toast.info(
+      partial === 1
+        ? 'Una fuente es larga: la propuesta usó sus secciones más relevantes y su reporte. Revise que no falte nada importante.'
+        : `${partial} fuentes son largas: la propuesta usó sus secciones más relevantes y sus reportes. Revise que no falte nada importante.`,
+    );
+}
+
 function clearDraft(projectId: string) {
   try {
     window.sessionStorage.removeItem(draftKey(projectId));
@@ -76,10 +151,15 @@ function ContextForm({
   onSaved,
   hasExisting,
   initial,
+  generating,
+  onGenerate,
 }: {
   projectId: string;
   onSaved: () => void;
   hasExisting: boolean;
+  // A background generation is running (DEC-132); its progress shows above.
+  generating: boolean;
+  onGenerate: () => void;
   // The current approved/current version, so "Crear nueva versión" starts
   // from what is already approved instead of a blank form — otherwise the
   // user loses their existing problem statement, objective, actors, etc.
@@ -105,7 +185,13 @@ function ContextForm({
     () => draft?.additionalContext ?? initial?.additionalContext ?? '',
   );
   const [actorsText, setActorsText] = useState(
-    () => draft?.actorsText ?? initial?.actors.map((a) => a.name).join('\n') ?? '',
+    () => draft?.actorsText ?? initial?.actors.map(actorLine).join('\n') ?? '',
+  );
+  const [inScopeText, setInScopeText] = useState(
+    () => draft?.inScopeText ?? scopeLines(initial?.scopeItems ?? [], 'IN_SCOPE'),
+  );
+  const [outOfScopeText, setOutOfScopeText] = useState(
+    () => draft?.outOfScopeText ?? scopeLines(initial?.scopeItems ?? [], 'OUT_OF_SCOPE'),
   );
   const [needsText, setNeedsText] = useState(
     () => draft?.needsText ?? initial?.needs.map((n) => n.description).join('\n') ?? '',
@@ -135,7 +221,6 @@ function ContextForm({
   }, [sourcesPrefilled, initial, sources.isLoading, approvedSources]);
 
   const [submitting, setSubmitting] = useState(false);
-  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
     writeDraft(projectId, {
@@ -143,6 +228,8 @@ function ContextForm({
       objective,
       additionalContext,
       actorsText,
+      inScopeText,
+      outOfScopeText,
       needsText,
       constraintsText,
       businessRulesText,
@@ -154,6 +241,8 @@ function ContextForm({
     objective,
     additionalContext,
     actorsText,
+    inScopeText,
+    outOfScopeText,
     needsText,
     constraintsText,
     businessRulesText,
@@ -166,37 +255,6 @@ function ContextForm({
     );
   }
 
-  async function handleGenerate() {
-    setGenerating(true);
-    try {
-      const candidate = await api.context.generate(projectId);
-      setProblemStatement(candidate.content.problemStatement);
-      setObjective(candidate.content.objective);
-      setAdditionalContext(candidate.content.additionalContext ?? '');
-      setActorsText(candidate.content.actors.join('\n'));
-      setNeedsText(candidate.content.needs.join('\n'));
-      setConstraintsText(candidate.content.constraints.join('\n'));
-      setBusinessRulesText(candidate.content.businessRules.join('\n'));
-      setSourceVersionIds(candidate.sourceVersionIds);
-      setSourcesPrefilled(true);
-      const reports = candidate.reportSourceVersionIds.length;
-      if (reports)
-        toast.info(
-          reports === 1
-            ? 'La propuesta también se apoyó en el reporte aprobado de una fuente.'
-            : `La propuesta también se apoyó en los reportes aprobados de ${reports} fuentes.`,
-        );
-    } catch (err) {
-      toast.error(
-        err instanceof ApiError
-          ? err.message
-          : 'No se pudo generar el contexto con IA en este momento. Puede completarlo manualmente.',
-      );
-    } finally {
-      setGenerating(false);
-    }
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
@@ -204,11 +262,14 @@ function ContextForm({
       problemStatement,
       objective,
       additionalContext: additionalContext || undefined,
-      actors: linesToItems(actorsText).map((i) => ({ name: i.description })),
+      actors: linesToActors(actorsText),
       needs: linesToItems(needsText),
       constraints: linesToItems(constraintsText),
       businessRules: linesToItems(businessRulesText),
-      scopeItems: [],
+      scopeItems: [
+        ...linesToItems(inScopeText).map((i) => ({ type: 'IN_SCOPE' as const, ...i })),
+        ...linesToItems(outOfScopeText).map((i) => ({ type: 'OUT_OF_SCOPE' as const, ...i })),
+      ],
       sourceVersionIds,
     };
     try {
@@ -242,7 +303,7 @@ function ContextForm({
             variant="outline"
             size="sm"
             type="button"
-            onClick={handleGenerate}
+            onClick={onGenerate}
             disabled={generating || approvedSources.length === 0}
             title={
               approvedSources.length === 0
@@ -260,7 +321,6 @@ function ContextForm({
               {generating ? 'Generando…' : 'Generar con IA'}
             </span>
           </Button>
-          <GenerationOverlay open={generating} />
         </div>
       </div>
 
@@ -301,7 +361,7 @@ function ContextForm({
               <Users className="size-4" aria-hidden="true" />
               Actores{' '}
               <span className="ml-auto text-xs font-normal text-muted-foreground">
-                (uno por línea)
+                (uno por línea · Nombre: responsabilidades)
               </span>
             </span>
             <textarea
@@ -309,7 +369,7 @@ function ContextForm({
               className="rounded-lg border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
               value={actorsText}
               onChange={(e) => setActorsText(e.target.value)}
-              placeholder="Ej: Administrador&#10;Cliente&#10;Vendedor"
+              placeholder="Ej: Administrador: configura el sistema y los usuarios&#10;Cajero: registra las ventas"
             />
           </label>
           <label className="group flex flex-col gap-2">
@@ -358,6 +418,36 @@ function ContextForm({
               value={businessRulesText}
               onChange={(e) => setBusinessRulesText(e.target.value)}
               placeholder="Ej: Usuarios inactivos por 30 días se suspenden"
+            />
+          </label>
+          <label className="group flex flex-col gap-2">
+            <span className="flex items-center gap-2 text-sm font-medium text-foreground transition-colors group-focus-within:text-primary">
+              Dentro del alcance{' '}
+              <span className="ml-auto text-xs font-normal text-muted-foreground">
+                (uno por línea)
+              </span>
+            </span>
+            <textarea
+              rows={4}
+              className="rounded-lg border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+              value={inScopeText}
+              onChange={(e) => setInScopeText(e.target.value)}
+              placeholder="Ej: Ventas por sucursal&#10;Inventario y alertas"
+            />
+          </label>
+          <label className="group flex flex-col gap-2">
+            <span className="flex items-center gap-2 text-sm font-medium text-foreground transition-colors group-focus-within:text-primary">
+              Fuera del alcance{' '}
+              <span className="ml-auto text-xs font-normal text-muted-foreground">
+                (uno por línea)
+              </span>
+            </span>
+            <textarea
+              rows={4}
+              className="rounded-lg border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+              value={outOfScopeText}
+              onChange={(e) => setOutOfScopeText(e.target.value)}
+              placeholder="Ej: Facturación electrónica&#10;Pasarela de pago"
             />
           </label>
         </div>
@@ -468,6 +558,55 @@ function ContextContent({ projectId }: { projectId: string }) {
   );
   const [showForm, setShowForm] = useState(false);
   const [approving, setApproving] = useState(false);
+  // Remounts the form so it reads a draft the generation just wrote.
+  const [formRevision, setFormRevision] = useState(0);
+
+  const generation = useQuery({
+    queryKey: ['context-generation', projectId],
+    queryFn: () => api.context.latestGeneration(projectId),
+    refetchInterval: (query) => (isRunning(query.state.data?.job) ? 2000 : false),
+  });
+  const job = generation.data?.job ?? null;
+  const running = isRunning(job);
+  // A job seen running here is announced when it ends, even after a reload.
+  const [followedJobId, setFollowedJobId] = useState<string | null>(null);
+  useEffect(() => {
+    if (running && job) setFollowedJobId(job.id);
+  }, [running, job]);
+  useEffect(() => {
+    if (!job || running || generation.isFetching) return;
+    if (job.status === 'COMPLETED' && job.candidate) {
+      // Never brings back a proposal older than the context already saved.
+      const newerThanContext =
+        !context.data || new Date(job.updatedAt) > new Date(context.data.version.createdAt);
+      if (wasApplied(projectId, job.candidate.id) || !newerThanContext) return;
+      markApplied(projectId, job.candidate.id);
+      writeDraft(projectId, draftFromCandidate(job.candidate));
+      announceCandidate(job.candidate);
+      setFormRevision((revision) => revision + 1);
+      setShowForm(true);
+    } else if (job.status === 'FAILED' && followedJobId === job.id) {
+      setFollowedJobId(null);
+      toast.error(
+        job.errorMessage ??
+          'No se pudo generar el contexto con IA en este momento. Puede completarlo manualmente.',
+      );
+    }
+  }, [job, running, generation.isFetching, followedJobId, projectId, context.data]);
+
+  async function startGeneration() {
+    try {
+      const started = await api.context.startGeneration(projectId);
+      setFollowedJobId(started.id);
+      queryClient.setQueryData(['context-generation', projectId], { job: started });
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError
+          ? err.message
+          : 'No se pudo generar el contexto con IA en este momento. Puede completarlo manualmente.',
+      );
+    }
+  }
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['context', projectId] });
@@ -756,12 +895,25 @@ function ContextContent({ projectId }: { projectId: string }) {
         </div>
       ) : null}
 
+      {running && job ? (
+        <GenerationProgress
+          title="Generando la propuesta del contexto"
+          startedAt={job.createdAt}
+          outputChars={job.outputChars}
+          expectedOutputTokens={job.expectedOutputTokens}
+          expectedDurationMs={job.expectedDurationMs}
+        />
+      ) : null}
+
       {showForm || (!context.data && notFound) ? (
         <ContextForm
+          key={formRevision}
           projectId={projectId}
           onSaved={invalidate}
           hasExisting={Boolean(context.data)}
           initial={context.data ?? undefined}
+          generating={running}
+          onGenerate={startGeneration}
         />
       ) : null}
     </div>

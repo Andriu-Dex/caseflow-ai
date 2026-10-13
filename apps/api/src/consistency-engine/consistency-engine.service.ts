@@ -18,6 +18,7 @@ import { contextCoverage } from '../requirements/context-coverage';
 const KIND_LABELS = { NEED: 'necesidad', BUSINESS_RULE: 'regla de negocio' } as const;
 
 const RULE_LABELS: Record<CoherenceGap['chain'], string> = {
+  QUALITY_REQUIREMENT_DESIGN: 'Requisito no funcional → diseño',
   CONTEXT_REQUIREMENT: 'Contexto → requisito',
   REQUIREMENT_USE_CASE_SCREEN: 'Requisito → caso de uso → pantalla',
   ENTITY_CLASS_PLAN: 'Entidad → clase → plan de implementación',
@@ -71,6 +72,39 @@ export class ConsistencyEngineService {
     }
     for (const gap of this.requirementGaps(versions))
       issues.push(this.issue(gap.gap, severity, gap.artifact));
+    const design = versions.filter((v) =>
+      ['NAVIGATION_TREE', 'UI_BLUEPRINT', 'SOFTWARE_ARCHITECTURE', 'SYSTEM_ARCHITECTURE'].includes(
+        v.artifact.artifactTypeCode,
+      ),
+    );
+    if (design.length) {
+      const coveredCodes = new Set(
+        design.flatMap((version) => {
+          const content = version.structuredAnalysisDetail?.content as {
+            nodes?: { relatedSourceCodes?: string[] }[];
+            components?: { relatedSourceCodes?: string[] }[];
+            screens?: { relatedSourceCodes?: string[] }[];
+          } | null;
+          return [
+            ...(content?.nodes ?? []),
+            ...(content?.components ?? []),
+            ...(content?.screens ?? []),
+          ].flatMap((item) => item.relatedSourceCodes ?? []);
+        }),
+      );
+      for (const requirement of versions.filter((v) => v.requirementType === 'NON_FUNCTIONAL'))
+        if (!coveredCodes.has(requirement.artifact.code))
+          issues.push(
+            this.issue(
+              {
+                chain: 'QUALITY_REQUIREMENT_DESIGN',
+                message: `El requisito no funcional ${requirement.artifact.code} no tiene cobertura explícita en el diseño aprobado. Relaciónelo con el componente, nodo o pantalla pertinente y revise cómo se atiende.`,
+              },
+              'WARNING',
+              requirement.artifact,
+            ),
+          );
+    }
 
     // DEC-126: the approved context reaches the approved requirements.
     const covered = await contextCoverage(this.prisma, projectId, { approvedOnly: true });

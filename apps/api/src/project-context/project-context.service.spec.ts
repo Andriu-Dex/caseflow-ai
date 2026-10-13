@@ -264,8 +264,9 @@ describe('ProjectContextService', () => {
         aiRunId: 'run-1',
         content,
         sourceVersionIds: ['source-version-1'],
-        // This source version has no report.
+        // This source version has no report, and it fits whole.
         reportSourceVersionIds: [],
+        partialSourceVersionIds: [],
       },
     });
   });

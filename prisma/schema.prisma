@@ -125,6 +125,7 @@ enum AIErrorCode {
   AI_RATE_LIMITED
   AI_INVALID_OUTPUT
   AI_PROVIDER_ERROR
+  AI_INPUT_TOO_LARGE
 
   @@map("ai_error_code")
 }
@@ -248,6 +249,8 @@ model User {
   generationRuns            GenerationRun[]
   sandboxRuns               SandboxRun[]
   generatedProjectSnapshots GeneratedProjectSnapshot[]
+  projectDeletions          ProjectDeletion[]
+  stageConfirmations        StageConfirmation[]
 
   @@map("users")
 }
@@ -306,8 +309,9 @@ model Workspace {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  projects    Project[]
-  memberships WorkspaceMembership[]
+  projects         Project[]
+  memberships      WorkspaceMembership[]
+  projectDeletions ProjectDeletion[]
 
   @@map("workspaces")
 }
@@ -356,9 +360,11 @@ model Project {
   aiRuns                        AIRun[]
   dataModelGenerations          DataModelGeneration[]
   sourceReportCandidates        SourceReportCandidate[]
+  sourceReportJobs              SourceReportJob[]
   structuredAnalysisGenerations StructuredAnalysisGeneration[]
   projectContextCandidates      ProjectContextCandidate[]
   mockupGenerationJobs          MockupGenerationJob[]
+  contextGenerationJobs         ContextGenerationJob[]
   sourceProcessingJobs          SourceProcessingJob[]
   projectMemberships            ProjectMembership[]
   projectBaselines              ProjectBaseline[]
@@ -369,6 +375,7 @@ model Project {
   sandboxRuns                   SandboxRun[]
   generatedProjectSnapshots     GeneratedProjectSnapshot[]
   workflowRuns                  WorkflowRun[]
+  stageConfirmations            StageConfirmation[]
 
   @@index([workspaceId, createdAt, id])
   @@map("projects")
@@ -406,6 +413,7 @@ model Artifact {
   acceptedDataModelCandidates          DataModelCandidate[]
   acceptedStructuredAnalysisCandidates StructuredAnalysisCandidate[]
   projectBaselineEntries               ProjectBaselineEntry[]
+  useCaseRelationTargets               UseCaseRelation[]
 
   // Project-scoped, never-reused codes (spec §31.4).
   @@unique([projectId, code])
@@ -451,6 +459,7 @@ model ArtifactVersion {
   sourceDetail                        SourceDetail?
   sourceProcessingJobs                SourceProcessingJob[]
   sourceReportCandidates              SourceReportCandidate[]
+  sourceReportJobs                    SourceReportJob[]
   structuredAnalysisDetail            StructuredAnalysisDetail?
   structuredAnalysisGenerationSources StructuredAnalysisGenerationSource[]
   mockupDetail                        MockupDetail?                        @relation("MockupOwnVersion")
@@ -611,6 +620,7 @@ model AIRun {
   dataModelGeneration          DataModelGeneration?
   dataModelDetails             DataModelDetail[]
   sourceReportCandidate        SourceReportCandidate?
+  sourceReportJobPart          SourceReportJobPart?
   sourceReportDetails          SourceReportDetail[]
   structuredAnalysisGeneration StructuredAnalysisGeneration?
   structuredAnalysisDetails    StructuredAnalysisDetail[]
@@ -913,6 +923,7 @@ model UseCaseDetail {
   mainFlowSteps         UseCaseMainFlowStep[]
   alternativeFlows      UseCaseAlternativeFlow[]
   requirementLinks      UseCaseRequirementLink[]
+  relations             UseCaseRelation[]
 
   @@map("use_case_details")
 }
@@ -997,6 +1008,26 @@ model UseCaseRequirementLink {
   @@map("use_case_requirement_links")
 }
 
+// UML include/extend from one use case version to another use case (DEC-129).
+// The target is the logical artifact, so the relation survives new versions
+// of the target.
+model UseCaseRelation {
+  artifactVersionId String              @map("artifact_version_id") @db.Uuid
+  targetArtifactId  String              @map("target_artifact_id") @db.Uuid
+  kind              UseCaseRelationKind
+  useCase           UseCaseDetail       @relation(fields: [artifactVersionId], references: [artifactVersionId], onDelete: Restrict)
+  target            Artifact            @relation(fields: [targetArtifactId], references: [id], onDelete: Restrict)
+
+  @@id([artifactVersionId, targetArtifactId])
+  @@index([targetArtifactId])
+  @@map("use_case_relations")
+}
+
+enum UseCaseRelationKind {
+  INCLUDE
+  EXTEND
+}
+
 model UseCaseGeneration {
   id              String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   projectId       String                    @map("project_id") @db.Uuid
@@ -1036,6 +1067,8 @@ model UseCaseCandidate {
   postconditions     Json
   mainFlow           Json                     @map("main_flow")
   alternativeFlows   Json                     @map("alternative_flows")
+  // [{ kind, targetCandidateId }] towards other candidates of the generation.
+  relations          Json                     @default("[]")
   acceptedArtifactId String?                  @map("accepted_artifact_id") @db.Uuid
   generation         UseCaseGeneration        @relation(fields: [generationId], references: [id], onDelete: Restrict)
   sources            UseCaseCandidateSource[]
@@ -1103,6 +1136,7 @@ model SourceReportCandidate {
   sourceVersion  ArtifactVersion     @relation(fields: [sourceVersionId], references: [id], onDelete: Restrict)
   aiRun          AIRun               @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
   acceptedDetail SourceReportDetail?
+  reportJob      SourceReportJob?
 
   @@map("source_report_candidates")
 }
@@ -1114,18 +1148,45 @@ model SourceReportCandidate {
 // actually exposes (no scopeItems yet); sourceVersionIds records which
 // approved Project Source versions were used as input, for evidence (§36.4).
 model ProjectContextCandidate {
-  id                     String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  projectId              String   @map("project_id") @db.Uuid
-  aiRunId                String   @unique @map("ai_run_id") @db.Uuid
-  content                Json
-  sourceVersionIds       Json     @map("source_version_ids")
-  reportSourceVersionIds Json     @default("[]") @map("report_source_version_ids")
-  createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  id                      String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId               String   @map("project_id") @db.Uuid
+  aiRunId                 String   @unique @map("ai_run_id") @db.Uuid
+  content                 Json
+  sourceVersionIds        Json     @map("source_version_ids")
+  reportSourceVersionIds  Json     @default("[]") @map("report_source_version_ids")
+  // DEC-127: cited sources too long for the budget, read as excerpts.
+  partialSourceVersionIds Json     @default("[]") @map("partial_source_version_ids")
+  createdAt               DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  aiRun   AIRun   @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+  project Project               @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  aiRun   AIRun                 @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+  job     ContextGenerationJob?
 
   @@map("project_context_candidates")
+}
+
+// A context proposal generated in the background (DEC-132): it survives a
+// page reload, and reports how much the AI has written against what earlier
+// proposals took, so a long generation never looks frozen.
+model ContextGenerationJob {
+  id                   String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId            String                 @map("project_id") @db.Uuid
+  status               SourceProcessingStatus @default(QUEUED)
+  // Characters of the answer received so far (streamed providers only).
+  outputChars          Int                    @default(0) @map("output_chars")
+  // What recent successful proposals took; null before the first one.
+  expectedOutputTokens Int?                   @map("expected_output_tokens")
+  expectedDurationMs   Int?                   @map("expected_duration_ms")
+  errorMessage         String?                @map("error_message")
+  candidateId          String?                @unique @map("candidate_id") @db.Uuid
+  createdAt            DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project   Project                  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  candidate ProjectContextCandidate? @relation(fields: [candidateId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, createdAt])
+  @@map("context_generation_jobs")
 }
 
 // Structured interpretation of a source's extracted content (spec §8):
@@ -1288,6 +1349,46 @@ enum SourceProcessingStatus {
   @@map("source_processing_status")
 }
 
+// A source report generated in the background (DEC-127): in one request when
+// the text fits a provider, otherwise part by part. Each part is kept, so a
+// failed or interrupted job resumes where it stopped, with the same plan.
+model SourceReportJob {
+  id              String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId       String                 @map("project_id") @db.Uuid
+  sourceVersionId String                 @map("source_version_id") @db.Uuid
+  status          SourceProcessingStatus @default(QUEUED)
+  // Input tokens per part, fixed when the job is first planned.
+  partTokens      Int?                   @map("part_tokens")
+  totalParts      Int?                   @map("total_parts")
+  completedParts  Int                    @default(0) @map("completed_parts")
+  errorMessage    String?                @map("error_message")
+  candidateId     String?                @unique @map("candidate_id") @db.Uuid
+  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project       Project                @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  sourceVersion ArtifactVersion        @relation(fields: [sourceVersionId, projectId], references: [id, projectId], onDelete: Cascade)
+  candidate     SourceReportCandidate? @relation(fields: [candidateId], references: [id], onDelete: Restrict)
+  parts         SourceReportJobPart[]
+
+  @@index([projectId, sourceVersionId])
+  @@map("source_report_jobs")
+}
+
+// The interpretation of one part of a long source, merged into the report.
+model SourceReportJobPart {
+  jobId    String @map("job_id") @db.Uuid
+  position Int
+  content  Json
+  aiRunId  String @unique @map("ai_run_id") @db.Uuid
+
+  job   SourceReportJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  aiRun AIRun           @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+
+  @@id([jobId, position])
+  @@map("source_report_job_parts")
+}
+
 model SourceProcessingJob {
   id              String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   projectId       String                 @map("project_id") @db.Uuid
@@ -1343,7 +1444,11 @@ model SourceFragment {
   speaker         String?
   timestamp       String?
   embedding       Unsupported("vector(1536)")?
+  // Full-text search in the project's language (DEC-127), GIN-indexed.
+  searchVector    Unsupported("tsvector")?     @map("search_vector")
 
+  @@index([projectId, sourceVersionId])
+  @@index([searchVector], type: Gin)
   @@map("source_fragments")
 }
 
@@ -1793,4 +1898,36 @@ model WorkflowRunStage {
 
   @@id([runId, stage])
   @@map("workflow_run_stages")
+}
+
+// Append-only review of a pipeline stage after approved upstream changes (DEC-136).
+model StageConfirmation {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId         String   @map("project_id") @db.Uuid
+  stage             String
+  confirmedByUserId String   @map("confirmed_by_user_id") @db.Uuid
+  confirmedAt       DateTime @default(now()) @map("confirmed_at") @db.Timestamptz(6)
+  note              String?
+  project           Project  @relation(fields: [projectId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  confirmedBy       User     @relation(fields: [confirmedByUserId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([projectId, stage, confirmedAt])
+  @@map("stage_confirmations")
+}
+
+// The project and its own audit are deleted; this append-only record survives (DEC-134).
+model ProjectDeletion {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId     String   @map("workspace_id") @db.Uuid
+  // No foreign key: the project no longer exists.
+  projectId       String   @map("project_id") @db.Uuid
+  projectName     String   @map("project_name")
+  deletedByUserId String   @map("deleted_by_user_id") @db.Uuid
+  deletedAt       DateTime @default(now()) @map("deleted_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  deletedBy User      @relation(fields: [deletedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, deletedAt])
+  @@map("project_deletions")
 }

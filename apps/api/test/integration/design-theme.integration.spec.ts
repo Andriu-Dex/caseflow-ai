@@ -78,6 +78,8 @@ describe('Design theme integration', () => {
 
   it('requires an approved theme before mockups and freezes it with the design', async () => {
     const projectId = await newProject('Proyecto nuevo');
+    const classes = await approved(ctx, projectId, 'CLASS_DIAGRAM');
+    const navigation = await approved(ctx, projectId, 'NAVIGATION_TREE');
     const ui = await approved(ctx, projectId, 'UI_BLUEPRINT');
     await expect(ctx.mockups.create(projectId, ui.version.id)).rejects.toThrow(
       'Apruebe el tema y los colores',
@@ -91,8 +93,8 @@ describe('Design theme integration', () => {
       GENERATION_PLAN: (await approved(ctx, projectId, 'GENERATION_PLAN')).version.id,
       CONCEPTUAL_DOMAIN_MODEL: (await approved(ctx, projectId, 'CONCEPTUAL_DOMAIN_MODEL')).version
         .id,
-      CLASS_DIAGRAM: (await approved(ctx, projectId, 'CLASS_DIAGRAM')).version.id,
-      NAVIGATION_TREE: (await approved(ctx, projectId, 'NAVIGATION_TREE')).version.id,
+      CLASS_DIAGRAM: classes.version.id,
+      NAVIGATION_TREE: navigation.version.id,
       UI_BLUEPRINT: ui.version.id,
       MOCKUP: mockup.version.id,
     };
@@ -114,7 +116,10 @@ describe('Design theme integration', () => {
     const foreignTheme = await approved(ctx, await newProject('Ajeno'), 'DESIGN_THEME');
     await post({ DESIGN_THEME: foreignTheme.version.id }).expect(422);
 
-    const frozen = await post({ DESIGN_THEME: theme.version.id }).expect(201);
+    await post({ DESIGN_THEME: theme.version.id }).expect(422);
+    const refreshed = await approvedMockup(ctx, projectId, ui.version.id);
+    versions.MOCKUP = refreshed.version.id;
+    const frozen = await post({ DESIGN_THEME: otherTheme.version.id }).expect(201);
     expect(frozen.body.entries.map((e: { role: string }) => e.role)).toContain('DESIGN_THEME');
 
     const graph = await ctx.traceability.buildGraph(projectId);
@@ -132,6 +137,7 @@ describe('Design theme integration', () => {
       where: { id: projectId },
       data: { designThemeRequired: false, coherenceRequired: false },
     });
+    const navigation = await approved(ctx, projectId, 'NAVIGATION_TREE');
     const ui = await approved(ctx, projectId, 'UI_BLUEPRINT');
     const mockup = await approvedMockup(ctx, projectId, ui.version.id);
     expect(mockup.designThemeVersionId).toBeNull();
@@ -152,7 +158,7 @@ describe('Design theme integration', () => {
           GENERATION_PLAN: (await approved(ctx, projectId, 'GENERATION_PLAN')).version.id,
           CONCEPTUAL_DOMAIN_MODEL: (await approved(ctx, projectId, 'CONCEPTUAL_DOMAIN_MODEL'))
             .version.id,
-          NAVIGATION_TREE: (await approved(ctx, projectId, 'NAVIGATION_TREE')).version.id,
+          NAVIGATION_TREE: navigation.version.id,
           UI_BLUEPRINT: ui.version.id,
           MOCKUP: mockup.version.id,
         },

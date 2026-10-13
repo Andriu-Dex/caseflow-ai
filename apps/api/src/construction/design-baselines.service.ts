@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  Optional,
+  UnprocessableEntityException,
+} from '@nestjs/common';
+import { StageCurrencyService } from '../readiness/stage-currency';
 import {
   DESIGN_BASELINE_ROLES,
   type CreateDesignBaselineRequest,
@@ -46,6 +52,7 @@ export class DesignBaselinesService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly consistency: ConsistencyEngineService,
+    @Optional() private readonly currency?: StageCurrencyService,
   ) {}
 
   async create(
@@ -74,6 +81,7 @@ export class DesignBaselinesService {
       return artifactVersionId ? [{ role, artifactVersionId }] : [];
     });
     await this.assertFreezable(projectId, entries);
+    await this.currency?.assertCurrent(projectId);
     // DEC-121: what is frozen must be coherent with itself and the analysis.
     await this.consistency.assertDesignCoherent(
       projectId,
