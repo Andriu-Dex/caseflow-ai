@@ -55,4 +55,19 @@ describe('PrismaAIRunRecorder', () => {
       },
     });
   });
+  it('retains incomplete output diagnostics and the requested model', async () => {
+    await recorder.fail('run-1', 'AI_INVALID_OUTPUT', 20, {
+      model: 'model-v1',
+      reason: 'stream_ended',
+      outputChars: 100,
+      usage: null,
+    });
+    expect(prisma.aIRun.update).toHaveBeenCalledWith({
+      where: { id: 'run-1' },
+      data: expect.objectContaining({
+        model: 'model-v1',
+        errorDetails: { reason: 'stream_ended', outputChars: 100, usage: null },
+      }),
+    });
+  });
 });

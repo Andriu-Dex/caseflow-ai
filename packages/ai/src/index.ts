@@ -24,18 +24,37 @@ const MAX_OUTPUT_TOKENS_LIMIT = 1_000_000;
 // Which quota a rate limit hit: the per-minute one recovers in seconds, the
 // daily one only at the provider's daily reset.
 export type AIQuota = 'MINUTE' | 'DAY';
+export interface AIFailureDiagnostics {
+  model?: string;
+  reason:
+    | 'max_output_tokens'
+    | 'max_messages'
+    | 'content_filter'
+    | 'steered'
+    | 'unknown_incomplete'
+    | 'stream_ended';
+  outputChars: number;
+  usage?: AIUsage | null;
+}
 export class AIError extends Error {
   readonly retryAfterMs?: number;
   readonly quota?: AIQuota;
+  readonly diagnostics?: AIFailureDiagnostics;
   constructor(
     public readonly code: AIErrorCode,
     message: string,
-    options?: { cause?: unknown; retryAfterMs?: number; quota?: AIQuota },
+    options?: {
+      cause?: unknown;
+      retryAfterMs?: number;
+      quota?: AIQuota;
+      diagnostics?: AIFailureDiagnostics;
+    },
   ) {
     super(message, options);
     this.name = 'AIError';
     this.retryAfterMs = options?.retryAfterMs;
     this.quota = options?.quota;
+    this.diagnostics = options?.diagnostics;
   }
   toJSON(): { code: AIErrorCode; message: string } {
     return { code: this.code, message: this.message };
@@ -173,7 +192,12 @@ export interface AIRunCompletion {
 export interface AIRunRecorder {
   start(input: AIRunStart): Promise<string>;
   succeed(id: string, completion: AIRunCompletion): Promise<void>;
-  fail(id: string, errorCode: AIErrorCode, latencyMs: number): Promise<void>;
+  fail(
+    id: string,
+    errorCode: AIErrorCode,
+    latencyMs: number,
+    diagnostics?: AIFailureDiagnostics,
+  ): Promise<void>;
 }
 export interface ValidatedGenerationCandidate<T> {
   data: T;
@@ -315,7 +339,9 @@ export class AIOrchestrator {
       };
     } catch (cause) {
       const error = normalizeAIError(cause);
-      await this.recorder.fail(runId, error.code, Date.now() - started);
+      if (error.diagnostics)
+        await this.recorder.fail(runId, error.code, Date.now() - started, error.diagnostics);
+      else await this.recorder.fail(runId, error.code, Date.now() - started);
       throw error;
     }
   }
