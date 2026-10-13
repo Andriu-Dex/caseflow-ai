@@ -14,6 +14,7 @@ const openAICompatibleSchema = z.object({
   AI_API_KEY: z.string().min(1),
   AI_MODEL: z.string().min(1),
   AI_TIMEOUT_MS: z.coerce.number().int().positive().max(300_000).default(30_000),
+  AI_MAX_OUTPUT_TOKENS: z.coerce.number().int().positive().optional(),
 });
 const fallbackTimeoutSchema = z.object({
   AI_TIMEOUT_MS: z.coerce.number().int().positive().max(300_000).default(30_000),
@@ -24,6 +25,22 @@ const fallbackSlotSchema = z.object({
   apiKey: z.string().min(1),
   model: z.string().min(1),
   schemaDialect: z.enum(['strict', 'narrow']).default('strict'),
+  // What the provider's plan accepts (DEC-127); unset means unknown.
+  maxInputTokens: z.coerce.number().int().positive().optional(),
+  tokensPerMinute: z.coerce.number().int().positive().optional(),
+  // What it may write per answer (DEC-131); unset: each task's own budget.
+  maxOutputTokens: z.coerce.number().int().positive().optional(),
+  dayResetTimeZone: z
+    .string()
+    .refine((zone) => {
+      try {
+        new Intl.DateTimeFormat('en-US', { timeZone: zone });
+        return true;
+      } catch {
+        return false;
+      }
+    }, 'Zona horaria no válida.')
+    .optional(),
 });
 const MAX_AI_FALLBACK_PROVIDERS = 5;
 
@@ -34,6 +51,10 @@ export type AIProviderSlot = {
   model: string;
   timeoutMs: number;
   schemaDialect: 'strict' | 'narrow';
+  maxInputTokens?: number;
+  tokensPerMinute?: number;
+  maxOutputTokens?: number;
+  dayResetTimeZone?: string;
 };
 // DEC-117: the user's ChatGPT plan, desktop edition only. The desktop main
 // process holds the OAuth credentials and serves short-lived access tokens
@@ -42,8 +63,17 @@ const chatgptSchema = z.object({
   AI_PROVIDER: z.literal('chatgpt'),
   AI_MODEL: z.string().min(1),
   AI_TIMEOUT_MS: z.coerce.number().int().positive().max(300_000).default(120_000),
-  CHATGPT_BROKER_URL: z.url(),
+  // The broker only ever lives on this machine (ADR-002, DEC-128).
+  CHATGPT_BROKER_URL: z
+    .url()
+    .refine((url) => ['127.0.0.1', 'localhost', '[::1]'].includes(new URL(url).hostname), {
+      message: 'CHATGPT_BROKER_URL debe apuntar a este equipo (127.0.0.1).',
+    }),
   CHATGPT_BROKER_SECRET: z.string().min(32),
+  // The plan's model context, in input tokens (DEC-127); unset means unknown.
+  AI_MAX_INPUT_TOKENS: z.coerce.number().int().positive().optional(),
+  // What the plan's model may write per answer (DEC-131).
+  AI_MAX_OUTPUT_TOKENS: z.coerce.number().int().positive().optional(),
 });
 
 export type AIConfig =
@@ -52,6 +82,8 @@ export type AIConfig =
       provider: 'chatgpt';
       model: string;
       timeoutMs: number;
+      maxInputTokens?: number;
+      maxOutputTokens?: number;
       brokerUrl: string;
       brokerSecret: string;
     }
@@ -61,6 +93,7 @@ export type AIConfig =
       apiKey: string;
       model: string;
       timeoutMs: number;
+      maxOutputTokens?: number;
     }
   | { provider: 'fallback'; chain: AIProviderSlot[] };
 
@@ -80,6 +113,8 @@ export function loadAIConfig(environment: NodeJS.ProcessEnv): AIConfig {
       provider,
       model: parsed.AI_MODEL,
       timeoutMs: parsed.AI_TIMEOUT_MS,
+      maxInputTokens: parsed.AI_MAX_INPUT_TOKENS,
+      maxOutputTokens: parsed.AI_MAX_OUTPUT_TOKENS,
       brokerUrl: parsed.CHATGPT_BROKER_URL,
       brokerSecret: parsed.CHATGPT_BROKER_SECRET,
     };
@@ -96,6 +131,10 @@ export function loadAIConfig(environment: NodeJS.ProcessEnv): AIConfig {
         apiKey: environment[`AI_PROVIDER_${index}_API_KEY`],
         model: environment[`AI_PROVIDER_${index}_MODEL`],
         schemaDialect: environment[`AI_PROVIDER_${index}_SCHEMA_DIALECT`],
+        maxInputTokens: environment[`AI_PROVIDER_${index}_MAX_INPUT_TOKENS`] || undefined,
+        tokensPerMinute: environment[`AI_PROVIDER_${index}_TOKENS_PER_MINUTE`] || undefined,
+        maxOutputTokens: environment[`AI_PROVIDER_${index}_MAX_OUTPUT_TOKENS`] || undefined,
+        dayResetTimeZone: environment[`AI_PROVIDER_${index}_DAY_RESET_TIMEZONE`] || undefined,
       });
       chain.push({ ...slot, timeoutMs });
     }
@@ -110,5 +149,6 @@ export function loadAIConfig(environment: NodeJS.ProcessEnv): AIConfig {
     apiKey: parsed.AI_API_KEY,
     model: parsed.AI_MODEL,
     timeoutMs: parsed.AI_TIMEOUT_MS,
+    maxOutputTokens: parsed.AI_MAX_OUTPUT_TOKENS,
   };
 }

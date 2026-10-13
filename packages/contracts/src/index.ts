@@ -16,6 +16,7 @@ export {
   PROJECT_LIST_STATUSES,
   updateProjectLanguageRequestSchema,
   updateProjectRequestSchema,
+  deleteProjectRequestSchema,
   upgradeWorkflowRouteRequestSchema,
   WORKFLOW_ROUTES,
 } from './projects/project.contract';
@@ -27,6 +28,7 @@ export type {
   ProjectLanguage,
   UpdateProjectLanguageRequest,
   UpdateProjectRequest,
+  DeleteProjectRequest,
   UpgradeWorkflowRouteRequest,
   WorkflowRoute,
 } from './projects/project.contract';
@@ -69,6 +71,8 @@ export {
   PROJECT_CONTEXT_SCOPE_TYPES,
   projectContextActorInputSchema,
   projectContextCandidateSchema,
+  projectContextGenerationJobSchema,
+  latestProjectContextGenerationJobSchema,
   projectContextGenerationContentSchema,
   projectContextRequestSchema,
   projectContextResponseSchema,
@@ -76,6 +80,7 @@ export {
 } from './project-context/project-context.contract';
 export type {
   ProjectContextCandidate,
+  ProjectContextGenerationJob,
   ProjectContextGenerationContent,
   ProjectContextRequest,
   ProjectContextResponse,

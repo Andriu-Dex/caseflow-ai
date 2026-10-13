@@ -61,7 +61,15 @@ export const projectContextGenerationContentSchema = z
     problemStatement: narrative(10_000),
     objective: narrative(5_000),
     additionalContext: narrative(10_000).optional(),
-    actors: z.array(narrative(200)).max(PROJECT_CONTEXT_COLLECTION_LIMIT).default([]),
+    // DEC-131: the proposal fills the whole form, scope and actor roles too.
+    scopeItems: z
+      .array(projectContextScopeItemInputSchema)
+      .max(PROJECT_CONTEXT_COLLECTION_LIMIT)
+      .default([]),
+    actors: z
+      .array(projectContextActorInputSchema)
+      .max(PROJECT_CONTEXT_COLLECTION_LIMIT)
+      .default([]),
     needs: z.array(narrative(2_000)).max(PROJECT_CONTEXT_COLLECTION_LIMIT).default([]),
     constraints: z.array(narrative(2_000)).max(PROJECT_CONTEXT_COLLECTION_LIMIT).default([]),
     businessRules: z.array(narrative(2_000)).max(PROJECT_CONTEXT_COLLECTION_LIMIT).default([]),
@@ -79,9 +87,30 @@ export const projectContextCandidateSchema = z.object({
   sourceVersionIds: z.array(z.uuid()),
   // DEC-124: the cited sources whose approved report also guided the proposal.
   reportSourceVersionIds: z.array(z.uuid()),
+  // DEC-127: cited sources too long for the budget, read as excerpts.
+  partialSourceVersionIds: z.array(z.uuid()),
   createdAt: z.iso.datetime(),
 });
 export type ProjectContextCandidate = z.infer<typeof projectContextCandidateSchema>;
+
+// DEC-132: a proposal generated in the background, with its progress.
+export const projectContextGenerationJobSchema = z.object({
+  id: z.uuid(),
+  status: z.enum(['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED']),
+  // Characters of the answer the AI has written so far (streamed providers).
+  outputChars: z.number().int().min(0),
+  // What recent successful proposals took; null before the first one.
+  expectedOutputTokens: z.number().int().positive().nullable(),
+  expectedDurationMs: z.number().int().positive().nullable(),
+  errorMessage: z.string().nullable(),
+  candidate: projectContextCandidateSchema.nullable(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+export type ProjectContextGenerationJob = z.infer<typeof projectContextGenerationJobSchema>;
+export const latestProjectContextGenerationJobSchema = z.object({
+  job: projectContextGenerationJobSchema.nullable(),
+});
 
 export const projectContextResponseSchema = z.object({
   artifactId: z.uuid(),

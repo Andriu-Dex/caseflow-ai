@@ -13,7 +13,7 @@ import { UseCasesService } from '../../src/use-cases/use-cases.service';
 import { approved } from './support/construction-fixtures';
 import { createTestContext, createWorkspace, type TestContext } from './support/test-app';
 
-const disabledKb: Pick<KnowledgeBaseService, 'retrieve'> = { retrieve: async () => [] };
+const disabledKb: Pick<KnowledgeBaseService, 'searchSources'> = { searchSources: async () => [] };
 
 const FAKE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><g></g></svg>';
 
@@ -377,7 +377,7 @@ describe('Export (First Deliverable, Phase H)', () => {
 
     const useCasesService = new UseCasesService(
       ctx.prisma,
-      fakeAi(ctx, 'use-cases.generate', 1, {
+      fakeAi(ctx, 'use-cases.generate', 2, {
         candidates: [
           {
             candidateId: 'uc1',
@@ -403,7 +403,7 @@ describe('Export (First Deliverable, Phase H)', () => {
 
     const dataModelsService = new DataModelsService(
       ctx.prisma,
-      fakeAi(ctx, 'data-model.generate', 1, {
+      fakeAi(ctx, 'data-model.generate', 2, {
         candidates: [
           {
             candidateId: 'dm1',

@@ -83,6 +83,54 @@ describe('ChatGPTProvider', () => {
     });
   });
 
+  it('writes up to the plan model ceiling and waits as long as that answer takes (DEC-131)', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise<Response>((_resolve, reject) =>
+            init.signal!.addEventListener('abort', () => reject(new Error('aborted'))),
+          ),
+      );
+      const provider = new ChatGPTProvider({
+        model: 'gpt-x',
+        timeoutMs: 300_000,
+        maxOutputTokens: 64_000,
+        broker: {
+          accessToken: vi.fn().mockResolvedValue('token'),
+          reportUsageLimit: vi.fn(),
+          reportRevoked: vi.fn(),
+        },
+        fetch: fetchMock as unknown as typeof fetch,
+      });
+      const outcome = provider.generateStructured(request).catch((error: Error) => error);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(JSON.parse(String(fetchMock.mock.calls[0]![1].body)).max_output_tokens).toBe(64_000);
+      // Neither the request's 30 s nor the configured 5 minutes cut it: 64 000
+      // tokens at 20 per second take 3 200 s.
+      await vi.advanceTimersByTimeAsync(301_000);
+      expect(fetchMock.mock.calls[0]![1].signal!.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(2_900_000);
+      expect(fetchMock.mock.calls[0]![1].signal!.aborted).toBe(true);
+      await outcome;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reports how much of the answer has arrived while it streams (DEC-132)', async () => {
+    const { provider } = setup(
+      sse(
+        { type: 'response.output_text.delta', delta: '{"nodes":' },
+        { type: 'response.output_text.delta', delta: '[]}' },
+        { type: 'response.completed', response: {} },
+      ),
+    );
+    const onProgress = vi.fn();
+    await provider.generateStructured({ ...request, onProgress });
+    expect(onProgress.mock.calls).toEqual([[9], [12]]);
+  });
+
   it('pauses the plan on its usage limit and never retries elsewhere', async () => {
     const { provider, broker } = setup(
       new Response(

@@ -76,11 +76,11 @@ describe('Class diagram integration', () => {
       .send({ title: 'Clases', content: CONTENT.CLASS_DIAGRAM })
       .expect(201);
     expect(created.body).toMatchObject({ code: 'DC-001', kind: 'CLASS_DIAGRAM' });
-    const diagram = await ctx.structuredAnalysis.getDiagram(
-      projectId,
-      'CLASS_DIAGRAM',
-      created.body.id,
-    );
+    // Through the same route as the web's "Ver diagrama".
+    const { body: diagram } = await http()
+      .get(`/projects/${projectId}/class-diagram/${created.body.id}/diagram`)
+      .set(auth)
+      .expect(200);
     expect(diagram).toMatchObject({ kind: 'CLASS_DIAGRAM', sourceFormat: 'MERMAID_CLASS' });
     expect(diagram.source).toContain('class order["Pedido"]');
 

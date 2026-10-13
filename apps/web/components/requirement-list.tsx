@@ -9,7 +9,11 @@ import {
   CheckCircle2,
   ChevronRight,
   CircleDashed,
+  Eye,
+  EyeOff,
+  FileText,
   Gauge,
+  Layers,
   Link2,
   ListChecks,
   Minus,
@@ -102,7 +106,7 @@ const normalize = (text: string) =>
     .replace(/\p{Diacritic}/gu, '')
     .toLowerCase();
 
-function Tile({
+export function Tile({
   icon: Icon,
   label,
   value,
@@ -283,22 +287,54 @@ function OriginIndicator({ requirement }: { requirement: RequirementResponse['re
   );
 }
 
-function DetailBlock({ title, children }: { title: string; children: ReactNode }) {
+export function DetailBlock({
+  title,
+  icon,
+  children,
+  className,
+}: {
+  title: string;
+  icon?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
   return (
-    <div>
-      <p className="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-        {title}
-      </p>
-      {children}
+    <div
+      className={`rounded-xl border border-border/70 bg-card p-4 shadow-2xs transition-colors dark:border-border/50 ${
+        className ?? ''
+      }`}
+    >
+      <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        {icon ? <span className="text-primary">{icon}</span> : null}
+        <span>{title}</span>
+      </div>
+      <div>{children}</div>
     </div>
   );
 }
 
-function ItemList({ items }: { items: string[] }) {
+export function ItemList({
+  items,
+  variant = 'default',
+}: {
+  items: string[];
+  variant?: 'default' | 'success';
+}) {
   return (
-    <ul className="ml-4 list-disc space-y-0.5 text-sm text-foreground/85 marker:text-primary">
+    <ul className="space-y-1.5 text-xs sm:text-sm">
       {items.map((item, i) => (
-        <li key={`${i}-${item}`}>{item}</li>
+        <li key={`${i}-${item}`} className="flex items-start gap-2 leading-snug text-foreground/90">
+          <span
+            className={`mt-0.5 flex size-4.5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${
+              variant === 'success'
+                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                : 'bg-muted/80 text-muted-foreground dark:bg-muted/40'
+            }`}
+          >
+            {i + 1}
+          </span>
+          <span className="flex-1">{item}</span>
+        </li>
       ))}
     </ul>
   );
@@ -408,6 +444,10 @@ function RequirementRow({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={onToggle}>
+                {open ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
+                {open ? 'Ocultar detalle' : 'Ver detalle'}
+              </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => actions.edit(r)}>
                 <Pencil aria-hidden="true" />
                 Editar
@@ -431,37 +471,56 @@ function RequirementRow({
       {open ? (
         <div
           id={detailsId}
-          className="flex flex-col gap-4 border-t border-border bg-muted/20 px-4 py-4 sm:pl-10"
+          className="flex flex-col gap-3.5 border-t border-border/70 bg-muted/20 px-5 py-5 sm:px-6 transition-colors"
         >
-          <p className="text-sm leading-relaxed whitespace-pre-line text-foreground/90">
-            {req.description}
-          </p>
-          <DetailBlock title="Origen">
+          {/* Descripción */}
+          <div className="rounded-xl border border-border/70 bg-card p-4 shadow-2xs transition-colors dark:border-border/50">
+            <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <FileText className="size-3.5 text-primary" aria-hidden="true" />
+              <span>Descripción</span>
+            </div>
+            <p className="text-sm font-normal leading-relaxed whitespace-pre-line text-foreground/90">
+              {req.description}
+            </p>
+          </div>
+
+          {/* Origen y respaldo */}
+          <DetailBlock
+            title="Origen y respaldo"
+            icon={<Target className="size-3.5" aria-hidden="true" />}
+          >
             {req.origin?.kind === 'CONTEXT' ? (
-              <ul className="flex flex-col gap-1.5">
+              <ul className="flex flex-col gap-2">
                 {req.origin.contextItems.map((item) => (
-                  <li key={item.id} className="flex items-start gap-2 text-sm">
-                    <ContextCode code={item.code} kind={item.kind} />
-                    <span className="text-foreground/85">{item.description}</span>
+                  <li key={item.id} className="flex items-start gap-2.5 text-xs sm:text-sm">
+                    <div className="shrink-0 pt-0.5">
+                      <ContextCode code={item.code} kind={item.kind} />
+                    </div>
+                    <span className="font-normal leading-relaxed text-foreground/90">
+                      {item.description}
+                    </span>
                   </li>
                 ))}
               </ul>
             ) : req.origin?.kind === 'USER_DECISION' ? (
-              <p className="flex items-start gap-2 text-sm text-foreground/85">
-                <UserCheck className="mt-0.5 size-4 shrink-0 text-sky-600" aria-hidden="true" />
+              <p className="flex items-start gap-2 text-xs sm:text-sm text-foreground/90">
+                <UserCheck
+                  className="mt-0.5 size-4 shrink-0 text-sky-600 dark:text-sky-400"
+                  aria-hidden="true"
+                />
                 <span>
-                  <span className="font-medium">Decisión del usuario: </span>
-                  {req.origin.justification}
+                  <span className="font-semibold text-foreground">Decisión del usuario: </span>
+                  <span className="leading-relaxed">{req.origin.justification}</span>
                 </span>
               </p>
             ) : (
-              <p className="flex flex-wrap items-center gap-2 text-sm text-amber-800 dark:text-amber-300">
-                No indica qué elementos del contexto atiende ni por qué se incluye.
+              <p className="flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm text-amber-800 dark:text-amber-300">
+                <span>No indica qué elementos del contexto atiende ni por qué se incluye.</span>
                 <Button
                   type="button"
-                  variant="link"
+                  variant="outline"
                   size="sm"
-                  className="h-auto p-0"
+                  className="h-7 border-amber-300 text-xs text-amber-900 dark:border-amber-700 dark:text-amber-200"
                   onClick={() => actions.edit(r)}
                 >
                   Indicar el origen
@@ -469,57 +528,93 @@ function RequirementRow({
               </p>
             )}
           </DetailBlock>
-          <div className="grid gap-4 sm:grid-cols-2">
-            {req.actors.length ? (
-              <DetailBlock title="Actores">
-                <span className="flex flex-wrap items-center gap-1.5">
-                  <Users className="size-3.5 text-muted-foreground" aria-hidden="true" />
-                  {req.actors.map((actor) => (
-                    <span key={actor} className="rounded-md bg-muted px-2 py-0.5 text-xs">
-                      {actor}
-                    </span>
-                  ))}
-                </span>
-              </DetailBlock>
-            ) : null}
-            {req.dependencyArtifactIds.length ? (
-              <DetailBlock title="Depende de">
-                <span className="flex flex-wrap items-center gap-1.5">
-                  <Link2 className="size-3.5 text-muted-foreground" aria-hidden="true" />
-                  {req.dependencyArtifactIds.map((id) => (
-                    <span
-                      key={id}
-                      className="rounded-md border border-dashed border-border px-2 py-0.5 text-xs"
-                    >
-                      {nameOf(id)}
-                    </span>
-                  ))}
-                </span>
-              </DetailBlock>
-            ) : null}
-            {req.preconditions.length ? (
-              <DetailBlock title="Precondiciones">
-                <ItemList items={req.preconditions} />
-              </DetailBlock>
-            ) : null}
-            {req.postconditions.length ? (
-              <DetailBlock title="Postcondiciones">
-                <ItemList items={req.postconditions} />
-              </DetailBlock>
-            ) : null}
-          </div>
+
+          {/* Actores & Dependencias */}
+          {(req.actors.length > 0 || req.dependencyArtifactIds.length > 0) && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {req.actors.length ? (
+                <DetailBlock
+                  title="Actores"
+                  icon={<Users className="size-3.5" aria-hidden="true" />}
+                >
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {req.actors.map((actor) => (
+                      <span
+                        key={actor}
+                        className="inline-flex items-center rounded-md border border-border/80 bg-muted/50 px-2.5 py-1 text-xs font-medium text-foreground dark:bg-muted/30"
+                      >
+                        {actor}
+                      </span>
+                    ))}
+                  </div>
+                </DetailBlock>
+              ) : null}
+
+              {req.dependencyArtifactIds.length ? (
+                <DetailBlock
+                  title="Depende de"
+                  icon={<Link2 className="size-3.5" aria-hidden="true" />}
+                >
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {req.dependencyArtifactIds.map((id) => (
+                      <span
+                        key={id}
+                        className="inline-flex items-center rounded-md border border-primary/25 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary dark:bg-primary/15"
+                      >
+                        {nameOf(id)}
+                      </span>
+                    ))}
+                  </div>
+                </DetailBlock>
+              ) : null}
+            </div>
+          )}
+
+          {/* Precondiciones & Postcondiciones */}
+          {(req.preconditions.length > 0 || req.postconditions.length > 0) && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {req.preconditions.length ? (
+                <DetailBlock
+                  title="Precondiciones"
+                  icon={<Layers className="size-3.5" aria-hidden="true" />}
+                >
+                  <ItemList items={req.preconditions} />
+                </DetailBlock>
+              ) : null}
+              {req.postconditions.length ? (
+                <DetailBlock
+                  title="Postcondiciones"
+                  icon={
+                    <CheckCircle2
+                      className="size-3.5 text-emerald-600 dark:text-emerald-400"
+                      aria-hidden="true"
+                    />
+                  }
+                >
+                  <ItemList items={req.postconditions} variant="success" />
+                </DetailBlock>
+              ) : null}
+            </div>
+          )}
+
+          {/* Sugerencias de calidad */}
           {issues.length ? (
-            <DetailBlock title="Sugerencias de calidad (ISO/IEC/IEEE 29148)">
-              <ul className="flex flex-col gap-1 text-sm text-amber-800 dark:text-amber-300">
+            <div className="rounded-xl border border-amber-200/80 bg-amber-50/70 p-4 shadow-2xs dark:border-amber-900/50 dark:bg-amber-950/20">
+              <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-amber-800 dark:text-amber-400">
+                <AlertTriangle className="size-3.5" aria-hidden="true" />
+                <span>Sugerencias de calidad (ISO/IEC/IEEE 29148)</span>
+              </div>
+              <ul className="flex flex-col gap-1.5 text-xs sm:text-sm text-amber-900 dark:text-amber-300">
                 {issues.map((issue, i) => (
-                  <li key={`${issue.code}-${i}`} className="flex items-start gap-1.5">
-                    <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-                    {issue.message}
+                  <li key={`${issue.code}-${i}`} className="flex items-start gap-2">
+                    <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-amber-500" />
+                    <span className="leading-relaxed">{issue.message}</span>
                   </li>
                 ))}
               </ul>
-            </DetailBlock>
+            </div>
           ) : null}
+
           {stale ? <StaleNotice /> : null}
         </div>
       ) : null}

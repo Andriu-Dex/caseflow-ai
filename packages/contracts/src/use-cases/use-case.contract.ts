@@ -9,6 +9,23 @@ const alternativeFlowSchema = z
   .object({ name: text(200), condition: text(2000), steps: z.array(flowStepSchema).min(1).max(50) })
   .strict();
 
+// UML relationships between use cases (DEC-129). The use case that carries
+// the relation is its origin: an INCLUDE points to the behaviour it always
+// reuses, an EXTEND to the base use case it optionally extends.
+export const USE_CASE_RELATION_KINDS = ['INCLUDE', 'EXTEND'] as const;
+export type UseCaseRelationKind = (typeof USE_CASE_RELATION_KINDS)[number];
+const relationKind = z.enum(USE_CASE_RELATION_KINDS);
+const relationSchema = z.object({ kind: relationKind, targetUseCaseId: z.uuid() }).strict();
+const candidateRelationSchema = z
+  .object({ kind: relationKind, targetCandidateId: text(80) })
+  .strict();
+const uniqueTargets =
+  <T>(key: (item: T) => string, message: string) =>
+  (items: T[], context: z.RefinementCtx) => {
+    const keys = items.map(key);
+    if (new Set(keys).size !== keys.length) context.addIssue({ code: 'custom', message });
+  };
+
 const useCaseFieldsSchema = z
   .object({
     name: text(200),
@@ -20,6 +37,16 @@ const useCaseFieldsSchema = z
     mainFlow: z.array(flowStepSchema).min(1).max(USE_CASE_FLOW_STEP_LIMIT),
     alternativeFlows: z.array(alternativeFlowSchema).max(25).default([]),
     relatedRequirementVersionIds: z.array(z.uuid()).min(1).max(50),
+    relations: z
+      .array(relationSchema)
+      .max(25)
+      .default([])
+      .superRefine(
+        uniqueTargets(
+          (r) => r.targetUseCaseId,
+          'Un caso de uso solo puede relacionarse una vez con otro.',
+        ),
+      ),
   })
   .strict();
 
@@ -58,8 +85,12 @@ export type UseCaseResponse = z.infer<typeof useCaseResponseSchema>;
 export const useCaseListResponseSchema = z.object({ items: z.array(useCaseResponseSchema) });
 
 export const useCaseGenerationCandidateSchema = useCaseFieldsSchema
-  .omit({ relatedRequirementVersionIds: true })
-  .extend({ candidateId: text(80), relatedRequirementSourceIds: z.array(text(80)).min(1).max(50) })
+  .omit({ relatedRequirementVersionIds: true, relations: true })
+  .extend({
+    candidateId: text(80),
+    relatedRequirementSourceIds: z.array(text(80)).min(1).max(50),
+    relations: z.array(candidateRelationSchema).max(25).default([]),
+  })
   .strict()
   .superRefine((value, context) => {
     if (
@@ -84,6 +115,19 @@ export const useCaseGenerationOutputSchema = z
         message: 'candidateId debe ser único.',
         path: ['candidates'],
       });
+    value.candidates.forEach((candidate, index) => {
+      const targets = candidate.relations.map((r) => r.targetCandidateId);
+      if (
+        new Set(targets).size !== targets.length ||
+        targets.some((target) => target === candidate.candidateId || !ids.includes(target))
+      )
+        context.addIssue({
+          code: 'custom',
+          message:
+            'Cada relación debe apuntar, una sola vez, a otro candidato de la misma respuesta.',
+          path: ['candidates', index, 'relations'],
+        });
+    });
   });
 export const generateUseCasesRequestSchema = z
   .object({ requirementVersionIds: z.array(z.uuid()).min(1).max(50) })

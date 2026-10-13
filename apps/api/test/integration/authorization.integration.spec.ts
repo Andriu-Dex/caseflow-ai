@@ -107,6 +107,7 @@ describe('Cross-Project Authorization (Isolation)', () => {
       'AuthController',
       'InternalMockupJobsController',
       'InternalSourceJobsController',
+      'InternalSourceReportJobsController',
       'InternalConstructionJobsController',
     ]);
     const unguarded: string[] = [];

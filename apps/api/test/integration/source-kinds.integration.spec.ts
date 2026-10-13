@@ -1,3 +1,4 @@
+import { SOURCE_LIMITS } from '@caseflow-ai/contracts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import {
@@ -165,7 +166,7 @@ describe('Source kinds and extraction feedback integration', () => {
       maxFileSizeBytes: 25 * 1024 * 1024,
       maxPdfPages: 100,
       maxScannedPdfPages: 10,
-      maxExtractedCharacters: 50_000,
+      maxExtractedCharacters: SOURCE_LIMITS.maxExtractedCharacters,
     });
     const intruder = await createUnauthorizedUser(ctx);
     await http()

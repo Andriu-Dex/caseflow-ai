@@ -17,6 +17,24 @@ interface PdfLine {
 
 const BULLET = /^(?:[•▪●◦‣·*-]|=>|->|–)\s*/;
 
+// A table of contents entry: a title, dot leaders and a page number
+// ("1.1 Necesidad de negocio . . . . 4"). Inside a table of contents, a
+// numbered line ending in a page number is one too, even without leaders
+// ("2 Actores y autorizaciones 5").
+const TOC_LEADERS = /^(.*?\S)\s*(?:[.…·]\s*){3,}(\d{1,4})$/;
+const TOC_NUMBERED = /^(\d+(?:\.\d+)*\.?\s+.*?\S)\s+(\d{1,4})$/;
+
+// Only lines this short are tested: the patterns backtrack on long runs of
+// dots, and no real entry is longer.
+const MAX_TOC_LINE = 300;
+
+// One entry per line, indented by its numbering depth, without the leaders.
+function tocEntry(title: string, page: string): string {
+  const number = /^(\d+(?:\.\d+)*)/.exec(title)?.[1];
+  const depth = number ? number.split('.').filter(Boolean).length - 1 : 0;
+  return `${'  '.repeat(Math.min(depth, 3))}- ${title} — ${page}`;
+}
+
 // A line that starts like Markdown syntax would be read as markup.
 const escapeLine = (line: string) => line.replace(/^([#>|])/, '\\$1');
 
@@ -74,14 +92,56 @@ export function pdfPagesToMarkdown(pages: readonly (readonly PdfTextItem[])[]): 
     const blocks: string[] = [];
     let paragraph: string[] = [];
     let list: string[] = [];
+    let toc: string[] = [];
+    // The first line of a table of contents title that wrapped.
+    let tocTitle: string | null = null;
     let previous: PdfLine | undefined;
     const flush = () => {
       if (paragraph.length) blocks.push(paragraph.join(' '));
       if (list.length) blocks.push(list.join('\n'));
+      if (toc.length) blocks.push(toc.join('\n'));
+      if (tocTitle) blocks.push(escapeLine(tocTitle));
       paragraph = [];
       list = [];
+      toc = [];
+      tocTitle = null;
     };
     for (const line of lines) {
+      const entry =
+        line.text.length > MAX_TOC_LINE
+          ? null
+          : (TOC_LEADERS.exec(line.text) ?? (toc.length ? TOC_NUMBERED.exec(line.text) : null));
+      if (entry) {
+        // Numbered lines just before the first leaders were entries already.
+        if (
+          !toc.length &&
+          paragraph.length &&
+          paragraph.every((p) => p.length <= MAX_TOC_LINE && TOC_NUMBERED.test(p))
+        ) {
+          toc = paragraph.map((p) => {
+            const [, title, page] = TOC_NUMBERED.exec(p)!;
+            return tocEntry(title!, page!);
+          });
+          paragraph = [];
+        }
+        if (paragraph.length || list.length) {
+          const pending = tocTitle;
+          tocTitle = null;
+          flush();
+          tocTitle = pending;
+        }
+        const title = tocTitle ? `${tocTitle} ${entry[1]}` : entry[1]!;
+        toc.push(tocEntry(title, entry[2]!));
+        tocTitle = null;
+        previous = line;
+        continue;
+      }
+      if (toc.length && !tocTitle && !headingLevel(line, body)) {
+        tocTitle = line.text;
+        previous = line;
+        continue;
+      }
+      if (toc.length) flush();
       const level = headingLevel(line, body);
       const gap = previous ? Math.abs(previous.y - line.y) : 0;
       const spaced = previous ? gap > Math.max(previous.fontSize, line.fontSize) * 1.8 : false;

@@ -5,8 +5,8 @@ import type { AIOrchestrator } from '@caseflow-ai/ai';
 import type { PrismaService } from '../database/prisma.service';
 import { RequirementsService } from './requirements.service';
 
-const fakeKb = (): Pick<KnowledgeBaseService, 'retrieve'> => ({
-  retrieve: vi.fn().mockResolvedValue([]),
+const fakeKb = (): Pick<KnowledgeBaseService, 'searchSources'> => ({
+  searchSources: vi.fn().mockResolvedValue([]),
 });
 
 const version = {
@@ -119,6 +119,40 @@ describe('RequirementsService', () => {
       mustCover: ['N-1'],
     });
   });
+  it('adds the source fragments relevant to the context, within the room left (DEC-127)', async () => {
+    const prisma = {
+      project: { findUnique: vi.fn().mockResolvedValue({ language: 'ES' }) },
+      artifactVersion: {
+        findFirst: vi.fn().mockResolvedValue({
+          projectContextDetail: { ...contextDetail, sources: [{ sourceVersionId: 's' }] },
+        }),
+      },
+    };
+    const ai = {
+      maxInputTokens: 8_000,
+      generateStructured: vi.fn().mockRejectedValue(new AIError('AI_NOT_CONFIGURED', 'off')),
+    };
+    const kb = {
+      searchSources: vi
+        .fn()
+        .mockResolvedValue([{ sourceCode: 'SRC-001', section: 'Pedidos', content: 'Texto' }]),
+    };
+    await expect(
+      new RequirementsService(
+        prisma as unknown as PrismaService,
+        ai as unknown as AIOrchestrator,
+        kb as unknown as KnowledgeBaseService,
+      ).generate('p', 'v'),
+    ).rejects.toBeDefined();
+    const [, query, budget] = kb.searchSources.mock.calls[0]!;
+    expect(query).toContain('Registrar pedidos');
+    expect(budget).toBeGreaterThan(0);
+    expect(budget).toBeLessThanOrEqual(2_500);
+    expect(ai.generateStructured.mock.calls[0]![0].messages[0].content).toContain(
+      '[SRC-001 › Pedidos] Texto',
+    );
+  });
+
   it('does not persist candidates when structured output is invalid', async () => {
     const prisma = {
       project: { findUnique: vi.fn().mockResolvedValue({ language: 'ES' }) },

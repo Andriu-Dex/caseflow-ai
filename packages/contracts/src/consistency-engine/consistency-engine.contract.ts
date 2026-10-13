@@ -5,6 +5,7 @@ export type ConsistencyIssueSeverity = z.infer<typeof consistencyIssueSeveritySc
 
 // The chains whose coverage DEC-121 (ADR-006) requires between stages.
 export const COHERENCE_CHAINS = [
+  'QUALITY_REQUIREMENT_DESIGN',
   // DEC-126: every need and business rule of the approved context reaches a
   // requirement.
   'CONTEXT_REQUIREMENT',

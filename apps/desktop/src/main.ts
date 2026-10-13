@@ -12,7 +12,7 @@ import {
   shell,
   type IpcMainInvokeEvent,
 } from 'electron';
-import { ChatGPTConnection, startBroker } from './chatgpt-connection.js';
+import { ChatGPTConnection, encryptedFileStore, startBroker } from './chatgpt-connection.js';
 import { startDatabase, type DesktopDatabase } from './database.js';
 import {
   PORTS,
@@ -136,11 +136,10 @@ async function start(): Promise<void> {
   // credentials are never written unencrypted.
   if (safeStorage.isEncryptionAvailable()) {
     chatgpt = new ChatGPTConnection(
-      join(dataDir, 'chatgpt.bin'),
-      {
+      encryptedFileStore(join(dataDir, 'chatgpt.bin'), {
         encrypt: (plain) => safeStorage.encryptString(plain),
         decrypt: (data) => safeStorage.decryptString(data),
-      },
+      }),
       (url) => shell.openExternal(url),
       startApi,
     );

@@ -2,28 +2,117 @@
 
 import { GenerationOverlay } from '../../components/generation-overlay';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { UseCaseResponse } from '@caseflow-ai/contracts';
-import { ChevronDown, ChevronRight, Network, Pencil, Sparkles } from 'lucide-react';
-import { useState } from 'react';
+import type { RequirementResponse, UseCaseResponse } from '@caseflow-ai/contracts';
+import { ChevronDown, Gauge, ListChecks, Network, Plus, Search, Sparkles } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { Button } from '@caseflow-ai/ui';
+import { Button, Input } from '@caseflow-ai/ui';
 import { api, ApiError, type ArtifactVersionStatus, type GenerationResult } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
-import { StatusBadge } from '../../components/status-badge';
 import { CandidateReview } from '../../components/candidate-review';
 import { DiagramViewer } from '../../components/diagram-viewer';
 import { UseCaseManualForm } from '../../components/use-case-manual-form';
+import { UseCaseCandidateCard } from '../../components/use-case-candidate-card';
+import { UseCaseList, UseCasesSummary } from '../../components/use-case-list';
 import { PageHeading } from '../../components/page-heading';
 import {
   AiUnavailableHint,
   ApproveAllButton,
-  ArchiveButton,
   EmptyState,
-  StaleNotice,
   approveDirectly,
   isPendingApproval,
   useStaleArtifactIds,
 } from '../../components/artifact-actions';
+
+// Approved requirements to generate from, grouped by type, with a search.
+function RequirementSelector({
+  requirements,
+  selected,
+  onChange,
+}: {
+  requirements: RequirementResponse[];
+  selected: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const q = query.trim().toLocaleLowerCase('es');
+  const all = requirements.map((r) => r.version.id);
+  const toggle = (id: string) =>
+    onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
+  const groups = [
+    { type: 'FUNCTIONAL', title: 'Funcionales', icon: ListChecks },
+    { type: 'NON_FUNCTIONAL', title: 'No funcionales', icon: Gauge },
+  ] as const;
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative sm:w-72">
+          <Search
+            className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <Input
+            type="search"
+            aria-label="Buscar requisitos aprobados"
+            placeholder="Buscar requisitos"
+            className="pl-8"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
+        <span className="text-sm text-muted-foreground" aria-live="polite">
+          {selected.length} de {all.length} seleccionados
+        </span>
+        <Button
+          variant="link"
+          size="sm"
+          type="button"
+          className="ml-auto text-xs font-medium"
+          onClick={() => onChange(selected.length === all.length ? [] : all)}
+        >
+          {selected.length === all.length ? 'Quitar selección' : 'Seleccionar todos'}
+        </Button>
+      </div>
+      <div className="grid max-h-80 gap-4 overflow-y-auto rounded-md border border-border p-3 md:grid-cols-2">
+        {groups.map((group) => {
+          const rows = requirements.filter(
+            (r) =>
+              r.requirement.requirementType === group.type &&
+              (!q || `${r.code} ${r.requirement.name}`.toLocaleLowerCase('es').includes(q)),
+          );
+          if (!rows.length) return null;
+          const Icon = group.icon;
+          return (
+            <div key={group.type} className="flex flex-col gap-1">
+              <p className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                <Icon className="size-3.5" aria-hidden="true" />
+                {group.title}
+              </p>
+              {rows.map((r) => (
+                <label
+                  key={r.id}
+                  className="flex cursor-pointer items-start gap-2 rounded px-1.5 py-1 text-sm hover:bg-muted/40"
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 size-4 shrink-0 accent-primary"
+                    checked={selected.includes(r.version.id)}
+                    onChange={() => toggle(r.version.id)}
+                    aria-label={`${r.code} ${r.requirement.name}`}
+                  />
+                  <span className="font-mono text-xs font-semibold text-muted-foreground">
+                    {r.code}
+                  </span>
+                  <span className="text-foreground/90">{r.requirement.name}</span>
+                </label>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 function UseCasesContent({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
@@ -45,16 +134,10 @@ function UseCasesContent({ projectId }: { projectId: string }) {
   const diagram = diagrams.data?.items.at(-1) ?? null;
   const stale = useStaleArtifactIds(projectId);
 
-  // null = "no manual selection yet", so every approved requirement is
-  // selected by default — avoids re-checking boxes for requirements the user
-  // already approved one screen ago. Becomes an explicit array the moment
-  // the user toggles anything, so their choice is never silently overridden.
+  // null = "no manual selection yet": every approved requirement is selected.
   const [selected, setSelected] = useState<string[] | null>(null);
-  // null = "no explicit preference yet": collapsed once there is already at
-  // least one use case (the generation panel already did its job — the
-  // diagram/list below is what gets revisited), expanded on a brand-new
-  // project where it's the only thing to do. Becomes explicit the moment the
-  // user toggles it, so it never snaps shut again on them mid-session.
+  // null = "no explicit preference yet": open only while there are no use
+  // cases, then it stays as the user leaves it.
   const [generatorOpen, setGeneratorOpen] = useState<boolean | null>(null);
   const [generation, setGeneration] = useState<GenerationResult | null>(null);
   const [showManualForm, setShowManualForm] = useState(false);
@@ -63,11 +146,13 @@ function UseCasesContent({ projectId }: { projectId: string }) {
   const [generatingDiagram, setGeneratingDiagram] = useState(false);
   const [approvingId, setApprovingId] = useState<string | null>(null);
 
-  const approvedRequirements = (requirements.data?.items ?? []).filter(
-    (r) => r.version.status === 'APPROVED',
+  const allRequirements = requirements.data?.items ?? [];
+  const approvedRequirements = allRequirements.filter((r) => r.version.status === 'APPROVED');
+  const selectedRequirements = selected ?? approvedRequirements.map((r) => r.version.id);
+  const lookup = useMemo(
+    () => new Map(allRequirements.map((r) => [r.version.id, r] as const)),
+    [allRequirements],
   );
-  const allRequirementIds = approvedRequirements.map((r) => r.version.id);
-  const selectedRequirements = selected ?? allRequirementIds;
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['use-cases', projectId] });
@@ -98,7 +183,8 @@ function UseCasesContent({ projectId }: { projectId: string }) {
   async function approveOne(u: UseCaseResponse) {
     setApprovingId(u.id);
     try {
-      await approveDirectly(transitionFor(u));
+      if (u.version.status === 'IN_REVIEW') await transitionFor(u)('APPROVED');
+      else await approveDirectly(transitionFor(u));
       toast.success(`${u.code} aprobado.`);
       invalidate();
     } catch (err) {
@@ -108,12 +194,23 @@ function UseCasesContent({ projectId }: { projectId: string }) {
     }
   }
 
-  async function transition(u: UseCaseResponse, status: ArtifactVersionStatus) {
+  async function requestChanges(u: UseCaseResponse) {
     try {
-      await transitionFor(u)(status);
+      await transitionFor(u)('CHANGES_REQUESTED');
       invalidate();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'No se pudo cambiar el estado.');
+    }
+  }
+
+  async function archive(u: UseCaseResponse) {
+    try {
+      await api.artifacts.archive(projectId, u.id);
+      toast.success(`${u.code} archivado.`);
+      invalidate();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo archivar.');
+      throw err;
     }
   }
 
@@ -142,26 +239,30 @@ function UseCasesContent({ projectId }: { projectId: string }) {
     <div className="flex flex-col gap-6">
       <PageHeading title="Casos de uso" projectId={projectId} />
 
-      <section className="rounded-lg border border-border bg-card p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
+      <section className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
-            variant="ghost"
-            size="sm"
             type="button"
             onClick={() => setGeneratorOpen(!isGeneratorOpen)}
-            className="flex items-center gap-1.5 text-sm font-semibold text-foreground"
+            aria-expanded={isGeneratorOpen}
           >
-            {isGeneratorOpen ? (
-              <ChevronDown className="size-4 text-muted-foreground" aria-hidden="true" />
-            ) : (
-              <ChevronRight className="size-4 text-muted-foreground" aria-hidden="true" />
-            )}
-            Generar casos de uso con IA
-            {!isGeneratorOpen ? (
-              <span className="font-normal text-muted-foreground">
-                ({items.length} {items.length === 1 ? 'caso de uso' : 'casos de uso'})
-              </span>
-            ) : null}
+            <Sparkles className="size-4" aria-hidden="true" />
+            Generar con IA
+            <ChevronDown
+              className={`size-4 transition-transform ${isGeneratorOpen ? 'rotate-180' : ''}`}
+              aria-hidden="true"
+            />
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setEditing(null);
+              setShowManualForm(true);
+            }}
+          >
+            <Plus className="size-4" aria-hidden="true" />
+            Crear manualmente
           </Button>
           <ApproveAllButton
             pending={pending}
@@ -169,82 +270,46 @@ function UseCasesContent({ projectId }: { projectId: string }) {
             onDone={invalidate}
           />
         </div>
+        <AiUnavailableHint />
+
         {isGeneratorOpen ? (
-          <div className="mt-2">
+          <div className="flex flex-col gap-3 rounded-xl border border-primary/30 bg-card p-4 shadow-sm">
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">
+                Generar casos de uso a partir de requisitos
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Elija los requisitos aprobados en los que se basará la IA. Podrá revisar cada
+                propuesta antes de incorporarla.
+              </p>
+            </div>
             {approvedRequirements.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                Cuando haya requisitos aprobados podrá elegirlos aquí como base para generar casos
-                de uso.
+                Cuando haya requisitos aprobados podrá elegirlos aquí.
               </p>
             ) : (
-              <>
-                <div className="mb-1 flex justify-end">
-                  <Button
-                    variant="link"
-                    size="sm"
-                    type="button"
-                    className="text-xs font-medium"
-                    onClick={() =>
-                      setSelected(
-                        selectedRequirements.length === allRequirementIds.length
-                          ? []
-                          : allRequirementIds,
-                      )
-                    }
-                  >
-                    {selectedRequirements.length === allRequirementIds.length
-                      ? 'Quitar selección'
-                      : 'Seleccionar todos'}
-                  </Button>
-                </div>
-                <ul className="mb-2 flex max-h-64 flex-col gap-1 overflow-y-auto text-sm">
-                  {approvedRequirements.map((r) => (
-                    <li key={r.id} className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        id={`req-${r.id}`}
-                        checked={selectedRequirements.includes(r.version.id)}
-                        onChange={() =>
-                          setSelected(
-                            selectedRequirements.includes(r.version.id)
-                              ? selectedRequirements.filter((id) => id !== r.version.id)
-                              : [...selectedRequirements, r.version.id],
-                          )
-                        }
-                      />
-                      <label htmlFor={`req-${r.id}`}>
-                        {r.code} — {r.requirement.name}
-                      </label>
-                    </li>
-                  ))}
-                </ul>
-              </>
+              <RequirementSelector
+                requirements={approvedRequirements}
+                selected={selectedRequirements}
+                onChange={setSelected}
+              />
             )}
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={generating || approvedRequirements.length === 0}
-                onClick={generate}
-              >
-                <Sparkles className="size-4" aria-hidden="true" />
-                {generating ? 'Generando…' : 'Generar con IA'}
-              </Button>
-              <GenerationOverlay open={generating} />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setEditing(null);
-                  setShowManualForm((v) => !v);
-                }}
-              >
-                Crear manualmente
-              </Button>
-            </div>
-            <AiUnavailableHint />
+            <Button
+              type="button"
+              className="self-start"
+              disabled={generating || selectedRequirements.length === 0}
+              onClick={generate}
+            >
+              <Sparkles className="size-4" aria-hidden="true" />
+              {generating
+                ? 'Generando…'
+                : `Generar con ${selectedRequirements.length} ${selectedRequirements.length === 1 ? 'requisito' : 'requisitos'}`}
+            </Button>
+            <GenerationOverlay open={generating} />
           </div>
         ) : null}
+
+        {items.length ? <UseCasesSummary items={items} requirements={allRequirements} /> : null}
       </section>
 
       {showManualForm || editing ? (
@@ -252,6 +317,7 @@ function UseCasesContent({ projectId }: { projectId: string }) {
           key={editing?.id ?? 'new'}
           projectId={projectId}
           approvedRequirements={approvedRequirements}
+          useCases={items}
           initial={editing ?? undefined}
           onCreated={() => {
             invalidate();
@@ -269,6 +335,19 @@ function UseCasesContent({ projectId }: { projectId: string }) {
         <CandidateReview
           generation={generation}
           describe={(c) => `${c.name}: ${String(c.objective ?? '').slice(0, 160)}`}
+          renderCard={(c, index) => (
+            <UseCaseCandidateCard
+              candidate={c}
+              index={index}
+              requirementCode={(versionId) => {
+                const r = lookup.get(versionId);
+                return r ? { code: r.code, name: r.requirement.name } : undefined;
+              }}
+              candidateName={(candidateId) =>
+                generation.candidates.find((other) => other.candidateId === candidateId)?.name
+              }
+            />
+          )}
           onAccept={async (ids) => {
             await api.useCases.accept(projectId, generation.id, ids);
             invalidate();
@@ -284,101 +363,52 @@ function UseCasesContent({ projectId }: { projectId: string }) {
           </EmptyState>
         ) : (
           <>
-            <ul className="flex flex-col gap-2">
-              {items.map((u) => (
-                <li key={u.id} className="rounded-lg border border-border bg-card p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-sm">
-                      <span className="font-mono text-xs text-muted-foreground">{u.code}</span>{' '}
-                      <span className="font-medium text-foreground">{u.useCase.name}</span>{' '}
-                      <span className="text-xs text-muted-foreground">
-                        · {u.useCase.primaryActor}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <StatusBadge status={u.version.status} />
-                      {isPendingApproval(u.version.status) ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          type="button"
-                          onClick={() => approveOne(u)}
-                          disabled={approvingId === u.id}
-                          className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
-                        >
-                          {approvingId === u.id ? 'Aprobando…' : 'Aprobar'}
-                        </Button>
-                      ) : null}
-                      {u.version.status === 'IN_REVIEW' ? (
-                        <>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            type="button"
-                            onClick={() => transition(u, 'APPROVED')}
-                            className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700"
-                          >
-                            Aprobar
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            type="button"
-                            onClick={() => transition(u, 'CHANGES_REQUESTED')}
-                            className="rounded-md border border-destructive/40 px-3 py-1 text-sm text-destructive hover:bg-destructive/5"
-                          >
-                            Solicitar cambios
-                          </Button>
-                        </>
-                      ) : null}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        type="button"
-                        onClick={() => {
-                          setShowManualForm(false);
-                          setEditing(u);
-                        }}
-                        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-muted/40"
-                      >
-                        <Pencil className="size-3.5" aria-hidden="true" />
-                        Editar
-                      </Button>
-                      <ArchiveButton
-                        projectId={projectId}
-                        artifactId={u.id}
-                        code={u.code}
-                        onDone={invalidate}
-                      />
-                    </div>
-                  </div>
-                  {stale.has(u.id) ? <StaleNotice /> : null}
-                </li>
-              ))}
-            </ul>
+            <UseCaseList
+              items={items}
+              lookup={lookup}
+              isStale={(id) => stale.has(id)}
+              approvingId={approvingId}
+              actions={{
+                approve: approveOne,
+                requestChanges,
+                edit: (u) => {
+                  setShowManualForm(false);
+                  setEditing(u);
+                },
+                archive,
+              }}
+            />
 
-            <section className="rounded-lg border border-border bg-card p-4">
-              <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
-                <Network className="size-4 text-primary" aria-hidden="true" />
-                Diagrama de casos de uso
-              </h2>
-              {approvedVersionIds.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  El diagrama se genera a partir de los casos de uso aprobados.
-                </p>
-              ) : (
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="mb-2"
-                  disabled={generatingDiagram}
-                  onClick={generateDiagram}
-                >
-                  {generatingDiagram
-                    ? 'Generando…'
-                    : `Generar diagrama (${approvedVersionIds.length} aprobados)`}
-                </Button>
-              )}
+            <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 shadow-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <Network className="size-4 text-primary" aria-hidden="true" />
+                    Diagrama de casos de uso
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    {approvedVersionIds.length
+                      ? approvedVersionIds.length === 1
+                        ? 'Incluirá el caso de uso aprobado.'
+                        : `Incluirá los ${approvedVersionIds.length} casos de uso aprobados.`
+                      : 'Se genera a partir de los casos de uso aprobados.'}
+                  </p>
+                </div>
+                {approvedVersionIds.length ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={generatingDiagram}
+                    onClick={generateDiagram}
+                  >
+                    {generatingDiagram
+                      ? 'Generando…'
+                      : diagram
+                        ? 'Actualizar diagrama'
+                        : 'Generar diagrama'}
+                  </Button>
+                ) : null}
+              </div>
               {diagram ? (
                 <DiagramViewer
                   svg={diagram.svg}

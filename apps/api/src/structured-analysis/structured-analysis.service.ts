@@ -26,10 +26,13 @@ import type { Prisma } from '../generated/prisma/client';
 import {
   DiagramEngine,
   type ClassDiagramModel,
+  type SoftwareArchitectureDiagramModel,
+  type SystemArchitectureDiagramModel,
   type DiagramFormat,
 } from '../data-models/diagram-engine';
 import { DIAGRAM_PROVIDER } from '../data-models/diagram-provider.token';
 import { sanitizeDiagramSvg } from '../data-models/svg-sanitizer';
+import { StageCurrencyService } from '../readiness/stage-currency';
 import {
   evaluateStructuredGeneration,
   type GenerationSourceReference,
@@ -72,7 +75,6 @@ interface KindConfig {
   maxOutputTokens: number;
   // What the AI proposes when the system fills part of the content itself.
   aiOutputSchema?: z.ZodType;
-  maxContextChars?: number;
   // Splits one AI answer into several alternative candidates (default: one).
   candidates?: (data: Content) => Content[];
   diagram?: { format: DiagramFormat; generate: (content: Content) => string };
@@ -131,7 +133,7 @@ const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
   NAVIGATION_TREE: {
     promptKey: 'navigation.generate',
     promptVersion: 4,
-    maxOutputTokens: 4096,
+    maxOutputTokens: 8192,
     diagram: {
       format: 'MERMAID_FLOWCHART',
       generate: (content) =>
@@ -149,35 +151,25 @@ const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
   SOFTWARE_ARCHITECTURE: {
     promptKey: 'software-architecture.generate',
     promptVersion: 2,
-    maxOutputTokens: 6144,
+    maxOutputTokens: 8192,
     diagram: {
       format: 'PLANTUML_COMPONENT',
       generate: (content) =>
-        new DiagramEngine().generateSoftwareComponentDiagram({
-          components: content.components as { localId: string; name: string }[],
-          dependencies: content.dependencies as {
-            fromLocalId: string;
-            toLocalId: string;
-            description?: string;
-          }[],
-        }),
+        new DiagramEngine().generateSoftwareComponentDiagram(
+          content as unknown as SoftwareArchitectureDiagramModel,
+        ),
     },
   },
   SYSTEM_ARCHITECTURE: {
     promptKey: 'system-architecture.generate',
     promptVersion: 2,
-    maxOutputTokens: 6144,
+    maxOutputTokens: 8192,
     diagram: {
       format: 'PLANTUML_DEPLOYMENT',
       generate: (content) =>
-        new DiagramEngine().generateSystemDeploymentDiagram({
-          nodes: content.nodes as { localId: string; name: string; kind: string }[],
-          links: content.links as {
-            fromLocalId: string;
-            toLocalId: string;
-            description?: string;
-          }[],
-        }),
+        new DiagramEngine().generateSystemDeploymentDiagram(
+          content as unknown as SystemArchitectureDiagramModel,
+        ),
     },
   },
   UI_BLUEPRINT: {
@@ -200,11 +192,10 @@ const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
     promptVersion: 2,
     maxOutputTokens: 16384,
     aiOutputSchema: implementationPlanBodySchema,
-    maxContextChars: 40_000,
   },
   CLASS_DIAGRAM: {
     promptKey: 'class-diagram.generate',
-    promptVersion: 1,
+    promptVersion: 2,
     maxOutputTokens: 12_288,
     diagram: {
       format: 'MERMAID_CLASS',
@@ -234,12 +225,15 @@ export class StructuredAnalysisService {
     // Injected by Nest; code constructing the service directly still audits.
     @Optional() audit?: AuditService,
     @Optional() consistency?: ConsistencyEngineService,
+    @Optional() private readonly currency?: StageCurrencyService,
   ) {
     this.audit = audit ?? new AuditService(prisma);
     this.consistency = consistency ?? new ConsistencyEngineService(prisma);
   }
 
   async create(projectId: string, kind: StructuredAnalysisKind, title: string, content: Content) {
+    if (['GENERATION_PLAN', 'CONCEPTUAL_DOMAIN_MODEL', 'IMPLEMENTATION_PLAN'].includes(kind))
+      await this.currency?.assertCurrent(projectId);
     await this.assertContentReferences(projectId, kind, content);
     const diagram = await this.renderDiagramIfApplicable(kind, content);
     return this.prisma.$transaction((tx) =>
@@ -293,6 +287,8 @@ export class StructuredAnalysisService {
     title: string,
     content: Content,
   ) {
+    if (['GENERATION_PLAN', 'CONCEPTUAL_DOMAIN_MODEL', 'IMPLEMENTATION_PLAN'].includes(kind))
+      await this.currency?.assertCurrent(projectId);
     await this.assertContentReferences(projectId, kind, content);
     const diagram = await this.renderDiagramIfApplicable(kind, content);
     return this.prisma.$transaction(async (tx) => {
@@ -324,6 +320,8 @@ export class StructuredAnalysisService {
     sourceVersionIds: string[],
     options: { designBaselineId?: string; instruction?: string } = {},
   ) {
+    if (['GENERATION_PLAN', 'CONCEPTUAL_DOMAIN_MODEL', 'IMPLEMENTATION_PLAN'].includes(kind))
+      await this.currency?.assertCurrent(projectId);
     const unique = [...new Set(sourceVersionIds)];
     if (unique.length !== sourceVersionIds.length)
       throw new UnprocessableEntityException('Las versiones fuente no pueden repetirse.');
@@ -458,10 +456,8 @@ export class StructuredAnalysisService {
       ...(mustCover.length ? { mustCover } : {}),
     });
     const config = KIND_CONFIG[kind];
-    if (serializedContext.length > (config.maxContextChars ?? 18_000))
-      throw new UnprocessableEntityException(
-        'Las fuentes seleccionadas exceden el límite de contexto. Seleccione menos versiones para esta generación.',
-      );
+    // DEC-127: whether this fits is the provider router's call, by each
+    // provider's real capacity; a fixed limit here refused what Gemini takes.
     const language = await getProjectLanguage(this.prisma, projectId);
     try {
       const result = await this.ai.generateStructured({
@@ -579,6 +575,8 @@ export class StructuredAnalysisService {
     generationId: string,
     candidateIds: string[],
   ) {
+    if (['GENERATION_PLAN', 'CONCEPTUAL_DOMAIN_MODEL', 'IMPLEMENTATION_PLAN'].includes(kind))
+      await this.currency?.assertCurrent(projectId);
     const selected = new Set(candidateIds);
     const preview = await this.prisma.structuredAnalysisGeneration.findFirst({
       where: { id: generationId, projectId, kind },

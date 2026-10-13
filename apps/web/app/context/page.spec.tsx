@@ -71,6 +71,9 @@ const mocks = vi.hoisted(() => ({
   listSources: vi.fn(),
   getStaleness: vi.fn(),
   createVersion: vi.fn(),
+  generate: vi.fn(),
+  startGeneration: vi.fn(),
+  latestGeneration: vi.fn(),
 }));
 
 vi.mock('../../lib/api', () => ({
@@ -78,14 +81,21 @@ vi.mock('../../lib/api', () => ({
     context: {
       getCurrent: (...args: unknown[]) => mocks.getCurrent(...args),
       createVersion: (...args: unknown[]) => mocks.createVersion(...args),
-      generate: vi.fn(),
+      generate: (...args: unknown[]) => mocks.generate(...args),
+      startGeneration: (...args: unknown[]) => mocks.startGeneration(...args),
+      latestGeneration: (...args: unknown[]) => mocks.latestGeneration(...args),
       transition: vi.fn(),
     },
     sources: { list: (...args: unknown[]) => mocks.listSources(...args) },
     staleness: { get: (...args: unknown[]) => mocks.getStaleness(...args) },
   },
   ApiError: class ApiError extends Error {
-    status?: number;
+    constructor(
+      message: string,
+      readonly status?: number,
+    ) {
+      super(message);
+    }
   },
   restoreSession: vi.fn(),
 }));
@@ -101,6 +111,7 @@ beforeEach(() => {
     entries: [],
   });
   mocks.createVersion.mockResolvedValue(existingContext);
+  mocks.latestGeneration.mockResolvedValue({ job: null });
 });
 
 function renderPage() {
@@ -158,6 +169,33 @@ describe('ContextPage — list field parsing', () => {
       { description: 'Consultar inventario' },
     ]);
   });
+
+  it('keeps the scope of the previous version and reads "Nombre: responsabilidades" actors', async () => {
+    mocks.getCurrent.mockResolvedValue({
+      ...existingContext,
+      scopeItems: [
+        { id: 's1', position: 0, type: 'OUT_OF_SCOPE', description: 'Facturación electrónica' },
+      ],
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: 'Crear nueva versión' }));
+
+    const actorsField = await screen.findByLabelText(/^Actores/);
+    await user.clear(actorsField);
+    await user.type(actorsField, 'Cajero: registra las ventas{enter}Administrador');
+    await user.click(screen.getByRole('button', { name: 'Guardar nueva versión' }));
+
+    await waitFor(() => expect(mocks.createVersion).toHaveBeenCalled());
+    const payload = mocks.createVersion.mock.calls[0]![1];
+    expect(payload.actors).toEqual([
+      { name: 'Cajero', description: 'registra las ventas' },
+      { name: 'Administrador' },
+    ]);
+    expect(payload.scopeItems).toEqual([
+      { type: 'OUT_OF_SCOPE', description: 'Facturación electrónica' },
+    ]);
+  });
 });
 
 describe('ContextPage — staleness', () => {
@@ -210,5 +248,74 @@ describe('ContextPage — staleness', () => {
     expect(
       await screen.findByDisplayValue('Restaurante Mateos gestiona ventas de forma dispersa.'),
     ).toBeInTheDocument();
+  });
+});
+describe('ContextPage — AI proposal', () => {
+  // DEC-132: generated in the background, so a reload loses nothing.
+  it('shows the progress and fills the form when the background generation ends, even after a reload', async () => {
+    const { ApiError } = await import('../../lib/api');
+    mocks.getCurrent.mockRejectedValue(new ApiError('No existe', 404));
+    const job = {
+      id: 'j1',
+      status: 'RUNNING',
+      outputChars: 7_000,
+      expectedOutputTokens: 7_000,
+      expectedDurationMs: 220_000,
+      errorMessage: null,
+      candidate: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    mocks.startGeneration.mockResolvedValue({ ...job, outputChars: 0 });
+    const user = userEvent.setup();
+    const first = renderPage();
+    await user.click(await screen.findByRole('button', { name: /Generar con IA/ }));
+    expect(mocks.startGeneration).toHaveBeenCalledWith('p1');
+    expect(await screen.findByText(/leyendo las fuentes/)).toBeInTheDocument();
+
+    // The user reloads while the AI writes: the page finds the job running.
+    first.unmount();
+    mocks.latestGeneration.mockResolvedValue({ job });
+    const second = renderPage();
+    expect(
+      await screen.findByText(/escribiendo la propuesta: ~2000 tokens de ~7000/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Suele tardar unos 3 min 40 s/)).toBeInTheDocument();
+    second.unmount();
+
+    // It finishes: the proposal lands in the form, scope and actor roles too.
+    mocks.latestGeneration.mockResolvedValue({
+      job: {
+        ...job,
+        status: 'COMPLETED',
+        candidate: {
+          id: 'c1',
+          projectId: 'p1',
+          aiRunId: 'r1',
+          content: {
+            problemStatement: 'Las ventas se anotan en papel.',
+            objective: 'Registrar ventas en línea.',
+            actors: [{ name: 'Cajero', description: 'Registra las ventas' }],
+            scopeItems: [
+              { type: 'IN_SCOPE', description: 'Ventas' },
+              { type: 'OUT_OF_SCOPE', description: 'Facturación electrónica' },
+            ],
+            needs: ['Registrar ventas'],
+            constraints: [],
+            businessRules: [],
+          },
+          sourceVersionIds: [],
+          reportSourceVersionIds: [],
+          partialSourceVersionIds: [],
+          createdAt: new Date().toISOString(),
+        },
+      },
+    });
+    renderPage();
+    expect(await screen.findByDisplayValue('Las ventas se anotan en papel.')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Cajero: Registra las ventas')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Ventas')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Facturación electrónica')).toBeInTheDocument();
+    expect(mocks.startGeneration).toHaveBeenCalledOnce();
   });
 });

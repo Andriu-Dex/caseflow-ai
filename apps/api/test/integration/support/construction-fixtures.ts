@@ -118,18 +118,21 @@ export async function approvedMockup(ctx: TestContext, pid: string, uiBlueprintV
 
 // Approved versions for every required Design Baseline role.
 export async function freezableDesign(ctx: TestContext, pid: string) {
+  const classes = await approved(ctx, pid, 'CLASS_DIAGRAM');
+  const navigation = await approved(ctx, pid, 'NAVIGATION_TREE');
   const ui = await approved(ctx, pid, 'UI_BLUEPRINT');
   // New projects freeze their theme, and mockups are painted with it (DEC-118).
   const theme = await approved(ctx, pid, 'DESIGN_THEME');
+  const mockup = await approvedMockup(ctx, pid, ui.version.id);
   return {
     GENERATION_PLAN: (await approved(ctx, pid, 'GENERATION_PLAN')).version.id,
     CONCEPTUAL_DOMAIN_MODEL: (await approved(ctx, pid, 'CONCEPTUAL_DOMAIN_MODEL')).version.id,
     // New projects freeze their class diagram too (DEC-121).
-    CLASS_DIAGRAM: (await approved(ctx, pid, 'CLASS_DIAGRAM')).version.id,
-    NAVIGATION_TREE: (await approved(ctx, pid, 'NAVIGATION_TREE')).version.id,
+    CLASS_DIAGRAM: classes.version.id,
+    NAVIGATION_TREE: navigation.version.id,
     UI_BLUEPRINT: ui.version.id,
     DESIGN_THEME: theme.version.id,
-    MOCKUP: (await approvedMockup(ctx, pid, ui.version.id)).version.id,
+    MOCKUP: mockup.version.id,
   };
 }
 

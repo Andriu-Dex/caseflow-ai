@@ -24,7 +24,7 @@ import {
   sourceCapabilitiesResponseSchema,
   sourceListResponseSchema,
   sourceMetadataInputSchema,
-  sourceReportCandidateSchema,
+  sourceReportJobResponseSchema,
   sourceReportResponseSchema,
   sourceResponseSchema,
   sourceTextResponseSchema,
@@ -232,14 +232,32 @@ export class SourcesController {
     return this.service.transition(projectId, sourceId, versionId, status);
   }
 
+  // DEC-127: the report is generated in the background, part by part when
+  // the source is long; this starts (or resumes) it and answers at once.
   @Post(':sourceId/report/generate')
-  @ApiOperation({ operationId: 'generateSourceReport', summary: 'Generar informe/interpretación' })
-  @ApiZodResponse(201, 'Source Report Candidate.', sourceReportCandidateSchema)
+  @ApiOperation({
+    operationId: 'generateSourceReport',
+    summary: 'Generar el informe en segundo plano',
+  })
+  @ApiZodResponse(201, 'Source report job.', sourceReportJobResponseSchema)
   generateReport(
     @Param('projectId', uuidParamPipe) projectId: string,
     @Param('sourceId', uuidParamPipe) sourceId: string,
   ) {
-    return this.service.generateReport(projectId, sourceId);
+    return this.service.requestReport(projectId, sourceId);
+  }
+
+  @Get(':sourceId/report-job')
+  @ApiOperation({
+    operationId: 'getSourceReportJob',
+    summary: 'Consultar el progreso del informe en segundo plano',
+  })
+  @ApiZodResponse(200, 'Source report job.', sourceReportJobResponseSchema)
+  getReportJob(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('sourceId', uuidParamPipe) sourceId: string,
+  ) {
+    return this.service.reportJob(projectId, sourceId);
   }
 
   @Get(':sourceId/report')

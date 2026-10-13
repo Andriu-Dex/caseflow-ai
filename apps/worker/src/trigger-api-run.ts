@@ -8,6 +8,11 @@ export const API_RECONNECT_DELAYS_MS = [2_000, 4_000, 8_000, 15_000, 30_000, 60_
 const refused = (error: unknown) =>
   error instanceof Error && (error.cause as { code?: string } | undefined)?.code === 'ECONNREFUSED';
 
+// Set when the worker shuts down: a run waiting for the API gives up at once
+// instead of holding the shutdown for minutes.
+const shutdown = new AbortController();
+export const stopWaitingForApi = () => shutdown.abort();
+
 export async function triggerApiRun(
   url: string,
   init: RequestInit,
@@ -18,8 +23,19 @@ export async function triggerApiRun(
     try {
       return await fetchImpl(url, init);
     } catch (error) {
-      if (!refused(error)) throw error;
-      await new Promise((resolve) => setTimeout(resolve, delay));
+      if (!refused(error) || shutdown.signal.aborted) throw error;
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, delay);
+        shutdown.signal.addEventListener(
+          'abort',
+          () => {
+            clearTimeout(timer);
+            resolve();
+          },
+          { once: true },
+        );
+      });
+      if (shutdown.signal.aborted) throw error;
     }
   }
   return fetchImpl(url, init);

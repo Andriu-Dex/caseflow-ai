@@ -1,5 +1,7 @@
 import {
   AIError,
+  outputAllowance,
+  writingTimeoutMs,
   type AIProvider,
   type AIProviderRequest,
   type AIProviderResponse,
@@ -31,6 +33,9 @@ export interface ChatGPTBroker {
 export interface ChatGPTProviderConfig {
   model: string;
   timeoutMs: number;
+  maxInputTokens?: number;
+  // What the plan's model may write per answer (DEC-131); unset: the task's own.
+  maxOutputTokens?: number;
   broker: ChatGPTBroker;
   fetch?: typeof fetch;
 }
@@ -39,18 +44,23 @@ const RESPONSES_URL = 'https://api.openai.com/v1/responses';
 
 export class ChatGPTProvider implements AIProvider {
   readonly id = 'chatgpt';
+  readonly maxInputTokens?: number;
   private readonly fetchImplementation: typeof fetch;
   constructor(private readonly config: ChatGPTProviderConfig) {
     this.fetchImplementation = config.fetch ?? fetch;
+    this.maxInputTokens = config.maxInputTokens;
   }
 
   async generateStructured(request: AIProviderRequest): Promise<AIProviderResponse> {
     const started = Date.now();
     const token = await this.config.broker.accessToken();
     const controller = new AbortController();
+    const maxOutputTokens = outputAllowance(request.maxOutputTokens, this.config.maxOutputTokens);
+    // The configured timeout is the floor; a larger request, or a longer answer
+    // the provider may write (DEC-131), may need more.
     const timeout = setTimeout(
       () => controller.abort(),
-      Math.min(request.timeoutMs, this.config.timeoutMs),
+      Math.max(request.timeoutMs, this.config.timeoutMs, writingTimeoutMs(maxOutputTokens)),
     );
     const abort = () => controller.abort();
     request.signal?.addEventListener('abort', abort, { once: true });
@@ -76,16 +86,14 @@ export class ChatGPTProvider implements AIProvider {
               schema: request.outputSchema,
             },
           },
-          ...(request.maxOutputTokens === undefined
-            ? {}
-            : { max_output_tokens: request.maxOutputTokens }),
+          ...(maxOutputTokens === undefined ? {} : { max_output_tokens: maxOutputTokens }),
           // Plan usage requires streamed, unstored responses.
           store: false,
           stream: true,
         }),
       });
       if (!response.ok) throw await this.failure(response.status, await response.text());
-      const { text, usage } = await this.readStream(response);
+      const { text, usage } = await this.readStream(response, request.onProgress);
       let payload: unknown;
       try {
         payload = JSON.parse(text);
@@ -142,7 +150,7 @@ export class ChatGPTProvider implements AIProvider {
   }
 
   // Server-sent events: text deltas until response.completed.
-  private async readStream(response: Response) {
+  private async readStream(response: Response, onProgress?: (outputChars: number) => void) {
     if (!response.body)
       throw new AIError('AI_PROVIDER_ERROR', 'El proveedor devolvió una respuesta no válida.');
     const reader = response.body.getReader();
@@ -159,9 +167,10 @@ export class ChatGPTProvider implements AIProvider {
       } catch {
         throw new AIError('AI_PROVIDER_ERROR', 'El proveedor devolvió una respuesta no válida.');
       }
-      if (event.type === 'response.output_text.delta' && typeof event.delta === 'string')
+      if (event.type === 'response.output_text.delta' && typeof event.delta === 'string') {
         text += event.delta;
-      else if (event.type === 'response.completed') {
+        onProgress?.(text.length);
+      } else if (event.type === 'response.completed') {
         completed = true;
         const raw = event.response?.usage as
           { input_tokens?: number; output_tokens?: number; total_tokens?: number } | undefined;

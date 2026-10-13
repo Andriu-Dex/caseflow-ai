@@ -10,6 +10,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
+    "dev:chatgpt": "tsc -p tsconfig.build.json && node --env-file-if-exists=../../.env dist/dev-broker.js",
     "build:all": "node scripts/build-web.mjs && pnpm run build && pnpm run build:api",
     "start": "pnpm run build && node scripts/start.mjs",
     "package": "pnpm run build:all && electron-builder --config electron-builder.yml",

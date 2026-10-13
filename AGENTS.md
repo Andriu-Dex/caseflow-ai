@@ -1029,6 +1029,8 @@ Do not physically delete:
 - official GeneratedProjectSnapshots;
 - append-only AuditEvents.
 
+Exception (DEC-134, `docs/decisions/ADR-009-eliminacion-definitiva-de-proyectos.md`): deleting a whole project removes all of its history, only inside the transaction that marks itself `caseflow.project_purge`. Nothing may be deleted individually.
+
 ### 31.4 Artifact codes
 
 Project-scoped codes such as:

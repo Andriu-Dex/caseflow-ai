@@ -1,5 +1,7 @@
 import {
   AIError,
+  outputAllowance,
+  writingTimeoutMs,
   type AIProvider,
   type AIProviderRequest,
   type AIProviderResponse,
@@ -86,6 +88,8 @@ export interface OpenAICompatibleProviderConfig {
   apiKey: string;
   model: string;
   timeoutMs: number;
+  // What the provider may write per answer (DEC-131); unset: the task's own.
+  maxOutputTokens?: number;
   fetch?: typeof fetch;
   // Explicit capability flag, set from this provider slot's own config
   // (never inferred from `id`, which is a free-form label a user could set
@@ -106,9 +110,12 @@ export class OpenAICompatibleProvider implements AIProvider {
   async generateStructured(request: AIProviderRequest): Promise<AIProviderResponse> {
     const started = Date.now();
     const controller = new AbortController();
+    const maxOutputTokens = outputAllowance(request.maxOutputTokens, this.config.maxOutputTokens);
+    // The configured timeout is the floor; a larger request, or a longer answer
+    // the provider may write (DEC-131), may need more.
     const timeout = setTimeout(
       () => controller.abort(),
-      Math.min(request.timeoutMs, this.config.timeoutMs),
+      Math.max(request.timeoutMs, this.config.timeoutMs, writingTimeoutMs(maxOutputTokens)),
     );
     const abort = () => controller.abort();
     request.signal?.addEventListener('abort', abort, { once: true });
@@ -138,13 +145,11 @@ export class OpenAICompatibleProvider implements AIProvider {
               },
             },
             ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
-            ...(request.maxOutputTokens === undefined
-              ? {}
-              : { max_tokens: request.maxOutputTokens }),
+            ...(maxOutputTokens === undefined ? {} : { max_tokens: maxOutputTokens }),
           }),
         },
       );
-      if (!response.ok) throw statusError(response.status);
+      if (!response.ok) throw await statusError(response);
       let body: unknown;
       try {
         body = await response.json();
@@ -172,19 +177,53 @@ export class OpenAICompatibleProvider implements AIProvider {
   }
 }
 
-function statusError(status: number): AIError {
-  if (status === 429 || status === 413)
+async function statusError(response: Response): Promise<AIError> {
+  const status = response.status;
+  // Groq answers 413 when one request exceeds its tokens per minute: waiting
+  // never helps, only a smaller request does.
+  if (status === 413)
+    return new AIError(
+      'AI_INPUT_TOO_LARGE',
+      'La solicitud supera el tamaño que admite el proveedor de IA.',
+    );
+  if (status === 429) {
+    const { retryAfterMs, quota } = rateLimitDetails(
+      response.headers?.get('retry-after') ?? null,
+      (await response.text?.().catch(() => '')) ?? '',
+    );
     return new AIError(
       'AI_RATE_LIMITED',
-      status === 413
-        ? 'La solicitud superó el límite de tokens del proveedor de IA.'
+      quota === 'DAY'
+        ? 'Se agotó la cuota diaria del proveedor de IA.'
         : 'El proveedor de IA limitó temporalmente las solicitudes.',
+      { retryAfterMs, quota },
     );
+  }
   if (status === 408 || status === 504)
     return new AIError('AI_TIMEOUT', 'El proveedor de IA excedió el tiempo límite.');
   if (status >= 500)
     return new AIError('AI_PROVIDER_UNAVAILABLE', 'El proveedor de IA no está disponible.');
   return new AIError('AI_PROVIDER_ERROR', 'El proveedor de IA rechazó la solicitud.');
+}
+
+// Reads how long to wait and which quota a 429 hit. Groq sends a retry-after
+// header and names the limit ("tokens per day (TPD)"); Gemini says "Please
+// retry in 12.3s" and names its quota ("...PerDay").
+export function rateLimitDetails(
+  retryAfterHeader: string | null,
+  body: string,
+): { retryAfterMs?: number; quota: 'MINUTE' | 'DAY' } {
+  const quota = /per[\s_-]?day|PerDay|\b(RPD|TPD)\b/i.test(body) ? 'DAY' : 'MINUTE';
+  const header = Number(retryAfterHeader);
+  if (retryAfterHeader && Number.isFinite(header) && header > 0)
+    return { retryAfterMs: Math.ceil(header * 1000), quota };
+  const inBody = /(?:retry|try again) in ([\d.]+)\s*(ms|s)\b/i.exec(body);
+  if (inBody)
+    return {
+      retryAfterMs: Math.ceil(Number(inBody[1]) * (inBody[2]!.toLowerCase() === 'ms' ? 1 : 1000)),
+      quota,
+    };
+  return { quota };
 }
 
 // Some OpenAI-compatible endpoints (confirmed: Gemini's) accept the chat
@@ -235,6 +274,12 @@ function parseResponse(value: unknown): {
   const message = first?.message as Record<string, unknown> | undefined;
   if (typeof body.model !== 'string' || typeof message?.content !== 'string')
     throw new AIError('AI_PROVIDER_ERROR', 'El proveedor devolvió una respuesta incompleta.');
+  // The answer hit its output limit: the JSON is cut, never usable.
+  if (first?.finish_reason === 'length')
+    throw new AIError(
+      'AI_INVALID_OUTPUT',
+      'La respuesta de la IA se cortó por superar su tamaño máximo. Seleccione menos elementos o inténtelo de nuevo.',
+    );
   let payload: unknown;
   try {
     payload = JSON.parse(message.content);

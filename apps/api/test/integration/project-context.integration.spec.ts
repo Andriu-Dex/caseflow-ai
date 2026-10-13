@@ -4,9 +4,14 @@ import {
   projectContextResponseSchema,
   type ProjectContextRequest,
 } from '@caseflow-ai/contracts';
-import { AIOrchestrator, FakeAIProvider, PromptRegistry } from '@caseflow-ai/ai';
+import {
+  AIOrchestrator,
+  FakeAIProvider,
+  FallbackAIProvider,
+  PromptRegistry,
+} from '@caseflow-ai/ai';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { PrismaAIRunRecorder } from '../../src/ai/ai-run-recorder';
 import { ProjectContextService } from '../../src/project-context/project-context.service';
 import { createTestContext, createWorkspaceWithOwner, type TestContext } from './support/test-app';
@@ -340,7 +345,9 @@ describe('Project Context integration', () => {
       const content = {
         problemStatement: 'Problema generado',
         objective: 'Objetivo generado',
-        actors: ['Coordinador'],
+        // DEC-131: actor roles and scope come in the proposal too.
+        actors: [{ name: 'Coordinador', description: 'Aprueba los pedidos' }],
+        scopeItems: [{ type: 'OUT_OF_SCOPE', description: 'Facturación electrónica' }],
         needs: ['Visibilidad en tiempo real'],
         constraints: [],
         businessRules: ['Bloquear morosos'],
@@ -356,7 +363,7 @@ describe('Project Context integration', () => {
         new PromptRegistry([
           {
             key: 'project-context.generate',
-            version: 2,
+            version: 5,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'project_context_generation',
             systemInstructions: 'policy',
@@ -376,6 +383,115 @@ describe('Project Context integration', () => {
       expect(
         await ctx.prisma.projectContextCandidate.findUnique({ where: { id: candidate.id } }),
       ).toMatchObject({ projectId: project.id });
+    });
+
+    // DEC-132: generated in the background, followed by its latest job.
+    it('generates in the background, reports progress and closes jobs cut off by a restart', async () => {
+      const project = await createProject(ctx, 'AI Background');
+      await createApprovedSource(ctx, project.id, 'Entrevista de fondo');
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      const content = {
+        problemStatement: 'Problema',
+        objective: 'Objetivo',
+        actors: [{ name: 'Coordinador' }],
+        needs: ['Registrar pedidos'],
+        constraints: [],
+        businessRules: [],
+      };
+      // A streamed provider: reports what it has written, then answers.
+      const streaming = {
+        id: 'streaming',
+        async generateStructured(request: { onProgress?: (chars: number) => void }) {
+          request.onProgress?.(3_500);
+          await gate;
+          return { provider: 'streaming', model: 'm', payload: content, usage: null, latencyMs: 1 };
+        },
+      };
+      const ai = new AIOrchestrator(
+        streaming,
+        new PromptRegistry([
+          {
+            key: 'project-context.generate',
+            version: 5,
+            capability: 'STRUCTURED_OUTPUT',
+            purpose: 'project_context_generation',
+            systemInstructions: 'policy',
+          },
+        ]),
+        new PrismaAIRunRecorder(ctx.prisma),
+      );
+      const service = new ProjectContextService(ctx.prisma, ai);
+
+      const started = await service.startGeneration(project.id);
+      expect(started.status).toMatch(/QUEUED|RUNNING/);
+      // Asking again while it runs returns the same generation.
+      expect((await service.startGeneration(project.id)).id).toBe(started.id);
+      await vi.waitFor(async () =>
+        expect((await service.latestGeneration(project.id)).job).toMatchObject({
+          status: 'RUNNING',
+          outputChars: 3_500,
+        }),
+      );
+      release();
+      await vi.waitFor(async () =>
+        expect((await service.latestGeneration(project.id)).job).toMatchObject({
+          status: 'COMPLETED',
+          candidate: { content: { problemStatement: 'Problema' } },
+        }),
+      );
+
+      // The next one expects what the previous proposals took.
+      const runs = await ctx.prisma.aIRun.findMany({
+        where: { promptKey: 'project-context.generate', status: 'SUCCEEDED' },
+        orderBy: { startedAt: 'desc' },
+        take: 5,
+      });
+      expect(runs.length).toBeGreaterThan(0);
+
+      // A job left open by a restart is closed with the restart message.
+      const orphan = await ctx.prisma.contextGenerationJob.create({
+        data: { projectId: project.id, status: 'RUNNING', updatedAt: new Date(Date.now() - 1_000) },
+      });
+      await service.onApplicationBootstrap();
+      expect(
+        await ctx.prisma.contextGenerationJob.findUniqueOrThrow({ where: { id: orphan.id } }),
+      ).toMatchObject({ status: 'FAILED', errorMessage: expect.stringContaining('reinició') });
+
+      // A project with nothing approved can still be deleted with its
+      // generations and their proposals.
+      const draft = await createProject(ctx, 'AI Background Delete');
+      const finished = await ctx.prisma.contextGenerationJob.findFirstOrThrow({
+        where: { projectId: project.id, status: 'COMPLETED' },
+        include: { candidate: true },
+      });
+      const run = await ctx.prisma.aIRun.create({
+        data: {
+          projectId: draft.id,
+          provider: 'streaming',
+          capability: 'STRUCTURED_OUTPUT',
+          purpose: 'project_context_generation',
+          promptKey: 'project-context.generate',
+          promptVersion: 5,
+          inputHash: 'a'.repeat(64),
+          status: 'SUCCEEDED',
+          completedAt: new Date(),
+          outputHash: 'b'.repeat(64),
+        },
+      });
+      const candidate = await ctx.prisma.projectContextCandidate.create({
+        data: {
+          projectId: draft.id,
+          aiRunId: run.id,
+          content: finished.candidate!.content as object,
+          sourceVersionIds: [],
+        },
+      });
+      await ctx.prisma.contextGenerationJob.create({
+        data: { projectId: draft.id, status: 'COMPLETED', candidateId: candidate.id },
+      });
+      await ctx.projects.delete(draft.id, 'AI Background Delete', ctx.userId);
+      expect(await ctx.prisma.project.findUnique({ where: { id: draft.id } })).toBeNull();
     });
 
     it('uses only the latest APPROVED version of a source, never an older approved one too', async () => {
@@ -413,7 +529,7 @@ describe('Project Context integration', () => {
         new PromptRegistry([
           {
             key: 'project-context.generate',
-            version: 2,
+            version: 5,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'project_context_generation',
             systemInstructions: 'policy',
@@ -478,7 +594,7 @@ describe('Project Context integration', () => {
       const content = {
         problemStatement: 'Problema',
         objective: 'Objetivo',
-        actors: ['Coordinador'],
+        actors: [{ name: 'Coordinador' }],
         needs: [],
         constraints: [],
         businessRules: [],
@@ -503,7 +619,7 @@ describe('Project Context integration', () => {
         new PromptRegistry([
           {
             key: 'project-context.generate',
-            version: 2,
+            version: 5,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'project_context_generation',
             systemInstructions: 'policy',
@@ -525,6 +641,83 @@ describe('Project Context integration', () => {
       expect(
         await ctx.prisma.projectContextCandidate.findUniqueOrThrow({ where: { id: candidate.id } }),
       ).toMatchObject({ reportSourceVersionIds: [reported.id] });
+    });
+
+    // DEC-127: the proposal reads a bounded input that fits the provider;
+    // a long source is sent as excerpts and recorded as such.
+    it('fits the smallest provider by sending long sources as excerpts', async () => {
+      const project = await createProject(ctx, 'AI Long Sources');
+      const approve = async (title: string, text: string) => {
+        const created = await ctx.sources.create(
+          project.id,
+          { title, sourceKind: 'TEXT', purpose: 'Prueba', description: '' },
+          {
+            originalname: 'fuente.md',
+            mimetype: 'text/markdown',
+            size: Buffer.byteLength(text),
+            buffer: Buffer.from(text),
+          },
+        );
+        await ctx.sources.transition(project.id, created.id, created.version.id, 'IN_REVIEW');
+        return ctx.sources.transition(project.id, created.id, created.version.id, 'APPROVED');
+      };
+      const short = await approve('Corta', 'El cliente registra pedidos.');
+      const long = await approve(
+        'Larga',
+        Array.from(
+          { length: 40 },
+          (_, i) => `# Capítulo ${i + 1}\n\n${'Detalle del proceso de pedidos. '.repeat(40)}`,
+        ).join('\n\n'),
+      );
+      const content = {
+        problemStatement: 'Problema',
+        objective: 'Objetivo',
+        actors: [],
+        needs: [],
+        constraints: [],
+        businessRules: [],
+      };
+      const fake = new FakeAIProvider({
+        provider: 'fake',
+        model: 'fake-v1',
+        payload: content,
+        usage: null,
+        latencyMs: 1,
+      });
+      const ai = new AIOrchestrator(
+        // Groq-sized: the long source alone would not fit.
+        new FallbackAIProvider([{ provider: fake, capacity: { tokensPerMinute: 8_000 } }]),
+        new PromptRegistry([
+          {
+            key: 'project-context.generate',
+            version: 5,
+            capability: 'STRUCTURED_OUTPUT',
+            purpose: 'project_context_generation',
+            systemInstructions: 'policy',
+          },
+        ]),
+        new PrismaAIRunRecorder(ctx.prisma),
+      );
+
+      const candidate = await new ProjectContextService(ctx.prisma, ai).generate(project.id);
+
+      const sent = JSON.parse(fake.lastRequest!.messages[0]!.content) as {
+        title: string;
+        extractedText?: string;
+        partial?: boolean;
+        excerpts?: unknown[];
+      }[];
+      expect(sent.find((s) => s.title === 'Corta')).toMatchObject({
+        extractedText: 'El cliente registra pedidos.',
+      });
+      const excerpted = sent.find((s) => s.title === 'Larga')!;
+      expect(excerpted.partial).toBe(true);
+      expect(excerpted.excerpts!.length).toBeGreaterThan(0);
+      expect(candidate.sourceVersionIds.sort()).toEqual([short.id, long.id].sort());
+      expect(candidate.partialSourceVersionIds).toEqual([long.id]);
+      expect(
+        await ctx.prisma.projectContextCandidate.findUniqueOrThrow({ where: { id: candidate.id } }),
+      ).toMatchObject({ partialSourceVersionIds: [long.id] });
     });
 
     it('rejects generation for a project without any usable approved source', async () => {

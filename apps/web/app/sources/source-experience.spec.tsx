@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   getText: vi.fn(),
   submitManualTranscript: vi.fn(),
   fetchBlob: vi.fn(),
+  reportJob: vi.fn(),
+  generateReport: vi.fn(),
 }));
 
 vi.mock('../../lib/api', () => ({
@@ -19,6 +21,8 @@ vi.mock('../../lib/api', () => ({
       capabilities: (...args: unknown[]) => mocks.capabilities(...args),
       getText: (...args: unknown[]) => mocks.getText(...args),
       submitManualTranscript: (...args: unknown[]) => mocks.submitManualTranscript(...args),
+      reportJob: (...args: unknown[]) => mocks.reportJob(...args),
+      generateReport: (...args: unknown[]) => mocks.generateReport(...args),
       downloadUrl: (projectId: string, id: string) =>
         `/projects/${projectId}/sources/${id}/download`,
     },
@@ -84,6 +88,8 @@ beforeEach(() => {
     maxExtractedCharacters: 50_000,
   });
   mocks.fetchBlob.mockResolvedValue(new Blob(['%PDF-'], { type: 'application/pdf' }));
+  mocks.reportJob.mockResolvedValue({ job: null });
+  mocks.getText.mockResolvedValue({ sourceVersionId: 'v1', text: 'Texto' });
   URL.createObjectURL = vi.fn(() => 'blob:preview');
   URL.revokeObjectURL = vi.fn();
 });
@@ -188,5 +194,59 @@ describe('Sources — reviewing a source', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Cerrar' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+});
+
+describe('Sources — the report of a long source (DEC-127)', () => {
+  const reportJob = (patch: Record<string, unknown>) => ({
+    job: {
+      id: 'report-job',
+      sourceVersionId: 'v1',
+      status: 'RUNNING',
+      totalParts: 5,
+      completedParts: 2,
+      errorMessage: null,
+      candidate: null,
+      updatedAt: new Date().toISOString(),
+      ...patch,
+    },
+  });
+
+  async function openReport(user: ReturnType<typeof userEvent.setup>) {
+    mocks.list.mockResolvedValue({ items: [pdfSource()] });
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: 'Ver detalle' }));
+    await user.click(screen.getByText('Reporte de la fuente'));
+  }
+
+  it('starts the report in the background and shows its progress by parts', async () => {
+    const user = userEvent.setup();
+    mocks.generateReport.mockResolvedValue(reportJob({}));
+    await openReport(user);
+    await user.click(await screen.findByRole('button', { name: 'Generar reporte con IA' }));
+    expect(mocks.generateReport).toHaveBeenCalledWith('p1', 'src1');
+    expect(await screen.findByText(/parte 3 de 5/)).toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: 'Avance del reporte' })).toHaveAttribute(
+      'aria-valuenow',
+      '40',
+    );
+    expect(
+      screen.queryByRole('button', { name: 'Generar reporte con IA' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('says why it failed and resumes from the next part', async () => {
+    const user = userEvent.setup();
+    mocks.reportJob.mockResolvedValue(
+      reportJob({
+        status: 'FAILED',
+        errorMessage: 'Se agotó la cuota diaria del proveedor de IA.',
+      }),
+    );
+    await openReport(user);
+    expect(
+      await screen.findByText(/Se agotó la cuota diaria.*continuará desde la parte 3/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reintentar el reporte' })).toBeInTheDocument();
   });
 });

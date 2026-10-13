@@ -86,6 +86,10 @@ function setup() {
     sourceDetail: { findFirst: vi.fn().mockResolvedValue(null) },
     sourceReportCandidate: { create: vi.fn(), findFirst: vi.fn() },
     sourceReportDetail: { create: vi.fn() },
+    sourceReportJob: {
+      findMany: vi.fn().mockResolvedValue([]),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    },
   };
   const ai = { generateStructured: vi.fn() };
   const storage = new FakeStorageProvider();
@@ -275,6 +279,10 @@ describe('SourcesService', () => {
       .mockResolvedValueOnce({ count: 1 })
       .mockResolvedValueOnce({ count: 0 })
       .mockResolvedValueOnce({ count: 1 });
+    // A report cut off mid-way resumes too (DEC-127).
+    prisma.sourceReportJob.findMany.mockResolvedValue([
+      { id: 'report', projectId: 'project', status: 'RUNNING' },
+    ]);
     const queue = { add: vi.fn().mockResolvedValue(undefined) };
     const service = new SourcesService(
       prisma as unknown as PrismaService,
@@ -285,7 +293,7 @@ describe('SourcesService', () => {
       queue as never,
     );
 
-    await expect(service.recoverInterruptedJobs(startedAt)).resolves.toBe(2);
+    await expect(service.recoverInterruptedJobs(startedAt)).resolves.toBe(3);
     expect(prisma.sourceProcessingJob.findMany).toHaveBeenCalledWith({
       where: { status: { in: ['RUNNING', 'QUEUED'] }, updatedAt: { lt: startedAt } },
       select: { id: true, projectId: true, status: true },
@@ -301,6 +309,7 @@ describe('SourcesService', () => {
     expect(queue.add.mock.calls.map((call) => call[1])).toEqual([
       { jobId: 'cut-off', projectId: 'project' },
       { jobId: 'orphaned', projectId: 'project' },
+      { jobId: 'report', projectId: 'project', kind: 'REPORT' },
     ]);
   });
 
@@ -418,6 +427,7 @@ describe('SourcesService', () => {
         .fn()
         .mockRejectedValue(new StorageProviderError('STORAGE_PROVIDER_UNAVAILABLE', 'down')),
       getObject: vi.fn(),
+      deleteObject: vi.fn(),
     };
     const service = new SourcesService(
       prisma as unknown as PrismaService,
