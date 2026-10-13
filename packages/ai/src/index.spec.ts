@@ -8,6 +8,7 @@ import {
   FallbackAIProvider,
   PromptRegistry,
   msUntilMidnight,
+  outputAllowance,
   scaledTimeoutMs,
   type AIRunRecorder,
 } from './index';
@@ -356,6 +357,14 @@ describe('FallbackAIProvider routing by capacity (DEC-127)', () => {
     expect(scaledTimeoutMs(30_000, 1_000_000)).toBe(180_000);
     // A long answer needs time to be written, whatever the input size.
     expect(scaledTimeoutMs(30_000, 3_000, 8_192)).toBe(110_000);
+  });
+
+  it('lets a provider write up to its declared ceiling, never below what the task needs (DEC-131)', () => {
+    expect(outputAllowance(4_096, undefined)).toBe(4_096);
+    expect(outputAllowance(undefined, undefined)).toBeUndefined();
+    expect(outputAllowance(4_096, 64_000)).toBe(64_000);
+    expect(outputAllowance(16_384, 8_000)).toBe(16_384);
+    expect(outputAllowance(undefined, 64_000)).toBe(64_000);
   });
 
   it('counts the time left until midnight in a time zone', () =>

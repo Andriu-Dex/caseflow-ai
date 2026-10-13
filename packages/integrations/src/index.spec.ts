@@ -63,6 +63,29 @@ describe('OpenAICompatibleProvider', () => {
     expect(result).toMatchObject({ payload: { ok: true }, usage: { totalTokens: 3 } });
   });
 
+  it('writes up to its declared output ceiling (DEC-131)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          model: 'configured-model',
+          choices: [{ message: { content: '{"ok":true}' } }],
+          usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    await new OpenAICompatibleProvider({
+      baseUrl: 'https://provider.test/v1/',
+      apiKey: 'top-secret',
+      model: 'configured-model',
+      timeoutMs: 100,
+      maxOutputTokens: 32_000,
+      fetch: fetchMock,
+    }).generateStructured(request);
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body)).max_tokens).toBe(32_000);
+  });
+
   it.each([
     [429, 'AI_RATE_LIMITED'],
     // One request above the tokens per minute: only a smaller one can pass.

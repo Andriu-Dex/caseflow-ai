@@ -164,6 +164,33 @@ describe('ContextPage — list field parsing', () => {
       { description: 'Consultar inventario' },
     ]);
   });
+
+  it('keeps the scope of the previous version and reads "Nombre: responsabilidades" actors', async () => {
+    mocks.getCurrent.mockResolvedValue({
+      ...existingContext,
+      scopeItems: [
+        { id: 's1', position: 0, type: 'OUT_OF_SCOPE', description: 'Facturación electrónica' },
+      ],
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: 'Crear nueva versión' }));
+
+    const actorsField = await screen.findByLabelText(/^Actores/);
+    await user.clear(actorsField);
+    await user.type(actorsField, 'Cajero: registra las ventas{enter}Administrador');
+    await user.click(screen.getByRole('button', { name: 'Guardar nueva versión' }));
+
+    await waitFor(() => expect(mocks.createVersion).toHaveBeenCalled());
+    const payload = mocks.createVersion.mock.calls[0]![1];
+    expect(payload.actors).toEqual([
+      { name: 'Cajero', description: 'registra las ventas' },
+      { name: 'Administrador' },
+    ]);
+    expect(payload.scopeItems).toEqual([
+      { type: 'OUT_OF_SCOPE', description: 'Facturación electrónica' },
+    ]);
+  });
 });
 
 describe('ContextPage — staleness', () => {
@@ -237,7 +264,11 @@ describe('ContextPage — AI proposal', () => {
         problemStatement: 'Las ventas se anotan en papel.',
         objective: 'Registrar ventas en línea.',
         additionalContext: null,
-        actors: ['Cajero'],
+        actors: [{ name: 'Cajero', description: 'Registra las ventas' }],
+        scopeItems: [
+          { type: 'IN_SCOPE', description: 'Ventas' },
+          { type: 'OUT_OF_SCOPE', description: 'Facturación electrónica' },
+        ],
         needs: ['Registrar ventas'],
         constraints: [],
         businessRules: [],
@@ -251,7 +282,10 @@ describe('ContextPage — AI proposal', () => {
 
     renderPage();
     expect(await screen.findByDisplayValue('Las ventas se anotan en papel.')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Cajero')).toBeInTheDocument();
+    // The proposal fills actor roles and both scope lists too (DEC-131).
+    expect(screen.getByDisplayValue('Cajero: Registra las ventas')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Ventas')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Facturación electrónica')).toBeInTheDocument();
     expect(mocks.generate).toHaveBeenCalledOnce();
   });
 });

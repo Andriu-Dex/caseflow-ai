@@ -7249,6 +7249,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-128 | El instalable (edición de escritorio) es la distribución principal y no hay despliegue web obligatorio. El plan de ChatGPT también puede usarse en desarrollo local con un intermediario propio que guarda las credenciales solo en memoria y solo escucha en 127.0.0.1 (§221.11, ADR-007) | Accepted |
 | DEC-129 | Los casos de uso propuestos por la IA tienen la granularidad de un objetivo concreto de un actor (prompt `use-cases.generate@2`) y un caso de uso registra relaciones «include» y «extend» hacia otros casos del proyecto, que el diagrama dibuja (§221.13, ADR-008) | Accepted |
 | DEC-130 | Convención de cardinalidad del modelo de datos y de multiplicidad del diagrama de clases: cada lado indica cuántas instancias de su entidad corresponden a una del otro lado; los prompts `data-model.generate@2` y `class-diagram.generate@2` la declaran, y los diagramas de arquitectura dibujan capas y protocolos (§221.14) | Accepted |
+| DEC-131 | Cada tarea de IA declara el mínimo de salida que necesita y cada proveedor puede declarar cuánto puede escribir (`AI_MAX_OUTPUT_TOKENS`, `AI_PROVIDER_n_MAX_OUTPUT_TOKENS`); se usa el mayor. `AI_TIMEOUT_MS` es siempre el mínimo de espera. La propuesta del contexto conserva el detalle de la fuente e incluye alcance y descripción de actores (§221.15) | Accepted |
 
 ---
 
@@ -7685,7 +7686,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-130)
+# 221. Extensiones de V2 (DEC-116 a DEC-131)
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
@@ -7843,6 +7844,12 @@ Los planes gratuitos configurados son limitados de formas opuestas (verificado e
 - **Diagrama ER:** un atributo clave primaria no se marca además como único.
 - **Arquitectura de software:** un componente que otros nombran como su capa (`layerLocalId`) se dibuja como paquete que los contiene, con un nivel de anidamiento.
 - **Arquitectura de sistema:** cada enlace muestra su protocolo junto a su descripción.
+
+## 221.15 Salida de la IA según el proveedor y contexto completo (DEC-131)
+
+- **Salida:** cada tarea fija en el código el mínimo de tokens de salida que necesita. Cada proveedor puede declarar cuánto puede escribir por respuesta (`AI_MAX_OUTPUT_TOKENS` para ChatGPT o un proveedor único, `AI_PROVIDER_n_MAX_OUTPUT_TOKENS` en la cadena). Se le permite el mayor de los dos, de modo que un proveedor más capaz no queda limitado por los valores pensados para los planes gratuitos. Sin valor declarado, se usa el de la tarea.
+- **Tiempo de espera:** `AI_TIMEOUT_MS` es el mínimo de espera en todos los proveedores. Una solicitud grande puede pedir más, nunca menos.
+- **Contexto:** `project-context.generate@4` pide conservar el nivel de detalle de las fuentes: una necesidad por capacidad, una regla por regla, cada atributo de calidad como restricción, el alcance (dentro y fuera) en su lista propia, la descripción de cada actor y las suposiciones pendientes en el contexto adicional. Su salida mínima pasa de 4096 a 16 384 tokens. El formulario edita el alcance y la descripción de los actores («Nombre: responsabilidades»), y una versión nueva conserva el alcance de la anterior.
 
 ## 221.4 Fuera de alcance de estas extensiones
 

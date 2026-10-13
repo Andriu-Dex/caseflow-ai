@@ -34,6 +34,23 @@ const linesToItems = (text: string) =>
     .filter(Boolean)
     .map((description) => ({ description }));
 
+// One actor per line as "Nombre: responsabilidades"; the description is optional.
+const actorLine = (actor: { name: string; description?: string | null }) =>
+  actor.description ? `${actor.name}: ${actor.description}` : actor.name;
+const linesToActors = (text: string) =>
+  linesToItems(text).map(({ description: line }) => {
+    const colon = line.indexOf(':');
+    const name = (colon > 0 ? line.slice(0, colon) : line).trim();
+    const description = colon > 0 ? line.slice(colon + 1).trim() : '';
+    return description ? { name, description } : { name };
+  });
+type ScopeType = 'IN_SCOPE' | 'OUT_OF_SCOPE';
+const scopeLines = (items: { type: ScopeType; description: string }[], type: ScopeType) =>
+  items
+    .filter((item) => item.type === type)
+    .map((item) => item.description)
+    .join('\n');
+
 // Per-tab unsent-draft convenience (not backend state): recovers an
 // in-progress Context form after the browser discards/reloads a
 // backgrounded tab. Never a substitute for actually saving the form.
@@ -42,6 +59,8 @@ interface ContextDraft {
   objective: string;
   additionalContext: string;
   actorsText: string;
+  inScopeText?: string;
+  outOfScopeText?: string;
   needsText: string;
   constraintsText: string;
   businessRulesText: string;
@@ -67,7 +86,9 @@ const draftFromCandidate = (candidate: ProjectContextCandidate): ContextDraft =>
   problemStatement: candidate.content.problemStatement,
   objective: candidate.content.objective,
   additionalContext: candidate.content.additionalContext ?? '',
-  actorsText: candidate.content.actors.join('\n'),
+  actorsText: candidate.content.actors.map(actorLine).join('\n'),
+  inScopeText: scopeLines(candidate.content.scopeItems, 'IN_SCOPE'),
+  outOfScopeText: scopeLines(candidate.content.scopeItems, 'OUT_OF_SCOPE'),
   needsText: candidate.content.needs.join('\n'),
   constraintsText: candidate.content.constraints.join('\n'),
   businessRulesText: candidate.content.businessRules.join('\n'),
@@ -158,7 +179,13 @@ function ContextForm({
     () => draft?.additionalContext ?? initial?.additionalContext ?? '',
   );
   const [actorsText, setActorsText] = useState(
-    () => draft?.actorsText ?? initial?.actors.map((a) => a.name).join('\n') ?? '',
+    () => draft?.actorsText ?? initial?.actors.map(actorLine).join('\n') ?? '',
+  );
+  const [inScopeText, setInScopeText] = useState(
+    () => draft?.inScopeText ?? scopeLines(initial?.scopeItems ?? [], 'IN_SCOPE'),
+  );
+  const [outOfScopeText, setOutOfScopeText] = useState(
+    () => draft?.outOfScopeText ?? scopeLines(initial?.scopeItems ?? [], 'OUT_OF_SCOPE'),
   );
   const [needsText, setNeedsText] = useState(
     () => draft?.needsText ?? initial?.needs.map((n) => n.description).join('\n') ?? '',
@@ -196,6 +223,8 @@ function ContextForm({
       objective,
       additionalContext,
       actorsText,
+      inScopeText,
+      outOfScopeText,
       needsText,
       constraintsText,
       businessRulesText,
@@ -207,6 +236,8 @@ function ContextForm({
     objective,
     additionalContext,
     actorsText,
+    inScopeText,
+    outOfScopeText,
     needsText,
     constraintsText,
     businessRulesText,
@@ -225,6 +256,8 @@ function ContextForm({
     setObjective(next.objective);
     setAdditionalContext(next.additionalContext);
     setActorsText(next.actorsText);
+    setInScopeText(next.inScopeText ?? '');
+    setOutOfScopeText(next.outOfScopeText ?? '');
     setNeedsText(next.needsText);
     setConstraintsText(next.constraintsText);
     setBusinessRulesText(next.businessRulesText);
@@ -257,11 +290,14 @@ function ContextForm({
       problemStatement,
       objective,
       additionalContext: additionalContext || undefined,
-      actors: linesToItems(actorsText).map((i) => ({ name: i.description })),
+      actors: linesToActors(actorsText),
       needs: linesToItems(needsText),
       constraints: linesToItems(constraintsText),
       businessRules: linesToItems(businessRulesText),
-      scopeItems: [],
+      scopeItems: [
+        ...linesToItems(inScopeText).map((i) => ({ type: 'IN_SCOPE' as const, ...i })),
+        ...linesToItems(outOfScopeText).map((i) => ({ type: 'OUT_OF_SCOPE' as const, ...i })),
+      ],
       sourceVersionIds,
     };
     try {
@@ -354,7 +390,7 @@ function ContextForm({
               <Users className="size-4" aria-hidden="true" />
               Actores{' '}
               <span className="ml-auto text-xs font-normal text-muted-foreground">
-                (uno por línea)
+                (uno por línea · Nombre: responsabilidades)
               </span>
             </span>
             <textarea
@@ -362,7 +398,7 @@ function ContextForm({
               className="rounded-lg border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
               value={actorsText}
               onChange={(e) => setActorsText(e.target.value)}
-              placeholder="Ej: Administrador&#10;Cliente&#10;Vendedor"
+              placeholder="Ej: Administrador: configura el sistema y los usuarios&#10;Cajero: registra las ventas"
             />
           </label>
           <label className="group flex flex-col gap-2">
@@ -411,6 +447,36 @@ function ContextForm({
               value={businessRulesText}
               onChange={(e) => setBusinessRulesText(e.target.value)}
               placeholder="Ej: Usuarios inactivos por 30 días se suspenden"
+            />
+          </label>
+          <label className="group flex flex-col gap-2">
+            <span className="flex items-center gap-2 text-sm font-medium text-foreground transition-colors group-focus-within:text-primary">
+              Dentro del alcance{' '}
+              <span className="ml-auto text-xs font-normal text-muted-foreground">
+                (uno por línea)
+              </span>
+            </span>
+            <textarea
+              rows={4}
+              className="rounded-lg border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+              value={inScopeText}
+              onChange={(e) => setInScopeText(e.target.value)}
+              placeholder="Ej: Ventas por sucursal&#10;Inventario y alertas"
+            />
+          </label>
+          <label className="group flex flex-col gap-2">
+            <span className="flex items-center gap-2 text-sm font-medium text-foreground transition-colors group-focus-within:text-primary">
+              Fuera del alcance{' '}
+              <span className="ml-auto text-xs font-normal text-muted-foreground">
+                (uno por línea)
+              </span>
+            </span>
+            <textarea
+              rows={4}
+              className="rounded-lg border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+              value={outOfScopeText}
+              onChange={(e) => setOutOfScopeText(e.target.value)}
+              placeholder="Ej: Facturación electrónica&#10;Pasarela de pago"
             />
           </label>
         </div>

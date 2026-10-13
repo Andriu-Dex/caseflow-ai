@@ -16,7 +16,8 @@ const ANSWERS: Record<string, (request: AIProviderRequest) => unknown> = {
   project_context_generation: () => ({
     problemStatement: 'Los pedidos se anotan en papel.',
     objective: 'Registrar pedidos en línea.',
-    actors: ['Vendedor'],
+    actors: [{ name: 'Vendedor' }],
+    scopeItems: [{ type: 'IN_SCOPE', description: 'Pedidos' }],
     needs: ['Registrar pedidos'],
     constraints: [],
     businessRules: [],
