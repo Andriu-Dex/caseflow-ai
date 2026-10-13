@@ -1,5 +1,6 @@
 import {
   AIError,
+  outputAllowance,
   type AIProvider,
   type AIProviderRequest,
   type AIProviderResponse,
@@ -32,6 +33,8 @@ export interface ChatGPTProviderConfig {
   model: string;
   timeoutMs: number;
   maxInputTokens?: number;
+  // What the plan's model may write per answer (DEC-131); unset: the task's own.
+  maxOutputTokens?: number;
   broker: ChatGPTBroker;
   fetch?: typeof fetch;
 }
@@ -51,14 +54,16 @@ export class ChatGPTProvider implements AIProvider {
     const started = Date.now();
     const token = await this.config.broker.accessToken();
     const controller = new AbortController();
+    // The configured timeout is the floor; a larger request may ask for more.
     const timeout = setTimeout(
       () => controller.abort(),
-      Math.min(request.timeoutMs, this.config.timeoutMs),
+      Math.max(request.timeoutMs, this.config.timeoutMs),
     );
     const abort = () => controller.abort();
     request.signal?.addEventListener('abort', abort, { once: true });
     try {
       const model = request.model ?? this.config.model;
+      const maxOutputTokens = outputAllowance(request.maxOutputTokens, this.config.maxOutputTokens);
       const response = await this.fetchImplementation(RESPONSES_URL, {
         method: 'POST',
         headers: {
@@ -79,9 +84,7 @@ export class ChatGPTProvider implements AIProvider {
               schema: request.outputSchema,
             },
           },
-          ...(request.maxOutputTokens === undefined
-            ? {}
-            : { max_output_tokens: request.maxOutputTokens }),
+          ...(maxOutputTokens === undefined ? {} : { max_output_tokens: maxOutputTokens }),
           // Plan usage requires streamed, unstored responses.
           store: false,
           stream: true,

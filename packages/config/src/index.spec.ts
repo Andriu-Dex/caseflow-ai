@@ -104,6 +104,7 @@ describe('loadAIConfig', () => {
       AI_PROVIDER_1_MAX_INPUT_TOKENS: '1048576',
       AI_PROVIDER_1_TOKENS_PER_MINUTE: '250000',
       AI_PROVIDER_1_DAY_RESET_TIMEZONE: 'America/Los_Angeles',
+      AI_PROVIDER_1_MAX_OUTPUT_TOKENS: '65536',
     };
     expect(loadAIConfig(slot)).toMatchObject({
       chain: [
@@ -111,6 +112,7 @@ describe('loadAIConfig', () => {
           maxInputTokens: 1_048_576,
           tokensPerMinute: 250_000,
           dayResetTimeZone: 'America/Los_Angeles',
+          maxOutputTokens: 65_536,
         },
       ],
     });
@@ -124,10 +126,15 @@ describe('loadAIConfig', () => {
       AI_PROVIDER: 'chatgpt',
       AI_MODEL: 'gpt-x',
       AI_MAX_INPUT_TOKENS: '200000',
+      AI_MAX_OUTPUT_TOKENS: '64000',
       CHATGPT_BROKER_URL: 'http://127.0.0.1:47833',
       CHATGPT_BROKER_SECRET: 'x'.repeat(32),
     };
-    expect(loadAIConfig(chatgpt)).toMatchObject({ provider: 'chatgpt', maxInputTokens: 200_000 });
+    expect(loadAIConfig(chatgpt)).toMatchObject({
+      provider: 'chatgpt',
+      maxInputTokens: 200_000,
+      maxOutputTokens: 64_000,
+    });
     expect(() =>
       loadAIConfig({ ...chatgpt, CHATGPT_BROKER_URL: 'https://broker.example.com' }),
     ).toThrow('este equipo');

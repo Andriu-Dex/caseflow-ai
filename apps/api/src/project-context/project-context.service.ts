@@ -239,11 +239,13 @@ export class ProjectContextService {
         projectId,
         language: project.language,
         promptKey: 'project-context.generate',
-        promptVersion: 3,
+        promptVersion: 4,
         messages: [{ role: 'user', content: JSON.stringify(input.entries) }],
         outputSchema: projectContextGenerationContentSchema,
         schemaName: 'project_context_generation',
-        maxOutputTokens: 4096,
+        // A detailed source lists dozens of needs, rules and qualities; 4096
+        // made the proposal summarize them away (DEC-131).
+        maxOutputTokens: 16_384,
       });
       const sourceVersionIds = usable.map((v) => v.id);
       // Recorded so the proposal can be audited: which reports guided it.

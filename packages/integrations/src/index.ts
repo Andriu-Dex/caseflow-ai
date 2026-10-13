@@ -1,5 +1,6 @@
 import {
   AIError,
+  outputAllowance,
   type AIProvider,
   type AIProviderRequest,
   type AIProviderResponse,
@@ -86,6 +87,8 @@ export interface OpenAICompatibleProviderConfig {
   apiKey: string;
   model: string;
   timeoutMs: number;
+  // What the provider may write per answer (DEC-131); unset: the task's own.
+  maxOutputTokens?: number;
   fetch?: typeof fetch;
   // Explicit capability flag, set from this provider slot's own config
   // (never inferred from `id`, which is a free-form label a user could set
@@ -113,6 +116,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     );
     const abort = () => controller.abort();
     request.signal?.addEventListener('abort', abort, { once: true });
+    const maxOutputTokens = outputAllowance(request.maxOutputTokens, this.config.maxOutputTokens);
     try {
       const response = await this.fetchImplementation(
         `${this.config.baseUrl.replace(/\/$/, '')}/chat/completions`,
@@ -139,9 +143,7 @@ export class OpenAICompatibleProvider implements AIProvider {
               },
             },
             ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
-            ...(request.maxOutputTokens === undefined
-              ? {}
-              : { max_tokens: request.maxOutputTokens }),
+            ...(maxOutputTokens === undefined ? {} : { max_tokens: maxOutputTokens }),
           }),
         },
       );

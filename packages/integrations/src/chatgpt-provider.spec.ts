@@ -83,6 +83,40 @@ describe('ChatGPTProvider', () => {
     });
   });
 
+  it('writes up to the plan model ceiling and honours a longer configured timeout (DEC-131)', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise<Response>((_resolve, reject) =>
+            init.signal!.addEventListener('abort', () => reject(new Error('aborted'))),
+          ),
+      );
+      const provider = new ChatGPTProvider({
+        model: 'gpt-x',
+        timeoutMs: 300_000,
+        maxOutputTokens: 64_000,
+        broker: {
+          accessToken: vi.fn().mockResolvedValue('token'),
+          reportUsageLimit: vi.fn(),
+          reportRevoked: vi.fn(),
+        },
+        fetch: fetchMock as unknown as typeof fetch,
+      });
+      const outcome = provider.generateStructured(request).catch((error: Error) => error);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(JSON.parse(String(fetchMock.mock.calls[0]![1].body)).max_output_tokens).toBe(64_000);
+      // The request asked for 30 s, but the configured 5 minutes win.
+      await vi.advanceTimersByTimeAsync(31_000);
+      expect(fetchMock.mock.calls[0]![1].signal!.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(300_000);
+      expect(fetchMock.mock.calls[0]![1].signal!.aborted).toBe(true);
+      await outcome;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('pauses the plan on its usage limit and never retries elsewhere', async () => {
     const { provider, broker } = setup(
       new Response(

@@ -61,7 +61,15 @@ export const projectContextGenerationContentSchema = z
     problemStatement: narrative(10_000),
     objective: narrative(5_000),
     additionalContext: narrative(10_000).optional(),
-    actors: z.array(narrative(200)).max(PROJECT_CONTEXT_COLLECTION_LIMIT).default([]),
+    // DEC-131: the proposal fills the whole form, scope and actor roles too.
+    scopeItems: z
+      .array(projectContextScopeItemInputSchema)
+      .max(PROJECT_CONTEXT_COLLECTION_LIMIT)
+      .default([]),
+    actors: z
+      .array(projectContextActorInputSchema)
+      .max(PROJECT_CONTEXT_COLLECTION_LIMIT)
+      .default([]),
     needs: z.array(narrative(2_000)).max(PROJECT_CONTEXT_COLLECTION_LIMIT).default([]),
     constraints: z.array(narrative(2_000)).max(PROJECT_CONTEXT_COLLECTION_LIMIT).default([]),
     businessRules: z.array(narrative(2_000)).max(PROJECT_CONTEXT_COLLECTION_LIMIT).default([]),

@@ -101,6 +101,12 @@ export const estimateRequestTokens = (request: AIProviderRequest) =>
 // more per 1 000 tokens the answer may write (writing is the slow part), up
 // to 3 minutes.
 export const MAX_AI_TIMEOUT_MS = 180_000;
+
+// How much a provider may write (DEC-131): what the task needs at least,
+// raised to what the provider declares it can write. A provider without a
+// declared ceiling gets exactly what the task asks for.
+export const outputAllowance = (requested: number | undefined, ceiling: number | undefined) =>
+  ceiling === undefined ? requested : Math.max(ceiling, requested ?? 0);
 export const scaledTimeoutMs = (baseMs: number, inputTokens: number, maxOutputTokens = 0) =>
   Math.min(
     MAX_AI_TIMEOUT_MS,

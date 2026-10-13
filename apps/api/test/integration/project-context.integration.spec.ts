@@ -345,7 +345,9 @@ describe('Project Context integration', () => {
       const content = {
         problemStatement: 'Problema generado',
         objective: 'Objetivo generado',
-        actors: ['Coordinador'],
+        // DEC-131: actor roles and scope come in the proposal too.
+        actors: [{ name: 'Coordinador', description: 'Aprueba los pedidos' }],
+        scopeItems: [{ type: 'OUT_OF_SCOPE', description: 'Facturación electrónica' }],
         needs: ['Visibilidad en tiempo real'],
         constraints: [],
         businessRules: ['Bloquear morosos'],
@@ -361,7 +363,7 @@ describe('Project Context integration', () => {
         new PromptRegistry([
           {
             key: 'project-context.generate',
-            version: 3,
+            version: 4,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'project_context_generation',
             systemInstructions: 'policy',
@@ -418,7 +420,7 @@ describe('Project Context integration', () => {
         new PromptRegistry([
           {
             key: 'project-context.generate',
-            version: 3,
+            version: 4,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'project_context_generation',
             systemInstructions: 'policy',
@@ -483,7 +485,7 @@ describe('Project Context integration', () => {
       const content = {
         problemStatement: 'Problema',
         objective: 'Objetivo',
-        actors: ['Coordinador'],
+        actors: [{ name: 'Coordinador' }],
         needs: [],
         constraints: [],
         businessRules: [],
@@ -508,7 +510,7 @@ describe('Project Context integration', () => {
         new PromptRegistry([
           {
             key: 'project-context.generate',
-            version: 3,
+            version: 4,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'project_context_generation',
             systemInstructions: 'policy',
@@ -579,7 +581,7 @@ describe('Project Context integration', () => {
         new PromptRegistry([
           {
             key: 'project-context.generate',
-            version: 3,
+            version: 4,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'project_context_generation',
             systemInstructions: 'policy',
