@@ -4,17 +4,19 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   Archive,
+  Check,
   ChevronRight,
   Columns2,
   Download,
   FileText,
+  Loader2,
   MoreHorizontal,
   Pencil,
   RefreshCw,
+  Sparkles,
   Trash2,
   Upload,
   X,
-  Loader2,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
@@ -487,7 +489,7 @@ function SourceCard({
           {outboundMessages.length ? (
             <span
               title="Hay un artefacto que aún no incorpora esta versión aprobada."
-              className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800"
+              className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300"
             >
               <AlertTriangle className="size-3.5" aria-hidden="true" />
               Pendiente de incorporar
@@ -523,7 +525,7 @@ function SourceCard({
       {open ? (
         <div className="mt-3 flex flex-col gap-4 border-t border-border pt-3 text-sm">
           {outboundMessages.length ? (
-            <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800">
+            <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
               <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
               <div>
                 <p className="font-medium">
@@ -774,35 +776,60 @@ function SourceCard({
                     </p>
                   ) : null}
                   {reportCandidate ? (
-                    <div className="rounded-md border border-dashed border-purple-300 bg-purple-50 p-3 text-foreground/80">
-                      <p className="mb-2 text-xs font-medium text-purple-700">
-                        Propuesta de IA — revísela antes de incorporarla
-                      </p>
-                      <p>{reportCandidate.content.summary}</p>
-                      {reportCandidate.content.actors.length ? (
-                        <p className="mt-1">
-                          <strong>Actores:</strong> {reportCandidate.content.actors.join(', ')}
-                        </p>
-                      ) : null}
-                      {reportCandidate.content.needs.length ? (
-                        <p className="mt-1">
-                          <strong>Necesidades:</strong> {reportCandidate.content.needs.join(', ')}
-                        </p>
-                      ) : null}
-                      <div className="mt-2 flex gap-2">
+                    <div className="rounded-xl border border-dashed border-purple-300/80 bg-purple-50/70 p-4 text-foreground/90 shadow-2xs transition-colors dark:border-purple-700/60 dark:bg-purple-950/30">
+                      <div className="mb-3 flex items-center gap-2">
+                        <Sparkles
+                          className="size-4 text-purple-600 dark:text-purple-400"
+                          aria-hidden="true"
+                        />
+                        <span className="text-xs font-semibold tracking-wide text-purple-800 uppercase dark:text-purple-300">
+                          Propuesta de IA — revísela antes de incorporarla
+                        </span>
+                      </div>
+
+                      <div className="space-y-2.5 text-sm leading-relaxed text-foreground/90">
+                        <p className="whitespace-pre-line">{reportCandidate.content.summary}</p>
+
+                        {reportCandidate.content.actors.length ? (
+                          <div className="rounded-lg border border-purple-200/60 bg-purple-100/40 p-2.5 text-xs dark:border-purple-900/40 dark:bg-purple-900/20">
+                            <span className="font-semibold text-foreground">
+                              Actores detectados:{' '}
+                            </span>
+                            <span className="text-muted-foreground">
+                              {reportCandidate.content.actors.join(', ')}
+                            </span>
+                          </div>
+                        ) : null}
+
+                        {reportCandidate.content.needs.length ? (
+                          <div className="rounded-lg border border-purple-200/60 bg-purple-100/40 p-2.5 text-xs dark:border-purple-900/40 dark:bg-purple-900/20">
+                            <span className="font-semibold text-foreground">
+                              Necesidades detectadas:{' '}
+                            </span>
+                            <span className="text-muted-foreground">
+                              {reportCandidate.content.needs.join(', ')}
+                            </span>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap items-center gap-2.5 border-t border-purple-200/60 pt-3 dark:border-purple-900/40">
                         <Button
                           type="button"
                           size="sm"
                           disabled={acceptingReport}
                           onClick={acceptReportCandidate}
+                          className="gap-1.5 shadow-2xs"
                         >
+                          <Check className="size-3.5" aria-hidden="true" />
                           {acceptingReport ? 'Aceptando…' : 'Aceptar como reporte oficial'}
                         </Button>
                         <Button
                           type="button"
-                          variant="ghost"
+                          variant="outline"
                           size="sm"
                           onClick={() => setDismissedCandidateId(reportCandidate.id)}
+                          className="text-xs shadow-2xs hover:bg-destructive/10 hover:text-destructive dark:border-purple-800/60"
                         >
                           Descartar
                         </Button>
@@ -810,7 +837,7 @@ function SourceCard({
                     </div>
                   ) : null}
                   <textarea
-                    className="w-full rounded-md border border-input px-2 py-1"
+                    className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm text-foreground shadow-2xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
                     rows={2}
                     placeholder="O escriba un resumen manual del contenido…"
                     value={manualSummary}
@@ -822,7 +849,7 @@ function SourceCard({
                     type="button"
                     onClick={submitManualReport}
                     disabled={!manualSummary.trim()}
-                    className="self-start"
+                    className="self-start shadow-2xs"
                   >
                     Guardar reporte manual
                   </Button>
