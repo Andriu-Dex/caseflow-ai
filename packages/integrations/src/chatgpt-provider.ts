@@ -5,6 +5,7 @@ import {
   type AIProvider,
   type AIProviderRequest,
   type AIProviderResponse,
+  type AIFailureDiagnostics,
 } from '@caseflow-ai/ai';
 
 // "ChatGPT" provider (DEC-117, desktop edition only): uses the signed-in
@@ -93,7 +94,7 @@ export class ChatGPTProvider implements AIProvider {
         }),
       });
       if (!response.ok) throw await this.failure(response.status, await response.text());
-      const { text, usage } = await this.readStream(response, request.onProgress);
+      const { text, usage } = await this.readStream(response, request.onProgress, model);
       let payload: unknown;
       try {
         payload = JSON.parse(text);
@@ -150,7 +151,11 @@ export class ChatGPTProvider implements AIProvider {
   }
 
   // Server-sent events: text deltas until response.completed.
-  private async readStream(response: Response, onProgress?: (outputChars: number) => void) {
+  private async readStream(
+    response: Response,
+    onProgress?: (outputChars: number) => void,
+    model?: string,
+  ) {
     if (!response.body)
       throw new AIError('AI_PROVIDER_ERROR', 'El proveedor devolvió una respuesta no válida.');
     const reader = response.body.getReader();
@@ -182,26 +187,68 @@ export class ChatGPTProvider implements AIProvider {
           };
       } else if (event.type === 'response.failed' || event.type === 'error')
         throw await this.failure(200, JSON.stringify(event.response ?? event));
-      else if (event.type === 'response.incomplete')
-        throw new AIError('AI_INVALID_OUTPUT', 'La respuesta de IA quedó incompleta.');
-    };
-    for (;;) {
-      const chunk = await reader.read();
-      pending += decoder.decode(chunk.value, { stream: !chunk.done });
-      const events = pending.split(/\r?\n\r?\n/);
-      pending = chunk.done ? '' : events.pop()!;
-      for (const block of events)
-        await handle(
-          block
-            .split(/\r?\n/)
-            .filter((line) => line.startsWith('data:'))
-            .map((line) => line.slice(5).replace(/^ /, ''))
-            .join('\n'),
+      else if (event.type === 'response.incomplete') {
+        const details = event.response?.incomplete_details as { reason?: unknown } | undefined;
+        const allowed = ['max_output_tokens', 'max_messages', 'content_filter', 'steered'] as const;
+        const reason: AIFailureDiagnostics['reason'] =
+          allowed.find((value) => value === details?.reason) ?? 'unknown_incomplete';
+        const raw = event.response?.usage as
+          { input_tokens?: number; output_tokens?: number; total_tokens?: number } | undefined;
+        const count = (value: unknown) =>
+          typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
+        throw new AIError(
+          'AI_INVALID_OUTPUT',
+          reason === 'max_output_tokens'
+            ? 'La respuesta de IA alcanzó su límite de salida. Reintente el lote o use otro modelo.'
+            : reason === 'content_filter'
+              ? 'El proveedor no pudo completar esta respuesta por sus filtros de contenido.'
+              : 'El proveedor indicó que la respuesta de IA quedó incompleta.',
+          {
+            diagnostics: {
+              model,
+              reason,
+              outputChars: text.length,
+              usage: raw
+                ? {
+                    inputTokens: count(raw.input_tokens),
+                    outputTokens: count(raw.output_tokens),
+                    totalTokens: count(raw.total_tokens),
+                  }
+                : null,
+            },
+          },
         );
-      if (chunk.done) break;
+      }
+    };
+    try {
+      for (;;) {
+        const chunk = await reader.read();
+        pending += decoder.decode(chunk.value, { stream: !chunk.done });
+        const events = pending.split(/\r?\n\r?\n/);
+        pending = chunk.done ? '' : events.pop()!;
+        for (const block of events)
+          await handle(
+            block
+              .split(/\r?\n/)
+              .filter((line) => line.startsWith('data:'))
+              .map((line) => line.slice(5).replace(/^ /, ''))
+              .join('\n'),
+          );
+        if (chunk.done) break;
+      }
+      if (!completed)
+        throw new AIError(
+          'AI_INVALID_OUTPUT',
+          'La transmisión de IA terminó sin confirmar una respuesta completa.',
+          {
+            diagnostics: { model, reason: 'stream_ended', outputChars: text.length, usage },
+          },
+        );
+      return { text, usage };
+    } finally {
+      await reader.cancel().catch(() => undefined);
+      reader.releaseLock();
     }
-    if (!completed) throw new AIError('AI_INVALID_OUTPUT', 'La respuesta de IA quedó incompleta.');
-    return { text, usage };
   }
 }
 

@@ -12,6 +12,8 @@ import {
   Query,
   Res,
   StreamableFile,
+  HttpCode,
+  Request,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
@@ -24,12 +26,14 @@ import {
   requirementContextCoverageResponseSchema,
   requirementResponseSchema,
   transitionArtifactVersionRequestSchema,
+  requirementGenerationJobSchema,
 } from '@caseflow-ai/contracts';
-import type { z } from 'zod';
+import { z } from 'zod';
 import { uuidParamPipe } from '../common/uuid-param.pipe';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ApiUuidParam, ApiZodBody, ApiZodResponse } from '../openapi/zod-openapi';
 import { RequirementsService } from './requirements.service';
+import { RequirementGenerationJobsService } from './requirement-generation-jobs.service';
 import {
   RequirementDocumentExportService,
   type RequirementDocumentFormat,
@@ -41,6 +45,7 @@ export class RequirementsController {
   constructor(
     private readonly service: RequirementsService,
     private readonly documents: RequirementDocumentExportService,
+    private readonly jobs: RequirementGenerationJobsService,
   ) {}
   @Post()
   @ApiOperation({ operationId: 'createRequirement', summary: 'Crear requisito manual' })
@@ -103,6 +108,47 @@ export class RequirementsController {
         : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     );
     return new StreamableFile(content);
+  }
+  @Post('generation-jobs')
+  @HttpCode(202)
+  @ApiOperation({
+    operationId: 'startRequirementGeneration',
+    summary: 'Generar requisitos por lotes en segundo plano',
+  })
+  @ApiZodBody(generateRequirementsRequestSchema)
+  @ApiZodResponse(202, 'Requirement generation job.', requirementGenerationJobSchema)
+  startGeneration(
+    @Param('projectId', uuidParamPipe) p: string,
+    @Body(new ZodValidationPipe(generateRequirementsRequestSchema))
+    body: z.output<typeof generateRequirementsRequestSchema>,
+    @Request() request: { user: { id: string } },
+  ) {
+    return this.jobs.start(p, body.sourceContextVersionId, request.user.id);
+  }
+  @Get('generation-jobs/latest')
+  @ApiZodResponse(
+    200,
+    'Latest requirement generation job.',
+    z.object({ job: requirementGenerationJobSchema.nullable() }),
+  )
+  @ApiOperation({
+    operationId: 'getLatestRequirementGeneration',
+    summary: 'Consultar el último trabajo de requisitos',
+  })
+  latestGeneration(@Param('projectId', uuidParamPipe) p: string) {
+    return this.jobs.latest(p);
+  }
+  @Get('generation-jobs/:jobId')
+  @ApiOperation({
+    operationId: 'getRequirementGenerationJob',
+    summary: 'Consultar avance de un trabajo de requisitos',
+  })
+  @ApiZodResponse(200, 'Requirement generation job.', requirementGenerationJobSchema)
+  generationJob(
+    @Param('projectId', uuidParamPipe) p: string,
+    @Param('jobId', uuidParamPipe) jobId: string,
+  ) {
+    return this.jobs.get(p, jobId);
   }
   @Get(':requirementId')
   @ApiOperation({ operationId: 'getRequirement', summary: 'Consultar requisito' })

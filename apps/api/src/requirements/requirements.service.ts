@@ -11,6 +11,8 @@ import { canTransitionArtifactVersionStatus, formatArtifactCode } from '@caseflo
 import {
   isMandatoryContextItem,
   requirementGenerationOutputSchema,
+  requirementBatchOutputSchema,
+  requirementDependencyOutputSchema,
   type ContextItemRef,
   type RequirementInput,
   type RequirementResponse,
@@ -36,6 +38,20 @@ import {
   coverage,
   type ContextDetailRows,
 } from './requirement-context';
+import {
+  planRequirementBatches,
+  mergeRequirementBatch,
+  mergeRequirementDependencies,
+  type CodedRequirementContext,
+  type BatchCandidate,
+  type CompleteOutput,
+} from './requirement-batches';
+import type { z } from 'zod';
+
+export interface RequirementGenerationProgress {
+  jobId: string;
+  update(completedBatches: number, totalBatches: number, outputChars: number): void;
+}
 
 type Tx = Prisma.TransactionClient;
 const detailInclude = {
@@ -161,7 +177,11 @@ export class RequirementsService {
       return this.map(artifact, complete);
     });
   }
-  async generate(projectId: string, sourceContextVersionId: string) {
+  async generate(
+    projectId: string,
+    sourceContextVersionId: string,
+    progress?: RequirementGenerationProgress,
+  ) {
     const context = await this.prisma.artifactVersion.findFirst({
       where: {
         id: sourceContextVersionId,
@@ -218,65 +238,253 @@ export class RequirementsService {
       : '';
 
     try {
-      const result = await this.ai.generateStructured({
-        projectId,
-        language,
-        sourceArtifactVersionId: sourceContextVersionId,
-        promptKey: 'requirements.generate',
-        // ISO/IEC/IEEE 29148:2018-aligned, citing the coded context items
-        // and proposing optional ideas (DEC-126).
-        promptVersion: 3,
-        messages: [
-          {
-            role: 'user',
-            content: JSON.stringify(coded) + ragContext,
-          },
-        ],
-        outputSchema: requirementGenerationOutputSchema,
-        schemaName: 'requirements_generation',
-        maxOutputTokens: 8192,
-      });
-      const generationId = await this.prisma.$transaction(async (tx) => {
-        const generation = await tx.requirementGeneration.create({
-          data: { projectId, sourceContextVersionId, aiRunId: result.metadata.runId },
-        });
-        const byKey = new Map<string, string>();
-        const proposals = [
-          ...result.data.candidates.map((c) => ({ ...c, suggested: false, rationale: null })),
-          ...result.data.suggestions.map((c) => ({ ...c, suggested: true, contextItemCodes: [] })),
-        ];
-        for (const c of proposals) {
-          const row = await tx.requirementCandidate.create({
-            data: {
-              generationId: generation.id,
-              candidateId: c.candidateId,
-              requirementType: c.requirementType,
-              name: c.name,
-              description: c.description,
-              priority: c.priority,
-              actors: c.actors,
-              preconditions: c.preconditions,
-              postconditions: c.postconditions,
-              contextItemCodes: c.contextItemCodes,
-              suggested: c.suggested,
-              rationale: c.rationale,
+      if (
+        progress &&
+        !(await this.prisma.requirementGenerationJob.findFirst({
+          where: { id: progress.jobId, projectId, sourceContextVersionId },
+        }))
+      )
+        throw new NotFoundException('Trabajo de generación no encontrado.');
+      const batched =
+        progress || coded.needs.length + coded.businessRules.length + coded.constraints.length > 20
+          ? await this.generateBatches(
+              projectId,
+              sourceContextVersionId,
+              coded,
+              language,
+              ragContext,
+              progress,
+            )
+          : null;
+      const result =
+        batched ??
+        (await this.ai.generateStructured({
+          projectId,
+          language,
+          sourceArtifactVersionId: sourceContextVersionId,
+          promptKey: 'requirements.generate',
+          // ISO/IEC/IEEE 29148:2018-aligned, citing the coded context items
+          // and proposing optional ideas (DEC-126).
+          promptVersion: 3,
+          messages: [
+            {
+              role: 'user',
+              content: JSON.stringify(coded) + ragContext,
             },
+          ],
+          outputSchema: requirementGenerationOutputSchema,
+          schemaName: 'requirements_generation',
+          maxOutputTokens: 8192,
+        }));
+      const generationId = await this.prisma.$transaction(
+        async (tx) => {
+          const generation = await tx.requirementGeneration.create({
+            data: { projectId, sourceContextVersionId, aiRunId: result.metadata.runId },
           });
-          byKey.set(c.candidateId, row.id);
-        }
-        for (const c of proposals)
-          for (const d of c.dependencyCandidateIds)
-            await tx.requirementCandidateDependency.create({
-              data: { candidateId: byKey.get(c.candidateId)!, dependsOnCandidateId: byKey.get(d)! },
+          const byKey = new Map<string, string>();
+          const proposals = [
+            ...result.data.candidates.map((c) => ({ ...c, suggested: false, rationale: null })),
+            ...result.data.suggestions.map((c) => ({
+              ...c,
+              suggested: true,
+              contextItemCodes: [],
+            })),
+          ];
+          for (const c of proposals) {
+            const row = await tx.requirementCandidate.create({
+              data: {
+                generationId: generation.id,
+                candidateId: c.candidateId,
+                requirementType: c.requirementType,
+                name: c.name,
+                description: c.description,
+                priority: c.priority,
+                actors: c.actors,
+                preconditions: c.preconditions,
+                postconditions: c.postconditions,
+                contextItemCodes: c.contextItemCodes,
+                suggested: c.suggested,
+                rationale: c.rationale,
+                aiRunId: batched?.candidateRuns.get(c.candidateId) ?? result.metadata.runId,
+              },
             });
-        return generation.id;
-      });
+            byKey.set(c.candidateId, row.id);
+          }
+          for (const c of proposals)
+            for (const d of c.dependencyCandidateIds)
+              await tx.requirementCandidateDependency.create({
+                data: {
+                  candidateId: byKey.get(c.candidateId)!,
+                  dependsOnCandidateId: byKey.get(d)!,
+                },
+              });
+          if (progress)
+            await tx.requirementGenerationJob.update({
+              where: { id: progress.jobId },
+              data: { generationId: generation.id },
+            });
+          return generation.id;
+        },
+        { timeout: 120_000 },
+      );
       return this.getGeneration(projectId, generationId);
     } catch (e) {
       if (e instanceof AIError)
         throw new ServiceUnavailableException({ message: e.message, code: e.code });
       throw e;
     }
+  }
+  private async generateBatches(
+    projectId: string,
+    sourceContextVersionId: string,
+    context: CodedRequirementContext,
+    language: 'ES' | 'EN',
+    ragContext: string,
+    progress?: RequirementGenerationProgress,
+  ) {
+    const plan = planRequirementBatches(context);
+    if (!plan.length)
+      throw new UnprocessableEntityException(
+        'El contexto no contiene elementos para generar requisitos.',
+      );
+    const total = plan.length + 1;
+    let candidates: BatchCandidate[] = [];
+    let suggestions: CompleteOutput['suggestions'] = [];
+    let lastRunId = '';
+    const execute = async <T extends z.ZodType>(
+      position: number,
+      schema: T,
+      key: string,
+      version: number,
+      input: unknown,
+      validate: (data: z.infer<T>, runId: string) => void,
+    ) => {
+      progress?.update(position, total, 0);
+      const cached = progress
+        ? await this.prisma.requirementGenerationPart.findUnique({
+            where: { jobId_position: { jobId: progress.jobId, position } },
+          })
+        : null;
+      if (cached) {
+        const data = schema.parse(cached.content);
+        validate(data, cached.aiRunId);
+        lastRunId = cached.aiRunId;
+        progress?.update(position + 1, total, 0);
+        return;
+      }
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const result = await this.ai.generateStructured({
+            projectId,
+            language,
+            sourceArtifactVersionId: sourceContextVersionId,
+            promptKey: key,
+            promptVersion: version,
+            schemaName:
+              key === 'requirements.generate' ? 'requirements_batch' : 'requirements_dependencies',
+            messages: [{ role: 'user', content: JSON.stringify(input) + ragContext }],
+            outputSchema: schema,
+            maxOutputTokens: 8192,
+            onProgress: (chars) => progress?.update(position, total, chars),
+          });
+          validate(schema.parse(result.data), result.metadata.runId);
+          if (progress)
+            await this.prisma.requirementGenerationPart.create({
+              data: {
+                jobId: progress.jobId,
+                position,
+                aiRunId: result.metadata.runId,
+                content: result.data as Prisma.InputJsonValue,
+              },
+            });
+          lastRunId = result.metadata.runId;
+          progress?.update(position + 1, total, 0);
+          return;
+        } catch (error) {
+          if (
+            attempt === 1 ||
+            !(error instanceof AIError) ||
+            !['AI_INVALID_OUTPUT', 'AI_PROVIDER_UNAVAILABLE', 'AI_TIMEOUT'].includes(error.code) ||
+            error.diagnostics?.reason === 'content_filter'
+          )
+            throw error;
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+      }
+    };
+    for (let position = 0; position < plan.length; position++) {
+      const targetContextItemCodes = plan[position]!;
+      const input = {
+        context,
+        targetContextItemCodes,
+        allowSuggestions: position === plan.length - 1,
+        existingCandidates: candidates.map(
+          ({ candidateId, name, description, requirementType, contextItemCodes }) => ({
+            candidateId,
+            name,
+            description,
+            requirementType,
+            contextItemCodes,
+          }),
+        ),
+      };
+      let next:
+        { candidates: BatchCandidate[]; suggestions: CompleteOutput['suggestions'] } | undefined;
+      await execute(
+        position,
+        requirementBatchOutputSchema,
+        'requirements.generate',
+        4,
+        input,
+        (data, runId) => {
+          if (position !== plan.length - 1 && data.suggestions.length)
+            throw new AIError(
+              'AI_INVALID_OUTPUT',
+              'Este lote no debe añadir sugerencias opcionales.',
+            );
+          next = mergeRequirementBatch(
+            candidates,
+            suggestions,
+            data,
+            targetContextItemCodes,
+            context,
+            position,
+            runId,
+          );
+        },
+      );
+      candidates = next!.candidates;
+      suggestions = next!.suggestions;
+    }
+    const suggestionsRunId = lastRunId;
+    await execute(
+      plan.length,
+      requirementDependencyOutputSchema,
+      'requirements.dependencies',
+      1,
+      {
+        context,
+        candidates: candidates.map((candidate) => ({
+          candidateId: candidate.candidateId,
+          name: candidate.name,
+          description: candidate.description,
+          requirementType: candidate.requirementType,
+          contextItemCodes: candidate.contextItemCodes,
+          dependencyCandidateIds: candidate.dependencyCandidateIds,
+        })),
+      },
+      (data) => {
+        candidates = mergeRequirementDependencies(candidates, data, context, suggestions);
+      },
+    );
+    return {
+      data: { candidates, suggestions },
+      metadata: { runId: lastRunId },
+      candidateRuns: new Map([
+        ...candidates.map((candidate) => [candidate.candidateId, candidate.aiRunId!] as const),
+        ...suggestions.map((candidate) => [candidate.candidateId, suggestionsRunId] as const),
+      ]),
+    };
   }
   async getGeneration(projectId: string, id: string) {
     const row = await this.prisma.requirementGeneration.findFirst({
@@ -326,77 +534,81 @@ export class RequirementsService {
     return [...eligible.keys()];
   }
   async accept(projectId: string, generationId: string, candidateIds: string[]) {
-    return this.prisma.$transaction(async (tx) => {
-      const generation = await tx.requirementGeneration.findFirst({
-        where: { id: generationId, projectId },
-        include: { candidates: { include: { outgoingDependencies: true } } },
-      });
-      if (!generation) throw new NotFoundException('Generación no encontrada.');
-      const selected = new Set(candidateIds);
-      const candidates = generation.candidates.filter((c) => selected.has(c.id));
-      if (candidates.length !== selected.size)
-        throw new NotFoundException('Candidato no encontrado.');
-      for (const c of candidates)
-        for (const d of c.outgoingDependencies)
-          if (!selected.has(d.dependsOnCandidateId))
-            throw new UnprocessableEntityException(
-              'Seleccione también todos los candidatos requeridos.',
-            );
-      const review = await this.reviewContext(tx, projectId, generation.sourceContextVersionId);
-      const created = new Map<string, RequirementResponse>();
-      for (const c of candidates) {
-        if (c.acceptedArtifactId)
-          throw new UnprocessableEntityException('El candidato ya fue aceptado.');
-        const codes = c.contextItemCodes as string[];
-        const error = review
-          .findings({ ...c, contextItemCodes: codes })
-          .find((f) => f.severity === 'ERROR');
-        if (error)
-          throw new UnprocessableEntityException(
-            `La propuesta «${c.name}» no puede incorporarse. ${error.message}`,
-          );
-        const r = await this.createInTx(
-          tx,
-          projectId,
-          {
-            requirementType: c.requirementType,
-            name: c.name,
-            description: c.description,
-            priority: c.priority,
-            actors: c.actors as string[],
-            preconditions: c.preconditions as string[],
-            postconditions: c.postconditions as string[],
-            dependencyArtifactIds: [],
-            origin: c.suggested
-              ? { kind: 'USER_DECISION', justification: c.rationale! }
-              : codes.length
-                ? { kind: 'CONTEXT', contextItemIds: review.itemsOf(codes).map((i) => i.id) }
-                : null,
-          },
-          'AI_GENERATED',
-          c.id,
-          generation.sourceContextVersionId,
-          generation.aiRunId,
-        );
-        created.set(c.id, r);
-        await tx.requirementCandidate.update({
-          where: { id: c.id },
-          data: { acceptedArtifactId: r.id },
+    return this.prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM requirement_generations WHERE id=${generationId}::uuid AND project_id=${projectId}::uuid FOR UPDATE`;
+        const generation = await tx.requirementGeneration.findFirst({
+          where: { id: generationId, projectId },
+          include: { candidates: { include: { outgoingDependencies: true } } },
         });
-      }
-      for (const c of candidates) {
-        const deps = c.outgoingDependencies.map((d) => created.get(d.dependsOnCandidateId)!.id);
-        if (deps.length)
-          await tx.requirementDependency.createMany({
-            data: deps.map((dependsOnArtifactId) => ({
-              artifactVersionId: created.get(c.id)!.version.id,
-              dependsOnArtifactId,
-            })),
+        if (!generation) throw new NotFoundException('Generación no encontrada.');
+        const selected = new Set(candidateIds);
+        const candidates = generation.candidates.filter((c) => selected.has(c.id));
+        if (candidates.length !== selected.size)
+          throw new NotFoundException('Candidato no encontrado.');
+        for (const c of candidates)
+          for (const d of c.outgoingDependencies)
+            if (!selected.has(d.dependsOnCandidateId))
+              throw new UnprocessableEntityException(
+                'Seleccione también todos los candidatos requeridos.',
+              );
+        const review = await this.reviewContext(tx, projectId, generation.sourceContextVersionId);
+        const created = new Map<string, RequirementResponse>();
+        for (const c of candidates) {
+          if (c.acceptedArtifactId)
+            throw new UnprocessableEntityException('El candidato ya fue aceptado.');
+          const codes = c.contextItemCodes as string[];
+          const error = review
+            .findings({ ...c, contextItemCodes: codes })
+            .find((f) => f.severity === 'ERROR');
+          if (error)
+            throw new UnprocessableEntityException(
+              `La propuesta «${c.name}» no puede incorporarse. ${error.message}`,
+            );
+          const r = await this.createInTx(
+            tx,
+            projectId,
+            {
+              requirementType: c.requirementType,
+              name: c.name,
+              description: c.description,
+              priority: c.priority,
+              actors: c.actors as string[],
+              preconditions: c.preconditions as string[],
+              postconditions: c.postconditions as string[],
+              dependencyArtifactIds: [],
+              origin: c.suggested
+                ? { kind: 'USER_DECISION', justification: c.rationale! }
+                : codes.length
+                  ? { kind: 'CONTEXT', contextItemIds: review.itemsOf(codes).map((i) => i.id) }
+                  : null,
+            },
+            'AI_GENERATED',
+            c.id,
+            generation.sourceContextVersionId,
+            c.aiRunId ?? generation.aiRunId,
+          );
+          created.set(c.id, r);
+          await tx.requirementCandidate.update({
+            where: { id: c.id },
+            data: { acceptedArtifactId: r.id },
           });
-        created.get(c.id)!.requirement.dependencyArtifactIds = deps;
-      }
-      return { items: [...created.values()] };
-    });
+        }
+        for (const c of candidates) {
+          const deps = c.outgoingDependencies.map((d) => created.get(d.dependsOnCandidateId)!.id);
+          if (deps.length)
+            await tx.requirementDependency.createMany({
+              data: deps.map((dependsOnArtifactId) => ({
+                artifactVersionId: created.get(c.id)!.version.id,
+                dependsOnArtifactId,
+              })),
+            });
+          created.get(c.id)!.requirement.dependencyArtifactIds = deps;
+        }
+        return { items: [...created.values()] };
+      },
+      { timeout: 120_000 },
+    );
   }
   // How the latest approved context is covered by the current requirements,
   // drafts included, so the user sees progress as they work (DEC-126).

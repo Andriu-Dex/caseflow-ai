@@ -300,6 +300,8 @@ export class ProjectsService {
         await tx.$executeRaw`DELETE FROM requirement_dependencies WHERE artifact_version_id IN (SELECT id FROM artifact_versions WHERE project_id = ${p})`;
         await tx.$executeRaw`DELETE FROM requirement_context_links WHERE artifact_version_id IN (SELECT id FROM artifact_versions WHERE project_id = ${p})`;
         await tx.$executeRaw`DELETE FROM requirement_details WHERE artifact_version_id IN (SELECT id FROM artifact_versions WHERE project_id = ${p})`;
+        await tx.$executeRaw`DELETE FROM requirement_generation_parts WHERE job_id IN (SELECT id FROM requirement_generation_jobs WHERE project_id = ${p})`;
+        await tx.$executeRaw`DELETE FROM requirement_generation_jobs WHERE project_id = ${p}`;
         await tx.$executeRaw`DELETE FROM requirement_candidates WHERE generation_id IN (SELECT id FROM requirement_generations WHERE project_id = ${p})`;
         await tx.$executeRaw`DELETE FROM requirement_generations WHERE project_id = ${p}`;
 

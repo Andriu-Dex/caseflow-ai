@@ -175,7 +175,50 @@ describe('ChatGPTProvider', () => {
     const { provider } = setup(sse({ type: 'response.output_text.delta', delta: '{"nodes"' }));
     await expect(provider.generateStructured(request)).rejects.toMatchObject({
       code: 'AI_INVALID_OUTPUT',
+      diagnostics: { reason: 'stream_ended', model: 'gpt-x', outputChars: 8 },
     });
+  });
+  it('records the incomplete reason and counters without accepting partial JSON', async () => {
+    const { provider } = setup(
+      sse(
+        { type: 'response.output_text.delta', delta: '{"nodes":' },
+        {
+          type: 'response.incomplete',
+          response: {
+            incomplete_details: { reason: 'max_output_tokens' },
+            usage: { input_tokens: 100, output_tokens: 200, total_tokens: 300 },
+          },
+        },
+      ),
+    );
+    await expect(provider.generateStructured(request)).rejects.toMatchObject({
+      code: 'AI_INVALID_OUTPUT',
+      diagnostics: {
+        reason: 'max_output_tokens',
+        model: 'gpt-x',
+        outputChars: 9,
+        usage: { inputTokens: 100, outputTokens: 200, totalTokens: 300 },
+      },
+    });
+  });
+  it('does not persist arbitrary provider text in failure diagnostics', async () => {
+    const { provider } = setup(
+      sse({
+        type: 'response.incomplete',
+        response: {
+          incomplete_details: { reason: 'private-secret' },
+          usage: { input_tokens: 'private-secret', output_tokens: -1, total_tokens: 3 },
+        },
+      }),
+    );
+    const error = await provider.generateStructured(request).catch((value) => value);
+    expect(error.diagnostics).toEqual({
+      model: 'gpt-x',
+      reason: 'unknown_incomplete',
+      outputChars: 0,
+      usage: { inputTokens: null, outputTokens: null, totalTokens: 3 },
+    });
+    expect(JSON.stringify(error.toJSON())).not.toContain('private-secret');
   });
 });
 

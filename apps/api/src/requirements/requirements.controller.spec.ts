@@ -15,7 +15,18 @@ describe('RequirementsController', () => {
     };
     const documents = { generate: vi.fn().mockResolvedValue(Buffer.from('document')) };
     for (const fn of Object.values(s)) fn.mockResolvedValue({});
-    const c = new RequirementsController(s as unknown as RequirementsService, documents as never);
+    const jobs = { start: vi.fn(), latest: vi.fn(), get: vi.fn() };
+    const c = new RequirementsController(
+      s as unknown as RequirementsService,
+      documents as never,
+      jobs as never,
+    );
+    await c.startGeneration('p', { sourceContextVersionId: 'v' }, { user: { id: 'u' } });
+    await c.latestGeneration('p');
+    await c.generationJob('p', 'j');
+    expect(jobs.start).toHaveBeenCalledWith('p', 'v', 'u');
+    expect(jobs.latest).toHaveBeenCalledWith('p');
+    expect(jobs.get).toHaveBeenCalledWith('p', 'j');
     const body = {
       requirementType: 'FUNCTIONAL' as const,
       name: 'N',

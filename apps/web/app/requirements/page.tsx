@@ -1,9 +1,9 @@
 'use client';
 
-import { GenerationOverlay } from '../../components/generation-overlay';
+import { RequirementGenerationPanel } from '../../components/requirement-generation-panel';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { RequirementResponse } from '@caseflow-ai/contracts';
-import { ChevronDown, Download, ExternalLink, FileDown, Plus, Sparkles } from 'lucide-react';
+import { ChevronDown, Download, ExternalLink, FileDown, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import {
@@ -77,7 +77,6 @@ function RequirementsContent({ projectId }: { projectId: string }) {
   const [generation, setGeneration] = useState<GenerationResult | null>(null);
   const [showManualForm, setShowManualForm] = useState(false);
   const [editing, setEditing] = useState<RequirementResponse | null>(null);
-  const [generating, setGenerating] = useState(false);
   const [approvingId, setApprovingId] = useState<string | null>(null);
 
   const contextApproved = context.data?.version.status === 'APPROVED';
@@ -88,23 +87,6 @@ function RequirementsContent({ projectId }: { projectId: string }) {
     queryClient.invalidateQueries({ queryKey: ['requirements-coverage', projectId] });
     queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
     queryClient.invalidateQueries({ queryKey: ['staleness', projectId] });
-  }
-
-  async function handleGenerate() {
-    if (!context.data || !contextApproved) {
-      toast.info(
-        'Primero apruebe el Contexto del proyecto; los requisitos se generan a partir de él.',
-      );
-      return;
-    }
-    setGenerating(true);
-    try {
-      setGeneration(await api.requirements.generate(projectId, context.data.version.id));
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'No se pudieron generar los requisitos.');
-    } finally {
-      setGenerating(false);
-    }
   }
 
   const transitionFor = (r: RequirementResponse) => (status: ArtifactVersionStatus) =>
@@ -161,11 +143,11 @@ function RequirementsContent({ projectId }: { projectId: string }) {
 
       <section className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" disabled={generating} onClick={handleGenerate}>
-            <Sparkles className="size-4" aria-hidden="true" />
-            {generating ? 'Generando…' : 'Generar con IA'}
-          </Button>
-          <GenerationOverlay open={generating} />
+          <RequirementGenerationPanel
+            projectId={projectId}
+            contextVersionId={contextApproved ? context.data!.version.id : null}
+            onCompleted={setGeneration}
+          />
           <Button
             type="button"
             variant="outline"
