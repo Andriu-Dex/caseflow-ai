@@ -1,16 +1,15 @@
 'use client';
 
-import { useState, type ComponentType, type ReactNode } from 'react';
+import { useEffect, useState, type ComponentType, type ReactNode } from 'react';
 import {
   AlertTriangle,
   Archive,
   ArrowDown,
   ArrowUp,
   CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   CircleDashed,
-  Eye,
-  EyeOff,
   FileText,
   Gauge,
   Layers,
@@ -79,6 +78,9 @@ export const PRIORITY_META: Record<
   },
 };
 
+// DEC-138: a long list is paged in the page itself, since the whole list is
+// already loaded for the summary and coverage.
+const PAGE_SIZE = 25;
 const STATUS_FILTERS = {
   ALL: { label: 'Todos los estados', matches: () => true },
   PENDING: {
@@ -444,10 +446,6 @@ function RequirementRow({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={onToggle}>
-                {open ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
-                {open ? 'Ocultar detalle' : 'Ver detalle'}
-              </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => actions.edit(r)}>
                 <Pencil aria-hidden="true" />
                 Editar
@@ -642,6 +640,14 @@ export function RequirementList({
   const [open, setOpen] = useState<string | null>(null);
   const [archiving, setArchiving] = useState<RequirementResponse | null>(null);
   const [archiveBusy, setArchiveBusy] = useState(false);
+  const [page, setPage] = useState(0);
+  // A filter starts again on the first page; approving or archiving does not.
+  const filter =
+    <T,>(setter: (value: T) => void) =>
+    (value: T) => {
+      setter(value);
+      setPage(0);
+    };
 
   const query = normalize(search.trim());
   const visible = items.filter(
@@ -653,6 +659,21 @@ export function RequirementList({
         normalize(`${r.code} ${r.requirement.name} ${r.requirement.description}`).includes(query)),
   );
   const filtered = Boolean(query) || type !== 'ALL' || status !== 'ALL' || priority !== 'ALL';
+  // Functional first, as the groups are shown; the page cuts across them.
+  const ordered = [
+    ...visible.filter((r) => r.requirement.requirementType === 'FUNCTIONAL'),
+    ...visible.filter((r) => r.requirement.requirementType === 'NON_FUNCTIONAL'),
+  ];
+  const pageCount = Math.max(1, Math.ceil(ordered.length / PAGE_SIZE));
+  const pageRows = ordered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  // Archiving the last requirement of the last page leaves it empty: step back.
+  useEffect(() => {
+    if (page >= pageCount) setPage(pageCount - 1);
+  }, [page, pageCount]);
+  const typeCount = (value: TypeFilter) =>
+    value === 'ALL'
+      ? items.length
+      : items.filter((r) => r.requirement.requirementType === value).length;
   const byId = new Map(items.map((r) => [r.id, r]));
   const nameOf = (id: string) => {
     const r = byId.get(id);
@@ -688,24 +709,24 @@ export function RequirementList({
             placeholder="Buscar requisitos"
             className="pl-8"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => filter(setSearch)(e.target.value)}
           />
         </div>
         <select
           aria-label="Tipo"
           className={select}
           value={type}
-          onChange={(e) => setType(e.target.value as TypeFilter)}
+          onChange={(e) => filter(setType)(e.target.value as TypeFilter)}
         >
-          <option value="ALL">Todos los tipos</option>
-          <option value="FUNCTIONAL">Funcionales</option>
-          <option value="NON_FUNCTIONAL">No funcionales</option>
+          <option value="ALL">Todos los tipos ({typeCount('ALL')})</option>
+          <option value="FUNCTIONAL">Funcionales ({typeCount('FUNCTIONAL')})</option>
+          <option value="NON_FUNCTIONAL">No funcionales ({typeCount('NON_FUNCTIONAL')})</option>
         </select>
         <select
           aria-label="Estado"
           className={select}
           value={status}
-          onChange={(e) => setStatus(e.target.value as StatusFilter)}
+          onChange={(e) => filter(setStatus)(e.target.value as StatusFilter)}
         >
           {(Object.keys(STATUS_FILTERS) as StatusFilter[]).map((key) => (
             <option key={key} value={key}>
@@ -717,7 +738,7 @@ export function RequirementList({
           aria-label="Prioridad"
           className={select}
           value={priority}
-          onChange={(e) => setPriority(e.target.value as RequirementPriority | 'ALL')}
+          onChange={(e) => filter(setPriority)(e.target.value as RequirementPriority | 'ALL')}
         >
           <option value="ALL">Todas las prioridades</option>
           {(Object.keys(PRIORITY_META) as RequirementPriority[]).map((key) => (
@@ -736,6 +757,7 @@ export function RequirementList({
               setType('ALL');
               setStatus('ALL');
               setPriority('ALL');
+              setPage(0);
             }}
           >
             Limpiar filtros
@@ -749,7 +771,7 @@ export function RequirementList({
         </p>
       ) : (
         groups.map((group) => {
-          const rows = visible.filter((r) => r.requirement.requirementType === group.type);
+          const rows = pageRows.filter((r) => r.requirement.requirementType === group.type);
           if (!rows.length) return null;
           const Icon = group.icon;
           return (
@@ -758,7 +780,7 @@ export function RequirementList({
                 <Icon className="size-4 text-muted-foreground" aria-hidden="true" />
                 {group.title}
                 <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                  {rows.length}
+                  {visible.filter((r) => r.requirement.requirementType === group.type).length}
                 </span>
               </h2>
               <ul className="flex flex-col gap-2">
@@ -780,6 +802,48 @@ export function RequirementList({
           );
         })
       )}
+
+      {pageCount > 1 ? (
+        <nav
+          aria-label="Paginación de requisitos"
+          className="flex flex-col items-center justify-between gap-3 rounded-xl border border-border/50 bg-card/60 px-4 py-3 text-xs text-muted-foreground sm:flex-row sm:text-sm"
+        >
+          <span className="font-medium text-foreground/80">
+            Mostrando {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, ordered.length)} de{' '}
+            {ordered.length} requisitos
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1 px-2.5 text-xs"
+              disabled={page === 0}
+              onClick={() => setPage((p) => p - 1)}
+            >
+              <ChevronLeft className="size-3.5" aria-hidden="true" />
+              Anterior
+            </Button>
+            <span
+              aria-live="polite"
+              className="rounded-md border border-border/40 bg-muted px-2.5 py-1 text-xs font-semibold text-foreground"
+            >
+              Página {page + 1} de {pageCount}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1 px-2.5 text-xs"
+              disabled={page + 1 >= pageCount}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Siguiente
+              <ChevronRight className="size-3.5" aria-hidden="true" />
+            </Button>
+          </div>
+        </nav>
+      ) : null}
 
       {archiving ? (
         <Dialog open onOpenChange={(o) => (o ? null : setArchiving(null))}>
