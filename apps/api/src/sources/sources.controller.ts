@@ -235,6 +235,33 @@ export class SourcesController {
     return this.service.archive(projectId, sourceId, req.user.id);
   }
 
+  @Post(':sourceId/file')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: SOURCE_MAX_FILE_SIZE_BYTES },
+      defParamCharset: 'utf8',
+    }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } },
+  })
+  @ApiOperation({
+    operationId: 'replaceSourceFile',
+    summary: 'Reemplazar el archivo de una fuente en una nueva versión (mismo código)',
+  })
+  @ApiZodResponse(201, 'Project Source.', sourceResponseSchema)
+  @ApiErrorResponse(404, 'La fuente no existe.')
+  @ApiErrorResponse(422, 'El archivo no es válido o la fuente está archivada o en proceso.')
+  replaceFile(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('sourceId', uuidParamPipe) sourceId: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.service.replaceFile(projectId, sourceId, file, req.user.id);
+  }
+
   @Post(':sourceId/unarchive')
   @ApiOperation({
     operationId: 'restoreSource',

@@ -76,6 +76,27 @@ function safeStorageKey(projectId: string, mimeType: string): string {
   return `sources/${projectId}/${randomUUID()}${extension}`;
 }
 
+type FileFields = {
+  originalFilename: string;
+  mimeType: string;
+  sizeBytes: number;
+  contentHash: string;
+  storageKey: string;
+  extractionState: 'EXTRACTED' | 'MANUAL' | 'UNSUPPORTED' | 'FAILED' | 'PENDING';
+  extractedText: string | null;
+  extractionFailureReason: SourceFailureReason | null;
+};
+
+// Which background reader a file needs.
+const processorFor = (mimeType: string) =>
+  mimeType.startsWith('audio/')
+    ? 'TRANSCRIPTION'
+    : mimeType.startsWith('image/')
+      ? 'OCR'
+      : mimeType === 'application/pdf'
+        ? 'PDF'
+        : 'DOCUMENT';
+
 @Injectable()
 export class SourcesService implements OnApplicationBootstrap {
   constructor(
@@ -103,72 +124,14 @@ export class SourcesService implements OnApplicationBootstrap {
       throw new UnprocessableEntityException(
         'Este tipo de fuente ya no está disponible. Use Documento PDF, Imagen u Otro.',
       );
-    let fileFields: {
-      originalFilename: string;
-      mimeType: string;
-      sizeBytes: number;
-      contentHash: string;
-      storageKey: string;
-      extractionState: 'EXTRACTED' | 'MANUAL' | 'UNSUPPORTED' | 'FAILED' | 'PENDING';
-      extractedText: string | null;
-      extractionFailureReason: SourceFailureReason | null;
-    };
-
-    let processAsync = Boolean(
-      file && this.queue && !['text/plain', 'text/markdown'].includes(file.mimetype),
-    );
+    let fileFields: FileFields;
+    let processAsync = false;
     if (file) {
-      if (
-        !ALLOWED_SOURCE_MIME_TYPES.includes(
-          file.mimetype as (typeof ALLOWED_SOURCE_MIME_TYPES)[number],
-        )
-      )
-        throw new UnprocessableEntityException('Tipo de archivo no permitido.');
-      assertKindMatchesFile(metadata.sourceKind, file.mimetype);
-      if (file.size <= 0) throw new UnprocessableEntityException('El archivo está vacío.');
-      if (!(await hasExpectedFileSignature(file)))
-        throw new UnprocessableEntityException('El contenido del archivo no coincide con su tipo.');
-
-      const contentHash = createHash('sha256').update(file.buffer).digest('hex');
-      const storageKey = safeStorageKey(projectId, file.mimetype);
-      const reusable = await this.prisma.sourceDetail.findFirst({
-        where: {
-          contentHash,
-          extractionState: 'EXTRACTED',
-          artifactVersion: { projectId, artifact: { archivedAt: null } },
-        },
-        select: { extractedText: true },
-      });
-      if (reusable?.extractedText) processAsync = false;
-      const extraction = reusable?.extractedText
-        ? ({ state: 'EXTRACTED', text: reusable.extractedText } as const)
-        : processAsync
-          ? ({ state: 'PENDING' } as const)
-          : await this.extractor.extract(file.mimetype, file.buffer, file.originalname);
-      try {
-        await this.storage.putObject({
-          key: storageKey,
-          body: file.buffer,
-          contentType: file.mimetype,
-        });
-      } catch (error) {
-        if (error instanceof StorageProviderError)
-          throw new ServiceUnavailableException({ message: error.message, code: error.code });
-        throw error;
-      }
-      fileFields = {
-        originalFilename: sanitizeFilenameForDisplay(file.originalname),
-        mimeType: file.mimetype,
-        sizeBytes: file.size,
-        contentHash,
-        storageKey,
-        extractionState: extraction.state === 'EXTRACTED' ? 'EXTRACTED' : extraction.state,
-        extractedText: extraction.state === 'EXTRACTED' ? extraction.text : null,
-        extractionFailureReason:
-          extraction.state === 'FAILED' || extraction.state === 'UNSUPPORTED'
-            ? extraction.reason
-            : null,
-      };
+      ({ fields: fileFields, processAsync } = await this.prepareFile(
+        projectId,
+        metadata.sourceKind,
+        file,
+      ));
     } else {
       // No file: the typed content itself is the source's knowledge,
       // exactly like the existing manual-transcript mechanism.
@@ -222,13 +185,7 @@ export class SourcesService implements OnApplicationBootstrap {
           data: {
             projectId,
             sourceVersionId: version.id,
-            processor: file!.mimetype.startsWith('audio/')
-              ? 'TRANSCRIPTION'
-              : file!.mimetype.startsWith('image/')
-                ? 'OCR'
-                : file!.mimetype === 'application/pdf'
-                  ? 'PDF'
-                  : 'DOCUMENT',
+            processor: processorFor(file!.mimetype),
           },
         });
       }
@@ -708,6 +665,133 @@ export class SourcesService implements OnApplicationBootstrap {
   // history (spec §87: "fuentes utilizadas → archivar antes que borrar").
   // Purely additive on the Artifact row — never touches any ArtifactVersion,
   // so it needs no immutability exception.
+  // DEC-137: a new file for the same source, as its next version (same code).
+  // The earlier versions keep their own file; the new one is read and indexed
+  // like a new upload and needs its own approval.
+  async replaceFile(
+    projectId: string,
+    id: string,
+    file: UploadedSourceFile | undefined,
+    userId: string | null = null,
+  ) {
+    if (!file) throw new UnprocessableEntityException('Adjunte el archivo nuevo.');
+    const row = await this.findLatest(projectId, id);
+    if (row.archivedAt)
+      throw new UnprocessableEntityException('Restaure la fuente antes de reemplazar su archivo.');
+    const latest = row.versions[0]!;
+    const detail = latest.sourceDetail!;
+    if (latest.sourceProcessingJobs.some((job) => ['QUEUED', 'RUNNING'].includes(job.status)))
+      throw new UnprocessableEntityException('El archivo actual todavía se está procesando.');
+    const { fields, processAsync } = await this.prepareFile(projectId, detail.sourceKind, file);
+    let job: { id: string } | undefined;
+    const result = await this.prisma.$transaction(async (tx) => {
+      const version = await tx.artifactVersion.create({
+        data: {
+          artifactId: id,
+          projectId,
+          versionNumber: latest.versionNumber + 1,
+          title: latest.title,
+          status: 'DRAFT',
+          origin: 'MANUAL',
+        },
+      });
+      await tx.sourceDetail.create({
+        data: {
+          artifactVersionId: version.id,
+          sourceKind: detail.sourceKind,
+          purpose: detail.purpose,
+          businessArea: detail.businessArea,
+          description: detail.description,
+          language: detail.language,
+          ...fields,
+        },
+      });
+      if (processAsync)
+        job = await tx.sourceProcessingJob.create({
+          data: { projectId, sourceVersionId: version.id, processor: processorFor(file.mimetype) },
+        });
+      await this.audit.record(
+        {
+          projectId,
+          actorUserId: userId,
+          action: 'SOURCE_FILE_REPLACED',
+          entityType: 'ARTIFACT',
+          entityId: id,
+          metadata: { code: row.code, versionNumber: version.versionNumber },
+        },
+        tx,
+      );
+      return this.loadAndMap(tx, id, version.id);
+    });
+    if (job) await this.enqueue({ jobId: job.id, projectId });
+    return job ? this.get(projectId, id) : result;
+  }
+
+  // Validates and stores an uploaded file, and reads it now or queues it.
+  private async prepareFile(
+    projectId: string,
+    sourceKind: ProjectSourceKind,
+    file: UploadedSourceFile,
+  ): Promise<{ fields: FileFields; processAsync: boolean }> {
+    let processAsync = Boolean(
+      this.queue && !['text/plain', 'text/markdown'].includes(file.mimetype),
+    );
+    if (
+      !ALLOWED_SOURCE_MIME_TYPES.includes(
+        file.mimetype as (typeof ALLOWED_SOURCE_MIME_TYPES)[number],
+      )
+    )
+      throw new UnprocessableEntityException('Tipo de archivo no permitido.');
+    assertKindMatchesFile(sourceKind, file.mimetype);
+    if (file.size <= 0) throw new UnprocessableEntityException('El archivo está vacío.');
+    if (!(await hasExpectedFileSignature(file)))
+      throw new UnprocessableEntityException('El contenido del archivo no coincide con su tipo.');
+
+    const contentHash = createHash('sha256').update(file.buffer).digest('hex');
+    const storageKey = safeStorageKey(projectId, file.mimetype);
+    const reusable = await this.prisma.sourceDetail.findFirst({
+      where: {
+        contentHash,
+        extractionState: 'EXTRACTED',
+        artifactVersion: { projectId, artifact: { archivedAt: null } },
+      },
+      select: { extractedText: true },
+    });
+    if (reusable?.extractedText) processAsync = false;
+    const extraction = reusable?.extractedText
+      ? ({ state: 'EXTRACTED', text: reusable.extractedText } as const)
+      : processAsync
+        ? ({ state: 'PENDING' } as const)
+        : await this.extractor.extract(file.mimetype, file.buffer, file.originalname);
+    try {
+      await this.storage.putObject({
+        key: storageKey,
+        body: file.buffer,
+        contentType: file.mimetype,
+      });
+    } catch (error) {
+      if (error instanceof StorageProviderError)
+        throw new ServiceUnavailableException({ message: error.message, code: error.code });
+      throw error;
+    }
+    return {
+      processAsync,
+      fields: {
+        originalFilename: sanitizeFilenameForDisplay(file.originalname),
+        mimeType: file.mimetype,
+        sizeBytes: file.size,
+        contentHash,
+        storageKey,
+        extractionState: extraction.state === 'EXTRACTED' ? 'EXTRACTED' : extraction.state,
+        extractedText: extraction.state === 'EXTRACTED' ? extraction.text : null,
+        extractionFailureReason:
+          extraction.state === 'FAILED' || extraction.state === 'UNSUPPORTED'
+            ? extraction.reason
+            : null,
+      },
+    };
+  }
+
   // Archiving keeps the history; with approved history it is a change of the
   // Sources stage, so the stages after it ask to be reviewed (DEC-137).
   async archive(projectId: string, id: string, userId: string | null = null) {
