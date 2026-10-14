@@ -20,6 +20,7 @@ import { AIStatusController } from './ai-status.controller';
 import { PROJECT_CONTEXT_PROMPT_V5 } from '../project-context/context-prompt';
 import {
   REQUIREMENTS_BATCH_PROMPT,
+  REQUIREMENTS_BATCH_PROMPT_V4,
   REQUIREMENTS_DEPENDENCY_PROMPT,
 } from '../requirements/requirements-prompt';
 
@@ -59,8 +60,16 @@ import {
       useFactory: () =>
         new PromptRegistry([
           {
+            // Preserved for auditability; superseded by @5 below.
             key: 'requirements.generate',
             version: 4,
+            capability: 'STRUCTURED_OUTPUT',
+            purpose: 'requirements_generation',
+            systemInstructions: REQUIREMENTS_BATCH_PROMPT_V4,
+          },
+          {
+            key: 'requirements.generate',
+            version: 5,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'requirements_generation',
             systemInstructions: REQUIREMENTS_BATCH_PROMPT,
