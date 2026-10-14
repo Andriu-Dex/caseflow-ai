@@ -30,6 +30,25 @@ describe('structured generation provenance checks', () => {
     ]);
   });
 
+  it('does not expect a class for a non-functional requirement', () => {
+    const findings = evaluateStructuredGeneration(
+      'CLASS_DIAGRAM',
+      { classes: [{ localId: 'order', name: 'Pedido', relatedSourceCodes: ['RF-001'] }] },
+      [
+        { code: 'RF-001', type: 'REQUIREMENT', requirementType: 'FUNCTIONAL' },
+        { code: 'RF-002', type: 'REQUIREMENT', requirementType: 'FUNCTIONAL' },
+        { code: 'RNF-001', type: 'REQUIREMENT', requirementType: 'NON_FUNCTIONAL' },
+      ],
+    );
+    expect(findings).toEqual([
+      expect.objectContaining({
+        code: 'UNCOVERED_SOURCE',
+        message:
+          'Ningún elemento de la propuesta proviene de RF-002. Revise si debería incluir algo de esa fuente.',
+      }),
+    ]);
+  });
+
   it('rejects invented source and use-case codes', () => {
     const findings = evaluateStructuredGeneration(
       'SOFTWARE_ARCHITECTURE',

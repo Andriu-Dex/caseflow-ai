@@ -534,11 +534,13 @@ export class StructuredAnalysisService {
         artifact: true,
         structuredAnalysisDetail: true,
         dataModelDetail: { include: { entities: { include: { attributes: true } } } },
+        requirementDetail: { select: { requirementType: true } },
       },
     });
     const references: GenerationSourceReference[] = sourceVersions.map((source) => ({
       code: source.artifact.code,
       type: source.artifact.artifactTypeCode,
+      requirementType: source.requirementDetail?.requirementType,
       content:
         source.structuredAnalysisDetail?.content ??
         (source.dataModelDetail
