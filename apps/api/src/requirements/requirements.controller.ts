@@ -19,6 +19,8 @@ import type { Response } from 'express';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import {
   acceptRequirementsRequestSchema,
+  requirementBulkRequestSchema,
+  requirementBulkResponseSchema,
   generateRequirementsRequestSchema,
   requirementInputSchema,
   requirementListResponseSchema,
@@ -34,6 +36,7 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ApiUuidParam, ApiZodBody, ApiZodResponse } from '../openapi/zod-openapi';
 import { RequirementsService } from './requirements.service';
 import { RequirementGenerationJobsService } from './requirement-generation-jobs.service';
+import { RequirementBulkService } from './requirement-bulk.service';
 import {
   RequirementDocumentExportService,
   type RequirementDocumentFormat,
@@ -46,6 +49,7 @@ export class RequirementsController {
     private readonly service: RequirementsService,
     private readonly documents: RequirementDocumentExportService,
     private readonly jobs: RequirementGenerationJobsService,
+    private readonly bulkActions: RequirementBulkService,
   ) {}
   @Post()
   @ApiOperation({ operationId: 'createRequirement', summary: 'Crear requisito manual' })
@@ -108,6 +112,22 @@ export class RequirementsController {
         : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     );
     return new StreamableFile(content);
+  }
+  @Post('bulk')
+  @HttpCode(200)
+  @ApiOperation({
+    operationId: 'applyRequirementBulkAction',
+    summary: 'Aprobar, archivar o eliminar varios requisitos a la vez (todos o ninguno)',
+  })
+  @ApiZodBody(requirementBulkRequestSchema)
+  @ApiZodResponse(200, 'How many requirements changed.', requirementBulkResponseSchema)
+  bulk(
+    @Param('projectId', uuidParamPipe) p: string,
+    @Body(new ZodValidationPipe(requirementBulkRequestSchema))
+    body: z.output<typeof requirementBulkRequestSchema>,
+    @Request() request: { user: { id: string } },
+  ) {
+    return this.bulkActions.apply(p, body.action, body.requirementIds, request.user.id);
   }
   @Post('generation-jobs')
   @HttpCode(202)

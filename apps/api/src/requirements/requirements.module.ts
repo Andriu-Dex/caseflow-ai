@@ -5,6 +5,7 @@ import { RequirementsService } from './requirements.service';
 import { RequirementDocumentExportService } from './requirement-document-export.service';
 import { KnowledgeBaseModule } from '../knowledge-base/knowledge-base.module';
 import { RequirementGenerationJobsService } from './requirement-generation-jobs.service';
+import { RequirementBulkService } from './requirement-bulk.service';
 
 @Module({
   imports: [AIModule, KnowledgeBaseModule],
@@ -13,6 +14,7 @@ import { RequirementGenerationJobsService } from './requirement-generation-jobs.
     RequirementsService,
     RequirementDocumentExportService,
     RequirementGenerationJobsService,
+    RequirementBulkService,
   ],
   exports: [RequirementsService],
 })

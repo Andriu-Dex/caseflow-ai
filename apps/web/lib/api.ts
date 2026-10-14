@@ -34,6 +34,8 @@ import type {
   SourceReportResponse,
   SourceResponse,
   SourceListResponse,
+  RequirementBulkAction,
+  RequirementBulkResponse,
   ListSourcesQuery,
   StalenessAnalysisResponse,
   StructuredAnalysisKind,
@@ -510,6 +512,12 @@ export const api = {
       post(`/projects/${projectId}/context/versions/${versionId}/transition`, { status }),
   },
   requirements: {
+    // DEC-138: one action over several requirements, all of them or none.
+    bulk: (projectId: string, action: RequirementBulkAction, requirementIds: string[]) =>
+      post<RequirementBulkResponse>(`/projects/${projectId}/requirements/bulk`, {
+        action,
+        requirementIds,
+      }),
     list: (projectId: string) =>
       get<{ items: RequirementResponse[] }>(`/projects/${projectId}/requirements`),
     exportUrl: (projectId: string, format: 'pdf' | 'docx') =>
