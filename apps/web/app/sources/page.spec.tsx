@@ -40,6 +40,7 @@ const mocks = vi.hoisted(() => ({
   listSources: vi.fn(),
   getStaleness: vi.fn(),
   restore: vi.fn(),
+  replaceFile: vi.fn(),
 }));
 
 // The API answers with the page plus its total and counts (DEC-137).
@@ -65,6 +66,8 @@ vi.mock('../../lib/api', () => ({
     sources: {
       list: async (...args: unknown[]) => withCounts(await mocks.listSources(...args)),
       restore: (...args: unknown[]) => mocks.restore(...args),
+      replaceFile: (...args: unknown[]) => mocks.replaceFile(...args),
+      getText: vi.fn(async () => ({ sourceVersionId: 'src-v2', text: 'Texto' })),
     },
     staleness: { get: (...args: unknown[]) => mocks.getStaleness(...args) },
   },
@@ -216,5 +219,32 @@ describe('SourcesPage — filters and paging', () => {
     await user.click(await screen.findByRole('button', { name: 'Más acciones' }));
     await user.click(await screen.findByRole('menuitem', { name: 'Restaurar' }));
     await waitFor(() => expect(mocks.restore).toHaveBeenCalledWith('p1', 'srcA'));
+  });
+
+  it('replaces the file of a source with a file of the same kind', async () => {
+    const pdf = {
+      ...baseSource,
+      source: {
+        ...baseSource.source,
+        sourceKind: 'PDF' as const,
+        originalFilename: 'acta.pdf',
+        mimeType: 'application/pdf',
+      },
+    };
+    mocks.listSources.mockResolvedValue({ items: [pdf] });
+    mocks.replaceFile.mockResolvedValue({ ...pdf, version: { ...pdf.version, versionNumber: 3 } });
+    const user = userEvent.setup({ applyAccept: false });
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: /Ver detalle/ }));
+    await user.click(await screen.findByRole('button', { name: 'Más acciones' }));
+    expect(await screen.findByRole('menuitem', { name: 'Reemplazar archivo' })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    const input = screen.getByLabelText('Archivo nuevo para SRC-001');
+    // Another kind is refused before uploading.
+    await user.upload(input, new File(['x'], 'foto.png', { type: 'image/png' }));
+    expect(mocks.replaceFile).not.toHaveBeenCalled();
+    const file = new File(['%PDF-1.4'], 'acta-v3.pdf', { type: 'application/pdf' });
+    await user.upload(input, file);
+    await waitFor(() => expect(mocks.replaceFile).toHaveBeenCalledWith('p1', 'srcA', file));
   });
 });

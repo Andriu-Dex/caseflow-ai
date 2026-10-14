@@ -435,6 +435,15 @@ export const api = {
         body: form,
       });
     },
+    // DEC-137: a new file as the next version of the same source.
+    replaceFile: (projectId: string, sourceId: string, file: File) => {
+      const form = new FormData();
+      form.set('file', file);
+      return request<SourceResponse>(`/projects/${projectId}/sources/${sourceId}/file`, {
+        method: 'POST',
+        body: form,
+      });
+    },
     edit: (projectId: string, sourceId: string, metadata: SourceMetadataInput) =>
       post<SourceResponse>(`/projects/${projectId}/sources/${sourceId}/edit`, metadata),
     delete: (projectId: string, sourceId: string) =>

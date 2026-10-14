@@ -7257,6 +7257,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-134 | Un proyecto puede eliminarse definitivamente, también con historial aprobado: solo su propietario o el propietario o un administrador del espacio de trabajo, y tras escribir su nombre exacto, comprobado en el servidor. Se borran sus filas y archivos y queda constancia en `project_deletions` (§87, ADR-009) | Accepted |
 | DEC-135 | El retorno de conexión de ChatGPT usa una página local accesible con modo oscuro, cabeceras de seguridad y enlace opcional de regreso a CASEFlow en desarrollo (§221.11) | Accepted |
 | DEC-136 | Al aprobar un cambio se revisan en orden los pasos posteriores; el primero pendiente puede rehacerse o confirmarse vigente con auditoría. Los pendientes bloquean congelar diseño y construir (§221.17, ADR-010) | Accepted |
+| DEC-137 | Fuentes: reemplazar el archivo crea la versión siguiente de la misma fuente; una fuente archivada se puede restaurar; archivar o restaurar algo con historial aprobado cuenta como cambio de su paso; la lista se filtra y pagina, con las archivadas ocultas por defecto (§221.18) | Accepted |
 
 ---
 
@@ -7693,7 +7694,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-136)
+# 221. Extensiones de V2 (DEC-116 a DEC-137)
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
@@ -7876,6 +7877,13 @@ Al aprobar un cambio, las etapas posteriores con evidencia anterior quedan por r
 Se resuelve cada pendiente mediante una aprobación posterior o «Confirmar que sigue vigente» (OWNER, EDITOR o REVIEWER, nota opcional hasta 500 caracteres). Las confirmaciones se conservan en `stage_confirmations`, con auditoría; no cambian versiones aprobadas ni permiten ocultar errores de coherencia. El diagrama de casos de uso debe representar todos los casos aprobados y su vigencia usa la fecha de generación; ER comparte la versión y revisión del modelo.
 
 El servidor bloquea congelar diseño y construir mientras quedan pasos por rehacer. La excepción interna de la orquestación ordenada EXPRESS/BUILD_ONLY no puede activarse desde la API pública. La matriz de coherencia avisa de RNF sin cobertura explícita en componentes, nodos o pantallas, sin exigir que cada requisito aparezca en todos los diagramas ni considerar una referencia prueba semántica de cumplimiento.
+
+## 221.18 Gestión de fuentes (DEC-137)
+
+- **Reemplazar el archivo:** `POST …/sources/:id/file` crea la versión siguiente de la misma fuente (mismo código) en borrador, con las mismas validaciones que al subirla (tipo, extensión, contenido, tamaño). El archivo debe ser del mismo tipo de fuente; las versiones anteriores conservan el suyo. Se extrae e indexa como una subida nueva, necesita su propia aprobación y queda auditado (`SOURCE_FILE_REPLACED`). No se permite en una fuente archivada ni mientras se procesa el archivo actual.
+- **Archivar y restaurar:** cualquier fuente activa puede archivarse, y una archivada restaurarse (`POST …/sources/:id/unarchive`). Ambas acciones se auditan (`SOURCE_ARCHIVED`, `SOURCE_RESTORED`). Eliminar sigue reservado a las fuentes que nunca se aprobaron.
+- **Efecto en el flujo:** `artifacts.archive_changed_at` se actualiza por un trigger cada vez que cambia `archived_at`, para cualquier tipo de artefacto. Si el artefacto tuvo alguna versión aprobada, esa fecha cuenta como un cambio de su paso en la vigencia del flujo (§221.17), y los pasos siguientes piden revisión. Archivar algo que nunca se aprobó no cambia nada.
+- **Lista:** `GET …/sources` acepta `status` (activas, archivadas o todas), `versionStatus`, `kind`, `search` (código o título, sin distinguir mayúsculas ni tildes), `sort`, `limit` y `offset`, y devuelve `total` y los conteos por estado. Sin parámetros devuelve todas las fuentes, como antes. La página muestra las activas por defecto, con filtros y una búsqueda que espera una pausa al escribir, y pagina de 20 en 20 solo cuando hay más.
 
 ## 221.4 Fuera de alcance de estas extensiones
 

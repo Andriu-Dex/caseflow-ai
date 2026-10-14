@@ -326,6 +326,7 @@ function SourceCard({
   // text editor are one click away.
   const [view, setView] = useState<'read' | 'compare' | 'edit'>('read');
   const hasFile = Boolean(source.source.originalFilename);
+  const replaceInputRef = useRef<HTMLInputElement>(null);
 
   const report = useQuery({
     queryKey: ['source-report', projectId, source.id],
@@ -403,6 +404,26 @@ function SourceCard({
       );
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'No se pudo volver a extraer el texto.');
+    }
+  }
+
+  // DEC-137: the chosen file becomes the next version, with the same code.
+  async function replaceFile(file: File | undefined) {
+    if (!file) return;
+    if (file.type && !sourceKindAcceptsMimeType(source.source.sourceKind, file.type)) {
+      toast.error(
+        `El archivo debe ser del mismo tipo que la fuente (${SOURCE_KIND_LABELS[source.source.sourceKind]}).`,
+      );
+      return;
+    }
+    try {
+      const updated = await api.sources.replaceFile(projectId, source.id, file);
+      invalidate();
+      toast.success(
+        `Archivo reemplazado en la versión ${updated.version.versionNumber} de ${source.code}. Revísela y apruébela.`,
+      );
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo reemplazar el archivo.');
     }
   }
 
@@ -629,6 +650,12 @@ function SourceCard({
                   </DropdownMenuItem>
                 ) : null}
                 {hasFile && !source.archivedAt ? (
+                  <DropdownMenuItem onSelect={() => replaceInputRef.current?.click()}>
+                    <Upload aria-hidden="true" />
+                    Reemplazar archivo
+                  </DropdownMenuItem>
+                ) : null}
+                {hasFile && !source.archivedAt ? (
                   <DropdownMenuItem onSelect={reExtract}>
                     <RefreshCw aria-hidden="true" />
                     Volver a extraer el texto
@@ -657,6 +684,17 @@ function SourceCard({
             </DropdownMenu>
           </div>
 
+          <input
+            ref={replaceInputRef}
+            type="file"
+            hidden
+            aria-label={`Archivo nuevo para ${source.code}`}
+            accept={sourceKindAccept(source.source.sourceKind)}
+            onChange={(e) => {
+              void replaceFile(e.target.files?.[0]);
+              e.target.value = '';
+            }}
+          />
           {view === 'compare' ? (
             // The original next to its text, over the whole screen, so a
             // reading or transcription error can be corrected while looking
