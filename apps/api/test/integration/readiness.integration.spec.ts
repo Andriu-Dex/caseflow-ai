@@ -229,6 +229,50 @@ describe('Readiness integration', () => {
     ).rejects.toMatchObject({ code: '23001' });
   });
 
+  // DEC-137: archiving or restoring an approved source changes the Sources stage.
+  it('asks to review the context when an approved source is archived or restored', async () => {
+    const projectId = await project('Archived source');
+    const source = await approveSource(ctx, projectId);
+    await approveContext(ctx, projectId, [source.id]);
+    const sourceId = source.artifactId;
+    const currency = async (key: string) =>
+      (await ctx.readiness.evaluate(projectId)).stages.find((s) => s.key === key)?.currency;
+    expect(await currency('CONTEXT')).toBe('CURRENT');
+
+    // A draft source that was never approved changes nothing.
+    const draft = await ctx.sources.create(
+      projectId,
+      { title: 'Borrador', sourceKind: 'TEXT', purpose: 'p', description: 'Contenido.' },
+      undefined,
+    );
+    await ctx.sources.archive(projectId, draft.id, ctx.userId);
+    expect(await currency('CONTEXT')).toBe('CURRENT');
+
+    await ctx.sources.archive(projectId, sourceId, ctx.userId);
+    expect(await currency('CONTEXT')).toBe('OUTDATED');
+    await ctx.readiness.confirmCurrent(projectId, 'CONTEXT', ctx.userId);
+    expect(await currency('CONTEXT')).toBe('CURRENT');
+
+    await expect(ctx.sources.restore(projectId, draft.id, ctx.userId)).resolves.toMatchObject({
+      archivedAt: null,
+    });
+    await ctx.sources.restore(projectId, sourceId, ctx.userId);
+    expect(await currency('CONTEXT')).toBe('OUTDATED');
+    await expect(ctx.sources.restore(projectId, sourceId, ctx.userId)).rejects.toThrow(
+      'no está archivada',
+    );
+    expect(
+      await ctx.prisma.auditEvent.findMany({
+        where: { projectId, entityId: sourceId },
+        select: { action: true, actorUserId: true },
+        orderBy: { createdAt: 'asc' },
+      }),
+    ).toEqual([
+      { action: 'SOURCE_ARCHIVED', actorUserId: ctx.userId },
+      { action: 'SOURCE_RESTORED', actorUserId: ctx.userId },
+    ]);
+  });
+
   it('blocks on an uploaded but unapproved source', async () => {
     const projectId = await project('Unapproved Source');
     await ctx.sources.create(

@@ -407,6 +407,10 @@ model Artifact {
   // row, so it needs no immutability-trigger exception. The code stays
   // reserved forever (spec §31.4), unlike a hard delete.
   archivedAt       DateTime? @map("archived_at") @db.Timestamptz(6)
+  // When it was last archived or restored (DEC-137), set by a trigger: an
+  // artifact with approved history leaving or returning is a change of its
+  // pipeline stage, like an approval.
+  archiveChangedAt DateTime? @map("archive_changed_at") @db.Timestamptz(6)
 
   project                              Project                       @relation(fields: [projectId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   artifactType                         ArtifactType                  @relation(fields: [artifactTypeCode], references: [code], onDelete: Restrict, onUpdate: Restrict)

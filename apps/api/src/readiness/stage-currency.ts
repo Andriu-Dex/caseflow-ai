@@ -93,13 +93,22 @@ export class StageCurrencyService {
     projectId: string,
     client: Prisma.TransactionClient | PrismaService = this.prisma,
   ) {
-    const [approved, confirmations] = await Promise.all([
+    const [approved, archiveChanges, confirmations] = await Promise.all([
       client.$queryRaw<{ type: string; changedAt: Date }[]>`
         SELECT a.artifact_type_code AS type,
           MAX(CASE WHEN a.artifact_type_code = 'USE_CASE_DIAGRAM' THEN v.created_at ELSE COALESCE(v.approved_at, v.created_at) END) AS "changedAt"
         FROM artifacts a JOIN artifact_versions v ON v.artifact_id = a.id AND v.project_id = a.project_id
         WHERE a.project_id = ${projectId}::uuid AND a.archived_at IS NULL
           AND (v.status = 'APPROVED' OR a.artifact_type_code = 'USE_CASE_DIAGRAM')
+        GROUP BY a.artifact_type_code`,
+      // DEC-137: archiving or restoring something that was approved changes
+      // its stage too; one that never was approved changes nothing.
+      client.$queryRaw<{ type: string; changedAt: Date }[]>`
+        SELECT a.artifact_type_code AS type, MAX(a.archive_changed_at) AS "changedAt"
+        FROM artifacts a
+        WHERE a.project_id = ${projectId}::uuid AND a.archive_changed_at IS NOT NULL
+          AND EXISTS (SELECT 1 FROM artifact_versions v
+                      WHERE v.artifact_id = a.id AND v.status = 'APPROVED')
         GROUP BY a.artifact_type_code`,
       client.stageConfirmation.groupBy({
         by: ['stage'],
@@ -108,9 +117,11 @@ export class StageCurrencyService {
       }),
     ]);
     const dates: StageDates = {};
-    for (const row of approved) {
+    for (const row of [...approved, ...archiveChanges]) {
       const stage = stageByType[row.type];
-      if (stage && row.changedAt) dates[stage] = row.changedAt;
+      const current = stage ? dates[stage] : undefined;
+      if (stage && row.changedAt && (!current || row.changedAt > current))
+        dates[stage] = row.changedAt;
     }
     // The ER representation lives on the approved DATA_MODEL version.
     if (dates.DATA_MODEL) dates.ER_DIAGRAM = dates.DATA_MODEL;
