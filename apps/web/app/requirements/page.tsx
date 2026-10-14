@@ -142,12 +142,11 @@ function RequirementsContent({ projectId }: { projectId: string }) {
       <PageHeading title="Requisitos" projectId={projectId} />
 
       <section className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <RequirementGenerationPanel
-            projectId={projectId}
-            contextVersionId={contextApproved ? context.data!.version.id : null}
-            onCompleted={setGeneration}
-          />
+        <RequirementGenerationPanel
+          projectId={projectId}
+          contextVersionId={contextApproved ? context.data!.version.id : null}
+          onCompleted={setGeneration}
+        >
           <Button
             type="button"
             variant="outline"
@@ -188,7 +187,7 @@ function RequirementsContent({ projectId }: { projectId: string }) {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-        </div>
+        </RequirementGenerationPanel>
         <AiUnavailableHint />
         {items.length ? (
           <RequirementsSummary
