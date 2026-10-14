@@ -157,6 +157,13 @@ describe('Batched requirement generation jobs', () => {
       generation.coverage.filter((item) => item.mandatory && item.coveredBy.length === 0),
     ).toEqual([]);
     expect(generation.candidates.at(-1)!.outgoingDependencies).not.toHaveLength(0);
+    // DEC-138: batches run on @5, which keeps cross-cutting constraints apart.
+    const versions = await ctx.prisma.aIRun.findMany({
+      where: { projectId, promptKey: 'requirements.generate' },
+      select: { promptVersion: true },
+      distinct: ['promptVersion'],
+    });
+    expect(versions.map((run) => run.promptVersion)).toEqual([5]);
     const ids = generation.candidates.map((candidate) => candidate.id);
     const accepted = await request(ctx.app.getHttpServer())
       .post(`/projects/${projectId}/requirements/generations/${generation.id}/accept`)
