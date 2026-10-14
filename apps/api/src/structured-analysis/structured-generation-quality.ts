@@ -17,7 +17,12 @@ export interface GenerationSourceReference {
   code: string;
   type: string;
   content?: unknown;
+  requirementType?: string;
 }
+
+// A non-functional requirement (performance, audit, availability) rarely
+// becomes a class or an entity; not citing it is expected there.
+const STRUCTURE_KINDS: StructuredAnalysisKind[] = ['CLASS_DIAGRAM', 'CONCEPTUAL_DOMAIN_MODEL'];
 
 export interface GenerationQualityFinding {
   severity: 'ERROR' | 'WARNING';
@@ -242,12 +247,13 @@ export function evaluateStructuredGeneration(
       message: gap.message,
     });
   for (const source of sources) {
-    if (!referenced.has(source.code))
-      findings.push({
-        severity: 'WARNING',
-        code: 'UNCOVERED_SOURCE',
-        message: `La fuente ${source.code} no está citada por ningún elemento de la propuesta.`,
-      });
+    if (referenced.has(source.code)) continue;
+    if (STRUCTURE_KINDS.includes(kind) && source.requirementType === 'NON_FUNCTIONAL') continue;
+    findings.push({
+      severity: 'WARNING',
+      code: 'UNCOVERED_SOURCE',
+      message: `Ningún elemento de la propuesta proviene de ${source.code}. Revise si debería incluir algo de esa fuente.`,
+    });
   }
   return findings;
 }
