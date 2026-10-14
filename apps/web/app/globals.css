@@ -46,8 +46,22 @@
   animation: ai-pulse 1.8s ease-in-out infinite;
 }
 
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .mockup-progress-indeterminate {
+  .mockup-progress-indeterminate,
+  .animate-shimmer {
     animation: none;
     transform: translateX(100%);
   }

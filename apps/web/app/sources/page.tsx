@@ -37,7 +37,6 @@ import {
   DialogContent,
   DialogDescription,
   DialogFooter,
-  DialogHeader,
   DialogTitle,
   DropdownMenu,
   DropdownMenuContent,
@@ -1066,27 +1065,67 @@ function DeleteSourceDialog({
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Eliminar fuente</DialogTitle>
-          <DialogDescription>
-            Esta acción es permanente y no se puede deshacer. Solo es posible mientras la fuente
-            nunca haya sido aprobada.
-          </DialogDescription>
-        </DialogHeader>
-        <p className="text-sm text-foreground">
-          Va a eliminar{' '}
-          <strong>
-            {source.code} — {source.source.title}
-          </strong>
-          .
-        </p>
-        <DialogFooter>
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+      <DialogContent className="sm:max-w-md p-6 gap-5">
+        <div className="flex items-start gap-4">
+          <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-destructive/10 text-destructive border border-destructive/20 shadow-2xs dark:bg-destructive/15">
+            <Trash2 className="size-5" aria-hidden="true" />
+          </div>
+          <div className="flex flex-col gap-1 min-w-0 flex-1">
+            <DialogTitle className="text-lg font-semibold tracking-tight text-foreground">
+              Eliminar fuente
+            </DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+              Esta acción es permanente y no se puede deshacer. Solo es posible mientras la fuente
+              nunca haya sido aprobada.
+            </DialogDescription>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-destructive/20 bg-destructive/[0.04] p-3.5 dark:border-destructive/30 dark:bg-destructive/[0.08]">
+          <p className="text-[11px] font-medium text-destructive mb-1.5 flex items-center gap-1.5">
+            <AlertTriangle className="size-3.5" aria-hidden="true" />
+            Fuente seleccionada para eliminación definitiva:
+          </p>
+          <div className="flex items-center gap-2.5">
+            <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded-md bg-background text-foreground border border-border shadow-2xs shrink-0">
+              {source.code}
+            </span>
+            <span
+              className="text-sm font-semibold text-foreground truncate"
+              title={source.source.title}
+            >
+              {source.source.title}
+            </span>
+          </div>
+        </div>
+
+        <DialogFooter className="gap-2 sm:gap-2.5 pt-1">
+          <Button
+            type="button"
+            variant="outline"
+            className="border-border/80 hover:bg-muted font-medium"
+            onClick={() => onOpenChange(false)}
+          >
             Cancelar
           </Button>
-          <Button type="button" variant="destructive" disabled={deleting} onClick={handleDelete}>
-            {deleting ? 'Eliminando…' : 'Eliminar definitivamente'}
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={deleting}
+            onClick={handleDelete}
+            className="gap-2 font-medium shadow-xs"
+          >
+            {deleting ? (
+              <>
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                Eliminando…
+              </>
+            ) : (
+              <>
+                <Trash2 className="size-4" aria-hidden="true" />
+                Eliminar definitivamente
+              </>
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1160,27 +1199,66 @@ function ArchiveSourceDialog({
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Archivar fuente</DialogTitle>
-          <DialogDescription>
-            Esta fuente tiene versiones aprobadas, así que no puede eliminarse. Archivarla la marca
-            como inactiva sin borrar su historial.
-          </DialogDescription>
-        </DialogHeader>
-        <p className="text-sm text-foreground">
-          Va a archivar{' '}
-          <strong>
-            {source.code} — {source.source.title}
-          </strong>
-          .
-        </p>
-        <DialogFooter>
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+      <DialogContent className="sm:max-w-md p-6 gap-5">
+        <div className="flex items-start gap-4">
+          <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 shadow-2xs">
+            <Archive className="size-5" aria-hidden="true" />
+          </div>
+          <div className="flex flex-col gap-1 min-w-0 flex-1">
+            <DialogTitle className="text-lg font-semibold tracking-tight text-foreground">
+              Archivar fuente
+            </DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+              Esta fuente tiene versiones aprobadas, así que no puede eliminarse. Archivarla la
+              marca como inactiva sin borrar su historial.
+            </DialogDescription>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-3.5 dark:border-amber-500/30 dark:bg-amber-500/[0.08]">
+          <p className="text-[11px] font-medium text-amber-600 dark:text-amber-400 mb-1.5 flex items-center gap-1.5">
+            <Archive className="size-3.5" aria-hidden="true" />
+            Fuente que se archivará:
+          </p>
+          <div className="flex items-center gap-2.5">
+            <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded-md bg-background text-foreground border border-border shadow-2xs shrink-0">
+              {source.code}
+            </span>
+            <span
+              className="text-sm font-semibold text-foreground truncate"
+              title={source.source.title}
+            >
+              {source.source.title}
+            </span>
+          </div>
+        </div>
+
+        <DialogFooter className="gap-2 sm:gap-2.5 pt-1">
+          <Button
+            type="button"
+            variant="outline"
+            className="border-border/80 hover:bg-muted font-medium"
+            onClick={() => onOpenChange(false)}
+          >
             Cancelar
           </Button>
-          <Button type="button" disabled={archiving} onClick={handleArchive}>
-            {archiving ? 'Archivando…' : 'Archivar'}
+          <Button
+            type="button"
+            disabled={archiving}
+            onClick={handleArchive}
+            className="gap-2 font-medium shadow-xs"
+          >
+            {archiving ? (
+              <>
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                Archivando…
+              </>
+            ) : (
+              <>
+                <Archive className="size-4" aria-hidden="true" />
+                Archivar
+              </>
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>
