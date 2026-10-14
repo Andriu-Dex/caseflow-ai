@@ -7258,6 +7258,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-135 | El retorno de conexión de ChatGPT usa una página local accesible con modo oscuro, cabeceras de seguridad y enlace opcional de regreso a CASEFlow en desarrollo (§221.11) | Accepted |
 | DEC-136 | Al aprobar un cambio se revisan en orden los pasos posteriores; el primero pendiente puede rehacerse o confirmarse vigente con auditoría. Los pendientes bloquean congelar diseño y construir (§221.17, ADR-010) | Accepted |
 | DEC-137 | Fuentes: reemplazar el archivo crea la versión siguiente de la misma fuente; una fuente archivada se puede restaurar; archivar o restaurar algo con historial aprobado cuenta como cambio de su paso; la lista se filtra y pagina, con las archivadas ocultas por defecto (§221.18) | Accepted |
+| DEC-138 | Requisitos: la lista se pagina de 25 en 25 y admite aprobar, archivar o eliminar varios a la vez (todos o ninguno; eliminar solo los nunca aprobados y sin referencias); las restricciones transversales se cubren con su propio requisito no funcional (prompt `requirements.generate@5`); el diagrama de clases y el modelo conceptual no esperan citar requisitos no funcionales (§221.19) | Accepted |
 
 ---
 
@@ -7694,7 +7695,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-137)
+# 221. Extensiones de V2 (DEC-116 a DEC-138)
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
@@ -7884,6 +7885,13 @@ El servidor bloquea congelar diseño y construir mientras quedan pasos por rehac
 - **Archivar y restaurar:** cualquier fuente activa puede archivarse, y una archivada restaurarse (`POST …/sources/:id/unarchive`). Ambas acciones se auditan (`SOURCE_ARCHIVED`, `SOURCE_RESTORED`). Eliminar sigue reservado a las fuentes que nunca se aprobaron.
 - **Efecto en el flujo:** `artifacts.archive_changed_at` se actualiza por un trigger cada vez que cambia `archived_at`, para cualquier tipo de artefacto. Si el artefacto tuvo alguna versión aprobada, esa fecha cuenta como un cambio de su paso en la vigencia del flujo (§221.17), y los pasos siguientes piden revisión. Archivar algo que nunca se aprobó no cambia nada.
 - **Lista:** `GET …/sources` acepta `status` (activas, archivadas o todas), `versionStatus`, `kind`, `search` (código o título, sin distinguir mayúsculas ni tildes), `sort`, `limit` y `offset`, y devuelve `total` y los conteos por estado. Sin parámetros devuelve todas las fuentes, como antes. La página muestra las activas por defecto, con filtros y una búsqueda que espera una pausa al escribir, y pagina de 20 en 20 solo cuando hay más.
+
+## 221.19 Requisitos en bloque y restricciones transversales (DEC-138)
+
+- **Lista:** la página de requisitos pagina de 25 en 25 (funcionales primero), sobre la lista completa que ya carga para el resumen y la cobertura. Cambiar un filtro vuelve a la primera página. Abrir el detalle se hace pulsando la fila; el menú ya no repite «Ver detalle».
+- **Acciones en bloque:** `POST …/requirements/bulk` con `action` (`APPROVE`, `ARCHIVE` o `DELETE`) y hasta 500 `requirementIds` del proyecto, en una sola transacción: se aplica a todos o a ninguno, con el motivo. Aprobar pasa cada pendiente por revisión hasta aprobado, con la misma exigencia de origen que de uno en uno, y omite los ya aprobados o archivados. Archivar omite los ya archivados. Eliminar solo es posible si ninguno tuvo una versión aprobada, ninguno es dependencia de un requisito fuera del lote y ningún caso de uso lo usa; si no, debe archivarse. Los códigos eliminados no se reutilizan. Cada requisito afectado se audita (`REQUIREMENT_APPROVED`, `REQUIREMENT_ARCHIVED`, `REQUIREMENT_DELETED`).
+- **Restricciones transversales:** el prompt por lotes `requirements.generate@5` cubre una restricción o regla que aplica a todo el sistema (autorización, auditoría, alcance, disponibilidad) con su propio requisito no funcional, en lugar de adjuntarla a cada requisito funcional; las actualizaciones de cobertura quedan para reglas específicas de una propuesta. Los no funcionales llevan actores solo si la condición se refiere a ellos. `@4` se conserva para auditoría.
+- **Procedencia en diseño:** en el diagrama de clases y el modelo conceptual, no citar un requisito no funcional no genera aviso. El aviso de fuente sin cubrir dice: «Ningún elemento de la propuesta proviene de {código}. Revise si debería incluir algo de esa fuente».
 
 ## 221.4 Fuera de alcance de estas extensiones
 
