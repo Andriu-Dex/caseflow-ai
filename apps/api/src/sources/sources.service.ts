@@ -35,6 +35,7 @@ import { STORAGE_PROVIDER } from './storage-provider.token';
 import { SOURCE_QUEUE } from './source-queue.token';
 import { hasExpectedFileSignature } from './source-file-validation';
 import { KnowledgeBaseService } from '../knowledge-base/knowledge-base.service';
+import { AuditService } from '../audit/audit.service';
 import { splitIntoSections } from '../knowledge-base/source-sections';
 import { MAX_REPORT_PARTS, inputBudget, mergeBatches, planReportParts } from './source-report-plan';
 
@@ -80,7 +81,12 @@ export class SourcesService implements OnApplicationBootstrap {
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
     private readonly knowledgeBase: KnowledgeBaseService,
     @Optional() @Inject(SOURCE_QUEUE) private readonly queue?: Queue<SourceProcessingJobPayload>,
-  ) {}
+    // Injected by Nest; code constructing the service directly still audits.
+    @Optional() audit?: AuditService,
+  ) {
+    this.audit = audit ?? new AuditService(prisma);
+  }
+  private readonly audit: AuditService;
 
   async create(
     projectId: string,
@@ -659,15 +665,48 @@ export class SourcesService implements OnApplicationBootstrap {
   // history (spec §87: "fuentes utilizadas → archivar antes que borrar").
   // Purely additive on the Artifact row — never touches any ArtifactVersion,
   // so it needs no immutability exception.
-  async archive(projectId: string, id: string) {
+  // Archiving keeps the history; with approved history it is a change of the
+  // Sources stage, so the stages after it ask to be reviewed (DEC-137).
+  async archive(projectId: string, id: string, userId: string | null = null) {
+    return this.setArchived(projectId, id, true, userId);
+  }
+
+  async restore(projectId: string, id: string, userId: string | null = null) {
+    return this.setArchived(projectId, id, false, userId);
+  }
+
+  private async setArchived(
+    projectId: string,
+    id: string,
+    archive: boolean,
+    userId: string | null,
+  ) {
     const artifact = await this.prisma.artifact.findFirst({
       where: { id, projectId, artifactTypeCode: 'PROJECT_SOURCE' },
     });
     if (!artifact) throw new NotFoundException('Fuente no encontrada.');
-    if (artifact.archivedAt)
+    if (archive && artifact.archivedAt)
       throw new UnprocessableEntityException('Esta fuente ya está archivada.');
+    if (!archive && !artifact.archivedAt)
+      throw new UnprocessableEntityException('Esta fuente no está archivada.');
 
-    await this.prisma.artifact.update({ where: { id }, data: { archivedAt: new Date() } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.artifact.update({
+        where: { id },
+        data: { archivedAt: archive ? new Date() : null },
+      });
+      await this.audit.record(
+        {
+          projectId,
+          actorUserId: userId,
+          action: archive ? 'SOURCE_ARCHIVED' : 'SOURCE_RESTORED',
+          entityType: 'ARTIFACT',
+          entityId: id,
+          metadata: { code: artifact.code },
+        },
+        tx,
+      );
+    });
     const row = await this.findLatest(projectId, id);
     return this.map(row, row.versions[0]!, await this.hasApprovedHistory(id));
   }

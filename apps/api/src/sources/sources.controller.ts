@@ -10,13 +10,18 @@ import {
   HttpCode,
   Param,
   Post,
+  Req,
   Res,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
+
+interface AuthenticatedRequest extends Request {
+  user: { id: string };
+}
 import {
   acceptSourceReportCandidateRequestSchema,
   manualSourceReportInputSchema,
@@ -209,7 +214,7 @@ export class SourcesController {
   @Post(':sourceId/archive')
   @ApiOperation({
     operationId: 'archiveSource',
-    summary: 'Archivar una fuente con historial aprobado (alternativa a eliminar)',
+    summary: 'Archivar una fuente: deja de mostrarse y de usarse, con su historial (DEC-137)',
   })
   @ApiZodResponse(200, 'Project Source.', sourceResponseSchema)
   @ApiErrorResponse(404, 'La fuente no existe.')
@@ -217,8 +222,25 @@ export class SourcesController {
   archive(
     @Param('projectId', uuidParamPipe) projectId: string,
     @Param('sourceId', uuidParamPipe) sourceId: string,
+    @Req() req: AuthenticatedRequest,
   ) {
-    return this.service.archive(projectId, sourceId);
+    return this.service.archive(projectId, sourceId, req.user.id);
+  }
+
+  @Post(':sourceId/unarchive')
+  @ApiOperation({
+    operationId: 'restoreSource',
+    summary: 'Restaurar una fuente archivada',
+  })
+  @ApiZodResponse(200, 'Project Source.', sourceResponseSchema)
+  @ApiErrorResponse(404, 'La fuente no existe.')
+  @ApiErrorResponse(422, 'La fuente no está archivada.')
+  restore(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('sourceId', uuidParamPipe) sourceId: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.service.restore(projectId, sourceId, req.user.id);
   }
 
   @Post(':sourceId/versions/:versionId/transition')
