@@ -10,6 +10,7 @@ import {
   HttpCode,
   Param,
   Post,
+  Query,
   Req,
   Res,
   UploadedFile,
@@ -24,6 +25,7 @@ interface AuthenticatedRequest extends Request {
 }
 import {
   acceptSourceReportCandidateRequestSchema,
+  listSourcesQuerySchema,
   manualSourceReportInputSchema,
   manualTranscriptInputSchema,
   sourceCapabilitiesResponseSchema,
@@ -39,7 +41,7 @@ import {
 import type { z } from 'zod';
 import { uuidParamPipe } from '../common/uuid-param.pipe';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
-import { ApiErrorResponse, ApiZodBody, ApiZodResponse } from '../openapi/zod-openapi';
+import { ApiErrorResponse, ApiZodBody, ApiZodQuery, ApiZodResponse } from '../openapi/zod-openapi';
 import { SourcesService } from './sources.service';
 
 @ApiTags('sources')
@@ -85,9 +87,15 @@ export class SourcesController {
 
   @Get()
   @ApiOperation({ operationId: 'listSources', summary: 'Listar fuentes del proyecto' })
+  @ApiZodQuery(listSourcesQuerySchema)
   @ApiZodResponse(200, 'Project Sources.', sourceListResponseSchema)
-  list(@Param('projectId', uuidParamPipe) projectId: string) {
-    return this.service.list(projectId);
+  @ApiErrorResponse(400, 'Los filtros no son válidos.')
+  list(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Query(new ZodValidationPipe(listSourcesQuerySchema))
+    query: z.output<typeof listSourcesQuerySchema>,
+  ) {
+    return this.service.search(projectId, query);
   }
 
   // Declared before ':sourceId' so the literal path is not read as an id.

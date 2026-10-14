@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ARTIFACT_VERSION_STATUSES } from '../artifacts/artifact.contract';
 
 // Semantic source kind (what the object represents), never inferred solely
 // from MIME type/extension (requirements.md §6.3).
@@ -194,7 +195,36 @@ export const sourceResponseSchema = z.object({
   }),
 });
 export type SourceResponse = z.infer<typeof sourceResponseSchema>;
-export const sourceListResponseSchema = z.object({ items: z.array(sourceResponseSchema) });
+// DEC-137: the Sources page filters and pages its list. Without parameters
+// the list is complete, as other screens rely on it.
+export const SOURCE_LIST_STATUSES = ['ACTIVE', 'ARCHIVED', 'ALL'] as const;
+export const SOURCE_LIST_SORTS = ['CODE', 'RECENT', 'UPDATED', 'TITLE'] as const;
+export const listSourcesQuerySchema = z
+  .object({
+    status: z.enum(SOURCE_LIST_STATUSES).default('ALL'),
+    // Status of each source's latest version.
+    versionStatus: z.enum(ARTIFACT_VERSION_STATUSES).optional(),
+    kind: z.enum(PROJECT_SOURCE_KINDS).optional(),
+    // Code or title contains this text, ignoring case and accents.
+    search: z.string().trim().max(100).optional(),
+    sort: z.enum(SOURCE_LIST_SORTS).default('CODE'),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+    offset: z.coerce.number().int().min(0).default(0),
+  })
+  .strict();
+export type ListSourcesQuery = z.input<typeof listSourcesQuerySchema>;
+export const sourceListResponseSchema = z.object({
+  items: z.array(sourceResponseSchema),
+  // Sources matching the filters, before paging.
+  total: z.number().int().min(0),
+  // Every source of the project by archive status, for the filter labels.
+  counts: z.object({
+    ACTIVE: z.number().int().min(0),
+    ARCHIVED: z.number().int().min(0),
+    ALL: z.number().int().min(0),
+  }),
+});
+export type SourceListResponse = z.infer<typeof sourceListResponseSchema>;
 export const sourceTextResponseSchema = z.object({
   sourceVersionId: z.uuid(),
   text: z.string(),

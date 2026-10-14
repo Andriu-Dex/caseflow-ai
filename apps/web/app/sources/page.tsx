@@ -1,10 +1,12 @@
 'use client';
 
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   Archive,
+  ArchiveRestore,
   Check,
+  ChevronLeft,
   ChevronRight,
   Columns2,
   Download,
@@ -16,6 +18,7 @@ import {
   Sparkles,
   Trash2,
   Upload,
+  Search,
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -318,7 +321,7 @@ function SourceCard({
   const [acceptingReport, setAcceptingReport] = useState(false);
   const [approving, setApproving] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [confirming, setConfirming] = useState<'archive' | 'delete' | null>(null);
   // The detail opens as a reading view; the original side by side and the
   // text editor are one click away.
   const [view, setView] = useState<'read' | 'compare' | 'edit'>('read');
@@ -400,6 +403,20 @@ function SourceCard({
       );
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'No se pudo volver a extraer el texto.');
+    }
+  }
+
+  // DEC-137: back to the active list. With approved history, the stages after
+  // Sources ask to be reviewed, as when it was archived.
+  async function restore() {
+    try {
+      await api.sources.restore(projectId, source.id);
+      invalidate();
+      toast.success(`${source.code} vuelve a estar activa.`);
+      if (source.hasApprovedHistory)
+        toast.info('Revise los pasos siguientes: la fuente vuelve a formar parte del proyecto.');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo restaurar la fuente.');
     }
   }
 
@@ -617,27 +634,24 @@ function SourceCard({
                     Volver a extraer el texto
                   </DropdownMenuItem>
                 ) : null}
-                {source.hasApprovedHistory ? (
-                  source.archivedAt ? null : (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onSelect={() => setConfirmingDelete(true)}>
-                        <Archive aria-hidden="true" />
-                        Archivar
-                      </DropdownMenuItem>
-                    </>
-                  )
+                <DropdownMenuSeparator />
+                {source.archivedAt ? (
+                  <DropdownMenuItem onSelect={restore}>
+                    <ArchiveRestore aria-hidden="true" />
+                    Restaurar
+                  </DropdownMenuItem>
                 ) : (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      variant="destructive"
-                      onSelect={() => setConfirmingDelete(true)}
-                    >
-                      <Trash2 aria-hidden="true" />
-                      Eliminar
-                    </DropdownMenuItem>
-                  </>
+                  <DropdownMenuItem onSelect={() => setConfirming('archive')}>
+                    <Archive aria-hidden="true" />
+                    Archivar
+                  </DropdownMenuItem>
+                )}
+                {/* Approved history is kept: such a source can only be archived. */}
+                {source.hasApprovedHistory ? null : (
+                  <DropdownMenuItem variant="destructive" onSelect={() => setConfirming('delete')}>
+                    <Trash2 aria-hidden="true" />
+                    Eliminar
+                  </DropdownMenuItem>
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
@@ -684,12 +698,12 @@ function SourceCard({
             />
           ) : null}
 
-          {confirmingDelete ? (
-            source.hasApprovedHistory ? (
+          {confirming ? (
+            confirming === 'archive' ? (
               <ArchiveSourceDialog
                 projectId={projectId}
                 source={source}
-                onOpenChange={setConfirmingDelete}
+                onOpenChange={(open) => setConfirming(open ? 'archive' : null)}
                 onArchived={() => {
                   queryClient.invalidateQueries({ queryKey: ['sources', projectId] });
                   queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
@@ -700,7 +714,7 @@ function SourceCard({
               <DeleteSourceDialog
                 projectId={projectId}
                 source={source}
-                onOpenChange={setConfirmingDelete}
+                onOpenChange={(open) => setConfirming(open ? 'delete' : null)}
                 onDeleted={() => {
                   queryClient.invalidateQueries({ queryKey: ['sources', projectId] });
                   queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
@@ -1209,8 +1223,8 @@ function ArchiveSourceDialog({
               Archivar fuente
             </DialogTitle>
             <DialogDescription className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
-              Esta fuente tiene versiones aprobadas, así que no puede eliminarse. Archivarla la
-              marca como inactiva sin borrar su historial.
+              Archivarla la oculta de la lista y deja de usarse, sin borrar su historial. Podrá
+              verla con el filtro «Archivadas» y restaurarla cuando quiera.
             </DialogDescription>
           </div>
         </div>
@@ -1266,11 +1280,65 @@ function ArchiveSourceDialog({
   );
 }
 
+// DEC-137: the list is filtered and paged on the server. Archived sources
+// are hidden by default and shown with the "Archivadas" filter; paging only
+// appears past one page.
+const PAGE_SIZE = 20;
+type SourceStatusFilter = 'ACTIVE' | 'ARCHIVED' | 'ALL';
+type SourceVersionFilter = '' | 'APPROVED' | 'IN_REVIEW' | 'DRAFT' | 'CHANGES_REQUESTED';
+type SourceSort = 'CODE' | 'RECENT' | 'UPDATED' | 'TITLE';
+const SOURCE_STATUS_LABELS: Record<SourceStatusFilter, string> = {
+  ACTIVE: 'Activas',
+  ARCHIVED: 'Archivadas',
+  ALL: 'Todas',
+};
+const SOURCE_VERSION_LABELS: Record<Exclude<SourceVersionFilter, ''>, string> = {
+  APPROVED: 'Aprobadas',
+  IN_REVIEW: 'En revisión',
+  DRAFT: 'Borradores',
+  CHANGES_REQUESTED: 'Con cambios solicitados',
+};
+const SOURCE_SORT_LABELS: Record<SourceSort, string> = {
+  CODE: 'Código',
+  RECENT: 'Más recientes',
+  UPDATED: 'Modificadas recientemente',
+  TITLE: 'Título (A-Z)',
+};
+const filterSelect =
+  'h-9 cursor-pointer rounded-lg border border-border/80 bg-card px-2.5 text-xs text-foreground shadow-2xs transition-colors hover:border-border focus:border-primary focus:ring-1 focus:ring-primary/20 focus:outline-none sm:text-sm';
+
 function SourcesContent({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState<SourceStatusFilter>('ACTIVE');
+  const [versionStatus, setVersionStatus] = useState<SourceVersionFilter>('');
+  const [kind, setKind] = useState<ProjectSourceKind | ''>('');
+  const [sort, setSort] = useState<SourceSort>('CODE');
+  const [page, setPage] = useState(0);
+  // The search waits for a pause in typing, and only a new search resets the page.
+  useEffect(() => {
+    const next = searchInput.trim();
+    if (next === search) return;
+    const timer = setTimeout(() => {
+      setSearch(next);
+      setPage(0);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput, search]);
+  const filters = {
+    status,
+    versionStatus: versionStatus || undefined,
+    kind: kind || undefined,
+    search: search || undefined,
+    sort,
+    limit: PAGE_SIZE,
+    offset: page * PAGE_SIZE,
+  };
   const sources = useQuery({
-    queryKey: ['sources', projectId],
-    queryFn: () => api.sources.list(projectId),
+    queryKey: ['sources', projectId, filters],
+    queryFn: () => api.sources.list(projectId, filters),
+    placeholderData: keepPreviousData,
     refetchInterval: (query) =>
       query.state.data?.items.some(
         (source) => source.processing && ['QUEUED', 'RUNNING'].includes(source.processing.status),
@@ -1288,14 +1356,34 @@ function SourcesContent({ projectId }: { projectId: string }) {
     queryKey: ['staleness', projectId],
     queryFn: () => api.staleness.get(projectId),
   });
+  const total = sources.data?.total ?? 0;
+  const counts = sources.data?.counts;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // Archiving or deleting the last source of a page leaves it empty: step back.
+  useEffect(() => {
+    if (sources.data && page > 0 && page >= pageCount) setPage(pageCount - 1);
+  }, [sources.data, page, pageCount]);
+  const filtered =
+    Boolean(search) || status !== 'ACTIVE' || Boolean(versionStatus) || Boolean(kind);
+  const change =
+    <T,>(setter: (value: T) => void) =>
+    (value: T) => {
+      setter(value);
+      setPage(0);
+    };
+  function clearFilters() {
+    setSearchInput('');
+    setSearch('');
+    setStatus('ACTIVE');
+    setVersionStatus('');
+    setKind('');
+    setPage(0);
+  }
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeading title="Fuentes del proyecto" projectId={projectId} />
-      <AddSection
-        isEmpty={sources.data ? sources.data.items.length === 0 : undefined}
-        addLabel="Agregar fuente"
-      >
+      <AddSection isEmpty={counts ? counts.ALL === 0 : undefined} addLabel="Agregar fuente">
         {(close) => (
           <CreateSourceForm
             projectId={projectId}
@@ -1308,17 +1396,161 @@ function SourcesContent({ projectId }: { projectId: string }) {
           />
         )}
       </AddSection>
+
+      {counts && counts.ALL > 0 ? (
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="relative flex-1 sm:max-w-xs sm:min-w-[240px]">
+            <Search
+              className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Input
+              type="search"
+              aria-label="Buscar fuentes"
+              placeholder="Buscar por código o título"
+              className="h-9 pl-8 text-xs sm:text-sm"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+            />
+          </div>
+          <select
+            aria-label="Estado de la fuente"
+            className={filterSelect}
+            value={status}
+            onChange={(e) => change(setStatus)(e.target.value as SourceStatusFilter)}
+          >
+            {(['ACTIVE', 'ARCHIVED', 'ALL'] as const).map((value) => (
+              <option key={value} value={value}>
+                {SOURCE_STATUS_LABELS[value]} ({counts[value]})
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Estado de revisión"
+            className={filterSelect}
+            value={versionStatus}
+            onChange={(e) => change(setVersionStatus)(e.target.value as SourceVersionFilter)}
+          >
+            <option value="">Cualquier revisión</option>
+            {(Object.keys(SOURCE_VERSION_LABELS) as Exclude<SourceVersionFilter, ''>[]).map(
+              (value) => (
+                <option key={value} value={value}>
+                  {SOURCE_VERSION_LABELS[value]}
+                </option>
+              ),
+            )}
+          </select>
+          <select
+            aria-label="Tipo de fuente"
+            className={filterSelect}
+            value={kind}
+            onChange={(e) => change(setKind)(e.target.value as ProjectSourceKind | '')}
+          >
+            <option value="">Todos los tipos</option>
+            {SELECTABLE_SOURCE_KINDS.map((value) => (
+              <option key={value} value={value}>
+                {SOURCE_KIND_LABELS[value]}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Ordenar fuentes por"
+            className={filterSelect}
+            value={sort}
+            onChange={(e) => change(setSort)(e.target.value as SourceSort)}
+          >
+            {(Object.keys(SOURCE_SORT_LABELS) as SourceSort[]).map((value) => (
+              <option key={value} value={value}>
+                {SOURCE_SORT_LABELS[value]}
+              </option>
+            ))}
+          </select>
+          {filtered ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-9 px-2.5 text-xs text-muted-foreground hover:text-foreground"
+              onClick={clearFilters}
+            >
+              <X className="mr-1 size-3.5" aria-hidden="true" />
+              Limpiar filtros
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
       <QueryState isLoading={sources.isLoading} error={sources.error}>
-        {sources.data && sources.data.items.length === 0 ? (
+        {counts && counts.ALL === 0 ? (
           <p className="text-sm text-muted-foreground">
             No hay fuentes todavía. Agregue la primera arriba.
           </p>
+        ) : sources.data && sources.data.items.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            {filtered
+              ? status === 'ARCHIVED' && !search && !versionStatus && !kind
+                ? 'No hay fuentes archivadas.'
+                : 'Ninguna fuente coincide con los filtros.'
+              : 'No hay fuentes activas. Las archivadas se ven con el filtro «Archivadas».'}
+          </p>
         ) : (
-          <ul className="flex flex-col gap-3">
-            {sources.data?.items.map((s) => (
-              <SourceCard key={s.id} source={s} projectId={projectId} staleness={staleness.data} />
-            ))}
-          </ul>
+          <>
+            <ul
+              className={`flex flex-col gap-3 transition-opacity ${
+                sources.isPlaceholderData ? 'opacity-60' : ''
+              }`}
+            >
+              {sources.data?.items.map((s) => (
+                <SourceCard
+                  key={s.id}
+                  source={s}
+                  projectId={projectId}
+                  staleness={staleness.data}
+                />
+              ))}
+            </ul>
+            {pageCount > 1 ? (
+              <nav
+                aria-label="Paginación de fuentes"
+                className="flex flex-col items-center justify-between gap-3 rounded-xl border border-border/50 bg-card/60 px-4 py-3 text-xs text-muted-foreground sm:flex-row sm:text-sm"
+              >
+                <span className="font-medium text-foreground/80">
+                  Mostrando {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} de{' '}
+                  {total} fuentes
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1 px-2.5 text-xs"
+                    disabled={page === 0}
+                    onClick={() => setPage((p) => p - 1)}
+                  >
+                    <ChevronLeft className="size-3.5" aria-hidden="true" />
+                    Anterior
+                  </Button>
+                  <span
+                    aria-live="polite"
+                    className="rounded-md border border-border/40 bg-muted px-2.5 py-1 text-xs font-semibold text-foreground"
+                  >
+                    Página {page + 1} de {pageCount}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1 px-2.5 text-xs"
+                    disabled={page + 1 >= pageCount}
+                    onClick={() => setPage((p) => p + 1)}
+                  >
+                    Siguiente
+                    <ChevronRight className="size-3.5" aria-hidden="true" />
+                  </Button>
+                </div>
+              </nav>
+            ) : null}
+          </>
         )}
       </QueryState>
     </div>

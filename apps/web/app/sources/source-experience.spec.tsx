@@ -14,10 +14,28 @@ const mocks = vi.hoisted(() => ({
   generateReport: vi.fn(),
 }));
 
+// The API answers with the page plus its total and counts (DEC-137).
+const withCounts = (page: {
+  items: { archivedAt?: string | null }[];
+  total?: number;
+  counts?: object;
+}) => {
+  const archived = page.items.filter((item) => item.archivedAt).length;
+  return {
+    ...page,
+    total: page.total ?? page.items.length,
+    counts: page.counts ?? {
+      ACTIVE: page.items.length - archived,
+      ARCHIVED: archived,
+      ALL: page.items.length,
+    },
+  };
+};
+
 vi.mock('../../lib/api', () => ({
   api: {
     sources: {
-      list: (...args: unknown[]) => mocks.list(...args),
+      list: async (...args: unknown[]) => withCounts(await mocks.list(...args)),
       capabilities: (...args: unknown[]) => mocks.capabilities(...args),
       getText: (...args: unknown[]) => mocks.getText(...args),
       submitManualTranscript: (...args: unknown[]) => mocks.submitManualTranscript(...args),
