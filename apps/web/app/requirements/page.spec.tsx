@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   transition: vi.fn(),
   archive: vi.fn(),
+  bulk: vi.fn(),
 }));
 
 vi.mock('sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }));
@@ -19,6 +20,7 @@ vi.mock('../../lib/api', () => ({
       generation: vi.fn(),
       list: (...args: unknown[]) => mocks.list(...args),
       transition: (...args: unknown[]) => mocks.transition(...args),
+      bulk: (...args: unknown[]) => mocks.bulk(...args),
       qualityReport: vi.fn(async () => ({
         issues: [
           {
@@ -228,5 +230,29 @@ describe('Requirements list', () => {
     expect(screen.getByText('Calidad 1')).toBeInTheDocument();
     expect(screen.queryByRole('navigation', { name: 'Paginación de requisitos' })).toBeNull();
     expect(screen.getByRole('option', { name: 'No funcionales (10)' })).toBeInTheDocument();
+  });
+
+  // DEC-138: several requirements at once, after confirming.
+  it('archives and approves the selected requirements in one action', async () => {
+    mocks.bulk.mockResolvedValue({ affected: 2, skipped: 0 });
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByRole('checkbox', { name: 'Seleccionar RF-002' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Seleccionar RNF-001' }));
+    expect(screen.getByText('2 seleccionados')).toBeInTheDocument();
+    const toolbar = () => within(screen.getByRole('toolbar', { name: 'Selección de requisitos' }));
+    await user.click(toolbar().getByRole('button', { name: 'Archivar' }));
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Archivar' }),
+    );
+    await waitFor(() => expect(mocks.bulk).toHaveBeenCalledWith('p1', 'ARCHIVE', ['r2', 'r3']));
+    // The selection is cleared after the action.
+    await waitFor(() => expect(screen.getByText('Seleccionar')).toBeInTheDocument());
+
+    await user.click(screen.getByRole('checkbox', { name: 'Seleccionar los de esta página' }));
+    await user.click(toolbar().getByRole('button', { name: 'Aprobar' }));
+    await waitFor(() =>
+      expect(mocks.bulk).toHaveBeenLastCalledWith('p1', 'APPROVE', ['r1', 'r2', 'r3']),
+    );
   });
 });

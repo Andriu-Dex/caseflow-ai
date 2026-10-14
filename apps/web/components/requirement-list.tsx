@@ -7,6 +7,7 @@ import {
   ArrowDown,
   ArrowUp,
   CheckCircle2,
+  Trash2,
   ChevronLeft,
   ChevronRight,
   CircleDashed,
@@ -26,6 +27,7 @@ import {
   Users,
 } from 'lucide-react';
 import type {
+  RequirementBulkAction,
   RequirementContextCoverageResponse,
   RequirementPriority,
   RequirementResponse,
@@ -347,7 +349,29 @@ export interface RequirementRowActions {
   requestChanges: (r: RequirementResponse) => void;
   edit: (r: RequirementResponse) => void;
   archive: (r: RequirementResponse) => Promise<void>;
+  // DEC-138: the same action over the selected requirements.
+  bulk?: (action: RequirementBulkAction, ids: string[]) => Promise<void>;
 }
+
+const BULK_CONFIRM: Record<
+  Exclude<RequirementBulkAction, 'APPROVE'>,
+  { title: string; description: string; button: string; busy: string }
+> = {
+  ARCHIVE: {
+    title: 'Archivar requisitos',
+    description:
+      'Dejan de mostrarse en las listas y en la preparación; su historial se conserva y sus códigos no se reutilizan.',
+    button: 'Archivar',
+    busy: 'Archivando…',
+  },
+  DELETE: {
+    title: 'Eliminar requisitos',
+    description:
+      'Se borran definitivamente. Solo es posible si ninguno tuvo una versión aprobada y nada los usa; si alguno no cumple, no se elimina ninguno. Sus códigos no se reutilizan.',
+    button: 'Eliminar definitivamente',
+    busy: 'Eliminando…',
+  },
+};
 
 function RequirementRow({
   requirement: r,
@@ -358,6 +382,8 @@ function RequirementRow({
   approving,
   nameOf,
   actions,
+  selected,
+  onSelect,
 }: {
   requirement: RequirementResponse;
   open: boolean;
@@ -367,6 +393,8 @@ function RequirementRow({
   approving: boolean;
   nameOf: (artifactId: string) => string;
   actions: RequirementRowActions & { confirmArchive: () => void };
+  selected?: boolean;
+  onSelect?: (checked: boolean) => void;
 }) {
   const priority = PRIORITY_META[r.requirement.priority];
   const PriorityIcon = priority.icon;
@@ -377,6 +405,15 @@ function RequirementRow({
   return (
     <li className="overflow-hidden rounded-lg border border-border bg-card shadow-xs transition-shadow hover:shadow-sm">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5">
+        {onSelect ? (
+          <input
+            type="checkbox"
+            className="size-4 shrink-0 cursor-pointer accent-primary"
+            aria-label={`Seleccionar ${r.code}`}
+            checked={Boolean(selected)}
+            onChange={(e) => onSelect(e.target.checked)}
+          />
+        ) : null}
         <button
           type="button"
           onClick={onToggle}
@@ -641,6 +678,12 @@ export function RequirementList({
   const [archiving, setArchiving] = useState<RequirementResponse | null>(null);
   const [archiveBusy, setArchiveBusy] = useState(false);
   const [page, setPage] = useState(0);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [confirmingBulk, setConfirmingBulk] = useState<Exclude<
+    RequirementBulkAction,
+    'APPROVE'
+  > | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
   // A filter starts again on the first page; approving or archiving does not.
   const filter =
     <T,>(setter: (value: T) => void) =>
@@ -670,6 +713,31 @@ export function RequirementList({
   useEffect(() => {
     if (page >= pageCount) setPage(pageCount - 1);
   }, [page, pageCount]);
+  // A deleted or archived requirement leaves the selection by itself.
+  const selection = items.filter((r) => selectedIds.has(r.id)).map((r) => r.id);
+  const pageSelected = pageRows.length > 0 && pageRows.every((r) => selectedIds.has(r.id));
+  const toggleSelected = (ids: string[], checked: boolean) =>
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      for (const id of ids) {
+        if (checked) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  async function runBulk(action: RequirementBulkAction) {
+    if (!actions.bulk || !selection.length) return;
+    setBulkBusy(true);
+    try {
+      await actions.bulk(action, selection);
+      setSelectedIds(new Set());
+      setConfirmingBulk(null);
+    } catch {
+      // The page already explained why; the selection stays to adjust it.
+    } finally {
+      setBulkBusy(false);
+    }
+  }
   const typeCount = (value: TypeFilter) =>
     value === 'ALL'
       ? items.length
@@ -765,6 +833,95 @@ export function RequirementList({
         ) : null}
       </div>
 
+      {actions.bulk && ordered.length ? (
+        <div
+          role="toolbar"
+          aria-label="Selección de requisitos"
+          className={`flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+            selection.length ? 'border-primary/40 bg-primary/5' : 'border-border/60 bg-card/60'
+          }`}
+        >
+          <label className="flex cursor-pointer items-center gap-2 text-muted-foreground">
+            <input
+              type="checkbox"
+              className="size-4 accent-primary"
+              aria-label="Seleccionar los de esta página"
+              checked={pageSelected}
+              onChange={(e) =>
+                toggleSelected(
+                  pageRows.map((r) => r.id),
+                  e.target.checked,
+                )
+              }
+            />
+            {selection.length
+              ? `${selection.length} ${selection.length === 1 ? 'seleccionado' : 'seleccionados'}`
+              : 'Seleccionar'}
+          </label>
+          {pageSelected && ordered.length > pageRows.length && selection.length < ordered.length ? (
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              className="h-7 px-1"
+              onClick={() =>
+                toggleSelected(
+                  ordered.map((r) => r.id),
+                  true,
+                )
+              }
+            >
+              Seleccionar los {ordered.length} que coinciden
+            </Button>
+          ) : null}
+          {selection.length ? (
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                disabled={bulkBusy}
+                className="h-8 bg-emerald-600 text-white hover:bg-emerald-700"
+                onClick={() => runBulk('APPROVE')}
+              >
+                <CheckCircle2 className="size-3.5" aria-hidden="true" />
+                Aprobar
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={bulkBusy}
+                className="h-8"
+                onClick={() => setConfirmingBulk('ARCHIVE')}
+              >
+                <Archive className="size-3.5" aria-hidden="true" />
+                Archivar
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={bulkBusy}
+                className="h-8 border-destructive/30 text-destructive hover:bg-destructive/10"
+                onClick={() => setConfirmingBulk('DELETE')}
+              >
+                <Trash2 className="size-3.5" aria-hidden="true" />
+                Eliminar
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-8"
+                onClick={() => setSelectedIds(new Set())}
+              >
+                Quitar selección
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       {visible.length === 0 ? (
         <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
           Ningún requisito coincide con la búsqueda o los filtros.
@@ -795,6 +952,10 @@ export function RequirementList({
                     approving={approvingId === r.id}
                     nameOf={nameOf}
                     actions={{ ...actions, confirmArchive: () => setArchiving(r) }}
+                    selected={selectedIds.has(r.id)}
+                    onSelect={
+                      actions.bulk ? (checked) => toggleSelected([r.id], checked) : undefined
+                    }
                   />
                 ))}
               </ul>
@@ -843,6 +1004,39 @@ export function RequirementList({
             </Button>
           </div>
         </nav>
+      ) : null}
+
+      {confirmingBulk ? (
+        <Dialog open onOpenChange={(o) => (o ? null : setConfirmingBulk(null))}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{BULK_CONFIRM[confirmingBulk].title}</DialogTitle>
+              <DialogDescription>{BULK_CONFIRM[confirmingBulk].description}</DialogDescription>
+            </DialogHeader>
+            <p className="text-sm text-foreground">
+              {selection.length} {selection.length === 1 ? 'requisito' : 'requisitos'}:{' '}
+              {items
+                .filter((r) => selectedIds.has(r.id))
+                .slice(0, 8)
+                .map((r) => r.code)
+                .join(', ')}
+              {selection.length > 8 ? '…' : ''}
+            </p>
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={() => setConfirmingBulk(null)}>
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                variant={confirmingBulk === 'DELETE' ? 'destructive' : 'default'}
+                disabled={bulkBusy}
+                onClick={() => runBulk(confirmingBulk)}
+              >
+                {bulkBusy ? BULK_CONFIRM[confirmingBulk].busy : BULK_CONFIRM[confirmingBulk].button}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       ) : null}
 
       {archiving ? (

@@ -2,7 +2,7 @@
 
 import { RequirementGenerationPanel } from '../../components/requirement-generation-panel';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { RequirementResponse } from '@caseflow-ai/contracts';
+import type { RequirementBulkAction, RequirementResponse } from '@caseflow-ai/contracts';
 import { ChevronDown, Download, ExternalLink, FileDown, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -122,6 +122,29 @@ function RequirementsContent({ projectId }: { projectId: string }) {
       invalidate();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'No se pudo archivar.');
+      throw err;
+    }
+  }
+
+  // DEC-138: the whole batch or none of it; the reason comes from the server.
+  async function bulk(action: RequirementBulkAction, ids: string[]) {
+    try {
+      const { affected, skipped } = await api.requirements.bulk(projectId, action, ids);
+      const done = {
+        APPROVE: affected === 1 ? 'requisito aprobado' : 'requisitos aprobados',
+        ARCHIVE: affected === 1 ? 'requisito archivado' : 'requisitos archivados',
+        DELETE: affected === 1 ? 'requisito eliminado' : 'requisitos eliminados',
+      }[action];
+      toast.success(`${affected} ${done}.`);
+      if (skipped)
+        toast.info(
+          action === 'APPROVE'
+            ? `${skipped} ya estaban aprobados o archivados y no se tocaron.`
+            : `${skipped} ya estaban archivados.`,
+        );
+      invalidate();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo aplicar la acción.');
       throw err;
     }
   }
@@ -300,6 +323,7 @@ function RequirementsContent({ projectId }: { projectId: string }) {
                 setEditing(r);
               },
               archive,
+              bulk,
             }}
           />
         )}

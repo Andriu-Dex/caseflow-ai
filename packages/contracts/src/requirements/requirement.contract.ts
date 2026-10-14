@@ -1,5 +1,26 @@
 import { z } from 'zod';
 export const REQUIREMENT_TYPES = ['FUNCTIONAL', 'NON_FUNCTIONAL'] as const;
+
+// DEC-138: one action over several requirements, all of them or none.
+export const REQUIREMENT_BULK_ACTIONS = ['APPROVE', 'ARCHIVE', 'DELETE'] as const;
+export type RequirementBulkAction = (typeof REQUIREMENT_BULK_ACTIONS)[number];
+export const requirementBulkRequestSchema = z
+  .object({
+    action: z.enum(REQUIREMENT_BULK_ACTIONS),
+    requirementIds: z
+      .array(z.uuid())
+      .min(1)
+      .max(500)
+      .refine((ids) => new Set(ids).size === ids.length, 'Los requisitos no pueden repetirse.'),
+  })
+  .strict();
+export const requirementBulkResponseSchema = z.object({
+  // Requirements the action changed, and those it left as they were
+  // (already approved or already archived).
+  affected: z.number().int().min(0),
+  skipped: z.number().int().min(0),
+});
+export type RequirementBulkResponse = z.infer<typeof requirementBulkResponseSchema>;
 export type RequirementType = (typeof REQUIREMENT_TYPES)[number];
 export const REQUIREMENT_PRIORITIES = ['HIGH', 'MEDIUM', 'LOW'] as const;
 export type RequirementPriority = (typeof REQUIREMENT_PRIORITIES)[number];

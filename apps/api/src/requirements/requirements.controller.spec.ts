@@ -16,11 +16,15 @@ describe('RequirementsController', () => {
     const documents = { generate: vi.fn().mockResolvedValue(Buffer.from('document')) };
     for (const fn of Object.values(s)) fn.mockResolvedValue({});
     const jobs = { start: vi.fn(), latest: vi.fn(), get: vi.fn() };
+    const bulk = { apply: vi.fn().mockResolvedValue({ affected: 1, skipped: 0 }) };
     const c = new RequirementsController(
       s as unknown as RequirementsService,
       documents as never,
       jobs as never,
+      bulk as never,
     );
+    await c.bulk('p', { action: 'ARCHIVE', requirementIds: ['r'] }, { user: { id: 'u' } });
+    expect(bulk.apply).toHaveBeenCalledWith('p', 'ARCHIVE', ['r'], 'u');
     await c.startGeneration('p', { sourceContextVersionId: 'v' }, { user: { id: 'u' } });
     await c.latestGeneration('p');
     await c.generationJob('p', 'j');
