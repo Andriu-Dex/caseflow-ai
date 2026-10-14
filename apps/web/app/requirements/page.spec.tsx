@@ -188,12 +188,45 @@ describe('Requirements list', () => {
     await waitFor(() => expect(mocks.archive).toHaveBeenCalledWith('p1', 'r2'));
   });
 
-  it('opens a row from its menu too', async () => {
+  // The row itself opens; its menu no longer repeats it as "Ver detalle".
+  it('opens a row by clicking it, not from its menu', async () => {
     const user = userEvent.setup();
     renderPage();
     const row = (await screen.findByText('Exportar a Excel')).closest('li')!;
     await user.click(within(row).getByRole('button', { name: 'Más acciones de RF-002' }));
-    await user.click(await screen.findByRole('menuitem', { name: 'Ver detalle' }));
+    await screen.findByRole('menuitem', { name: 'Editar' });
+    expect(screen.queryByRole('menuitem', { name: 'Ver detalle' })).toBeNull();
+    await user.keyboard('{Escape}');
+    await user.click(within(row).getByText('Exportar a Excel'));
     expect(screen.getByText('Descripción de Exportar a Excel')).toBeInTheDocument();
+  });
+
+  // DEC-138: a long list is paged, functional requirements first.
+  it('pages a long list and starts again on the first page when filtering', async () => {
+    mocks.list.mockResolvedValue({
+      items: [
+        ...Array.from({ length: 20 }, (_, i) =>
+          requirement(`f${i}`, `RF-${String(i + 1).padStart(3, '0')}`, `Funcional ${i + 1}`, {}),
+        ),
+        ...Array.from({ length: 10 }, (_, i) =>
+          requirement(`n${i}`, `RNF-${String(i + 1).padStart(3, '0')}`, `Calidad ${i + 1}`, {
+            type: 'NON_FUNCTIONAL',
+          }),
+        ),
+      ],
+    });
+    const user = userEvent.setup();
+    renderPage();
+    expect(await screen.findByText('Funcional 1')).toBeInTheDocument();
+    expect(screen.getByText('Página 1 de 2')).toBeInTheDocument();
+    expect(screen.getByText('Calidad 5')).toBeInTheDocument();
+    expect(screen.queryByText('Calidad 6')).toBeNull();
+    await user.click(screen.getByRole('button', { name: /Siguiente/ }));
+    expect(screen.getByText('Calidad 6')).toBeInTheDocument();
+    expect(screen.queryByText('Funcional 1')).toBeNull();
+    await user.selectOptions(screen.getByLabelText('Tipo'), 'NON_FUNCTIONAL');
+    expect(screen.getByText('Calidad 1')).toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Paginación de requisitos' })).toBeNull();
+    expect(screen.getByRole('option', { name: 'No funcionales (10)' })).toBeInTheDocument();
   });
 });
