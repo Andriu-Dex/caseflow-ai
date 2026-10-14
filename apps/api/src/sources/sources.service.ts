@@ -26,7 +26,11 @@ import {
   type SourceFailureReason,
   type SourceMetadataInput,
   type SourceReportContent,
+  type SourceListResponse,
+  type SourceResponse,
+  type listSourcesQuerySchema,
 } from '@caseflow-ai/contracts';
+import type { z } from 'zod';
 import { PrismaService } from '../database/prisma.service';
 import { getProjectLanguage } from '../projects/project-language';
 import type { Prisma } from '../generated/prisma/client';
@@ -289,6 +293,45 @@ export class SourcesService implements OnApplicationBootstrap {
     return {
       items: rows.map((row) => this.map(row, row.versions[0]!, approvedArtifactIds.has(row.id))),
     };
+  }
+
+  // DEC-137: the Sources page's filters and pages. A project holds tens of
+  // sources, so they are filtered here over the complete list.
+  // ponytail: in memory; move the filters into the query if projects ever
+  // hold thousands of sources.
+  async search(
+    projectId: string,
+    query: z.output<typeof listSourcesQuerySchema>,
+  ): Promise<SourceListResponse> {
+    // map() types statuses loosely; they are the contract's values.
+    const items = (await this.list(projectId)).items as SourceResponse[];
+    const fold = (value: string) =>
+      value
+        .normalize('NFD')
+        .replace(/\p{Diacritic}/gu, '')
+        .toLowerCase();
+    const term = query.search ? fold(query.search) : '';
+    const archived = items.filter((item) => item.archivedAt).length;
+    const counts = { ACTIVE: items.length - archived, ARCHIVED: archived, ALL: items.length };
+    const matching = items.filter(
+      (item) =>
+        (query.status === 'ALL' || Boolean(item.archivedAt) === (query.status === 'ARCHIVED')) &&
+        (!query.versionStatus || item.version.status === query.versionStatus) &&
+        (!query.kind || item.source.sourceKind === query.kind) &&
+        (!term || fold(`${item.code} ${item.source.title}`).includes(term)),
+    );
+    const by: Record<typeof query.sort, (a: SourceResponse, b: SourceResponse) => number> = {
+      CODE: (a, b) => a.code.localeCompare(b.code, 'es', { numeric: true }),
+      TITLE: (a, b) => a.source.title.localeCompare(b.source.title, 'es'),
+      RECENT: (a, b) => b.createdAt.localeCompare(a.createdAt),
+      UPDATED: (a, b) => b.version.createdAt.localeCompare(a.version.createdAt),
+    };
+    matching.sort(by[query.sort]);
+    const page =
+      query.limit === undefined
+        ? matching.slice(query.offset)
+        : matching.slice(query.offset, query.offset + query.limit);
+    return { items: page, total: matching.length, counts };
   }
 
   async get(projectId: string, id: string) {

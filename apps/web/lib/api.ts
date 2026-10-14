@@ -33,6 +33,8 @@ import type {
   SourceReportJob,
   SourceReportResponse,
   SourceResponse,
+  SourceListResponse,
+  ListSourcesQuery,
   StalenessAnalysisResponse,
   StructuredAnalysisKind,
   WorkflowRoute,
@@ -396,7 +398,15 @@ export const api = {
       `${BASE_URL}/projects/${projectId}/traceability/diagram/png`,
   },
   sources: {
-    list: (projectId: string) => get<{ items: SourceResponse[] }>(`/projects/${projectId}/sources`),
+    // Without filters, every source of the project (DEC-137).
+    list: (projectId: string, filters: ListSourcesQuery = {}) => {
+      const query = new URLSearchParams(
+        Object.entries(filters).flatMap(([key, value]) =>
+          value === undefined || value === '' ? [] : [[key, String(value)]],
+        ),
+      ).toString();
+      return get<SourceListResponse>(`/projects/${projectId}/sources${query ? `?${query}` : ''}`);
+    },
     get: (projectId: string, sourceId: string) =>
       get<SourceResponse>(`/projects/${projectId}/sources/${sourceId}`),
     getText: (projectId: string, sourceId: string) =>
@@ -431,6 +441,8 @@ export const api = {
       del<void>(`/projects/${projectId}/sources/${sourceId}`),
     archive: (projectId: string, sourceId: string) =>
       post<SourceResponse>(`/projects/${projectId}/sources/${sourceId}/archive`),
+    restore: (projectId: string, sourceId: string) =>
+      post<SourceResponse>(`/projects/${projectId}/sources/${sourceId}/unarchive`),
     submitManualTranscript: (projectId: string, sourceId: string, transcript: string) =>
       post<SourceResponse>(`/projects/${projectId}/sources/${sourceId}/manual-transcript`, {
         transcript,
