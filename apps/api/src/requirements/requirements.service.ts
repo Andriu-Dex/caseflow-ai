@@ -434,7 +434,7 @@ export class RequirementsService {
         position,
         requirementBatchOutputSchema,
         'requirements.generate',
-        5,
+        6,
         input,
         (data, runId) => {
           if (position !== plan.length - 1 && data.suggestions.length)
