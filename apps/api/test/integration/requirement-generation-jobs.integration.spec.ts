@@ -163,7 +163,7 @@ describe('Batched requirement generation jobs', () => {
       select: { promptVersion: true },
       distinct: ['promptVersion'],
     });
-    expect(versions.map((run) => run.promptVersion)).toEqual([5]);
+    expect(versions.map((run) => run.promptVersion)).toEqual([6]);
     const ids = generation.candidates.map((candidate) => candidate.id);
     const accepted = await request(ctx.app.getHttpServer())
       .post(`/projects/${projectId}/requirements/generations/${generation.id}/accept`)
