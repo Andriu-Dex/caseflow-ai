@@ -269,18 +269,20 @@ function RequirementPicker({
       <ul className="flex max-h-56 flex-col divide-y divide-border overflow-y-auto rounded-md border border-border">
         {visible.map((r) => (
           <li key={r.id}>
-            <label className="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-muted/40">
+            <label className="flex cursor-pointer items-start gap-2.5 px-3 py-2 text-sm hover:bg-muted/40 transition-colors">
               <input
                 type="checkbox"
-                className="size-4 shrink-0 accent-primary"
+                className="mt-0.5 size-4 shrink-0 accent-primary"
                 checked={selected.includes(r.version.id)}
                 onChange={() => toggle(r.version.id)}
                 aria-label={`${r.code} ${r.requirement.name}`}
               />
-              <span className="font-mono text-xs font-semibold text-muted-foreground">
-                {r.code}
+              <span className="flex min-w-0 flex-1 items-baseline gap-2">
+                <span className="shrink-0 font-mono text-sm font-semibold text-muted-foreground">
+                  {r.code}
+                </span>
+                <span className="text-foreground/90">{r.requirement.name}</span>
               </span>
-              <span className="text-foreground/90">{r.requirement.name}</span>
             </label>
           </li>
         ))}

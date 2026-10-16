@@ -121,39 +121,34 @@ export function StageOutdatedBanner({ stage, projectId }: { stage: string; proje
             </p>
           </div>
 
-          <DialogFooter className="-mx-6 -mb-6 mt-1 flex items-center justify-between gap-3 border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10 w-[calc(100%+3rem)]">
-            <p className="text-[11px] text-muted-foreground/70 hidden sm:block truncate">
-              Presione Esc para cancelar
-            </p>
-            <div className="flex items-center gap-2 shrink-0 ml-auto">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={busy}
-                onClick={() => setOpen(false)}
-                className="border-border/80 hover:bg-muted font-medium"
-              >
-                Cancelar
-              </Button>
-              <Button
-                type="button"
-                disabled={busy}
-                onClick={confirm}
-                className="gap-2 font-medium shadow-xs bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-600 dark:hover:bg-emerald-500"
-              >
-                {busy ? (
-                  <>
-                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                    Guardando…
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="size-4" aria-hidden="true" />
-                    Confirmar vigencia
-                  </>
-                )}
-              </Button>
-            </div>
+          <DialogFooter className="-mx-6 -mb-6 mt-1 flex items-center justify-end gap-2 border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10 w-[calc(100%+3rem)]">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() => setOpen(false)}
+              className="border-border/80 hover:bg-muted font-medium"
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={busy}
+              onClick={confirm}
+              className="gap-2 font-medium shadow-xs bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-600 dark:hover:bg-emerald-500"
+            >
+              {busy ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Guardando…
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="size-4" aria-hidden="true" />
+                  Confirmar vigencia
+                </>
+              )}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
