@@ -169,6 +169,36 @@ describe('DiagramViewer — highlighting connections', () => {
     expect(screen.queryByRole('button', { name: 'Quitar resaltado' })).not.toBeInTheDocument();
   });
 
+  it('can show only the connections of the kept element, and everything again after', () => {
+    const { el } = setup();
+    fireEvent.pointerDown(el('ent1'), { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(el('ent1'), { clientX: 10, clientY: 10 });
+    fireEvent.click(screen.getByRole('button', { name: 'Aislar' }));
+    // ent1 — ent2 stay; ent3 and the line to it are gone, not just faded.
+    expect(el('ent3').style.display).toBe('none');
+    expect(el('l2').style.display).toBe('none');
+    expect(el('ent2').style.display).toBe('');
+    expect(el('l1').style.display).toBe('');
+    expect(screen.getByRole('button', { name: 'Mostrar todo' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar todo' }));
+    expect(el('ent3').style.display).toBe('');
+    expect(el('ent3').style.opacity).toBe('0.15');
+  });
+
+  it('leaves the isolated view when the highlight is dropped', () => {
+    const { viewport, el } = setup();
+    fireEvent.pointerDown(el('ent1'), { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(el('ent1'), { clientX: 10, clientY: 10 });
+    fireEvent.click(screen.getByRole('button', { name: 'Aislar' }));
+    fireEvent.pointerDown(viewport, { button: 0, clientX: 5, clientY: 5 });
+    fireEvent.pointerUp(viewport, { clientX: 5, clientY: 5 });
+    expect(el('ent3').style.display).toBe('');
+    expect(screen.queryByRole('button', { name: 'Aislar' })).not.toBeInTheDocument();
+  });
+
   it('does not take a drag for a click', () => {
     const { el } = setup();
     fireEvent.pointerDown(el('ent1'), { button: 0, clientX: 10, clientY: 10 });

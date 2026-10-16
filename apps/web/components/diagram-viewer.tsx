@@ -36,6 +36,8 @@ function ZoomControls({
   zoom,
   moved,
   pinned,
+  isolated,
+  onToggleIsolate,
   interactive,
   onZoomOut,
   onZoomIn,
@@ -46,6 +48,8 @@ function ZoomControls({
   zoom: number;
   moved: boolean;
   pinned: boolean;
+  isolated: boolean;
+  onToggleIsolate: () => void;
   interactive: boolean;
   onZoomOut: () => void;
   onZoomIn: () => void;
@@ -98,6 +102,18 @@ function ZoomControls({
       {pinned ? (
         <Button
           type="button"
+          variant={isolated ? 'secondary' : 'ghost'}
+          size="sm"
+          className={small}
+          aria-pressed={isolated}
+          onClick={onToggleIsolate}
+        >
+          {isolated ? 'Mostrar todo' : 'Aislar'}
+        </Button>
+      ) : null}
+      {pinned ? (
+        <Button
+          type="button"
           variant={floating ? 'secondary' : 'ghost'}
           size="sm"
           className={small}
@@ -136,6 +152,13 @@ function ZoomableDiagram({
   const [interactive, setInteractive] = useState(false);
   const [hovered, setHovered] = useState<string | null>(null);
   const [pinned, setPinned] = useState<string | null>(null);
+  // With an element kept, hide everything not connected to it instead of fading.
+  const [isolated, setIsolated] = useState(false);
+  const isolate = isolated && pinned !== null;
+  // Dropping the highlight, however it happens, leaves the isolated view too.
+  useEffect(() => {
+    if (pinned === null) setIsolated(false);
+  }, [pinned]);
   const press = useRef<{ x: number; y: number; entity: string | null } | null>(null);
   const focus = pinned ?? hovered;
 
@@ -143,6 +166,7 @@ function ZoomableDiagram({
     setInteractive(!!contentRef.current && !!readGraph(contentRef.current));
     setHovered(null);
     setPinned(null);
+    setIsolated(false);
   }, [svg]);
 
   useEffect(() => {
@@ -153,9 +177,15 @@ function ZoomableDiagram({
     const line = (el: SVGElement) =>
       el.tagName.toLowerCase() === 'path' ? el : el.querySelector<SVGElement>('path');
     const clear = () => {
-      graph.nodes.forEach(({ el }) => (el.style.opacity = ''));
+      graph.nodes.forEach(({ el }) => {
+        el.style.opacity = '';
+        el.style.display = '';
+      });
       graph.links.forEach(({ els }) => {
-        els.forEach((el) => (el.style.opacity = ''));
+        els.forEach((el) => {
+          el.style.opacity = '';
+          el.style.display = '';
+        });
         const path = line(els[0]!);
         if (path) path.style.strokeWidth = '';
       });
@@ -170,16 +200,64 @@ function ZoomableDiagram({
       link.keys.forEach((key) => near.add(key));
     });
     graph.nodes.forEach(({ key, el }) => {
-      el.style.opacity = near.has(key) ? '' : FADED_ENTITY;
+      if (near.has(key)) return;
+      if (isolate) el.style.display = 'none';
+      else el.style.opacity = FADED_ENTITY;
     });
     graph.links.forEach(({ els }) => {
       const on = touching.has(els);
-      els.forEach((el) => (el.style.opacity = on ? '' : FADED_LINK));
+      if (!on)
+        els.forEach((el) => {
+          if (isolate) el.style.display = 'none';
+          else el.style.opacity = FADED_LINK;
+        });
       const path = line(els[0]!);
       if (path && on) path.style.strokeWidth = '2.5px';
     });
     return clear;
-  }, [focus, interactive, svg]);
+  }, [focus, interactive, isolate, svg]);
+
+  // Once only the connections are left, bring them into view: zoom and move
+  // the diagram so they fill the box.
+  useEffect(() => {
+    const content = contentRef.current;
+    const box = containerRef.current;
+    if (!isolate || !content || !box) return;
+    const graph = readGraph(content);
+    if (!graph) return;
+    const shown = graph.nodes.filter(({ el }) => el.style.display !== 'none');
+    if (!shown.length) return;
+    let left = Infinity;
+    let top = Infinity;
+    let right = -Infinity;
+    let bottom = -Infinity;
+    for (const { el } of shown) {
+      const rect = el.getBoundingClientRect();
+      left = Math.min(left, rect.left);
+      top = Math.min(top, rect.top);
+      right = Math.max(right, rect.right);
+      bottom = Math.max(bottom, rect.bottom);
+    }
+    if (!(right - left > 0 && bottom - top > 0)) return;
+    // The wrapper's rectangle already includes the current move and zoom.
+    const origin = content.getBoundingClientRect();
+    const scale = zoomRef.current;
+    const x = (left - origin.left) / scale;
+    const y = (top - origin.top) / scale;
+    const width = (right - left) / scale;
+    const height = (bottom - top) / scale;
+    const roomX = box.clientWidth - 2 * BOX_PADDING;
+    const roomY = box.clientHeight - 2 * BOX_PADDING;
+    const next = Math.min(
+      MAX_ZOOM,
+      Math.max(MIN_ZOOM, Math.min(roomX / width, roomY / height) * 0.95),
+    );
+    setZoom(next);
+    setOffset({
+      x: -x * next + (roomX - width * next) / 2,
+      y: -y * next + (roomY - height * next) / 2,
+    });
+  }, [isolate, pinned]);
   const dragStart = useRef<{ x: number; y: number; offsetX: number; offsetY: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -286,6 +364,8 @@ function ZoomableDiagram({
         zoom={zoom}
         moved={offset.x !== 0 || offset.y !== 0}
         pinned={pinned !== null}
+        isolated={isolate}
+        onToggleIsolate={() => setIsolated((current) => !current)}
         interactive={interactive}
         onZoomOut={() => {
           const next = Math.max(MIN_ZOOM, zoom - ZOOM_STEP);
@@ -297,7 +377,10 @@ function ZoomableDiagram({
           setZoom(1);
           setOffset({ x: 0, y: 0 });
         }}
-        onUnpin={() => setPinned(null)}
+        onUnpin={() => {
+          setPinned(null);
+          setIsolated(false);
+        }}
       />
     </div>
   );
