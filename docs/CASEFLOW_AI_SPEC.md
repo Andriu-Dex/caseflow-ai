@@ -7259,6 +7259,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-136 | Al aprobar un cambio se revisan en orden los pasos posteriores; el primero pendiente puede rehacerse o confirmarse vigente con auditoría. Los pendientes bloquean congelar diseño y construir (§221.17, ADR-010) | Accepted |
 | DEC-137 | Fuentes: reemplazar el archivo crea la versión siguiente de la misma fuente; una fuente archivada se puede restaurar; archivar o restaurar algo con historial aprobado cuenta como cambio de su paso; la lista se filtra y pagina, con las archivadas ocultas por defecto (§221.18) | Accepted |
 | DEC-138 | Requisitos: la lista se pagina de 25 en 25 y admite aprobar, archivar o eliminar varios a la vez (todos o ninguno; eliminar solo los nunca aprobados y sin referencias); las restricciones transversales se cubren con su propio requisito no funcional (prompt `requirements.generate@5`) y las prioridades se reparten con criterios explícitos (`@6`); el diagrama de clases y el modelo conceptual no esperan citar requisitos no funcionales (§221.19) | Accepted |
+| DEC-139 | Casos de uso: la generación con IA se hace por lotes en segundo plano (seis requisitos funcionales por lote, los no funcionales como contexto compartido, los casos ya propuestos como contexto de cada lote), con avance visible, un punto de control por lote y reanudación; admite más de 50 requisitos y más de 20 propuestas (§221.20) | Accepted |
 
 ---
 
@@ -7695,7 +7696,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-138)
+# 221. Extensiones de V2 (DEC-116 a DEC-139)
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
@@ -7894,6 +7895,16 @@ El servidor bloquea congelar diseño y construir mientras quedan pasos por rehac
 - **Aviso previo en la selección:** si la selección incluye elementos cuya versión vigente ya está aprobada, «Eliminar» queda desactivado (con `aria-disabled`, para que siga recibiendo foco) y un aviso explica que solo se pueden archivar; «Aprobar» se desactiva si todos ya están aprobados. El servidor sigue siendo la barrera real y rechaza también lo que solo él ve (dependencias, casos de uso que lo usan, versiones aprobadas anteriores).
 - **Restricciones transversales:** el prompt por lotes `requirements.generate@5` cubre una restricción o regla que aplica a todo el sistema (autorización, auditoría, alcance, disponibilidad) con su propio requisito no funcional, en lugar de adjuntarla a cada requisito funcional; las actualizaciones de cobertura quedan para reglas específicas de una propuesta. Los no funcionales llevan actores solo si la condición se refiere a ellos. `@6` añade criterios de prioridad: HIGH solo si el sistema no cumple su propósito sin ese requisito o lo exige una restricción obligatoria, MEDIUM para lo importante pero aplazable y LOW para mejoras; la mayoría debe quedar en MEDIUM. `@4` y `@5` se conservan para auditoría.
 - **Procedencia en diseño:** en el diagrama de clases y el modelo conceptual, no citar un requisito no funcional no genera aviso. El aviso de fuente sin cubrir dice: «Ningún elemento de la propuesta proviene de {código}. Revise si debería incluir algo de esa fuente».
+
+## 221.20 Generación de casos de uso por lotes (DEC-139)
+
+- **Por qué:** una sola llamada limitaba la selección a 50 requisitos y la respuesta a 20 propuestas, insuficiente para un proyecto con cien requisitos funcionales.
+- **Trabajo en segundo plano:** `POST …/use-cases/generation-jobs` (202) recibe hasta 500 `requirementVersionIds` de versiones aprobadas del proyecto; `GET …/generation-jobs/latest` y `GET …/generation-jobs/:jobId` informan el avance (`completedBatches`, `totalBatches`). Solo hay un trabajo activo por proyecto. Un reinicio del servidor deja el trabajo en fallido, no colgado. Se audita (`USE_CASE_GENERATION_STARTED`, `USE_CASE_GENERATION_FINISHED`).
+- **Lotes:** los requisitos funcionales, en orden de código, se reparten de seis en seis; los no funcionales de la selección van a todos los lotes como contexto (condiciones para precondiciones y flujos, no origen de casos de uso). Si solo se eligieron no funcionales, ellos son el objetivo. Cada lote recibe también los casos ya propuestos (nombre, actor, requisitos) y puede relacionar los suyos con ellos mediante INCLUDE o EXTEND. Prompt `use-cases.generate@3`; `@2` se conserva para la generación directa.
+- **Validación por lote:** el resultado pasa por el esquema y por reglas de dominio antes de guardarse. Cada propuesta cita solo requisitos suministrados y al menos uno del lote; las relaciones deben apuntar a un caso del mismo lote o de uno anterior; una propuesta con el mismo nombre que otra ya existente no se duplica: sus requisitos se suman a la existente y las relaciones hacia ella la siguen; las relaciones consigo mismas o repetidas se descartan.
+- **Reanudación:** cada lote validado queda guardado (`use_case_generation_parts`). Si el trabajo falla, volver a generar con la misma selección continúa desde el último lote terminado y no repite los anteriores; con otra selección empieza uno nuevo. Nada se publica hasta que todos los lotes terminan: entonces se crea una única generación con todas las propuestas.
+- **Revisión y aceptación:** las propuestas se entregan para revisión humana como antes, y se pueden aceptar más de 20 a la vez (hasta 500). Las rutas automáticas (`EXPRESS` y `BUILD_ONLY`) usan el mismo proceso por lotes.
+- **Límite conocido:** un caso propuesto en un lote solo puede relacionarse con casos de lotes anteriores o del mismo lote, no con los de lotes posteriores.
 
 ## 221.4 Fuera de alcance de estas extensiones
 

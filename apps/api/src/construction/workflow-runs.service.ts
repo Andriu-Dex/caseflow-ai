@@ -395,7 +395,7 @@ export class WorkflowRunsService {
       case 'USE_CASES': {
         const requirements = await this.versionIds(pid, 'REQUIREMENT');
         return this.produce(ctx, 'USE_CASE', async () => {
-          const generation = await this.useCases.generate(pid, requirements);
+          const generation = await this.useCases.generateInBatches(pid, requirements);
           await this.useCases.accept(
             pid,
             generation.id,

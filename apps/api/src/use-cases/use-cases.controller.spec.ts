@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { UseCasesController } from './use-cases.controller';
 import type { UseCasesService } from './use-cases.service';
 import type { UseCaseBulkService } from './use-case-bulk.service';
+import type { UseCaseGenerationJobsService } from './use-case-generation-jobs.service';
 describe('UseCasesController', () => {
   it('delegates semantic routes', async () => {
     const service = Object.fromEntries(
@@ -20,6 +21,7 @@ describe('UseCasesController', () => {
     const controller = new UseCasesController(
       service as unknown as UseCasesService,
       {} as UseCaseBulkService,
+      {} as UseCaseGenerationJobsService,
     );
     const body = {
       name: 'N',

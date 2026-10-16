@@ -11,16 +11,19 @@ import {
   useCaseAcademicValidationResponseSchema,
   useCaseBulkRequestSchema,
   useCaseBulkResponseSchema,
+  startUseCaseGenerationRequestSchema,
+  useCaseGenerationJobSchema,
   useCaseInputSchema,
   useCaseListResponseSchema,
   useCaseResponseSchema,
 } from '@caseflow-ai/contracts';
-import type { z } from 'zod';
+import { z } from 'zod';
 import { uuidParamPipe } from '../common/uuid-param.pipe';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ApiUuidParam, ApiZodBody, ApiZodResponse } from '../openapi/zod-openapi';
 import { UseCasesService } from './use-cases.service';
 import { UseCaseBulkService } from './use-case-bulk.service';
+import { UseCaseGenerationJobsService } from './use-case-generation-jobs.service';
 @ApiTags('use-cases')
 @UseGuards(JwtAuthGuard, ProjectMembershipGuard)
 @Controller('projects/:projectId/use-cases')
@@ -28,6 +31,7 @@ export class UseCasesController {
   constructor(
     private readonly service: UseCasesService,
     private readonly bulkActions: UseCaseBulkService,
+    private readonly jobs: UseCaseGenerationJobsService,
   ) {}
   @Post()
   @ApiOperation({ operationId: 'createUseCase', summary: 'Crear caso de uso manual' })
@@ -105,6 +109,47 @@ export class UseCasesController {
     @Request() request: { user: { id: string } },
   ) {
     return this.bulkActions.apply(p, body.action, body.useCaseIds, request.user.id);
+  }
+  @Post('generation-jobs')
+  @HttpCode(202)
+  @ApiOperation({
+    operationId: 'startUseCaseGeneration',
+    summary: 'Generar casos de uso por lotes en segundo plano',
+  })
+  @ApiZodBody(startUseCaseGenerationRequestSchema)
+  @ApiZodResponse(202, 'Use case generation job.', useCaseGenerationJobSchema)
+  startGeneration(
+    @Param('projectId', uuidParamPipe) p: string,
+    @Body(new ZodValidationPipe(startUseCaseGenerationRequestSchema))
+    body: z.output<typeof startUseCaseGenerationRequestSchema>,
+    @Request() request: { user: { id: string } },
+  ) {
+    return this.jobs.start(p, body.requirementVersionIds, request.user.id);
+  }
+  @Get('generation-jobs/latest')
+  @ApiOperation({
+    operationId: 'getLatestUseCaseGeneration',
+    summary: 'Consultar el último trabajo de casos de uso',
+  })
+  @ApiZodResponse(
+    200,
+    'Latest use case generation job.',
+    z.object({ job: useCaseGenerationJobSchema.nullable() }),
+  )
+  latestGeneration(@Param('projectId', uuidParamPipe) p: string) {
+    return this.jobs.latest(p);
+  }
+  @Get('generation-jobs/:jobId')
+  @ApiOperation({
+    operationId: 'getUseCaseGenerationJob',
+    summary: 'Consultar avance de un trabajo de casos de uso',
+  })
+  @ApiZodResponse(200, 'Use case generation job.', useCaseGenerationJobSchema)
+  generationJob(
+    @Param('projectId', uuidParamPipe) p: string,
+    @Param('jobId', uuidParamPipe) jobId: string,
+  ) {
+    return this.jobs.get(p, jobId);
   }
   @Get(':useCaseId')
   @ApiOperation({ operationId: 'getUseCase', summary: 'Consultar caso de uso' })

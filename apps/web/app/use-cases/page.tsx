@@ -1,6 +1,6 @@
 'use client';
 
-import { GenerationOverlay } from '../../components/generation-overlay';
+import { UseCaseGenerationPanel } from '../../components/use-case-generation-panel';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   RequirementResponse,
@@ -148,7 +148,6 @@ function UseCasesContent({ projectId }: { projectId: string }) {
   const [generation, setGeneration] = useState<GenerationResult | null>(null);
   const [showManualForm, setShowManualForm] = useState(false);
   const [editing, setEditing] = useState<UseCaseResponse | null>(null);
-  const [generating, setGenerating] = useState(false);
   const [generatingDiagram, setGeneratingDiagram] = useState(false);
   const [approvingId, setApprovingId] = useState<string | null>(null);
 
@@ -164,23 +163,6 @@ function UseCasesContent({ projectId }: { projectId: string }) {
     queryClient.invalidateQueries({ queryKey: ['use-cases', projectId] });
     queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
     queryClient.invalidateQueries({ queryKey: ['staleness', projectId] });
-  }
-
-  async function generate() {
-    if (!selectedRequirements.length) {
-      toast.info('Seleccione al menos un requisito aprobado para generar casos de uso.');
-      return;
-    }
-    setGenerating(true);
-    try {
-      setGeneration(await api.useCases.generate(projectId, selectedRequirements));
-    } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : 'No se pudieron generar los casos de uso.',
-      );
-    } finally {
-      setGenerating(false);
-    }
   }
 
   const transitionFor = (u: UseCaseResponse) => (status: ArtifactVersionStatus) =>
@@ -324,18 +306,11 @@ function UseCasesContent({ projectId }: { projectId: string }) {
                 onChange={setSelected}
               />
             )}
-            <Button
-              type="button"
-              className="self-start"
-              disabled={generating || selectedRequirements.length === 0}
-              onClick={generate}
-            >
-              <Sparkles className="size-4" aria-hidden="true" />
-              {generating
-                ? 'Generando…'
-                : `Generar con ${selectedRequirements.length} ${selectedRequirements.length === 1 ? 'requisito' : 'requisitos'}`}
-            </Button>
-            <GenerationOverlay open={generating} />
+            <UseCaseGenerationPanel
+              projectId={projectId}
+              requirementVersionIds={selectedRequirements}
+              onCompleted={setGeneration}
+            />
           </div>
         ) : null}
 
