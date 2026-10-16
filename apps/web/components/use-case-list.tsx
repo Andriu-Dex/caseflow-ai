@@ -576,6 +576,7 @@ export function UseCaseList({
                 size="sm"
                 disabled={bulkBusy}
                 aria-disabled={guards.approveBlocked}
+                title={guards.approveBlocked ? (guards.hint ?? undefined) : undefined}
                 aria-describedby={guards.hint ? 'bulk-hint' : undefined}
                 className={`h-8 bg-emerald-600 text-white hover:bg-emerald-700 ${
                   guards.approveBlocked ? 'cursor-not-allowed opacity-50 hover:bg-emerald-600' : ''
@@ -602,6 +603,7 @@ export function UseCaseList({
                 variant="outline"
                 disabled={bulkBusy}
                 aria-disabled={guards.deleteBlocked}
+                title={guards.deleteBlocked ? (guards.hint ?? undefined) : undefined}
                 aria-describedby={guards.hint ? 'bulk-hint' : undefined}
                 className={`h-8 border-destructive/30 text-destructive hover:bg-destructive/10 ${
                   guards.deleteBlocked ? 'cursor-not-allowed opacity-50 hover:bg-transparent' : ''

@@ -260,6 +260,11 @@ describe('Requirements list', () => {
     expect(toolbar().getByRole('status')).toHaveTextContent(
       '1 de 2 seleccionados ya está aprobado',
     );
+    expect(toolbar().getByRole('button', { name: 'Eliminar' })).toHaveAttribute(
+      'title',
+      expect.stringContaining('solo se puede archivar'),
+    );
+    expect(toolbar().getByRole('button', { name: 'Archivar' })).not.toHaveAttribute('title');
     await user.click(toolbar().getByRole('button', { name: 'Eliminar' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(mocks.bulk).not.toHaveBeenCalled();
