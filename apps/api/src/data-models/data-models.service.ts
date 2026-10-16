@@ -21,6 +21,12 @@ import {
 import { provenanceGuard, sourceStatuses } from '../projects/source-statuses';
 import { PrismaService } from '../database/prisma.service';
 import { getProjectLanguage } from '../projects/project-language';
+import {
+  fitToBudget,
+  requirementLevels,
+  useCaseLevels,
+  type BudgetItem,
+} from '../common/source-budget';
 import type { DiagramKind, DiagramSourceFormat, Prisma } from '../generated/prisma/client';
 import { DiagramEngine } from './diagram-engine';
 import { DIAGRAM_PROVIDER } from './diagram-provider.token';
@@ -166,6 +172,30 @@ export class DataModelsService {
   }
 
   async generate(projectId: string, requirementVersionIds: string[], useCaseVersionIds: string[]) {
+    type SourceRow = {
+      type: string;
+      code: string;
+      requirement: Record<string, unknown> | null;
+      useCase: Record<string, unknown> | null;
+    };
+    // DEC-140: past a hundred sources the analysis goes in with less detail.
+    const fitSources = (rows: SourceRow[]) =>
+      fitToBudget(
+        rows.map((row): BudgetItem<SourceRow> =>
+          row.useCase
+            ? {
+                kind: 'USE_CASE',
+                levels: useCaseLevels(row.useCase).map((useCase) => ({ ...row, useCase })),
+              }
+            : {
+                kind: 'REQUIREMENT',
+                levels: requirementLevels(row.requirement!).map((requirement) => ({
+                  ...row,
+                  requirement,
+                })),
+              },
+        ),
+      ).items;
     const sourceIds = [...requirementVersionIds, ...useCaseVersionIds];
     if (new Set(sourceIds).size !== sourceIds.length)
       throw new UnprocessableEntityException('Las versiones fuente no pueden repetirse.');
@@ -215,43 +245,47 @@ export class DataModelsService {
           {
             role: 'user',
             content: JSON.stringify({
-              sources: sources.map((source) => ({
-                type: source.artifact.artifactTypeCode,
-                code: source.artifact.code,
-                requirement: source.requirementDetail
-                  ? {
-                      requirementType: source.requirementDetail.requirementType,
-                      name: source.requirementDetail.name,
-                      description: source.requirementDetail.description,
-                      priority: source.requirementDetail.priority,
-                    }
-                  : null,
-                useCase: source.useCaseDetail
-                  ? {
-                      name: source.useCaseDetail.name,
-                      objective: source.useCaseDetail.objective,
-                      primaryActor: source.useCaseDetail.primaryActor,
-                      secondaryActors: source.useCaseDetail.secondaryActors.map(({ name }) => name),
-                      preconditions: source.useCaseDetail.preconditions.map(
-                        ({ description }) => description,
-                      ),
-                      postconditions: source.useCaseDetail.postconditions.map(
-                        ({ description }) => description,
-                      ),
-                      mainFlow: source.useCaseDetail.mainFlowSteps.map(({ actor, action }) => ({
-                        actor,
-                        action,
-                      })),
-                      alternativeFlows: source.useCaseDetail.alternativeFlows.map(
-                        ({ name, condition, steps }) => ({
-                          name,
-                          condition,
-                          steps: steps.map(({ actor, action }) => ({ actor, action })),
-                        }),
-                      ),
-                    }
-                  : null,
-              })),
+              sources: fitSources(
+                sources.map((source) => ({
+                  type: source.artifact.artifactTypeCode,
+                  code: source.artifact.code,
+                  requirement: source.requirementDetail
+                    ? {
+                        requirementType: source.requirementDetail.requirementType,
+                        name: source.requirementDetail.name,
+                        description: source.requirementDetail.description,
+                        priority: source.requirementDetail.priority,
+                      }
+                    : null,
+                  useCase: source.useCaseDetail
+                    ? {
+                        name: source.useCaseDetail.name,
+                        objective: source.useCaseDetail.objective,
+                        primaryActor: source.useCaseDetail.primaryActor,
+                        secondaryActors: source.useCaseDetail.secondaryActors.map(
+                          ({ name }) => name,
+                        ),
+                        preconditions: source.useCaseDetail.preconditions.map(
+                          ({ description }) => description,
+                        ),
+                        postconditions: source.useCaseDetail.postconditions.map(
+                          ({ description }) => description,
+                        ),
+                        mainFlow: source.useCaseDetail.mainFlowSteps.map(({ actor, action }) => ({
+                          actor,
+                          action,
+                        })),
+                        alternativeFlows: source.useCaseDetail.alternativeFlows.map(
+                          ({ name, condition, steps }) => ({
+                            name,
+                            condition,
+                            steps: steps.map(({ actor, action }) => ({ actor, action })),
+                          }),
+                        ),
+                      }
+                    : null,
+                })),
+              ),
             }),
           },
         ],

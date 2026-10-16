@@ -159,8 +159,8 @@ export const dataModelGenerationOutputSchema = z
   });
 export const generateDataModelRequestSchema = z
   .object({
-    requirementVersionIds: z.array(z.uuid()).max(100).default([]),
-    useCaseVersionIds: z.array(z.uuid()).max(100).default([]),
+    requirementVersionIds: z.array(z.uuid()).max(500).default([]),
+    useCaseVersionIds: z.array(z.uuid()).max(500).default([]),
   })
   .strict()
   .refine(

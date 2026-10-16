@@ -650,7 +650,7 @@ export const structuredAnalysisListResponseSchema = z.object({
 
 export const generateStructuredAnalysisRequestSchema = z
   .object({
-    sourceVersionIds: z.array(z.uuid()).min(1).max(100),
+    sourceVersionIds: z.array(z.uuid()).min(1).max(500),
     // Optional user adjustment (e.g. "más cálida"); treated as data, never as
     // system instructions.
     instruction: z.string().trim().min(1).max(500).optional(),

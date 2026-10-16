@@ -7260,6 +7260,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-137 | Fuentes: reemplazar el archivo crea la versión siguiente de la misma fuente; una fuente archivada se puede restaurar; archivar o restaurar algo con historial aprobado cuenta como cambio de su paso; la lista se filtra y pagina, con las archivadas ocultas por defecto (§221.18) | Accepted |
 | DEC-138 | Requisitos: la lista se pagina de 25 en 25 y admite aprobar, archivar o eliminar varios a la vez (todos o ninguno; eliminar solo los nunca aprobados y sin referencias); las restricciones transversales se cubren con su propio requisito no funcional (prompt `requirements.generate@5`) y las prioridades se reparten con criterios explícitos (`@6`); el diagrama de clases y el modelo conceptual no esperan citar requisitos no funcionales (§221.19) | Accepted |
 | DEC-139 | Casos de uso: la generación con IA se hace por lotes en segundo plano (seis requisitos funcionales por lote, los no funcionales como contexto compartido, los casos ya propuestos como contexto de cada lote), con avance visible, un punto de control por lote y reanudación; admite más de 50 requisitos y más de 20 propuestas (§221.20) | Accepted |
+| DEC-140 | Los análisis grandes no se rechazan: el modelo de datos, los artefactos de diseño y los diagramas aceptan hasta 500 fuentes, y lo que se envía a la IA se ajusta a un presupuesto de entrada reduciendo primero el detalle de los casos de uso y después el de los requisitos, sin omitir ninguno (§221.21) | Accepted |
 
 ---
 
@@ -7696,7 +7697,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-139)
+# 221. Extensiones de V2 (DEC-116 a DEC-140)
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
@@ -7906,6 +7907,12 @@ El servidor bloquea congelar diseño y construir mientras quedan pasos por rehac
 - **Reanudación:** cada lote validado queda guardado (`use_case_generation_parts`). Si el trabajo falla, volver a generar con la misma selección continúa desde el último lote terminado y no repite los anteriores; con otra selección empieza uno nuevo. Nada se publica hasta que todos los lotes terminan: entonces se crea una única generación con todas las propuestas.
 - **Revisión y aceptación:** las propuestas se entregan para revisión humana como antes, y se pueden aceptar más de 20 a la vez (hasta 500). Las rutas automáticas (`EXPRESS` y `BUILD_ONLY`) usan el mismo proceso por lotes.
 - **Límite conocido:** un caso propuesto en un lote solo puede relacionarse con casos de lotes anteriores o del mismo lote, no con los de lotes posteriores.
+
+## 221.21 Análisis grandes en las generaciones de diseño (DEC-140)
+
+- **Límites de selección:** la generación del modelo de datos (requisitos y casos de uso), la de los artefactos de diseño (`sourceVersionIds`) y la de los diagramas aceptan hasta 500 versiones fuente, en lugar de 100. Un proyecto con 160 requisitos y 105 casos de uso ya no recibe «La solicitud no es válida».
+- **Presupuesto de entrada:** estas generaciones envían a la IA todo el análisis en una sola llamada. Si supera unos 90 000 tokens estimados, se envía con menos detalle en lugar de rechazarse, siempre con todos los requisitos y casos de uso: primero los casos de uso pierden detalle (en este orden: los pasos de los flujos alternativos y el actor de cada paso; luego las precondiciones y los flujos alternativos; luego las postcondiciones y el flujo principal) y solo después los requisitos (precondiciones y postcondiciones, y por último la descripción). Los demás tipos de fuente van completos.
+- **Qué no cambia:** las reglas de cobertura y coherencia (DEC-121) se calculan siempre sobre el contenido completo; solo se recorta lo que lee el modelo. La capacidad de cada proveedor sigue decidiendo si la solicitud cabe (DEC-127).
 
 ## 221.4 Fuera de alcance de estas extensiones
 

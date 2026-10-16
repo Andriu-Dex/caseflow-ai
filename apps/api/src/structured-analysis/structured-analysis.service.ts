@@ -22,6 +22,12 @@ import type { z } from 'zod';
 import { provenanceGuard, sourceStatuses } from '../projects/source-statuses';
 import { PrismaService } from '../database/prisma.service';
 import { getProjectLanguage } from '../projects/project-language';
+import {
+  fitToBudget,
+  requirementLevels,
+  useCaseLevels,
+  type BudgetItem,
+} from '../common/source-budget';
 import type { Prisma } from '../generated/prisma/client';
 import {
   DiagramEngine,
@@ -451,8 +457,33 @@ export class StructuredAnalysisService {
     // DEC-121: the AI is told exactly what it must cover; the same rules
     // check the proposal afterwards.
     const mustCover = coherenceChecklist(kind, upstreamFromSources(contextSources));
+    // DEC-140: the coverage rules above read the full analysis; only what is
+    // sent to the model loses detail when it is too large for one call.
+    type ContextSource = (typeof contextSources)[number];
+    const asRecord = (value: unknown) => value as Record<string, unknown>;
+    const sentSources = fitToBudget(
+      contextSources.map((source): BudgetItem<ContextSource> =>
+        source.type === 'REQUIREMENT'
+          ? {
+              kind: 'REQUIREMENT',
+              levels: requirementLevels(asRecord(source.content)).map((content) => ({
+                ...source,
+                content,
+              })) as ContextSource[],
+            }
+          : source.type === 'USE_CASE'
+            ? {
+                kind: 'USE_CASE',
+                levels: useCaseLevels(asRecord(source.content)).map((content) => ({
+                  ...source,
+                  content,
+                })) as ContextSource[],
+              }
+            : { kind: 'OTHER', levels: [source] },
+      ),
+    ).items;
     const serializedContext = JSON.stringify({
-      sources: contextSources,
+      sources: sentSources,
       ...(mustCover.length ? { mustCover } : {}),
     });
     const config = KIND_CONFIG[kind];
