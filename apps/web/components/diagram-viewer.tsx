@@ -11,36 +11,57 @@ const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
 const ZOOM_STEP = 0.25;
 
-// Same wheel-zoom/drag-to-pan interaction as MockupScreenDialog
-// (apps/web/app/design/mockups/page.tsx) — reused here so every diagram
-// viewer in the product behaves the same way, not a second implementation.
-// Unlike the mockup viewer, this one also allows zooming out below 100%
-// (large traceability graphs benefit from shrinking to see the whole shape),
-// and panning is always available (not gated to zoom > 1): a diagram this
-// wide can overflow its box at 100% zoom too.
+// Ctrl + wheel (or a trackpad pinch, which browsers report the same way)
+// zooms; the plain wheel scrolls the diagram up and down inside its box, and
+// Shift + wheel sideways. Once the diagram reaches its edge the page scrolls
+// again, so the box never traps the wheel. Dragging pans in any direction.
+// This one also allows zooming out below 100% (large traceability graphs
+// benefit from shrinking to see the whole shape).
+const BOX_PADDING = 16;
 function ZoomableDiagram({ svg, caption }: { svg: string; caption?: string }) {
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
+  const offsetRef = useRef(offset);
+  offsetRef.current = offset;
+  const contentRef = useRef<HTMLDivElement>(null);
   const dragStart = useRef<{ x: number; y: number; offsetX: number; offsetY: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // React attaches wheel listeners as passive by default, so an onWheel prop
-  // can't reliably call preventDefault() — the page scrolls underneath while
-  // this also zooms. A native listener registered with { passive: false } is
-  // the only way to actually stop the page scroll here.
+  // can't reliably call preventDefault(). A native listener registered with
+  // { passive: false } is the only way to stop the page scroll when the
+  // wheel is used for zooming or for scrolling inside the box.
   useEffect(() => {
     const node = containerRef.current;
     if (!node) return;
     const handleWheel = (event: WheelEvent) => {
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+        const next = Math.min(
+          MAX_ZOOM,
+          Math.max(MIN_ZOOM, zoomRef.current + (event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP)),
+        );
+        setZoom(next);
+        if (next <= 1) setOffset({ x: 0, y: 0 });
+        return;
+      }
+      // Scroll inside the box, as far as the diagram goes.
+      const content = contentRef.current;
+      if (!content) return;
+      const scale = zoomRef.current;
+      const sideways = event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY);
+      const delta = sideways ? event.deltaX || event.deltaY : event.deltaY;
+      const room = sideways
+        ? node.clientWidth - 2 * BOX_PADDING - content.offsetWidth * scale
+        : node.clientHeight - 2 * BOX_PADDING - content.offsetHeight * scale;
+      const axis = sideways ? 'x' : 'y';
+      const current = offsetRef.current[axis];
+      const next = Math.min(0, Math.max(Math.min(0, room), current - delta));
+      if (next === current) return;
       event.preventDefault();
-      const next = Math.min(
-        MAX_ZOOM,
-        Math.max(MIN_ZOOM, zoomRef.current + (event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP)),
-      );
-      setZoom(next);
-      if (next <= 1) setOffset({ x: 0, y: 0 });
+      setOffset({ ...offsetRef.current, [axis]: next });
     };
     node.addEventListener('wheel', handleWheel, { passive: false });
     return () => node.removeEventListener('wheel', handleWheel);
@@ -50,7 +71,7 @@ function ZoomableDiagram({ svg, caption }: { svg: string; caption?: string }) {
     <div className="flex flex-col gap-2">
       <div
         ref={containerRef}
-        className="cursor-grab touch-none overflow-hidden rounded-lg border border-border bg-card p-4 active:cursor-grabbing"
+        className="max-h-[75vh] cursor-grab touch-none overflow-hidden rounded-lg border border-border bg-card p-4 active:cursor-grabbing"
         onPointerDown={(event) => {
           if (event.button !== 0) return;
           dragStart.current = {
@@ -74,9 +95,10 @@ function ZoomableDiagram({ svg, caption }: { svg: string; caption?: string }) {
         onPointerCancel={() => {
           dragStart.current = null;
         }}
-        aria-label="Vista ampliable: use la rueda para acercar y arrastre para desplazarse"
+        aria-label="Vista ampliable: Ctrl y rueda para acercar, rueda para desplazarse y arrastre para moverse"
       >
         <div
+          ref={contentRef}
           className="origin-top-left transition-transform duration-100 [&_figure]:m-0 [&_figure]:overflow-visible [&_figure]:border-0 [&_figure]:bg-transparent [&_figure]:p-0"
           style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})` }}
         >
@@ -109,7 +131,7 @@ function ZoomableDiagram({ svg, caption }: { svg: string; caption?: string }) {
         >
           <ZoomIn aria-hidden="true" className="size-4" />
         </Button>
-        {zoom !== 1 ? (
+        {zoom !== 1 || offset.x !== 0 || offset.y !== 0 ? (
           <Button
             type="button"
             variant="ghost"
@@ -122,6 +144,7 @@ function ZoomableDiagram({ svg, caption }: { svg: string; caption?: string }) {
             Restablecer
           </Button>
         ) : null}
+        <span className="ml-auto hidden sm:inline">Ctrl + rueda para acercar</span>
       </div>
     </div>
   );

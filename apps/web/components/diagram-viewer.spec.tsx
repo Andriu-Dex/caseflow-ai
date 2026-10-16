@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { DiagramViewer } from './diagram-viewer';
@@ -12,28 +12,28 @@ function renderViewer() {
 }
 
 describe('DiagramViewer — zoom/pan', () => {
-  it('zooms in on wheel-up, clamps at 400%, and resets via the Restablecer button', async () => {
+  it('zooms in on Ctrl + wheel-up, clamps at 400%, and resets via the Restablecer button', async () => {
     const user = userEvent.setup();
     renderViewer();
     const viewport = screen.getByLabelText(/Vista ampliable/i);
 
-    for (let i = 0; i < 20; i += 1) fireEvent.wheel(viewport, { deltaY: -1 });
+    for (let i = 0; i < 20; i += 1) fireEvent.wheel(viewport, { deltaY: -1, ctrlKey: true });
     expect(screen.getByText('400%')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Restablecer' }));
     expect(screen.getByText('100%')).toBeInTheDocument();
   });
 
-  it('zooms out below 100%, clamps at 25%, and disables "Alejar" there', async () => {
+  it('zooms out below 100% with Ctrl + wheel, clamps at 25%, and disables "Alejar" there', async () => {
     renderViewer();
     expect(screen.getByText('100%')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Alejar' })).not.toBeDisabled();
 
     const viewport = screen.getByLabelText(/Vista ampliable/i);
-    fireEvent.wheel(viewport, { deltaY: 1 });
+    fireEvent.wheel(viewport, { deltaY: 1, ctrlKey: true });
     expect(screen.getByText('75%')).toBeInTheDocument();
 
-    for (let i = 0; i < 20; i += 1) fireEvent.wheel(viewport, { deltaY: 1 });
+    for (let i = 0; i < 20; i += 1) fireEvent.wheel(viewport, { deltaY: 1, ctrlKey: true });
     expect(screen.getByText('25%')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Alejar' })).toBeDisabled();
   });
@@ -65,11 +65,48 @@ describe('DiagramViewer — zoom/pan', () => {
     expect(content.style.transform).toBe('translate(30px, -20px) scale(1)');
   });
 
-  it("does not prevent dragging with the browser's own default action (native wheel listener only blocks scroll on wheel)", () => {
+  it('leaves the plain wheel to the page when the diagram fits, and takes only Ctrl + wheel', () => {
     renderViewer();
     const viewport = screen.getByLabelText(/Vista ampliable/i);
-    const wheelEvent = new WheelEvent('wheel', { deltaY: -1, cancelable: true });
-    viewport.dispatchEvent(wheelEvent);
-    expect(wheelEvent.defaultPrevented).toBe(true);
+    Object.defineProperty(viewport, 'clientHeight', { value: 400 });
+    Object.defineProperty(viewport.firstElementChild, 'offsetHeight', { value: 100 });
+    const plain = new WheelEvent('wheel', { deltaY: 40, cancelable: true });
+    act(() => {
+      viewport.dispatchEvent(plain);
+    });
+    expect(plain.defaultPrevented).toBe(false);
+    expect(screen.getByText('100%')).toBeInTheDocument();
+    const zoom = new WheelEvent('wheel', { deltaY: -1, ctrlKey: true, cancelable: true });
+    act(() => {
+      viewport.dispatchEvent(zoom);
+    });
+    expect(zoom.defaultPrevented).toBe(true);
+    expect(screen.getByText('125%')).toBeInTheDocument();
+  });
+
+  it('scrolls a tall diagram up and down with the plain wheel, then hands over to the page', () => {
+    renderViewer();
+    const viewport = screen.getByLabelText(/Vista ampliable/i);
+    const content = viewport.firstElementChild as HTMLElement;
+    // A 1000px diagram in a 332px box (300px plus its padding): 700px of travel... minus padding.
+    Object.defineProperty(viewport, 'clientHeight', { value: 332 });
+    Object.defineProperty(content, 'offsetHeight', { value: 1000 });
+    const wheel = (deltaY: number) => {
+      const event = new WheelEvent('wheel', { deltaY, cancelable: true });
+      act(() => {
+        viewport.dispatchEvent(event);
+      });
+      return event;
+    };
+    expect(wheel(120).defaultPrevented).toBe(true);
+    expect(content.style.transform).toBe('translate(0px, -120px) scale(1)');
+    // Scrolling back up past the top stops at the top, and the page takes over.
+    expect(wheel(-500).defaultPrevented).toBe(true);
+    expect(content.style.transform).toBe('translate(0px, 0px) scale(1)');
+    expect(wheel(-50).defaultPrevented).toBe(false);
+    // Down to the end of the diagram (1000 - 300 = 700px), never beyond it.
+    expect(wheel(5000).defaultPrevented).toBe(true);
+    expect(content.style.transform).toBe('translate(0px, -700px) scale(1)');
+    expect(wheel(100).defaultPrevented).toBe(false);
   });
 });
