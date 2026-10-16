@@ -11,6 +11,7 @@ import {
   Layers,
   Link2,
   ListChecks,
+  Info,
   Loader2,
   MoreHorizontal,
   Pencil,
@@ -41,6 +42,7 @@ import {
   Input,
 } from '@caseflow-ai/ui';
 import { StatusBadge } from './status-badge';
+import { bulkGuards } from './bulk-guards';
 import { StaleNotice, isPendingApproval } from './artifact-actions';
 import { DetailBlock, ItemList, Tile } from './requirement-list';
 import { AlternativeFlows, FlowSteps } from './use-case-flow';
@@ -462,6 +464,7 @@ export function UseCaseList({
 
   // A deleted or archived use case leaves the selection by itself.
   const selection = items.filter((u) => selectedIds.has(u.id)).map((u) => u.id);
+  const guards = bulkGuards(items.filter((x) => selectedIds.has(x.id)));
   const allVisibleSelected = visible.length > 0 && visible.every((u) => selectedIds.has(u.id));
   const toggleSelected = (ids: string[], checked: boolean) =>
     setSelectedIds((current) => {
@@ -572,8 +575,12 @@ export function UseCaseList({
                 type="button"
                 size="sm"
                 disabled={bulkBusy}
-                className="h-8 bg-emerald-600 text-white hover:bg-emerald-700"
-                onClick={() => runBulk('APPROVE')}
+                aria-disabled={guards.approveBlocked}
+                aria-describedby={guards.hint ? 'bulk-hint' : undefined}
+                className={`h-8 bg-emerald-600 text-white hover:bg-emerald-700 ${
+                  guards.approveBlocked ? 'cursor-not-allowed opacity-50 hover:bg-emerald-600' : ''
+                }`}
+                onClick={() => !guards.approveBlocked && runBulk('APPROVE')}
               >
                 <CheckCircle2 className="size-3.5" aria-hidden="true" />
                 Aprobar
@@ -594,8 +601,12 @@ export function UseCaseList({
                 size="sm"
                 variant="outline"
                 disabled={bulkBusy}
-                className="h-8 border-destructive/30 text-destructive hover:bg-destructive/10"
-                onClick={() => setConfirmingBulk('DELETE')}
+                aria-disabled={guards.deleteBlocked}
+                aria-describedby={guards.hint ? 'bulk-hint' : undefined}
+                className={`h-8 border-destructive/30 text-destructive hover:bg-destructive/10 ${
+                  guards.deleteBlocked ? 'cursor-not-allowed opacity-50 hover:bg-transparent' : ''
+                }`}
+                onClick={() => !guards.deleteBlocked && setConfirmingBulk('DELETE')}
               >
                 <Trash2 className="size-3.5" aria-hidden="true" />
                 Eliminar
@@ -610,6 +621,16 @@ export function UseCaseList({
                 Quitar selección
               </Button>
             </div>
+          ) : null}
+          {guards.hint ? (
+            <p
+              id="bulk-hint"
+              role="status"
+              className="flex basis-full items-start gap-1.5 text-xs text-muted-foreground"
+            >
+              <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+              {guards.hint}
+            </p>
           ) : null}
         </div>
       ) : null}
@@ -766,7 +787,7 @@ export function UseCaseList({
               />
               <span className="text-muted-foreground">
                 {confirmingBulk === 'DELETE'
-                  ? 'Esta acción eliminará de forma permanente los casos de uso que no posean historial aprobado ni dependencias.'
+                  ? 'Esta acción elimina de forma permanente todos los seleccionados. Si alguno tuvo una versión aprobada o algo depende de él, no se elimina ninguno.'
                   : 'Los casos de uso archivados dejarán de mostrarse en las listas activas, pero todo su historial se conserva intacto.'}
               </span>
             </div>
