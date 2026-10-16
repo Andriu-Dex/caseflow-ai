@@ -243,6 +243,28 @@ describe('Requirements list', () => {
     expect(mocks.transition).not.toHaveBeenCalled();
   });
 
+  it('does not offer to delete a selection that includes an approved requirement', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const toolbar = () => within(screen.getByRole('toolbar', { name: 'Selección de requisitos' }));
+    await user.click(await screen.findByRole('checkbox', { name: 'Seleccionar RF-002' }));
+    expect(toolbar().getByRole('button', { name: 'Eliminar' })).toHaveAttribute(
+      'aria-disabled',
+      'false',
+    );
+    await user.click(screen.getByRole('checkbox', { name: 'Seleccionar RF-001' }));
+    expect(toolbar().getByRole('button', { name: 'Eliminar' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    expect(toolbar().getByRole('status')).toHaveTextContent(
+      '1 de 2 seleccionados ya está aprobado',
+    );
+    await user.click(toolbar().getByRole('button', { name: 'Eliminar' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(mocks.bulk).not.toHaveBeenCalled();
+  });
+
   it('archives and approves the selected requirements in one action', async () => {
     mocks.bulk.mockResolvedValue({ affected: 2, skipped: 0 });
     const user = userEvent.setup();

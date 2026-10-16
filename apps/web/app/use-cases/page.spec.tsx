@@ -106,14 +106,34 @@ describe('Use cases page', () => {
     );
   });
 
-  it('archives and deletes the selected use cases after confirming', async () => {
+  it('archives approved use cases and only deletes those never approved', async () => {
     mocks.bulk.mockResolvedValue({ affected: 1, skipped: 0 });
+    const draft = {
+      ...useCase,
+      id: 'u2',
+      code: 'CU-002',
+      version: { ...useCase.version, id: 'uv2', status: 'GENERATED' },
+      useCase: { ...useCase.useCase, name: 'Consultar un pedido' },
+    };
+    mocks.list.mockResolvedValue({ items: [useCase, draft] });
     const user = userEvent.setup();
     renderPage();
     await user.click(await screen.findByRole('checkbox', { name: 'Seleccionar CU-001' }));
     expect(screen.getByText('1 seleccionado')).toBeInTheDocument();
     const toolbar = () =>
       within(screen.getByRole('toolbar', { name: 'Selección de casos de uso' }));
+
+    // An approved one can only be archived: Eliminar and Aprobar say why and do nothing.
+    expect(toolbar().getByRole('button', { name: 'Eliminar' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    expect(toolbar().getByRole('status')).toHaveTextContent('solo se puede archivar');
+    await user.click(toolbar().getByRole('button', { name: 'Eliminar' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await user.click(toolbar().getByRole('button', { name: 'Aprobar' }));
+    expect(mocks.bulk).not.toHaveBeenCalled();
+
     await user.click(toolbar().getByRole('button', { name: 'Archivar' }));
     await user.click(
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'Archivar' }),
@@ -122,14 +142,19 @@ describe('Use cases page', () => {
     // The selection is cleared after the action.
     await waitFor(() => expect(screen.getByText('Seleccionar')).toBeInTheDocument());
 
-    await user.click(screen.getByRole('checkbox', { name: 'Seleccionar los que coinciden' }));
+    // One never approved can be deleted, after confirming.
+    await user.click(screen.getByRole('checkbox', { name: 'Seleccionar CU-002' }));
+    expect(toolbar().getByRole('button', { name: 'Eliminar' })).toHaveAttribute(
+      'aria-disabled',
+      'false',
+    );
     await user.click(toolbar().getByRole('button', { name: 'Eliminar' }));
     await user.click(
       within(await screen.findByRole('dialog')).getByRole('button', {
         name: 'Eliminar definitivamente',
       }),
     );
-    await waitFor(() => expect(mocks.bulk).toHaveBeenLastCalledWith('p1', 'DELETE', ['u1']));
+    await waitFor(() => expect(mocks.bulk).toHaveBeenLastCalledWith('p1', 'DELETE', ['u2']));
   });
 
   it('opens a use case to show its flows as numbered steps', async () => {
