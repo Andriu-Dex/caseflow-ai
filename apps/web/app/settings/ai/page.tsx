@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  AlertTriangle,
   CheckCircle2,
   CirclePause,
   Clock,
@@ -10,6 +11,7 @@ import {
   Download,
   ExternalLink,
   Laptop,
+  Loader2,
   LogOut,
   MessageSquare,
   Play,
@@ -24,7 +26,6 @@ import {
   DialogContent,
   DialogDescription,
   DialogFooter,
-  DialogHeader,
   DialogTitle,
 } from '@caseflow-ai/ui';
 import { DESKTOP_RELEASES_URL, desktopBridge, type CaseflowDesktop } from '../../../lib/desktop';
@@ -360,31 +361,65 @@ function ChatGPTConnectionCard({ desktop }: { desktop: CaseflowDesktop }) {
       </div>
       {/* Never automatic (DEC-117): another provider only with consent. */}
       <Dialog open={confirmSwitch} onOpenChange={setConfirmSwitch}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>¿Usar el otro proveedor configurado?</DialogTitle>
-            <DialogDescription>
-              Las generaciones dejarán de usar su plan de ChatGPT y usarán el proveedor de
-              caseflow.env, que puede tener costo según su cuenta. Podrá volver a ChatGPT cuando
-              quiera.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => setConfirmSwitch(false)}>
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              disabled={busy}
-              onClick={() =>
-                act(async () => {
-                  await desktop.chatgpt.prefer(false);
-                  setConfirmSwitch(false);
-                }, 'La IA usa ahora el proveedor configurado.')
-              }
-            >
-              Sí, usar el otro proveedor
-            </Button>
+        <DialogContent className="relative sm:max-w-md p-6 gap-5 overflow-hidden">
+          {/* Top amber accent gradient strip */}
+          <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-amber-500 via-amber-400 to-orange-500" />
+
+          <div className="flex items-start gap-4">
+            <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/25 shadow-xs ring-4 ring-amber-500/5 dark:ring-amber-500/10">
+              <AlertTriangle className="size-5" aria-hidden="true" />
+            </div>
+            <div className="flex flex-col gap-1 min-w-0 flex-1">
+              <DialogTitle className="text-lg font-bold tracking-tight text-foreground">
+                ¿Usar el otro proveedor configurado?
+              </DialogTitle>
+              <DialogDescription className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+                Las generaciones dejarán de usar su plan de ChatGPT y usarán el proveedor de
+                caseflow.env, que puede tener costo según su cuenta. Podrá volver a ChatGPT cuando
+                quiera.
+              </DialogDescription>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-3.5 text-xs text-muted-foreground leading-relaxed dark:border-amber-500/30 dark:bg-amber-500/[0.08]">
+            Esta acción alternará el motor de inferencia activo. Las credenciales de ChatGPT se
+            mantendrán almacenadas en su equipo si desea reconectar luego.
+          </div>
+
+          <DialogFooter className="-mx-6 -mb-6 mt-1 flex items-center justify-between border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10">
+            <p className="text-[11px] text-muted-foreground/70 hidden sm:block">
+              Presione Esc para cancelar
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="border-border/80 hover:bg-muted font-medium"
+                onClick={() => setConfirmSwitch(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  act(async () => {
+                    await desktop.chatgpt.prefer(false);
+                    setConfirmSwitch(false);
+                  }, 'La IA usa ahora el proveedor configurado.')
+                }
+                className="gap-2 font-medium shadow-xs"
+              >
+                {busy ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                    Cambiando…
+                  </>
+                ) : (
+                  'Sí, usar el otro proveedor'
+                )}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

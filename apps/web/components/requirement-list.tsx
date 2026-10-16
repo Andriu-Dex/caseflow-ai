@@ -8,7 +8,6 @@ import {
   ArrowUp,
   CheckCircle2,
   Trash2,
-  ChevronLeft,
   ChevronRight,
   CircleDashed,
   FileText,
@@ -16,6 +15,7 @@ import {
   Layers,
   Link2,
   ListChecks,
+  Loader2,
   Minus,
   MoreHorizontal,
   Pencil,
@@ -37,8 +37,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
-  DialogHeader,
   DialogTitle,
   DropdownMenu,
   DropdownMenuContent,
@@ -50,6 +48,7 @@ import {
 import { StatusBadge } from './status-badge';
 import { StaleNotice, isPendingApproval } from './artifact-actions';
 import { ContextCode, ContextCoverageSummary } from './context-coverage';
+import { PaginationNav } from './pagination-nav';
 
 // The project's requirements at a glance (DEC-126): a summary, search and
 // filters, functional and non-functional groups, and compact rows that open
@@ -425,10 +424,12 @@ function RequirementRow({
             className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`}
             aria-hidden="true"
           />
-          <span className="shrink-0 font-mono text-xs font-semibold text-muted-foreground">
-            {r.code}
+          <span className="flex min-w-0 flex-1 items-baseline gap-2">
+            <span className="shrink-0 font-mono text-sm font-semibold text-muted-foreground">
+              {r.code}
+            </span>
+            <span className="truncate text-sm font-medium text-foreground">{req.name}</span>
           </span>
-          <span className="truncate text-sm font-medium text-foreground">{req.name}</span>
         </button>
         <div className="flex flex-wrap items-center gap-2">
           <span
@@ -964,106 +965,289 @@ export function RequirementList({
         })
       )}
 
-      {pageCount > 1 ? (
-        <nav
-          aria-label="Paginación de requisitos"
-          className="flex flex-col items-center justify-between gap-3 rounded-xl border border-border/50 bg-card/60 px-4 py-3 text-xs text-muted-foreground sm:flex-row sm:text-sm"
-        >
-          <span className="font-medium text-foreground/80">
-            Mostrando {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, ordered.length)} de{' '}
-            {ordered.length} requisitos
-          </span>
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1 px-2.5 text-xs"
-              disabled={page === 0}
-              onClick={() => setPage((p) => p - 1)}
-            >
-              <ChevronLeft className="size-3.5" aria-hidden="true" />
-              Anterior
-            </Button>
-            <span
-              aria-live="polite"
-              className="rounded-md border border-border/40 bg-muted px-2.5 py-1 text-xs font-semibold text-foreground"
-            >
-              Página {page + 1} de {pageCount}
-            </span>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1 px-2.5 text-xs"
-              disabled={page + 1 >= pageCount}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              Siguiente
-              <ChevronRight className="size-3.5" aria-hidden="true" />
-            </Button>
-          </div>
-        </nav>
-      ) : null}
+      <PaginationNav
+        page={page}
+        pageCount={pageCount}
+        total={ordered.length}
+        pageSize={PAGE_SIZE}
+        setPage={setPage}
+        itemLabel="requisitos"
+        ariaLabel="Paginación de requisitos"
+        hideWhenSinglePage
+      />
 
       {confirmingBulk ? (
         <Dialog open onOpenChange={(o) => (o ? null : setConfirmingBulk(null))}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{BULK_CONFIRM[confirmingBulk].title}</DialogTitle>
-              <DialogDescription>{BULK_CONFIRM[confirmingBulk].description}</DialogDescription>
-            </DialogHeader>
-            <p className="text-sm text-foreground">
-              {selection.length} {selection.length === 1 ? 'requisito' : 'requisitos'}:{' '}
-              {items
-                .filter((r) => selectedIds.has(r.id))
-                .slice(0, 8)
-                .map((r) => r.code)
-                .join(', ')}
-              {selection.length > 8 ? '…' : ''}
-            </p>
-            <DialogFooter>
-              <Button type="button" variant="ghost" onClick={() => setConfirmingBulk(null)}>
-                Cancelar
-              </Button>
-              <Button
-                type="button"
-                variant={confirmingBulk === 'DELETE' ? 'destructive' : 'default'}
-                disabled={bulkBusy}
-                onClick={() => runBulk(confirmingBulk)}
+          <DialogContent className="sm:max-w-lg p-6 gap-5 overflow-hidden">
+            <div
+              className={`absolute inset-x-0 top-0 h-1.5 ${
+                confirmingBulk === 'DELETE'
+                  ? 'bg-gradient-to-r from-destructive/80 via-destructive to-destructive/80'
+                  : 'bg-gradient-to-r from-amber-500/80 via-amber-400 to-amber-500/80'
+              }`}
+              aria-hidden="true"
+            />
+
+            <div className="flex items-start gap-4 w-full min-w-0">
+              <div
+                className={`flex size-12 shrink-0 items-center justify-center rounded-2xl border shadow-xs ${
+                  confirmingBulk === 'DELETE'
+                    ? 'bg-destructive/10 text-destructive border-destructive/25 ring-4 ring-destructive/5'
+                    : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/25 ring-4 ring-amber-500/5'
+                }`}
               >
-                {bulkBusy ? BULK_CONFIRM[confirmingBulk].busy : BULK_CONFIRM[confirmingBulk].button}
-              </Button>
-            </DialogFooter>
+                {confirmingBulk === 'DELETE' ? (
+                  <Trash2 className="size-5.5" aria-hidden="true" />
+                ) : (
+                  <Archive className="size-5.5" aria-hidden="true" />
+                )}
+              </div>
+              <div className="flex flex-col gap-1 min-w-0 flex-1">
+                <DialogTitle className="text-lg font-bold tracking-tight text-foreground">
+                  {BULK_CONFIRM[confirmingBulk].title}
+                </DialogTitle>
+                <DialogDescription className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+                  {BULK_CONFIRM[confirmingBulk].description}
+                </DialogDescription>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border/70 bg-muted/40 p-3.5 flex flex-col gap-2.5 w-full min-w-0">
+              <div className="flex items-center justify-between text-xs pb-1 border-b border-border/40 gap-2">
+                <span className="font-semibold text-foreground flex items-center gap-1.5 min-w-0 truncate">
+                  <Layers className="size-3.5 text-muted-foreground shrink-0" aria-hidden="true" />
+                  <span className="truncate">
+                    {selection.length}{' '}
+                    {selection.length === 1 ? 'requisito seleccionado' : 'requisitos seleccionados'}
+                    :
+                  </span>
+                </span>
+                <span className="rounded-full bg-background px-2 py-0.5 text-2xs font-semibold text-muted-foreground border border-border/50 shadow-2xs shrink-0">
+                  {selection.length} de {items.length}
+                </span>
+              </div>
+
+              {items.filter((r) => selectedIds.has(r.id)).length <= 4 ? (
+                <div className="flex flex-col gap-2 max-h-48 overflow-y-auto w-full min-w-0">
+                  {items
+                    .filter((r) => selectedIds.has(r.id))
+                    .map((r) => (
+                      <div
+                        key={r.id}
+                        className="flex items-center gap-2.5 rounded-lg border border-border/60 bg-background/80 p-2 text-xs shadow-2xs dark:bg-background/40 w-full min-w-0 overflow-hidden"
+                      >
+                        <span className="inline-flex items-center rounded-md border border-border/60 bg-muted/60 px-2 py-0.5 font-mono text-xs font-semibold text-foreground shrink-0 shadow-2xs">
+                          {r.code}
+                        </span>
+                        <span
+                          className="truncate font-medium text-foreground/90 flex-1 min-w-0"
+                          title={r.requirement.name}
+                        >
+                          {r.requirement.name}
+                        </span>
+                        <span className="rounded-full bg-muted/60 px-2 py-0.5 text-2xs font-medium text-muted-foreground shrink-0 border border-border/40 whitespace-nowrap">
+                          {r.requirement.requirementType === 'FUNCTIONAL'
+                            ? 'Funcional'
+                            : 'No funcional'}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-1.5 pt-0.5 w-full min-w-0">
+                  {items
+                    .filter((r) => selectedIds.has(r.id))
+                    .slice(0, 12)
+                    .map((r) => (
+                      <span
+                        key={r.id}
+                        className="inline-flex items-center rounded-md border border-border/60 bg-background px-2 py-0.5 font-mono text-xs font-semibold text-foreground shadow-2xs"
+                      >
+                        {r.code}
+                      </span>
+                    ))}
+                  {selection.length > 12 ? (
+                    <span className="inline-flex items-center px-1.5 text-xs text-muted-foreground font-medium">
+                      +{selection.length - 12} más
+                    </span>
+                  ) : null}
+                </div>
+              )}
+
+              <p className="sr-only">
+                {selection.length} {selection.length === 1 ? 'requisito' : 'requisitos'}:{' '}
+                {items
+                  .filter((r) => selectedIds.has(r.id))
+                  .slice(0, 8)
+                  .map((r) => r.code)
+                  .join(', ')}
+                {selection.length > 8 ? '…' : ''}
+              </p>
+            </div>
+
+            <div
+              className={`flex items-start gap-2.5 rounded-xl border p-3 text-xs leading-relaxed w-full min-w-0 ${
+                confirmingBulk === 'DELETE'
+                  ? 'border-destructive/25 bg-destructive/5 text-foreground dark:bg-destructive/10'
+                  : 'border-amber-500/25 bg-amber-500/5 text-foreground dark:bg-amber-500/10'
+              }`}
+            >
+              <AlertTriangle
+                className={`mt-0.5 size-4 shrink-0 ${
+                  confirmingBulk === 'DELETE'
+                    ? 'text-destructive'
+                    : 'text-amber-600 dark:text-amber-400'
+                }`}
+                aria-hidden="true"
+              />
+              <span className="text-muted-foreground">
+                {confirmingBulk === 'DELETE'
+                  ? 'Esta acción eliminará de forma permanente los requisitos que no posean historial aprobado.'
+                  : 'Los requisitos archivados dejarán de mostrarse en las listas activas, pero todo su historial se conserva intacto.'}
+              </span>
+            </div>
+
+            <div className="-mx-6 -mb-6 mt-1 flex items-center justify-between gap-3 border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10 w-[calc(100%+3rem)]">
+              <span className="text-2xs text-muted-foreground/70 hidden sm:inline truncate">
+                Presione Esc para cancelar
+              </span>
+              <div className="flex items-center gap-2.5 shrink-0 ml-auto">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 px-4 rounded-xl border-border/80 hover:bg-muted font-medium text-xs sm:text-sm text-foreground shadow-2xs"
+                  onClick={() => setConfirmingBulk(null)}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  disabled={bulkBusy}
+                  onClick={() => runBulk(confirmingBulk)}
+                  className={`h-9 px-4 gap-2 rounded-xl font-semibold text-xs sm:text-sm shadow-xs transition-all ${
+                    confirmingBulk === 'DELETE'
+                      ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+                      : 'bg-amber-600 hover:bg-amber-700 text-white dark:bg-amber-500 dark:hover:bg-amber-600 dark:text-zinc-950'
+                  }`}
+                >
+                  {bulkBusy ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                      {BULK_CONFIRM[confirmingBulk].busy}
+                    </>
+                  ) : (
+                    <>
+                      {confirmingBulk === 'DELETE' ? (
+                        <Trash2 className="size-4" aria-hidden="true" />
+                      ) : (
+                        <Archive className="size-4" aria-hidden="true" />
+                      )}
+                      {BULK_CONFIRM[confirmingBulk].button}
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
           </DialogContent>
         </Dialog>
       ) : null}
 
       {archiving ? (
         <Dialog open onOpenChange={(o) => (o ? null : setArchiving(null))}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Archivar requisito</DialogTitle>
-              <DialogDescription>
-                Deja de mostrarse en las listas y en la preparación, pero su historial se conserva y
-                su código no se reutiliza.
-              </DialogDescription>
-            </DialogHeader>
-            <p className="text-sm text-foreground">
-              Va a archivar{' '}
-              <strong>
-                {archiving.code} — {archiving.requirement.name}
-              </strong>
-              .
-            </p>
-            <DialogFooter>
-              <Button type="button" variant="ghost" onClick={() => setArchiving(null)}>
-                Cancelar
-              </Button>
-              <Button type="button" disabled={archiveBusy} onClick={confirmArchive}>
-                {archiveBusy ? 'Archivando…' : 'Archivar'}
-              </Button>
-            </DialogFooter>
+          <DialogContent className="sm:max-w-lg p-6 gap-5 overflow-hidden">
+            <div
+              className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-amber-500/80 via-amber-400 to-amber-500/80"
+              aria-hidden="true"
+            />
+            <div className="flex items-start gap-4 w-full min-w-0">
+              <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/25 shadow-xs ring-4 ring-amber-500/5">
+                <Archive className="size-5.5" aria-hidden="true" />
+              </div>
+              <div className="flex flex-col gap-1 min-w-0 flex-1">
+                <DialogTitle className="text-lg font-bold tracking-tight text-foreground">
+                  Archivar requisito
+                </DialogTitle>
+                <DialogDescription className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+                  Deja de mostrarse en las listas y en la preparación, pero su historial se conserva
+                  y su código no se reutiliza.
+                </DialogDescription>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border/70 bg-muted/40 p-3.5 flex flex-col gap-2.5 w-full min-w-0">
+              <span className="text-xs font-semibold text-foreground flex items-center gap-1.5 pb-1 border-b border-border/40">
+                <FileText className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                Requisito a archivar:
+              </span>
+              <div className="flex items-center gap-2.5 rounded-lg border border-border/60 bg-background/80 p-2.5 shadow-2xs dark:bg-background/40 w-full min-w-0 overflow-hidden">
+                <span className="inline-flex items-center rounded-md border border-border/60 bg-muted/60 px-2 py-0.5 font-mono text-xs font-semibold text-foreground shadow-2xs shrink-0">
+                  {archiving.code}
+                </span>
+                <span
+                  className="text-xs font-medium text-foreground truncate flex-1 min-w-0"
+                  title={archiving.requirement.name}
+                >
+                  {archiving.requirement.name}
+                </span>
+                <span className="rounded-full bg-muted/60 px-2 py-0.5 text-2xs font-medium text-muted-foreground shrink-0 border border-border/40 whitespace-nowrap">
+                  {archiving.requirement.requirementType === 'FUNCTIONAL'
+                    ? 'Funcional'
+                    : 'No funcional'}
+                </span>
+              </div>
+              <p className="sr-only">
+                Va a archivar{' '}
+                <strong>
+                  {archiving.code} — {archiving.requirement.name}
+                </strong>
+                .
+              </p>
+            </div>
+
+            <div className="flex items-start gap-2.5 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 text-xs leading-relaxed dark:bg-amber-500/10 w-full min-w-0">
+              <AlertTriangle
+                className="size-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400"
+                aria-hidden="true"
+              />
+              <span className="text-muted-foreground">
+                Podrás consultar el historial de este requisito o restaurarlo en cualquier momento
+                desde el filtro de archivados.
+              </span>
+            </div>
+
+            <div className="-mx-6 -mb-6 mt-1 flex items-center justify-between gap-3 border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10 w-[calc(100%+3rem)]">
+              <span className="text-2xs text-muted-foreground/70 hidden sm:inline truncate">
+                Presione Esc para cancelar
+              </span>
+              <div className="flex items-center gap-2.5 shrink-0 ml-auto">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 px-4 rounded-xl border-border/80 hover:bg-muted font-medium text-xs sm:text-sm text-foreground shadow-2xs"
+                  onClick={() => setArchiving(null)}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  disabled={archiveBusy}
+                  onClick={confirmArchive}
+                  className="h-9 px-4 gap-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white dark:bg-amber-500 dark:hover:bg-amber-600 dark:text-zinc-950 font-semibold text-xs sm:text-sm shadow-xs transition-all"
+                >
+                  {archiveBusy ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                      Archivando…
+                    </>
+                  ) : (
+                    <>
+                      <Archive className="size-4" aria-hidden="true" />
+                      Archivar
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
           </DialogContent>
         </Dialog>
       ) : null}

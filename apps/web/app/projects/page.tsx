@@ -2,13 +2,12 @@
 
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  AlertTriangle,
   Archive,
   ArchiveRestore,
   ArrowRight,
   CalendarDays,
   Check,
-  ChevronLeft,
-  ChevronRight,
   FolderKanban,
   Loader2,
   Search,
@@ -31,7 +30,6 @@ import {
   DialogContent,
   DialogDescription,
   DialogFooter,
-  DialogHeader,
   DialogTitle,
   Input,
   Label,
@@ -41,6 +39,7 @@ import { api, ApiError } from '../../lib/api';
 import { QueryState } from '../../components/query-state';
 import { useActiveProject } from '../../lib/active-project';
 import { WORKFLOW_ROUTE_LABELS } from '../../components/workflow-route';
+import { PaginationNav } from '../../components/pagination-nav';
 
 function EditProjectDialog({
   project,
@@ -78,41 +77,91 @@ function EditProjectDialog({
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent>
-        <form onSubmit={handleSave} className="flex flex-col gap-4">
-          <DialogHeader>
-            <DialogTitle>Editar proyecto</DialogTitle>
-            <DialogDescription>
-              Cambiar el nombre no afecta a sus artefactos, códigos ni versiones aprobadas.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor={`project-name-${project.id}`}>Nombre</Label>
-            <Input
-              id={`project-name-${project.id}`}
-              required
-              maxLength={200}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
+      <DialogContent className="relative sm:max-w-lg p-6 gap-5 overflow-hidden">
+        {/* Top accent gradient strip */}
+        <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-primary via-primary/70 to-indigo-500" />
+
+        <form onSubmit={handleSave} className="flex flex-col gap-5 w-full min-w-0">
+          <div className="flex items-start gap-4 w-full min-w-0">
+            <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary border border-primary/25 shadow-xs ring-4 ring-primary/5 dark:bg-primary/15 dark:ring-primary/10">
+              <Pencil className="size-5" aria-hidden="true" />
+            </div>
+            <div className="flex flex-col gap-1 min-w-0 flex-1">
+              <DialogTitle className="text-lg font-bold tracking-tight text-foreground">
+                Editar proyecto
+              </DialogTitle>
+              <DialogDescription className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+                Modifique los datos informativos. No afecta a sus artefactos, códigos ni versiones
+                aprobadas.
+              </DialogDescription>
+            </div>
           </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor={`project-description-${project.id}`}>Descripción (opcional)</Label>
-            <Textarea
-              id={`project-description-${project.id}`}
-              rows={3}
-              maxLength={5000}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
+
+          <div className="rounded-xl border border-border/70 bg-muted/30 p-4 flex flex-col gap-4 w-full min-w-0">
+            <div className="flex flex-col gap-1.5">
+              <Label
+                htmlFor={`project-name-${project.id}`}
+                className="text-xs font-semibold text-foreground"
+              >
+                Nombre
+              </Label>
+              <Input
+                id={`project-name-${project.id}`}
+                required
+                maxLength={200}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Nombre del proyecto"
+                className="h-9 text-sm bg-background border-border/80"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label
+                htmlFor={`project-description-${project.id}`}
+                className="text-xs font-semibold text-foreground"
+              >
+                Descripción (opcional)
+              </Label>
+              <Textarea
+                id={`project-description-${project.id}`}
+                rows={3}
+                maxLength={5000}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Breve resumen de los objetivos del proyecto…"
+                className="text-sm bg-background border-border/80 resize-none"
+              />
+            </div>
           </div>
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-              Cancelar
-            </Button>
-            <Button type="submit" disabled={saving || !name.trim()}>
-              {saving ? 'Guardando…' : 'Guardar'}
-            </Button>
+
+          <DialogFooter className="-mx-6 -mb-6 mt-1 flex items-center justify-between border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10 w-[calc(100%+3rem)]">
+            <p className="text-[11px] text-muted-foreground/70 hidden sm:block truncate">
+              Presione Esc para cancelar
+            </p>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                type="button"
+                variant="outline"
+                className="border-border/80 hover:bg-muted font-medium"
+                onClick={() => onOpenChange(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                disabled={saving || !name.trim()}
+                className="gap-2 font-medium shadow-xs"
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                    Guardando…
+                  </>
+                ) : (
+                  'Guardar'
+                )}
+              </Button>
+            </div>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -149,67 +198,89 @@ function DeleteProjectDialog({
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md p-6 gap-5">
-        <div className="flex items-start gap-4">
-          <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-destructive/10 text-destructive border border-destructive/20 shadow-2xs dark:bg-destructive/15">
+      <DialogContent className="relative sm:max-w-lg p-6 gap-5 overflow-hidden">
+        {/* Top destructive accent gradient strip */}
+        <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-destructive via-red-500 to-rose-600" />
+
+        <div className="flex items-start gap-4 w-full min-w-0">
+          <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-destructive/10 text-destructive border border-destructive/25 shadow-xs ring-4 ring-destructive/5 dark:bg-destructive/15 dark:ring-destructive/10">
             <Trash2 className="size-5" aria-hidden="true" />
           </div>
           <div className="flex flex-col gap-1 min-w-0 flex-1">
-            <DialogTitle className="text-lg font-semibold tracking-tight text-foreground">
+            <DialogTitle className="text-lg font-bold tracking-tight text-foreground">
               Eliminar proyecto
             </DialogTitle>
             <DialogDescription className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
               Esta acción es{' '}
-              <strong className="text-foreground font-semibold">permanente e irreversible</strong>:
-              se borrarán las fuentes y sus archivos, el contexto, los requisitos, los diseños, las
-              líneas base, el código generado y todo el historial del proyecto.
+              <strong className="text-foreground font-semibold">permanente e irreversible</strong>.
             </DialogDescription>
           </div>
         </div>
 
-        <div className="rounded-xl border border-destructive/20 bg-destructive/[0.04] p-3.5 dark:border-destructive/30 dark:bg-destructive/[0.08] flex flex-col gap-2">
-          <Label htmlFor="confirm-project-name" className="text-xs font-medium text-foreground">
-            Para confirmar, escriba el nombre exacto del proyecto:{' '}
-            <strong className="text-destructive font-semibold">{project.name}</strong>
-          </Label>
-          <Input
-            id="confirm-project-name"
-            autoFocus
-            className="bg-background text-sm"
-            placeholder={project.name}
-            value={confirmText}
-            onChange={(e) => setConfirmText(e.target.value)}
-          />
+        {/* Affected summary preview card */}
+        <div className="rounded-xl border border-destructive/20 bg-destructive/[0.04] p-3.5 dark:border-destructive/30 dark:bg-destructive/[0.08] flex flex-col gap-2 w-full min-w-0">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="size-4 text-destructive shrink-0" aria-hidden="true" />
+            <p className="text-xs font-semibold text-foreground">
+              Se eliminará definitivamente el proyecto y todos sus artefactos:
+            </p>
+          </div>
+          <div className="rounded-lg border border-destructive/20 bg-background/80 p-2.5 w-full min-w-0">
+            <p className="text-sm font-semibold text-foreground break-all">{project.name}</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Fuentes, requerimientos, casos de uso, diseños, líneas base y código generado.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-1.5 pt-1 w-full min-w-0">
+            <Label htmlFor="confirm-project-name" className="text-xs font-medium text-foreground">
+              Para confirmar, escriba el nombre exacto:{' '}
+              <strong className="text-destructive font-semibold">{project.name}</strong>
+            </Label>
+            <Input
+              id="confirm-project-name"
+              autoFocus
+              className="bg-background text-sm border-destructive/30 focus-visible:ring-destructive/30"
+              placeholder={project.name}
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+            />
+          </div>
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-2.5 pt-1">
-          <Button
-            type="button"
-            variant="outline"
-            className="border-border/80 hover:bg-muted font-medium"
-            onClick={() => onOpenChange(false)}
-          >
-            Cancelar
-          </Button>
-          <Button
-            type="button"
-            variant="destructive"
-            disabled={!matches || deleting}
-            onClick={handleDelete}
-            className="gap-2 font-medium shadow-xs"
-          >
-            {deleting ? (
-              <>
-                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                Eliminando…
-              </>
-            ) : (
-              <>
-                <Trash2 className="size-4" aria-hidden="true" />
-                Eliminar definitivamente
-              </>
-            )}
-          </Button>
+        <DialogFooter className="-mx-6 -mb-6 mt-1 flex items-center justify-between border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10 w-[calc(100%+3rem)]">
+          <p className="text-[11px] text-muted-foreground/70 hidden sm:block truncate">
+            Presione Esc para cancelar
+          </p>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              type="button"
+              variant="outline"
+              className="border-border/80 hover:bg-muted font-medium"
+              onClick={() => onOpenChange(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={!matches || deleting}
+              onClick={handleDelete}
+              className="gap-2 font-medium shadow-xs"
+            >
+              {deleting ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Eliminando…
+                </>
+              ) : (
+                <>
+                  <Trash2 className="size-4" aria-hidden="true" />
+                  Eliminar definitivamente
+                </>
+              )}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -242,13 +313,16 @@ function ArchiveProjectDialog({
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md p-6 gap-5">
-        <div className="flex items-start gap-4">
-          <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 shadow-2xs">
+      <DialogContent className="relative sm:max-w-lg p-6 gap-5 overflow-hidden">
+        {/* Top amber accent gradient strip */}
+        <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-amber-500 via-amber-400 to-orange-500" />
+
+        <div className="flex items-start gap-4 w-full min-w-0">
+          <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/25 shadow-xs ring-4 ring-amber-500/5 dark:ring-amber-500/10">
             <Archive className="size-5" aria-hidden="true" />
           </div>
           <div className="flex flex-col gap-1 min-w-0 flex-1">
-            <DialogTitle className="text-lg font-semibold tracking-tight text-foreground">
+            <DialogTitle className="text-lg font-bold tracking-tight text-foreground">
               Archivar proyecto
             </DialogTitle>
             <DialogDescription className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
@@ -258,38 +332,65 @@ function ArchiveProjectDialog({
           </div>
         </div>
 
-        <div className="rounded-xl border border-border/60 bg-muted/30 p-3.5">
-          <p className="text-xs text-muted-foreground mb-1">Proyecto que se archivará:</p>
-          <p className="text-sm font-semibold text-foreground">{project.name}</p>
+        {/* Project detail card */}
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-3.5 dark:border-amber-500/30 dark:bg-amber-500/[0.07] flex flex-col gap-2 w-full min-w-0">
+          <div className="flex items-center gap-2">
+            <FolderKanban
+              className="size-4 text-amber-600 dark:text-amber-400 shrink-0"
+              aria-hidden="true"
+            />
+            <p className="text-xs font-semibold text-foreground">Proyecto que se archivará:</p>
+          </div>
+          <div className="rounded-lg border border-border/60 bg-background/80 p-2.5 w-full min-w-0">
+            <p className="text-sm font-semibold text-foreground break-all">{project.name}</p>
+            {project.description && (
+              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                {project.description}
+              </p>
+            )}
+          </div>
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-2.5 pt-1">
-          <Button
-            type="button"
-            variant="outline"
-            className="border-border/80 hover:bg-muted font-medium"
-            onClick={() => onOpenChange(false)}
-          >
-            Cancelar
-          </Button>
-          <Button
-            type="button"
-            disabled={archiving}
-            onClick={handleArchive}
-            className="gap-2 font-medium shadow-xs"
-          >
-            {archiving ? (
-              <>
-                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                Archivando…
-              </>
-            ) : (
-              <>
-                <Archive className="size-4" aria-hidden="true" />
-                Archivar
-              </>
-            )}
-          </Button>
+        {/* Reassurance banner */}
+        <div className="flex items-start gap-2.5 rounded-xl border border-border/60 bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground w-full min-w-0">
+          <AlertTriangle className="size-4 shrink-0 text-amber-500 mt-0.5" aria-hidden="true" />
+          <span>
+            Sus artefactos permanecerán intactos y protegidos. Ningún colaborador perderá datos.
+          </span>
+        </div>
+
+        <DialogFooter className="-mx-6 -mb-6 mt-1 flex items-center justify-between border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10 w-[calc(100%+3rem)]">
+          <p className="text-[11px] text-muted-foreground/70 hidden sm:block truncate">
+            Presione Esc para cancelar
+          </p>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              type="button"
+              variant="outline"
+              className="border-border/80 hover:bg-muted font-medium"
+              onClick={() => onOpenChange(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={archiving}
+              onClick={handleArchive}
+              className="gap-2 font-medium shadow-xs bg-amber-600 hover:bg-amber-700 text-white dark:bg-amber-600 dark:hover:bg-amber-500"
+            >
+              {archiving ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Archivando…
+                </>
+              ) : (
+                <>
+                  <Archive className="size-4" aria-hidden="true" />
+                  Archivar
+                </>
+              )}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -678,49 +779,15 @@ export default function ProjectsPage() {
                 <ProjectCard key={project.id} project={project} onDeleted={invalidate} />
               ))}
             </div>
-            <nav
-              aria-label="Paginación de proyectos"
-              className="mt-4 flex flex-col items-center justify-between gap-3 rounded-xl border border-border/50 bg-card/60 px-4 py-3 text-xs sm:text-sm text-muted-foreground sm:flex-row shadow-2xs backdrop-blur-xs"
-            >
-              <div className="flex items-center gap-2">
-                <span className="font-medium text-foreground/80">
-                  Mostrando {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} de{' '}
-                  {total} proyectos
-                </span>
-              </div>
-              {pageCount > 1 ? (
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 gap-1 px-2.5 text-xs font-medium"
-                    disabled={page === 0}
-                    onClick={() => setPage((p) => p - 1)}
-                  >
-                    <ChevronLeft className="size-3.5" aria-hidden="true" />
-                    Anterior
-                  </Button>
-                  <span
-                    aria-live="polite"
-                    className="inline-flex items-center rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-foreground border border-border/40"
-                  >
-                    Página {page + 1} de {pageCount}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 gap-1 px-2.5 text-xs font-medium"
-                    disabled={page + 1 >= pageCount}
-                    onClick={() => setPage((p) => p + 1)}
-                  >
-                    Siguiente
-                    <ChevronRight className="size-3.5" aria-hidden="true" />
-                  </Button>
-                </div>
-              ) : null}
-            </nav>
+            <PaginationNav
+              page={page}
+              pageCount={pageCount}
+              total={total}
+              pageSize={PAGE_SIZE}
+              setPage={setPage}
+              itemLabel="proyectos"
+              ariaLabel="Paginación de proyectos"
+            />
           </>
         )}
       </QueryState>

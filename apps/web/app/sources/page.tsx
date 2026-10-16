@@ -6,7 +6,6 @@ import {
   Archive,
   ArchiveRestore,
   Check,
-  ChevronLeft,
   ChevronRight,
   Columns2,
   Download,
@@ -58,6 +57,7 @@ import {
 import { api, ApiError, downloadFile } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { PageHeading } from '../../components/page-heading';
+import { PaginationNav } from '../../components/pagination-nav';
 import { AddSection } from '../../components/add-section';
 import { ReadableText } from '../../components/readable-text';
 import { StatusBadge } from '../../components/status-badge';
@@ -1117,33 +1117,40 @@ function DeleteSourceDialog({
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md p-6 gap-5">
-        <div className="flex items-start gap-4">
-          <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-destructive/10 text-destructive border border-destructive/20 shadow-2xs dark:bg-destructive/15">
+      <DialogContent className="relative sm:max-w-lg p-6 gap-5 overflow-hidden">
+        {/* Top destructive accent gradient strip */}
+        <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-destructive via-red-500 to-rose-600" />
+
+        <div className="flex items-start gap-4 w-full min-w-0">
+          <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-destructive/10 text-destructive border border-destructive/25 shadow-xs ring-4 ring-destructive/5 dark:bg-destructive/15 dark:ring-destructive/10">
             <Trash2 className="size-5" aria-hidden="true" />
           </div>
           <div className="flex flex-col gap-1 min-w-0 flex-1">
-            <DialogTitle className="text-lg font-semibold tracking-tight text-foreground">
+            <DialogTitle className="text-lg font-bold tracking-tight text-foreground">
               Eliminar fuente
             </DialogTitle>
             <DialogDescription className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
-              Esta acción es permanente y no se puede deshacer. Solo es posible mientras la fuente
-              nunca haya sido aprobada.
+              Esta acción es{' '}
+              <strong className="text-foreground font-semibold">permanente e irreversible</strong>.
+              Solo es posible mientras la fuente nunca haya sido aprobada.
             </DialogDescription>
           </div>
         </div>
 
-        <div className="rounded-xl border border-destructive/20 bg-destructive/[0.04] p-3.5 dark:border-destructive/30 dark:bg-destructive/[0.08]">
-          <p className="text-[11px] font-medium text-destructive mb-1.5 flex items-center gap-1.5">
-            <AlertTriangle className="size-3.5" aria-hidden="true" />
-            Fuente seleccionada para eliminación definitiva:
-          </p>
-          <div className="flex items-center gap-2.5">
-            <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded-md bg-background text-foreground border border-border shadow-2xs shrink-0">
+        {/* Affected item preview card */}
+        <div className="rounded-xl border border-destructive/20 bg-destructive/[0.04] p-3.5 dark:border-destructive/30 dark:bg-destructive/[0.08] flex flex-col gap-2 w-full min-w-0">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="size-4 text-destructive shrink-0" aria-hidden="true" />
+            <p className="text-xs font-semibold text-foreground">
+              Fuente seleccionada para eliminación definitiva:
+            </p>
+          </div>
+          <div className="flex items-center gap-2.5 rounded-lg border border-destructive/20 bg-background/80 p-2.5 min-w-0">
+            <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-muted text-foreground border border-border shadow-2xs shrink-0">
               {source.code}
             </span>
             <span
-              className="text-sm font-semibold text-foreground truncate"
+              className="text-sm font-semibold text-foreground truncate min-w-0 flex-1"
               title={source.source.title}
             >
               {source.source.title}
@@ -1151,34 +1158,39 @@ function DeleteSourceDialog({
           </div>
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-2.5 pt-1">
-          <Button
-            type="button"
-            variant="outline"
-            className="border-border/80 hover:bg-muted font-medium"
-            onClick={() => onOpenChange(false)}
-          >
-            Cancelar
-          </Button>
-          <Button
-            type="button"
-            variant="destructive"
-            disabled={deleting}
-            onClick={handleDelete}
-            className="gap-2 font-medium shadow-xs"
-          >
-            {deleting ? (
-              <>
-                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                Eliminando…
-              </>
-            ) : (
-              <>
-                <Trash2 className="size-4" aria-hidden="true" />
-                Eliminar definitivamente
-              </>
-            )}
-          </Button>
+        <DialogFooter className="-mx-6 -mb-6 mt-1 flex items-center justify-between gap-3 border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10 w-[calc(100%+3rem)]">
+          <p className="text-[11px] text-muted-foreground/70 hidden sm:block truncate">
+            Presione Esc para cancelar
+          </p>
+          <div className="flex items-center gap-2 shrink-0 ml-auto">
+            <Button
+              type="button"
+              variant="outline"
+              className="border-border/80 hover:bg-muted font-medium"
+              onClick={() => onOpenChange(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={deleting}
+              onClick={handleDelete}
+              className="gap-2 font-medium shadow-xs"
+            >
+              {deleting ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Eliminando…
+                </>
+              ) : (
+                <>
+                  <Trash2 className="size-4" aria-hidden="true" />
+                  Eliminar definitivamente
+                </>
+              )}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -1251,33 +1263,40 @@ function ArchiveSourceDialog({
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md p-6 gap-5">
-        <div className="flex items-start gap-4">
-          <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 shadow-2xs">
+      <DialogContent className="relative sm:max-w-lg p-6 gap-5 overflow-hidden">
+        {/* Top amber accent gradient strip */}
+        <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-amber-500 via-amber-400 to-orange-500" />
+
+        <div className="flex items-start gap-4 w-full min-w-0">
+          <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/25 shadow-xs ring-4 ring-amber-500/5 dark:ring-amber-500/10">
             <Archive className="size-5" aria-hidden="true" />
           </div>
           <div className="flex flex-col gap-1 min-w-0 flex-1">
-            <DialogTitle className="text-lg font-semibold tracking-tight text-foreground">
+            <DialogTitle className="text-lg font-bold tracking-tight text-foreground">
               Archivar fuente
             </DialogTitle>
             <DialogDescription className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
-              Archivarla la oculta de la lista y deja de usarse, sin borrar su historial. Podrá
-              verla con el filtro «Archivadas» y restaurarla cuando quiera.
+              Archivarla la oculta de la lista activa sin borrar su historial. Podrá verla con el
+              filtro «Archivadas» y restaurarla cuando quiera.
             </DialogDescription>
           </div>
         </div>
 
-        <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-3.5 dark:border-amber-500/30 dark:bg-amber-500/[0.08]">
-          <p className="text-[11px] font-medium text-amber-600 dark:text-amber-400 mb-1.5 flex items-center gap-1.5">
-            <Archive className="size-3.5" aria-hidden="true" />
-            Fuente que se archivará:
-          </p>
-          <div className="flex items-center gap-2.5">
-            <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded-md bg-background text-foreground border border-border shadow-2xs shrink-0">
+        {/* Affected item card */}
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-3.5 dark:border-amber-500/30 dark:bg-amber-500/[0.08] flex flex-col gap-2 w-full min-w-0">
+          <div className="flex items-center gap-2">
+            <Archive
+              className="size-4 text-amber-600 dark:text-amber-400 shrink-0"
+              aria-hidden="true"
+            />
+            <p className="text-xs font-semibold text-foreground">Fuente que se archivará:</p>
+          </div>
+          <div className="flex items-center gap-2.5 rounded-lg border border-border/60 bg-background/80 p-2.5 min-w-0">
+            <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-muted text-foreground border border-border shadow-2xs shrink-0">
               {source.code}
             </span>
             <span
-              className="text-sm font-semibold text-foreground truncate"
+              className="text-sm font-semibold text-foreground truncate min-w-0 flex-1"
               title={source.source.title}
             >
               {source.source.title}
@@ -1285,33 +1304,46 @@ function ArchiveSourceDialog({
           </div>
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-2.5 pt-1">
-          <Button
-            type="button"
-            variant="outline"
-            className="border-border/80 hover:bg-muted font-medium"
-            onClick={() => onOpenChange(false)}
-          >
-            Cancelar
-          </Button>
-          <Button
-            type="button"
-            disabled={archiving}
-            onClick={handleArchive}
-            className="gap-2 font-medium shadow-xs"
-          >
-            {archiving ? (
-              <>
-                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                Archivando…
-              </>
-            ) : (
-              <>
-                <Archive className="size-4" aria-hidden="true" />
-                Archivar
-              </>
-            )}
-          </Button>
+        {/* Reassurance banner */}
+        <div className="flex items-start gap-2.5 rounded-xl border border-border/60 bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground w-full min-w-0">
+          <AlertTriangle className="size-4 shrink-0 text-amber-500 mt-0.5" aria-hidden="true" />
+          <span>
+            Todo el contenido, archivos extraídos e historial de versiones se mantienen intactos.
+          </span>
+        </div>
+
+        <DialogFooter className="-mx-6 -mb-6 mt-1 flex items-center justify-between gap-3 border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10 w-[calc(100%+3rem)]">
+          <p className="text-[11px] text-muted-foreground/70 hidden sm:block truncate">
+            Presione Esc para cancelar
+          </p>
+          <div className="flex items-center gap-2 shrink-0 ml-auto">
+            <Button
+              type="button"
+              variant="outline"
+              className="border-border/80 hover:bg-muted font-medium"
+              onClick={() => onOpenChange(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={archiving}
+              onClick={handleArchive}
+              className="gap-2 font-medium shadow-xs bg-amber-600 hover:bg-amber-700 text-white dark:bg-amber-600 dark:hover:bg-amber-500"
+            >
+              {archiving ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Archivando…
+                </>
+              ) : (
+                <>
+                  <Archive className="size-4" aria-hidden="true" />
+                  Archivar
+                </>
+              )}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -1547,47 +1579,16 @@ function SourcesContent({ projectId }: { projectId: string }) {
                 />
               ))}
             </ul>
-            {pageCount > 1 ? (
-              <nav
-                aria-label="Paginación de fuentes"
-                className="flex flex-col items-center justify-between gap-3 rounded-xl border border-border/50 bg-card/60 px-4 py-3 text-xs text-muted-foreground sm:flex-row sm:text-sm"
-              >
-                <span className="font-medium text-foreground/80">
-                  Mostrando {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} de{' '}
-                  {total} fuentes
-                </span>
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 gap-1 px-2.5 text-xs"
-                    disabled={page === 0}
-                    onClick={() => setPage((p) => p - 1)}
-                  >
-                    <ChevronLeft className="size-3.5" aria-hidden="true" />
-                    Anterior
-                  </Button>
-                  <span
-                    aria-live="polite"
-                    className="rounded-md border border-border/40 bg-muted px-2.5 py-1 text-xs font-semibold text-foreground"
-                  >
-                    Página {page + 1} de {pageCount}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 gap-1 px-2.5 text-xs"
-                    disabled={page + 1 >= pageCount}
-                    onClick={() => setPage((p) => p + 1)}
-                  >
-                    Siguiente
-                    <ChevronRight className="size-3.5" aria-hidden="true" />
-                  </Button>
-                </div>
-              </nav>
-            ) : null}
+            <PaginationNav
+              page={page}
+              pageCount={pageCount}
+              total={total}
+              pageSize={PAGE_SIZE}
+              setPage={setPage}
+              itemLabel="fuentes"
+              ariaLabel="Paginación de fuentes"
+              hideWhenSinglePage
+            />
           </>
         )}
       </QueryState>

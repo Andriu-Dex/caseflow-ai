@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import {
+  AlertTriangle,
   Archive,
   CheckCircle2,
   ChevronRight,
@@ -9,6 +10,7 @@ import {
   EyeOff,
   Link2,
   ListChecks,
+  Loader2,
   MoreHorizontal,
   Pencil,
   RefreshCw,
@@ -24,8 +26,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
-  DialogHeader,
   DialogTitle,
   DropdownMenu,
   DropdownMenuContent,
@@ -244,10 +244,12 @@ function UseCaseRow({
             className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`}
             aria-hidden="true"
           />
-          <span className="shrink-0 font-mono text-xs font-semibold text-muted-foreground">
-            {u.code}
+          <span className="flex min-w-0 flex-1 items-baseline gap-2">
+            <span className="shrink-0 font-mono text-sm font-semibold text-muted-foreground">
+              {u.code}
+            </span>
+            <span className="truncate text-sm font-medium text-foreground">{uc.name}</span>
           </span>
-          <span className="truncate text-sm font-medium text-foreground">{uc.name}</span>
         </button>
         <div className="flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-300">
@@ -490,29 +492,95 @@ export function UseCaseList({
 
       {archiving ? (
         <Dialog open onOpenChange={(o) => (o ? null : setArchiving(null))}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Archivar caso de uso</DialogTitle>
-              <DialogDescription>
-                Deja de mostrarse en las listas y en la preparación, pero su historial se conserva y
-                su código no se reutiliza.
-              </DialogDescription>
-            </DialogHeader>
-            <p className="text-sm text-foreground">
-              Va a archivar{' '}
-              <strong>
-                {archiving.code} — {archiving.useCase.name}
-              </strong>
-              .
-            </p>
-            <DialogFooter>
-              <Button type="button" variant="ghost" onClick={() => setArchiving(null)}>
-                Cancelar
-              </Button>
-              <Button type="button" disabled={archiveBusy} onClick={confirmArchive}>
-                {archiveBusy ? 'Archivando…' : 'Archivar'}
-              </Button>
-            </DialogFooter>
+          <DialogContent className="sm:max-w-lg p-6 gap-5 overflow-hidden">
+            <div
+              className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-amber-500/80 via-amber-400 to-amber-500/80"
+              aria-hidden="true"
+            />
+            <div className="flex items-start gap-4 w-full min-w-0">
+              <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/25 shadow-xs ring-4 ring-amber-500/5">
+                <Archive className="size-5.5" aria-hidden="true" />
+              </div>
+              <div className="flex flex-col gap-1 min-w-0 flex-1">
+                <DialogTitle className="text-lg font-bold tracking-tight text-foreground">
+                  Archivar caso de uso
+                </DialogTitle>
+                <DialogDescription className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+                  Deja de mostrarse en las listas y en la preparación, pero su historial se conserva
+                  y su código no se reutiliza.
+                </DialogDescription>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border/70 bg-muted/40 p-3.5 flex flex-col gap-2.5 w-full min-w-0">
+              <span className="text-xs font-semibold text-foreground flex items-center gap-1.5 pb-1 border-b border-border/40">
+                <Workflow className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                Caso de uso a archivar:
+              </span>
+              <div className="flex items-center gap-2.5 rounded-lg border border-border/60 bg-background/80 p-2.5 shadow-2xs dark:bg-background/40 w-full min-w-0 overflow-hidden">
+                <span className="inline-flex items-center rounded-md border border-border/60 bg-muted/60 px-2 py-0.5 font-mono text-xs font-semibold text-foreground shadow-2xs shrink-0">
+                  {archiving.code}
+                </span>
+                <span
+                  className="text-xs font-medium text-foreground truncate flex-1 min-w-0"
+                  title={archiving.useCase.name}
+                >
+                  {archiving.useCase.name}
+                </span>
+              </div>
+              <p className="sr-only">
+                Va a archivar{' '}
+                <strong>
+                  {archiving.code} — {archiving.useCase.name}
+                </strong>
+                .
+              </p>
+            </div>
+
+            <div className="flex items-start gap-2.5 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 text-xs leading-relaxed dark:bg-amber-500/10 w-full min-w-0">
+              <AlertTriangle
+                className="size-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400"
+                aria-hidden="true"
+              />
+              <span className="text-muted-foreground">
+                Podrás consultar el historial de este caso de uso o restaurarlo en cualquier momento
+                desde el filtro de archivados.
+              </span>
+            </div>
+
+            <div className="-mx-6 -mb-6 mt-1 flex items-center justify-between gap-3 border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10 w-[calc(100%+3rem)]">
+              <span className="text-2xs text-muted-foreground/70 hidden sm:inline truncate">
+                Presione Esc para cancelar
+              </span>
+              <div className="flex items-center gap-2.5 shrink-0 ml-auto">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 px-4 rounded-xl border-border/80 hover:bg-muted font-medium text-xs sm:text-sm text-foreground shadow-2xs"
+                  onClick={() => setArchiving(null)}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  disabled={archiveBusy}
+                  onClick={confirmArchive}
+                  className="h-9 px-4 gap-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white dark:bg-amber-500 dark:hover:bg-amber-600 dark:text-zinc-950 font-semibold text-xs sm:text-sm shadow-xs transition-all"
+                >
+                  {archiveBusy ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                      Archivando…
+                    </>
+                  ) : (
+                    <>
+                      <Archive className="size-4" aria-hidden="true" />
+                      Archivar
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
           </DialogContent>
         </Dialog>
       ) : null}

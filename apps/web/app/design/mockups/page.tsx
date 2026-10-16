@@ -20,6 +20,7 @@ import {
   Loader2,
   Maximize2,
   Minimize2,
+  Pencil,
   Wand2,
   X,
   ZoomIn,
@@ -159,32 +160,42 @@ function ScreenEditDialog({
 }) {
   return (
     <Dialog open={screen !== null} onOpenChange={(open) => (!open && !busy ? onClose() : null)}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Editar pantalla: {screen?.screenName}</DialogTitle>
-          <DialogDescription>
-            Stitch modificará solo esta pantalla; las demás se conservan tal cual.
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="sm:max-w-lg p-6 gap-5">
+        <div className="flex items-start gap-4">
+          <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-2xs">
+            <Pencil className="size-5" aria-hidden="true" />
+          </div>
+          <div className="flex flex-col gap-1 min-w-0 flex-1">
+            <DialogTitle className="text-lg font-semibold tracking-tight text-foreground">
+              Editar pantalla: {screen?.screenName}
+            </DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+              Stitch modificará solo esta pantalla; las demás se conservan tal cual.
+            </DialogDescription>
+          </div>
+        </div>
+
         {imageUrl ? (
-          <div className="flex aspect-[16/10] items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40 p-2">
+          <div className="flex aspect-[16/10] items-center justify-center overflow-hidden rounded-xl border border-border/70 bg-muted/30 p-2 shadow-2xs">
             {busy ? (
               <AiOrbitSpinner label="Aplicando los cambios a esta pantalla…" />
             ) : (
               <AuthedImage
                 url={imageUrl}
                 alt={screen?.screenName ?? ''}
-                className="max-h-full max-w-full object-contain"
+                className="max-h-full max-w-full rounded-lg object-contain shadow-2xs"
               />
             )}
           </div>
         ) : null}
+
         {screen?.refinementPrompt ? (
-          <p className="text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">Última edición:</span>{' '}
+          <div className="rounded-xl border border-border/60 bg-muted/30 px-3.5 py-2.5 text-xs text-muted-foreground">
+            <span className="font-semibold text-foreground">Última edición:</span>{' '}
             {screen.refinementPrompt}
-          </p>
+          </div>
         ) : null}
+
         <MockupRefineForm
           busy={busy}
           autoFocus
