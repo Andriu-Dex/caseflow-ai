@@ -96,11 +96,11 @@ export function UpgradeRouteButton({
         Subir de ruta…
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="relative sm:max-w-md p-6 gap-5 overflow-hidden">
+        <DialogContent className="relative sm:max-w-lg p-6 gap-5 overflow-hidden">
           {/* Top blue accent gradient strip */}
           <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-blue-500 via-indigo-500 to-sky-500" />
 
-          <div className="flex items-start gap-4">
+          <div className="flex items-start gap-4 w-full min-w-0">
             <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary border border-primary/25 shadow-xs ring-4 ring-primary/5 dark:bg-primary/15 dark:ring-primary/10">
               <ArrowUpCircle className="size-5" aria-hidden="true" />
             </div>
@@ -115,7 +115,7 @@ export function UpgradeRouteButton({
             </div>
           </div>
 
-          <fieldset className="flex flex-col gap-2.5">
+          <fieldset className="flex flex-col gap-2.5 w-full min-w-0">
             <legend className="sr-only">Nueva ruta</legend>
             {targets.map((option) => (
               <label
@@ -133,7 +133,7 @@ export function UpgradeRouteButton({
                   checked={chosen === option}
                   onChange={() => setTarget(option)}
                 />
-                <span className="flex flex-col gap-0.5">
+                <span className="flex flex-col gap-0.5 min-w-0 flex-1">
                   <span className="font-semibold text-sm text-foreground">
                     {WORKFLOW_ROUTE_LABELS[option]}
                   </span>
@@ -145,11 +145,11 @@ export function UpgradeRouteButton({
             ))}
           </fieldset>
 
-          <DialogFooter className="-mx-6 -mb-6 mt-1 flex items-center justify-between border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10">
-            <p className="text-[11px] text-muted-foreground/70 hidden sm:block">
+          <DialogFooter className="-mx-6 -mb-6 mt-1 flex items-center justify-between gap-3 border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10 w-[calc(100%+3rem)]">
+            <p className="text-[11px] text-muted-foreground/70 hidden sm:block truncate">
               Presione Esc para cancelar
             </p>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0 ml-auto">
               <Button
                 type="button"
                 variant="outline"

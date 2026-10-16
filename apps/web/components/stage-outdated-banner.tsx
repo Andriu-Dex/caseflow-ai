@@ -82,11 +82,11 @@ export function StageOutdatedBanner({ stage, projectId }: { stage: string; proje
           if (!busy) setOpen(value);
         }}
       >
-        <DialogContent className="relative sm:max-w-md p-6 gap-5 overflow-hidden">
+        <DialogContent className="relative sm:max-w-lg p-6 gap-5 overflow-hidden">
           {/* Top emerald accent gradient strip */}
           <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-emerald-500 via-teal-500 to-green-600" />
 
-          <div className="flex items-start gap-4">
+          <div className="flex items-start gap-4 w-full min-w-0">
             <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 shadow-xs ring-4 ring-emerald-500/5 dark:ring-emerald-500/10">
               <CheckCircle2 className="size-5" aria-hidden="true" />
             </div>
@@ -101,7 +101,7 @@ export function StageOutdatedBanner({ stage, projectId }: { stage: string; proje
             </div>
           </div>
 
-          <div className="rounded-xl border border-border/70 bg-muted/30 p-4 flex flex-col gap-2">
+          <div className="rounded-xl border border-border/70 bg-muted/30 p-4 flex flex-col gap-2 w-full min-w-0">
             <Label
               htmlFor={`stage-note-${stage}`}
               className="text-xs font-semibold text-foreground"
@@ -121,11 +121,11 @@ export function StageOutdatedBanner({ stage, projectId }: { stage: string; proje
             </p>
           </div>
 
-          <DialogFooter className="-mx-6 -mb-6 mt-1 flex items-center justify-between border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10">
-            <p className="text-[11px] text-muted-foreground/70 hidden sm:block">
+          <DialogFooter className="-mx-6 -mb-6 mt-1 flex items-center justify-between gap-3 border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10 w-[calc(100%+3rem)]">
+            <p className="text-[11px] text-muted-foreground/70 hidden sm:block truncate">
               Presione Esc para cancelar
             </p>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0 ml-auto">
               <Button
                 type="button"
                 variant="outline"
