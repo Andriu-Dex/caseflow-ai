@@ -36,6 +36,10 @@ describe('Batched use case generation jobs', () => {
             throw new AIError('AI_PROVIDER_ERROR', 'Proveedor no disponible.');
           }
           const earlier: { candidateId: string }[] = payload.existingUseCases;
+          // The model cites the shared non-functional context too; it must not stick.
+          const context: string[] = payload.contextRequirementSources.map(
+            (source: { sourceId: string }) => source.sourceId,
+          );
           return {
             provider: 'scripted',
             model: 'test',
@@ -46,7 +50,7 @@ describe('Batched use case generation jobs', () => {
                 objective: `Completar ${code}`,
                 primaryActor: 'Operador',
                 mainFlow: [{ actor: 'Operador', action: `Solicita ${code}` }],
-                relatedRequirementSourceIds: [code],
+                relatedRequirementSourceIds: [code, ...context],
                 // Every batch after the first relates its first proposal to the
                 // very first one proposed.
                 relations:

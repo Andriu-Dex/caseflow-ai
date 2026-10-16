@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   mergeUseCaseBatch,
+  splitPrimaryActor,
   planUseCaseBatches,
   USE_CASE_BATCH_SIZE,
   type BatchCandidate,
@@ -146,5 +147,61 @@ describe('mergeUseCaseBatch', () => {
       0,
     );
     expect(result[1]!.relations).toEqual([{ kind: 'INCLUDE', targetCandidateId: 'B1-C1' }]);
+  });
+});
+
+describe('shared context and primary actor', () => {
+  it('never keeps the shared non-functional requirements as sources', () => {
+    const result = mergeUseCaseBatch(
+      [],
+      { candidates: [candidate('a', 'Registrar venta', ['RF-001', 'RNF-001'])] },
+      ['RF-001'],
+      allowed,
+      0,
+      { contextCodes: new Set(['RNF-001']) },
+    );
+    expect(result[0]!.relatedRequirementSourceIds).toEqual(['RF-001']);
+    // Also when a later proposal is folded into an existing one.
+    const folded = mergeUseCaseBatch(
+      result,
+      { candidates: [candidate('b', 'Registrar venta', ['RF-002', 'RNF-001'])] },
+      ['RF-002'],
+      allowed,
+      1,
+      { contextCodes: new Set(['RNF-001']) },
+    );
+    expect(folded[0]!.relatedRequirementSourceIds).toEqual(['RF-001', 'RF-002']);
+  });
+
+  it('splits a compound primary actor into one primary and the rest secondary', () => {
+    const known = ['Administrador', 'Encargado de sucursal', 'Cajero'];
+    expect(splitPrimaryActor('Administrador o Encargado de sucursal', ['Cajero'], known)).toEqual({
+      primaryActor: 'Administrador',
+      secondaryActors: ['Encargado de sucursal', 'Cajero'],
+    });
+    expect(splitPrimaryActor('Administrador, Encargado de sucursal o Cajero', [], known)).toEqual({
+      primaryActor: 'Administrador',
+      secondaryActors: ['Encargado de sucursal', 'Cajero'],
+    });
+  });
+
+  it('leaves an actor alone when it is single or not made of known actors', () => {
+    const known = ['Administrador', 'Cajero'];
+    expect(splitPrimaryActor('Cajero', [], known).primaryActor).toBe('Cajero');
+    expect(splitPrimaryActor('Cliente o Cajero', [], known).primaryActor).toBe('Cliente o Cajero');
+    expect(splitPrimaryActor('Auditor y contador', [], known).primaryActor).toBe(
+      'Auditor y contador',
+    );
+  });
+
+  it('applies the split to the proposals a batch adds', () => {
+    const c = {
+      ...candidate('a', 'Iniciar sesión', ['RF-001']),
+      primaryActor: 'Cajero o Administrador',
+    };
+    const result = mergeUseCaseBatch([], { candidates: [c] }, ['RF-001'], allowed, 0, {
+      knownActors: ['Cajero', 'Administrador'],
+    });
+    expect(result[0]).toMatchObject({ primaryActor: 'Cajero', secondaryActors: ['Administrador'] });
   });
 });
