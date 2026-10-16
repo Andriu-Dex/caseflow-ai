@@ -34,6 +34,37 @@ describe('DiagramEngine', () => {
     expect(first).toContain('uuid id PK\n');
     expect(() => engine.validate('MERMAID_ER', first)).not.toThrow();
   });
+  it('keeps accented attribute names readable instead of turning the accent into an underscore', () => {
+    const source = engine.generateER({
+      entities: [
+        {
+          localId: 'usuario',
+          name: 'Usuario',
+          attributes: [
+            {
+              name: 'Denominación',
+              type: 'STRING',
+              primaryKey: false,
+              unique: false,
+            },
+            {
+              name: 'Última actividad',
+              type: 'DATETIME',
+              primaryKey: false,
+              unique: false,
+            },
+            { name: 'Ámbito', type: 'STRING', primaryKey: false, unique: false },
+          ],
+        },
+      ],
+      relationships: [],
+    });
+    expect(source).toContain('string Denominacion');
+    expect(source).toContain('datetime Ultima_actividad');
+    expect(source).toContain('string Ambito');
+    expect(source).not.toMatch(/Denominaci_n|_ltima|_mbito/);
+    expect(() => engine.validate('MERMAID_ER', source)).not.toThrow();
+  });
   it('deduplicates the diagram-wide actor list and never invents include/extend', () => {
     const source = engine.generateUseCase({
       systemName: 'Sistema',

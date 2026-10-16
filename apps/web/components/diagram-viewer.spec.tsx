@@ -246,3 +246,50 @@ describe('DiagramViewer — fullscreen mode', () => {
     expect(document.body.style.overflow).toBe('');
   });
 });
+
+// Mermaid's ER renderer: ids carry the svg's id, and each line is named after
+// the two entities it joins.
+const erGraph =
+  '<svg id="container" xmlns="http://www.w3.org/2000/svg">' +
+  '<g class="node default" id="container-entity-usuario-0"><rect/></g>' +
+  '<g class="node default" id="container-entity-valor_parametro-1"><rect/></g>' +
+  '<g class="node default" id="container-entity-rol-2"><rect/></g>' +
+  '<path id="container-id_entity-usuario-0_entity-rol-2_0" data-edge="true" data-id="id_entity-usuario-0_entity-rol-2_0" d="M0 0"/>' +
+  '<path id="container-id_entity-rol-2_entity-valor_parametro-1_1" data-edge="true" data-id="id_entity-rol-2_entity-valor_parametro-1_1" d="M0 0"/>' +
+  '<g class="edgeLabel" id="lbl1"><g class="label" data-id="id_entity-usuario-0_entity-rol-2_0"><foreignObject/></g></g>' +
+  '<g class="edgeLabel" id="lbl2"><g class="label" data-id="id_entity-rol-2_entity-valor_parametro-1_1"><foreignObject/></g></g>' +
+  '</svg>';
+
+describe('DiagramViewer — highlighting an ER diagram', () => {
+  it('follows the lines named after their entities, labels included', () => {
+    const view = render(
+      <DiagramViewer svg={erGraph} source="erDiagram" sourceFormat="MERMAID_ER" code="t" />,
+    );
+    const viewport = screen.getByLabelText(/Vista ampliable/i);
+    const node = (id: string) => view.container.querySelector<SVGElement>(`#container-${id}`)!;
+    const el = (id: string) => view.container.querySelector<SVGElement>(`#${id}`)!;
+    // usuario — rol — valor_parametro (an entity id with an underscore in it).
+    fireEvent.pointerMove(node('entity-usuario-0'));
+    expect(node('entity-rol-2').style.opacity).toBe('');
+    expect(node('entity-valor_parametro-1').style.opacity).toBe('0.15');
+    expect(el('container-id_entity-usuario-0_entity-rol-2_0').style.opacity).toBe('');
+    expect(el('lbl1').style.opacity).toBe('');
+    expect(el('container-id_entity-rol-2_entity-valor_parametro-1_1').style.opacity).toBe('0.06');
+    expect(el('lbl2').style.opacity).toBe('0.06');
+    fireEvent.pointerMove(node('entity-valor_parametro-1'));
+    expect(node('entity-usuario-0').style.opacity).toBe('0.15');
+    expect(node('entity-rol-2').style.opacity).toBe('');
+    fireEvent.pointerLeave(viewport);
+    expect(node('entity-usuario-0').style.opacity).toBe('');
+    expect(el('lbl2').style.opacity).toBe('');
+  });
+
+  it('leaves a Mermaid flowchart alone: its edges are not named after entities', () => {
+    const flow =
+      '<svg id="container" xmlns="http://www.w3.org/2000/svg"><g class="node default" id="flowchart-A-0"/><path data-edge="true" data-id="L_A_B_0" d="M0 0"/></svg>';
+    render(
+      <DiagramViewer svg={flow} source="flowchart TD" sourceFormat="MERMAID_FLOWCHART" code="t" />,
+    );
+    expect(screen.queryByText(/para ver sus conexiones/)).not.toBeInTheDocument();
+  });
+});

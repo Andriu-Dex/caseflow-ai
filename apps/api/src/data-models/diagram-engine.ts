@@ -123,6 +123,10 @@ const cardinality: Record<string, string> = {
   ZERO_OR_MORE: 'o{',
 };
 const safeId = (value: string) => value.replace(/[^A-Za-z0-9_]/g, '_');
+// Mermaid attribute names are plain identifiers: "Denominación" has to become
+// "Denominacion", not "Denominaci_n", which reads as a mistake in the diagram.
+const attributeId = (value: string) =>
+  safeId(value.normalize('NFD').replace(/\p{Diacritic}/gu, ''));
 const quote = (value: string) => value.replace(/["\n\r]/g, ' ').trim();
 
 // Ordinal (code-unit) comparison, never localeCompare: the same input must
@@ -170,7 +174,7 @@ export class DiagramEngine {
         // A primary key is unique already: "PK,UK" only repeats it.
         const flags = attribute.primaryKey ? 'PK' : attribute.unique ? 'UK' : '';
         lines.push(
-          `    ${attribute.type.toLowerCase()} ${safeId(attribute.name)}${flags ? ` ${flags}` : ''}`,
+          `    ${attribute.type.toLowerCase()} ${attributeId(attribute.name)}${flags ? ` ${flags}` : ''}`,
         );
       }
       lines.push('  }');
