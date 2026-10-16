@@ -194,8 +194,8 @@ export function UseCasesSummary({
           {open ? (
             <ul className="mt-2 flex flex-col gap-1" aria-label="Requisitos sin caso de uso">
               {missing.map((r) => (
-                <li key={r.id} className="flex items-start gap-2">
-                  <span className="font-mono text-xs font-semibold text-muted-foreground">
+                <li key={r.id} className="flex items-baseline gap-2">
+                  <span className="shrink-0 font-mono text-sm font-semibold text-muted-foreground">
                     {r.code}
                   </span>
                   <span className="text-foreground/85">{r.requirement.name}</span>
@@ -794,46 +794,41 @@ export function UseCaseList({
               </span>
             </div>
 
-            <div className="-mx-6 -mb-6 mt-1 flex items-center justify-between gap-3 border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10 w-[calc(100%+3rem)]">
-              <span className="text-2xs text-muted-foreground/70 hidden sm:inline truncate">
-                Presione Esc para cancelar
-              </span>
-              <div className="flex items-center gap-2.5 shrink-0 ml-auto">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-9 px-4 rounded-xl border-border/80 hover:bg-muted font-medium text-xs sm:text-sm text-foreground shadow-2xs"
-                  onClick={() => setConfirmingBulk(null)}
-                >
-                  Cancelar
-                </Button>
-                <Button
-                  type="button"
-                  disabled={bulkBusy}
-                  onClick={() => runBulk(confirmingBulk)}
-                  className={`h-9 px-4 gap-2 rounded-xl font-semibold text-xs sm:text-sm shadow-xs transition-all ${
-                    confirmingBulk === 'DELETE'
-                      ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
-                      : 'bg-amber-600 hover:bg-amber-700 text-white dark:bg-amber-500 dark:hover:bg-amber-600 dark:text-zinc-950'
-                  }`}
-                >
-                  {bulkBusy ? (
-                    <>
-                      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                      {BULK_CONFIRM[confirmingBulk].busy}
-                    </>
-                  ) : (
-                    <>
-                      {confirmingBulk === 'DELETE' ? (
-                        <Trash2 className="size-4" aria-hidden="true" />
-                      ) : (
-                        <Archive className="size-4" aria-hidden="true" />
-                      )}
-                      {BULK_CONFIRM[confirmingBulk].button}
-                    </>
-                  )}
-                </Button>
-              </div>
+            <div className="-mx-6 -mb-6 mt-1 flex items-center justify-end gap-2.5 border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10 w-[calc(100%+3rem)]">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-9 px-4 rounded-xl border-border/80 hover:bg-muted font-medium text-xs sm:text-sm text-foreground shadow-2xs"
+                onClick={() => setConfirmingBulk(null)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                disabled={bulkBusy}
+                onClick={() => runBulk(confirmingBulk)}
+                className={`h-9 px-4 gap-2 rounded-xl font-semibold text-xs sm:text-sm shadow-xs transition-all ${
+                  confirmingBulk === 'DELETE'
+                    ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+                    : 'bg-amber-600 hover:bg-amber-700 text-white dark:bg-amber-500 dark:hover:bg-amber-600 dark:text-zinc-950'
+                }`}
+              >
+                {bulkBusy ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                    {BULK_CONFIRM[confirmingBulk].busy}
+                  </>
+                ) : (
+                  <>
+                    {confirmingBulk === 'DELETE' ? (
+                      <Trash2 className="size-4" aria-hidden="true" />
+                    ) : (
+                      <Archive className="size-4" aria-hidden="true" />
+                    )}
+                    {BULK_CONFIRM[confirmingBulk].button}
+                  </>
+                )}
+              </Button>
             </div>
           </DialogContent>
         </Dialog>
@@ -897,38 +892,33 @@ export function UseCaseList({
               </span>
             </div>
 
-            <div className="-mx-6 -mb-6 mt-1 flex items-center justify-between gap-3 border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10 w-[calc(100%+3rem)]">
-              <span className="text-2xs text-muted-foreground/70 hidden sm:inline truncate">
-                Presione Esc para cancelar
-              </span>
-              <div className="flex items-center gap-2.5 shrink-0 ml-auto">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-9 px-4 rounded-xl border-border/80 hover:bg-muted font-medium text-xs sm:text-sm text-foreground shadow-2xs"
-                  onClick={() => setArchiving(null)}
-                >
-                  Cancelar
-                </Button>
-                <Button
-                  type="button"
-                  disabled={archiveBusy}
-                  onClick={confirmArchive}
-                  className="h-9 px-4 gap-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white dark:bg-amber-500 dark:hover:bg-amber-600 dark:text-zinc-950 font-semibold text-xs sm:text-sm shadow-xs transition-all"
-                >
-                  {archiveBusy ? (
-                    <>
-                      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                      Archivando…
-                    </>
-                  ) : (
-                    <>
-                      <Archive className="size-4" aria-hidden="true" />
-                      Archivar
-                    </>
-                  )}
-                </Button>
-              </div>
+            <div className="-mx-6 -mb-6 mt-1 flex items-center justify-end gap-2.5 border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10 w-[calc(100%+3rem)]">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-9 px-4 rounded-xl border-border/80 hover:bg-muted font-medium text-xs sm:text-sm text-foreground shadow-2xs"
+                onClick={() => setArchiving(null)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                disabled={archiveBusy}
+                onClick={confirmArchive}
+                className="h-9 px-4 gap-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white dark:bg-amber-500 dark:hover:bg-amber-600 dark:text-zinc-950 font-semibold text-xs sm:text-sm shadow-xs transition-all"
+              >
+                {archiveBusy ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                    Archivando…
+                  </>
+                ) : (
+                  <>
+                    <Archive className="size-4" aria-hidden="true" />
+                    Archivar
+                  </>
+                )}
+              </Button>
             </div>
           </DialogContent>
         </Dialog>

@@ -1158,39 +1158,34 @@ function DeleteSourceDialog({
           </div>
         </div>
 
-        <DialogFooter className="-mx-6 -mb-6 mt-1 flex items-center justify-between gap-3 border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10 w-[calc(100%+3rem)]">
-          <p className="text-[11px] text-muted-foreground/70 hidden sm:block truncate">
-            Presione Esc para cancelar
-          </p>
-          <div className="flex items-center gap-2 shrink-0 ml-auto">
-            <Button
-              type="button"
-              variant="outline"
-              className="border-border/80 hover:bg-muted font-medium"
-              onClick={() => onOpenChange(false)}
-            >
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              disabled={deleting}
-              onClick={handleDelete}
-              className="gap-2 font-medium shadow-xs"
-            >
-              {deleting ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                  Eliminando…
-                </>
-              ) : (
-                <>
-                  <Trash2 className="size-4" aria-hidden="true" />
-                  Eliminar definitivamente
-                </>
-              )}
-            </Button>
-          </div>
+        <DialogFooter className="-mx-6 -mb-6 mt-1 flex items-center justify-end gap-2 border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10 w-[calc(100%+3rem)]">
+          <Button
+            type="button"
+            variant="outline"
+            className="border-border/80 hover:bg-muted font-medium"
+            onClick={() => onOpenChange(false)}
+          >
+            Cancelar
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={deleting}
+            onClick={handleDelete}
+            className="gap-2 font-medium shadow-xs"
+          >
+            {deleting ? (
+              <>
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                Eliminando…
+              </>
+            ) : (
+              <>
+                <Trash2 className="size-4" aria-hidden="true" />
+                Eliminar definitivamente
+              </>
+            )}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -1312,38 +1307,33 @@ function ArchiveSourceDialog({
           </span>
         </div>
 
-        <DialogFooter className="-mx-6 -mb-6 mt-1 flex items-center justify-between gap-3 border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10 w-[calc(100%+3rem)]">
-          <p className="text-[11px] text-muted-foreground/70 hidden sm:block truncate">
-            Presione Esc para cancelar
-          </p>
-          <div className="flex items-center gap-2 shrink-0 ml-auto">
-            <Button
-              type="button"
-              variant="outline"
-              className="border-border/80 hover:bg-muted font-medium"
-              onClick={() => onOpenChange(false)}
-            >
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              disabled={archiving}
-              onClick={handleArchive}
-              className="gap-2 font-medium shadow-xs bg-amber-600 hover:bg-amber-700 text-white dark:bg-amber-600 dark:hover:bg-amber-500"
-            >
-              {archiving ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                  Archivando…
-                </>
-              ) : (
-                <>
-                  <Archive className="size-4" aria-hidden="true" />
-                  Archivar
-                </>
-              )}
-            </Button>
-          </div>
+        <DialogFooter className="-mx-6 -mb-6 mt-1 flex items-center justify-end gap-2 border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10 w-[calc(100%+3rem)]">
+          <Button
+            type="button"
+            variant="outline"
+            className="border-border/80 hover:bg-muted font-medium"
+            onClick={() => onOpenChange(false)}
+          >
+            Cancelar
+          </Button>
+          <Button
+            type="button"
+            disabled={archiving}
+            onClick={handleArchive}
+            className="gap-2 font-medium shadow-xs bg-amber-600 hover:bg-amber-700 text-white dark:bg-amber-600 dark:hover:bg-amber-500"
+          >
+            {archiving ? (
+              <>
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                Archivando…
+              </>
+            ) : (
+              <>
+                <Archive className="size-4" aria-hidden="true" />
+                Archivar
+              </>
+            )}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

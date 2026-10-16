@@ -95,7 +95,7 @@ function RequirementSelector({
               {rows.map((r) => (
                 <label
                   key={r.id}
-                  className="flex cursor-pointer items-start gap-2 rounded px-1.5 py-1 text-sm hover:bg-muted/40"
+                  className="flex cursor-pointer items-start gap-2.5 rounded px-2 py-1.5 text-sm hover:bg-muted/40 transition-colors"
                 >
                   <input
                     type="checkbox"
@@ -104,10 +104,12 @@ function RequirementSelector({
                     onChange={() => toggle(r.version.id)}
                     aria-label={`${r.code} ${r.requirement.name}`}
                   />
-                  <span className="font-mono text-xs font-semibold text-muted-foreground">
-                    {r.code}
+                  <span className="flex min-w-0 flex-1 items-baseline gap-2">
+                    <span className="shrink-0 font-mono text-sm font-semibold text-muted-foreground">
+                      {r.code}
+                    </span>
+                    <span className="text-foreground/90">{r.requirement.name}</span>
                   </span>
-                  <span className="text-foreground/90">{r.requirement.name}</span>
                 </label>
               ))}
             </div>
