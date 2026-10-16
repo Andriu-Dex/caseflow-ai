@@ -233,6 +233,16 @@ describe('Requirements list', () => {
   });
 
   // DEC-138: several requirements at once, after confirming.
+  it('approves every pending requirement in one call, not one request each', async () => {
+    mocks.bulk.mockResolvedValue({ affected: 2, skipped: 0 });
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: /Aprobar todos los pendientes/ }));
+    await waitFor(() => expect(mocks.bulk).toHaveBeenCalledWith('p1', 'APPROVE', ['r2', 'r3']));
+    expect(mocks.bulk).toHaveBeenCalledTimes(1);
+    expect(mocks.transition).not.toHaveBeenCalled();
+  });
+
   it('archives and approves the selected requirements in one action', async () => {
     mocks.bulk.mockResolvedValue({ affected: 2, skipped: 0 });
     const user = userEvent.setup();
