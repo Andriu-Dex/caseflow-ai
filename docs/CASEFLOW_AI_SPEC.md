@@ -7261,6 +7261,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-138 | Requisitos: la lista se pagina de 25 en 25 y admite aprobar, archivar o eliminar varios a la vez (todos o ninguno; eliminar solo los nunca aprobados y sin referencias); las restricciones transversales se cubren con su propio requisito no funcional (prompt `requirements.generate@5`) y las prioridades se reparten con criterios explícitos (`@6`); el diagrama de clases y el modelo conceptual no esperan citar requisitos no funcionales (§221.19) | Accepted |
 | DEC-139 | Casos de uso: la generación con IA se hace por lotes en segundo plano (seis requisitos funcionales por lote, los no funcionales como contexto compartido, los casos ya propuestos como contexto de cada lote), con avance visible, un punto de control por lote y reanudación; admite más de 50 requisitos y más de 20 propuestas (§221.20) | Accepted |
 | DEC-140 | Los análisis grandes no se rechazan: el modelo de datos, los artefactos de diseño y los diagramas aceptan hasta 500 fuentes, y lo que se envía a la IA se ajusta a un presupuesto de entrada reduciendo primero el detalle de los casos de uso y después el de los requisitos, sin omitir ninguno (§221.21) | Accepted |
+| DEC-141 | Diagramas grandes legibles: el de casos de uso agrupa los casos de cada actor primario en un paquete y da a las líneas de cada actor su propio color; el visor desplaza con la rueda, hace zoom con Ctrl + rueda y resalta las conexiones del elemento señalado o pulsado (§221.22) | Accepted |
 
 ---
 
@@ -7697,7 +7698,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-140)
+# 221. Extensiones de V2 (DEC-116 a DEC-141)
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
@@ -7913,6 +7914,12 @@ El servidor bloquea congelar diseño y construir mientras quedan pasos por rehac
 - **Límites de selección:** la generación del modelo de datos (requisitos y casos de uso), la de los artefactos de diseño (`sourceVersionIds`) y la de los diagramas aceptan hasta 500 versiones fuente, en lugar de 100. Un proyecto con 160 requisitos y 105 casos de uso ya no recibe «La solicitud no es válida».
 - **Presupuesto de entrada:** estas generaciones envían a la IA todo el análisis en una sola llamada. Si supera unos 90 000 tokens estimados, se envía con menos detalle en lugar de rechazarse, siempre con todos los requisitos y casos de uso: primero los casos de uso pierden detalle (en este orden: los pasos de los flujos alternativos y el actor de cada paso; luego las precondiciones y los flujos alternativos; luego las postcondiciones y el flujo principal) y solo después los requisitos (precondiciones y postcondiciones, y por último la descripción). Los demás tipos de fuente van completos.
 - **Qué no cambia:** las reglas de cobertura y coherencia (DEC-121) se calculan siempre sobre el contenido completo; solo se recorta lo que lee el modelo. La capacidad de cada proveedor sigue decidiendo si la solicitud cabe (DEC-127).
+
+## 221.22 Diagramas grandes legibles (DEC-141)
+
+- **Fuente determinista:** el diagrama de casos de uso agrupa los casos de cada actor primario en un paquete («Casos de uso de {actor}»), ordenados por actor y luego por código, con un tinte propio; los que no tienen actor van en «Sin actor primario». Las líneas de cada actor, primario o secundario, comparten un color y distintos actores no lo comparten. La numeración de los casos (U1, U2…) sigue el orden de código, de modo que la misma entrada da siempre la misma fuente. Es solo presentación: no cambia qué actor realiza qué caso ni las relaciones INCLUDE/EXTEND.
+- **Visor:** la rueda normal desplaza el diagrama de arriba abajo dentro de su recuadro (con Shift, de lado) y, al llegar al borde, deja que la página siga; Ctrl + rueda, o el pellizco del trackpad, hace zoom. El recuadro mide como máximo el 75 % de la altura de la ventana.
+- **Resaltado de conexiones:** al señalar un elemento, o pulsarlo para mantenerlo, el visor atenúa todo salvo ese elemento, aquello con lo que se conecta y las líneas entre ellos; pulsar el fondo, otro elemento o «Quitar resaltado» lo suelta. Usa el marcado que PlantUML deja en el SVG (`data-entity-1`/`data-entity-2` en cada línea); un diagrama sin ese marcado no lo ofrece. Los diagramas anteriores conservan su apariencia hasta regenerarlos.
 
 ## 221.4 Fuera de alcance de estas extensiones
 

@@ -81,7 +81,7 @@ describe('DiagramEngine', () => {
       useCases: [{ code: 'CU-001', name: 'Ingresar', actors: ['Cliente', 'Cliente', ' Cliente '] }],
     });
     expect(source.match(/actor "Cliente"/g)).toHaveLength(1);
-    expect(source.match(/-- U1/g)).toHaveLength(1);
+    expect(source.match(/\]- U1/g)).toHaveLength(1);
   });
   it('orders actors and use cases ordinally, independent of locale', () => {
     // Under a default/locale-aware compare these could sort differently
@@ -96,6 +96,37 @@ describe('DiagramEngine', () => {
     });
     const order = ['A', 'Z', 'a', 'b'].map((actor) => source.indexOf(`actor "${actor}"`));
     expect(order).toEqual([...order].sort((x, y) => x - y));
+  });
+  it("groups each primary actor's use cases in a package and colours each actor's lines", () => {
+    const source = engine.generateUseCase({
+      systemName: 'Sistema',
+      useCases: [
+        { code: 'CU-003', name: 'Anular', actors: ['Cajero', 'Gerente'] },
+        { code: 'CU-001', name: 'Publicar', actors: ['Gerente'] },
+        { code: 'CU-002', name: 'Vender', actors: ['Cajero'] },
+        { code: 'CU-004', name: 'Sin dueño', actors: [] },
+      ],
+    });
+    const lines = source.split('\n');
+    // Packages follow the ordinal actor order; members follow the code order.
+    const at = (text: string) => lines.findIndex((line) => line.includes(text));
+    expect(at('package "Casos de uso de Cajero"')).toBeGreaterThan(-1);
+    expect(at('package "Casos de uso de Cajero"')).toBeLessThan(
+      at('package "Casos de uso de Gerente"'),
+    );
+    expect(at('as U2')).toBeLessThan(at('as U3')); // Vender, then Anular, both Cajero's
+    expect(at('as U3')).toBeLessThan(at('package "Casos de uso de Gerente"'));
+    expect(at('package "Sin actor primario"')).toBeGreaterThan(at('as U1'));
+    // Use case numbers follow the code, not the grouping.
+    expect(source).toContain('usecase "Publicar" as U1');
+    expect(source).toContain('usecase "Anular" as U3');
+    // An actor's lines share one colour, and two actors never share it.
+    const colour = (actor: string) =>
+      lines.filter((l) => l.startsWith(actor + ' -[')).map((l) => /#[0-9A-F]{6}/.exec(l)![0]);
+    expect(new Set(colour('A1')).size).toBe(1);
+    expect(new Set(colour('A2')).size).toBe(1);
+    expect(colour('A1')[0]).not.toBe(colour('A2')[0]);
+    expect(() => engine.validate('PLANTUML', source)).not.toThrow();
   });
   it('rejects unsafe or malformed source', () => {
     expect(() => engine.validate('PLANTUML', '@startuml\n!include evil\n@enduml')).toThrow(

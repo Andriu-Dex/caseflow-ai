@@ -110,3 +110,77 @@ describe('DiagramViewer — zoom/pan', () => {
     expect(wheel(100).defaultPrevented).toBe(false);
   });
 });
+
+// Three entities in a chain: ent1 — ent2 — ent3, as PlantUML marks them up.
+const graph =
+  '<svg xmlns="http://www.w3.org/2000/svg">' +
+  '<g class="entity" id="ent1"><ellipse/></g><g class="entity" id="ent2"><ellipse/></g>' +
+  '<g class="entity" id="ent3"><ellipse/></g>' +
+  '<g class="link" data-entity-1="ent1" data-entity-2="ent2" id="l1"><path id="A1-U1" d="M0 0"/></g>' +
+  '<g class="link" data-entity-1="ent2" data-entity-2="ent3" id="l2"><path id="U1-U2" d="M0 0"/></g>' +
+  '</svg>';
+
+describe('DiagramViewer — highlighting connections', () => {
+  const setup = () => {
+    const view = render(
+      <DiagramViewer svg={graph} source="@startuml" sourceFormat="PLANTUML" code="test" />,
+    );
+    const viewport = screen.getByLabelText(/Vista ampliable/i);
+    // jsdom doesn't implement pointer capture.
+    viewport.setPointerCapture = () => undefined;
+    const el = (id: string) => view.container.querySelector<SVGElement>(`#${id}`)!;
+    return { viewport, el };
+  };
+
+  it('fades what is not connected to the element pointed at, and restores it on leaving', () => {
+    const { viewport, el } = setup();
+    fireEvent.pointerMove(el('ent1'));
+    expect(el('ent3').style.opacity).toBe('0.15');
+    expect(el('l2').style.opacity).toBe('0.06');
+    expect(el('ent2').style.opacity).toBe('');
+    expect(el('l1').style.opacity).toBe('');
+    expect(el('l1').querySelector('path')!.style.strokeWidth).toBe('2.5px');
+    fireEvent.pointerLeave(viewport);
+    expect(el('ent3').style.opacity).toBe('');
+    expect(el('l2').style.opacity).toBe('');
+    expect(el('l1').querySelector('path')!.style.strokeWidth).toBe('');
+  });
+
+  it('keeps the highlight of a clicked element until another click, and drops it on the background', () => {
+    const { viewport, el } = setup();
+    fireEvent.pointerDown(el('ent1'), { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(el('ent1'), { clientX: 12, clientY: 11 });
+    fireEvent.pointerLeave(viewport);
+    expect(el('ent3').style.opacity).toBe('0.15');
+    // Pointing elsewhere does not move it while it is kept.
+    fireEvent.pointerMove(el('ent3'));
+    expect(el('ent1').style.opacity).toBe('');
+    expect(el('ent3').style.opacity).toBe('0.15');
+    expect(screen.getByRole('button', { name: 'Quitar resaltado' })).toBeInTheDocument();
+
+    fireEvent.pointerDown(el('ent3'), { button: 0, clientX: 50, clientY: 50 });
+    fireEvent.pointerUp(el('ent3'), { clientX: 50, clientY: 50 });
+    expect(el('ent1').style.opacity).toBe('0.15');
+    expect(el('ent3').style.opacity).toBe('');
+
+    fireEvent.pointerDown(viewport, { button: 0, clientX: 5, clientY: 5 });
+    fireEvent.pointerUp(viewport, { clientX: 5, clientY: 5 });
+    expect(el('ent1').style.opacity).toBe('');
+    expect(screen.queryByRole('button', { name: 'Quitar resaltado' })).not.toBeInTheDocument();
+  });
+
+  it('does not take a drag for a click', () => {
+    const { el } = setup();
+    fireEvent.pointerDown(el('ent1'), { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(el('ent1'), { clientX: 60, clientY: 10 });
+    fireEvent.pointerUp(el('ent1'), { clientX: 60, clientY: 10 });
+    expect(screen.queryByRole('button', { name: 'Quitar resaltado' })).not.toBeInTheDocument();
+  });
+
+  it('does nothing, and does not mention it, for a diagram without connection markup', () => {
+    render(
+      <DiagramViewer svg={svg} source="flowchart TD" sourceFormat="MERMAID_FLOWCHART" code="t" />,
+    );
+    expect(screen.queryByText(/para ver sus conexiones/)).not.toBeInTheDocument();
+  });
+});
