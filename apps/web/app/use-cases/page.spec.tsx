@@ -1,10 +1,10 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import UseCasesPage from './page';
 import { TestProviders } from '../../lib/test-utils';
 
-const mocks = vi.hoisted(() => ({ list: vi.fn(), generate: vi.fn() }));
+const mocks = vi.hoisted(() => ({ list: vi.fn(), generate: vi.fn(), bulk: vi.fn() }));
 
 vi.mock('sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }));
 vi.mock('../../lib/api', () => ({
@@ -12,6 +12,7 @@ vi.mock('../../lib/api', () => ({
     useCases: {
       list: (...args: unknown[]) => mocks.list(...args),
       generate: (...args: unknown[]) => mocks.generate(...args),
+      bulk: (...args: unknown[]) => mocks.bulk(...args),
     },
     requirements: { list: vi.fn(async () => ({ items: requirements })) },
     useCaseDiagrams: { list: vi.fn(async () => ({ items: [] })) },
@@ -103,6 +104,32 @@ describe('Use cases page', () => {
     expect(screen.getByRole('list', { name: 'Requisitos sin caso de uso' })).toHaveTextContent(
       'RF-002Consultar pedidos',
     );
+  });
+
+  it('archives and deletes the selected use cases after confirming', async () => {
+    mocks.bulk.mockResolvedValue({ affected: 1, skipped: 0 });
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByRole('checkbox', { name: 'Seleccionar CU-001' }));
+    expect(screen.getByText('1 seleccionado')).toBeInTheDocument();
+    const toolbar = () =>
+      within(screen.getByRole('toolbar', { name: 'Selección de casos de uso' }));
+    await user.click(toolbar().getByRole('button', { name: 'Archivar' }));
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Archivar' }),
+    );
+    await waitFor(() => expect(mocks.bulk).toHaveBeenCalledWith('p1', 'ARCHIVE', ['u1']));
+    // The selection is cleared after the action.
+    await waitFor(() => expect(screen.getByText('Seleccionar')).toBeInTheDocument());
+
+    await user.click(screen.getByRole('checkbox', { name: 'Seleccionar los que coinciden' }));
+    await user.click(toolbar().getByRole('button', { name: 'Eliminar' }));
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', {
+        name: 'Eliminar definitivamente',
+      }),
+    );
+    await waitFor(() => expect(mocks.bulk).toHaveBeenLastCalledWith('p1', 'DELETE', ['u1']));
   });
 
   it('opens a use case to show its flows as numbered steps', async () => {

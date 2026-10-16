@@ -2,7 +2,11 @@
 
 import { GenerationOverlay } from '../../components/generation-overlay';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { RequirementResponse, UseCaseResponse } from '@caseflow-ai/contracts';
+import type {
+  RequirementResponse,
+  UseCaseBulkAction,
+  UseCaseResponse,
+} from '@caseflow-ai/contracts';
 import { ChevronDown, Gauge, ListChecks, Network, Plus, Search, Sparkles } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
@@ -214,6 +218,29 @@ function UseCasesContent({ projectId }: { projectId: string }) {
     }
   }
 
+  // DEC-138: the whole batch or none of it; the reason comes from the server.
+  async function bulk(action: UseCaseBulkAction, ids: string[]) {
+    try {
+      const { affected, skipped } = await api.useCases.bulk(projectId, action, ids);
+      const done = {
+        APPROVE: affected === 1 ? 'caso de uso aprobado' : 'casos de uso aprobados',
+        ARCHIVE: affected === 1 ? 'caso de uso archivado' : 'casos de uso archivados',
+        DELETE: affected === 1 ? 'caso de uso eliminado' : 'casos de uso eliminados',
+      }[action];
+      toast.success(`${affected} ${done}.`);
+      if (skipped)
+        toast.info(
+          action === 'APPROVE'
+            ? `${skipped} ya estaban aprobados o archivados y no se tocaron.`
+            : `${skipped} ya estaban archivados.`,
+        );
+      invalidate();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo aplicar la acción.');
+      throw err;
+    }
+  }
+
   const items = useCases.data?.items ?? [];
   const isGeneratorOpen = generatorOpen ?? items.length === 0;
   const pending = items.filter((u) => isPendingApproval(u.version.status));
@@ -267,6 +294,7 @@ function UseCasesContent({ projectId }: { projectId: string }) {
           <ApproveAllButton
             pending={pending}
             approve={(id) => approveDirectly(transitionFor(items.find((u) => u.id === id)!))}
+            approveMany={(ids) => bulk('APPROVE', ids)}
             onDone={invalidate}
           />
         </div>
@@ -376,6 +404,7 @@ function UseCasesContent({ projectId }: { projectId: string }) {
                   setEditing(u);
                 },
                 archive,
+                bulk,
               }}
             />
 

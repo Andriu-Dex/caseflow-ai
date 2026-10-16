@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { UseCasesController } from './use-cases.controller';
 import type { UseCasesService } from './use-cases.service';
+import type { UseCaseBulkService } from './use-case-bulk.service';
 describe('UseCasesController', () => {
   it('delegates semantic routes', async () => {
     const service = Object.fromEntries(
@@ -16,7 +17,10 @@ describe('UseCasesController', () => {
         'transition',
       ].map((name) => [name, vi.fn().mockResolvedValue({})]),
     );
-    const controller = new UseCasesController(service as unknown as UseCasesService);
+    const controller = new UseCasesController(
+      service as unknown as UseCasesService,
+      {} as UseCaseBulkService,
+    );
     const body = {
       name: 'N',
       objective: 'O',
