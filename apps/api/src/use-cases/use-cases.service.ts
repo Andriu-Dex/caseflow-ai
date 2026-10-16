@@ -237,6 +237,12 @@ export class UseCasesService {
       }));
     const language = await getProjectLanguage(this.prisma, projectId);
     const allowed = new Set(byCode.keys());
+    const mergeOptions = {
+      contextCodes: new Set([...byCode.keys()].filter((code) => !planned.has(code))),
+      knownActors: [
+        ...new Set(requirements.flatMap((v) => v.requirementDetail!.actors.map((a) => a.name))),
+      ],
+    };
     let candidates: BatchCandidate[] = [];
     let lastRunId = '';
     try {
@@ -256,7 +262,7 @@ export class UseCasesService {
             projectId,
             language,
             promptKey: 'use-cases.generate',
-            promptVersion: 3,
+            promptVersion: 4,
             messages: [
               {
                 role: 'user',
@@ -280,7 +286,14 @@ export class UseCasesService {
           lastRunId = result.metadata.runId;
         }
         // Domain validation happens here, before anything is checkpointed.
-        candidates = mergeUseCaseBatch(candidates, output, targets, allowed, position);
+        candidates = mergeUseCaseBatch(
+          candidates,
+          output,
+          targets,
+          allowed,
+          position,
+          mergeOptions,
+        );
         if (progress && !cached)
           await this.prisma.useCaseGenerationPart.upsert({
             where: { jobId_position: { jobId: progress.jobId, position } },
