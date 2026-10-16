@@ -150,11 +150,50 @@ export const useCaseGenerationOutputSchema = z
         });
     });
   });
+// DEC-139: a batch proposes use cases for a few requirements and may relate
+// them to proposals of earlier batches, so a relation target is checked
+// against the whole accumulated set, not against this response alone.
+export const useCaseBatchOutputSchema = z
+  .object({ candidates: z.array(useCaseGenerationCandidateSchema).max(USE_CASE_CANDIDATE_LIMIT) })
+  .strict()
+  .superRefine((value, context) => {
+    const ids = value.candidates.map((candidate) => candidate.candidateId);
+    if (new Set(ids).size !== ids.length)
+      context.addIssue({
+        code: 'custom',
+        message: 'candidateId debe ser único.',
+        path: ['candidates'],
+      });
+  });
+export const USE_CASE_GENERATION_SELECTION_LIMIT = 500;
+export const startUseCaseGenerationRequestSchema = z
+  .object({
+    requirementVersionIds: z
+      .array(z.uuid())
+      .min(1)
+      .max(USE_CASE_GENERATION_SELECTION_LIMIT)
+      .refine((ids) => new Set(ids).size === ids.length, 'Los requisitos no pueden repetirse.'),
+  })
+  .strict();
+export const useCaseGenerationJobSchema = z.object({
+  id: z.uuid(),
+  projectId: z.uuid(),
+  status: z.enum(['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED']),
+  completedBatches: z.number().int().nonnegative(),
+  totalBatches: z.number().int().nonnegative(),
+  outputChars: z.number().int().nonnegative(),
+  generationId: z.uuid().nullable(),
+  errorMessage: z.string().nullable(),
+  requirementVersionIds: z.array(z.uuid()),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+export type UseCaseGenerationJob = z.infer<typeof useCaseGenerationJobSchema>;
 export const generateUseCasesRequestSchema = z
   .object({ requirementVersionIds: z.array(z.uuid()).min(1).max(50) })
   .strict();
 export const acceptUseCasesRequestSchema = z
-  .object({ candidateIds: z.array(z.uuid()).min(1).max(USE_CASE_CANDIDATE_LIMIT) })
+  .object({ candidateIds: z.array(z.uuid()).min(1).max(USE_CASE_GENERATION_SELECTION_LIMIT) })
   .strict();
 export const useCaseAcademicValidationResponseSchema = z.object({
   acceptedCount: z.number().int().nonnegative(),

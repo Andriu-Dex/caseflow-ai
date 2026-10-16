@@ -4,14 +4,22 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import UseCasesPage from './page';
 import { TestProviders } from '../../lib/test-utils';
 
-const mocks = vi.hoisted(() => ({ list: vi.fn(), generate: vi.fn(), bulk: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  list: vi.fn(),
+  start: vi.fn(),
+  latest: vi.fn(),
+  generation: vi.fn(),
+  bulk: vi.fn(),
+}));
 
 vi.mock('sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }));
 vi.mock('../../lib/api', () => ({
   api: {
     useCases: {
       list: (...args: unknown[]) => mocks.list(...args),
-      generate: (...args: unknown[]) => mocks.generate(...args),
+      startGeneration: (...args: unknown[]) => mocks.start(...args),
+      latestGeneration: (...args: unknown[]) => mocks.latest(...args),
+      generation: (...args: unknown[]) => mocks.generation(...args),
       bulk: (...args: unknown[]) => mocks.bulk(...args),
     },
     requirements: { list: vi.fn(async () => ({ items: requirements })) },
@@ -83,6 +91,7 @@ const useCase = {
 beforeEach(() => {
   window.localStorage.setItem('caseflow.activeProjectId', 'p1');
   mocks.list.mockResolvedValue({ items: [useCase] });
+  mocks.latest.mockResolvedValue({ job: null });
 });
 
 const renderPage = () =>
@@ -175,7 +184,20 @@ describe('Use cases page', () => {
 
   it('generates from the chosen requirements and shows proposals as cards', async () => {
     const user = userEvent.setup();
-    mocks.generate.mockResolvedValue({
+    mocks.start.mockResolvedValue({
+      id: 'job1',
+      projectId: 'p1',
+      status: 'COMPLETED',
+      completedBatches: 1,
+      totalBatches: 1,
+      outputChars: 0,
+      generationId: 'g1',
+      errorMessage: null,
+      requirementVersionIds: ['rv1', 'rv2'],
+      createdAt: '2026-10-16T00:00:00.000Z',
+      updatedAt: '2026-10-16T00:00:00.000Z',
+    });
+    mocks.generation.mockResolvedValue({
       id: 'g1',
       candidates: [
         {
@@ -197,7 +219,8 @@ describe('Use cases page', () => {
     await user.click(screen.getByLabelText('RNF-003 Responder rápido'));
     expect(screen.getByText('2 de 3 seleccionados')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Generar con 2 requisitos' }));
-    expect(mocks.generate).toHaveBeenCalledWith('p1', ['rv1', 'rv2']);
+    expect(mocks.start).toHaveBeenCalledWith('p1', ['rv1', 'rv2']);
+    expect(mocks.generation).toHaveBeenCalledWith('p1', 'g1');
     expect(await screen.findByText('El cliente revisa sus pedidos.')).toBeInTheDocument();
     expect(screen.getByTitle('Consultar pedidos')).toHaveTextContent('RF-002');
   });

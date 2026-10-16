@@ -36,6 +36,7 @@ import type {
   SourceListResponse,
   RequirementBulkAction,
   UseCaseBulkAction,
+  UseCaseGenerationJob,
   UseCaseBulkResponse,
   RequirementBulkResponse,
   ListSourcesQuery,
@@ -582,6 +583,17 @@ export const api = {
       post<GenerationResult>(`/projects/${projectId}/use-cases/generate`, {
         requirementVersionIds,
       }),
+    // DEC-139: the use cases are generated in the background, in batches.
+    startGeneration: (projectId: string, requirementVersionIds: string[]) =>
+      post<UseCaseGenerationJob>(`/projects/${projectId}/use-cases/generation-jobs`, {
+        requirementVersionIds,
+      }),
+    latestGeneration: (projectId: string) =>
+      get<{ job: UseCaseGenerationJob | null }>(
+        `/projects/${projectId}/use-cases/generation-jobs/latest`,
+      ),
+    generation: (projectId: string, generationId: string) =>
+      get<GenerationResult>(`/projects/${projectId}/use-cases/generations/${generationId}`),
     accept: (projectId: string, generationId: string, candidateIds: string[]) =>
       post(`/projects/${projectId}/use-cases/generations/${generationId}/accept`, {
         candidateIds,

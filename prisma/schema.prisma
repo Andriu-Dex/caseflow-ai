@@ -377,6 +377,7 @@ model Project {
   workflowRuns                  WorkflowRun[]
   stageConfirmations            StageConfirmation[]
   requirementGenerationJobs     RequirementGenerationJob[]
+  useCaseGenerationJobs         UseCaseGenerationJob[]
 
   @@index([workspaceId, createdAt, id])
   @@map("projects")
@@ -472,6 +473,7 @@ model ArtifactVersion {
   mockupsThemedFromHere               MockupDetail[]                       @relation("MockupDesignThemeSource")
   projectContextSourceLinks           ProjectContextSource[]
   requirementGenerationJobs           RequirementGenerationJob[]
+  useCaseGenerationJobSources         UseCaseGenerationJobSource[]
   projectBaselineEntries              ProjectBaselineEntry[]
   designBaselineEntries               DesignBaselineEntry[]
   generationRuns                      GenerationRun[]
@@ -634,6 +636,7 @@ model AIRun {
   projectContextCandidate      ProjectContextCandidate?
   requirementCandidates        RequirementCandidate[]
   requirementGenerationParts   RequirementGenerationPart[]
+  useCaseGenerationParts       UseCaseGenerationPart[]
 
   @@index([projectId, startedAt, id])
   @@index([sourceArtifactVersionId])
@@ -1086,6 +1089,7 @@ model UseCaseGeneration {
   sources         UseCaseGenerationSource[]
   candidates      UseCaseCandidate[]
   acceptedDetails UseCaseDetail[]
+  job             UseCaseGenerationJob?
 
   @@index([projectId, createdAt])
   @@map("use_case_generations")
@@ -1979,4 +1983,51 @@ model ProjectDeletion {
 
   @@index([workspaceId, deletedAt])
   @@map("project_deletions")
+}
+
+// Batched use case generation (DEC-139): the exact approved requirement
+// versions chosen, processed in order in the background, with a checkpoint per
+// batch so a failed run resumes instead of starting over.
+model UseCaseGenerationJob {
+  id               String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId        String                       @map("project_id") @db.Uuid
+  status           SourceProcessingStatus       @default(QUEUED)
+  totalBatches     Int                          @default(0) @map("total_batches")
+  completedBatches Int                          @default(0) @map("completed_batches")
+  outputChars      Int                          @default(0) @map("output_chars")
+  generationId     String?                      @unique @map("generation_id") @db.Uuid
+  errorMessage     String?                      @map("error_message")
+  createdAt        DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime                     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project          Project                      @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  generation       UseCaseGeneration?           @relation(fields: [generationId], references: [id], onDelete: Restrict)
+  sources          UseCaseGenerationJobSource[]
+  parts            UseCaseGenerationPart[]
+
+  @@index([projectId, createdAt])
+  @@map("use_case_generation_jobs")
+}
+
+model UseCaseGenerationJobSource {
+  jobId                String               @map("job_id") @db.Uuid
+  requirementVersionId String               @map("requirement_version_id") @db.Uuid
+  position             Int
+  job                  UseCaseGenerationJob @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  requirementVersion   ArtifactVersion      @relation(fields: [requirementVersionId], references: [id], onDelete: Restrict)
+
+  @@id([jobId, requirementVersionId])
+  @@map("use_case_generation_job_sources")
+}
+
+model UseCaseGenerationPart {
+  jobId    String               @map("job_id") @db.Uuid
+  position Int
+  aiRunId  String               @map("ai_run_id") @db.Uuid
+  // Temporary, schema/domain-validated provider payload, not an official artifact.
+  content  Json
+  job      UseCaseGenerationJob @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  aiRun    AIRun                @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+
+  @@id([jobId, position])
+  @@map("use_case_generation_parts")
 }

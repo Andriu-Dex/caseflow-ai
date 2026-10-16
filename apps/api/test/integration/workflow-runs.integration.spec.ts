@@ -53,7 +53,7 @@ const ANSWERS: Record<string, (request: AIProviderRequest) => unknown> = {
         mainFlow: [{ actor: 'Vendedor', action: 'Registra el pedido' }],
         alternativeFlows: [],
         relatedRequirementSourceIds: [
-          /"requirementVersionId":"([0-9a-f-]{36})"/.exec(req.messages[0]!.content)![1],
+          JSON.parse(req.messages[0]!.content).targetRequirementSources[0].sourceId,
         ],
       },
     ],
