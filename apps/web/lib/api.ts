@@ -35,6 +35,8 @@ import type {
   SourceResponse,
   SourceListResponse,
   RequirementBulkAction,
+  UseCaseBulkAction,
+  UseCaseBulkResponse,
   RequirementBulkResponse,
   ListSourcesQuery,
   StalenessAnalysisResponse,
@@ -567,6 +569,9 @@ export const api = {
       ),
   },
   useCases: {
+    // DEC-138: one action over several use cases, all of them or none.
+    bulk: (projectId: string, action: UseCaseBulkAction, useCaseIds: string[]) =>
+      post<UseCaseBulkResponse>(`/projects/${projectId}/use-cases/bulk`, { action, useCaseIds }),
     list: (projectId: string) =>
       get<{ items: UseCaseResponse[] }>(`/projects/${projectId}/use-cases`),
     create: (projectId: string, input: UseCaseInput) =>

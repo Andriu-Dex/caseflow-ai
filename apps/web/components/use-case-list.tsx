@@ -15,12 +15,17 @@ import {
   Pencil,
   RefreshCw,
   Search,
+  Trash2,
   Undo2,
   User,
   Users,
   Workflow,
 } from 'lucide-react';
-import type { RequirementResponse, UseCaseResponse } from '@caseflow-ai/contracts';
+import type {
+  RequirementResponse,
+  UseCaseBulkAction,
+  UseCaseResponse,
+} from '@caseflow-ai/contracts';
 import {
   Button,
   Dialog,
@@ -206,7 +211,29 @@ export interface UseCaseRowActions {
   requestChanges: (u: UseCaseResponse) => void;
   edit: (u: UseCaseResponse) => void;
   archive: (u: UseCaseResponse) => Promise<void>;
+  // DEC-138: the same action over the selected use cases.
+  bulk?: (action: UseCaseBulkAction, ids: string[]) => Promise<void>;
 }
+
+const BULK_CONFIRM: Record<
+  Exclude<UseCaseBulkAction, 'APPROVE'>,
+  { title: string; description: string; button: string; busy: string }
+> = {
+  ARCHIVE: {
+    title: 'Archivar casos de uso',
+    description:
+      'Dejan de mostrarse en las listas y en la preparación; su historial se conserva y sus códigos no se reutilizan.',
+    button: 'Archivar',
+    busy: 'Archivando…',
+  },
+  DELETE: {
+    title: 'Eliminar casos de uso',
+    description:
+      'Se borran definitivamente. Solo es posible si ninguno tuvo una versión aprobada y ningún otro caso de uso los incluye o extiende; si alguno no cumple, no se elimina ninguno. Sus códigos no se reutilizan.',
+    button: 'Eliminar definitivamente',
+    busy: 'Eliminando…',
+  },
+};
 
 function UseCaseRow({
   useCase: u,
@@ -217,6 +244,8 @@ function UseCaseRow({
   approving,
   lookup,
   actions,
+  selected,
+  onSelect,
 }: {
   useCase: UseCaseResponse;
   useCases: UseCaseResponse[];
@@ -226,6 +255,8 @@ function UseCaseRow({
   approving: boolean;
   lookup: RequirementLookup;
   actions: UseCaseRowActions & { confirmArchive: () => void };
+  selected?: boolean;
+  onSelect?: (checked: boolean) => void;
 }) {
   const uc = u.useCase;
   const detailsId = `use-case-${u.id}-details`;
@@ -233,6 +264,15 @@ function UseCaseRow({
   return (
     <li className="overflow-hidden rounded-lg border border-border bg-card shadow-xs transition-shadow hover:shadow-sm">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5">
+        {onSelect ? (
+          <input
+            type="checkbox"
+            className="size-4 shrink-0 cursor-pointer accent-primary"
+            aria-label={`Seleccionar ${u.code}`}
+            checked={Boolean(selected)}
+            onChange={(e) => onSelect(e.target.checked)}
+          />
+        ) : null}
         <button
           type="button"
           onClick={onToggle}
@@ -402,6 +442,12 @@ export function UseCaseList({
   const [open, setOpen] = useState<string | null>(null);
   const [archiving, setArchiving] = useState<UseCaseResponse | null>(null);
   const [archiveBusy, setArchiveBusy] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [confirmingBulk, setConfirmingBulk] = useState<Exclude<
+    UseCaseBulkAction,
+    'APPROVE'
+  > | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const query = normalize(search.trim());
   const visible = items.filter(
     (u) =>
@@ -412,6 +458,32 @@ export function UseCaseList({
         ).includes(query)),
   );
   const filtered = Boolean(query) || status !== 'ALL';
+
+  // A deleted or archived use case leaves the selection by itself.
+  const selection = items.filter((u) => selectedIds.has(u.id)).map((u) => u.id);
+  const allVisibleSelected = visible.length > 0 && visible.every((u) => selectedIds.has(u.id));
+  const toggleSelected = (ids: string[], checked: boolean) =>
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      for (const id of ids) {
+        if (checked) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  async function runBulk(action: UseCaseBulkAction) {
+    if (!actions.bulk || !selection.length) return;
+    setBulkBusy(true);
+    try {
+      await actions.bulk(action, selection);
+      setSelectedIds(new Set());
+      setConfirmingBulk(null);
+    } catch {
+      // The page already explained why; the selection stays to adjust it.
+    } finally {
+      setBulkBusy(false);
+    }
+  }
 
   async function confirmArchive() {
     if (!archiving) return;
@@ -468,6 +540,79 @@ export function UseCaseList({
         ) : null}
       </div>
 
+      {actions.bulk && items.length ? (
+        <div
+          role="toolbar"
+          aria-label="Selección de casos de uso"
+          className={`flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+            selection.length ? 'border-primary/40 bg-primary/5' : 'border-border/60 bg-card/60'
+          }`}
+        >
+          <label className="flex cursor-pointer items-center gap-2 text-muted-foreground">
+            <input
+              type="checkbox"
+              className="size-4 accent-primary"
+              aria-label="Seleccionar los que coinciden"
+              checked={allVisibleSelected}
+              onChange={(e) =>
+                toggleSelected(
+                  visible.map((u) => u.id),
+                  e.target.checked,
+                )
+              }
+            />
+            {selection.length
+              ? `${selection.length} ${selection.length === 1 ? 'seleccionado' : 'seleccionados'}`
+              : 'Seleccionar'}
+          </label>
+          {selection.length ? (
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                disabled={bulkBusy}
+                className="h-8 bg-emerald-600 text-white hover:bg-emerald-700"
+                onClick={() => runBulk('APPROVE')}
+              >
+                <CheckCircle2 className="size-3.5" aria-hidden="true" />
+                Aprobar
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={bulkBusy}
+                className="h-8"
+                onClick={() => setConfirmingBulk('ARCHIVE')}
+              >
+                <Archive className="size-3.5" aria-hidden="true" />
+                Archivar
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={bulkBusy}
+                className="h-8 border-destructive/30 text-destructive hover:bg-destructive/10"
+                onClick={() => setConfirmingBulk('DELETE')}
+              >
+                <Trash2 className="size-3.5" aria-hidden="true" />
+                Eliminar
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-8"
+                onClick={() => setSelectedIds(new Set())}
+              >
+                Quitar selección
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       {visible.length === 0 ? (
         <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
           Ningún caso de uso coincide con la búsqueda o el filtro.
@@ -485,10 +630,43 @@ export function UseCaseList({
               approving={approvingId === u.id}
               lookup={lookup}
               actions={{ ...actions, confirmArchive: () => setArchiving(u) }}
+              selected={selectedIds.has(u.id)}
+              onSelect={actions.bulk ? (checked) => toggleSelected([u.id], checked) : undefined}
             />
           ))}
         </ul>
       )}
+
+      {confirmingBulk ? (
+        <Dialog open onOpenChange={(o) => (o ? null : setConfirmingBulk(null))}>
+          <DialogContent>
+            <DialogTitle>{BULK_CONFIRM[confirmingBulk].title}</DialogTitle>
+            <DialogDescription>{BULK_CONFIRM[confirmingBulk].description}</DialogDescription>
+            <p className="text-sm text-foreground">
+              {selection.length} {selection.length === 1 ? 'caso de uso' : 'casos de uso'}:{' '}
+              {items
+                .filter((u) => selectedIds.has(u.id))
+                .slice(0, 8)
+                .map((u) => u.code)
+                .join(', ')}
+              {selection.length > 8 ? '…' : ''}
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setConfirmingBulk(null)}>
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                variant={confirmingBulk === 'DELETE' ? 'destructive' : 'default'}
+                disabled={bulkBusy}
+                onClick={() => runBulk(confirmingBulk)}
+              >
+                {bulkBusy ? BULK_CONFIRM[confirmingBulk].busy : BULK_CONFIRM[confirmingBulk].button}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      ) : null}
 
       {archiving ? (
         <Dialog open onOpenChange={(o) => (o ? null : setArchiving(null))}>

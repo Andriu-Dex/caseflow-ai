@@ -2,13 +2,15 @@ import { UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../identity/jwt-auth.guard';
 import { ProjectMembershipGuard } from '../identity/project-membership.guard';
 
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Request } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   acceptUseCasesRequestSchema,
   generateUseCasesRequestSchema,
   transitionArtifactVersionRequestSchema,
   useCaseAcademicValidationResponseSchema,
+  useCaseBulkRequestSchema,
+  useCaseBulkResponseSchema,
   useCaseInputSchema,
   useCaseListResponseSchema,
   useCaseResponseSchema,
@@ -18,11 +20,15 @@ import { uuidParamPipe } from '../common/uuid-param.pipe';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ApiUuidParam, ApiZodBody, ApiZodResponse } from '../openapi/zod-openapi';
 import { UseCasesService } from './use-cases.service';
+import { UseCaseBulkService } from './use-case-bulk.service';
 @ApiTags('use-cases')
 @UseGuards(JwtAuthGuard, ProjectMembershipGuard)
 @Controller('projects/:projectId/use-cases')
 export class UseCasesController {
-  constructor(private readonly service: UseCasesService) {}
+  constructor(
+    private readonly service: UseCasesService,
+    private readonly bulkActions: UseCaseBulkService,
+  ) {}
   @Post()
   @ApiOperation({ operationId: 'createUseCase', summary: 'Crear caso de uso manual' })
   @ApiUuidParam('projectId', 'Project identifier.')
@@ -83,6 +89,22 @@ export class UseCasesController {
     b: z.output<typeof acceptUseCasesRequestSchema>,
   ) {
     return this.service.accept(p, id, b.candidateIds);
+  }
+  @Post('bulk')
+  @HttpCode(200)
+  @ApiOperation({
+    operationId: 'applyUseCaseBulkAction',
+    summary: 'Aprobar, archivar o eliminar varios casos de uso a la vez (todos o ninguno)',
+  })
+  @ApiZodBody(useCaseBulkRequestSchema)
+  @ApiZodResponse(200, 'How many use cases changed.', useCaseBulkResponseSchema)
+  bulk(
+    @Param('projectId', uuidParamPipe) p: string,
+    @Body(new ZodValidationPipe(useCaseBulkRequestSchema))
+    body: z.output<typeof useCaseBulkRequestSchema>,
+    @Request() request: { user: { id: string } },
+  ) {
+    return this.bulkActions.apply(p, body.action, body.useCaseIds, request.user.id);
   }
   @Get(':useCaseId')
   @ApiOperation({ operationId: 'getUseCase', summary: 'Consultar caso de uso' })

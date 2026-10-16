@@ -1,6 +1,27 @@
 import { z } from 'zod';
 
 export const USE_CASE_CANDIDATE_LIMIT = 20;
+
+// DEC-138: one action over several use cases, all of them or none.
+export const USE_CASE_BULK_ACTIONS = ['APPROVE', 'ARCHIVE', 'DELETE'] as const;
+export type UseCaseBulkAction = (typeof USE_CASE_BULK_ACTIONS)[number];
+export const useCaseBulkRequestSchema = z
+  .object({
+    action: z.enum(USE_CASE_BULK_ACTIONS),
+    useCaseIds: z
+      .array(z.uuid())
+      .min(1)
+      .max(500)
+      .refine((ids) => new Set(ids).size === ids.length, 'Los casos de uso no pueden repetirse.'),
+  })
+  .strict();
+export const useCaseBulkResponseSchema = z.object({
+  // Use cases the action changed, and those it left as they were (already
+  // approved or already archived).
+  affected: z.number().int().min(0),
+  skipped: z.number().int().min(0),
+});
+export type UseCaseBulkResponse = z.infer<typeof useCaseBulkResponseSchema>;
 export const USE_CASE_FLOW_STEP_LIMIT = 100;
 const text = (max: number) => z.string().trim().min(1, 'El valor es obligatorio.').max(max);
 const orderedText = z.array(text(2000)).max(50).default([]);
