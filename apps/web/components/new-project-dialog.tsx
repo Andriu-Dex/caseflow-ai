@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { FolderPlus, Loader2, Sparkles } from 'lucide-react';
 import type { WorkflowRoute } from '@caseflow-ai/contracts';
 import {
   Button,
@@ -12,7 +13,6 @@ import {
   DialogContent,
   DialogDescription,
   DialogFooter,
-  DialogHeader,
   DialogTitle,
   Input,
   Textarea,
@@ -87,31 +87,52 @@ export function NewProjectDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <form onSubmit={create} className="flex flex-col gap-4">
-          <DialogHeader>
-            <DialogTitle>Nuevo proyecto</DialogTitle>
-            <DialogDescription>
-              Elija cuánta revisión humana tendrá. Podrá subir de ruta más adelante, nunca bajar.
-            </DialogDescription>
-          </DialogHeader>
-          <Input
-            autoFocus
-            required
-            aria-label="Nombre del nuevo proyecto"
-            placeholder="Nombre del proyecto"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
+      <DialogContent className="relative sm:max-w-lg p-6 gap-5 overflow-hidden">
+        {/* Top accent gradient strip */}
+        <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-primary via-primary/70 to-indigo-500" />
+
+        <form onSubmit={create} className="flex flex-col gap-5">
+          <div className="flex items-start gap-4">
+            <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary border border-primary/25 shadow-xs ring-4 ring-primary/5 dark:bg-primary/15 dark:ring-primary/10">
+              <FolderPlus className="size-5" aria-hidden="true" />
+            </div>
+            <div className="flex flex-col gap-1 min-w-0 flex-1">
+              <DialogTitle className="text-lg font-bold tracking-tight text-foreground">
+                Nuevo proyecto
+              </DialogTitle>
+              <DialogDescription className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+                Elija cuánta revisión humana tendrá. Podrá subir de ruta más adelante, nunca bajar.
+              </DialogDescription>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Input
+              autoFocus
+              required
+              aria-label="Nombre del nuevo proyecto"
+              placeholder="Nombre del proyecto"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="h-9.5 text-sm bg-background border-border/80"
+            />
+          </div>
+
           <fieldset className="flex flex-col gap-2">
-            <legend className="mb-1 text-sm font-medium">Ruta de trabajo</legend>
+            <legend className="mb-1 text-xs font-semibold text-foreground uppercase tracking-wider">
+              Ruta de trabajo
+            </legend>
             {ROUTES.map((option) => {
               const available = option === 'FULL' || aiAvailable;
               return (
                 <label
                   key={option}
-                  className={`flex items-start gap-2 rounded-md border border-border p-2 text-sm ${
-                    available ? 'cursor-pointer' : 'opacity-60'
+                  className={`flex items-start gap-3 rounded-xl border p-3 text-sm transition-all ${
+                    available ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'
+                  } ${
+                    route === option
+                      ? 'border-primary bg-primary/5 shadow-2xs ring-1 ring-primary/20'
+                      : 'border-border/60 bg-card hover:border-border hover:bg-muted/30'
                   }`}
                 >
                   <input
@@ -122,14 +143,18 @@ export function NewProjectDialog({
                     checked={route === option}
                     onChange={() => setRoute(option)}
                   />
-                  <span>
-                    <span className="font-medium">{WORKFLOW_ROUTE_LABELS[option]}</span>
-                    {available ? null : (
-                      <span className="ml-2 text-xs text-amber-700 dark:text-amber-400">
-                        Requiere IA
+                  <span className="flex flex-col gap-0.5">
+                    <span className="flex items-center gap-2">
+                      <span className="font-semibold text-foreground">
+                        {WORKFLOW_ROUTE_LABELS[option]}
                       </span>
-                    )}
-                    <span className="block text-xs text-muted-foreground">
+                      {available ? null : (
+                        <span className="rounded-md bg-amber-500/10 px-1.5 py-0.5 text-xs font-semibold text-amber-700 dark:text-amber-400 border border-amber-500/20">
+                          Requiere IA
+                        </span>
+                      )}
+                    </span>
+                    <span className="text-xs text-muted-foreground leading-relaxed">
                       {WORKFLOW_ROUTE_DESCRIPTIONS[option]}
                     </span>
                   </span>
@@ -142,7 +167,7 @@ export function NewProjectDialog({
                 ChatGPT o configure un proveedor en{' '}
                 <Link
                   href="/settings/ai"
-                  className="font-medium underline"
+                  className="font-medium underline text-primary"
                   onClick={() => onOpenChange(false)}
                 >
                   Ajustes de IA
@@ -151,16 +176,20 @@ export function NewProjectDialog({
               </p>
             ) : null}
           </fieldset>
+
           {needsPrompt ? (
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="font-medium">¿Qué aplicación quiere construir?</span>
+            <label className="flex flex-col gap-1.5 text-sm">
+              <span className="font-semibold text-foreground text-xs">
+                ¿Qué aplicación quiere construir?
+              </span>
               <Textarea
                 required
-                rows={5}
+                rows={4}
                 maxLength={4000}
                 placeholder="Por ejemplo: una aplicación para que una tienda registre pedidos, clientes y entregas."
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
+                className="text-sm bg-background border-border/80 resize-none"
               />
               <span className="text-xs text-muted-foreground">
                 Se guarda como la primera fuente del proyecto: todo lo que se genere quedará trazado
@@ -168,21 +197,46 @@ export function NewProjectDialog({
               </span>
             </label>
           ) : null}
+
           {error ? (
-            <p role="alert" className="text-sm text-destructive">
+            <p role="alert" className="text-sm font-medium text-destructive">
               {error}
             </p>
           ) : null}
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-              Cancelar
-            </Button>
-            <Button
-              type="submit"
-              disabled={saving || !name.trim() || (needsPrompt && !prompt.trim())}
-            >
-              {saving ? 'Creando…' : needsPrompt ? 'Crear y generar' : 'Crear proyecto'}
-            </Button>
+
+          <DialogFooter className="-mx-6 -mb-6 mt-1 flex items-center justify-between border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10">
+            <p className="text-[11px] text-muted-foreground/70 hidden sm:block">
+              Presione Esc para cancelar
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="border-border/80 hover:bg-muted font-medium"
+                onClick={() => onOpenChange(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                disabled={saving || !name.trim() || (needsPrompt && !prompt.trim())}
+                className="gap-2 font-medium shadow-xs"
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                    Creando…
+                  </>
+                ) : needsPrompt ? (
+                  <>
+                    <Sparkles className="size-4" aria-hidden="true" />
+                    Crear y generar
+                  </>
+                ) : (
+                  'Crear proyecto'
+                )}
+              </Button>
+            </div>
           </DialogFooter>
         </form>
       </DialogContent>
