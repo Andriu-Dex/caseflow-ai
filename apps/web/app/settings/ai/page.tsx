@@ -361,11 +361,11 @@ function ChatGPTConnectionCard({ desktop }: { desktop: CaseflowDesktop }) {
       </div>
       {/* Never automatic (DEC-117): another provider only with consent. */}
       <Dialog open={confirmSwitch} onOpenChange={setConfirmSwitch}>
-        <DialogContent className="relative sm:max-w-md p-6 gap-5 overflow-hidden">
+        <DialogContent className="relative sm:max-w-lg p-6 gap-5 overflow-hidden">
           {/* Top amber accent gradient strip */}
           <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-amber-500 via-amber-400 to-orange-500" />
 
-          <div className="flex items-start gap-4">
+          <div className="flex items-start gap-4 w-full min-w-0">
             <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/25 shadow-xs ring-4 ring-amber-500/5 dark:ring-amber-500/10">
               <AlertTriangle className="size-5" aria-hidden="true" />
             </div>
@@ -381,16 +381,16 @@ function ChatGPTConnectionCard({ desktop }: { desktop: CaseflowDesktop }) {
             </div>
           </div>
 
-          <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-3.5 text-xs text-muted-foreground leading-relaxed dark:border-amber-500/30 dark:bg-amber-500/[0.08]">
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-3.5 text-xs text-muted-foreground leading-relaxed dark:border-amber-500/30 dark:bg-amber-500/[0.08] w-full min-w-0">
             Esta acción alternará el motor de inferencia activo. Las credenciales de ChatGPT se
             mantendrán almacenadas en su equipo si desea reconectar luego.
           </div>
 
-          <DialogFooter className="-mx-6 -mb-6 mt-1 flex items-center justify-between border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10">
-            <p className="text-[11px] text-muted-foreground/70 hidden sm:block">
+          <DialogFooter className="-mx-6 -mb-6 mt-1 flex items-center justify-between gap-3 border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10 w-[calc(100%+3rem)]">
+            <p className="text-[11px] text-muted-foreground/70 hidden sm:block truncate">
               Presione Esc para cancelar
             </p>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0 ml-auto">
               <Button
                 type="button"
                 variant="outline"
