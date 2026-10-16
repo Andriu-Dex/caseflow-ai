@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { ApiError, downloadFile } from '../lib/api';
 import { TrustedDiagram } from './trusted-svg';
+import { nodeKeyAt, readGraph } from './diagram-graph';
 
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
@@ -21,14 +22,12 @@ const BOX_PADDING = 16;
 
 // A big diagram has more lines than the eye can follow. Pointing at an element
 // (or clicking it, to keep it) fades everything except it, what it connects to
-// and the lines between them. It reads the entity and link markup PlantUML
-// leaves in the SVG (data-entity-1/2 on each link, one id per entity); a
+// and the lines between them (diagram-graph.ts reads them from the SVG); a
 // diagram without that markup simply has no highlighting.
 const FADED_ENTITY = '0.15';
 const FADED_LINK = '0.06';
 const CLICK_SLOP = 5;
-const entityAt = (target: EventTarget | null) =>
-  (target as Element | null)?.closest?.('g.entity')?.id ?? null;
+const entityAt = nodeKeyAt;
 function ZoomableDiagram({
   svg,
   caption,
@@ -52,7 +51,7 @@ function ZoomableDiagram({
   const focus = pinned ?? hovered;
 
   useEffect(() => {
-    setInteractive(!!contentRef.current?.querySelector('g.link[data-entity-1]'));
+    setInteractive(!!contentRef.current && !!readGraph(contentRef.current));
     setHovered(null);
     setPinned(null);
   }, [svg]);
@@ -60,35 +59,34 @@ function ZoomableDiagram({
   useEffect(() => {
     const root = contentRef.current;
     if (!root || !interactive) return;
-    const entities = root.querySelectorAll<SVGGElement>('g.entity');
-    const links = root.querySelectorAll<SVGGElement>('g.link');
+    const graph = readGraph(root);
+    if (!graph) return;
+    const line = (el: SVGElement) =>
+      el.tagName.toLowerCase() === 'path' ? el : el.querySelector<SVGElement>('path');
     const clear = () => {
-      entities.forEach((entity) => (entity.style.opacity = ''));
-      links.forEach((link) => {
-        link.style.opacity = '';
-        const path = link.querySelector('path');
+      graph.nodes.forEach(({ el }) => (el.style.opacity = ''));
+      graph.links.forEach(({ els }) => {
+        els.forEach((el) => (el.style.opacity = ''));
+        const path = line(els[0]!);
         if (path) path.style.strokeWidth = '';
       });
     };
     clear();
     if (!focus) return;
     const near = new Set([focus]);
-    const touching = new Set<Element>();
-    links.forEach((link) => {
-      const a = link.getAttribute('data-entity-1');
-      const b = link.getAttribute('data-entity-2');
-      if (a !== focus && b !== focus) return;
-      touching.add(link);
-      if (a) near.add(a);
-      if (b) near.add(b);
+    const touching = new Set<SVGElement[]>();
+    graph.links.forEach((link) => {
+      if (!link.keys.includes(focus)) return;
+      touching.add(link.els);
+      link.keys.forEach((key) => near.add(key));
     });
-    entities.forEach((entity) => {
-      entity.style.opacity = near.has(entity.id) ? '' : FADED_ENTITY;
+    graph.nodes.forEach(({ key, el }) => {
+      el.style.opacity = near.has(key) ? '' : FADED_ENTITY;
     });
-    links.forEach((link) => {
-      const on = touching.has(link);
-      link.style.opacity = on ? '' : FADED_LINK;
-      const path = link.querySelector('path');
+    graph.links.forEach(({ els }) => {
+      const on = touching.has(els);
+      els.forEach((el) => (el.style.opacity = on ? '' : FADED_LINK));
+      const path = line(els[0]!);
       if (path && on) path.style.strokeWidth = '2.5px';
     });
     return clear;
