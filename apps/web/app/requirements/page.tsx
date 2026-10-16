@@ -184,6 +184,7 @@ function RequirementsContent({ projectId }: { projectId: string }) {
           <ApproveAllButton
             pending={pending}
             approve={(id) => approveDirectly(transitionFor(items.find((r) => r.id === id)!))}
+            approveMany={(ids) => bulk('APPROVE', ids)}
             onDone={invalidate}
           />
           <DropdownMenu>

@@ -24,10 +24,14 @@ export async function approveDirectly(
 export function ApproveAllButton({
   pending,
   approve,
+  approveMany,
   onDone,
 }: {
   pending: { id: string; code: string }[];
   approve: (id: string) => Promise<unknown>;
+  // One atomic call for all of them (DEC-138); it reports its own result, so
+  // none is left half approved. Without it, each is approved on its own.
+  approveMany?: (ids: string[]) => Promise<unknown>;
   onDone: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -35,6 +39,17 @@ export function ApproveAllButton({
 
   async function run() {
     setBusy(true);
+    if (approveMany) {
+      try {
+        await approveMany(pending.map((p) => p.id));
+      } catch {
+        // The caller already explained why; nothing was approved.
+      } finally {
+        setBusy(false);
+        onDone();
+      }
+      return;
+    }
     const results = await Promise.allSettled(pending.map((p) => approve(p.id)));
     const failed = pending.filter((_, i) => results[i]!.status === 'rejected');
     setBusy(false);
