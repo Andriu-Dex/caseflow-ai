@@ -29,7 +29,15 @@ const FADED_LINK = '0.06';
 const CLICK_SLOP = 5;
 const entityAt = (target: EventTarget | null) =>
   (target as Element | null)?.closest?.('g.entity')?.id ?? null;
-function ZoomableDiagram({ svg, caption }: { svg: string; caption?: string }) {
+function ZoomableDiagram({
+  svg,
+  caption,
+  fullscreen = false,
+}: {
+  svg: string;
+  caption?: string;
+  fullscreen?: boolean;
+}) {
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const zoomRef = useRef(zoom);
@@ -127,10 +135,14 @@ function ZoomableDiagram({ svg, caption }: { svg: string; caption?: string }) {
   }, []);
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className={`relative flex flex-col ${fullscreen ? 'h-full w-full' : 'gap-2'}`}>
       <div
         ref={containerRef}
-        className="max-h-[75vh] cursor-grab touch-none overflow-hidden rounded-lg border border-border bg-card p-4 active:cursor-grabbing"
+        className={
+          fullscreen
+            ? 'relative flex-1 w-full h-full cursor-grab touch-none overflow-hidden bg-muted/15 p-6 active:cursor-grabbing'
+            : 'max-h-[75vh] cursor-grab touch-none overflow-hidden rounded-lg border border-border bg-card p-4 active:cursor-grabbing'
+        }
         onPointerDown={(event) => {
           if (event.button !== 0) return;
           press.current = { x: event.clientX, y: event.clientY, entity: entityAt(event.target) };
@@ -182,55 +194,121 @@ function ZoomableDiagram({ svg, caption }: { svg: string; caption?: string }) {
           <TrustedDiagram svg={svg} caption={caption} />
         </div>
       </div>
-      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-        <Button
-          type="button"
-          variant="outline"
-          size="icon-sm"
-          aria-label="Alejar"
-          disabled={zoom <= MIN_ZOOM}
-          onClick={() => {
-            const next = Math.max(MIN_ZOOM, zoom - ZOOM_STEP);
-            setZoom(next);
-            if (next <= 1) setOffset({ x: 0, y: 0 });
-          }}
-        >
-          <ZoomOut aria-hidden="true" className="size-4" />
-        </Button>
-        <span className="min-w-12 text-center">{Math.round(zoom * 100)}%</span>
-        <Button
-          type="button"
-          variant="outline"
-          size="icon-sm"
-          aria-label="Acercar"
-          disabled={zoom >= MAX_ZOOM}
-          onClick={() => setZoom((current) => Math.min(MAX_ZOOM, current + ZOOM_STEP))}
-        >
-          <ZoomIn aria-hidden="true" className="size-4" />
-        </Button>
-        {zoom !== 1 || offset.x !== 0 || offset.y !== 0 ? (
+      {fullscreen ? (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex flex-wrap items-center gap-1.5 rounded-full border border-border/80 bg-background/95 px-3.5 py-1.5 shadow-2xl backdrop-blur-md text-xs text-foreground">
           <Button
             type="button"
             variant="ghost"
-            size="sm"
+            size="icon-sm"
+            aria-label="Alejar"
+            disabled={zoom <= MIN_ZOOM}
+            className="size-7 rounded-full"
             onClick={() => {
-              setZoom(1);
-              setOffset({ x: 0, y: 0 });
+              const next = Math.max(MIN_ZOOM, zoom - ZOOM_STEP);
+              setZoom(next);
+              if (next <= 1) setOffset({ x: 0, y: 0 });
             }}
           >
-            Restablecer
+            <ZoomOut aria-hidden="true" className="size-3.5" />
           </Button>
-        ) : null}
-        {pinned ? (
-          <Button type="button" variant="ghost" size="sm" onClick={() => setPinned(null)}>
-            Quitar resaltado
+          <span className="min-w-12 text-center font-mono font-medium">
+            {Math.round(zoom * 100)}%
+          </span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Acercar"
+            disabled={zoom >= MAX_ZOOM}
+            className="size-7 rounded-full"
+            onClick={() => setZoom((current) => Math.min(MAX_ZOOM, current + ZOOM_STEP))}
+          >
+            <ZoomIn aria-hidden="true" className="size-3.5" />
           </Button>
-        ) : null}
-        <span className="ml-auto hidden text-right sm:inline">
-          {interactive ? 'Señale o pulse un elemento para ver sus conexiones · ' : ''}Ctrl + rueda
-          para acercar
-        </span>
-      </div>
+          <div className="h-4 w-px bg-border/80 mx-1" />
+          {zoom !== 1 || offset.x !== 0 || offset.y !== 0 ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2.5 rounded-full text-xs font-normal"
+              onClick={() => {
+                setZoom(1);
+                setOffset({ x: 0, y: 0 });
+              }}
+            >
+              Restablecer
+            </Button>
+          ) : null}
+          {pinned ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="h-7 px-2.5 rounded-full text-xs font-normal"
+              onClick={() => setPinned(null)}
+            >
+              Quitar resaltado
+            </Button>
+          ) : null}
+          <div className="hidden md:flex items-center gap-1 text-[11px] text-muted-foreground pl-2 border-l border-border/60">
+            <span>
+              {interactive ? 'Señale o pulse un elemento para ver conexiones · ' : ''}Ctrl + rueda
+              para acercar
+            </span>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            aria-label="Alejar"
+            disabled={zoom <= MIN_ZOOM}
+            onClick={() => {
+              const next = Math.max(MIN_ZOOM, zoom - ZOOM_STEP);
+              setZoom(next);
+              if (next <= 1) setOffset({ x: 0, y: 0 });
+            }}
+          >
+            <ZoomOut aria-hidden="true" className="size-4" />
+          </Button>
+          <span className="min-w-12 text-center">{Math.round(zoom * 100)}%</span>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            aria-label="Acercar"
+            disabled={zoom >= MAX_ZOOM}
+            onClick={() => setZoom((current) => Math.min(MAX_ZOOM, current + ZOOM_STEP))}
+          >
+            <ZoomIn aria-hidden="true" className="size-4" />
+          </Button>
+          {zoom !== 1 || offset.x !== 0 || offset.y !== 0 ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setZoom(1);
+                setOffset({ x: 0, y: 0 });
+              }}
+            >
+              Restablecer
+            </Button>
+          ) : null}
+          {pinned ? (
+            <Button type="button" variant="ghost" size="sm" onClick={() => setPinned(null)}>
+              Quitar resaltado
+            </Button>
+          ) : null}
+          <span className="ml-auto hidden text-right sm:inline">
+            {interactive ? 'Señale o pulse un elemento para ver sus conexiones · ' : ''}Ctrl + rueda
+            para acercar
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -298,6 +376,24 @@ export function DiagramViewer({
   const [saving, setSaving] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const extension = SOURCE_EXTENSION[sourceFormat] ?? 'txt';
+
+  useEffect(() => {
+    if (!fullscreen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setFullscreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [fullscreen]);
 
   async function save() {
     setSaving(true);
@@ -420,20 +516,77 @@ export function DiagramViewer({
         <div
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-50 flex flex-col gap-2 overflow-auto bg-background/95 p-4"
+          aria-label={caption || 'Vista en pantalla completa del diagrama'}
+          className="fixed inset-0 z-50 flex flex-col bg-background text-foreground"
         >
-          <Button
-            variant="ghost"
-            size="sm"
-            type="button"
-            onClick={() => setFullscreen(false)}
-            className="inline-flex w-fit items-center gap-1 rounded-md bg-muted px-3 py-1.5 text-sm text-foreground hover:bg-muted/70"
-          >
-            <X className="size-3.5" aria-hidden="true" />
-            Cerrar
-          </Button>
-          <div className="flex flex-1 items-center justify-center overflow-hidden">
-            <ZoomableDiagram key={svg} svg={svg} caption={caption} />
+          <header className="flex h-14 shrink-0 items-center justify-between border-b border-border/80 bg-card/90 px-4 sm:px-6 backdrop-blur-md">
+            <div className="flex items-center gap-2.5 overflow-hidden">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary border border-primary/20">
+                <Maximize2 className="size-4" aria-hidden="true" />
+              </span>
+              <div className="flex flex-col truncate">
+                <span className="truncate text-sm font-semibold text-foreground">
+                  {caption || 'Diagrama'}
+                </span>
+                <span className="text-[11px] text-muted-foreground font-mono">
+                  {code} · {sourceFormat}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                onClick={() => download(`${code}.svg`, svg, 'image/svg+xml')}
+                className="hidden sm:inline-flex items-center gap-1.5 text-xs h-8"
+              >
+                <Download className="size-3.5" aria-hidden="true" />
+                Descargar SVG
+              </Button>
+              {pngUrl ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  onClick={() => downloadPng(pngUrl, `${code}.png`)}
+                  className="hidden sm:inline-flex items-center gap-1.5 text-xs h-8"
+                >
+                  <Download className="size-3.5" aria-hidden="true" />
+                  Descargar PNG
+                </Button>
+              ) : null}
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                onClick={() => download(`${code}.${extension}`, source, 'text/plain')}
+                className="hidden md:inline-flex items-center gap-1.5 text-xs h-8"
+              >
+                <Code2 className="size-3.5" aria-hidden="true" />
+                Descargar código fuente
+              </Button>
+              <div className="hidden sm:block h-5 w-px bg-border mx-1" />
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                onClick={() => setFullscreen(false)}
+                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+                aria-label="Cerrar pantalla completa"
+              >
+                <X className="size-4" aria-hidden="true" />
+                <span>Cerrar</span>
+                <kbd className="hidden sm:inline-flex items-center rounded border border-border/80 bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                  Esc
+                </kbd>
+              </Button>
+            </div>
+          </header>
+
+          <div className="relative flex-1 w-full h-full overflow-hidden">
+            <ZoomableDiagram key={`fullscreen-${svg}`} svg={svg} caption={caption} fullscreen />
           </div>
         </div>
       ) : null}
