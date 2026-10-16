@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { DiagramViewer } from './diagram-viewer';
@@ -182,5 +182,67 @@ describe('DiagramViewer — highlighting connections', () => {
       <DiagramViewer svg={svg} source="flowchart TD" sourceFormat="MERMAID_FLOWCHART" code="t" />,
     );
     expect(screen.queryByText(/para ver sus conexiones/)).not.toBeInTheDocument();
+  });
+});
+
+describe('DiagramViewer — fullscreen mode', () => {
+  it('opens fullscreen, locks body scroll, shows header with actions and closes via button', async () => {
+    const user = userEvent.setup();
+    render(
+      <DiagramViewer
+        svg={svg}
+        source="flowchart TD"
+        sourceFormat="MERMAID_FLOWCHART"
+        code="DIAG-01"
+        caption="Diagrama de arquitectura"
+        pngUrl="/api/diagrams/1/png"
+      />,
+    );
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(document.body.style.overflow).toBe('');
+
+    // Open fullscreen
+    await user.click(screen.getByRole('button', { name: 'Ver en pantalla completa' }));
+    const dialog = screen.getByRole('dialog', { name: 'Diagrama de arquitectura' });
+    expect(dialog).toBeInTheDocument();
+    expect(document.body.style.overflow).toBe('hidden');
+
+    // Header info & action buttons
+    const header = within(dialog).getByRole('banner');
+    expect(header).toHaveTextContent('Diagrama de arquitectura');
+    expect(header).toHaveTextContent('DIAG-01 · MERMAID_FLOWCHART');
+    expect(within(header).getByRole('button', { name: 'Descargar SVG' })).toBeInTheDocument();
+    expect(within(header).getByRole('button', { name: 'Descargar PNG' })).toBeInTheDocument();
+    expect(
+      within(header).getByRole('button', { name: 'Descargar código fuente' }),
+    ).toBeInTheDocument();
+
+    // Close via Cerrar button
+    await user.click(within(header).getByRole('button', { name: 'Cerrar pantalla completa' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(document.body.style.overflow).toBe('');
+  });
+
+  it('closes fullscreen mode with the Escape key', async () => {
+    const user = userEvent.setup();
+    render(
+      <DiagramViewer
+        svg={svg}
+        source="flowchart TD"
+        sourceFormat="MERMAID_FLOWCHART"
+        code="DIAG-01"
+        caption="Diagrama general"
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Ver en pantalla completa' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(document.body.style.overflow).toBe('hidden');
+
+    // Press Escape
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(document.body.style.overflow).toBe('');
   });
 });
