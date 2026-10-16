@@ -18,6 +18,17 @@ const ZOOM_STEP = 0.25;
 // This one also allows zooming out below 100% (large traceability graphs
 // benefit from shrinking to see the whole shape).
 const BOX_PADDING = 16;
+
+// A big diagram has more lines than the eye can follow. Pointing at an element
+// (or clicking it, to keep it) fades everything except it, what it connects to
+// and the lines between them. It reads the entity and link markup PlantUML
+// leaves in the SVG (data-entity-1/2 on each link, one id per entity); a
+// diagram without that markup simply has no highlighting.
+const FADED_ENTITY = '0.15';
+const FADED_LINK = '0.06';
+const CLICK_SLOP = 5;
+const entityAt = (target: EventTarget | null) =>
+  (target as Element | null)?.closest?.('g.entity')?.id ?? null;
 function ZoomableDiagram({ svg, caption }: { svg: string; caption?: string }) {
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -26,6 +37,54 @@ function ZoomableDiagram({ svg, caption }: { svg: string; caption?: string }) {
   const offsetRef = useRef(offset);
   offsetRef.current = offset;
   const contentRef = useRef<HTMLDivElement>(null);
+  const [interactive, setInteractive] = useState(false);
+  const [hovered, setHovered] = useState<string | null>(null);
+  const [pinned, setPinned] = useState<string | null>(null);
+  const press = useRef<{ x: number; y: number; entity: string | null } | null>(null);
+  const focus = pinned ?? hovered;
+
+  useEffect(() => {
+    setInteractive(!!contentRef.current?.querySelector('g.link[data-entity-1]'));
+    setHovered(null);
+    setPinned(null);
+  }, [svg]);
+
+  useEffect(() => {
+    const root = contentRef.current;
+    if (!root || !interactive) return;
+    const entities = root.querySelectorAll<SVGGElement>('g.entity');
+    const links = root.querySelectorAll<SVGGElement>('g.link');
+    const clear = () => {
+      entities.forEach((entity) => (entity.style.opacity = ''));
+      links.forEach((link) => {
+        link.style.opacity = '';
+        const path = link.querySelector('path');
+        if (path) path.style.strokeWidth = '';
+      });
+    };
+    clear();
+    if (!focus) return;
+    const near = new Set([focus]);
+    const touching = new Set<Element>();
+    links.forEach((link) => {
+      const a = link.getAttribute('data-entity-1');
+      const b = link.getAttribute('data-entity-2');
+      if (a !== focus && b !== focus) return;
+      touching.add(link);
+      if (a) near.add(a);
+      if (b) near.add(b);
+    });
+    entities.forEach((entity) => {
+      entity.style.opacity = near.has(entity.id) ? '' : FADED_ENTITY;
+    });
+    links.forEach((link) => {
+      const on = touching.has(link);
+      link.style.opacity = on ? '' : FADED_LINK;
+      const path = link.querySelector('path');
+      if (path && on) path.style.strokeWidth = '2.5px';
+    });
+    return clear;
+  }, [focus, interactive, svg]);
   const dragStart = useRef<{ x: number; y: number; offsetX: number; offsetY: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -74,6 +133,7 @@ function ZoomableDiagram({ svg, caption }: { svg: string; caption?: string }) {
         className="max-h-[75vh] cursor-grab touch-none overflow-hidden rounded-lg border border-border bg-card p-4 active:cursor-grabbing"
         onPointerDown={(event) => {
           if (event.button !== 0) return;
+          press.current = { x: event.clientX, y: event.clientY, entity: entityAt(event.target) };
           dragStart.current = {
             x: event.clientX,
             y: event.clientY,
@@ -83,17 +143,34 @@ function ZoomableDiagram({ svg, caption }: { svg: string; caption?: string }) {
           event.currentTarget.setPointerCapture(event.pointerId);
         }}
         onPointerMove={(event) => {
-          if (!dragStart.current) return;
+          if (!dragStart.current) {
+            if (interactive) setHovered(entityAt(event.target));
+            return;
+          }
           setOffset({
             x: dragStart.current.offsetX + event.clientX - dragStart.current.x,
             y: dragStart.current.offsetY + event.clientY - dragStart.current.y,
           });
         }}
-        onPointerUp={() => {
+        onPointerUp={(event) => {
           dragStart.current = null;
+          if (interactive) setHovered(entityAt(event.target));
+          const start = press.current;
+          press.current = null;
+          // A click, not a drag: keep the highlight on that element, or drop it.
+          if (
+            interactive &&
+            start &&
+            Math.hypot(event.clientX - start.x, event.clientY - start.y) < CLICK_SLOP
+          )
+            setPinned((current) =>
+              start.entity && start.entity !== current ? start.entity : null,
+            );
         }}
+        onPointerLeave={() => setHovered(null)}
         onPointerCancel={() => {
           dragStart.current = null;
+          press.current = null;
         }}
         aria-label="Vista ampliable: Ctrl y rueda para acercar, rueda para desplazarse y arrastre para moverse"
       >
@@ -144,7 +221,15 @@ function ZoomableDiagram({ svg, caption }: { svg: string; caption?: string }) {
             Restablecer
           </Button>
         ) : null}
-        <span className="ml-auto hidden sm:inline">Ctrl + rueda para acercar</span>
+        {pinned ? (
+          <Button type="button" variant="ghost" size="sm" onClick={() => setPinned(null)}>
+            Quitar resaltado
+          </Button>
+        ) : null}
+        <span className="ml-auto hidden text-right sm:inline">
+          {interactive ? 'Señale o pulse un elemento para ver sus conexiones · ' : ''}Ctrl + rueda
+          para acercar
+        </span>
       </div>
     </div>
   );

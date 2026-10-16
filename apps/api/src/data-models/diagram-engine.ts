@@ -14,6 +14,28 @@ export type ERDiagramModel = {
     name?: string;
   }[];
 };
+// Distinguishable on a white background; the package tints are the same hues,
+// light enough to sit behind the use case ellipses.
+const ACTOR_COLORS = [
+  '#1565C0',
+  '#C62828',
+  '#2E7D32',
+  '#EF6C00',
+  '#6A1B9A',
+  '#00838F',
+  '#AD1457',
+  '#4E342E',
+];
+const GROUP_FILLS = [
+  '#E3F2FD',
+  '#FFEBEE',
+  '#E8F5E9',
+  '#FFF3E0',
+  '#F3E5F5',
+  '#E0F7FA',
+  '#FCE4EC',
+  '#EFEBE9',
+];
 export type UseCaseDiagramModel = {
   systemName: string;
   useCases: {
@@ -164,6 +186,11 @@ export class DiagramEngine {
     return lines.join('\n');
   }
 
+  // A large system draws hundreds of lines, so the diagram helps the eye: the
+  // use cases of each primary actor sit together in their own tinted package,
+  // and every actor's lines have their own colour, so a line can be followed
+  // from its actor to its use case. Use case numbers follow the code order,
+  // whatever the grouping, so the same input always gives the same source.
   generateUseCase(model: UseCaseDiagramModel): string {
     // Normalize actor identity per use case first so malformed/historical
     // duplicate entries (e.g. the primary actor repeated in secondaryActors)
@@ -176,17 +203,37 @@ export class DiagramEngine {
       compareOrdinal,
     );
     const sortedUseCases = [...useCases].sort((a, b) => compareOrdinal(a.code, b.code));
+    const numbered = sortedUseCases.map((useCase, index) => ({ ...useCase, number: index + 1 }));
     const lines = ['@startuml', 'left to right direction'];
     actors.forEach((actor, index) => lines.push(`actor "${quote(actor)}" as A${index + 1}`));
     lines.push(`rectangle "${quote(model.systemName)}" {`);
-    sortedUseCases.forEach((useCase, index) =>
-      lines.push(`  usecase "${quote(useCase.name)}" as U${index + 1}`),
-    );
+    const groups = [
+      ...actors.map((actor, index) => ({
+        title: `Casos de uso de ${quote(actor)}`,
+        fill: ` ${GROUP_FILLS[index % GROUP_FILLS.length]}`,
+        members: numbered.filter((useCase) => useCase.actors[0] === actor),
+      })),
+      {
+        title: 'Sin actor primario',
+        fill: '',
+        members: numbered.filter((useCase) => useCase.actors.length === 0),
+      },
+    ];
+    for (const group of groups) {
+      if (!group.members.length) continue;
+      lines.push(`  package "${group.title}"${group.fill} {`);
+      for (const useCase of group.members)
+        lines.push(`    usecase "${quote(useCase.name)}" as U${useCase.number}`);
+      lines.push('  }');
+    }
     lines.push('}');
-    sortedUseCases.forEach((useCase, useCaseIndex) =>
-      useCase.actors.forEach((actor) =>
-        lines.push(`A${actors.indexOf(actor) + 1} -- U${useCaseIndex + 1}`),
-      ),
+    numbered.forEach((useCase) =>
+      useCase.actors.forEach((actor) => {
+        const index = actors.indexOf(actor);
+        lines.push(
+          `A${index + 1} -[${ACTOR_COLORS[index % ACTOR_COLORS.length]}]- U${useCase.number}`,
+        );
+      }),
     );
     const codes = sortedUseCases.map((useCase) => useCase.code);
     sortedUseCases.forEach((useCase, useCaseIndex) =>
