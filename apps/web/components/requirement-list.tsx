@@ -83,7 +83,9 @@ export const PRIORITY_META: Record<
 
 // DEC-138: a long list is paged in the page itself, since the whole list is
 // already loaded for the summary and coverage.
-const PAGE_SIZE = 25;
+const PAGE_SIZE_OPTIONS = [10, 20, 25, 50, 100];
+const DEFAULT_PAGE_SIZE = 25;
+const PAGE_SIZE_KEY = 'caseflow.pageSize.requirements';
 const STATUS_FILTERS = {
   ALL: { label: 'Todos los estados', matches: () => true },
   PENDING: {
@@ -681,12 +683,36 @@ export function RequirementList({
   const [archiving, setArchiving] = useState<RequirementResponse | null>(null);
   const [archiveBusy, setArchiveBusy] = useState(false);
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [confirmingBulk, setConfirmingBulk] = useState<Exclude<
     RequirementBulkAction,
     'APPROVE'
   > | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(PAGE_SIZE_KEY);
+      if (!raw) return;
+      const parsed = Number(raw);
+      if (PAGE_SIZE_OPTIONS.includes(parsed)) {
+        setPageSize(parsed);
+      }
+    } catch {
+      // Ignore storage read errors (e.g. private browsing mode)
+    }
+  }, []);
+
+  const changePageSize = (newSize: number) => {
+    setPageSize(newSize);
+    setPage(0);
+    try {
+      window.localStorage.setItem(PAGE_SIZE_KEY, String(newSize));
+    } catch {
+      // Ignore storage write errors
+    }
+  };
   // A filter starts again on the first page; approving or archiving does not.
   const filter =
     <T,>(setter: (value: T) => void) =>
@@ -710,8 +736,8 @@ export function RequirementList({
     ...visible.filter((r) => r.requirement.requirementType === 'FUNCTIONAL'),
     ...visible.filter((r) => r.requirement.requirementType === 'NON_FUNCTIONAL'),
   ];
-  const pageCount = Math.max(1, Math.ceil(ordered.length / PAGE_SIZE));
-  const pageRows = ordered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const pageCount = Math.max(1, Math.ceil(ordered.length / pageSize));
+  const pageRows = ordered.slice(page * pageSize, (page + 1) * pageSize);
   // Archiving the last requirement of the last page leaves it empty: step back.
   useEffect(() => {
     if (page >= pageCount) setPage(pageCount - 1);
@@ -816,6 +842,18 @@ export function RequirementList({
           {(Object.keys(PRIORITY_META) as RequirementPriority[]).map((key) => (
             <option key={key} value={key}>
               Prioridad {PRIORITY_META[key].label.toLowerCase()}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Elementos por página"
+          className={select}
+          value={pageSize}
+          onChange={(e) => changePageSize(Number(e.target.value))}
+        >
+          {PAGE_SIZE_OPTIONS.map((size) => (
+            <option key={size} value={size}>
+              {size} por página
             </option>
           ))}
         </select>
@@ -992,8 +1030,10 @@ export function RequirementList({
         page={page}
         pageCount={pageCount}
         total={ordered.length}
-        pageSize={PAGE_SIZE}
+        pageSize={pageSize}
         setPage={setPage}
+        pageSizeOptions={PAGE_SIZE_OPTIONS}
+        onPageSizeChange={changePageSize}
         itemLabel="requisitos"
         ariaLabel="Paginación de requisitos"
         hideWhenSinglePage

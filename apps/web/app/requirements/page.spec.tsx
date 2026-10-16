@@ -102,6 +102,7 @@ const requirement = (
 });
 
 beforeEach(() => {
+  window.localStorage.clear();
   window.localStorage.setItem('caseflow.activeProjectId', 'p1');
   mocks.list.mockResolvedValue({
     items: [
@@ -230,6 +231,27 @@ describe('Requirements list', () => {
     expect(screen.getByText('Calidad 1')).toBeInTheDocument();
     expect(screen.queryByRole('navigation', { name: 'Paginación de requisitos' })).toBeNull();
     expect(screen.getByRole('option', { name: 'No funcionales (10)' })).toBeInTheDocument();
+
+    // Changing page size saves to localStorage
+    const pageSizeSelects = screen.getAllByRole('combobox', { name: 'Elementos por página' });
+    await user.selectOptions(pageSizeSelects[0]!, '50');
+    expect(window.localStorage.getItem('caseflow.pageSize.requirements')).toBe('50');
+  });
+
+  it('restores persisted page size from localStorage on mount', async () => {
+    window.localStorage.setItem('caseflow.pageSize.requirements', '10');
+    mocks.list.mockResolvedValue({
+      items: Array.from({ length: 15 }, (_, i) =>
+        requirement(`f${i}`, `RF-${String(i + 1).padStart(3, '0')}`, `Funcional ${i + 1}`, {}),
+      ),
+    });
+    renderPage();
+
+    // Persisted pageSize is 10: page 1 shows Funcional 1 through Funcional 10
+    expect(await screen.findByText('Funcional 1')).toBeInTheDocument();
+    expect(screen.getByText('Funcional 10')).toBeInTheDocument();
+    expect(screen.queryByText('Funcional 11')).toBeNull();
+    expect(screen.getByText('Página 1 de 2')).toBeInTheDocument();
   });
 
   // DEC-138: several requirements at once, after confirming.

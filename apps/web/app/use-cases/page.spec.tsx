@@ -89,6 +89,7 @@ const useCase = {
 };
 
 beforeEach(() => {
+  window.localStorage.clear();
   window.localStorage.setItem('caseflow.activeProjectId', 'p1');
   mocks.list.mockResolvedValue({ items: [useCase] });
   mocks.latest.mockResolvedValue({ job: null });
@@ -223,5 +224,57 @@ describe('Use cases page', () => {
     expect(mocks.generation).toHaveBeenCalledWith('p1', 'g1');
     expect(await screen.findByText('El cliente revisa sus pedidos.')).toBeInTheDocument();
     expect(screen.getByTitle('Consultar pedidos')).toHaveTextContent('RF-002');
+  });
+
+  it('pages a long list of use cases and respects page size changes', async () => {
+    const manyUseCases = Array.from({ length: 25 }, (_, i) => ({
+      ...useCase,
+      id: `u-${i + 1}`,
+      code: `CU-${String(i + 1).padStart(3, '0')}`,
+      useCase: { ...useCase.useCase, name: `Caso de uso ${i + 1}` },
+    }));
+    mocks.list.mockResolvedValue({ items: manyUseCases });
+    const user = userEvent.setup();
+    renderPage();
+
+    // Default pageSize is 20: page 1 shows CU-001 through CU-020
+    expect(await screen.findByText('CU-001')).toBeInTheDocument();
+    expect(screen.getByText('CU-020')).toBeInTheDocument();
+    expect(screen.queryByText('CU-021')).not.toBeInTheDocument();
+    expect(screen.getByText('Página 1 de 2')).toBeInTheDocument();
+
+    // Navigate to page 2
+    await user.click(screen.getByRole('button', { name: 'Página 2' }));
+    expect(screen.getByText('CU-021')).toBeInTheDocument();
+    expect(screen.queryByText('CU-001')).not.toBeInTheDocument();
+
+    // Select all on page 2: selects the 5 items on page 2
+    await user.click(screen.getByRole('checkbox', { name: 'Seleccionar los de esta página' }));
+    expect(screen.getByText('5 seleccionados')).toBeInTheDocument();
+
+    // Change page size to 50: all 25 appear on page 1 and single-page nav hides
+    const pageSizeSelects = screen.getAllByRole('combobox', { name: 'Elementos por página' });
+    await user.selectOptions(pageSizeSelects[0]!, '50');
+    expect(screen.getByText('CU-001')).toBeInTheDocument();
+    expect(screen.getByText('CU-025')).toBeInTheDocument();
+    expect(window.localStorage.getItem('caseflow.pageSize.useCases')).toBe('50');
+  });
+
+  it('restores persisted page size from localStorage on mount', async () => {
+    window.localStorage.setItem('caseflow.pageSize.useCases', '10');
+    const manyUseCases = Array.from({ length: 15 }, (_, i) => ({
+      ...useCase,
+      id: `u-${i + 1}`,
+      code: `CU-${String(i + 1).padStart(3, '0')}`,
+      useCase: { ...useCase.useCase, name: `Caso de uso ${i + 1}` },
+    }));
+    mocks.list.mockResolvedValue({ items: manyUseCases });
+    renderPage();
+
+    // Persisted pageSize is 10: page 1 shows CU-001 through CU-010
+    expect(await screen.findByText('CU-001')).toBeInTheDocument();
+    expect(screen.getByText('CU-010')).toBeInTheDocument();
+    expect(screen.queryByText('CU-011')).not.toBeInTheDocument();
+    expect(screen.getByText('Página 1 de 2')).toBeInTheDocument();
   });
 });
