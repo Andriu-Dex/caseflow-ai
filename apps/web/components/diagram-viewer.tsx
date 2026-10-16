@@ -28,6 +28,95 @@ const FADED_ENTITY = '0.15';
 const FADED_LINK = '0.06';
 const CLICK_SLOP = 5;
 const entityAt = nodeKeyAt;
+// The zoom controls of both views. They are the same controls; only where they
+// sit and how they look differs: a plain bar under the diagram, or a floating
+// pill over the full-screen one.
+function ZoomControls({
+  floating,
+  zoom,
+  moved,
+  pinned,
+  interactive,
+  onZoomOut,
+  onZoomIn,
+  onReset,
+  onUnpin,
+}: {
+  floating: boolean;
+  zoom: number;
+  moved: boolean;
+  pinned: boolean;
+  interactive: boolean;
+  onZoomOut: () => void;
+  onZoomIn: () => void;
+  onReset: () => void;
+  onUnpin: () => void;
+}) {
+  const icon = floating ? 'size-3.5' : 'size-4';
+  const iconButton = floating ? 'ghost' : 'outline';
+  const small = floating ? 'h-7 rounded-full px-2.5 text-xs font-normal' : undefined;
+  const hint = `${interactive ? 'Señale o pulse un elemento para ver sus conexiones · ' : ''}Ctrl + rueda para acercar`;
+  return (
+    <div
+      className={
+        floating
+          ? 'absolute bottom-6 left-1/2 z-20 flex -translate-x-1/2 flex-wrap items-center gap-1.5 rounded-full border border-border/80 bg-background/95 px-3.5 py-1.5 text-xs text-foreground shadow-2xl backdrop-blur-md'
+          : 'flex items-center gap-1 text-xs text-muted-foreground'
+      }
+    >
+      <Button
+        type="button"
+        variant={iconButton}
+        size="icon-sm"
+        aria-label="Alejar"
+        disabled={zoom <= MIN_ZOOM}
+        className={floating ? 'size-7 rounded-full' : undefined}
+        onClick={onZoomOut}
+      >
+        <ZoomOut aria-hidden="true" className={icon} />
+      </Button>
+      <span className={`min-w-12 text-center ${floating ? 'font-mono font-medium' : ''}`}>
+        {Math.round(zoom * 100)}%
+      </span>
+      <Button
+        type="button"
+        variant={iconButton}
+        size="icon-sm"
+        aria-label="Acercar"
+        disabled={zoom >= MAX_ZOOM}
+        className={floating ? 'size-7 rounded-full' : undefined}
+        onClick={onZoomIn}
+      >
+        <ZoomIn aria-hidden="true" className={icon} />
+      </Button>
+      {floating ? <div className="mx-1 h-4 w-px bg-border/80" /> : null}
+      {zoom !== 1 || moved ? (
+        <Button type="button" variant="ghost" size="sm" className={small} onClick={onReset}>
+          Restablecer
+        </Button>
+      ) : null}
+      {pinned ? (
+        <Button
+          type="button"
+          variant={floating ? 'secondary' : 'ghost'}
+          size="sm"
+          className={small}
+          onClick={onUnpin}
+        >
+          Quitar resaltado
+        </Button>
+      ) : null}
+      {floating ? (
+        <div className="hidden items-center gap-1 border-l border-border/60 pl-2 text-[11px] text-muted-foreground md:flex">
+          <span>{hint}</span>
+        </div>
+      ) : (
+        <span className="ml-auto hidden text-right sm:inline">{hint}</span>
+      )}
+    </div>
+  );
+}
+
 function ZoomableDiagram({
   svg,
   caption,
@@ -192,121 +281,24 @@ function ZoomableDiagram({
           <TrustedDiagram svg={svg} caption={caption} />
         </div>
       </div>
-      {fullscreen ? (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex flex-wrap items-center gap-1.5 rounded-full border border-border/80 bg-background/95 px-3.5 py-1.5 shadow-2xl backdrop-blur-md text-xs text-foreground">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Alejar"
-            disabled={zoom <= MIN_ZOOM}
-            className="size-7 rounded-full"
-            onClick={() => {
-              const next = Math.max(MIN_ZOOM, zoom - ZOOM_STEP);
-              setZoom(next);
-              if (next <= 1) setOffset({ x: 0, y: 0 });
-            }}
-          >
-            <ZoomOut aria-hidden="true" className="size-3.5" />
-          </Button>
-          <span className="min-w-12 text-center font-mono font-medium">
-            {Math.round(zoom * 100)}%
-          </span>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Acercar"
-            disabled={zoom >= MAX_ZOOM}
-            className="size-7 rounded-full"
-            onClick={() => setZoom((current) => Math.min(MAX_ZOOM, current + ZOOM_STEP))}
-          >
-            <ZoomIn aria-hidden="true" className="size-3.5" />
-          </Button>
-          <div className="h-4 w-px bg-border/80 mx-1" />
-          {zoom !== 1 || offset.x !== 0 || offset.y !== 0 ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2.5 rounded-full text-xs font-normal"
-              onClick={() => {
-                setZoom(1);
-                setOffset({ x: 0, y: 0 });
-              }}
-            >
-              Restablecer
-            </Button>
-          ) : null}
-          {pinned ? (
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="h-7 px-2.5 rounded-full text-xs font-normal"
-              onClick={() => setPinned(null)}
-            >
-              Quitar resaltado
-            </Button>
-          ) : null}
-          <div className="hidden md:flex items-center gap-1 text-[11px] text-muted-foreground pl-2 border-l border-border/60">
-            <span>
-              {interactive ? 'Señale o pulse un elemento para ver conexiones · ' : ''}Ctrl + rueda
-              para acercar
-            </span>
-          </div>
-        </div>
-      ) : (
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon-sm"
-            aria-label="Alejar"
-            disabled={zoom <= MIN_ZOOM}
-            onClick={() => {
-              const next = Math.max(MIN_ZOOM, zoom - ZOOM_STEP);
-              setZoom(next);
-              if (next <= 1) setOffset({ x: 0, y: 0 });
-            }}
-          >
-            <ZoomOut aria-hidden="true" className="size-4" />
-          </Button>
-          <span className="min-w-12 text-center">{Math.round(zoom * 100)}%</span>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon-sm"
-            aria-label="Acercar"
-            disabled={zoom >= MAX_ZOOM}
-            onClick={() => setZoom((current) => Math.min(MAX_ZOOM, current + ZOOM_STEP))}
-          >
-            <ZoomIn aria-hidden="true" className="size-4" />
-          </Button>
-          {zoom !== 1 || offset.x !== 0 || offset.y !== 0 ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setZoom(1);
-                setOffset({ x: 0, y: 0 });
-              }}
-            >
-              Restablecer
-            </Button>
-          ) : null}
-          {pinned ? (
-            <Button type="button" variant="ghost" size="sm" onClick={() => setPinned(null)}>
-              Quitar resaltado
-            </Button>
-          ) : null}
-          <span className="ml-auto hidden text-right sm:inline">
-            {interactive ? 'Señale o pulse un elemento para ver sus conexiones · ' : ''}Ctrl + rueda
-            para acercar
-          </span>
-        </div>
-      )}
+      <ZoomControls
+        floating={fullscreen}
+        zoom={zoom}
+        moved={offset.x !== 0 || offset.y !== 0}
+        pinned={pinned !== null}
+        interactive={interactive}
+        onZoomOut={() => {
+          const next = Math.max(MIN_ZOOM, zoom - ZOOM_STEP);
+          setZoom(next);
+          if (next <= 1) setOffset({ x: 0, y: 0 });
+        }}
+        onZoomIn={() => setZoom((current) => Math.min(MAX_ZOOM, current + ZOOM_STEP))}
+        onReset={() => {
+          setZoom(1);
+          setOffset({ x: 0, y: 0 });
+        }}
+        onUnpin={() => setPinned(null)}
+      />
     </div>
   );
 }
