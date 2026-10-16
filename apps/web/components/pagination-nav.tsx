@@ -34,6 +34,8 @@ export interface PaginationNavProps {
   itemLabel: string;
   ariaLabel: string;
   hideWhenSinglePage?: boolean;
+  pageSizeOptions?: number[];
+  onPageSizeChange?: (size: number) => void;
 }
 
 export function PaginationNav({
@@ -45,6 +47,8 @@ export function PaginationNav({
   itemLabel,
   ariaLabel,
   hideWhenSinglePage = false,
+  pageSizeOptions,
+  onPageSizeChange,
 }: PaginationNavProps) {
   if (hideWhenSinglePage && pageCount <= 1) {
     return null;
@@ -59,11 +63,34 @@ export function PaginationNav({
       aria-label={ariaLabel}
       className="mt-6 flex flex-col items-center justify-between gap-3.5 rounded-xl border border-border/50 bg-card/60 p-3 sm:px-4 sm:py-3 text-xs sm:text-sm text-muted-foreground shadow-2xs backdrop-blur-xs md:grid md:grid-cols-3 md:items-center"
     >
-      {/* Column 1: Item counts */}
-      <div className="flex items-center justify-center md:justify-start gap-2 text-xs sm:text-sm">
+      {/* Column 1: Item counts and optional page size selector */}
+      <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 text-xs sm:text-sm">
         <span className="font-medium text-foreground/80">
           Mostrando {start}–{end} de {total} {itemLabel}
         </span>
+        {pageSizeOptions && onPageSizeChange && total > (pageSizeOptions[0] ?? 10) ? (
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span aria-hidden="true" className="opacity-40">
+              ·
+            </span>
+            <select
+              aria-label="Elementos por página"
+              className="h-7 rounded-md border border-border/60 bg-background/80 px-2 text-xs font-medium text-foreground shadow-2xs hover:bg-muted/40 focus:outline-hidden focus:ring-1 focus:ring-primary cursor-pointer"
+              value={pageSize}
+              onChange={(e) => {
+                const newSize = Number(e.target.value);
+                onPageSizeChange(newSize);
+                setPage(0);
+              }}
+            >
+              {pageSizeOptions.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt} por pág.
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
       </div>
 
       {/* Column 2: Centered pagination controls */}

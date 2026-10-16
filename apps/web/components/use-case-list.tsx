@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   AlertTriangle,
   Archive,
@@ -47,10 +47,15 @@ import { StaleNotice, isPendingApproval } from './artifact-actions';
 import { DetailBlock, ItemList, Tile } from './requirement-list';
 import { AlternativeFlows, FlowSteps } from './use-case-flow';
 import { UseCaseRelationChips } from './use-case-relations';
+import { PaginationNav } from './pagination-nav';
 
 // The project's use cases at a glance: a summary with how the approved
 // functional requirements are realised, search and status filter, and
 // compact rows that open to show the flows.
+
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
+const DEFAULT_PAGE_SIZE = 20;
+const PAGE_SIZE_KEY = 'caseflow.pageSize.useCases';
 
 const select = 'h-9 rounded-md border border-input bg-background px-2 text-sm';
 const STATUS_FILTERS = {
@@ -445,12 +450,38 @@ export function UseCaseList({
   const [open, setOpen] = useState<string | null>(null);
   const [archiving, setArchiving] = useState<UseCaseResponse | null>(null);
   const [archiveBusy, setArchiveBusy] = useState(false);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [confirmingBulk, setConfirmingBulk] = useState<Exclude<
     UseCaseBulkAction,
     'APPROVE'
   > | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(PAGE_SIZE_KEY);
+      if (!raw) return;
+      const parsed = Number(raw);
+      if (PAGE_SIZE_OPTIONS.includes(parsed)) {
+        setPageSize(parsed);
+      }
+    } catch {
+      // Ignore storage read errors (e.g. private browsing mode)
+    }
+  }, []);
+
+  const changePageSize = (newSize: number) => {
+    setPageSize(newSize);
+    setPage(0);
+    try {
+      window.localStorage.setItem(PAGE_SIZE_KEY, String(newSize));
+    } catch {
+      // Ignore storage write errors
+    }
+  };
+
   const query = normalize(search.trim());
   const visible = items.filter(
     (u) =>
@@ -462,10 +493,17 @@ export function UseCaseList({
   );
   const filtered = Boolean(query) || status !== 'ALL';
 
+  const pageCount = Math.max(1, Math.ceil(visible.length / pageSize));
+  const pageRows = visible.slice(page * pageSize, (page + 1) * pageSize);
+
+  useEffect(() => {
+    if (page >= pageCount) setPage(Math.max(0, pageCount - 1));
+  }, [page, pageCount]);
+
   // A deleted or archived use case leaves the selection by itself.
   const selection = items.filter((u) => selectedIds.has(u.id)).map((u) => u.id);
   const guards = bulkGuards(items.filter((x) => selectedIds.has(x.id)));
-  const allVisibleSelected = visible.length > 0 && visible.every((u) => selectedIds.has(u.id));
+  const pageSelected = pageRows.length > 0 && pageRows.every((u) => selectedIds.has(u.id));
   const toggleSelected = (ids: string[], checked: boolean) =>
     setSelectedIds((current) => {
       const next = new Set(current);
@@ -514,18 +552,36 @@ export function UseCaseList({
             placeholder="Buscar casos de uso"
             className="pl-8"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(0);
+            }}
           />
         </div>
         <select
           aria-label="Estado"
           className={select}
           value={status}
-          onChange={(e) => setStatus(e.target.value as StatusFilter)}
+          onChange={(e) => {
+            setStatus(e.target.value as StatusFilter);
+            setPage(0);
+          }}
         >
           {(Object.keys(STATUS_FILTERS) as StatusFilter[]).map((key) => (
             <option key={key} value={key}>
               {STATUS_FILTERS[key].label}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Elementos por página"
+          className={select}
+          value={pageSize}
+          onChange={(e) => changePageSize(Number(e.target.value))}
+        >
+          {PAGE_SIZE_OPTIONS.map((size) => (
+            <option key={size} value={size}>
+              {size} por página
             </option>
           ))}
         </select>
@@ -537,6 +593,7 @@ export function UseCaseList({
             onClick={() => {
               setSearch('');
               setStatus('ALL');
+              setPage(0);
             }}
           >
             Limpiar filtros
@@ -556,11 +613,13 @@ export function UseCaseList({
             <input
               type="checkbox"
               className="size-4 accent-primary"
-              aria-label="Seleccionar los que coinciden"
-              checked={allVisibleSelected}
+              aria-label={
+                pageCount > 1 ? 'Seleccionar los de esta página' : 'Seleccionar los que coinciden'
+              }
+              checked={pageSelected}
               onChange={(e) =>
                 toggleSelected(
-                  visible.map((u) => u.id),
+                  pageRows.map((u) => u.id),
                   e.target.checked,
                 )
               }
@@ -569,6 +628,22 @@ export function UseCaseList({
               ? `${selection.length} ${selection.length === 1 ? 'seleccionado' : 'seleccionados'}`
               : 'Seleccionar'}
           </label>
+          {pageSelected && visible.length > pageRows.length && selection.length < visible.length ? (
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              className="h-7 px-1 text-xs"
+              onClick={() =>
+                toggleSelected(
+                  visible.map((u) => u.id),
+                  true,
+                )
+              }
+            >
+              Seleccionar los {visible.length} que coinciden
+            </Button>
+          ) : null}
           {selection.length ? (
             <div className="ml-auto flex flex-wrap items-center gap-2">
               <Button
@@ -643,7 +718,7 @@ export function UseCaseList({
         </p>
       ) : (
         <ul className="flex flex-col gap-2">
-          {visible.map((u) => (
+          {pageRows.map((u) => (
             <UseCaseRow
               key={u.id}
               useCase={u}
@@ -660,6 +735,19 @@ export function UseCaseList({
           ))}
         </ul>
       )}
+
+      <PaginationNav
+        page={page}
+        pageCount={pageCount}
+        total={visible.length}
+        pageSize={pageSize}
+        setPage={setPage}
+        pageSizeOptions={PAGE_SIZE_OPTIONS}
+        onPageSizeChange={changePageSize}
+        itemLabel="casos de uso"
+        ariaLabel="Paginación de casos de uso"
+        hideWhenSinglePage
+      />
 
       {confirmingBulk ? (
         <Dialog open onOpenChange={(o) => (o ? null : setConfirmingBulk(null))}>
