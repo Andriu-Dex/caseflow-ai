@@ -20,9 +20,13 @@ export interface GenerationSourceReference {
   requirementType?: string;
 }
 
-// A non-functional requirement (performance, audit, availability) rarely
-// becomes a class or an entity; not citing it is expected there.
+// A class or an entity is not made per requirement or per use case: the
+// analysis is covered by the coverage rules (DEC-121), which say what must be
+// reflected. Not citing one of them is expected there, so only the design
+// inputs those kinds are built from (the data model) are expected to be cited.
 const STRUCTURE_KINDS: StructuredAnalysisKind[] = ['CLASS_DIAGRAM', 'CONCEPTUAL_DOMAIN_MODEL'];
+const ANALYSIS_TYPES = ['REQUIREMENT', 'USE_CASE'];
+const LISTED_UNCOVERED = 5;
 
 export interface GenerationQualityFinding {
   severity: 'ERROR' | 'WARNING';
@@ -246,13 +250,23 @@ export function evaluateStructuredGeneration(
       code: 'COVERAGE_GAP',
       message: gap.message,
     });
-  for (const source of sources) {
-    if (referenced.has(source.code)) continue;
-    if (STRUCTURE_KINDS.includes(kind) && source.requirementType === 'NON_FUNCTIONAL') continue;
+  // One notice for all of them: with a hundred sources, a line each buries the
+  // findings that matter.
+  const uncovered = sources.filter(
+    (source) =>
+      !referenced.has(source.code) &&
+      !(STRUCTURE_KINDS.includes(kind) && ANALYSIS_TYPES.includes(source.type)),
+  );
+  if (uncovered.length) {
+    const listed = uncovered.slice(0, LISTED_UNCOVERED).map((source) => source.code);
+    const more = uncovered.length - listed.length;
     findings.push({
       severity: 'WARNING',
       code: 'UNCOVERED_SOURCE',
-      message: `Ningún elemento de la propuesta proviene de ${source.code}. Revise si debería incluir algo de esa fuente.`,
+      message:
+        uncovered.length === 1
+          ? `Ningún elemento de la propuesta proviene de ${listed[0]}. Revise si debería incluir algo de esa fuente.`
+          : `${uncovered.length} de las ${sources.length} fuentes no aparecen citadas en la propuesta (${listed.join(', ')}${more > 0 ? ` y ${more} más` : ''}). Revise si debería reflejar algo de ellas.`,
     });
   }
   return findings;
