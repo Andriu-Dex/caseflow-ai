@@ -166,11 +166,15 @@ export const ELIGIBLE_SOURCE_TYPES: Record<StructuredAnalysisKind, string[]> = {
   CLASS_DIAGRAM: ['REQUIREMENT', 'USE_CASE', 'DATA_MODEL'],
 };
 
+// maxOutputTokens is what the task needs at least; a provider that can write
+// more is given its own ceiling (DEC-131). Sized for a project of a hundred
+// requirements and use cases: an answer cut short is an invalid answer. The
+// kinds that still go in one request keep this room until they are batched.
 const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
   NAVIGATION_TREE: {
     promptKey: 'navigation.generate',
     promptVersion: 4,
-    maxOutputTokens: 8192,
+    maxOutputTokens: 12_288,
     diagram: {
       format: 'MERMAID_FLOWCHART',
       generate: (content) =>
@@ -188,7 +192,7 @@ const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
   SOFTWARE_ARCHITECTURE: {
     promptKey: 'software-architecture.generate',
     promptVersion: 2,
-    maxOutputTokens: 8192,
+    maxOutputTokens: 12_288,
     diagram: {
       format: 'PLANTUML_COMPONENT',
       generate: (content) =>
@@ -212,22 +216,22 @@ const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
   UI_BLUEPRINT: {
     promptKey: 'ui-blueprint.generate',
     promptVersion: 2,
-    maxOutputTokens: 8192,
+    maxOutputTokens: 16_384,
   },
   GENERATION_PLAN: {
     promptKey: 'generation-plan.generate',
     promptVersion: 1,
-    maxOutputTokens: 8192,
+    maxOutputTokens: 16_384,
   },
   CONCEPTUAL_DOMAIN_MODEL: {
     promptKey: 'conceptual-domain-model.generate',
     promptVersion: 2,
-    maxOutputTokens: 8192,
+    maxOutputTokens: 16_384,
   },
   IMPLEMENTATION_PLAN: {
     promptKey: 'implementation-plan.generate',
     promptVersion: 2,
-    maxOutputTokens: 16384,
+    maxOutputTokens: 32_768,
     aiOutputSchema: implementationPlanBodySchema,
   },
   CLASS_DIAGRAM: {

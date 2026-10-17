@@ -4,7 +4,7 @@ import { ARTIFACT_VERSION_STATUSES } from '../artifacts/artifact.contract';
 export const DATA_MODEL_ENTITY_LIMIT = 60;
 export const DATA_MODEL_ATTRIBUTE_LIMIT = 50;
 export const DATA_MODEL_RELATIONSHIP_LIMIT = 150;
-export const DATA_MODEL_MAX_OUTPUT_TOKENS = 12_288;
+export const DATA_MODEL_MAX_OUTPUT_TOKENS = 24_576;
 export const CONCEPTUAL_ATTRIBUTE_TYPES = [
   'STRING',
   'TEXT',

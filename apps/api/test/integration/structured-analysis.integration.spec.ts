@@ -183,7 +183,7 @@ describe('Structured Analysis (Navigation/Architecture/UI Blueprint) integration
     const generation = await service.generate(projectId, 'NAVIGATION_TREE', [
       approvedRequirementId,
     ]);
-    expect(provider.lastRequest?.maxOutputTokens).toBe(8192);
+    expect(provider.lastRequest?.maxOutputTokens).toBe(12_288);
     expect(generation.candidates).toHaveLength(1);
     expect(generation.candidates[0]?.content).toMatchObject(navigation);
 
