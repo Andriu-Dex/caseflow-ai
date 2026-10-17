@@ -352,6 +352,7 @@ export class ProjectsService {
         // Mockups
         await tx.$executeRaw`DELETE FROM mockup_screen_details WHERE mockup_version_id IN (SELECT id FROM artifact_versions WHERE project_id = ${p})`;
         await tx.$executeRaw`DELETE FROM mockup_details WHERE artifact_version_id IN (SELECT id FROM artifact_versions WHERE project_id = ${p})`;
+        await tx.$executeRaw`DELETE FROM mockup_generation_parts WHERE job_id IN (SELECT id FROM mockup_generation_jobs WHERE project_id = ${p})`;
         await tx.$executeRaw`DELETE FROM mockup_generation_jobs WHERE project_id = ${p}`;
 
         // Sources

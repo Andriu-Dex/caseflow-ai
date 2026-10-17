@@ -43,6 +43,16 @@ export class MockupsController {
     return this.service.create(projectId, body.uiBlueprintVersionId, body.deviceType);
   }
 
+  // Declared before 'jobs/:jobId' so "latest" is not read as an identifier.
+  @Get('jobs/latest')
+  @ApiOperation({
+    operationId: 'getLatestMockupJob',
+    summary: 'Consultar el último trabajo de bocetos',
+  })
+  latestJob(@Param('projectId', uuidParamPipe) projectId: string) {
+    return this.service.latestJob(projectId);
+  }
+
   @Get('jobs/:jobId')
   @ApiOperation({ operationId: 'getMockupJob', summary: 'Consultar el estado de generación' })
   @ApiZodResponse(200, 'Mockup generation job.', mockupJobResponseSchema)

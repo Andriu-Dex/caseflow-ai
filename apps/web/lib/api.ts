@@ -802,6 +802,8 @@ export const api = {
       }),
     getJob: (projectId: string, jobId: string) =>
       get<MockupJobResponse>(`/projects/${projectId}/mockups/jobs/${jobId}`),
+    latestJob: (projectId: string) =>
+      get<{ job: MockupJobResponse | null }>(`/projects/${projectId}/mockups/jobs/latest`),
     transition: (projectId: string, id: string, versionId: string, status: ArtifactVersionStatus) =>
       post(`/projects/${projectId}/mockups/${id}/versions/${versionId}/transition`, { status }),
   },

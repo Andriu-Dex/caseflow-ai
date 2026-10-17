@@ -171,3 +171,42 @@ describe('StitchMockupProvider', () => {
     });
   });
 });
+
+describe('StitchMockupProvider screen by screen (DEC-146)', () => {
+  it('bounds each screen by its own time limit and reports it by name', async () => {
+    const provider = new StitchMockupProvider({ apiKey: 'test', timeoutMs: 20 });
+    // The SDK call never answers: only the per-screen limit ends it.
+    (provider as unknown as { sdk: () => Promise<unknown> }).sdk = async () => ({
+      project: () => ({ generate: () => new Promise(() => undefined) }),
+    });
+    await expect(
+      provider.screens.generateScreen(
+        'p1',
+        {
+          localId: 'a',
+          name: 'Pedidos',
+          purpose: 'Registrar',
+          targetActors: [],
+          sections: [],
+          primaryActions: [],
+          secondaryActions: [],
+          forms: [],
+          principalData: [],
+          states: [],
+          relatedUseCaseCodes: [],
+        },
+        'DESKTOP',
+      ),
+    ).rejects.toMatchObject({
+      code: 'MOCKUP_PROVIDER_TIMEOUT',
+      message: 'La pantalla «Pedidos» excedió el tiempo límite.',
+    });
+  });
+  it('creates the provider project the screens of one mockup go to', async () => {
+    const provider = new StitchMockupProvider({ apiKey: 'test', timeoutMs: 1000 });
+    (provider as unknown as { sdk: () => Promise<unknown> }).sdk = async () => ({
+      createProject: async (title: string) => ({ id: `id-${title}` }),
+    });
+    await expect(provider.screens.createProject('X')).resolves.toBe('id-X');
+  });
+});

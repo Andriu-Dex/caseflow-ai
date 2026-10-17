@@ -51,7 +51,7 @@ import { PageHeading } from '../../../components/page-heading';
 import { StatusBadge } from '../../../components/status-badge';
 import { TrustedDiagram } from '../../../components/trusted-svg';
 import { AuthedDownloadButton, AuthedImage } from '../../../components/authed-media';
-import { AiOrbitSpinner, GenerationOverlay } from '../../../components/generation-overlay';
+import { AiOrbitSpinner } from '../../../components/generation-overlay';
 import {
   ApproveAllButton,
   ArchiveButton,
@@ -60,7 +60,9 @@ import {
   isPendingApproval,
 } from '../../../components/artifact-actions';
 
-const MOCKUP_POLL_TIMEOUT_MS = 6 * 60_000;
+// DEC-146: Stitch draws a few screens at a time, about two minutes each, so a
+// mockup of many screens can take well over half an hour.
+const MOCKUP_POLL_TIMEOUT_MS = 2 * 60 * 60_000;
 const MOCKUP_POLL_INTERVAL_MS = 2_000;
 type MockupUiStatus = 'SUBMITTING' | MockupJobResponse['status'];
 
@@ -72,12 +74,12 @@ export async function pollMockupJob(
   now: () => number = Date.now,
   delay: (milliseconds: number) => Promise<void> = (milliseconds) =>
     new Promise((resolve) => setTimeout(resolve, milliseconds)),
-  onStatus?: (status: MockupJobResponse['status']) => void,
+  onStatus?: (status: MockupJobResponse['status'], job: MockupJobResponse) => void,
 ): Promise<MockupPollResult> {
   const deadline = now() + MOCKUP_POLL_TIMEOUT_MS;
   for (;;) {
     const job = await getJob();
-    onStatus?.(job.status);
+    onStatus?.(job.status, job);
     if (job.status === 'COMPLETED' || job.status === 'FAILED') return { timedOut: false, job };
     if (now() >= deadline) return { timedOut: true, status: job.status };
     await delay(MOCKUP_POLL_INTERVAL_MS);
@@ -404,8 +406,8 @@ function MockupPreview({
           </div>
           <div className="flex items-center justify-between sm:justify-end gap-3 text-xs text-muted-foreground">
             <span>
-              Mostrando <strong className="text-foreground">{filteredScreens.length}</strong> de {screens.length}{' '}
-              {screens.length === 1 ? 'pantalla' : 'pantallas'}
+              Mostrando <strong className="text-foreground">{filteredScreens.length}</strong> de{' '}
+              {screens.length} {screens.length === 1 ? 'pantalla' : 'pantallas'}
             </span>
             <AuthedDownloadButton
               url={downloadAllUrl}
@@ -418,9 +420,7 @@ function MockupPreview({
               />
               <span>
                 Descargar todas{' '}
-                <span className="font-normal text-muted-foreground">
-                  (ZIP · {screens.length})
-                </span>
+                <span className="font-normal text-muted-foreground">(ZIP · {screens.length})</span>
               </span>
             </AuthedDownloadButton>
           </div>
@@ -487,7 +487,10 @@ function MockupPreview({
                 </div>
 
                 <figcaption className="flex items-center justify-between gap-2 border-t border-border/80 bg-card px-3.5 py-2.5 text-sm">
-                  <span className="truncate font-medium text-foreground text-xs sm:text-sm" title={screen.screenName}>
+                  <span
+                    className="truncate font-medium text-foreground text-xs sm:text-sm"
+                    title={screen.screenName}
+                  >
                     {screen.screenName}
                   </span>
                   <span className="flex shrink-0 items-center gap-1.5">
@@ -540,7 +543,9 @@ function MockupPreview({
                     className="line-clamp-2 border-t border-border/60 bg-violet-500/5 px-3 py-1.5 text-xs text-muted-foreground"
                     title={screen.refinementPrompt}
                   >
-                    <span className="font-medium text-violet-600 dark:text-violet-400">Editada:</span>{' '}
+                    <span className="font-medium text-violet-600 dark:text-violet-400">
+                      Editada:
+                    </span>{' '}
                     {screen.refinementPrompt}
                   </p>
                 ) : null}
@@ -580,11 +585,7 @@ function MockupPreview({
           }
         >
           <AuthedImage
-            url={api.mockups.screenImageUrl(
-              projectId,
-              mockupId,
-              screens[selectedScreenIndex]!.id,
-            )}
+            url={api.mockups.screenImageUrl(projectId, mockupId, screens[selectedScreenIndex]!.id)}
             alt={screens[selectedScreenIndex]!.screenName}
             className="max-h-[var(--mockup-image-max-height)] max-w-full object-contain"
           />
@@ -857,6 +858,8 @@ function MockupsContent({ projectId }: { projectId: string }) {
   });
   const [creatingVersionId, setCreatingVersionId] = useState<string | null>(null);
   const [creatingJobStatus, setCreatingJobStatus] = useState<MockupUiStatus | null>(null);
+  // Screens drawn so far, when the provider draws them one by one.
+  const [progress, setProgress] = useState<{ completed: number; total: number } | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [deviceTypes, setDeviceTypes] = useState<Record<string, MockupDeviceType>>({});
   const approvedBlueprints = (blueprints.data?.items ?? []).filter(
@@ -895,7 +898,14 @@ function MockupsContent({ projectId }: { projectId: string }) {
         () => api.mockups.getJob(projectId, job.id),
         Date.now,
         undefined,
-        setCreatingJobStatus,
+        (status, current) => {
+          setCreatingJobStatus(status);
+          setProgress(
+            current.totalScreens
+              ? { completed: current.completedScreens, total: current.totalScreens }
+              : null,
+          );
+        },
       );
       if (result.timedOut) {
         if (result.status === 'QUEUED') {
@@ -910,6 +920,8 @@ function MockupsContent({ projectId }: { projectId: string }) {
         toast.error(result.job.errorMessage ?? 'No se pudo generar el boceto.');
       } else {
         toast.success('Boceto generado.');
+        // Why it is the internal wireframe and not Stitch, when that happened.
+        if (result.job.errorMessage) toast.warning(result.job.errorMessage);
         invalidate();
         // A refinement adds a version to an existing mockup: its preview changes too.
         queryClient.invalidateQueries({ queryKey: ['mockup-preview', projectId] });
@@ -920,9 +932,25 @@ function MockupsContent({ projectId }: { projectId: string }) {
     } finally {
       setCreatingVersionId(null);
       setCreatingJobStatus(null);
+      setProgress(null);
     }
     return false;
   }
+
+  // A generation still running when the page opens (it was left, or reloaded)
+  // is followed again instead of being lost from view.
+  const resumed = useRef(false);
+  useEffect(() => {
+    if (resumed.current) return;
+    resumed.current = true;
+    api.mockups
+      .latestJob(projectId)
+      .then(({ job }) => {
+        if (job && (job.status === 'QUEUED' || job.status === 'RUNNING'))
+          void runMockupJob('job', () => Promise.resolve(job));
+      })
+      .catch(() => undefined);
+  }, [projectId]);
 
   const transitionFor = (m: MockupResponse) => (status: ArtifactVersionStatus) =>
     api.mockups.transition(projectId, m.id, m.version.id, status);
@@ -969,7 +997,8 @@ function MockupsContent({ projectId }: { projectId: string }) {
             <div>
               <h2 className="text-sm font-semibold text-foreground">Generar boceto</h2>
               <p className="text-xs text-muted-foreground">
-                A partir de un Plano de interfaz aprobado, genera pantallas de alta fidelidad o esquemas visuales.
+                A partir de un Plano de interfaz aprobado, genera pantallas de alta fidelidad o
+                esquemas visuales.
               </p>
             </div>
           </div>
@@ -986,8 +1015,7 @@ function MockupsContent({ projectId }: { projectId: string }) {
         ) : (
           <ul className="flex flex-col gap-2.5 text-sm">
             {approvedBlueprints.map((b) => {
-              const screensCount =
-                'screens' in b.content ? b.content.screens.length : null;
+              const screensCount = 'screens' in b.content ? b.content.screens.length : null;
               const currentDevice = deviceTypes[b.version.id] ?? 'DESKTOP';
               return (
                 <li
@@ -1097,17 +1125,6 @@ function MockupsContent({ projectId }: { projectId: string }) {
         )}
       </section>
 
-      <GenerationOverlay
-        open={creatingVersionId !== null}
-        title={
-          creatingJobStatus === 'SUBMITTING'
-            ? 'Preparando la generación'
-            : creatingJobStatus === 'QUEUED'
-              ? 'Boceto en cola'
-              : 'Generando las pantallas'
-        }
-        description="Puede tardar varios minutos. El estado se actualizará automáticamente."
-      />
       {creatingVersionId ? (
         <div
           role="status"
@@ -1132,7 +1149,9 @@ function MockupsContent({ projectId }: { projectId: string }) {
                   ? 'Enviando el trabajo al servicio de generación.'
                   : creatingJobStatus === 'QUEUED'
                     ? 'El servicio de generación iniciará el trabajo en cuanto esté disponible.'
-                    : 'El proveedor está creando las pantallas. La duración depende del contenido del plano.'}
+                    : progress
+                      ? `${progress.completed} de ${progress.total} pantallas listas. Se dibujan unas pocas a la vez; puede salir de esta página, el avance se conserva.`
+                      : 'El proveedor está creando las pantallas. La duración depende del contenido del plano.'}
               </p>
             </div>
           </div>
@@ -1152,9 +1171,23 @@ function MockupsContent({ projectId }: { projectId: string }) {
                   ? 'En cola'
                   : 'En curso'
             }
+            {...(progress
+              ? {
+                  'aria-valuemin': 0,
+                  'aria-valuemax': progress.total,
+                  'aria-valuenow': progress.completed,
+                }
+              : {})}
             className="h-1.5 overflow-hidden rounded-full bg-muted"
           >
-            <div className="mockup-progress-indeterminate h-full w-1/3 rounded-full bg-primary" />
+            {progress ? (
+              <div
+                className="h-full rounded-full bg-primary transition-all"
+                style={{ width: `${Math.round((progress.completed / progress.total) * 100)}%` }}
+              />
+            ) : (
+              <div className="mockup-progress-indeterminate h-full w-1/3 rounded-full bg-primary" />
+            )}
           </div>
           <ol className="grid gap-2 text-xs sm:grid-cols-3">
             <li
@@ -1193,7 +1226,9 @@ function MockupsContent({ projectId }: { projectId: string }) {
             </li>
           </ol>
           <p className="text-xs text-muted-foreground">
-            Puede tardar varios minutos. El estado se actualizará automáticamente.
+            {progress
+              ? 'Si se interrumpe, vuelva a generar el boceto: solo se piden las pantallas que faltan.'
+              : 'Puede tardar varios minutos. El estado se actualizará automáticamente.'}
           </p>
         </div>
       ) : null}

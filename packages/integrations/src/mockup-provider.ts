@@ -45,7 +45,33 @@ export interface EditedScreen {
   providerRef: ProviderScreenRef;
 }
 
+export type BlueprintScreen = UiBlueprintContent['screens'][number];
+
+// DEC-146: a provider that draws one screen at a time (Stitch takes about two
+// minutes a screen), so the caller can keep each screen as it arrives and
+// resume a long run instead of asking for every screen in one call.
+export interface ScreenGenerator {
+  // The provider project the screens of one mockup go to.
+  createProject(title: string): Promise<string>;
+  generateScreen(
+    projectId: string,
+    screen: BlueprintScreen,
+    deviceType: MockupDeviceType,
+    refinement?: string,
+    theme?: DesignThemeContent,
+  ): Promise<GeneratedScreen>;
+}
+
 export interface MockupProvider {
+  // Present when the provider can draw screen by screen.
+  readonly screens?: ScreenGenerator;
+  // Draws the mockup without the screen-by-screen provider: the deterministic
+  // fallback used when that provider produced no screen at all.
+  generateFallback?(
+    content: UiBlueprintContent,
+    deviceType?: MockupDeviceType,
+    theme?: DesignThemeContent,
+  ): Promise<MockupGenerationResult>;
   readonly id: string;
   // `refinement` is an extra user instruction layered on the blueprint; a
   // deterministic provider may ignore it (callers check the result kind).
@@ -74,6 +100,19 @@ export class FallbackMockupProvider implements MockupProvider {
     private readonly onProviderFailure?: MockupProviderFailureHandler,
   ) {
     if (!providers.length) throw new Error('FallbackMockupProvider requires a provider.');
+  }
+  get screens(): ScreenGenerator | undefined {
+    return this.providers.find((provider) => provider.screens)?.screens;
+  }
+  async generateFallback(
+    content: UiBlueprintContent,
+    deviceType?: MockupDeviceType,
+    theme?: DesignThemeContent,
+  ): Promise<MockupGenerationResult> {
+    const fallback = this.providers.find((provider) => !provider.screens);
+    if (!fallback)
+      throw new MockupProviderError('MOCKUP_NOT_CONFIGURED', 'No hay un esquema de respaldo.');
+    return fallback.generate(content, deviceType, undefined, theme);
   }
   async generate(
     content: UiBlueprintContent,

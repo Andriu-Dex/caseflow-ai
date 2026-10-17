@@ -13,6 +13,11 @@ const mocks = vi.hoisted(() => ({
   refine: vi.fn(),
   refineScreen: vi.fn(),
   getJob: vi.fn(),
+  latestJob: vi.fn<(...args: unknown[]) => Promise<{ job: MockupJobResponse | null }>>(
+    async () => ({
+      job: null,
+    }),
+  ),
   downloadAllUrl: vi.fn((projectId: string, mockupId: string) => `/${projectId}/${mockupId}.zip`),
   screenImageUrl: vi.fn(
     (projectId: string, mockupId: string, screenId: string) =>
@@ -36,6 +41,7 @@ vi.mock('../../../lib/api', () => ({
       refine: (...args: unknown[]) => mocks.refine(...args),
       refineScreen: (...args: unknown[]) => mocks.refineScreen(...args),
       getJob: (...args: unknown[]) => mocks.getJob(...args),
+      latestJob: (...args: unknown[]) => mocks.latestJob(...args),
     },
     structuredAnalysis: { list: (...args: unknown[]) => mocks.listBlueprints(...args) },
   },
@@ -150,13 +156,13 @@ describe('pollMockupJob', () => {
   });
 
   it.each(['QUEUED', 'RUNNING'] as const)(
-    'stops polling after six minutes while the job is %s',
+    'stops polling after two hours while the job is %s',
     async (status) => {
       let elapsed = 0;
       const getJob = vi.fn().mockResolvedValue(job(status));
       const delay = vi.fn(async (milliseconds: number) => {
         expect(milliseconds).toBe(2_000);
-        elapsed = 6 * 60_000;
+        elapsed = 2 * 60 * 60_000;
       });
       await expect(pollMockupJob(getJob, () => elapsed, delay)).resolves.toEqual({
         timedOut: true,
@@ -399,5 +405,31 @@ describe('MockupsPage generation and badges', () => {
     expect(await screen.findByText('MCK-001')).toBeInTheDocument();
     expect(screen.getByText('v1')).toBeInTheDocument();
     expect(screen.getAllByText('Escritorio').length).toBeGreaterThan(0);
+  });
+});
+
+describe('MockupsPage background generation (DEC-146)', () => {
+  it('follows a generation still running when the page opens, showing the screens done', async () => {
+    const running = {
+      id: 'job-9',
+      status: 'RUNNING',
+      completedScreens: 2,
+      totalScreens: 5,
+      errorMessage: null,
+    } as MockupJobResponse;
+    mocks.latestJob.mockResolvedValueOnce({ job: running });
+    mocks.getJob
+      .mockResolvedValueOnce(running)
+      .mockResolvedValue({ ...running, status: 'COMPLETED', completedScreens: 5 });
+    render(
+      <TestProviders>
+        <MockupsPage />
+      </TestProviders>,
+    );
+    expect(await screen.findByText(/2 de 5 pantallas listas/)).toBeInTheDocument();
+    const bar = screen.getByRole('progressbar');
+    expect(bar).toHaveAttribute('aria-valuenow', '2');
+    expect(bar).toHaveAttribute('aria-valuemax', '5');
+    await waitFor(() => expect(mocks.getJob).toHaveBeenCalledWith('p1', 'job-9'));
   });
 });
