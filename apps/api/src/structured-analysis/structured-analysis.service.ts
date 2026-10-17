@@ -17,6 +17,9 @@ import {
   conceptualBatchOutputSchema,
   generationPlanContentSchema,
   navigationTreeContentSchema,
+  planDetailBatchOutputSchema,
+  planOutlineSchema,
+  uiBlueprintContentSchema,
   uiBlueprintBatchOutputSchema,
   designThemeContentSchema,
   designThemeContrastIssues,
@@ -53,6 +56,17 @@ import {
   type ModelEntity,
   type ModelRelationship,
 } from './class-diagram-batches';
+import {
+  PLAN_BATCH_ATTEMPTS,
+  cleanOutline,
+  fillMissingScreens as fillMissingPlanScreens,
+  finishGenerationPlan,
+  mergePlanBatch,
+  modulesWithoutScreen,
+  planDetailBatches,
+  type PlanAccumulated,
+  type PlanCodes,
+} from './generation-plan-batches';
 import {
   UI_BATCH_ATTEMPTS,
   fillMissingScreens,
@@ -669,6 +683,7 @@ export class StructuredAnalysisService {
     if (kind === 'UI_BLUEPRINT') await this.loadUiSources(projectId, sourceVersionIds);
     else if (kind === 'CONCEPTUAL_DOMAIN_MODEL')
       await this.loadConceptualSources(projectId, sourceVersionIds);
+    else if (kind === 'GENERATION_PLAN') await this.loadPlanSources(projectId, sourceVersionIds);
     else await this.loadBatchedSources(projectId, kind, sourceVersionIds);
   }
 
@@ -684,6 +699,8 @@ export class StructuredAnalysisService {
       return this.generateUiBlueprintInBatches(projectId, kind, sourceVersionIds, progress);
     if (kind === 'CONCEPTUAL_DOMAIN_MODEL')
       return this.generateConceptualInBatches(projectId, kind, sourceVersionIds, progress);
+    if (kind === 'GENERATION_PLAN')
+      return this.generatePlanInBatches(projectId, kind, sourceVersionIds, progress);
     throw new UnprocessableEntityException('Este tipo de artefacto no se genera por lotes.');
   }
 
@@ -1170,6 +1187,195 @@ export class StructuredAnalysisService {
         runner.lastRunId,
         sources.map((source) => source.id),
         [content as unknown as Content],
+      );
+      return this.getGeneration(projectId, kind, id);
+    } catch (error) {
+      if (error instanceof AIError)
+        throw new ServiceUnavailableException({ message: error.message, code: error.code });
+      throw error;
+    }
+  }
+
+  // DEC-144: the generation plan is drawn in two stages. The outline (modules,
+  // actors, integrations, authentication, constraints, risks) comes first from
+  // a compact view of the whole analysis and design; then each batch of
+  // modules gets its workflows and screens.
+  private async loadPlanSources(projectId: string, sourceVersionIds: string[]) {
+    const unique = [...new Set(sourceVersionIds)];
+    if (unique.length !== sourceVersionIds.length)
+      throw new UnprocessableEntityException('Las versiones fuente no pueden repetirse.');
+    const sources = await this.prisma.artifactVersion.findMany({
+      where: {
+        id: { in: unique },
+        projectId,
+        status: { in: await sourceStatuses(this.prisma, projectId) },
+        artifact: { artifactTypeCode: { in: ELIGIBLE_SOURCE_TYPES.GENERATION_PLAN } },
+      },
+      include: {
+        artifact: true,
+        structuredAnalysisDetail: true,
+        requirementDetail: { select: { name: true, requirementType: true, priority: true } },
+        useCaseDetail: {
+          include: { mainFlowSteps: { orderBy: { position: 'asc' } } },
+        },
+        dataModelDetail: { include: { entities: { orderBy: { position: 'asc' } } } },
+      },
+      orderBy: { artifact: { code: 'asc' } },
+    });
+    if (sources.length !== unique.length)
+      throw new UnprocessableEntityException(
+        'La generación requiere versiones exactas APPROVED de un tipo elegible del mismo proyecto.',
+      );
+    if (!sources.some((source) => source.requirementDetail || source.useCaseDetail))
+      throw new UnprocessableEntityException(
+        'Seleccione al menos un requisito o caso de uso aprobado como base del plan.',
+      );
+    return { sources };
+  }
+
+  private async generatePlanInBatches(
+    projectId: string,
+    kind: StructuredAnalysisKind,
+    sourceVersionIds: string[],
+    progress?: StructuredGenerationProgress,
+  ) {
+    const { sources } = await this.loadPlanSources(projectId, sourceVersionIds);
+    const typeOf = (source: (typeof sources)[number]) => source.artifact.artifactTypeCode;
+    const useCases = new Map(
+      sources
+        .filter((source) => source.useCaseDetail)
+        .map((source) => {
+          const detail = source.useCaseDetail!;
+          return [
+            source.artifact.code,
+            {
+              code: source.artifact.code,
+              name: detail.name,
+              objective: detail.objective,
+              primaryActor: detail.primaryActor,
+              mainFlow: detail.mainFlowSteps.slice(0, 8).map((step) => step.action),
+            },
+          ] as const;
+        }),
+    );
+    const analysis = {
+      requirements: sources
+        .filter((source) => source.requirementDetail)
+        .map((source) => ({
+          code: source.artifact.code,
+          name: source.requirementDetail!.name,
+          type: source.requirementDetail!.requirementType,
+          priority: source.requirementDetail!.priority,
+        })),
+      useCases: [...useCases.values()].map(({ code, name, objective, primaryActor }) => ({
+        code,
+        name,
+        objective,
+        primaryActor,
+      })),
+    };
+    const content = (type: string) =>
+      sources
+        .filter((source) => typeOf(source) === type)
+        .map((source) => source.structuredAnalysisDetail?.content);
+    const design = {
+      dataModelEntities: sources.flatMap(
+        (source) => source.dataModelDetail?.entities.map((entity) => entity.name) ?? [],
+      ),
+      classes: content('CLASS_DIAGRAM').flatMap((value) => {
+        const parsed = classDiagramContentSchema.safeParse(value);
+        return parsed.success
+          ? parsed.data.classes.filter((cls) => cls.stereotype === 'ENTITY').map((cls) => cls.name)
+          : [];
+      }),
+      navigationViews: content('NAVIGATION_TREE').flatMap((value) => {
+        const parsed = navigationTreeContentSchema.safeParse(value);
+        return parsed.success ? parsed.data.nodes.map((node) => node.label) : [];
+      }),
+      screens: content('UI_BLUEPRINT').flatMap((value) => {
+        const parsed = uiBlueprintContentSchema.safeParse(value);
+        return parsed.success ? parsed.data.screens.map((screen) => screen.name) : [];
+      }),
+    };
+    const codes: PlanCodes = {
+      requirements: new Set(analysis.requirements.map((item) => item.code)),
+      useCases: new Set(useCases.keys()),
+      sources: new Set(sources.map((source) => source.artifact.code)),
+    };
+    const runner = createStepRunner({
+      prisma: this.prisma,
+      ai: this.ai,
+      projectId,
+      language: await getProjectLanguage(this.prisma, projectId),
+      progress,
+    });
+    try {
+      progress?.update(0, 1, 0);
+      let outline!: z.infer<typeof planOutlineSchema>;
+      await runner.run(
+        0,
+        {
+          promptKey: 'generation-plan.generate',
+          promptVersion: 2,
+          payload: { analysis, design },
+          schema: planOutlineSchema,
+          schemaName: 'generation_plan_outline',
+          maxOutputTokens: 16_384,
+        },
+        (output) => {
+          outline = cleanOutline(output, codes);
+        },
+      );
+      const batches = planDetailBatches(outline.modules);
+      const allModuleIds = new Set(outline.modules.map((module) => module.localId));
+      const total = batches.length + 1;
+      progress?.update(1, total, 0);
+      let drawn: PlanAccumulated = { workflows: [], screens: [] };
+      for (const [position, batch] of batches.entries()) {
+        // The modules the model gave no screen are asked for again (twice at
+        // most) before a screen is made from the module itself.
+        let remaining = batch;
+        for (let attempt = 0; attempt < PLAN_BATCH_ATTEMPTS && remaining.length; attempt += 1) {
+          await runner.run(
+            1 + position * PLAN_BATCH_ATTEMPTS + attempt,
+            {
+              promptKey: 'generation-plan.detail',
+              promptVersion: 1,
+              payload: {
+                targetModules: remaining.map((module) => ({
+                  localId: module.localId,
+                  name: module.name,
+                  purpose: module.purpose,
+                  entityNames: module.entityNames,
+                  relatedSourceCodes: module.relatedSourceCodes,
+                  useCases: module.relatedUseCaseCodes.flatMap((code) => useCases.get(code) ?? []),
+                })),
+                otherModules: outline.modules
+                  .filter((module) => !batch.includes(module))
+                  .map((module) => module.name),
+                actors: outline.actors.map((actor) => actor.name),
+                existingWorkflows: drawn.workflows.map((workflow) => workflow.name),
+              },
+              schema: planDetailBatchOutputSchema,
+              schemaName: 'generation_plan_detail',
+              maxOutputTokens: 12_288,
+            },
+            (output) => {
+              drawn = mergePlanBatch(drawn, output, remaining, codes, allModuleIds);
+            },
+          );
+          remaining = modulesWithoutScreen(drawn, remaining);
+        }
+        drawn = fillMissingPlanScreens(drawn, remaining);
+        progress?.update(position + 2, total, 0);
+      }
+      const plan = finishGenerationPlan(outline, drawn);
+      const id = await this.persistGeneration(
+        projectId,
+        kind,
+        runner.lastRunId,
+        sources.map((source) => source.id),
+        [plan as unknown as Content],
       );
       return this.getGeneration(projectId, kind, id);
     } catch (error) {

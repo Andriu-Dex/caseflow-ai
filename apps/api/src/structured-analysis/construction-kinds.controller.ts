@@ -56,8 +56,49 @@ export class GenerationPlanController extends BaseStructuredAnalysisController {
   protected readonly kind = 'GENERATION_PLAN' as const;
   protected readonly contentSchema = generationPlanContentSchema;
 
-  constructor(service: StructuredAnalysisService) {
+  constructor(
+    service: StructuredAnalysisService,
+    private readonly jobs: StructuredGenerationJobsService,
+  ) {
     super(service);
+  }
+
+  // DEC-144: drawn in batches in the background.
+  @Post('generation-jobs')
+  @HttpCode(202)
+  @ApiOperation({
+    operationId: 'startGenerationPlanGeneration',
+    summary: 'Generar el plan de generación por lotes en segundo plano',
+  })
+  @ApiZodBody(startStructuredGenerationRequestSchema)
+  @ApiZodResponse(202, 'GenerationPlan generation job.', structuredGenerationJobSchema)
+  startGeneration(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Body(new ZodValidationPipe(startStructuredGenerationRequestSchema))
+    body: z.output<typeof startStructuredGenerationRequestSchema>,
+    @Request() request: { user: { id: string } },
+  ) {
+    return this.jobs.start(projectId, this.kind, body.sourceVersionIds, request.user.id);
+  }
+  @Get('generation-jobs/latest')
+  @ApiOperation({
+    operationId: 'getLatestGenerationPlanGeneration',
+    summary: 'Consultar el último trabajo del plan de generación',
+  })
+  latestGeneration(@Param('projectId', uuidParamPipe) projectId: string) {
+    return this.jobs.latest(projectId, this.kind);
+  }
+  @Get('generation-jobs/:jobId')
+  @ApiOperation({
+    operationId: 'getGenerationPlanGenerationJob',
+    summary: 'Consultar avance de un trabajo del plan de generación',
+  })
+  @ApiZodResponse(200, 'GenerationPlan generation job.', structuredGenerationJobSchema)
+  generationJob(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('jobId', uuidParamPipe) jobId: string,
+  ) {
+    return this.jobs.get(projectId, this.kind, jobId);
   }
 
   @Post()
