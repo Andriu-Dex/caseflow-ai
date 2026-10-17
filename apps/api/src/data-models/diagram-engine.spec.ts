@@ -193,6 +193,20 @@ describe('DiagramEngine', () => {
     expect(() => engine.validate('MERMAID_FLOWCHART', source)).not.toThrow();
   });
 
+  it('declares navigation nodes as the tree reads, each followed by its children, not by identifier', () => {
+    const source = engine.generateNavigationFlowchart({
+      nodes: [
+        { localId: 'z-home', label: 'Inicio' },
+        { localId: 'b-sales', label: 'Ventas', parentLocalId: 'z-home' },
+        { localId: 'a-detail', label: 'Detalle', parentLocalId: 'b-sales' },
+        { localId: 'a-inventory', label: 'Inventario', parentLocalId: 'z-home' },
+        { localId: 'orphan', label: 'Suelto', parentLocalId: 'missing' },
+      ],
+    });
+    const declared = [...source.matchAll(/^ {2}(\S+)\["/gm)].map((m) => m[1]);
+    expect(declared).toEqual(['z_home', 'b_sales', 'a_detail', 'a_inventory', 'orphan']);
+  });
+
   it('draws a big navigation tree left to right so it is not many times wider than tall', () => {
     const nodes = Array.from({ length: 25 }, (_, i) => ({
       localId: `n${i}`,

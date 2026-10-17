@@ -164,6 +164,34 @@ function wrapText(text: string, maxLineLength: number = 40): string {
 
   return lines.join('\\n');
 }
+// The renderer places siblings in the order they are declared, so nodes are
+// declared as the tree reads: each node followed by its children, in the order
+// of the model. Sorting them by identifier scattered the children of a node
+// across the drawing. Nodes the walk does not reach (a cycle, a missing
+// parent) follow in model order, so none is lost.
+function inTreeOrder<T extends { localId: string; parentLocalId?: string | undefined }>(
+  nodes: T[],
+): T[] {
+  const ids = new Set(nodes.map((node) => node.localId));
+  const children = new Map<string | undefined, T[]>();
+  for (const node of nodes) {
+    const parent =
+      node.parentLocalId && ids.has(node.parentLocalId) ? node.parentLocalId : undefined;
+    children.set(parent, [...(children.get(parent) ?? []), node]);
+  }
+  const ordered: T[] = [];
+  const seen = new Set<string>();
+  const visit = (node: T) => {
+    if (seen.has(node.localId)) return;
+    seen.add(node.localId);
+    ordered.push(node);
+    for (const child of children.get(node.localId) ?? []) visit(child);
+  };
+  for (const root of children.get(undefined) ?? []) visit(root);
+  for (const node of nodes) visit(node);
+  return ordered;
+}
+
 // Navigation trees with more nodes than this are drawn left to right.
 const LEFT_TO_RIGHT_FROM = 20;
 
@@ -263,7 +291,7 @@ export class DiagramEngine {
   // more nodes per level than levels, so it is drawn left to right (depth
   // across, breadth down); top-down would make it many times wider than tall.
   generateNavigationFlowchart(model: NavigationDiagramModel): string {
-    const nodes = [...model.nodes].sort((a, b) => compareOrdinal(a.localId, b.localId));
+    const nodes = inTreeOrder(model.nodes);
     const lines = [nodes.length > LEFT_TO_RIGHT_FROM ? 'flowchart LR' : 'flowchart TD'];
     for (const node of nodes) lines.push(`  ${safeId(node.localId)}["${quote(node.label)}"]`);
     for (const node of nodes)
