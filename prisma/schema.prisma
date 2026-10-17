@@ -1484,13 +1484,38 @@ model MockupGenerationJob {
   status               MockupJobStatus  @default(QUEUED)
   resultArtifactId     String?          @map("result_artifact_id") @db.Uuid
   errorMessage         String?          @map("error_message")
+  // DEC-146: progress of a screen-by-screen Stitch generation, and the Stitch
+  // project its screens go to, so a resumed run adds to the same one.
+  totalScreens         Int              @default(0) @map("total_screens")
+  completedScreens     Int              @default(0) @map("completed_screens")
+  stitchProjectId      String?          @map("stitch_project_id")
   createdAt            DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  project Project                 @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  parts   MockupGenerationPart[]
 
   @@index([projectId, createdAt])
   @@map("mockup_generation_jobs")
+}
+
+// One screen of a mockup generation, saved as soon as it arrives (DEC-146): its
+// files are already in storage, so a resumed run never asks for it again.
+model MockupGenerationPart {
+  jobId            String   @map("job_id") @db.Uuid
+  screenLocalId    String   @map("screen_local_id")
+  screenName       String   @map("screen_name")
+  imageStorageKey  String   @map("image_storage_key")
+  imageContentType String   @map("image_content_type")
+  htmlStorageKey   String   @map("html_storage_key")
+  stitchProjectId  String?  @map("stitch_project_id")
+  stitchScreenId   String?  @map("stitch_screen_id")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  job MockupGenerationJob @relation(fields: [jobId], references: [id], onDelete: Restrict)
+
+  @@id([jobId, screenLocalId])
+  @@map("mockup_generation_parts")
 }
 
 // Knowledge Base Fragment for RAG (spec Increment 2)

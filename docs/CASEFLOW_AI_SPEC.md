@@ -7266,6 +7266,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-143 | El plano de interfaz se genera por lotes en segundo plano, vista a vista del árbol de navegación aprobado (seis por lote), con el mismo mecanismo de trabajos, avance, puntos de control y reanudación; lo que el modelo omite se vuelve a pedir y, como último recurso, se dibuja una pantalla simple desde el árbol de navegación (§221.24) | Accepted |
 | DEC-144 | El modelo conceptual se genera por lotes en segundo plano, clase a clase del diagrama de clases aprobado (ocho por lote), con el mismo mecanismo de trabajos, avance, puntos de control y reanudación; lo que el modelo omite se vuelve a pedir y, como último recurso, la entidad sale de la propia clase, y las relaciones del diagrama que no llegaron se trasladan con su cardinalidad (§221.25); lo mismo con el plan de generación (esqueleto y detalle por módulos) y con el plan de implementación (esqueleto, entidades y rutas, a partir de la línea base de diseño) y con el modelo de datos (descubrimiento y detalle por entidades) | Accepted |
 | DEC-145 | Lo archivado se puede ver y restaurar: `GET …/artifacts/archived?types=` lista los artefactos archivados y `POST …/artifacts/:id/restore` los devuelve al trabajo, con auditoría de ambos (`ARTIFACT_ARCHIVED`/`ARTIFACT_RESTORED`). Restaurar nunca se rechaza por lo que cambió mientras tanto: cuenta como cambio de su paso (DEC-137) y lo que depende de él queda por rehacer; si ya hay otro aprobado de un tipo que el proyecto usa una vez, se avisa (§221.26) | Accepted |
+| DEC-146 | Los bocetos de Stitch se generan pantalla por pantalla en segundo plano: unas pocas a la vez (`STITCH_CONCURRENCY`, 4 por defecto), cada una con su propio límite de tiempo y hasta tres intentos, guardando cada pantalla en cuanto llega; un trabajo que se detiene se reanuda con las que faltan al volver a generar el mismo boceto, y solo si no se obtuvo ninguna pantalla se usa el esquema interno, diciendo por qué (§221.27) | Accepted |
 
 ---
 
@@ -7702,7 +7703,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-145)
+# 221. Extensiones de V2 (DEC-116 a DEC-146)
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
@@ -7970,6 +7971,14 @@ El servidor bloquea congelar diseño y construir mientras quedan pasos por rehac
 - **Qué se puede hacer:** cada lista de requisitos, casos de uso, modelo de datos, maquetas y de los tipos de diseño (diagrama de clases, navegación, arquitecturas, plano, tema, planes y modelo conceptual) tiene una sección plegable «Archivados (n)», solo visible si hay alguno, con su código, título, estado, fecha y un botón Restaurar. `GET …/artifacts/archived?types=A,B` los lista (los más recientes primero) y `POST …/artifacts/:id/restore` restaura uno. Archivar también se audita ahora (`ARTIFACT_ARCHIVED`).
 - **Vigencia:** restaurar no se rechaza por lo que cambió mientras el artefacto estaba archivado. El disparador de DEC-137 cuenta archivar y restaurar algo con historial aprobado como un cambio de su paso, de modo que los pasos que dependen de él quedan por rehacer y la vigencia de etapas lo refleja.
 - **Aviso de competencia:** en los tipos que el proyecto usa una vez (modelo de datos, diagrama de clases, navegación, arquitecturas, plano de interfaz, plan de generación, modelo conceptual, plan de implementación y tema), si el restaurado está aprobado y ya hay otro aprobado activo, la respuesta incluye `warning` con sus códigos y la interfaz lo muestra como aviso. No se impide: el usuario decide cuál sigue vigente y archiva el otro. Un archivado no se ofrece como fuente de generación hasta que se restaura.
+
+## 221.27 Bocetos de Stitch por pantalla (DEC-146)
+
+- **Por qué:** Stitch tarda cerca de dos minutos por pantalla. El boceto pedía todas las pantallas del plano a la vez dentro de un único límite de tiempo (`STITCH_TIMEOUT_MS`); con un plano de decenas de pantallas se agotaba y el sistema caía en silencio al esquema interno, que con tantas pantallas no se lee.
+- **Cómo se genera:** el proveedor ofrece una generación por pantalla (`ScreenGenerator`: crear el proyecto de Stitch y dibujar una pantalla). El trabajo de bocetos crea un proyecto de Stitch, que guarda para reutilizarlo, y dibuja unas pocas pantallas a la vez (`STITCH_CONCURRENCY`, 4 por defecto, entre 1 y 8). Cada pantalla tiene su propio límite de tiempo (`STITCH_TIMEOUT_MS` ahora limita una pantalla) y se pide hasta tres veces.
+- **Punto de control:** cada pantalla se guarda en cuanto llega: sus archivos en el almacenamiento y una fila en `mockup_generation_parts`. El trabajo informa el avance (`completedScreens` de `totalScreens`). Si faltan pantallas al terminar, el trabajo queda fallido con cuáles faltan y por qué; generar el mismo boceto otra vez (mismo plano, dispositivo e instrucción) reanuda ese trabajo y solo pide las que faltan, en el mismo proyecto de Stitch. Un reinicio del servidor deja el trabajo fallido y se reanuda igual.
+- **Ejecución:** la llamada interna que ejecuta el trabajo responde de inmediato (202) y el trabajo sigue en el servidor, porque dura mucho más de lo que una petición HTTP espera. La página muestra el avance sin bloquearse, retoma el seguimiento de una generación en curso al volver a abrirse (`GET …/mockups/jobs/latest`) y espera hasta dos horas.
+- **Respaldo:** solo si no se obtuvo ninguna pantalla (por ejemplo, Stitch no responde) y no hay una instrucción de edición, el boceto se genera con el esquema interno; el trabajo termina con un aviso que dice por qué. Con pantallas ya generadas nunca se reemplaza todo por el esquema: se reanuda.
 
 ## 221.4 Fuera de alcance de estas extensiones
 

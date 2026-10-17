@@ -49,6 +49,7 @@ export {
   MOCKUP_PROVIDER_ERROR_CODES,
 } from './mockup-provider';
 export type {
+  BlueprintScreen,
   EditedScreen,
   GeneratedScreen,
   MockupGenerationResult,
@@ -56,6 +57,7 @@ export type {
   MockupProviderErrorCode,
   MockupProviderFailureHandler,
   ProviderScreenRef,
+  ScreenGenerator,
 } from './mockup-provider';
 
 export {

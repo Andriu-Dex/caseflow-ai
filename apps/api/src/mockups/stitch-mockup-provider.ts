@@ -10,6 +10,7 @@ import {
   type ProviderScreenRef,
   type MockupGenerationResult,
   type MockupProvider,
+  type ScreenGenerator,
 } from '@caseflow-ai/integrations';
 
 export interface StitchMockupProviderConfig {
@@ -23,10 +24,72 @@ export interface StitchMockupProviderConfig {
 const importSdk = new Function('return import("stitch-sdk")') as () => Promise<
   typeof import('stitch-sdk')
 >;
+type StitchScreen = Awaited<ReturnType<import('stitch-sdk').Project['generate']>>;
 
 export class StitchMockupProvider implements MockupProvider {
   readonly id = 'stitch';
   constructor(private readonly config: StitchMockupProviderConfig) {}
+
+  // DEC-146: one screen per call, each with its own time limit (the limit
+  // bounds one screen, not the whole mockup).
+  readonly screens: ScreenGenerator = {
+    createProject: (title) =>
+      this.withTimeout(
+        async () => (await (await this.sdk()).createProject(title)).id,
+        'Crear el proyecto del boceto excedió el tiempo límite.',
+        'El proveedor de bocetos no está disponible.',
+      ),
+    generateScreen: (projectId, screen, deviceType, refinement, theme) =>
+      this.withTimeout(
+        async () =>
+          this.drawScreen(
+            (await this.sdk()).project(projectId),
+            projectId,
+            screen,
+            deviceType,
+            refinement,
+            theme,
+          ),
+        `La pantalla «${screen.name}» excedió el tiempo límite.`,
+        'El proveedor de bocetos no está disponible.',
+      ),
+  };
+
+  private async sdk() {
+    const { Stitch, StitchToolClient } = await importSdk();
+    return new Stitch(
+      new StitchToolClient({ apiKey: this.config.apiKey, timeout: this.config.timeoutMs }),
+    );
+  }
+
+  private async drawScreen(
+    project: { generate: (prompt: string, deviceType: MockupDeviceType) => Promise<StitchScreen> },
+    projectId: string,
+    screen: UiBlueprintContent['screens'][number],
+    deviceType: MockupDeviceType,
+    refinement?: string,
+    theme?: DesignThemeContent,
+  ): Promise<GeneratedScreen> {
+    const generated = await project.generate(
+      this.buildPrompt(screen, deviceType, refinement, theme),
+      deviceType,
+    );
+    const [imageUrl, htmlUrl] = await Promise.all([generated.getImage(), generated.getHtml()]);
+    const [image, html] = await Promise.all([
+      this.download(
+        this.fullResolutionImageUrl(imageUrl, generated.data?.width, deviceType),
+        'image',
+      ),
+      this.download(htmlUrl, 'html'),
+    ]);
+    return {
+      screenLocalId: screen.localId,
+      screenName: screen.name,
+      image: { body: image.body, contentType: image.contentType },
+      html: html.body.toString('utf8'),
+      providerRef: { projectId, screenId: generated.id },
+    };
+  }
 
   async generate(
     content: UiBlueprintContent,
@@ -72,33 +135,11 @@ export class StitchMockupProvider implements MockupProvider {
     refinement?: string,
     theme?: DesignThemeContent,
   ): Promise<MockupGenerationResult> {
-    const { Stitch, StitchToolClient } = await importSdk();
-    const sdk = new Stitch(
-      new StitchToolClient({ apiKey: this.config.apiKey, timeout: this.config.timeoutMs }),
-    );
-    const project = await sdk.createProject(`CASEFlow ${Date.now()}`);
+    const project = await (await this.sdk()).createProject(`CASEFlow ${Date.now()}`);
     const screens = await Promise.all(
-      content.screens.map(async (screen): Promise<GeneratedScreen> => {
-        const generated = await project.generate(
-          this.buildPrompt(screen, deviceType, refinement, theme),
-          deviceType,
-        );
-        const [imageUrl, htmlUrl] = await Promise.all([generated.getImage(), generated.getHtml()]);
-        const [image, html] = await Promise.all([
-          this.download(
-            this.fullResolutionImageUrl(imageUrl, generated.data?.width, deviceType),
-            'image',
-          ),
-          this.download(htmlUrl, 'html'),
-        ]);
-        return {
-          screenLocalId: screen.localId,
-          screenName: screen.name,
-          image: { body: image.body, contentType: image.contentType },
-          html: html.body.toString('utf8'),
-          providerRef: { projectId: project.id, screenId: generated.id },
-        };
-      }),
+      content.screens.map((screen) =>
+        this.drawScreen(project, project.id, screen, deviceType, refinement, theme),
+      ),
     );
     if (screens.length === 0) throw new Error('Stitch returned no screens.');
     return { kind: 'STITCH', screens };

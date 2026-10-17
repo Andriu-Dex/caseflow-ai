@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FakeMockupProvider, FallbackMockupProvider, MockupProviderError } from './mockup-provider';
 
 const content = { screens: [] } as never;
@@ -90,5 +90,31 @@ describe('FallbackMockupProvider', () => {
       new FakeMockupProvider(new Error('second')),
     ]);
     await expect(chain.generate(content)).rejects.toBeInstanceOf(MockupProviderError);
+  });
+});
+
+describe('FallbackMockupProvider screen by screen (DEC-146)', () => {
+  const generator = {
+    createProject: async () => 'p',
+    generateScreen: async () => {
+      throw new Error('not used');
+    },
+  };
+  it('offers the screen generator of the provider that has one, and falls back to the others', async () => {
+    const wireframe = new FakeMockupProvider({ kind: 'INTERNAL_WIREFRAME', svg: '<svg>w</svg>' });
+    const stitch = { id: 'stitch', screens: generator, generate: async () => wireframe.generate() };
+    const provider = new FallbackMockupProvider([stitch, wireframe]);
+    expect(provider.screens).toBe(generator);
+    await expect(provider.generateFallback({ screens: [] } as never)).resolves.toEqual({
+      kind: 'INTERNAL_WIREFRAME',
+      svg: '<svg>w</svg>',
+    });
+  });
+  it('has no screen generator nor fallback when no provider offers them', async () => {
+    const provider = new FallbackMockupProvider([
+      { id: 's', screens: generator, generate: vi.fn() },
+    ]);
+    await expect(provider.generateFallback({ screens: [] } as never)).rejects.toThrow('respaldo');
+    expect(new FallbackMockupProvider([new FakeMockupProvider()]).screens).toBeUndefined();
   });
 });
