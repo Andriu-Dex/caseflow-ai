@@ -20,10 +20,12 @@ import {
   type UiBlueprintContent,
 } from '@caseflow-ai/contracts';
 import {
+  ArrowRight,
   Box,
   CheckCircle2,
   Compass,
   CornerDownRight,
+  Cpu,
   Database,
   Eye,
   EyeOff,
@@ -296,7 +298,7 @@ function getArtifactMetrics(kind: StructuredAnalysisKind, content: unknown): Art
   }
   if (kind === 'SOFTWARE_ARCHITECTURE') {
     const sa = content as SoftwareArchitectureContent;
-    return [
+    const metrics: ArtifactMetric[] = [
       {
         singular: 'componente',
         plural: 'componentes',
@@ -310,6 +312,15 @@ function getArtifactMetrics(kind: StructuredAnalysisKind, content: unknown): Art
         icon: Link2,
       },
     ];
+    if (sa.decisions && sa.decisions.length > 0) {
+      metrics.push({
+        singular: 'decisión',
+        plural: 'decisiones',
+        count: sa.decisions.length,
+        icon: ShieldCheck,
+      });
+    }
+    return metrics;
   }
   if (kind === 'SYSTEM_ARCHITECTURE') {
     const sa = content as SystemArchitectureContent;
@@ -543,57 +554,218 @@ function NavigationTreeDetail({ content }: { content: NavigationTreeContent }) {
   );
 }
 
+function SoftwareArchitectureDetail({ content }: { content: SoftwareArchitectureContent }) {
+  const [query, setQuery] = useState('');
+  const { style, components = [], dependencies = [], decisions = [] } = content;
+
+  const componentNames = new Map(components.map((c) => [c.localId, c.name]));
+
+  const trimmed = query.trim().toLowerCase();
+  const isFiltering = trimmed.length > 0;
+  const filteredComponents = isFiltering
+    ? components.filter((c) => {
+        const text = [
+          c.name,
+          c.layerLocalId ?? '',
+          ...(c.responsibilities ?? []),
+          ...(c.relatedSourceCodes ?? []),
+        ]
+          .join(' ')
+          .toLowerCase();
+        return text.includes(trimmed);
+      })
+    : components;
+
+  return (
+    <div className="mt-4 flex flex-col gap-4 border-t border-border/60 pt-4 text-xs">
+      {/* Architectural Style Banner */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3 sm:p-3.5 shadow-2xs">
+        <div className="flex items-center gap-2.5">
+          <div className="rounded-md bg-primary/10 p-2 text-primary">
+            <Cpu className="size-4" aria-hidden="true" />
+          </div>
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Estilo arquitectónico
+            </div>
+            <div className="text-sm font-bold text-foreground">{style}</div>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="rounded-md bg-background px-2 py-1 font-medium text-muted-foreground border border-border/60">
+            {components.length} componentes
+          </span>
+          <span className="rounded-md bg-background px-2 py-1 font-medium text-muted-foreground border border-border/60">
+            {dependencies.length} dependencias
+          </span>
+          {decisions.length > 0 ? (
+            <span className="rounded-md bg-background px-2 py-1 font-medium text-muted-foreground border border-border/60">
+              {decisions.length} decisiones
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Components Section */}
+      <div>
+        <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
+          <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+            <Box className="size-3.5 text-primary" aria-hidden="true" />
+            Componentes del software ({components.length})
+          </h4>
+          {components.length > 1 ? (
+            <div className="relative w-full sm:w-64">
+              <Search
+                className="pointer-events-none absolute left-2.5 top-2.5 size-3.5 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Buscar componente, capa o función…"
+                className="h-8 w-full rounded-md border border-input bg-background pl-8 pr-3 text-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+            </div>
+          ) : null}
+        </div>
+
+        {isFiltering && filteredComponents.length === 0 ? (
+          <p className="rounded-md border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+            No se encontraron componentes que coincidan con «{query}».
+          </p>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {filteredComponents.map((component) => (
+              <div
+                key={component.localId}
+                className="flex flex-col rounded-lg border border-border/80 bg-muted/20 p-3 shadow-2xs transition-colors hover:border-border"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-1.5 pb-2 border-b border-border/40">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Box className="size-3.5 text-primary shrink-0" aria-hidden="true" />
+                    <span className="font-semibold text-sm text-foreground truncate">
+                      {component.name}
+                    </span>
+                  </div>
+                  {component.layerLocalId ? (
+                    <span className="inline-flex items-center gap-1 rounded-md border border-indigo-500/20 bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 dark:text-indigo-400">
+                      <Layers className="size-2.5" aria-hidden="true" />
+                      {component.layerLocalId}
+                    </span>
+                  ) : null}
+                </div>
+
+                {component.responsibilities.length > 0 ? (
+                  <div className="mt-2.5 flex flex-col gap-1.5">
+                    <span className="text-[11px] font-medium text-muted-foreground">
+                      Responsabilidades:
+                    </span>
+                    <ul className="flex flex-col gap-1 text-xs text-muted-foreground">
+                      {component.responsibilities.map((resp, ri) => (
+                        <li key={ri} className="flex items-start gap-1.5">
+                          <CheckCircle2
+                            className="size-3 text-primary mt-0.5 shrink-0"
+                            aria-hidden="true"
+                          />
+                          <span className="text-foreground/90">{resp}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {component.relatedSourceCodes && component.relatedSourceCodes.length > 0 ? (
+                  <div className="mt-2.5 flex flex-wrap items-center gap-1 pt-1.5 border-t border-border/30 text-[11px]">
+                    <span className="text-muted-foreground">Fuentes:</span>
+                    {component.relatedSourceCodes.map((sc) => (
+                      <span
+                        key={sc}
+                        className="rounded bg-muted px-1.5 py-0.5 font-mono font-medium text-foreground"
+                      >
+                        {sc}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Dependencies Section */}
+      {dependencies.length > 0 ? (
+        <div>
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+            <Link2 className="size-3.5 text-primary" aria-hidden="true" />
+            Dependencias entre componentes ({dependencies.length})
+          </h4>
+          <div className="flex flex-col gap-2">
+            {dependencies.map((dep, di) => {
+              const fromName = componentNames.get(dep.fromLocalId) ?? dep.fromLocalId;
+              const toName = componentNames.get(dep.toLocalId) ?? dep.toLocalId;
+              return (
+                <div
+                  key={di}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-xs"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-md bg-background px-2 py-0.5 border border-border font-semibold text-foreground">
+                      {fromName}
+                    </span>
+                    <div className="flex items-center gap-1 text-muted-foreground">
+                      <span className="h-px w-3 bg-border" />
+                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-primary text-[11px] font-medium">
+                        {dep.description || 'Depende de'}
+                      </span>
+                      <ArrowRight className="size-3 text-primary" aria-hidden="true" />
+                      <span className="h-px w-3 bg-border" />
+                    </div>
+                    <span className="rounded-md bg-background px-2 py-0.5 border border-border font-semibold text-foreground">
+                      {toName}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Decisions Section (ADRs) */}
+      {decisions.length > 0 ? (
+        <div>
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+            <ShieldCheck className="size-3.5 text-primary" aria-hidden="true" />
+            Decisiones arquitectónicas ({decisions.length})
+          </h4>
+          <div className="flex flex-col gap-2">
+            {decisions.map((decision, di) => (
+              <div
+                key={di}
+                className="flex items-start gap-2.5 rounded-lg border border-border/70 bg-muted/20 p-3 text-xs"
+              >
+                <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-primary">
+                  ADR-{String(di + 1).padStart(3, '0')}
+                </span>
+                <p className="flex-1 text-foreground leading-relaxed">{decision}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function renderContentDetail(kind: StructuredAnalysisKind, content: unknown) {
   switch (kind) {
     case 'NAVIGATION_TREE': {
       return <NavigationTreeDetail content={content as NavigationTreeContent} />;
     }
     case 'SOFTWARE_ARCHITECTURE': {
-      const { style, components, dependencies, decisions } = content as SoftwareArchitectureContent;
-      return (
-        <div className="mt-2 flex flex-col gap-2 border-t border-border pt-2 text-sm">
-          <p>
-            <strong>Estilo:</strong> {style}
-          </p>
-          <ul className="flex flex-col gap-1">
-            {components.map((component) => (
-              <li key={component.localId}>
-                <strong>{component.name}</strong>
-                {component.layerLocalId ? ` (capa: ${component.layerLocalId})` : ''}
-                {component.responsibilities.length > 0 ? (
-                  <span className="text-muted-foreground">
-                    {' '}
-                    — {component.responsibilities.join('; ')}
-                  </span>
-                ) : null}
-                {component.relatedSourceCodes?.length ? (
-                  <span className="text-muted-foreground">
-                    {' '}
-                    · Fuentes: {component.relatedSourceCodes.join(', ')}
-                  </span>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-          {dependencies.length > 0 ? (
-            <ul className="flex flex-col gap-1 text-muted-foreground">
-              {dependencies.map((dependency, i) => (
-                <li key={i}>
-                  {dependency.fromLocalId} → {dependency.toLocalId}
-                  {dependency.description ? `: ${dependency.description}` : ''}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {decisions.length > 0 ? (
-            <ul className="flex flex-col gap-1 text-muted-foreground">
-              {decisions.map((decision, i) => (
-                <li key={i}>{decision}</li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      );
+      return <SoftwareArchitectureDetail content={content as SoftwareArchitectureContent} />;
     }
     case 'SYSTEM_ARCHITECTURE': {
       const { boundary, nodes, links } = content as SystemArchitectureContent;
