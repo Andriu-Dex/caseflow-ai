@@ -193,6 +193,20 @@ describe('DiagramEngine', () => {
     expect(() => engine.validate('MERMAID_FLOWCHART', source)).not.toThrow();
   });
 
+  it('draws a big navigation tree left to right so it is not many times wider than tall', () => {
+    const nodes = Array.from({ length: 25 }, (_, i) => ({
+      localId: `n${i}`,
+      label: `Nodo ${i}`,
+      ...(i ? { parentLocalId: 'n0' } : {}),
+    }));
+    const source = engine.generateNavigationFlowchart({ nodes });
+    expect(source.startsWith('flowchart LR\n')).toBe(true);
+    expect(() => engine.validate('MERMAID_FLOWCHART', source)).not.toThrow();
+    expect(
+      engine.generateNavigationFlowchart({ nodes: nodes.slice(0, 5) }).startsWith('flowchart TD\n'),
+    ).toBe(true);
+  });
+
   it('generates a deterministic Mermaid flowchart from the traceability graph, sorted by code, word-wrapping long titles instead of truncating them', () => {
     const source = engine.generateTraceabilityFlowchart({
       nodes: [
