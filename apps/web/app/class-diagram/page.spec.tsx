@@ -7,6 +7,9 @@ import { TestProviders } from '../../lib/test-utils';
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   generate: vi.fn(),
+  latestJob: vi.fn(),
+  startJob: vi.fn(),
+  generation: vi.fn(),
   getDiagram: vi.fn(),
   transition: vi.fn(),
   archive: vi.fn(),
@@ -18,6 +21,9 @@ vi.mock('../../lib/api', () => ({
     structuredAnalysis: {
       list: (...args: unknown[]) => mocks.list(...args),
       generate: (...args: unknown[]) => mocks.generate(...args),
+      latestGenerationJob: (...args: unknown[]) => mocks.latestJob(...args),
+      startGenerationJob: (...args: unknown[]) => mocks.startJob(...args),
+      generation: (...args: unknown[]) => mocks.generation(...args),
       getDiagram: (...args: unknown[]) => mocks.getDiagram(...args),
       transition: (...args: unknown[]) => mocks.transition(...args),
       diagramPngUrl: () => '/api/diagram.png',
@@ -153,6 +159,7 @@ describe('ClassDiagramPage', () => {
     window.localStorage.clear();
     window.localStorage.setItem('caseflow.activeProjectId', 'p1');
     mocks.list.mockResolvedValue({ items: [mockClassDiagram] });
+    mocks.latestJob.mockResolvedValue({ job: null });
     mocks.getDiagram.mockResolvedValue({
       svg: '<svg data-testid="class-diagram-svg"><text>UML Classes</text></svg>',
       source: 'classDiagram\nclass Pedido',
@@ -251,5 +258,76 @@ describe('ClassDiagramPage', () => {
         'APPROVED',
       ),
     );
+  });
+
+  // DEC-142: drawn in batches in the background, not in one request.
+  it('draws the class diagram as a background job and shows the proposal when it finishes', async () => {
+    mocks.startJob.mockResolvedValue({
+      id: 'job1',
+      projectId: 'p1',
+      kind: 'CLASS_DIAGRAM',
+      status: 'COMPLETED',
+      completedBatches: 6,
+      totalBatches: 6,
+      outputChars: 0,
+      generationId: 'gen1',
+      errorMessage: null,
+      sourceVersionIds: ['rv1', 'uv1', 'dmv1'],
+      createdAt: '2026-10-17T00:00:00.000Z',
+      updatedAt: '2026-10-17T00:00:00.000Z',
+    });
+    mocks.generation.mockResolvedValue({
+      id: 'gen1',
+      candidates: [
+        {
+          id: 'cand1',
+          candidateId: 'candidate-1',
+          title: 'Diagrama de clases (candidato)',
+          content: { classes: [], relationships: [] },
+          qualityFindings: [],
+          acceptedArtifactId: null,
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: 'Generar' }));
+    await waitFor(() =>
+      expect(mocks.startJob).toHaveBeenCalledWith(
+        'p1',
+        'CLASS_DIAGRAM',
+        expect.arrayContaining(['rv1', 'uv1', 'dmv1']),
+      ),
+    );
+    // The synchronous generation is no longer used for it.
+    expect(mocks.generate).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(mocks.generation).toHaveBeenCalledWith('p1', 'CLASS_DIAGRAM', 'gen1'),
+    );
+    expect(await screen.findByText(/La IA generó 1 propuesta/)).toBeInTheDocument();
+  });
+
+  it('offers to resume a class diagram run that stopped, keeping the finished batches', async () => {
+    mocks.latestJob.mockResolvedValue({
+      job: {
+        id: 'job1',
+        projectId: 'p1',
+        kind: 'CLASS_DIAGRAM',
+        status: 'FAILED',
+        completedBatches: 2,
+        totalBatches: 6,
+        outputChars: 0,
+        generationId: null,
+        errorMessage: 'Se interrumpió porque el servidor se reinició. Puede reintentarlo.',
+        sourceVersionIds: ['rv1', 'uv1', 'dmv1'],
+        createdAt: '2026-10-17T00:00:00.000Z',
+        updatedAt: '2026-10-17T00:00:00.000Z',
+      },
+    });
+    renderPage();
+    expect(await screen.findByRole('button', { name: 'Reanudar generación' })).toBeEnabled();
+    expect(
+      await screen.findByText(/Se interrumpió porque el servidor se reinició/),
+    ).toBeInTheDocument();
   });
 });

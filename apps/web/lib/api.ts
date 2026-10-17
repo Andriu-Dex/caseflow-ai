@@ -37,6 +37,7 @@ import type {
   RequirementBulkAction,
   UseCaseBulkAction,
   UseCaseGenerationJob,
+  StructuredGenerationJob,
   UseCaseBulkResponse,
   RequirementBulkResponse,
   ListSourcesQuery,
@@ -697,6 +698,24 @@ export const api = {
       post<GenerationResult>(
         `/projects/${projectId}/${api.structuredAnalysis.basePath(kind)}/generate`,
         { sourceVersionIds, ...(instruction ? { instruction } : {}) },
+      ),
+    // DEC-142: some kinds are generated in the background, in batches.
+    startGenerationJob: (
+      projectId: string,
+      kind: StructuredAnalysisKind,
+      sourceVersionIds: string[],
+    ) =>
+      post<StructuredGenerationJob>(
+        `/projects/${projectId}/${api.structuredAnalysis.basePath(kind)}/generation-jobs`,
+        { sourceVersionIds },
+      ),
+    latestGenerationJob: (projectId: string, kind: StructuredAnalysisKind) =>
+      get<{ job: StructuredGenerationJob | null }>(
+        `/projects/${projectId}/${api.structuredAnalysis.basePath(kind)}/generation-jobs/latest`,
+      ),
+    generation: (projectId: string, kind: StructuredAnalysisKind, generationId: string) =>
+      get<GenerationResult>(
+        `/projects/${projectId}/${api.structuredAnalysis.basePath(kind)}/generations/${generationId}`,
       ),
     // An Implementation Plan is generated from an approved Design Baseline.
     generateImplementationPlan: (projectId: string, designBaselineId: string) =>

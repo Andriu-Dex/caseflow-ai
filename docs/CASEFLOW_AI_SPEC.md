@@ -7262,6 +7262,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-139 | Casos de uso: la generación con IA se hace por lotes en segundo plano (seis requisitos funcionales por lote, los no funcionales como contexto compartido, los casos ya propuestos como contexto de cada lote), con avance visible, un punto de control por lote y reanudación; admite más de 50 requisitos y más de 20 propuestas (§221.20) | Accepted |
 | DEC-140 | Los análisis grandes no se rechazan: el modelo de datos, los artefactos de diseño y los diagramas aceptan hasta 500 fuentes, y lo que se envía a la IA se ajusta a un presupuesto de entrada reduciendo primero el detalle de los casos de uso y después el de los requisitos, sin omitir ninguno (§221.21) | Accepted |
 | DEC-141 | Diagramas grandes legibles: el de casos de uso agrupa los casos de cada actor primario en un paquete y da a las líneas de cada actor su propio color; el visor desplaza con la rueda, hace zoom con Ctrl + rueda y resalta las conexiones del elemento señalado o pulsado (§221.22) | Accepted |
+| DEC-142 | El diagrama de clases se genera por lotes en segundo plano (ocho entidades del modelo de datos por lote), con avance visible, punto de control por lote y reanudación; lo que el modelo omite de una entidad se completa desde el modelo de datos; las ejecuciones de IA que quedaron «en ejecución» por un reinicio se cierran como fallidas al arrancar (§221.23) | Accepted |
 
 ---
 
@@ -7698,7 +7699,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-141)
+# 221. Extensiones de V2 (DEC-116 a DEC-142)
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
@@ -7923,6 +7924,16 @@ El servidor bloquea congelar diseño y construir mientras quedan pasos por rehac
 - **Atributos del diagrama entidad-relación:** Mermaid solo admite identificadores simples como nombre de atributo, así que «Denominación» se dibuja «Denominacion» (sin acento), no «Denominaci_n». El modelo guarda el nombre original.
 - **Diagramas ya guardados:** el diagrama de una versión se guarda con ella y no cambia (las versiones son inmutables), así que las mejoras del generador solo se ven en los diagramas nuevos. Para una versión aún sin aprobar basta crear una versión nueva del modelo, que genera su diagrama con el generador actual.
 - **Aviso de fuentes sin citar:** la revisión de una propuesta de diseño avisa una sola vez de las fuentes que no cita («39 de las 40 fuentes no aparecen citadas… (RF-002, RF-003… y 34 más)»), no una vez por fuente. En el diagrama de clases y en el modelo conceptual no se espera que se cite cada requisito ni cada caso de uso: lo que deben reflejar lo dicen las reglas de cobertura (DEC-121), y solo se avisa de los insumos de diseño que no se usaron, como el modelo de datos.
+
+## 221.23 Diagrama de clases por lotes y ejecuciones interrumpidas (DEC-142)
+
+- **Por qué:** con un modelo de 44 entidades, una sola respuesta tardaba de 7 a 15 minutos, podía llegar cortada (inválida) y se perdía por completo si el servidor se reiniciaba o la conexión caía.
+- **Trabajo en segundo plano:** `POST …/class-diagram/generation-jobs` (202) recibe las versiones fuente aprobadas (un modelo de datos y, como contexto, los requisitos y casos de uso elegidos); `GET …/generation-jobs/latest` y `GET …/generation-jobs/:jobId` informan el avance. Solo hay un trabajo activo por proyecto y tipo. Se audita (`STRUCTURED_GENERATION_STARTED`/`FINISHED`), y un reinicio deja el trabajo en fallido, no colgado. Es un mecanismo común (`structured_generation_jobs`) pensado para otros tipos de artefacto de diseño; hoy solo el diagrama de clases lo usa.
+- **Lotes:** las entidades del modelo de datos, en su orden, de ocho en ocho. Cada lote recibe sus entidades con todos sus atributos, las relaciones del modelo de datos que debe dibujar (las que cierra su entidad más tardía, de modo que el otro extremo ya existe), las clases ya dibujadas y un resumen de requisitos y casos de uso. Prompt `class-diagram.generate@3`; `@1` y `@2` se conservan.
+- **Validación y completado por lote:** la clase de una entidad solo puede ser de las entidades del lote; una clase de apoyo con el nombre de una ya dibujada no se repite y las relaciones hacia ella la siguen; las relaciones solo citan clases del diagrama. Lo que el modelo omite se completa desde el modelo de datos, que es la autoridad: una clase que falta, o un atributo que falta, no hace fallar una ejecución larga. Al final, toda relación del modelo de datos que no se dibujó se añade como asociación con sus multiplicidades.
+- **Reanudación:** cada lote validado queda guardado; si el trabajo falla, generar de nuevo con la misma selección continúa desde el último lote terminado. Nada se publica hasta el final, y entonces se crea una sola generación con un candidato, que sigue el mismo camino de revisión y aceptación.
+- **Ejecuciones de IA interrumpidas:** al arrancar, la API cierra como fallidas (`interrupted_by_restart`) las ejecuciones que quedaron «en ejecución»: la API es el único proceso que llama a la IA, así que ninguna puede seguir viva. Antes quedaban así para siempre.
+- **Límites del contrato:** un diagrama de clases admite hasta 150 clases y 400 relaciones (antes 80 y 200).
 
 ## 221.4 Fuera de alcance de estas extensiones
 

@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, Post, Request, Res, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  Post,
+  Request,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { z } from 'zod';
@@ -6,6 +16,8 @@ import {
   acceptStructuredAnalysisCandidatesRequestSchema,
   classDiagramContentSchema,
   generateStructuredAnalysisRequestSchema,
+  startStructuredGenerationRequestSchema,
+  structuredGenerationJobSchema,
   structuredAnalysisGenerationResponseSchema,
   structuredAnalysisListResponseSchema,
   structuredAnalysisResponseSchema,
@@ -17,6 +29,7 @@ import { uuidParamPipe } from '../common/uuid-param.pipe';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ApiZodBody, ApiZodResponse } from '../openapi/zod-openapi';
 import { StructuredAnalysisService } from './structured-analysis.service';
+import { StructuredGenerationJobsService } from './structured-generation-jobs.service';
 import { BaseStructuredAnalysisController, inputSchema } from './structured-analysis.controller';
 
 // Domain class diagram (DEC-121): same structured-analysis lifecycle; each
@@ -35,8 +48,49 @@ export class ClassDiagramController extends BaseStructuredAnalysisController {
   protected readonly kind = 'CLASS_DIAGRAM' as const;
   protected readonly contentSchema = classDiagramContentSchema;
 
-  constructor(service: StructuredAnalysisService) {
+  constructor(
+    service: StructuredAnalysisService,
+    private readonly jobs: StructuredGenerationJobsService,
+  ) {
     super(service);
+  }
+
+  // DEC-142: the class diagram is drawn in batches in the background.
+  @Post('generation-jobs')
+  @HttpCode(202)
+  @ApiOperation({
+    operationId: 'startClassDiagramGeneration',
+    summary: 'Generar el diagrama de clases por lotes en segundo plano',
+  })
+  @ApiZodBody(startStructuredGenerationRequestSchema)
+  @ApiZodResponse(202, 'Class diagram generation job.', structuredGenerationJobSchema)
+  startGeneration(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Body(new ZodValidationPipe(startStructuredGenerationRequestSchema))
+    body: z.output<typeof startStructuredGenerationRequestSchema>,
+    @Request() request: AuthenticatedRequest,
+  ) {
+    return this.jobs.start(projectId, this.kind, body.sourceVersionIds, request.user.id);
+  }
+  @Get('generation-jobs/latest')
+  @ApiOperation({
+    operationId: 'getLatestClassDiagramGeneration',
+    summary: 'Consultar el último trabajo del diagrama de clases',
+  })
+  latestGeneration(@Param('projectId', uuidParamPipe) projectId: string) {
+    return this.jobs.latest(projectId, this.kind);
+  }
+  @Get('generation-jobs/:jobId')
+  @ApiOperation({
+    operationId: 'getClassDiagramGenerationJob',
+    summary: 'Consultar avance de un trabajo del diagrama de clases',
+  })
+  @ApiZodResponse(200, 'Class diagram generation job.', structuredGenerationJobSchema)
+  generationJob(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('jobId', uuidParamPipe) jobId: string,
+  ) {
+    return this.jobs.get(projectId, this.kind, jobId);
   }
 
   @Post()

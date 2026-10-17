@@ -17,6 +17,7 @@ import {
 import { DesignThemeController } from './design-theme.controller';
 import { ClassDiagramController } from './class-diagram.controller';
 import { StageCurrencyModule } from '../readiness/stage-currency';
+import { StructuredGenerationJobsService } from './structured-generation-jobs.service';
 
 @Module({
   // Reuses DataModelsModule's DiagramEngine/DIAGRAM_PROVIDER wiring — one
@@ -33,7 +34,7 @@ import { StageCurrencyModule } from '../readiness/stage-currency';
     ConceptualDomainModelController,
     ImplementationPlanController,
   ],
-  providers: [StructuredAnalysisService],
+  providers: [StructuredAnalysisService, StructuredGenerationJobsService],
   exports: [StructuredAnalysisService],
 })
 export class StructuredAnalysisModule {}

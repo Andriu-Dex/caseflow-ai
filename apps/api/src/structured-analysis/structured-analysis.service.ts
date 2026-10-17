@@ -12,6 +12,7 @@ import { canTransitionArtifactVersionStatus, formatArtifactCode } from '@caseflo
 import { DiagramProviderError, type DiagramProvider } from '@caseflow-ai/integrations';
 import {
   STRUCTURED_ANALYSIS_CONTENT_SCHEMAS,
+  classBatchOutputSchema,
   designThemeContentSchema,
   designThemeContrastIssues,
   designThemeGenerationOutputSchema,
@@ -22,6 +23,16 @@ import type { z } from 'zod';
 import { provenanceGuard, sourceStatuses } from '../projects/source-statuses';
 import { PrismaService } from '../database/prisma.service';
 import { getProjectLanguage } from '../projects/project-language';
+import {
+  completeRelationships,
+  finishClassDiagram,
+  mergeClassBatch,
+  planClassBatches,
+  relationshipsToDraw,
+  type Accumulated as ClassDrawn,
+  type ModelEntity,
+  type ModelRelationship,
+} from './class-diagram-batches';
 import {
   fitToBudget,
   requirementLevels,
@@ -74,6 +85,12 @@ const APPROVAL_AUDIT_ACTIONS: Partial<Record<StructuredAnalysisKind, AuditAction
   DESIGN_THEME: 'DESIGN_THEME_APPROVED',
   CLASS_DIAGRAM: 'CLASS_DIAGRAM_APPROVED',
 };
+
+// Progress and checkpoints of a batched run (DEC-142).
+export interface StructuredGenerationProgress {
+  jobId: string;
+  update: (completedBatches: number, totalBatches: number, outputChars: number) => void;
+}
 
 interface KindConfig {
   promptKey: string;
@@ -515,34 +532,221 @@ export class StructuredAnalysisService {
         schemaName: `${kind.toLowerCase()}_generation`,
         maxOutputTokens: config.maxOutputTokens,
       });
-      const generationId = await this.prisma.$transaction(async (tx) => {
-        const generation = await tx.structuredAnalysisGeneration.create({
-          data: { projectId, kind, aiRunId: result.metadata.runId },
-        });
-        await tx.structuredAnalysisGenerationSource.createMany({
-          data: sources.map((source) => ({
-            generationId: generation.id,
-            artifactVersionId: source.id,
-            sourceId: source.id,
-          })),
-        });
-        const contents = config.candidates?.(result.data) ?? [result.data];
-        await tx.structuredAnalysisCandidate.createMany({
-          data: contents.map((content, index) => ({
-            generationId: generation.id,
-            candidateId: `candidate-${index + 1}`,
-            title:
-              contents.length > 1
-                ? `${KIND_LABELS[kind]} (candidato ${index + 1})`
-                : `${KIND_LABELS[kind]} (candidato)`,
-            content: (options.designBaselineId
-              ? { ...content, designBaselineId: options.designBaselineId }
-              : content) as Prisma.InputJsonValue,
-          })),
-        });
-        return generation.id;
-      });
+      const generationId = await this.persistGeneration(
+        projectId,
+        kind,
+        result.metadata.runId,
+        sources.map((source) => source.id),
+        config.candidates?.(result.data) ?? [result.data],
+        options.designBaselineId,
+      );
       return this.getGeneration(projectId, kind, generationId);
+    } catch (error) {
+      if (error instanceof AIError)
+        throw new ServiceUnavailableException({ message: error.message, code: error.code });
+      throw error;
+    }
+  }
+
+  private persistGeneration(
+    projectId: string,
+    kind: StructuredAnalysisKind,
+    aiRunId: string,
+    sourceIds: string[],
+    contents: Content[],
+    designBaselineId?: string,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const generation = await tx.structuredAnalysisGeneration.create({
+        data: { projectId, kind, aiRunId },
+      });
+      await tx.structuredAnalysisGenerationSource.createMany({
+        data: sourceIds.map((id) => ({
+          generationId: generation.id,
+          artifactVersionId: id,
+          sourceId: id,
+        })),
+      });
+      await tx.structuredAnalysisCandidate.createMany({
+        data: contents.map((content, index) => ({
+          generationId: generation.id,
+          candidateId: `candidate-${index + 1}`,
+          title:
+            contents.length > 1
+              ? `${KIND_LABELS[kind]} (candidato ${index + 1})`
+              : `${KIND_LABELS[kind]} (candidato)`,
+          content: (designBaselineId
+            ? { ...content, designBaselineId }
+            : content) as Prisma.InputJsonValue,
+        })),
+      });
+      return generation.id;
+    });
+  }
+
+  // DEC-142: the exact approved sources of a batched generation. A class
+  // diagram is built from one approved data model; the requirements and use
+  // cases chosen go in as a compact view of the analysis.
+  private async loadBatchedSources(
+    projectId: string,
+    kind: StructuredAnalysisKind,
+    sourceVersionIds: string[],
+  ) {
+    const unique = [...new Set(sourceVersionIds)];
+    if (unique.length !== sourceVersionIds.length)
+      throw new UnprocessableEntityException('Las versiones fuente no pueden repetirse.');
+    const sources = await this.prisma.artifactVersion.findMany({
+      where: {
+        id: { in: unique },
+        projectId,
+        status: { in: await sourceStatuses(this.prisma, projectId) },
+        artifact: { artifactTypeCode: { in: ELIGIBLE_SOURCE_TYPES[kind] } },
+      },
+      include: {
+        artifact: true,
+        requirementDetail: { select: { name: true, requirementType: true } },
+        useCaseDetail: { select: { name: true, objective: true, primaryActor: true } },
+        dataModelDetail: {
+          include: {
+            entities: {
+              orderBy: { position: 'asc' },
+              include: { attributes: { orderBy: { position: 'asc' } } },
+            },
+            relationships: { orderBy: { position: 'asc' } },
+          },
+        },
+      },
+      orderBy: { artifact: { code: 'asc' } },
+    });
+    if (sources.length !== unique.length)
+      throw new UnprocessableEntityException(
+        'La generación requiere versiones exactas APPROVED de un tipo elegible del mismo proyecto.',
+      );
+    const models = sources.filter((source) => source.dataModelDetail);
+    if (models.length !== 1)
+      throw new UnprocessableEntityException(
+        'Seleccione exactamente un modelo de datos aprobado como base del diagrama de clases.',
+      );
+    return { sources, model: models[0]!.dataModelDetail! };
+  }
+
+  async checkBatchedSources(
+    projectId: string,
+    kind: StructuredAnalysisKind,
+    sourceVersionIds: string[],
+  ) {
+    await this.loadBatchedSources(projectId, kind, sourceVersionIds);
+  }
+
+  // DEC-142: a class diagram of a large data model in one response is too long
+  // to arrive whole, so it is drawn a few entities at a time. Each batch sees
+  // what the earlier ones drew; each validated result is checkpointed, so a
+  // failed run resumes where it stopped. Nothing is published until the end.
+  async generateInBatches(
+    projectId: string,
+    kind: StructuredAnalysisKind,
+    sourceVersionIds: string[],
+    progress?: StructuredGenerationProgress,
+  ) {
+    if (kind !== 'CLASS_DIAGRAM')
+      throw new UnprocessableEntityException('Este tipo de artefacto no se genera por lotes.');
+    const { sources, model } = await this.loadBatchedSources(projectId, kind, sourceVersionIds);
+    const entityName = new Map(model.entities.map((entity) => [entity.id, entity.name]));
+    const entities: ModelEntity[] = model.entities.map((entity) => ({
+      name: entity.name,
+      description: entity.description,
+      attributes: entity.attributes.map(({ name, type, required }) => ({ name, type, required })),
+    }));
+    const relationships: ModelRelationship[] = model.relationships.map((relationship) => ({
+      from: entityName.get(relationship.sourceEntityId)!,
+      to: entityName.get(relationship.targetEntityId)!,
+      name: relationship.name,
+      fromCardinality: relationship.sourceCardinality,
+      toCardinality: relationship.targetCardinality,
+    }));
+    // The analysis, compact: enough to know what the system does.
+    const analysis = {
+      requirements: sources
+        .filter((source) => source.requirementDetail)
+        .map((source) => ({
+          code: source.artifact.code,
+          name: source.requirementDetail!.name,
+          type: source.requirementDetail!.requirementType,
+        })),
+      useCases: sources
+        .filter((source) => source.useCaseDetail)
+        .map((source) => ({
+          code: source.artifact.code,
+          name: source.useCaseDetail!.name,
+          objective: source.useCaseDetail!.objective,
+          primaryActor: source.useCaseDetail!.primaryActor,
+        })),
+    };
+    const plan = planClassBatches(entities);
+    const language = await getProjectLanguage(this.prisma, projectId);
+    let drawn: ClassDrawn = { classes: [], relationships: [] };
+    let lastRunId = '';
+    try {
+      for (const [position, batch] of plan.entries()) {
+        progress?.update(position, plan.length, 0);
+        const targets = entities.filter((entity) => batch.includes(entity.name));
+        const cached = progress
+          ? await this.prisma.structuredGenerationPart.findUnique({
+              where: { jobId_position: { jobId: progress.jobId, position } },
+            })
+          : null;
+        let output: z.infer<typeof classBatchOutputSchema>;
+        if (cached) {
+          output = classBatchOutputSchema.parse(cached.content);
+          lastRunId = cached.aiRunId;
+        } else {
+          const result = await this.ai.generateStructured({
+            projectId,
+            language,
+            promptKey: 'class-diagram.generate',
+            promptVersion: 3,
+            messages: [
+              {
+                role: 'user',
+                content: JSON.stringify({
+                  targetEntities: targets,
+                  dataModelRelationships: relationshipsToDraw(entities, relationships, batch),
+                  existingClasses: drawn.classes.map((cls) => ({
+                    localId: cls.localId,
+                    name: cls.name,
+                    stereotype: cls.stereotype,
+                    entityName: cls.dataModelEntityName,
+                  })),
+                  analysis,
+                }),
+              },
+            ],
+            outputSchema: classBatchOutputSchema,
+            schemaName: 'class_diagram_batch',
+            maxOutputTokens: 12_288,
+          });
+          output = result.data;
+          lastRunId = result.metadata.runId;
+        }
+        // Domain validation happens here, before anything is checkpointed.
+        drawn = mergeClassBatch(drawn, output, targets);
+        if (progress && !cached)
+          await this.prisma.structuredGenerationPart.upsert({
+            where: { jobId_position: { jobId: progress.jobId, position } },
+            create: { jobId: progress.jobId, position, aiRunId: lastRunId, content: output },
+            update: { aiRunId: lastRunId, content: output },
+          });
+        progress?.update(position + 1, plan.length, 0);
+      }
+      const content = finishClassDiagram(completeRelationships(drawn, relationships));
+      const id = await this.persistGeneration(
+        projectId,
+        kind,
+        lastRunId,
+        sources.map((source) => source.id),
+        [content as unknown as Content],
+      );
+      return this.getGeneration(projectId, kind, id);
     } catch (error) {
       if (error instanceof AIError)
         throw new ServiceUnavailableException({ message: error.message, code: error.code });

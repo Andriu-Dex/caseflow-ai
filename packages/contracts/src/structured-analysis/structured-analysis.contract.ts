@@ -20,6 +20,33 @@ export const STRUCTURED_ANALYSIS_KINDS = [
 ] as const;
 export type StructuredAnalysisKind = (typeof STRUCTURED_ANALYSIS_KINDS)[number];
 
+// DEC-142: the kinds generated in batches in the background.
+export const BATCHED_STRUCTURED_KINDS = ['CLASS_DIAGRAM'] as const;
+export const startStructuredGenerationRequestSchema = z
+  .object({
+    sourceVersionIds: z
+      .array(z.uuid())
+      .min(1)
+      .max(500)
+      .refine((ids) => new Set(ids).size === ids.length, 'Las fuentes no pueden repetirse.'),
+  })
+  .strict();
+export const structuredGenerationJobSchema = z.object({
+  id: z.uuid(),
+  projectId: z.uuid(),
+  kind: z.enum(STRUCTURED_ANALYSIS_KINDS),
+  status: z.enum(['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED']),
+  completedBatches: z.number().int().nonnegative(),
+  totalBatches: z.number().int().nonnegative(),
+  outputChars: z.number().int().nonnegative(),
+  generationId: z.uuid().nullable(),
+  errorMessage: z.string().nullable(),
+  sourceVersionIds: z.array(z.uuid()),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+export type StructuredGenerationJob = z.infer<typeof structuredGenerationJobSchema>;
+
 const text = (max: number) => z.string().trim().min(1, 'El valor es obligatorio.').max(max);
 const localId = () => text(80);
 
