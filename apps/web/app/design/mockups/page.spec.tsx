@@ -274,4 +274,130 @@ describe('MockupsPage screen gallery', () => {
       ).toBeInTheDocument(),
     );
   });
+
+  it('filters screens in real time using the search input and restores them when cleared', async () => {
+    const user = userEvent.setup();
+    render(
+      <TestProviders>
+        <MockupsPage />
+      </TestProviders>,
+    );
+
+    expect(await screen.findByText('Inicio')).toBeInTheDocument();
+    expect(screen.getByText('Catálogo')).toBeInTheDocument();
+    expect(screen.getByText('Detalle')).toBeInTheDocument();
+    expect(screen.getByText(/Mostrando/)).toHaveTextContent('Mostrando 3 de 3 pantallas');
+
+    const searchInput = screen.getByLabelText('Buscar pantalla en el boceto');
+    await user.type(searchInput, 'Catálogo');
+
+    expect(screen.getByText('Catálogo')).toBeInTheDocument();
+    expect(screen.queryByText('Inicio')).not.toBeInTheDocument();
+    expect(screen.queryByText('Detalle')).not.toBeInTheDocument();
+    expect(screen.getByText(/Mostrando/)).toHaveTextContent('Mostrando 1 de 3 pantallas');
+
+    const clearBtn = screen.getByRole('button', { name: 'Borrar búsqueda' });
+    await user.click(clearBtn);
+
+    expect(screen.getByText('Inicio')).toBeInTheDocument();
+    expect(screen.getByText('Catálogo')).toBeInTheDocument();
+    expect(screen.getByText('Detalle')).toBeInTheDocument();
+  });
+
+  it('shows empty search state when no screen matches query', async () => {
+    const user = userEvent.setup();
+    render(
+      <TestProviders>
+        <MockupsPage />
+      </TestProviders>,
+    );
+
+    await screen.findByText('Inicio');
+    const searchInput = screen.getByLabelText('Buscar pantalla en el boceto');
+    await user.type(searchInput, 'InexistenteXYZ');
+
+    expect(screen.getByText('No se encontraron pantallas')).toBeInTheDocument();
+    expect(screen.getByText(/No hay ninguna pantalla que coincida con/i)).toBeInTheDocument();
+
+    const resetBtn = screen.getByRole('button', { name: 'Limpiar búsqueda' });
+    await user.click(resetBtn);
+    expect(screen.getByText('Inicio')).toBeInTheDocument();
+  });
+});
+
+describe('MockupsPage refinement suggestions and options', () => {
+  it('populates refinement input when clicking suggestion chips', async () => {
+    const user = userEvent.setup();
+    render(
+      <TestProviders>
+        <MockupsPage />
+      </TestProviders>,
+    );
+
+    const input = await screen.findByLabelText('Editar todas las pantallas');
+    expect(input).toHaveValue('');
+
+    const suggestionBtn = screen.getByRole('button', {
+      name: /\+ Paleta con mayor contraste y legibilidad/i,
+    });
+    await user.click(suggestionBtn);
+
+    expect(input).toHaveValue('Paleta con mayor contraste y legibilidad');
+
+    const secondSuggestion = screen.getByRole('button', {
+      name: /\+ Tipografía moderna con jerarquía clara/i,
+    });
+    await user.click(secondSuggestion);
+    expect(input).toHaveValue(
+      'Paleta con mayor contraste y legibilidad, Tipografía moderna con jerarquía clara',
+    );
+  });
+});
+
+describe('MockupsPage generation and badges', () => {
+  it('renders approved blueprint with device toggle and allows switching to mobile', async () => {
+    mocks.listBlueprints.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'bp-1',
+          code: 'UI-001',
+          title: 'Plano Principal',
+          content: { screens: [{ id: 's1' }, { id: 's2' }] },
+          version: { id: 'bp-v1', status: 'APPROVED' },
+        },
+      ],
+    });
+
+    render(
+      <TestProviders>
+        <MockupsPage />
+      </TestProviders>,
+    );
+
+    expect(await screen.findByText('UI-001')).toBeInTheDocument();
+    expect(screen.getByText('Plano Principal')).toBeInTheDocument();
+    expect(screen.getByText('2 pantallas')).toBeInTheDocument();
+
+    const desktopRadio = screen.getByRole('radio', { name: /Escritorio/i });
+    const mobileRadio = screen.getByRole('radio', { name: /Móvil/i });
+
+    expect(desktopRadio).toHaveAttribute('aria-checked', 'true');
+    expect(mobileRadio).toHaveAttribute('aria-checked', 'false');
+
+    fireEvent.click(mobileRadio);
+    expect(mobileRadio).toHaveAttribute('aria-checked', 'true');
+    expect(desktopRadio).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('renders mockup header badges for code, device and version', async () => {
+    render(
+      <TestProviders>
+        <MockupsPage />
+      </TestProviders>,
+    );
+
+    expect(await screen.findByText('MCK-001')).toBeInTheDocument();
+    expect(screen.getByText('v1')).toBeInTheDocument();
+    expect(screen.getAllByText('Escritorio').length).toBeGreaterThan(0);
+  });
 });

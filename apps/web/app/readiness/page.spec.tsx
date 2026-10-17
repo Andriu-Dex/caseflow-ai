@@ -5,10 +5,12 @@ import ReadinessPage from './page';
 import { TestProviders } from '../../lib/test-utils';
 
 const getReadiness = vi.fn();
+const getConsistency = vi.fn();
 
 vi.mock('../../lib/api', () => ({
   api: {
     readiness: { get: (...args: unknown[]) => getReadiness(...args) },
+    consistency: { get: (...args: unknown[]) => getConsistency(...args) },
     export: {
       url: (projectId: string, format: string) =>
         `http://localhost:3001/projects/${projectId}/export?format=${format}`,
@@ -44,6 +46,7 @@ const oneStageSatisfied = {
 
 beforeEach(() => {
   getReadiness.mockReset().mockResolvedValue(oneStageSatisfied);
+  getConsistency.mockReset().mockResolvedValue({ totalArtifacts: 5, issues: [] });
 });
 
 beforeEach(() => {
@@ -132,5 +135,84 @@ describe('ReadinessPage', () => {
     );
     expect(fetchBlob).toHaveBeenCalledWith('http://localhost:3001/projects/p1/export?format=html');
     expect(downloadFile).not.toHaveBeenCalled();
+  });
+
+  it('filters stages between all, completed, and pending', async () => {
+    getReadiness.mockResolvedValueOnce({
+      ...oneStageSatisfied,
+      stages: [
+        {
+          key: 'SOURCES',
+          label: 'Fuentes del proyecto',
+          satisfied: true,
+          summary: 'ok',
+          blockers: [],
+          warnings: [],
+          nextAction: null,
+        },
+        {
+          key: 'CONTEXT',
+          label: 'Contexto del proyecto',
+          satisfied: false,
+          summary: 'requiere revisión',
+          blockers: ['Falta contexto'],
+          warnings: [],
+          nextAction: null,
+        },
+      ],
+    });
+
+    const user = userEvent.setup();
+    render(
+      <TestProviders>
+        <ReadinessPage />
+      </TestProviders>,
+    );
+
+    expect(await screen.findByText('Fuentes del proyecto')).toBeInTheDocument();
+    expect(screen.getByText('Contexto del proyecto')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Completadas \(1\)/i }));
+    expect(screen.getByText('Fuentes del proyecto')).toBeInTheDocument();
+    expect(screen.queryByText('Contexto del proyecto')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Pendientes \(1\)/i }));
+    expect(screen.queryByText('Fuentes del proyecto')).not.toBeInTheDocument();
+    expect(screen.getByText('Contexto del proyecto')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Todas \(2\)/i }));
+    expect(screen.getByText('Fuentes del proyecto')).toBeInTheDocument();
+    expect(screen.getByText('Contexto del proyecto')).toBeInTheDocument();
+  });
+
+  it('renders consistency report with issues, severity badges, and affected artifact links', async () => {
+    getConsistency.mockResolvedValueOnce({
+      totalArtifacts: 8,
+      issues: [
+        {
+          rule: 'Mockup Association',
+          severity: 'ERROR',
+          message: 'Toda pantalla de plano debe tener un boceto asociado.',
+          affectedArtifactIds: ['art1-screens'],
+        },
+      ],
+    });
+
+    render(
+      <TestProviders>
+        <ReadinessPage />
+      </TestProviders>,
+    );
+
+    expect(await screen.findByText(/\[Asociación de boceto\]/i)).toBeInTheDocument();
+    expect(
+      screen.getByText('Toda pantalla de plano debe tener un boceto asociado.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Crítico')).toBeInTheDocument();
+    expect(screen.getByText('art1')).toBeInTheDocument();
+    expect(screen.getByText('art1').closest('a')).toHaveAttribute(
+      'href',
+      '/projects/p1/artifacts/art1-screens',
+    );
   });
 });
