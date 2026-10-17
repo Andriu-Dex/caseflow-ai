@@ -9,6 +9,27 @@ export interface StructuredGenerationProgress {
   update: (completedBatches: number, totalBatches: number, outputChars: number) => void;
 }
 
+// Where the validated answers of a job are kept. Each kind of job has its own
+// table; the structured design artifacts share one.
+export interface PartsStore {
+  find: (jobId: string, position: number) => Promise<{ content: unknown; aiRunId: string } | null>;
+  save: (jobId: string, position: number, aiRunId: string, content: unknown) => Promise<void>;
+}
+
+export const structuredPartsStore = (prisma: PrismaService): PartsStore => ({
+  find: (jobId, position) =>
+    prisma.structuredGenerationPart.findUnique({
+      where: { jobId_position: { jobId, position } },
+    }),
+  save: async (jobId, position, aiRunId, content) => {
+    await prisma.structuredGenerationPart.upsert({
+      where: { jobId_position: { jobId, position } },
+      create: { jobId, position, aiRunId, content: content as Prisma.InputJsonValue },
+      update: { aiRunId, content: content as Prisma.InputJsonValue },
+    });
+  },
+});
+
 export interface StepRequest<S extends z.ZodType> {
   promptKey: string;
   promptVersion: number;
@@ -29,7 +50,9 @@ export function createStepRunner(deps: {
   projectId: string;
   language: 'ES' | 'EN';
   progress?: StructuredGenerationProgress;
+  parts?: PartsStore;
 }) {
+  const parts = deps.parts ?? structuredPartsStore(deps.prisma);
   let lastRunId = '';
   return {
     get lastRunId() {
@@ -40,12 +63,8 @@ export function createStepRunner(deps: {
       request: StepRequest<S>,
       apply: (output: z.infer<S>) => void,
     ): Promise<void> {
-      const { prisma, ai, projectId, language, progress } = deps;
-      const cached = progress
-        ? await prisma.structuredGenerationPart.findUnique({
-            where: { jobId_position: { jobId: progress.jobId, position: part } },
-          })
-        : null;
+      const { ai, projectId, language, progress } = deps;
+      const cached = progress ? await parts.find(progress.jobId, part) : null;
       let output: z.infer<S>;
       if (cached) {
         output = request.schema.parse(cached.content) as z.infer<S>;
@@ -65,17 +84,7 @@ export function createStepRunner(deps: {
         lastRunId = result.metadata.runId;
       }
       apply(output);
-      if (progress && !cached)
-        await prisma.structuredGenerationPart.upsert({
-          where: { jobId_position: { jobId: progress.jobId, position: part } },
-          create: {
-            jobId: progress.jobId,
-            position: part,
-            aiRunId: lastRunId,
-            content: output as Prisma.InputJsonValue,
-          },
-          update: { aiRunId: lastRunId, content: output as Prisma.InputJsonValue },
-        });
+      if (progress && !cached) await parts.save(progress.jobId, part, lastRunId, output);
     },
   };
 }

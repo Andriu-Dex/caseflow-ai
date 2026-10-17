@@ -379,6 +379,7 @@ model Project {
   requirementGenerationJobs     RequirementGenerationJob[]
   useCaseGenerationJobs         UseCaseGenerationJob[]
   structuredGenerationJobs      StructuredGenerationJob[]
+  dataModelGenerationJobs       DataModelGenerationJob[]
 
   @@index([workspaceId, createdAt, id])
   @@map("projects")
@@ -476,6 +477,7 @@ model ArtifactVersion {
   requirementGenerationJobs           RequirementGenerationJob[]
   useCaseGenerationJobSources         UseCaseGenerationJobSource[]
   structuredGenerationJobSources      StructuredGenerationJobSource[]
+  dataModelGenerationJobSources       DataModelGenerationJobSource[]
   projectBaselineEntries              ProjectBaselineEntry[]
   designBaselineEntries               DesignBaselineEntry[]
   generationRuns                      GenerationRun[]
@@ -640,6 +642,7 @@ model AIRun {
   requirementGenerationParts   RequirementGenerationPart[]
   useCaseGenerationParts       UseCaseGenerationPart[]
   structuredGenerationParts    StructuredGenerationPart[]
+  dataModelGenerationParts     DataModelGenerationPart[]
 
   @@index([projectId, startedAt, id])
   @@index([sourceArtifactVersionId])
@@ -726,6 +729,7 @@ model DataModelGeneration {
   sources         DataModelGenerationSource[]
   candidates      DataModelCandidate[]
   acceptedDetails DataModelDetail[]
+  job             DataModelGenerationJob?
 
   @@index([projectId, createdAt])
   @@map("data_model_generations")
@@ -2089,4 +2093,51 @@ model StructuredGenerationPart {
 
   @@id([jobId, position])
   @@map("structured_generation_parts")
+}
+
+// Batched, resumable data model generation (DEC-144): the exact approved
+// requirements and use cases chosen, processed in the background with a
+// checkpoint per answer.
+model DataModelGenerationJob {
+  id               String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId        String                         @map("project_id") @db.Uuid
+  status           SourceProcessingStatus         @default(QUEUED)
+  totalBatches     Int                            @default(0) @map("total_batches")
+  completedBatches Int                            @default(0) @map("completed_batches")
+  outputChars      Int                            @default(0) @map("output_chars")
+  generationId     String?                        @unique @map("generation_id") @db.Uuid
+  errorMessage     String?                        @map("error_message")
+  createdAt        DateTime                       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime                       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project          Project                        @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  generation       DataModelGeneration?           @relation(fields: [generationId], references: [id], onDelete: Restrict)
+  sources          DataModelGenerationJobSource[]
+  parts            DataModelGenerationPart[]
+
+  @@index([projectId, createdAt])
+  @@map("data_model_generation_jobs")
+}
+
+model DataModelGenerationJobSource {
+  jobId             String                 @map("job_id") @db.Uuid
+  artifactVersionId String                 @map("artifact_version_id") @db.Uuid
+  position          Int
+  job               DataModelGenerationJob @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  artifactVersion   ArtifactVersion        @relation(fields: [artifactVersionId], references: [id], onDelete: Restrict)
+
+  @@id([jobId, artifactVersionId])
+  @@map("data_model_generation_job_sources")
+}
+
+model DataModelGenerationPart {
+  jobId    String                 @map("job_id") @db.Uuid
+  position Int
+  aiRunId  String                 @map("ai_run_id") @db.Uuid
+  // Temporary, schema/domain-validated provider payload, not an official artifact.
+  content  Json
+  job      DataModelGenerationJob @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  aiRun    AIRun                  @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+
+  @@id([jobId, position])
+  @@map("data_model_generation_parts")
 }

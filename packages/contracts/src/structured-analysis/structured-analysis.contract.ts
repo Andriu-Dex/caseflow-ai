@@ -566,7 +566,7 @@ export const implementationPlanBodySchema = z
       .object({ required: z.boolean(), roles: z.array(text(60)).max(20).default([]) })
       .strict(),
     modules: z.array(implementationModuleSchema).min(1).max(40),
-    entities: z.array(implementationEntitySchema).min(1).max(80),
+    entities: z.array(implementationEntitySchema).min(1).max(100),
     customEndpoints: z.array(implementationEndpointSchema).max(100).default([]),
     routes: z.array(implementationRouteSchema).max(100).default([]),
     envVars: z.array(implementationEnvVarSchema).max(40).default([]),

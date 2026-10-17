@@ -1,6 +1,6 @@
 'use client';
 
-import { GenerationOverlay } from '../../components/generation-overlay';
+import { BatchedGenerationPanel } from '../../components/batched-generation-panel';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { DataModelResponse, DiagramResponse } from '@caseflow-ai/contracts';
 import {
@@ -13,7 +13,6 @@ import {
   Pencil,
   Plus,
   Search,
-  Sparkles,
   X,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -66,7 +65,6 @@ function DataModelContent({ projectId }: { projectId: string }) {
   const [loadingDiagramId, setLoadingDiagramId] = useState<string | null>(null);
   const [showManualForm, setShowManualForm] = useState(false);
   const [editing, setEditing] = useState<DataModelResponse | null>(null);
-  const [generating, setGenerating] = useState(false);
   const [approvingId, setApprovingId] = useState<string | null>(null);
 
   const approvedRequirementIds = (requirements.data?.items ?? [])
@@ -80,25 +78,6 @@ function DataModelContent({ projectId }: { projectId: string }) {
     queryClient.invalidateQueries({ queryKey: ['data-models', projectId] });
     queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
     setDiagrams({});
-  }
-
-  async function generate() {
-    if (!approvedRequirementIds.length && !approvedUseCaseIds.length) {
-      toast.info(
-        'Apruebe requisitos o casos de uso primero: el modelo se genera a partir de ellos.',
-      );
-      return;
-    }
-    setGenerating(true);
-    try {
-      setGeneration(
-        await api.dataModels.generate(projectId, approvedRequirementIds, approvedUseCaseIds),
-      );
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'No se pudo generar el modelo de datos.');
-    } finally {
-      setGenerating(false);
-    }
   }
 
   const transitionFor = (m: DataModelResponse) => (status: ArtifactVersionStatus) =>
@@ -179,29 +158,37 @@ function DataModelContent({ projectId }: { projectId: string }) {
       <section className="flex flex-col gap-3 rounded-xl border border-border/80 bg-card p-4 shadow-2xs">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              variant="default"
-              disabled={generating}
-              onClick={generate}
-              className="gap-2"
+            <BatchedGenerationPanel
+              queryKey={['data-model-generation-job', projectId]}
+              latest={() => api.dataModels.latestGeneration(projectId)}
+              start={() =>
+                api.dataModels.startGeneration(
+                  projectId,
+                  approvedRequirementIds,
+                  approvedUseCaseIds,
+                )
+              }
+              fetchGeneration={(generationId) => api.dataModels.generation(projectId, generationId)}
+              jobSelection={(job) => job.sourceVersionIds}
+              selection={[...approvedRequirementIds, ...approvedUseCaseIds]}
+              onCompleted={setGeneration}
+              title="Generando el modelo de datos por lotes"
+              progressLabel="Lotes del modelo de datos validados"
+              startLabel={() => 'Generar con IA'}
             >
-              <Sparkles className="size-4" aria-hidden="true" />
-              {generating ? 'Generando…' : 'Generar con IA'}
-            </Button>
-            <GenerationOverlay open={generating} />
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setEditing(null);
-                setShowManualForm((v) => !v);
-              }}
-              className="gap-1.5"
-            >
-              <Plus className="size-4" aria-hidden="true" />
-              Crear manualmente
-            </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setEditing(null);
+                  setShowManualForm((v) => !v);
+                }}
+                className="gap-1.5"
+              >
+                <Plus className="size-4" aria-hidden="true" />
+                Crear manualmente
+              </Button>
+            </BatchedGenerationPanel>
           </div>
           <div className="flex items-center gap-2">
             <ApproveAllButton
