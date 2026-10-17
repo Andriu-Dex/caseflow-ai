@@ -16,7 +16,18 @@ import type {
   SystemArchitectureContent,
   UiBlueprintContent,
 } from '@caseflow-ai/contracts';
-import { Eye, EyeOff, Pencil, Sparkles } from 'lucide-react';
+import {
+  Box,
+  CheckCircle2,
+  Database,
+  Eye,
+  EyeOff,
+  Layers,
+  Link2,
+  Pencil,
+  Plus,
+  Sparkles,
+} from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button, Card, CardContent, CardHeader, CardTitle } from '@caseflow-ai/ui';
@@ -37,7 +48,6 @@ import {
   ClassDiagramManualForm,
   ConceptualDomainModelManualForm,
   GenerationPlanManualForm,
-  formatClassMembers,
 } from './construction-manual-forms';
 import { ImplementationPlanManualForm } from './implementation-plan-manual-form';
 import { DesignThemeManualForm, DesignThemePreview } from './design-theme';
@@ -177,6 +187,71 @@ async function loadApprovedSources(projectId: string, type: SourceType): Promise
         name: s.title,
       }));
   }
+}
+
+interface ArtifactMetric {
+  singular: string;
+  plural: string;
+  count: number;
+  icon: React.ComponentType<{ className?: string }>;
+}
+
+function getArtifactMetrics(kind: StructuredAnalysisKind, content: unknown): ArtifactMetric[] {
+  if (!content || typeof content !== 'object') return [];
+  if (kind === 'CLASS_DIAGRAM') {
+    const cd = content as ClassDiagramContent;
+    return [
+      { singular: 'clase', plural: 'clases', count: cd.classes?.length ?? 0, icon: Box },
+      {
+        singular: 'relación',
+        plural: 'relaciones',
+        count: cd.relationships?.length ?? 0,
+        icon: Link2,
+      },
+    ];
+  }
+  if (kind === 'NAVIGATION_TREE') {
+    const nt = content as NavigationTreeContent;
+    return [
+      {
+        singular: 'nodo de navegación',
+        plural: 'nodos de navegación',
+        count: nt.nodes?.length ?? 0,
+        icon: Layers,
+      },
+    ];
+  }
+  if (kind === 'SOFTWARE_ARCHITECTURE') {
+    const sa = content as SoftwareArchitectureContent;
+    return [
+      {
+        singular: 'componente',
+        plural: 'componentes',
+        count: sa.components?.length ?? 0,
+        icon: Box,
+      },
+      {
+        singular: 'dependencia',
+        plural: 'dependencias',
+        count: sa.dependencies?.length ?? 0,
+        icon: Link2,
+      },
+    ];
+  }
+  if (kind === 'SYSTEM_ARCHITECTURE') {
+    const sa = content as SystemArchitectureContent;
+    return [
+      { singular: 'nodo', plural: 'nodos', count: sa.nodes?.length ?? 0, icon: Box },
+      { singular: 'enlace', plural: 'enlaces', count: sa.links?.length ?? 0, icon: Link2 },
+    ];
+  }
+  if (kind === 'UI_BLUEPRINT') {
+    const ub = content as UiBlueprintContent;
+    return [
+      { singular: 'pantalla', plural: 'pantallas', count: ub.screens?.length ?? 0, icon: Layers },
+    ];
+  }
+  return [];
 }
 
 function renderContentDetail(kind: StructuredAnalysisKind, content: unknown) {
@@ -447,44 +522,220 @@ function renderContentDetail(kind: StructuredAnalysisKind, content: unknown) {
       const { classes, relationships } = content as ClassDiagramContent;
       const names = new Map(classes.map((cls) => [cls.localId, cls.name]));
       return (
-        <div className="mt-2 flex flex-col gap-3 border-t border-border pt-2 text-sm">
-          <ul className="flex flex-col gap-2">
-            {classes.map((cls) => (
-              <li key={cls.localId}>
-                <strong>{cls.name}</strong>{' '}
-                <span className="text-muted-foreground">
-                  ({CLASS_STEREOTYPE_LABELS[cls.stereotype]}
-                  {cls.dataModelEntityName ? ` · entidad ${cls.dataModelEntityName}` : ''})
-                </span>
-                {cls.attributes.length + cls.methods.length > 0 ? (
-                  <pre className="mt-1 font-mono text-xs whitespace-pre-wrap text-muted-foreground">
-                    {formatClassMembers(cls)}
-                  </pre>
-                ) : null}
-                {cls.relatedSourceCodes?.length ? (
-                  <div className="text-muted-foreground">
-                    Fuentes: {cls.relatedSourceCodes.join(', ')}
+        <div className="mt-4 flex flex-col gap-4 border-t border-border/60 pt-4 text-xs">
+          <div>
+            <h4 className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              <Box className="size-3.5 text-primary" aria-hidden="true" />
+              Clases del dominio ({classes.length})
+            </h4>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {classes.map((cls) => {
+                const stereotypeColor =
+                  cls.stereotype === 'ENTITY'
+                    ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20'
+                    : cls.stereotype === 'VALUE_OBJECT'
+                      ? 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20'
+                      : cls.stereotype === 'ABSTRACT'
+                        ? 'bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/20'
+                        : 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20';
+
+                return (
+                  <div
+                    key={cls.localId}
+                    className="flex flex-col rounded-lg border border-border/80 bg-muted/20 p-3 shadow-2xs transition-colors hover:border-border"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-1.5 pb-2 border-b border-border/40">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <Box className="size-3.5 text-primary shrink-0" aria-hidden="true" />
+                        <span className="font-semibold text-sm text-foreground truncate">
+                          {cls.name}
+                        </span>
+                      </div>
+                      <span
+                        className={`rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${stereotypeColor}`}
+                      >
+                        {CLASS_STEREOTYPE_LABELS[cls.stereotype]}
+                      </span>
+                    </div>
+
+                    {cls.dataModelEntityName ? (
+                      <div className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground">
+                        <Database className="size-3 text-primary/70 shrink-0" aria-hidden="true" />
+                        <span>Entidad:</span>
+                        <span className="font-semibold text-foreground font-mono">
+                          {cls.dataModelEntityName}
+                        </span>
+                      </div>
+                    ) : null}
+
+                    {cls.description ? (
+                      <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                        {cls.description}
+                      </p>
+                    ) : null}
+
+                    {cls.attributes.length > 0 ? (
+                      <div className="mt-2.5 flex flex-col gap-1">
+                        <span className="text-[11px] font-medium text-muted-foreground">
+                          Atributos ({cls.attributes.length}):
+                        </span>
+                        <ul className="flex flex-col gap-1 text-xs">
+                          {cls.attributes.map((attr, ai) => {
+                            const visSymbol =
+                              attr.visibility === 'PUBLIC'
+                                ? '+'
+                                : attr.visibility === 'PRIVATE'
+                                  ? '-'
+                                  : '#';
+                            const visColor =
+                              attr.visibility === 'PUBLIC'
+                                ? 'text-emerald-600 dark:text-emerald-400'
+                                : attr.visibility === 'PRIVATE'
+                                  ? 'text-red-500 dark:text-red-400'
+                                  : 'text-amber-500 dark:text-amber-400';
+                            return (
+                              <li
+                                key={ai}
+                                className="flex flex-wrap items-center justify-between gap-1 rounded bg-background/80 px-2 py-1 border border-border/40 font-mono text-xs"
+                              >
+                                <div className="flex items-center gap-1">
+                                  <span className={`font-bold ${visColor}`}>{visSymbol}</span>
+                                  <span className="font-medium text-foreground">{attr.name}</span>
+                                </div>
+                                <div className="flex items-center gap-1 text-[10px]">
+                                  <span className="rounded bg-muted px-1 py-0.5 text-muted-foreground">
+                                    {attr.type}
+                                  </span>
+                                  {attr.required ? (
+                                    <span
+                                      className="rounded bg-blue-500/15 text-blue-700 dark:text-blue-400 font-semibold px-1"
+                                      title="Requerido"
+                                    >
+                                      REQ
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    ) : null}
+
+                    {cls.methods.length > 0 ? (
+                      <div className="mt-2 flex flex-col gap-1">
+                        <span className="text-[11px] font-medium text-muted-foreground">
+                          Métodos ({cls.methods.length}):
+                        </span>
+                        <ul className="flex flex-col gap-1 text-xs">
+                          {cls.methods.map((method, mi) => {
+                            const visSymbol =
+                              method.visibility === 'PUBLIC'
+                                ? '+'
+                                : method.visibility === 'PRIVATE'
+                                  ? '-'
+                                  : '#';
+                            const visColor =
+                              method.visibility === 'PUBLIC'
+                                ? 'text-emerald-600 dark:text-emerald-400'
+                                : method.visibility === 'PRIVATE'
+                                  ? 'text-red-500 dark:text-red-400'
+                                  : 'text-amber-500 dark:text-amber-400';
+                            const paramsText = method.parameters
+                              .map((p) => `${p.name}: ${p.type}`)
+                              .join(', ');
+                            return (
+                              <li
+                                key={mi}
+                                className="flex flex-wrap items-center justify-between gap-1 rounded bg-background/80 px-2 py-1 border border-border/40 font-mono text-xs"
+                              >
+                                <div className="flex items-center gap-1">
+                                  <span className={`font-bold ${visColor}`}>{visSymbol}</span>
+                                  <span className="font-medium text-foreground">
+                                    {method.name}({paramsText})
+                                  </span>
+                                </div>
+                                {method.returnType ? (
+                                  <span className="text-primary font-semibold text-[11px]">
+                                    : {method.returnType}
+                                  </span>
+                                ) : null}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    ) : null}
+
+                    {cls.relatedSourceCodes?.length ? (
+                      <div className="mt-2.5 flex flex-wrap items-center gap-1 pt-1.5 border-t border-border/30 text-[11px]">
+                        <span className="text-muted-foreground">Fuentes:</span>
+                        {cls.relatedSourceCodes.map((sc) => (
+                          <span
+                            key={sc}
+                            className="rounded bg-muted px-1.5 py-0.5 font-mono font-medium text-foreground"
+                          >
+                            {sc}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
-                ) : null}
-              </li>
-            ))}
-          </ul>
+                );
+              })}
+            </div>
+          </div>
+
           {relationships.length > 0 ? (
             <div>
-              <strong>Relaciones</strong>
-              <ul className="mt-1 text-muted-foreground">
-                {relationships.map((relationship, i) => (
-                  <li key={i}>
-                    {names.get(relationship.fromLocalId)}
-                    {relationship.fromMultiplicity
-                      ? ` [${relationship.fromMultiplicity}]`
-                      : ''} — {CLASS_RELATIONSHIP_LABELS[relationship.kind]} →{' '}
-                    {names.get(relationship.toLocalId)}
-                    {relationship.toMultiplicity ? ` [${relationship.toMultiplicity}]` : ''}
-                    {relationship.label ? ` (${relationship.label})` : ''}
-                  </li>
-                ))}
-              </ul>
+              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <Link2 className="size-3.5 text-primary" aria-hidden="true" />
+                Relaciones UML ({relationships.length})
+              </h4>
+              <div className="flex flex-col gap-2">
+                {relationships.map((rel, ri) => {
+                  const fromName = names.get(rel.fromLocalId) ?? rel.fromLocalId;
+                  const toName = names.get(rel.toLocalId) ?? rel.toLocalId;
+                  return (
+                    <div
+                      key={ri}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-xs"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex items-center gap-1.5 font-medium">
+                          <span className="rounded-md bg-background px-2 py-0.5 border border-border font-semibold text-foreground">
+                            {fromName}
+                          </span>
+                          {rel.fromMultiplicity ? (
+                            <span className="font-mono text-muted-foreground text-[11px] font-semibold">
+                              [{rel.fromMultiplicity}]
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="flex items-center gap-1 text-muted-foreground">
+                          <span className="h-px w-3 bg-border" />
+                          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-primary text-[11px] font-medium">
+                            {CLASS_RELATIONSHIP_LABELS[rel.kind]}
+                            {rel.label ? ` · ${rel.label}` : ''}
+                          </span>
+                          <span className="text-primary font-bold">→</span>
+                          <span className="h-px w-3 bg-border" />
+                        </div>
+                        <div className="flex items-center gap-1.5 font-medium">
+                          {rel.toMultiplicity ? (
+                            <span className="font-mono text-muted-foreground text-[11px] font-semibold">
+                              [{rel.toMultiplicity}]
+                            </span>
+                          ) : null}
+                          <span className="rounded-md bg-background px-2 py-0.5 border border-border font-semibold text-foreground">
+                            {toName}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           ) : null}
         </div>
@@ -700,7 +951,7 @@ export function StructuredKindPage({
     <div className="flex flex-col gap-6">
       <PageHeading title={title} projectId={projectId} />
 
-      <Card>
+      <Card className="rounded-xl border border-border/80 bg-card shadow-2xs">
         <CardHeader>
           <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-sm">
             <span className="flex items-center gap-2">
@@ -770,7 +1021,7 @@ export function StructuredKindPage({
                     : 'Seleccionar todo'}
                 </Button>
               </div>
-              <div className="flex max-h-72 flex-col gap-3 overflow-y-auto rounded-md border border-border p-2">
+              <div className="flex max-h-72 flex-col gap-3 overflow-y-auto rounded-lg border border-border/70 bg-muted/20 p-3 text-xs">
                 {sourceGroups.map((group) => (
                   <fieldset key={group.type}>
                     <legend className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -814,15 +1065,33 @@ export function StructuredKindPage({
               />
             </label>
           ) : null}
+          {sourceGroups.length > 0 ? (
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/50 pt-2.5 text-xs text-muted-foreground">
+              <span>Insumos para generación:</span>
+              {sourceGroups.map((group) => (
+                <span
+                  key={group.type}
+                  className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 font-medium text-foreground"
+                >
+                  <CheckCircle2
+                    className="size-3 text-emerald-600 dark:text-emerald-400"
+                    aria-hidden="true"
+                  />
+                  {group.options.length} {SOURCE_LABELS[group.type].toLowerCase()}
+                </span>
+              ))}
+            </div>
+          ) : null}
           <div className="mt-3 flex flex-wrap gap-2">
             <Button
               type="button"
-              variant="outline"
+              variant="default"
               size="sm"
               disabled={
                 generating || (usesBaseline ? !chosenBaselineId : sourceGroups.length === 0)
               }
               onClick={generate}
+              className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90 h-9 px-4"
             >
               <Sparkles className="size-4" aria-hidden="true" />
               {generating ? 'Generando…' : 'Generar'}
@@ -832,11 +1101,13 @@ export function StructuredKindPage({
               type="button"
               variant="outline"
               size="sm"
+              className="gap-1.5 h-9 px-4"
               onClick={() => {
                 setEditing(null);
                 setShowManualForm((v) => !v);
               }}
             >
+              <Plus className="size-4" aria-hidden="true" />
               Crear manualmente
             </Button>
           </div>
@@ -887,120 +1158,156 @@ export function StructuredKindPage({
           </EmptyState>
         ) : (
           <ul className="flex flex-col gap-3">
-            {items.map((item) => (
-              <li key={item.id}>
-                <Card>
-                  <CardContent>
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="text-sm">
-                        <span className="font-mono text-xs text-muted-foreground">{item.code}</span>{' '}
-                        <span className="font-medium text-foreground">{item.title}</span>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <StatusBadge status={item.version.status} />
-                        {isPendingApproval(item.version.status) ? (
+            {items.map((item) => {
+              const metrics = getArtifactMetrics(kind, item.content);
+              return (
+                <li key={item.id}>
+                  <Card className="overflow-hidden border border-border/80 shadow-2xs transition-all hover:border-border">
+                    <CardContent className="p-4 sm:p-5">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 font-mono text-xs font-semibold text-foreground border border-border/60">
+                              {item.code}
+                            </span>
+                            <h3 className="text-base font-semibold text-foreground">
+                              {item.title}
+                            </h3>
+                          </div>
+                          {metrics.length > 0 ? (
+                            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                              {metrics.map((m) => {
+                                const Icon = m.icon;
+                                return (
+                                  <span
+                                    key={m.singular}
+                                    className="inline-flex items-center gap-1 rounded-full bg-primary/5 px-2.5 py-0.5 text-xs font-medium text-primary border border-primary/10"
+                                  >
+                                    <Icon className="size-3 text-primary/80" aria-hidden="true" />
+                                    <span>
+                                      {m.count} {m.count === 1 ? m.singular : m.plural}
+                                    </span>
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          ) : null}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <StatusBadge status={item.version.status} />
+                          {isPendingApproval(item.version.status) ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="bg-emerald-600 text-white hover:bg-emerald-700 shadow-2xs"
+                              disabled={approvingId === item.id}
+                              onClick={() => approveOne(item)}
+                            >
+                              <CheckCircle2 className="mr-1 size-3.5" aria-hidden="true" />
+                              {approvingId === item.id ? 'Aprobando…' : 'Aprobar'}
+                            </Button>
+                          ) : null}
+                          {item.version.status === 'IN_REVIEW' ? (
+                            <>
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="bg-emerald-600 text-white hover:bg-emerald-700 shadow-2xs"
+                                onClick={() => transition(item, 'APPROVED')}
+                              >
+                                <CheckCircle2 className="mr-1 size-3.5" aria-hidden="true" />
+                                Aprobar
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="border-destructive/40 text-destructive hover:bg-destructive/5"
+                                onClick={() => transition(item, 'CHANGES_REQUESTED')}
+                              >
+                                Solicitar cambios
+                              </Button>
+                            </>
+                          ) : null}
                           <Button
-                            type="button"
+                            variant="outline"
                             size="sm"
-                            className="bg-emerald-600 text-white hover:bg-emerald-700"
-                            disabled={approvingId === item.id}
-                            onClick={() => approveOne(item)}
+                            type="button"
+                            onClick={() => {
+                              setShowManualForm(false);
+                              setEditing(item);
+                            }}
+                            className="inline-flex items-center gap-1 rounded-md text-xs text-muted-foreground hover:bg-muted/60"
                           >
-                            {approvingId === item.id ? 'Aprobando…' : 'Aprobar'}
+                            <Pencil className="size-3.5" aria-hidden="true" />
+                            Editar
+                          </Button>
+                          <ArchiveButton
+                            projectId={projectId}
+                            artifactId={item.id}
+                            code={item.code}
+                            onDone={invalidate}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap items-center gap-2 pt-2 border-t border-border/50">
+                        {isTheme ? null : (
+                          <Button
+                            variant={expandedId === item.id ? 'secondary' : 'outline'}
+                            size="sm"
+                            type="button"
+                            onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
+                            aria-expanded={expandedId === item.id}
+                            className="h-8 gap-1.5 text-xs"
+                          >
+                            <Layers className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                            {expandedId === item.id ? 'Ocultar detalle' : 'Ver detalle'}
+                          </Button>
+                        )}
+                        {/* UI Blueprint has no diagram: its visual form is the Mockup step. */}
+                        {KINDS_WITH_DIAGRAM.has(kind) ? (
+                          <Button
+                            variant={diagrams[item.id] ? 'secondary' : 'outline'}
+                            size="sm"
+                            type="button"
+                            onClick={() => toggleDiagram(item.id)}
+                            className="h-8 gap-1.5 text-xs text-primary"
+                          >
+                            {diagrams[item.id] ? (
+                              <EyeOff className="size-3.5" aria-hidden="true" />
+                            ) : (
+                              <Eye className="size-3.5" aria-hidden="true" />
+                            )}
+                            {diagrams[item.id] ? 'Ocultar diagrama' : 'Ver diagrama'}
                           </Button>
                         ) : null}
-                        {item.version.status === 'IN_REVIEW' ? (
-                          <>
-                            <Button
-                              type="button"
-                              size="sm"
-                              className="bg-emerald-600 text-white hover:bg-emerald-700"
-                              onClick={() => transition(item, 'APPROVED')}
-                            >
-                              Aprobar
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="border-destructive/40 text-destructive hover:bg-destructive/5"
-                              onClick={() => transition(item, 'CHANGES_REQUESTED')}
-                            >
-                              Solicitar cambios
-                            </Button>
-                          </>
-                        ) : null}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          type="button"
-                          onClick={() => {
-                            setShowManualForm(false);
-                            setEditing(item);
-                          }}
-                          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-muted/40"
-                        >
-                          <Pencil className="size-3.5" aria-hidden="true" />
-                          Editar
-                        </Button>
-                        <ArchiveButton
-                          projectId={projectId}
-                          artifactId={item.id}
-                          code={item.code}
-                          onDone={invalidate}
-                        />
                       </div>
-                    </div>
-                    {isTheme ? null : (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        type="button"
-                        onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
-                        aria-expanded={expandedId === item.id}
-                        className="mt-2 text-muted-foreground underline"
-                      >
-                        {expandedId === item.id ? 'Ocultar detalle' : 'Ver detalle'}
-                      </Button>
-                    )}
-                    {/* UI Blueprint has no diagram: its visual form is the Mockup step. */}
-                    {KINDS_WITH_DIAGRAM.has(kind) ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        type="button"
-                        onClick={() => toggleDiagram(item.id)}
-                        className="mt-2 inline-flex items-center gap-1 text-sm text-primary hover:underline"
-                      >
-                        {diagrams[item.id] ? (
-                          <EyeOff className="size-4" aria-hidden="true" />
-                        ) : (
-                          <Eye className="size-4" aria-hidden="true" />
-                        )}
-                        {diagrams[item.id] ? 'Ocultar diagrama' : 'Ver diagrama'}
-                      </Button>
-                    ) : null}
-                    {/* A theme is judged by looking at it: its preview is always shown. */}
-                    {expandedId === item.id || isTheme
-                      ? renderContentDetail(kind, item.content)
-                      : null}
-                    {expandedId === item.id && kind === 'IMPLEMENTATION_PLAN' ? (
-                      <ImplementationPlanArtifacts projectId={projectId} planId={item.id} />
-                    ) : null}
-                    {diagrams[item.id] ? (
-                      <DiagramViewer
-                        svg={diagrams[item.id]!.svg}
-                        source={diagrams[item.id]!.source}
-                        sourceFormat={diagrams[item.id]!.sourceFormat}
-                        code={item.code}
-                        caption={`${title} — ${item.code}`}
-                        pngUrl={api.structuredAnalysis.diagramPngUrl(projectId, kind, item.id)}
-                      />
-                    ) : null}
-                  </CardContent>
-                </Card>
-              </li>
-            ))}
+
+                      {/* A theme is judged by looking at it: its preview is always shown. */}
+                      {expandedId === item.id || isTheme ? (
+                        <div className="mt-3">{renderContentDetail(kind, item.content)}</div>
+                      ) : null}
+                      {expandedId === item.id && kind === 'IMPLEMENTATION_PLAN' ? (
+                        <ImplementationPlanArtifacts projectId={projectId} planId={item.id} />
+                      ) : null}
+                      {diagrams[item.id] ? (
+                        <div className="mt-4 pt-3 border-t border-border/60">
+                          <DiagramViewer
+                            svg={diagrams[item.id]!.svg}
+                            source={diagrams[item.id]!.source}
+                            sourceFormat={diagrams[item.id]!.sourceFormat}
+                            code={item.code}
+                            caption={`${title} — ${item.code}`}
+                            pngUrl={api.structuredAnalysis.diagramPngUrl(projectId, kind, item.id)}
+                          />
+                        </div>
+                      ) : null}
+                    </CardContent>
+                  </Card>
+                </li>
+              );
+            })}
           </ul>
         )}
       </QueryState>
