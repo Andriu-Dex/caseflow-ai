@@ -1,5 +1,6 @@
 import { InternalServerErrorException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AuditService } from '../audit/audit.service';
 import type { PrismaService } from '../database/prisma.service';
 import { ArtifactsService } from './artifacts.service';
 
@@ -47,7 +48,10 @@ describe('ArtifactsService (rule branches)', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     prisma.$transaction.mockImplementation((callback) => callback(tx));
-    service = new ArtifactsService(prisma as unknown as PrismaService);
+    service = new ArtifactsService(
+      prisma as unknown as PrismaService,
+      { record: vi.fn() } as unknown as AuditService,
+    );
   });
 
   it('rejects structured subtypes through the generic artifact workflow', async () => {

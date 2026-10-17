@@ -24,6 +24,7 @@ import { StatusBadge } from '../../components/status-badge';
 import { CandidateReview } from '../../components/candidate-review';
 import { DataModelManualForm } from '../../components/data-model-manual-form';
 import { DiagramViewer } from '../../components/diagram-viewer';
+import { ArchivedArtifacts } from '../../components/archived-artifacts';
 import { PageHeading } from '../../components/page-heading';
 import {
   AiUnavailableHint,
@@ -77,6 +78,7 @@ function DataModelContent({ projectId }: { projectId: string }) {
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['data-models', projectId] });
     queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['archived-artifacts', projectId] });
     setDiagrams({});
   }
 
@@ -772,6 +774,8 @@ function DataModelContent({ projectId }: { projectId: string }) {
           </ul>
         )}
       </QueryState>
+
+      <ArchivedArtifacts projectId={projectId} types={['DATA_MODEL']} onRestored={invalidate} />
     </div>
   );
 }

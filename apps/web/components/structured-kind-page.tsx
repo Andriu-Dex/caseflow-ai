@@ -48,6 +48,7 @@ import { toast } from 'sonner';
 import { Button, Card, CardContent, CardHeader, CardTitle } from '@caseflow-ai/ui';
 import { api, ApiError, type ArtifactVersionStatus, type GenerationResult } from '../lib/api';
 import { QueryState } from './query-state';
+import { ArchivedArtifacts } from './archived-artifacts';
 import { PageHeading } from './page-heading';
 import { StatusBadge } from './status-badge';
 import { CandidateReview } from './candidate-review';
@@ -1128,6 +1129,7 @@ export function StructuredKindPage({
     queryClient.invalidateQueries({ queryKey: ['structured-analysis', kind, projectId] });
     queryClient.invalidateQueries({ queryKey: ['eligible-sources'] });
     queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['archived-artifacts', projectId] });
     setDiagrams({});
     setExpandedId(null);
   }
@@ -1632,6 +1634,8 @@ export function StructuredKindPage({
           </ul>
         )}
       </QueryState>
+
+      <ArchivedArtifacts projectId={projectId} types={[kind]} onRestored={invalidate} />
     </div>
   );
 }

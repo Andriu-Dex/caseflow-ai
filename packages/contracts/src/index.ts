@@ -37,6 +37,10 @@ export {
   APPROVAL_ORIGINS,
   ARTIFACT_ORIGINS,
   ARTIFACT_VERSION_STATUSES,
+  archivedArtifactSchema,
+  archivedArtifactsResponseSchema,
+  listArchivedArtifactsQuerySchema,
+  restoreArtifactResponseSchema,
   artifactResponseSchema,
   artifactVersionResponseSchema,
   createArtifactRequestSchema,
@@ -86,6 +90,9 @@ export type {
   ProjectContextResponse,
 } from './project-context/project-context.contract';
 export type {
+  ArchivedArtifact,
+  ArchivedArtifactsResponse,
+  RestoreArtifactResponse,
   ArtifactOrigin,
   ArtifactResponse,
   ArtifactVersionResponse,
