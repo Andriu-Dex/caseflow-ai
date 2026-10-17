@@ -24,6 +24,9 @@ import {
   ArrowRight,
   Box,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  CircleDot,
   Cloud,
   Compass,
   CornerDownRight,
@@ -35,14 +38,18 @@ import {
   FileEdit,
   FileText,
   FolderTree,
+  FormInput,
+  GitBranch,
   Globe,
   HardDrive,
   Home,
   Layers,
   Layout,
+  LayoutGrid,
   Link2,
   ListFilter,
   Monitor,
+  MousePointerClick,
   Network,
   Pencil,
   Plus,
@@ -50,8 +57,9 @@ import {
   Server,
   ShieldCheck,
   Sparkles,
+  Users,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Button, Card, CardContent, CardHeader, CardTitle } from '@caseflow-ai/ui';
 import { api, ApiError, type ArtifactVersionStatus, type GenerationResult } from '../lib/api';
@@ -383,9 +391,42 @@ function getArtifactMetrics(kind: StructuredAnalysisKind, content: unknown): Art
   }
   if (kind === 'UI_BLUEPRINT') {
     const ub = content as UiBlueprintContent;
-    return [
-      { singular: 'pantalla', plural: 'pantallas', count: ub.screens?.length ?? 0, icon: Layers },
+    const screens = ub.screens ?? [];
+    const screensCount = screens.length;
+    const sectionsCount = screens.reduce((acc, s) => acc + (s.sections?.length ?? 0), 0);
+    const actionsCount = screens.reduce(
+      (acc, s) => acc + (s.primaryActions?.length ?? 0) + (s.secondaryActions?.length ?? 0),
+      0,
+    );
+    const formsCount = screens.reduce((acc, s) => acc + (s.forms?.length ?? 0), 0);
+    const metrics: ArtifactMetric[] = [
+      { singular: 'pantalla', plural: 'pantallas', count: screensCount, icon: Monitor },
     ];
+    if (sectionsCount > 0) {
+      metrics.push({
+        singular: 'sección de interfaz',
+        plural: 'secciones de interfaz',
+        count: sectionsCount,
+        icon: LayoutGrid,
+      });
+    }
+    if (actionsCount > 0) {
+      metrics.push({
+        singular: 'acción interactiva',
+        plural: 'acciones interactivas',
+        count: actionsCount,
+        icon: MousePointerClick,
+      });
+    }
+    if (formsCount > 0) {
+      metrics.push({
+        singular: 'formulario',
+        plural: 'formularios',
+        count: formsCount,
+        icon: FormInput,
+      });
+    }
+    return metrics;
   }
   return [];
 }
@@ -1000,6 +1041,457 @@ function SystemArchitectureDetail({ content }: { content: SystemArchitectureCont
   );
 }
 
+type UiBlueprintScreen = UiBlueprintContent['screens'][number];
+
+function UiBlueprintScreenCard({
+  screen,
+  isExpanded,
+  onToggle,
+}: {
+  screen: UiBlueprintScreen;
+  isExpanded: boolean;
+  onToggle: () => void;
+}) {
+  const sections = screen.sections ?? [];
+  const primaryActions = screen.primaryActions ?? [];
+  const secondaryActions = screen.secondaryActions ?? [];
+  const forms = screen.forms ?? [];
+  const principalData = screen.principalData ?? [];
+  const states = screen.states ?? [];
+  const targetActors = screen.targetActors ?? [];
+  const relatedUseCases = screen.relatedUseCaseCodes ?? [];
+  const relatedSources = screen.relatedSourceCodes ?? [];
+
+  const hasSections = sections.length > 0;
+  const hasPrimaryActions = primaryActions.length > 0;
+  const hasSecondaryActions = secondaryActions.length > 0;
+  const hasForms = forms.length > 0;
+  const hasData = principalData.length > 0;
+  const hasStates = states.length > 0;
+  const totalActions = primaryActions.length + secondaryActions.length;
+
+  return (
+    <div className="rounded-xl border border-border/80 bg-card text-card-foreground shadow-xs transition-all hover:border-border">
+      {/* Header bar */}
+      <div
+        onClick={onToggle}
+        className="flex cursor-pointer flex-col gap-2 p-3 sm:p-4 transition-colors hover:bg-muted/10"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="flex items-start gap-2.5 min-w-0">
+            <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary border border-primary/20">
+              <Monitor className="size-4" aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-semibold text-sm text-foreground">{screen.name}</span>
+                <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground border border-border/50">
+                  {screen.localId}
+                </span>
+                {screen.navigationNodeLocalId ? (
+                  <span className="rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 px-2 py-0.5 text-[10px] font-medium flex items-center gap-1">
+                    <FolderTree className="size-3" aria-hidden="true" />
+                    Nodo: {screen.navigationNodeLocalId}
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground leading-relaxed">{screen.purpose}</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 ml-auto">
+            {/* Quick summary badges */}
+            <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              {hasSections ? (
+                <span className="rounded-md bg-muted/60 px-2 py-0.5 border border-border/40">
+                  {sections.length} {sections.length === 1 ? 'sección' : 'secciones'}
+                </span>
+              ) : null}
+              {totalActions > 0 ? (
+                <span className="rounded-md bg-muted/60 px-2 py-0.5 border border-border/40">
+                  {totalActions} {totalActions === 1 ? 'acción' : 'acciones'}
+                </span>
+              ) : null}
+              {hasForms ? (
+                <span className="rounded-md bg-muted/60 px-2 py-0.5 border border-border/40">
+                  {forms.length} {forms.length === 1 ? 'formulario' : 'formularios'}
+                </span>
+              ) : null}
+            </div>
+
+            <button
+              type="button"
+              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label={isExpanded ? 'Contraer pantalla' : 'Expandir pantalla'}
+            >
+              {isExpanded ? (
+                <ChevronUp className="size-4" aria-hidden="true" />
+              ) : (
+                <ChevronDown className="size-4" aria-hidden="true" />
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Traceability badges */}
+        <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11px]">
+          {targetActors.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-1">
+              {targetActors.map((actor) => (
+                <span
+                  key={actor}
+                  className="inline-flex items-center gap-1 rounded-full bg-purple-500/10 text-purple-700 dark:text-purple-300 border border-purple-500/20 px-2 py-0.5 font-medium"
+                >
+                  <Users
+                    className="size-3 text-purple-600 dark:text-purple-400"
+                    aria-hidden="true"
+                  />
+                  {actor}
+                </span>
+              ))}
+            </div>
+          ) : null}
+
+          {relatedUseCases.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-1">
+              {relatedUseCases.map((cu) => (
+                <span
+                  key={cu}
+                  className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20 px-2 py-0.5 font-medium font-mono text-[10px]"
+                >
+                  <GitBranch
+                    className="size-3 text-blue-600 dark:text-blue-400"
+                    aria-hidden="true"
+                  />
+                  {cu}
+                </span>
+              ))}
+            </div>
+          ) : null}
+
+          {relatedSources.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-1">
+              {relatedSources.map((src) => (
+                <span
+                  key={src}
+                  className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground border border-border/50"
+                >
+                  <FileCode className="size-3" aria-hidden="true" />
+                  {src}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Expanded Compartments */}
+      {isExpanded ? (
+        <div className="border-t border-border/60 bg-muted/10 p-3 sm:p-4 flex flex-col gap-3.5">
+          {/* 1. Estructura y Secciones */}
+          {hasSections ? (
+            <div>
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 mb-2">
+                <LayoutGrid className="size-3.5 text-primary" aria-hidden="true" />
+                Estructura y secciones de la interfaz
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {sections.map((sec, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center gap-1.5 rounded-lg border border-border/70 bg-background/80 px-2.5 py-1.5 text-xs text-foreground shadow-2xs"
+                  >
+                    <span className="flex size-4 items-center justify-center rounded-full bg-muted text-[10px] font-bold text-muted-foreground">
+                      {idx + 1}
+                    </span>
+                    <span>{sec}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {/* 2. Acciones del Usuario */}
+          {hasPrimaryActions || hasSecondaryActions ? (
+            <div>
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 mb-2">
+                <MousePointerClick className="size-3.5 text-primary" aria-hidden="true" />
+                Acciones disponibles
+              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                {primaryActions.map((act, idx) => (
+                  <span
+                    key={`p-${idx}`}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-primary/10 text-primary border border-primary/25 px-2.5 py-1 text-xs font-semibold shadow-2xs"
+                  >
+                    <Sparkles className="size-3 text-primary" aria-hidden="true" />
+                    {act}
+                    <span className="text-[9px] uppercase tracking-wider font-bold bg-primary/20 rounded px-1 text-primary">
+                      Principal
+                    </span>
+                  </span>
+                ))}
+                {secondaryActions.map((act, idx) => (
+                  <span
+                    key={`s-${idx}`}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-background text-muted-foreground border border-border/80 px-2.5 py-1 text-xs shadow-2xs"
+                  >
+                    <CircleDot className="size-3 text-muted-foreground" aria-hidden="true" />
+                    {act}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {/* 3. Datos y Formularios */}
+          {hasForms || hasData ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {hasForms ? (
+                <div className="rounded-lg border border-border/60 bg-background/60 p-2.5">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 mb-1.5">
+                    <FormInput
+                      className="size-3.5 text-amber-600 dark:text-amber-400"
+                      aria-hidden="true"
+                    />
+                    Formularios y captura ({forms.length})
+                  </span>
+                  <ul className="flex flex-col gap-1">
+                    {forms.map((form, idx) => (
+                      <li key={idx} className="flex items-start gap-1.5 text-xs text-foreground">
+                        <span className="mt-1 size-1.5 rounded-full bg-amber-500 shrink-0" />
+                        <span>{form}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {hasData ? (
+                <div className="rounded-lg border border-border/60 bg-background/60 p-2.5">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 mb-1.5">
+                    <Database
+                      className="size-3.5 text-blue-600 dark:text-blue-400"
+                      aria-hidden="true"
+                    />
+                    Datos desplegados ({principalData.length})
+                  </span>
+                  <ul className="flex flex-col gap-1">
+                    {principalData.map((data, idx) => (
+                      <li key={idx} className="flex items-start gap-1.5 text-xs text-foreground">
+                        <span className="mt-1 size-1.5 rounded-full bg-blue-500 shrink-0" />
+                        <span>{data}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {/* 4. Estados contemplados */}
+          {hasStates ? (
+            <div>
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 mb-1.5">
+                <Layers
+                  className="size-3.5 text-emerald-600 dark:text-emerald-400"
+                  aria-hidden="true"
+                />
+                Estados contemplados en el diseño
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {states.map((st, idx) => (
+                  <span
+                    key={idx}
+                    className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 border border-emerald-500/20 px-2 py-0.5 text-[11px]"
+                  >
+                    <span className="size-1.5 rounded-full bg-emerald-500" />
+                    {st}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function UiBlueprintDetail({ content }: { content: UiBlueprintContent }) {
+  const screens = content.screens ?? [];
+  const [query, setQuery] = useState('');
+  const [selectedActor, setSelectedActor] = useState<string | null>(null);
+  const [allExpanded, setAllExpanded] = useState(true);
+  const [expandedScreens, setExpandedScreens] = useState<Record<string, boolean>>({});
+
+  const allActors = useMemo(() => {
+    const actorSet = new Set<string>();
+    for (const screen of screens) {
+      for (const actor of screen.targetActors ?? []) {
+        if (actor.trim()) actorSet.add(actor.trim());
+      }
+    }
+    return Array.from(actorSet).sort();
+  }, [screens]);
+
+  const toggleScreen = (localId: string) => {
+    setExpandedScreens((prev) => ({
+      ...prev,
+      [localId]: prev[localId] === undefined ? !allExpanded : !prev[localId],
+    }));
+  };
+
+  const handleToggleAll = () => {
+    const nextState = !allExpanded;
+    setAllExpanded(nextState);
+    setExpandedScreens({});
+  };
+
+  const isScreenExpanded = (localId: string) => {
+    if (expandedScreens[localId] !== undefined) {
+      return expandedScreens[localId];
+    }
+    return allExpanded;
+  };
+
+  const trimmed = query.trim().toLowerCase();
+  const filteredScreens = screens.filter((screen) => {
+    if (selectedActor && !(screen.targetActors ?? []).includes(selectedActor)) {
+      return false;
+    }
+    if (!trimmed) return true;
+    const searchable = [
+      screen.name,
+      screen.purpose,
+      screen.localId,
+      screen.navigationNodeLocalId ?? '',
+      ...(screen.targetActors ?? []),
+      ...(screen.relatedUseCaseCodes ?? []),
+      ...(screen.relatedSourceCodes ?? []),
+      ...(screen.sections ?? []),
+      ...(screen.primaryActions ?? []),
+      ...(screen.secondaryActions ?? []),
+      ...(screen.principalData ?? []),
+      ...(screen.forms ?? []),
+      ...(screen.states ?? []),
+    ]
+      .join(' ')
+      .toLowerCase();
+    return searchable.includes(trimmed);
+  });
+
+  return (
+    <div className="mt-4 flex flex-col gap-4 border-t border-border/60 pt-4 text-xs">
+      {/* Header toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+            <Monitor className="size-3.5 text-primary" aria-hidden="true" />
+            Catálogo de planos de pantalla ({screens.length})
+          </h4>
+          {screens.length > 0 ? (
+            <button
+              type="button"
+              onClick={handleToggleAll}
+              className="text-[11px] text-primary hover:underline flex items-center gap-1 ml-2 font-medium"
+            >
+              {allExpanded ? (
+                <>
+                  <ChevronUp className="size-3" aria-hidden="true" />
+                  Contraer todas
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="size-3" aria-hidden="true" />
+                  Expandir todas
+                </>
+              )}
+            </button>
+          ) : null}
+        </div>
+
+        {/* Search Input */}
+        {screens.length > 1 ? (
+          <div className="relative w-full sm:w-72">
+            <Search
+              className="pointer-events-none absolute left-2.5 top-2.5 size-3.5 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar por pantalla, sección, actor o CU…"
+              className="h-8 w-full rounded-md border border-input bg-background pl-8 pr-3 text-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
+          </div>
+        ) : null}
+      </div>
+
+      {/* Actor filter buttons if multiple actors */}
+      {allActors.length > 1 ? (
+        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+          <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-1 mr-1">
+            <Users className="size-3 text-muted-foreground" aria-hidden="true" />
+            Filtrar por actor:
+          </span>
+          <button
+            type="button"
+            onClick={() => setSelectedActor(null)}
+            className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+              selectedActor === null
+                ? 'bg-primary text-primary-foreground shadow-xs'
+                : 'bg-muted/70 text-muted-foreground hover:bg-muted hover:text-foreground'
+            }`}
+          >
+            Todos ({screens.length})
+          </button>
+          {allActors.map((actor) => {
+            const count = screens.filter((s) => (s.targetActors ?? []).includes(actor)).length;
+            const isSelected = selectedActor === actor;
+            return (
+              <button
+                key={actor}
+                type="button"
+                onClick={() => setSelectedActor(isSelected ? null : actor)}
+                className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+                  isSelected
+                    ? 'bg-primary text-primary-foreground shadow-xs'
+                    : 'bg-purple-500/10 text-purple-700 dark:text-purple-300 border border-purple-500/20 hover:bg-purple-500/20'
+                }`}
+              >
+                {actor} ({count})
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {/* Screen cards */}
+      {filteredScreens.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
+          No se encontraron planos de pantalla que coincidan con los filtros aplicados.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {filteredScreens.map((screen) => {
+            const isExpanded = isScreenExpanded(screen.localId);
+            return (
+              <UiBlueprintScreenCard
+                key={screen.localId}
+                screen={screen}
+                isExpanded={isExpanded}
+                onToggle={() => toggleScreen(screen.localId)}
+              />
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function renderContentDetail(kind: StructuredAnalysisKind, content: unknown) {
   switch (kind) {
     case 'NAVIGATION_TREE': {
@@ -1012,50 +1504,7 @@ function renderContentDetail(kind: StructuredAnalysisKind, content: unknown) {
       return <SystemArchitectureDetail content={content as SystemArchitectureContent} />;
     }
     case 'UI_BLUEPRINT': {
-      const { screens } = content as UiBlueprintContent;
-      return (
-        <ul className="mt-2 flex flex-col gap-2 border-t border-border pt-2 text-sm">
-          {screens.map((screen) => (
-            <li key={screen.localId}>
-              <strong>{screen.name}</strong> — {screen.purpose}
-              {screen.relatedSourceCodes?.length ? (
-                <div className="text-muted-foreground">
-                  Fuentes: {screen.relatedSourceCodes.join(', ')}
-                </div>
-              ) : null}
-              {screen.targetActors.length > 0 ? (
-                <div className="text-muted-foreground">
-                  Actores: {screen.targetActors.join(', ')}
-                </div>
-              ) : null}
-              {screen.sections.length > 0 ? (
-                <div className="text-muted-foreground">Secciones: {screen.sections.join(', ')}</div>
-              ) : null}
-              {screen.primaryActions.length > 0 ? (
-                <div className="text-muted-foreground">
-                  Acciones principales: {screen.primaryActions.join(', ')}
-                </div>
-              ) : null}
-              {screen.secondaryActions.length > 0 ? (
-                <div className="text-muted-foreground">
-                  Acciones secundarias: {screen.secondaryActions.join(', ')}
-                </div>
-              ) : null}
-              {screen.principalData.length > 0 ? (
-                <div className="text-muted-foreground">
-                  Datos principales: {screen.principalData.join(', ')}
-                </div>
-              ) : null}
-              {screen.forms.length > 0 ? (
-                <div className="text-muted-foreground">Formularios: {screen.forms.join(', ')}</div>
-              ) : null}
-              {screen.states.length > 0 ? (
-                <div className="text-muted-foreground">Estados: {screen.states.join(', ')}</div>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      );
+      return <UiBlueprintDetail content={content as UiBlueprintContent} />;
     }
     case 'GENERATION_PLAN': {
       const plan = content as GenerationPlanContent;
