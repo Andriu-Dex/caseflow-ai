@@ -362,7 +362,7 @@ describe('Structured Analysis (Navigation/Architecture/UI Blueprint) integration
       ctx,
       'software-architecture.generate',
       softwareArchitecture,
-      2,
+      3,
     );
     const service = new StructuredAnalysisService(
       ctx.prisma,

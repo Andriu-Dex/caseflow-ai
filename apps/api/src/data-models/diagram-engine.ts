@@ -192,6 +192,10 @@ function inTreeOrder<T extends { localId: string; parentLocalId?: string | undef
   return ordered;
 }
 
+// Line lengths of the component diagram: notes, then dependency labels.
+const NOTE_WIDTH = 60;
+const LABEL_WIDTH = 45;
+
 // Navigation trees with more nodes than this are drawn left to right.
 const LEFT_TO_RIGHT_FROM = 20;
 
@@ -321,13 +325,16 @@ export class DiagramEngine {
   }
 
   // Deterministic PlantUML component diagram from the structured Software
-  // Architecture (spec §14.3).
+  // Architecture (spec §14.3). Drawn left to right, with the notes and the
+  // dependency labels broken into short lines: a note is a paragraph and a
+  // label a sentence, and unbroken they made the drawing many screens wide.
+  // A component's layer is the name of the package that holds it.
   generateSoftwareComponentDiagram(model: SoftwareArchitectureDiagramModel): string {
     const components = [...model.components].sort((a, b) => compareOrdinal(a.localId, b.localId));
     const layers = [
       ...new Set(components.flatMap((c) => (c.layerLocalId ? [c.layerLocalId] : []))),
     ].sort(compareOrdinal);
-    const lines = ['@startuml'];
+    const lines = ['@startuml', 'left to right direction'];
     // ponytail: one level of layers; a layer inside another layer is drawn flat.
     for (const layer of layers) {
       const name = components.find((c) => c.localId === layer)?.name ?? layer;
@@ -343,7 +350,9 @@ export class DiagramEngine {
     for (const dependency of model.dependencies)
       lines.push(
         `${safeId(dependency.fromLocalId)} --> ${safeId(dependency.toLocalId)}${
-          dependency.description ? ` : "${quote(dependency.description)}"` : ''
+          dependency.description
+            ? ` : "${wrapText(quote(dependency.description), LABEL_WIDTH)}"`
+            : ''
         }`,
       );
     for (const component of components) {
@@ -355,7 +364,7 @@ export class DiagramEngine {
       ];
       if (details.length)
         lines.push(
-          `note right of ${safeId(component.localId)} : ${details.map((detail) => quote(detail).replace(/[<>]/g, '')).join('\\n')}`,
+          `note right of ${safeId(component.localId)} : ${details.map((detail) => wrapText(quote(detail).replace(/[<>]/g, ''), NOTE_WIDTH)).join('\\n')}`,
         );
     }
     lines.push('@enduml');
