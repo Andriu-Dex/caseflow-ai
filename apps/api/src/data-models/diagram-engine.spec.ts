@@ -259,23 +259,29 @@ describe('DiagramEngine', () => {
     expect(() => engine.validate('PLANTUML_COMPONENT', source)).not.toThrow();
   });
 
-  it('breaks long notes and dependency labels into short lines instead of one very long line', () => {
+  it('breaks long dependency labels into short lines and draws no notes', () => {
     const long = Array.from({ length: 30 }, (_, i) => `palabra${i}`).join(' ');
     const source = engine.generateSoftwareComponentDiagram({
       components: [
-        { localId: 'api', name: 'API', responsibilities: [long] },
+        { localId: 'api', name: 'API', responsibilities: [long], relatedSourceCodes: ['RF-001'] },
         { localId: 'web', name: 'Web' },
       ],
       dependencies: [{ fromLocalId: 'web', toLocalId: 'api', description: long }],
     });
-    const lines = source.split('\n');
-    const label = lines.find((line) => line.startsWith('web --> api'))!;
-    const note = lines.find((line) => line.startsWith('note right of api'))!;
-    // Each piece between the "\\n" breaks stays short.
-    for (const text of [label, note])
-      for (const piece of text.split('\\n')) expect(piece.length).toBeLessThan(80);
+    const label = source.split('\n').find((line) => line.startsWith('web --> api'))!;
+    for (const piece of label.split('\\n')) expect(piece.length).toBeLessThan(80);
     expect(label.split('\\n').length).toBeGreaterThan(3);
-    expect(note.split('\\n').length).toBeGreaterThan(2);
+    // Responsibilities and plain sources stay in the stored content, not in the drawing.
+    expect(source).not.toContain('note ');
+    expect(source).not.toContain('RF-001');
+    const quality = engine.generateSoftwareComponentDiagram({
+      components: [
+        { localId: 'api', name: 'API', relatedSourceCodes: ['RF-001', 'RNF-002', 'RNF-003'] },
+      ],
+      dependencies: [],
+    });
+    expect(quality).toContain('note right of api : Calidad: RNF-002, RNF-003');
+    expect(quality).not.toContain('RF-001');
     expect(() => engine.validate('PLANTUML_COMPONENT', source)).not.toThrow();
   });
 

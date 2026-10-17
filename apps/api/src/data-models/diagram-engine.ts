@@ -192,8 +192,8 @@ function inTreeOrder<T extends { localId: string; parentLocalId?: string | undef
   return ordered;
 }
 
-// Line lengths of the component diagram: notes, then dependency labels.
-const NOTE_WIDTH = 60;
+// Line lengths of the component diagram: quality notes, then dependency labels.
+const NOTE_WIDTH = 40;
 const LABEL_WIDTH = 45;
 
 // Navigation trees with more nodes than this are drawn left to right.
@@ -325,10 +325,12 @@ export class DiagramEngine {
   }
 
   // Deterministic PlantUML component diagram from the structured Software
-  // Architecture (spec §14.3). Drawn left to right, with the notes and the
-  // dependency labels broken into short lines: a note is a paragraph and a
-  // label a sentence, and unbroken they made the drawing many screens wide.
-  // A component's layer is the name of the package that holds it.
+  // Architecture (spec §14.3). Drawn left to right, with the dependency labels
+  // broken into short lines. A component's layer is the name of the package
+  // that holds it. Each component carries a short note with the quality
+  // requirements (RNF) it answers; its responsibilities and other sources are
+  // not drawn, since a note of several lines per component hid the structure.
+  // They stay in the stored content and in the component's card.
   generateSoftwareComponentDiagram(model: SoftwareArchitectureDiagramModel): string {
     const components = [...model.components].sort((a, b) => compareOrdinal(a.localId, b.localId));
     const layers = [
@@ -356,15 +358,10 @@ export class DiagramEngine {
         }`,
       );
     for (const component of components) {
-      const details = [
-        ...(component.responsibilities ?? []),
-        ...(component.relatedSourceCodes?.length
-          ? [`Fuentes: ${component.relatedSourceCodes.join(', ')}`]
-          : []),
-      ];
-      if (details.length)
+      const quality = (component.relatedSourceCodes ?? []).filter((code) => /^RNF-/.test(code));
+      if (quality.length)
         lines.push(
-          `note right of ${safeId(component.localId)} : ${details.map((detail) => wrapText(quote(detail).replace(/[<>]/g, ''), NOTE_WIDTH)).join('\\n')}`,
+          `note right of ${safeId(component.localId)} : ${wrapText(`Calidad: ${quality.join(', ')}`, NOTE_WIDTH)}`,
         );
     }
     lines.push('@enduml');
