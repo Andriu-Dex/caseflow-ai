@@ -13,6 +13,7 @@ describe('Batched class diagram generation jobs', () => {
   const seenTargets: string[][] = [];
   const seenExisting: number[] = [];
   let failSecondBatch = true;
+  let omittedOnce = false;
   const http = () => request(ctx.app.getHttpServer());
   const base = () => `/projects/${projectId}/class-diagram/generation-jobs`;
   const start = (ids = sourceIds) =>
@@ -33,40 +34,50 @@ describe('Batched class diagram generation jobs', () => {
             failSecondBatch = false;
             throw new AIError('AI_PROVIDER_ERROR', 'Proveedor no disponible.');
           }
+          // The first time the last batch is asked for, the model answers only
+          // for its first entity: Entidad 10 has to be asked for again.
+          let answered = targets;
+          if (targets.some((t) => t.name === 'Entidad 10') && targets.length > 1 && !omittedOnce) {
+            omittedOnce = true;
+            answered = targets.slice(0, 1);
+          }
           const idOf = (entity: string) =>
-            targets.some((t) => t.name === entity)
+            answered.some((t) => t.name === entity)
               ? `c-${entity}`
               : payload.existingClasses.find(
                   (c: { entityName?: string }) => c.entityName === entity,
-                ).localId;
+                )?.localId;
           return {
             provider: 'scripted',
             model: 'test',
             payload: {
               classes: [
                 // Every attribute but the second one: the data model fills it in.
-                ...(
-                  payload.targetEntities as { name: string; attributes: { name: string }[] }[]
-                ).map((entity) => ({
-                  localId: `c-${entity.name}`,
-                  name: entity.name,
-                  stereotype: 'ENTITY',
-                  dataModelEntityName: entity.name,
-                  attributes: entity.attributes
-                    .slice(0, 1)
-                    .map((a) => ({ name: a.name, type: 'UUID' })),
-                })),
+                ...(answered as { name: string; attributes: { name: string }[] }[]).map(
+                  (entity) => ({
+                    localId: `c-${entity.name}`,
+                    name: entity.name,
+                    stereotype: 'ENTITY',
+                    dataModelEntityName: entity.name,
+                    attributes: entity.attributes
+                      .slice(0, 1)
+                      .map((a) => ({ name: a.name, type: 'UUID' })),
+                  }),
+                ),
                 // The same support class in every batch: drawn once.
                 { localId: 'estado', name: 'EstadoComun', stereotype: 'ENUMERATION' },
               ],
+              // Only the relationships whose two classes exist by now.
               relationships: (
                 payload.dataModelRelationships as { from: string; to: string; label?: string }[]
-              ).map((r) => ({
-                fromLocalId: idOf(r.from),
-                toLocalId: idOf(r.to),
-                kind: 'ASSOCIATION',
-                label: r.label,
-              })),
+              )
+                .filter((r) => idOf(r.from) && idOf(r.to))
+                .map((r) => ({
+                  fromLocalId: idOf(r.from),
+                  toLocalId: idOf(r.to),
+                  kind: 'ASSOCIATION',
+                  label: r.label,
+                })),
             },
             usage: null,
             latencyMs: 1,
@@ -157,9 +168,9 @@ describe('Batched class diagram generation jobs', () => {
     await vi.waitFor(async () => expect(await jobStatus(response.body.id)).toBe('COMPLETED'), {
       timeout: 10000,
     });
-    // 10 entities, eight per batch: 2 batches; the first was kept.
-    expect(seenTargets.slice(calls)).toHaveLength(1);
-    expect(seenTargets[calls]).toEqual(['Entidad 9', 'Entidad 10']);
+    // 10 entities, eight per batch: 2 batches; the first was kept. The model
+    // answered only for Entidad 9, so Entidad 10 was asked for again.
+    expect(seenTargets.slice(calls)).toEqual([['Entidad 9', 'Entidad 10'], ['Entidad 10']]);
     // The resumed batch sees what the checkpoint kept: eight entities and the enumeration.
     expect(seenExisting[calls]).toBe(9);
 
@@ -174,9 +185,20 @@ describe('Batched class diagram generation jobs', () => {
     );
     expect(generation.candidates).toHaveLength(1);
     const content = generation.candidates[0]!.content as {
-      classes: { name: string; stereotype: string; attributes: { name: string }[] }[];
+      classes: {
+        name: string;
+        stereotype: string;
+        attributes: { name: string }[];
+        relatedSourceCodes?: string[];
+      }[];
       relationships: { fromLocalId: string; toLocalId: string }[];
     };
+    // Every entity class cites the data model it comes from.
+    expect(
+      content.classes
+        .filter((c) => c.stereotype === 'ENTITY')
+        .every((c) => c.relatedSourceCodes?.includes('MD-001')),
+    ).toBe(true);
     // 10 entity classes and the support class once, not once per batch.
     expect(content.classes).toHaveLength(11);
     expect(content.classes.filter((c) => c.name === 'EstadoComun')).toHaveLength(1);

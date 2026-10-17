@@ -1,5 +1,8 @@
 import { USE_CASE_BATCH_PROMPT, USE_CASE_BATCH_PROMPT_V3 } from '../use-cases/use-cases-prompt';
-import { CLASS_DIAGRAM_BATCH_PROMPT } from '../structured-analysis/class-diagram-prompt';
+import {
+  CLASS_DIAGRAM_BATCH_PROMPT,
+  CLASS_DIAGRAM_BATCH_PROMPT_V3,
+} from '../structured-analysis/class-diagram-prompt';
 import { Module } from '@nestjs/common';
 import {
   AIOrchestrator,
@@ -364,6 +367,13 @@ import {
             // Batched class diagram generation (DEC-142).
             key: 'class-diagram.generate',
             version: 3,
+            capability: 'STRUCTURED_OUTPUT',
+            purpose: 'class_diagram_generation',
+            systemInstructions: CLASS_DIAGRAM_BATCH_PROMPT_V3,
+          },
+          {
+            key: 'class-diagram.generate',
+            version: 4,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'class_diagram_generation',
             systemInstructions: CLASS_DIAGRAM_BATCH_PROMPT,
