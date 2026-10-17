@@ -1,6 +1,6 @@
 'use client';
 
-import { Code2, Download, Maximize2, Pencil, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { Code2, Download, Loader2, Maximize2, Pencil, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { Button } from '@caseflow-ai/ui';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -417,6 +417,47 @@ async function downloadPng(pngUrl: string, filename: string) {
   }
 }
 
+// The PNG is drawn by the server, which takes a few seconds for a large
+// diagram: the button says it is working and cannot be pressed again meanwhile.
+function PngButton({
+  pngUrl,
+  filename,
+  variant,
+  className,
+}: {
+  pngUrl: string;
+  filename: string;
+  variant: 'ghost' | 'outline';
+  className: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <Button
+      variant={variant}
+      size="sm"
+      type="button"
+      disabled={busy}
+      aria-busy={busy}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          await downloadPng(pngUrl, filename);
+        } finally {
+          setBusy(false);
+        }
+      }}
+      className={className}
+    >
+      {busy ? (
+        <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+      ) : (
+        <Download className="size-3.5" aria-hidden="true" />
+      )}
+      {busy ? 'Preparando PNG…' : 'Descargar PNG'}
+    </Button>
+  );
+}
+
 // Shows a backend-rendered/sanitized diagram (TrustedDiagram) alongside its
 // canonical text source, with downloads for both. `onSaveEdit`, when given,
 // lets the user override the source directly — always re-rendered/sanitized
@@ -516,16 +557,12 @@ export function DiagramViewer({
           Descargar SVG
         </Button>
         {pngUrl ? (
-          <Button
+          <PngButton
+            pngUrl={pngUrl}
+            filename={`${code}.png`}
             variant="ghost"
-            size="sm"
-            type="button"
-            onClick={() => downloadPng(pngUrl, `${code}.png`)}
             className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-muted-foreground hover:bg-muted/40"
-          >
-            <Download className="size-3.5" aria-hidden="true" />
-            Descargar PNG
-          </Button>
+          />
         ) : null}
         <Button
           variant="ghost"
@@ -619,16 +656,12 @@ export function DiagramViewer({
                 Descargar SVG
               </Button>
               {pngUrl ? (
-                <Button
+                <PngButton
+                  pngUrl={pngUrl}
+                  filename={`${code}.png`}
                   variant="outline"
-                  size="sm"
-                  type="button"
-                  onClick={() => downloadPng(pngUrl, `${code}.png`)}
                   className="hidden sm:inline-flex items-center gap-1.5 text-xs h-8"
-                >
-                  <Download className="size-3.5" aria-hidden="true" />
-                  Descargar PNG
-                </Button>
+                />
               ) : null}
               <Button
                 variant="outline"
