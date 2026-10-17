@@ -240,3 +240,74 @@ describe('TraceabilityPage — impact analysis', () => {
     ).toBeInTheDocument();
   });
 });
+
+describe('TraceabilityPage — enhanced UX and controls', () => {
+  it('clears search input when clicking the clear button', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /CU-001/ })).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /RF-001/ })).toBeInTheDocument();
+
+    const searchInput = screen.getByLabelText('Buscar artefacto');
+    await user.type(searchInput, 'CU-001');
+
+    expect(screen.queryByRole('button', { name: /RF-001/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /CU-001/ })).toBeInTheDocument();
+
+    const clearBtn = screen.getByRole('button', { name: 'Limpiar búsqueda' });
+    await user.click(clearBtn);
+
+    expect(screen.getByRole('button', { name: /RF-001/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /CU-001/ })).toBeInTheDocument();
+  });
+
+  it('collapses and expands artifact categories', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /RF-001/ })).toBeInTheDocument());
+
+    const requirementsCategory = screen.getByRole('button', { name: /Requisitos/i });
+    await user.click(requirementsCategory);
+
+    expect(screen.queryByRole('button', { name: /RF-001/ })).not.toBeInTheDocument();
+
+    await user.click(requirementsCategory);
+    expect(screen.getByRole('button', { name: /RF-001/ })).toBeInTheDocument();
+  });
+
+  it('filters to only stale artifacts and renders KPI overview cards', async () => {
+    getStaleness.mockResolvedValueOnce({
+      projectId: 'p1',
+      generatedAt: new Date().toISOString(),
+      entries: [
+        {
+          artifactId: 'a1',
+          artifactVersionId: 'v1',
+          artifactType: 'REQUIREMENT',
+          code: 'RF-001',
+          versionNumber: 1,
+          status: 'APPROVED',
+          impactState: 'POTENTIALLY_AFFECTED',
+          reasons: [],
+        },
+      ],
+    });
+
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(await screen.findByText('Nodos en Grafo')).toBeInTheDocument();
+    expect(screen.getByText('Enlaces / Relaciones')).toBeInTheDocument();
+    expect(screen.getByText('Salud de Coherencia')).toBeInTheDocument();
+
+    const staleFilterBtn = await screen.findByRole('button', {
+      name: /Solo desactualizados/i,
+    });
+    await user.click(staleFilterBtn);
+
+    expect(screen.getByRole('button', { name: /RF-001/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /CU-001/ })).not.toBeInTheDocument();
+  });
+});
