@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DiagramEngine } from './diagram-engine';
 
 describe('quality requirements in architecture diagrams', () => {
-  it('shows declared responsibilities and requirement codes in component and deployment diagrams', () => {
+  it('shows the quality requirement codes in the component diagram, and responsibilities and codes in the deployment diagram', () => {
     const engine = new DiagramEngine();
     const details = {
       localId: 'audit',
@@ -18,10 +18,12 @@ describe('quality requirements in architecture diagrams', () => {
       nodes: [{ ...details, kind: 'STORAGE' }],
       links: [],
     });
-    for (const source of [component, deployment]) {
-      expect(source).toContain('note right of audit');
-      expect(source).toContain('Registrar operaciones');
-      expect(source).toContain('RNF-001');
-    }
+    // The component diagram keeps only the quality codes, short; the rest is in the card.
+    expect(component).toContain('note right of audit');
+    expect(component).toContain('RNF-001');
+    expect(component).not.toContain('Registrar operaciones');
+    expect(deployment).toContain('note right of audit');
+    expect(deployment).toContain('Registrar operaciones');
+    expect(deployment).toContain('RNF-001');
   });
 });
