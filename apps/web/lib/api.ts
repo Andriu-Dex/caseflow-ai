@@ -709,6 +709,11 @@ export const api = {
         `/projects/${projectId}/${api.structuredAnalysis.basePath(kind)}/generation-jobs`,
         { sourceVersionIds },
       ),
+    // An implementation plan is drawn in the background from a design baseline.
+    startImplementationPlanJob: (projectId: string, designBaselineId: string) =>
+      post<StructuredGenerationJob>(`/projects/${projectId}/implementation-plan/generation-jobs`, {
+        designBaselineId,
+      }),
     latestGenerationJob: (projectId: string, kind: StructuredAnalysisKind) =>
       get<{ job: StructuredGenerationJob | null }>(
         `/projects/${projectId}/${api.structuredAnalysis.basePath(kind)}/generation-jobs/latest`,

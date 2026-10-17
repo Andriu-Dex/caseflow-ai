@@ -15,7 +15,11 @@ import {
   classBatchOutputSchema,
   classDiagramContentSchema,
   conceptualBatchOutputSchema,
+  conceptualDomainModelContentSchema,
   generationPlanContentSchema,
+  implementationEntityBatchOutputSchema,
+  implementationRoutesBatchOutputSchema,
+  implementationSkeletonSchema,
   navigationTreeContentSchema,
   planDetailBatchOutputSchema,
   planOutlineSchema,
@@ -56,6 +60,24 @@ import {
   type ModelEntity,
   type ModelRelationship,
 } from './class-diagram-batches';
+import {
+  IP_BATCH_ATTEMPTS,
+  addRelations,
+  classesWithoutPlanEntity,
+  cleanSkeleton,
+  fillMissingEntities as fillMissingPlanEntities,
+  fillMissingRoutes,
+  finishImplementationPlan,
+  finishRoutes,
+  mergeEntityBatch,
+  mergeRouteBatch,
+  planEntityBatches,
+  planRouteBatches,
+  screensWithoutRoute,
+  type IpEntity,
+  type PlanContext,
+  type RoutesAccumulated,
+} from './implementation-plan-batches';
 import {
   PLAN_BATCH_ATTEMPTS,
   cleanOutline,
@@ -677,6 +699,7 @@ export class StructuredAnalysisService {
     projectId: string,
     kind: StructuredAnalysisKind,
     sourceVersionIds: string[],
+    designBaselineId?: string,
   ) {
     if (['GENERATION_PLAN', 'CONCEPTUAL_DOMAIN_MODEL', 'IMPLEMENTATION_PLAN'].includes(kind))
       await this.currency?.assertCurrent(projectId);
@@ -684,6 +707,8 @@ export class StructuredAnalysisService {
     else if (kind === 'CONCEPTUAL_DOMAIN_MODEL')
       await this.loadConceptualSources(projectId, sourceVersionIds);
     else if (kind === 'GENERATION_PLAN') await this.loadPlanSources(projectId, sourceVersionIds);
+    else if (kind === 'IMPLEMENTATION_PLAN')
+      await this.loadImplementationSources(projectId, sourceVersionIds, designBaselineId);
     else await this.loadBatchedSources(projectId, kind, sourceVersionIds);
   }
 
@@ -692,7 +717,16 @@ export class StructuredAnalysisService {
     kind: StructuredAnalysisKind,
     sourceVersionIds: string[],
     progress?: StructuredGenerationProgress,
+    designBaselineId?: string,
   ) {
+    if (kind === 'IMPLEMENTATION_PLAN')
+      return this.generateImplementationInBatches(
+        projectId,
+        kind,
+        sourceVersionIds,
+        progress,
+        designBaselineId,
+      );
     if (kind === 'CLASS_DIAGRAM')
       return this.generateClassDiagramInBatches(projectId, kind, sourceVersionIds, progress);
     if (kind === 'UI_BLUEPRINT')
@@ -1385,6 +1419,256 @@ export class StructuredAnalysisService {
     }
   }
 
+  // DEC-144: the implementation plan is drawn from what an approved Design
+  // Baseline froze, in stages: the skeleton (roles, modules, variables), then
+  // the entities of a few classes at a time (relations follow from the class
+  // diagram), then the routes of a few screens at a time with the custom
+  // endpoints they need. Tests are derived from modules and routes.
+  private async loadImplementationSources(
+    projectId: string,
+    sourceVersionIds: string[],
+    designBaselineId: string | undefined,
+  ) {
+    if (!designBaselineId)
+      throw new UnprocessableEntityException(
+        'Seleccione la línea base de diseño aprobada de la que parte el plan.',
+      );
+    const unique = [...new Set(sourceVersionIds)];
+    const frozen = new Set(await this.designBaselineVersionIds(projectId, designBaselineId));
+    if (unique.length !== sourceVersionIds.length || unique.some((id) => !frozen.has(id)))
+      throw new UnprocessableEntityException(
+        'Las fuentes deben ser versiones congeladas en la línea base de diseño seleccionada.',
+      );
+    const sources = await this.prisma.artifactVersion.findMany({
+      where: {
+        id: { in: unique },
+        projectId,
+        status: { in: await sourceStatuses(this.prisma, projectId) },
+        artifact: { artifactTypeCode: { in: ELIGIBLE_SOURCE_TYPES.IMPLEMENTATION_PLAN } },
+      },
+      include: { artifact: true, structuredAnalysisDetail: true },
+      orderBy: { artifact: { code: 'asc' } },
+    });
+    if (sources.length !== unique.length)
+      throw new UnprocessableEntityException(
+        'La generación requiere versiones exactas APPROVED de un tipo elegible del mismo proyecto.',
+      );
+    const contentOf = (type: string) =>
+      sources.find((source) => source.artifact.artifactTypeCode === type)?.structuredAnalysisDetail
+        ?.content;
+    const diagram = classDiagramContentSchema.safeParse(contentOf('CLASS_DIAGRAM'));
+    if (!diagram.success || !diagram.data.classes.some((cls) => cls.stereotype === 'ENTITY'))
+      throw new UnprocessableEntityException(
+        'La línea base debe incluir un diagrama de clases con clases de entidad.',
+      );
+    const plan = generationPlanContentSchema.safeParse(contentOf('GENERATION_PLAN'));
+    if (!plan.success)
+      throw new UnprocessableEntityException('La línea base debe incluir un plan de generación.');
+    const blueprint = uiBlueprintContentSchema.safeParse(contentOf('UI_BLUEPRINT'));
+    const conceptual = conceptualDomainModelContentSchema.safeParse(
+      contentOf('CONCEPTUAL_DOMAIN_MODEL'),
+    );
+    return {
+      sources,
+      classes: diagram.data.classes,
+      classRelationships: diagram.data.relationships,
+      plan: plan.data,
+      screens: blueprint.success ? blueprint.data.screens : [],
+      conceptualEntities: conceptual.success ? conceptual.data.entities : [],
+    };
+  }
+
+  private async generateImplementationInBatches(
+    projectId: string,
+    kind: StructuredAnalysisKind,
+    sourceVersionIds: string[],
+    progress: StructuredGenerationProgress | undefined,
+    designBaselineId: string | undefined,
+  ) {
+    const { sources, classes, classRelationships, plan, screens, conceptualEntities } =
+      await this.loadImplementationSources(projectId, sourceVersionIds, designBaselineId);
+    const baselineId = designBaselineId!;
+    const sourceCodes = new Set(sources.map((source) => source.artifact.code));
+    const entityBatches = planEntityBatches(classes);
+    const routeBatches = planRouteBatches(screens);
+    const total = 1 + entityBatches.length + routeBatches.length;
+    const runner = createStepRunner({
+      prisma: this.prisma,
+      ai: this.ai,
+      projectId,
+      language: await getProjectLanguage(this.prisma, projectId),
+      progress,
+    });
+    try {
+      progress?.update(0, total, 0);
+      let skeleton!: z.infer<typeof implementationSkeletonSchema>;
+      await runner.run(
+        0,
+        {
+          promptKey: 'implementation-plan.skeleton',
+          promptVersion: 1,
+          payload: {
+            planModules: plan.modules.map((module) => ({
+              name: module.name,
+              purpose: module.purpose,
+              entityNames: module.entityNames,
+              relatedSourceCodes: module.relatedSourceCodes,
+            })),
+            entityClasses: classes
+              .filter((cls) => cls.stereotype === 'ENTITY')
+              .map((cls) => cls.name),
+            screens: screens.map((screen) => screen.name),
+            authentication: plan.authentication,
+          },
+          schema: implementationSkeletonSchema,
+          schemaName: 'implementation_plan_skeleton',
+          maxOutputTokens: 8192,
+        },
+        (output) => {
+          skeleton = cleanSkeleton(output, sourceCodes);
+        },
+      );
+      const context: PlanContext = {
+        moduleIds: new Set(skeleton.modules.map((module) => module.localId)),
+        roles: new Set(skeleton.authentication.roles),
+        sourceCodes,
+      };
+      const allClassIds = new Set(classes.map((cls) => cls.localId));
+      // The module a class belongs to, by the plan module that lists its entity.
+      const moduleOf = (cls: (typeof classes)[number]) => {
+        const index = plan.modules.findIndex((module) =>
+          module.entityNames.some((name) => name.trim().toLowerCase() === cls.name.toLowerCase()),
+        );
+        return skeleton.modules.length === plan.modules.length && index >= 0
+          ? skeleton.modules[index]!.localId
+          : undefined;
+      };
+      progress?.update(1, total, 0);
+
+      let entities: IpEntity[] = [];
+      for (const [position, batch] of entityBatches.entries()) {
+        let remaining = batch;
+        for (let attempt = 0; attempt < IP_BATCH_ATTEMPTS && remaining.length; attempt += 1) {
+          await runner.run(
+            1 + position * IP_BATCH_ATTEMPTS + attempt,
+            {
+              promptKey: 'implementation-plan.entities',
+              promptVersion: 1,
+              payload: {
+                targetClasses: remaining.map((cls) => ({
+                  localId: cls.localId,
+                  name: cls.name,
+                  description: cls.description,
+                  attributes: cls.attributes.map(({ name, type, required }) => ({
+                    name,
+                    type,
+                    required,
+                  })),
+                  relatedSourceCodes: cls.relatedSourceCodes,
+                })),
+                enumerations: classes
+                  .filter((cls) => cls.stereotype === 'ENUMERATION')
+                  .map((cls) => ({
+                    name: cls.name,
+                    values: cls.attributes.map((attribute) => attribute.name),
+                  })),
+                conceptualEntities: conceptualEntities
+                  .filter((entity) => remaining.some((cls) => cls.localId === entity.classLocalId))
+                  .map((entity) => ({
+                    classLocalId: entity.classLocalId,
+                    moduleName: entity.moduleName,
+                    description: entity.description,
+                  })),
+                modules: skeleton.modules.map((module) => ({
+                  localId: module.localId,
+                  name: module.name,
+                  description: module.description,
+                })),
+                roles: skeleton.authentication.roles,
+                existingEntities: entities.map((entity) => entity.name),
+              },
+              schema: implementationEntityBatchOutputSchema,
+              schemaName: 'implementation_plan_entities',
+              maxOutputTokens: 12_288,
+            },
+            (output) => {
+              entities = mergeEntityBatch(entities, output, remaining, context, allClassIds);
+            },
+          );
+          remaining = classesWithoutPlanEntity(entities, remaining);
+        }
+        entities = fillMissingPlanEntities(entities, remaining, classes, context, moduleOf);
+        progress?.update(2 + position, total, 0);
+      }
+      entities = addRelations(entities, classRelationships);
+
+      let routes: RoutesAccumulated = { routes: [], customEndpoints: [] };
+      const allScreenIds = new Set(screens.map((screen) => screen.localId));
+      const routeBase = 1 + entityBatches.length * IP_BATCH_ATTEMPTS;
+      for (const [position, batch] of routeBatches.entries()) {
+        let remaining = batch;
+        for (let attempt = 0; attempt < IP_BATCH_ATTEMPTS && remaining.length; attempt += 1) {
+          await runner.run(
+            routeBase + position * IP_BATCH_ATTEMPTS + attempt,
+            {
+              promptKey: 'implementation-plan.routes',
+              promptVersion: 1,
+              payload: {
+                targetScreens: remaining.map((screen) => ({
+                  localId: screen.localId,
+                  name: screen.name,
+                  purpose: screen.purpose,
+                  primaryActions: screen.primaryActions,
+                  secondaryActions: screen.secondaryActions,
+                  relatedSourceCodes: screen.relatedSourceCodes,
+                })),
+                entities: entities.map((entity) => ({
+                  localId: entity.localId,
+                  name: entity.name,
+                  moduleLocalId: entity.moduleLocalId,
+                  operations: entity.operations,
+                })),
+                modules: skeleton.modules.map((module) => ({
+                  localId: module.localId,
+                  name: module.name,
+                })),
+                roles: skeleton.authentication.roles,
+                existingEndpoints: routes.customEndpoints.map(
+                  (endpoint) => `${endpoint.method} ${endpoint.path}`,
+                ),
+              },
+              schema: implementationRoutesBatchOutputSchema,
+              schemaName: 'implementation_plan_routes',
+              maxOutputTokens: 12_288,
+            },
+            (output) => {
+              routes = mergeRouteBatch(routes, output, remaining, entities, context, allScreenIds);
+            },
+          );
+          remaining = screensWithoutRoute(routes, remaining);
+        }
+        routes = fillMissingRoutes(routes, remaining, context);
+        progress?.update(2 + entityBatches.length + position, total, 0);
+      }
+      routes = finishRoutes(routes, screens, entities);
+
+      const content = finishImplementationPlan(skeleton, entities, routes, baselineId);
+      const id = await this.persistGeneration(
+        projectId,
+        kind,
+        runner.lastRunId,
+        sources.map((source) => source.id),
+        [content as unknown as Content],
+        baselineId,
+      );
+      return this.getGeneration(projectId, kind, id);
+    } catch (error) {
+      if (error instanceof AIError)
+        throw new ServiceUnavailableException({ message: error.message, code: error.code });
+      throw error;
+    }
+  }
+
   async getGeneration(projectId: string, kind: StructuredAnalysisKind, id: string) {
     const generation = await this.prisma.structuredAnalysisGeneration.findFirst({
       where: { id, projectId, kind },
@@ -1663,7 +1947,7 @@ export class StructuredAnalysisService {
   }
 
   // The frozen versions of a Design Baseline this kind may use as sources.
-  async generateFromDesignBaseline(
+  async designBaselineSources(
     projectId: string,
     kind: StructuredAnalysisKind,
     designBaselineId: string,
@@ -1675,10 +1959,18 @@ export class StructuredAnalysisService {
       },
       select: { id: true },
     });
+    return frozen.map((version) => version.id);
+  }
+
+  async generateFromDesignBaseline(
+    projectId: string,
+    kind: StructuredAnalysisKind,
+    designBaselineId: string,
+  ) {
     return this.generate(
       projectId,
       kind,
-      frozen.map((version) => version.id),
+      await this.designBaselineSources(projectId, kind, designBaselineId),
       { designBaselineId },
     );
   }

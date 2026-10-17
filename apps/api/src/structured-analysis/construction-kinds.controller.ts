@@ -25,6 +25,7 @@ import {
   structuredAnalysisListResponseSchema,
   structuredAnalysisResponseSchema,
   transitionArtifactVersionRequestSchema,
+  startImplementationPlanGenerationRequestSchema,
 } from '@caseflow-ai/contracts';
 import { JwtAuthGuard } from '../identity/jwt-auth.guard';
 import { ProjectMembershipGuard } from '../identity/project-membership.guard';
@@ -326,8 +327,54 @@ export class ImplementationPlanController extends BaseStructuredAnalysisControll
   protected readonly kind = 'IMPLEMENTATION_PLAN' as const;
   protected readonly contentSchema = implementationPlanContentSchema;
 
-  constructor(service: StructuredAnalysisService) {
+  constructor(
+    service: StructuredAnalysisService,
+    private readonly jobs: StructuredGenerationJobsService,
+  ) {
     super(service);
+  }
+
+  // DEC-144: drawn in stages in the background, from a design baseline.
+  @Post('generation-jobs')
+  @HttpCode(202)
+  @ApiOperation({
+    operationId: 'startImplementationPlanGeneration',
+    summary: 'Generar el plan de implementación por etapas en segundo plano',
+  })
+  @ApiZodBody(startImplementationPlanGenerationRequestSchema)
+  @ApiZodResponse(202, 'ImplementationPlan generation job.', structuredGenerationJobSchema)
+  startGeneration(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Body(new ZodValidationPipe(startImplementationPlanGenerationRequestSchema))
+    body: z.output<typeof startImplementationPlanGenerationRequestSchema>,
+    @Request() request: { user: { id: string } },
+  ) {
+    return this.jobs.startFromBaseline(
+      projectId,
+      this.kind,
+      body.designBaselineId,
+      request.user.id,
+    );
+  }
+  @Get('generation-jobs/latest')
+  @ApiOperation({
+    operationId: 'getLatestImplementationPlanGeneration',
+    summary: 'Consultar el último trabajo del plan de implementación',
+  })
+  latestGeneration(@Param('projectId', uuidParamPipe) projectId: string) {
+    return this.jobs.latest(projectId, this.kind);
+  }
+  @Get('generation-jobs/:jobId')
+  @ApiOperation({
+    operationId: 'getImplementationPlanGenerationJob',
+    summary: 'Consultar avance de un trabajo del plan de implementación',
+  })
+  @ApiZodResponse(200, 'ImplementationPlan generation job.', structuredGenerationJobSchema)
+  generationJob(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('jobId', uuidParamPipe) jobId: string,
+  ) {
+    return this.jobs.get(projectId, this.kind, jobId);
   }
 
   @Post()

@@ -574,6 +574,35 @@ export const implementationPlanBodySchema = z
   })
   .strict();
 
+export type ImplementationPlanBody = z.output<typeof implementationPlanBodySchema>;
+
+// DEC-144: the plan is drawn in stages. The skeleton gives the roles, modules
+// and environment variables; each batch of entity classes then gives their
+// entities (relations come from the class diagram); each batch of screens
+// gives their routes and the custom endpoints those need. Tests are derived.
+export const implementationSkeletonSchema = z
+  .object({
+    authentication: implementationPlanBodySchema.shape.authentication,
+    modules: implementationPlanBodySchema.shape.modules,
+    envVars: implementationPlanBodySchema.shape.envVars,
+  })
+  .strict();
+export type ImplementationSkeleton = z.output<typeof implementationSkeletonSchema>;
+export const implementationEntityBatchOutputSchema = z
+  .object({
+    entities: z
+      .array(implementationEntitySchema.omit({ relations: true }))
+      .min(1)
+      .max(20),
+  })
+  .strict();
+export const implementationRoutesBatchOutputSchema = z
+  .object({
+    routes: z.array(implementationRouteSchema).min(1).max(40),
+    customEndpoints: z.array(implementationEndpointSchema).max(40).default([]),
+  })
+  .strict();
+
 export const implementationPlanContentSchema = implementationPlanBodySchema
   .extend({ designBaselineId: z.uuid() })
   .strict()
