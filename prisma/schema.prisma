@@ -378,6 +378,7 @@ model Project {
   stageConfirmations            StageConfirmation[]
   requirementGenerationJobs     RequirementGenerationJob[]
   useCaseGenerationJobs         UseCaseGenerationJob[]
+  structuredGenerationJobs      StructuredGenerationJob[]
 
   @@index([workspaceId, createdAt, id])
   @@map("projects")
@@ -474,6 +475,7 @@ model ArtifactVersion {
   projectContextSourceLinks           ProjectContextSource[]
   requirementGenerationJobs           RequirementGenerationJob[]
   useCaseGenerationJobSources         UseCaseGenerationJobSource[]
+  structuredGenerationJobSources      StructuredGenerationJobSource[]
   projectBaselineEntries              ProjectBaselineEntry[]
   designBaselineEntries               DesignBaselineEntry[]
   generationRuns                      GenerationRun[]
@@ -637,6 +639,7 @@ model AIRun {
   requirementCandidates        RequirementCandidate[]
   requirementGenerationParts   RequirementGenerationPart[]
   useCaseGenerationParts       UseCaseGenerationPart[]
+  structuredGenerationParts    StructuredGenerationPart[]
 
   @@index([projectId, startedAt, id])
   @@index([sourceArtifactVersionId])
@@ -1275,6 +1278,7 @@ model StructuredAnalysisGeneration {
   sources         StructuredAnalysisGenerationSource[]
   candidates      StructuredAnalysisCandidate[]
   acceptedDetails StructuredAnalysisDetail[]
+  job             StructuredGenerationJob?
 
   @@index([projectId, kind, createdAt])
   @@map("structured_analysis_generations")
@@ -2030,4 +2034,55 @@ model UseCaseGenerationPart {
 
   @@id([jobId, position])
   @@map("use_case_generation_parts")
+}
+
+// Batched, resumable generation of a structured design artifact (DEC-142):
+// the exact approved sources chosen, processed in the background in batches,
+// with a checkpoint per batch. Only the kinds that process in batches use it.
+model StructuredGenerationJob {
+  id               String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId        String                 @map("project_id") @db.Uuid
+  kind             StructuredAnalysisKind
+  status           SourceProcessingStatus @default(QUEUED)
+  totalBatches     Int                    @default(0) @map("total_batches")
+  completedBatches Int                    @default(0) @map("completed_batches")
+  outputChars      Int                    @default(0) @map("output_chars")
+  generationId     String?                @unique @map("generation_id") @db.Uuid
+  errorMessage     String?                @map("error_message")
+  createdAt        DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project    Project                         @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  generation StructuredAnalysisGeneration?   @relation(fields: [generationId], references: [id], onDelete: Restrict)
+  sources    StructuredGenerationJobSource[]
+  parts      StructuredGenerationPart[]
+
+  @@index([projectId, kind, createdAt])
+  @@map("structured_generation_jobs")
+}
+
+model StructuredGenerationJobSource {
+  jobId             String @map("job_id") @db.Uuid
+  artifactVersionId String @map("artifact_version_id") @db.Uuid
+  position          Int
+
+  job             StructuredGenerationJob @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  artifactVersion ArtifactVersion         @relation(fields: [artifactVersionId], references: [id], onDelete: Restrict)
+
+  @@id([jobId, artifactVersionId])
+  @@map("structured_generation_job_sources")
+}
+
+model StructuredGenerationPart {
+  jobId    String @map("job_id") @db.Uuid
+  position Int
+  aiRunId  String @map("ai_run_id") @db.Uuid
+  // Temporary, schema/domain-validated provider payload, not an official artifact.
+  content  Json
+
+  job   StructuredGenerationJob @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  aiRun AIRun                   @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+
+  @@id([jobId, position])
+  @@map("structured_generation_parts")
 }

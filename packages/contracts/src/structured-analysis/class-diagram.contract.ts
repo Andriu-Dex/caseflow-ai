@@ -64,10 +64,21 @@ const classRelationshipSchema = z
   })
   .strict();
 
+// DEC-142: a batch proposes the classes of a few data-model entities, plus the
+// support classes they need, and the relationships whose other end is already
+// drawn. A relationship is checked against everything drawn so far, not
+// against this response alone.
+export const classBatchOutputSchema = z
+  .object({
+    classes: z.array(domainClassSchema).min(1).max(40),
+    relationships: z.array(classRelationshipSchema).max(120).default([]),
+  })
+  .strict();
+
 export const classDiagramContentSchema = z
   .object({
-    classes: z.array(domainClassSchema).min(1).max(80),
-    relationships: z.array(classRelationshipSchema).max(200).default([]),
+    classes: z.array(domainClassSchema).min(1).max(150),
+    relationships: z.array(classRelationshipSchema).max(400).default([]),
   })
   .strict()
   .superRefine((value, ctx) => {

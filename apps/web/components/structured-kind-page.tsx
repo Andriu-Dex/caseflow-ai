@@ -1,6 +1,8 @@
 'use client';
 
+import { BATCHED_STRUCTURED_KINDS } from '@caseflow-ai/contracts';
 import { GenerationOverlay } from './generation-overlay';
+import { BatchedGenerationPanel } from './batched-generation-panel';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   ClassDiagramContent,
@@ -839,6 +841,8 @@ export function StructuredKindPage({
   // Optional adjustment the AI applies to every proposal (theme only).
   const [instruction, setInstruction] = useState('');
   const isTheme = kind === 'DESIGN_THEME';
+  // DEC-142: some kinds are generated in batches, in the background.
+  const batched = (BATCHED_STRUCTURED_KINDS as readonly string[]).includes(kind);
   const ManualForm = MANUAL_FORMS[kind];
   // An Implementation Plan starts from an approved Design Baseline (the
   // backend resolves its frozen versions as sources), not a free selection.
@@ -1083,33 +1087,68 @@ export function StructuredKindPage({
             </div>
           ) : null}
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="default"
-              size="sm"
-              disabled={
-                generating || (usesBaseline ? !chosenBaselineId : sourceGroups.length === 0)
-              }
-              onClick={generate}
-              className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90 h-9 px-4"
-            >
-              <Sparkles className="size-4" aria-hidden="true" />
-              {generating ? 'Generando…' : 'Generar'}
-            </Button>
-            <GenerationOverlay open={generating} />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="gap-1.5 h-9 px-4"
-              onClick={() => {
-                setEditing(null);
-                setShowManualForm((v) => !v);
-              }}
-            >
-              <Plus className="size-4" aria-hidden="true" />
-              Crear manualmente
-            </Button>
+            {batched ? (
+              <BatchedGenerationPanel
+                queryKey={['structured-generation-job', kind, projectId]}
+                latest={() => api.structuredAnalysis.latestGenerationJob(projectId, kind)}
+                start={() =>
+                  api.structuredAnalysis.startGenerationJob(projectId, kind, selectedIds)
+                }
+                fetchGeneration={(generationId) =>
+                  api.structuredAnalysis.generation(projectId, kind, generationId)
+                }
+                jobSelection={(job) => job.sourceVersionIds}
+                selection={selectedIds}
+                onCompleted={setGeneration}
+                title="Generando el diagrama de clases por lotes"
+                progressLabel="Lotes del diagrama de clases validados"
+                startLabel={() => 'Generar'}
+              >
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 h-9 px-4"
+                  onClick={() => {
+                    setEditing(null);
+                    setShowManualForm((v) => !v);
+                  }}
+                >
+                  <Plus className="size-4" aria-hidden="true" />
+                  Crear manualmente
+                </Button>
+              </BatchedGenerationPanel>
+            ) : (
+              <>
+                <Button
+                  type="button"
+                  variant="default"
+                  size="sm"
+                  disabled={
+                    generating || (usesBaseline ? !chosenBaselineId : sourceGroups.length === 0)
+                  }
+                  onClick={generate}
+                  className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90 h-9 px-4"
+                >
+                  <Sparkles className="size-4" aria-hidden="true" />
+                  {generating ? 'Generando…' : 'Generar'}
+                </Button>
+                <GenerationOverlay open={generating} />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 h-9 px-4"
+                  onClick={() => {
+                    setEditing(null);
+                    setShowManualForm((v) => !v);
+                  }}
+                >
+                  <Plus className="size-4" aria-hidden="true" />
+                  Crear manualmente
+                </Button>
+              </>
+            )}
           </div>
           <AiUnavailableHint />
         </CardContent>

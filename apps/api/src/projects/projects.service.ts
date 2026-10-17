@@ -306,6 +306,9 @@ export class ProjectsService {
         await tx.$executeRaw`DELETE FROM requirement_generations WHERE project_id = ${p}`;
 
         // Use cases
+        await tx.$executeRaw`DELETE FROM structured_generation_parts WHERE job_id IN (SELECT id FROM structured_generation_jobs WHERE project_id = ${p})`;
+        await tx.$executeRaw`DELETE FROM structured_generation_job_sources WHERE job_id IN (SELECT id FROM structured_generation_jobs WHERE project_id = ${p})`;
+        await tx.$executeRaw`DELETE FROM structured_generation_jobs WHERE project_id = ${p}`;
         await tx.$executeRaw`DELETE FROM use_case_generation_parts WHERE job_id IN (SELECT id FROM use_case_generation_jobs WHERE project_id = ${p})`;
         await tx.$executeRaw`DELETE FROM use_case_generation_job_sources WHERE job_id IN (SELECT id FROM use_case_generation_jobs WHERE project_id = ${p})`;
         await tx.$executeRaw`DELETE FROM use_case_generation_jobs WHERE project_id = ${p}`;
