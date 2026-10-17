@@ -22,6 +22,7 @@ import {
   type GenerationResult,
 } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
+import { ArchivedArtifacts } from '../../components/archived-artifacts';
 import { PageHeading } from '../../components/page-heading';
 import { CandidateReview } from '../../components/candidate-review';
 import {
@@ -86,6 +87,7 @@ function RequirementsContent({ projectId }: { projectId: string }) {
     queryClient.invalidateQueries({ queryKey: ['requirements-quality', projectId] });
     queryClient.invalidateQueries({ queryKey: ['requirements-coverage', projectId] });
     queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['archived-artifacts', projectId] });
     queryClient.invalidateQueries({ queryKey: ['staleness', projectId] });
   }
 
@@ -329,6 +331,8 @@ function RequirementsContent({ projectId }: { projectId: string }) {
           />
         )}
       </QueryState>
+
+      <ArchivedArtifacts projectId={projectId} types={['REQUIREMENT']} onRestored={invalidate} />
     </div>
   );
 }

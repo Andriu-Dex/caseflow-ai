@@ -37,6 +37,8 @@ import type {
   RequirementBulkAction,
   UseCaseBulkAction,
   UseCaseGenerationJob,
+  ArchivedArtifactsResponse,
+  RestoreArtifactResponse,
   DataModelGenerationJob,
   StructuredGenerationJob,
   UseCaseBulkResponse,
@@ -387,6 +389,13 @@ export const api = {
   artifacts: {
     archive: (projectId: string, artifactId: string) =>
       post<{ archivedAt: string }>(`/projects/${projectId}/artifacts/${artifactId}/archive`),
+    // What was archived can be listed (by type) and restored.
+    listArchived: (projectId: string, types: string[]) =>
+      get<ArchivedArtifactsResponse>(
+        `/projects/${projectId}/artifacts/archived?types=${encodeURIComponent(types.join(','))}`,
+      ),
+    restore: (projectId: string, artifactId: string) =>
+      post<RestoreArtifactResponse>(`/projects/${projectId}/artifacts/${artifactId}/restore`),
   },
   readiness: {
     get: (projectId: string) => get<ReadinessResponse>(`/projects/${projectId}/readiness`),

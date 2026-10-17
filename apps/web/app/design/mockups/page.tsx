@@ -39,6 +39,7 @@ import {
 } from '@caseflow-ai/ui';
 import { api, ApiError, type ArtifactVersionStatus } from '../../../lib/api';
 import { QueryState, RequireActiveProject } from '../../../components/query-state';
+import { ArchivedArtifacts } from '../../../components/archived-artifacts';
 import { PageHeading } from '../../../components/page-heading';
 import { StatusBadge } from '../../../components/status-badge';
 import { TrustedDiagram } from '../../../components/trusted-svg';
@@ -662,6 +663,7 @@ function MockupsContent({ projectId }: { projectId: string }) {
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['mockups', projectId] });
     queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['archived-artifacts', projectId] });
   }
 
   function createMockup(uiBlueprintVersionId: string) {
@@ -987,6 +989,8 @@ function MockupsContent({ projectId }: { projectId: string }) {
           </ul>
         )}
       </QueryState>
+
+      <ArchivedArtifacts projectId={projectId} types={['MOCKUP']} onRestored={invalidate} />
     </div>
   );
 }

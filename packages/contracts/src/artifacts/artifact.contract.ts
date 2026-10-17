@@ -91,3 +91,27 @@ export const artifactResponseSchema = z.object({
 });
 
 export type ArtifactResponse = z.infer<typeof artifactResponseSchema>;
+
+// Artifacts retired from active work (archived) can be listed and restored.
+export const archivedArtifactSchema = z.object({
+  id: z.uuid(),
+  type: z.string(),
+  code: z.string(),
+  title: z.string(),
+  status: z.enum(ARTIFACT_VERSION_STATUSES),
+  versionNumber: z.number().int().min(1),
+  archivedAt: z.iso.datetime(),
+});
+export type ArchivedArtifact = z.infer<typeof archivedArtifactSchema>;
+export const archivedArtifactsResponseSchema = z.object({ items: z.array(archivedArtifactSchema) });
+export type ArchivedArtifactsResponse = z.infer<typeof archivedArtifactsResponseSchema>;
+export const listArchivedArtifactsQuerySchema = z
+  .object({ types: z.string().min(1).max(500).optional() })
+  .strict();
+// `warning` is set when the restored artifact now competes with another
+// approved one of a type the project uses once.
+export const restoreArtifactResponseSchema = z.object({
+  restored: z.literal(true),
+  warning: z.string().nullable(),
+});
+export type RestoreArtifactResponse = z.infer<typeof restoreArtifactResponseSchema>;

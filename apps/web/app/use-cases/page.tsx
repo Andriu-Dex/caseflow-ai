@@ -18,6 +18,7 @@ import { DiagramViewer } from '../../components/diagram-viewer';
 import { UseCaseManualForm } from '../../components/use-case-manual-form';
 import { UseCaseCandidateCard } from '../../components/use-case-candidate-card';
 import { UseCaseList, UseCasesSummary } from '../../components/use-case-list';
+import { ArchivedArtifacts } from '../../components/archived-artifacts';
 import { PageHeading } from '../../components/page-heading';
 import {
   AiUnavailableHint,
@@ -162,6 +163,7 @@ function UseCasesContent({ projectId }: { projectId: string }) {
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['use-cases', projectId] });
     queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['archived-artifacts', projectId] });
     queryClient.invalidateQueries({ queryKey: ['staleness', projectId] });
   }
 
@@ -434,6 +436,8 @@ function UseCasesContent({ projectId }: { projectId: string }) {
           </>
         )}
       </QueryState>
+
+      <ArchivedArtifacts projectId={projectId} types={['USE_CASE']} onRestored={invalidate} />
     </div>
   );
 }
