@@ -117,6 +117,7 @@ import { sanitizeDiagramSvg } from '../data-models/svg-sanitizer';
 import { StageCurrencyService } from '../readiness/stage-currency';
 import {
   evaluateStructuredGeneration,
+  withUseCaseProvenance,
   type GenerationSourceReference,
 } from './structured-generation-quality';
 import { ConsistencyEngineService } from '../consistency-engine/consistency-engine.service';
@@ -641,8 +642,8 @@ export class StructuredAnalysisService {
               ? `${KIND_LABELS[kind]} (candidato ${index + 1})`
               : `${KIND_LABELS[kind]} (candidato)`,
           content: (designBaselineId
-            ? { ...content, designBaselineId }
-            : content) as Prisma.InputJsonValue,
+            ? { ...withUseCaseProvenance(kind, content), designBaselineId }
+            : withUseCaseProvenance(kind, content)) as Prisma.InputJsonValue,
         })),
       });
       return generation.id;

@@ -28,6 +28,31 @@ const STRUCTURE_KINDS: StructuredAnalysisKind[] = ['CLASS_DIAGRAM', 'CONCEPTUAL_
 const ANALYSIS_TYPES = ['REQUIREMENT', 'USE_CASE'];
 const LISTED_UNCOVERED = 5;
 
+// A node or screen that relates a use case also names it among the sources
+// that justify it: the relation is the justification, so the model is not
+// asked (and the user not warned) to repeat it.
+export function withUseCaseProvenance<T extends object>(
+  kind: StructuredAnalysisKind,
+  content: T,
+): T {
+  const key = kind === 'NAVIGATION_TREE' ? 'nodes' : kind === 'UI_BLUEPRINT' ? 'screens' : null;
+  const items = key ? (content as Record<string, unknown>)[key] : null;
+  if (!key || !Array.isArray(items)) return content;
+  return {
+    ...content,
+    [key]: items.map((item: { relatedUseCaseCodes?: string[]; relatedSourceCodes?: string[] }) =>
+      item.relatedUseCaseCodes?.length
+        ? {
+            ...item,
+            relatedSourceCodes: [
+              ...new Set([...(item.relatedSourceCodes ?? []), ...item.relatedUseCaseCodes]),
+            ],
+          }
+        : item,
+    ),
+  };
+}
+
 export interface GenerationQualityFinding {
   severity: 'ERROR' | 'WARNING';
   code: string;

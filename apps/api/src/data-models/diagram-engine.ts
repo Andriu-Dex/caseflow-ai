@@ -164,6 +164,9 @@ function wrapText(text: string, maxLineLength: number = 40): string {
 
   return lines.join('\\n');
 }
+// Navigation trees with more nodes than this are drawn left to right.
+const LEFT_TO_RIGHT_FROM = 20;
+
 @Injectable()
 export class DiagramEngine {
   generateER(model: ERDiagramModel): string {
@@ -256,10 +259,12 @@ export class DiagramEngine {
   }
 
   // Deterministic Mermaid flowchart from the structured Navigation Tree
-  // (spec §13.4). AI never produces this source directly.
+  // (spec §13.4). AI never produces this source directly. A big tree has far
+  // more nodes per level than levels, so it is drawn left to right (depth
+  // across, breadth down); top-down would make it many times wider than tall.
   generateNavigationFlowchart(model: NavigationDiagramModel): string {
     const nodes = [...model.nodes].sort((a, b) => compareOrdinal(a.localId, b.localId));
-    const lines = ['flowchart TD'];
+    const lines = [nodes.length > LEFT_TO_RIGHT_FROM ? 'flowchart LR' : 'flowchart TD'];
     for (const node of nodes) lines.push(`  ${safeId(node.localId)}["${quote(node.label)}"]`);
     for (const node of nodes)
       if (node.parentLocalId)
@@ -428,7 +433,7 @@ export class DiagramEngine {
               // "-->" arrow syntax. As with PLANTUML below, this is a cheap
               // structural pre-check only — the real renderer + sanitizeDiagramSvg()
               // are the compatibility/security authority (see class doc comment).
-              source.startsWith('flowchart TD\n')
+              /^flowchart (TD|LR)\n/.test(source)
             : source.startsWith('@startuml\n') &&
               source.endsWith('\n@enduml') &&
               !source.includes('!include') &&

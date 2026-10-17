@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateStructuredGeneration } from './structured-generation-quality';
+import {
+  evaluateStructuredGeneration,
+  withUseCaseProvenance,
+} from './structured-generation-quality';
 
 describe('structured generation provenance checks', () => {
   it('accepts exact selected references and flags uncovered sources', () => {
@@ -372,6 +375,56 @@ describe('references by identifier across stages (DEC-121)', () => {
     );
     expect(findings).toContainEqual(
       expect.objectContaining({ severity: 'ERROR', code: 'UNKNOWN_CLASS' }),
+    );
+  });
+});
+
+describe('withUseCaseProvenance', () => {
+  it('names the related use cases among the justifying sources, once, and leaves the rest alone', () => {
+    const tree = withUseCaseProvenance('NAVIGATION_TREE', {
+      nodes: [
+        {
+          localId: 'a',
+          relatedUseCaseCodes: ['CU-001', 'CU-002'],
+          relatedSourceCodes: ['CU-001', 'RF-001'],
+        },
+        { localId: 'b', relatedUseCaseCodes: [] },
+      ],
+    });
+    expect(tree.nodes[0]!.relatedSourceCodes).toEqual(['CU-001', 'RF-001', 'CU-002']);
+    expect(tree.nodes[1]).toEqual({ localId: 'b', relatedUseCaseCodes: [] });
+    const blueprint = withUseCaseProvenance('UI_BLUEPRINT', {
+      screens: [{ localId: 's', relatedUseCaseCodes: ['CU-003'] }],
+    });
+    expect((blueprint.screens[0] as { relatedSourceCodes?: string[] }).relatedSourceCodes).toEqual([
+      'CU-003',
+    ]);
+    const other = { modules: [] };
+    expect(withUseCaseProvenance('GENERATION_PLAN', other)).toBe(other);
+  });
+
+  it('removes the warning the provenance check raised for such a node', () => {
+    const content = {
+      nodes: [
+        {
+          localId: 'a',
+          label: 'Pedidos',
+          viewName: 'Pedidos',
+          kind: 'LIST',
+          relatedUseCaseCodes: ['CU-001'],
+          relatedSourceCodes: ['RF-001'],
+        },
+      ],
+    };
+    const sources = [
+      { code: 'RF-001', type: 'REQUIREMENT' },
+      { code: 'CU-001', type: 'USE_CASE' },
+    ];
+    const codes = (value: unknown) =>
+      evaluateStructuredGeneration('NAVIGATION_TREE', value, sources).map((f) => f.code);
+    expect(codes(content)).toContain('MISSING_USE_CASE_PROVENANCE');
+    expect(codes(withUseCaseProvenance('NAVIGATION_TREE', content))).not.toContain(
+      'MISSING_USE_CASE_PROVENANCE',
     );
   });
 });
