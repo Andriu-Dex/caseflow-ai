@@ -6,6 +6,7 @@ import { BatchedGenerationPanel } from './batched-generation-panel';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   NAVIGATION_NODE_KINDS,
+  SYSTEM_NODE_KINDS,
   type ClassDiagramContent,
   type ConceptualDomainModelContent,
   type DesignThemeContent,
@@ -23,6 +24,7 @@ import {
   ArrowRight,
   Box,
   CheckCircle2,
+  Cloud,
   Compass,
   CornerDownRight,
   Cpu,
@@ -34,14 +36,18 @@ import {
   FileText,
   FolderTree,
   Globe,
+  HardDrive,
   Home,
   Layers,
   Layout,
   Link2,
   ListFilter,
+  Monitor,
+  Network,
   Pencil,
   Plus,
   Search,
+  Server,
   ShieldCheck,
   Sparkles,
 } from 'lucide-react';
@@ -216,6 +222,42 @@ export const NAVIGATION_NODE_LABELS: Record<
   },
 };
 
+export const SYSTEM_NODE_LABELS: Record<
+  (typeof SYSTEM_NODE_KINDS)[number],
+  { label: string; color: string; icon: React.ComponentType<{ className?: string }> }
+> = {
+  RUNTIME: {
+    label: 'Servidor / Runtime',
+    color: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20',
+    icon: Server,
+  },
+  DATABASE: {
+    label: 'Base de datos',
+    color: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20',
+    icon: Database,
+  },
+  STORAGE: {
+    label: 'Almacenamiento',
+    color: 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20',
+    icon: HardDrive,
+  },
+  EXTERNAL_SERVICE: {
+    label: 'Servicio externo',
+    color: 'bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/20',
+    icon: Cloud,
+  },
+  CLIENT: {
+    label: 'Cliente',
+    color: 'bg-sky-500/10 text-sky-700 dark:text-sky-400 border-sky-500/20',
+    icon: Monitor,
+  },
+  OTHER: {
+    label: 'Otro',
+    color: 'bg-slate-500/10 text-slate-700 dark:text-slate-400 border-slate-500/20',
+    icon: Box,
+  },
+};
+
 interface SourceOption {
   versionId: string;
   code: string;
@@ -325,8 +367,18 @@ function getArtifactMetrics(kind: StructuredAnalysisKind, content: unknown): Art
   if (kind === 'SYSTEM_ARCHITECTURE') {
     const sa = content as SystemArchitectureContent;
     return [
-      { singular: 'nodo', plural: 'nodos', count: sa.nodes?.length ?? 0, icon: Box },
-      { singular: 'enlace', plural: 'enlaces', count: sa.links?.length ?? 0, icon: Link2 },
+      {
+        singular: 'nodo de sistema',
+        plural: 'nodos de sistema',
+        count: sa.nodes?.length ?? 0,
+        icon: Server,
+      },
+      {
+        singular: 'enlace de red',
+        plural: 'enlaces de red',
+        count: sa.links?.length ?? 0,
+        icon: Network,
+      },
     ];
   }
   if (kind === 'UI_BLUEPRINT') {
@@ -759,6 +811,195 @@ function SoftwareArchitectureDetail({ content }: { content: SoftwareArchitecture
   );
 }
 
+function SystemArchitectureDetail({ content }: { content: SystemArchitectureContent }) {
+  const [query, setQuery] = useState('');
+  const { boundary, nodes = [], links = [] } = content;
+
+  const nodeNames = new Map(nodes.map((n) => [n.localId, n.name]));
+
+  const trimmed = query.trim().toLowerCase();
+  const isFiltering = trimmed.length > 0;
+  const filteredNodes = isFiltering
+    ? nodes.filter((n) => {
+        const text = [
+          n.name,
+          n.kind,
+          SYSTEM_NODE_LABELS[n.kind]?.label ?? '',
+          ...(n.responsibilities ?? []),
+          ...(n.relatedSourceCodes ?? []),
+        ]
+          .join(' ')
+          .toLowerCase();
+        return text.includes(trimmed);
+      })
+    : nodes;
+
+  return (
+    <div className="mt-4 flex flex-col gap-4 border-t border-border/60 pt-4 text-xs">
+      {/* System Boundary Banner */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3 sm:p-3.5 shadow-2xs">
+        <div className="flex items-center gap-2.5">
+          <div className="rounded-md bg-primary/10 p-2 text-primary">
+            <Network className="size-4" aria-hidden="true" />
+          </div>
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Límite del sistema
+            </div>
+            <div className="text-sm font-bold text-foreground">{boundary}</div>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="rounded-md bg-background px-2 py-1 font-medium text-muted-foreground border border-border/60">
+            {nodes.length} {nodes.length === 1 ? 'nodo' : 'nodos'}
+          </span>
+          <span className="rounded-md bg-background px-2 py-1 font-medium text-muted-foreground border border-border/60">
+            {links.length} {links.length === 1 ? 'enlace' : 'enlaces'}
+          </span>
+        </div>
+      </div>
+
+      {/* Nodes Section */}
+      <div>
+        <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
+          <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+            <Server className="size-3.5 text-primary" aria-hidden="true" />
+            Nodos del sistema ({nodes.length})
+          </h4>
+          {nodes.length > 1 ? (
+            <div className="relative w-full sm:w-64">
+              <Search
+                className="pointer-events-none absolute left-2.5 top-2.5 size-3.5 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Buscar nodo, tipo o función…"
+                className="h-8 w-full rounded-md border border-input bg-background pl-8 pr-3 text-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+            </div>
+          ) : null}
+        </div>
+
+        {isFiltering && filteredNodes.length === 0 ? (
+          <p className="rounded-md border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+            No se encontraron nodos que coincidan con «{query}».
+          </p>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {filteredNodes.map((node) => {
+              const meta = SYSTEM_NODE_LABELS[node.kind] ?? SYSTEM_NODE_LABELS.OTHER;
+              const Icon = meta.icon;
+              return (
+                <div
+                  key={node.localId}
+                  className="flex flex-col rounded-lg border border-border/80 bg-muted/20 p-3 shadow-2xs transition-colors hover:border-border"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-1.5 pb-2 border-b border-border/40">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <Icon className="size-3.5 text-primary shrink-0" aria-hidden="true" />
+                      <span className="font-semibold text-sm text-foreground truncate">
+                        {node.name}
+                      </span>
+                    </div>
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${meta.color}`}
+                    >
+                      <Icon className="size-2.5" aria-hidden="true" />
+                      {meta.label}
+                    </span>
+                  </div>
+
+                  {node.responsibilities.length > 0 ? (
+                    <div className="mt-2.5 flex flex-col gap-1.5">
+                      <span className="text-[11px] font-medium text-muted-foreground">
+                        Responsabilidades:
+                      </span>
+                      <ul className="flex flex-col gap-1 text-xs text-muted-foreground">
+                        {node.responsibilities.map((resp, ri) => (
+                          <li key={ri} className="flex items-start gap-1.5">
+                            <CheckCircle2
+                              className="size-3 text-primary mt-0.5 shrink-0"
+                              aria-hidden="true"
+                            />
+                            <span className="text-foreground/90">{resp}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+
+                  {node.relatedSourceCodes && node.relatedSourceCodes.length > 0 ? (
+                    <div className="mt-2.5 flex flex-wrap items-center gap-1 pt-1.5 border-t border-border/30 text-[11px]">
+                      <span className="text-muted-foreground">Fuentes:</span>
+                      {node.relatedSourceCodes.map((sc) => (
+                        <span
+                          key={sc}
+                          className="rounded bg-muted px-1.5 py-0.5 font-mono font-medium text-foreground"
+                        >
+                          {sc}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Links Section */}
+      {links.length > 0 ? (
+        <div>
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+            <Link2 className="size-3.5 text-primary" aria-hidden="true" />
+            Enlaces y comunicación de red ({links.length})
+          </h4>
+          <div className="flex flex-col gap-2">
+            {links.map((link, li) => {
+              const fromName = nodeNames.get(link.fromLocalId) ?? link.fromLocalId;
+              const toName = nodeNames.get(link.toLocalId) ?? link.toLocalId;
+              return (
+                <div
+                  key={li}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-xs"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-md bg-background px-2 py-0.5 border border-border font-semibold text-foreground">
+                      {fromName}
+                    </span>
+                    <div className="flex items-center gap-1 text-muted-foreground">
+                      <span className="h-px w-3 bg-border" />
+                      {link.protocol ? (
+                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-primary font-mono text-[10px] font-semibold border border-primary/20">
+                          {link.protocol}
+                        </span>
+                      ) : null}
+                      {link.description ? (
+                        <span className="text-muted-foreground text-[11px]">
+                          {link.description}
+                        </span>
+                      ) : null}
+                      <ArrowRight className="size-3 text-primary" aria-hidden="true" />
+                      <span className="h-px w-3 bg-border" />
+                    </div>
+                    <span className="rounded-md bg-background px-2 py-0.5 border border-border font-semibold text-foreground">
+                      {toName}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function renderContentDetail(kind: StructuredAnalysisKind, content: unknown) {
   switch (kind) {
     case 'NAVIGATION_TREE': {
@@ -768,45 +1009,7 @@ function renderContentDetail(kind: StructuredAnalysisKind, content: unknown) {
       return <SoftwareArchitectureDetail content={content as SoftwareArchitectureContent} />;
     }
     case 'SYSTEM_ARCHITECTURE': {
-      const { boundary, nodes, links } = content as SystemArchitectureContent;
-      return (
-        <div className="mt-2 flex flex-col gap-2 border-t border-border pt-2 text-sm">
-          <p>
-            <strong>Límite del sistema:</strong> {boundary}
-          </p>
-          <ul className="flex flex-col gap-1">
-            {nodes.map((node) => (
-              <li key={node.localId}>
-                <strong>{node.name}</strong>{' '}
-                <span className="text-muted-foreground">({node.kind})</span>
-                {node.responsibilities.length > 0 ? (
-                  <span className="text-muted-foreground">
-                    {' '}
-                    — {node.responsibilities.join('; ')}
-                  </span>
-                ) : null}
-                {node.relatedSourceCodes?.length ? (
-                  <span className="text-muted-foreground">
-                    {' '}
-                    · Fuentes: {node.relatedSourceCodes.join(', ')}
-                  </span>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-          {links.length > 0 ? (
-            <ul className="flex flex-col gap-1 text-muted-foreground">
-              {links.map((link, i) => (
-                <li key={i}>
-                  {link.fromLocalId} → {link.toLocalId}
-                  {link.protocol ? ` (${link.protocol})` : ''}
-                  {link.description ? `: ${link.description}` : ''}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      );
+      return <SystemArchitectureDetail content={content as SystemArchitectureContent} />;
     }
     case 'UI_BLUEPRINT': {
       const { screens } = content as UiBlueprintContent;
