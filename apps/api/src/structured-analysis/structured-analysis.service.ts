@@ -25,8 +25,11 @@ import { PrismaService } from '../database/prisma.service';
 import { getProjectLanguage } from '../projects/project-language';
 import {
   completeRelationships,
+  entitiesWithoutClass,
+  fillMissingEntities,
   finishClassDiagram,
   mergeClassBatch,
+  CLASS_BATCH_ATTEMPTS,
   planClassBatches,
   relationshipsToDraw,
   type Accumulated as ClassDrawn,
@@ -687,55 +690,74 @@ export class StructuredAnalysisService {
     let drawn: ClassDrawn = { classes: [], relationships: [] };
     let lastRunId = '';
     try {
+      const knownEntities = new Set(
+        entities.map((entity) => entity.name.trim().toLocaleLowerCase('es')),
+      );
+      const dataModelCode = sources.find((source) => source.dataModelDetail)!.artifact.code;
       for (const [position, batch] of plan.entries()) {
         progress?.update(position, plan.length, 0);
         const targets = entities.filter((entity) => batch.includes(entity.name));
-        const cached = progress
-          ? await this.prisma.structuredGenerationPart.findUnique({
-              where: { jobId_position: { jobId: progress.jobId, position } },
-            })
-          : null;
-        let output: z.infer<typeof classBatchOutputSchema>;
-        if (cached) {
-          output = classBatchOutputSchema.parse(cached.content);
-          lastRunId = cached.aiRunId;
-        } else {
-          const result = await this.ai.generateStructured({
-            projectId,
-            language,
-            promptKey: 'class-diagram.generate',
-            promptVersion: 3,
-            messages: [
-              {
-                role: 'user',
-                content: JSON.stringify({
-                  targetEntities: targets,
-                  dataModelRelationships: relationshipsToDraw(entities, relationships, batch),
-                  existingClasses: drawn.classes.map((cls) => ({
-                    localId: cls.localId,
-                    name: cls.name,
-                    stereotype: cls.stereotype,
-                    entityName: cls.dataModelEntityName,
-                  })),
-                  analysis,
-                }),
+        // The model sometimes answers with only part of a batch: what it left
+        // out is asked for again (twice at most) before it is filled in from the
+        // data model. Each answer is a checkpoint of its own.
+        let remaining = targets;
+        for (let attempt = 0; attempt < CLASS_BATCH_ATTEMPTS && remaining.length; attempt += 1) {
+          const part = position * CLASS_BATCH_ATTEMPTS + attempt;
+          const cached = progress
+            ? await this.prisma.structuredGenerationPart.findUnique({
+                where: { jobId_position: { jobId: progress.jobId, position: part } },
+              })
+            : null;
+          let output: z.infer<typeof classBatchOutputSchema>;
+          if (cached) {
+            output = classBatchOutputSchema.parse(cached.content);
+            lastRunId = cached.aiRunId;
+          } else {
+            const result = await this.ai.generateStructured({
+              projectId,
+              language,
+              promptKey: 'class-diagram.generate',
+              promptVersion: 4,
+              messages: [
+                {
+                  role: 'user',
+                  content: JSON.stringify({
+                    dataModelCode,
+                    targetEntities: remaining,
+                    dataModelRelationships: relationshipsToDraw(entities, relationships, batch),
+                    existingClasses: drawn.classes.map((cls) => ({
+                      localId: cls.localId,
+                      name: cls.name,
+                      stereotype: cls.stereotype,
+                      entityName: cls.dataModelEntityName,
+                    })),
+                    analysis,
+                  }),
+                },
+              ],
+              outputSchema: classBatchOutputSchema,
+              schemaName: 'class_diagram_batch',
+              maxOutputTokens: 12_288,
+            });
+            output = result.data;
+            lastRunId = result.metadata.runId;
+          }
+          // Domain validation happens here, before anything is checkpointed.
+          drawn = mergeClassBatch(drawn, output, remaining, { knownEntities, dataModelCode });
+          if (progress && !cached)
+            await this.prisma.structuredGenerationPart.upsert({
+              where: { jobId_position: { jobId: progress.jobId, position: part } },
+              create: {
+                jobId: progress.jobId,
+                position: part,
+                aiRunId: lastRunId,
+                content: output,
               },
-            ],
-            outputSchema: classBatchOutputSchema,
-            schemaName: 'class_diagram_batch',
-            maxOutputTokens: 12_288,
-          });
-          output = result.data;
-          lastRunId = result.metadata.runId;
+              update: { aiRunId: lastRunId, content: output },
+            });
+          remaining = entitiesWithoutClass(drawn, remaining);
         }
-        // Domain validation happens here, before anything is checkpointed.
-        drawn = mergeClassBatch(drawn, output, targets);
-        if (progress && !cached)
-          await this.prisma.structuredGenerationPart.upsert({
-            where: { jobId_position: { jobId: progress.jobId, position } },
-            create: { jobId: progress.jobId, position, aiRunId: lastRunId, content: output },
-            update: { aiRunId: lastRunId, content: output },
-          });
+        drawn = fillMissingEntities(drawn, remaining, dataModelCode);
         progress?.update(position + 1, plan.length, 0);
       }
       const content = finishClassDiagram(completeRelationships(drawn, relationships));

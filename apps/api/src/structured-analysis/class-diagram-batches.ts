@@ -9,6 +9,8 @@ import type { z } from 'zod';
 // DEC-142: data-model entities per batch. A class carries its attributes and
 // methods, so a batch of this size fits one response with room to spare.
 export const CLASS_BATCH_SIZE = 8;
+// Times a batch is asked for: once, and twice more for the entities it left out.
+export const CLASS_BATCH_ATTEMPTS = 3;
 
 export type BatchOutput = z.infer<typeof classBatchOutputSchema>;
 export type DomainClass = ClassDiagramContent['classes'][number];
@@ -104,13 +106,21 @@ const classFromEntity = (entity: ModelEntity, localId: string): DomainClass => (
 // Adds one batch's classes and relationships to what earlier batches drew.
 //  - A support class (enumeration, value object) named like one already drawn
 //    is not drawn twice; relationships aimed at it follow the existing one.
-//  - What the model left out of an entity is filled in from the data model
-//    itself: a missing class, or a missing attribute, is not worth failing
-//    a long run for, and the data model is the authority on both.
+//  - An attribute the model left out of an entity's class is filled in from
+//    the data model, which is the authority on them; a class it left out is
+//    asked for again (see fillMissingEntities for what is left after that).
+//  - Every entity's class cites the data model it comes from.
+export interface MergeOptions {
+  // Entities already drawn in earlier batches: if the model repeats one, the
+  // repeat is dropped (the entity is not a mistake, it is just done).
+  knownEntities?: Set<string>;
+  dataModelCode?: string;
+}
 export function mergeClassBatch(
   accumulated: Accumulated,
   output: BatchOutput,
   targets: ModelEntity[],
+  options: MergeOptions = {},
 ): Accumulated {
   const classes = accumulated.classes.map((cls) => ({ ...cls }));
   const taken = new Set(classes.map((cls) => cls.localId));
@@ -127,8 +137,16 @@ export function mergeClassBatch(
   for (const cls of output.classes) {
     const entity = cls.dataModelEntityName ? key(cls.dataModelEntityName) : null;
     if (entity) {
-      if (!targetByName.has(entity))
+      if (!targetByName.has(entity)) {
+        const done = classes.find(
+          (value) => value.dataModelEntityName && key(value.dataModelEntityName) === entity,
+        );
+        if (done && options.knownEntities?.has(entity)) {
+          finalId.set(cls.localId, done.localId);
+          continue;
+        }
         invalid('Una clase representa una entidad que no es de este lote.');
+      }
       if (drawn.has(entity)) invalid('El lote repite la clase de una entidad.');
       drawn.add(entity);
     }
@@ -143,19 +161,17 @@ export function mergeClassBatch(
     byName.set(key(created.name), created);
     classes.push(created);
   }
-  // The data model is the authority on entities and their attributes.
+  // The data model is the authority on an entity's attributes.
   for (const entity of targets) {
     const name = key(entity.name);
     const cls = classes.find(
       (value) => value.dataModelEntityName && key(value.dataModelEntityName) === name,
     );
-    if (!cls) {
-      const filled = classFromEntity(entity, unique(`entity-${name.replace(/[^a-z0-9]+/g, '-')}`));
-      classes.push(filled);
-      byName.set(key(filled.name), filled);
-      finalId.set(filled.localId, filled.localId);
-      continue;
-    }
+    if (!cls) continue;
+    if (options.dataModelCode)
+      cls.relatedSourceCodes = [
+        ...new Set([...(cls.relatedSourceCodes ?? []), options.dataModelCode]),
+      ];
     const have = new Set(cls.attributes.map((attribute) => key(attribute.name)));
     const missing = classFromEntity(entity, cls.localId).attributes.filter(
       (attribute) => !have.has(key(attribute.name)),
@@ -176,6 +192,38 @@ export function mergeClassBatch(
     relationships.push(next);
   }
   return { classes, relationships };
+}
+
+// The entities of a batch that still have no class: what the model gave back
+// after being asked again.
+export function entitiesWithoutClass(accumulated: Accumulated, targets: ModelEntity[]) {
+  return targets.filter(
+    (entity) =>
+      !accumulated.classes.some(
+        (cls) => cls.dataModelEntityName && key(cls.dataModelEntityName) === key(entity.name),
+      ),
+  );
+}
+
+// Last resort for an entity the model never drew: its class comes from the data
+// model, with its attributes, and says so by citing it.
+export function fillMissingEntities(
+  accumulated: Accumulated,
+  missing: ModelEntity[],
+  dataModelCode?: string,
+): Accumulated {
+  const taken = new Set(accumulated.classes.map((cls) => cls.localId));
+  const classes = [...accumulated.classes];
+  for (const entity of missing) {
+    let localId = `entity-${key(entity.name).replace(/[^a-z0-9]+/g, '-')}`;
+    for (let n = 2; taken.has(localId); n += 1) localId = `${localId}-${n}`;
+    taken.add(localId);
+    classes.push({
+      ...classFromEntity(entity, localId),
+      ...(dataModelCode ? { relatedSourceCodes: [dataModelCode] } : {}),
+    });
+  }
+  return { classes, relationships: accumulated.relationships };
 }
 
 const relationshipKey = (relationship: ClassRelationship) =>

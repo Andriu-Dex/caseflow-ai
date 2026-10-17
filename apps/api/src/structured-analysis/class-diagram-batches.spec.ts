@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   CLASS_BATCH_SIZE,
   completeRelationships,
+  entitiesWithoutClass,
+  fillMissingEntities,
   finishClassDiagram,
   mergeClassBatch,
   planClassBatches,
@@ -133,25 +135,73 @@ describe('mergeClassBatch', () => {
     expect(second.relationships[0]).toMatchObject({ fromLocalId: 'v', toLocalId: 'e1' });
   });
 
-  it('fills in from the data model what the model left out of an entity', () => {
+  it('fills in from the data model an attribute the model left out of an entity', () => {
     const result = mergeClassBatch(
       empty,
       { classes: [cls('u', 'Usuario', 'Usuario', ['Identificador'])], relationships: [] },
       targets,
     );
     expect(result.classes[0]!.attributes.map((a) => a.name)).toEqual(['Identificador', 'Nombre']);
-    // A class the model did not draw at all comes from the data model too.
-    const missing = mergeClassBatch(
+  });
+
+  it('makes the class of an entity cite the data model it comes from', () => {
+    const result = mergeClassBatch(
       empty,
-      { classes: [cls('x', 'Auxiliar')], relationships: [] },
+      {
+        classes: [
+          {
+            ...cls('u', 'Usuario', 'Usuario', ['Identificador', 'Nombre']),
+            relatedSourceCodes: ['CU-001'],
+          },
+          cls('e', 'EstadoVenta'),
+        ],
+        relationships: [],
+      },
+      targets,
+      { dataModelCode: 'MD-002' },
+    );
+    expect(result.classes[0]!.relatedSourceCodes).toEqual(['CU-001', 'MD-002']);
+    // A support class belongs to no entity: it keeps what the model gave it.
+    expect(result.classes[1]!.relatedSourceCodes).toBeUndefined();
+  });
+
+  it('does not draw an entity again when a later answer repeats one already drawn', () => {
+    const first = mergeClassBatch(
+      empty,
+      { classes: [cls('u', 'Usuario', 'Usuario', ['Identificador', 'Nombre'])], relationships: [] },
       targets,
     );
-    expect(missing.classes.map((c) => c.name)).toEqual(['Auxiliar', 'Usuario']);
-    expect(missing.classes[1]).toMatchObject({
+    const second = mergeClassBatch(
+      first,
+      {
+        classes: [cls('u2', 'Usuario', 'Usuario'), cls('v', 'Venta', 'Venta')],
+        relationships: [{ fromLocalId: 'v', toLocalId: 'u2', kind: 'ASSOCIATION' }],
+      },
+      [entity('Venta')],
+      { knownEntities: new Set(['usuario', 'venta']) },
+    );
+    expect(second.classes.map((c) => c.name)).toEqual(['Usuario', 'Venta']);
+    expect(second.relationships[0]).toMatchObject({ fromLocalId: 'v', toLocalId: 'u' });
+  });
+
+  it('says which entities of a batch still have no class, and draws them from the data model as a last resort', () => {
+    const drawn = mergeClassBatch(
+      empty,
+      { classes: [cls('u', 'Usuario', 'Usuario', ['Identificador', 'Nombre'])], relationships: [] },
+      targets,
+    );
+    const asked = [entity('Usuario'), entity('Auditoría', ['Identificador', 'Acción'])];
+    const missing = entitiesWithoutClass(drawn, asked);
+    expect(missing.map((e) => e.name)).toEqual(['Auditoría']);
+    const filled = fillMissingEntities(drawn, missing, 'MD-002');
+    expect(filled.classes.map((c) => c.name)).toEqual(['Usuario', 'Auditoría']);
+    expect(filled.classes[1]).toMatchObject({
       stereotype: 'ENTITY',
-      dataModelEntityName: 'Usuario',
+      dataModelEntityName: 'Auditoría',
+      relatedSourceCodes: ['MD-002'],
     });
-    expect(missing.classes[1]!.attributes.map((a) => a.type)).toEqual(['String', 'String']);
+    expect(filled.classes[1]!.attributes.map((a) => a.name)).toEqual(['Identificador', 'Acción']);
+    expect(entitiesWithoutClass(filled, asked)).toEqual([]);
   });
 
   it('keeps every local id unique across batches', () => {
