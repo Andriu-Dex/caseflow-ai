@@ -239,7 +239,7 @@ const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
   },
   SOFTWARE_ARCHITECTURE: {
     promptKey: 'software-architecture.generate',
-    promptVersion: 2,
+    promptVersion: 3,
     maxOutputTokens: 12_288,
     diagram: {
       format: 'PLANTUML_COMPONENT',

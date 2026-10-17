@@ -482,7 +482,7 @@ describe('Export (First Deliverable, Phase H)', () => {
 
     const softwareArchitectureService = new StructuredAnalysisService(
       ctx.prisma,
-      fakeAi(ctx, 'software-architecture.generate', 2, {
+      fakeAi(ctx, 'software-architecture.generate', 3, {
         style: 'Monolito modular',
         components: [{ localId: 'api', name: 'API' }],
         dependencies: [],

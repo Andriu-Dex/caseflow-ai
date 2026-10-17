@@ -463,7 +463,7 @@ describe('Readiness integration', () => {
 
     const softwareArchitectureService = new StructuredAnalysisService(
       ctx.prisma,
-      fakeAi(ctx, 'software-architecture.generate', 2, {
+      fakeAi(ctx, 'software-architecture.generate', 3, {
         style: 'Monolito modular',
         components: [{ localId: 'api', name: 'API' }],
         dependencies: [],

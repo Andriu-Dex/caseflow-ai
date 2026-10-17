@@ -259,6 +259,26 @@ describe('DiagramEngine', () => {
     expect(() => engine.validate('PLANTUML_COMPONENT', source)).not.toThrow();
   });
 
+  it('breaks long notes and dependency labels into short lines instead of one very long line', () => {
+    const long = Array.from({ length: 30 }, (_, i) => `palabra${i}`).join(' ');
+    const source = engine.generateSoftwareComponentDiagram({
+      components: [
+        { localId: 'api', name: 'API', responsibilities: [long] },
+        { localId: 'web', name: 'Web' },
+      ],
+      dependencies: [{ fromLocalId: 'web', toLocalId: 'api', description: long }],
+    });
+    const lines = source.split('\n');
+    const label = lines.find((line) => line.startsWith('web --> api'))!;
+    const note = lines.find((line) => line.startsWith('note right of api'))!;
+    // Each piece between the "\\n" breaks stays short.
+    for (const text of [label, note])
+      for (const piece of text.split('\\n')) expect(piece.length).toBeLessThan(80);
+    expect(label.split('\\n').length).toBeGreaterThan(3);
+    expect(note.split('\\n').length).toBeGreaterThan(2);
+    expect(() => engine.validate('PLANTUML_COMPONENT', source)).not.toThrow();
+  });
+
   it('draws each layer as a package holding its components', () => {
     const source = engine.generateSoftwareComponentDiagram({
       components: [
@@ -272,6 +292,7 @@ describe('DiagramEngine', () => {
     expect(source).toBe(
       [
         '@startuml',
+        'left to right direction',
         'package "Capa de aplicación" as backend {',
         '  component "Ventas" as sales',
         '  component "Inventario" as stock',
