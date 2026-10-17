@@ -138,7 +138,7 @@ describe('Data Model + Diagram Engine integration', () => {
       [approvedRequirementId],
       [approvedUseCaseId],
     );
-    expect(provider.lastRequest?.maxOutputTokens).toBe(12_288);
+    expect(provider.lastRequest?.maxOutputTokens).toBe(24_576);
     expect(
       await ctx.prisma.artifact.count({ where: { projectId, artifactTypeCode: 'DATA_MODEL' } }),
     ).toBe(1);
