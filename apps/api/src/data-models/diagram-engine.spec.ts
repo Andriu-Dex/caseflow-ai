@@ -326,6 +326,32 @@ describe('DiagramEngine', () => {
     expect(source).toContain('api --> ocr : "HTTPS"');
   });
 
+  it('draws the deployment diagram left to right with short link labels and notes, keeping responsibilities and quality codes only', () => {
+    const long = Array.from({ length: 30 }, (_, i) => `palabra${i}`).join(' ');
+    const source = engine.generateSystemDeploymentDiagram({
+      nodes: [
+        {
+          localId: 'server',
+          name: 'Server',
+          kind: 'RUNTIME',
+          responsibilities: [long],
+          relatedSourceCodes: ['RF-001', 'RNF-002'],
+        },
+        { localId: 'db', name: 'Database', kind: 'DATABASE' },
+      ],
+      links: [{ fromLocalId: 'server', toLocalId: 'db', protocol: 'TCP', description: long }],
+    });
+    const lines = source.split('\n');
+    expect(lines[1]).toBe('left to right direction');
+    const label = lines.find((line) => line.startsWith('server --> db'))!;
+    const note = lines.find((line) => line.startsWith('note right of server'))!;
+    for (const text of [label, note])
+      for (const piece of text.split('\\n')) expect(piece.length).toBeLessThan(80);
+    expect(note).toContain('Calidad: RNF-002');
+    expect(note).not.toContain('RF-001');
+    expect(() => engine.validate('PLANTUML_DEPLOYMENT', source)).not.toThrow();
+  });
+
   it('generates a deterministic PlantUML deployment diagram, with and without a link description', () => {
     const source = engine.generateSystemDeploymentDiagram({
       nodes: [

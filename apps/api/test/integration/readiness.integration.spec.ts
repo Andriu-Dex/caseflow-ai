@@ -504,7 +504,7 @@ describe('Readiness integration', () => {
 
     const systemArchitectureService = new StructuredAnalysisService(
       ctx.prisma,
-      fakeAi(ctx, 'system-architecture.generate', 2, {
+      fakeAi(ctx, 'system-architecture.generate', 3, {
         boundary: 'Sistema',
         nodes: [{ localId: 'server', name: 'Servidor', kind: 'RUNTIME' as const }],
         links: [],
