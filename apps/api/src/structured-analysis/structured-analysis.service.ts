@@ -13,6 +13,9 @@ import { DiagramProviderError, type DiagramProvider } from '@caseflow-ai/integra
 import {
   STRUCTURED_ANALYSIS_CONTENT_SCHEMAS,
   classBatchOutputSchema,
+  classDiagramContentSchema,
+  conceptualBatchOutputSchema,
+  generationPlanContentSchema,
   navigationTreeContentSchema,
   uiBlueprintBatchOutputSchema,
   designThemeContentSchema,
@@ -25,6 +28,18 @@ import type { z } from 'zod';
 import { provenanceGuard, sourceStatuses } from '../projects/source-statuses';
 import { PrismaService } from '../database/prisma.service';
 import { getProjectLanguage } from '../projects/project-language';
+import { createStepRunner, type StructuredGenerationProgress } from './structured-step-runner';
+import {
+  CONCEPTUAL_BATCH_ATTEMPTS,
+  classesWithoutEntity,
+  completeRelationships as completeConceptualRelationships,
+  fillMissingEntities as fillMissingConceptualEntities,
+  finishConceptualModel,
+  mergeConceptualBatch,
+  planConceptualBatches,
+  relationshipsToCarry,
+  type Accumulated as ConceptualDrawn,
+} from './conceptual-model-batches';
 import {
   completeRelationships,
   entitiesWithoutClass,
@@ -100,11 +115,7 @@ const APPROVAL_AUDIT_ACTIONS: Partial<Record<StructuredAnalysisKind, AuditAction
   CLASS_DIAGRAM: 'CLASS_DIAGRAM_APPROVED',
 };
 
-// Progress and checkpoints of a batched run (DEC-142).
-export interface StructuredGenerationProgress {
-  jobId: string;
-  update: (completedBatches: number, totalBatches: number, outputChars: number) => void;
-}
+export type { StructuredGenerationProgress };
 
 interface KindConfig {
   promptKey: string;
@@ -653,7 +664,11 @@ export class StructuredAnalysisService {
     kind: StructuredAnalysisKind,
     sourceVersionIds: string[],
   ) {
+    if (['GENERATION_PLAN', 'CONCEPTUAL_DOMAIN_MODEL', 'IMPLEMENTATION_PLAN'].includes(kind))
+      await this.currency?.assertCurrent(projectId);
     if (kind === 'UI_BLUEPRINT') await this.loadUiSources(projectId, sourceVersionIds);
+    else if (kind === 'CONCEPTUAL_DOMAIN_MODEL')
+      await this.loadConceptualSources(projectId, sourceVersionIds);
     else await this.loadBatchedSources(projectId, kind, sourceVersionIds);
   }
 
@@ -667,6 +682,8 @@ export class StructuredAnalysisService {
       return this.generateClassDiagramInBatches(projectId, kind, sourceVersionIds, progress);
     if (kind === 'UI_BLUEPRINT')
       return this.generateUiBlueprintInBatches(projectId, kind, sourceVersionIds, progress);
+    if (kind === 'CONCEPTUAL_DOMAIN_MODEL')
+      return this.generateConceptualInBatches(projectId, kind, sourceVersionIds, progress);
     throw new UnprocessableEntityException('Este tipo de artefacto no se genera por lotes.');
   }
 
@@ -986,6 +1003,171 @@ export class StructuredAnalysisService {
         projectId,
         kind,
         lastRunId,
+        sources.map((source) => source.id),
+        [content as unknown as Content],
+      );
+      return this.getGeneration(projectId, kind, id);
+    } catch (error) {
+      if (error instanceof AIError)
+        throw new ServiceUnavailableException({ message: error.message, code: error.code });
+      throw error;
+    }
+  }
+
+  // DEC-144: the conceptual model is drawn class by class of one approved class
+  // diagram (DEC-121): each persisted class gets its entity. The plan, when
+  // chosen, gives the modules; the analysis chosen goes in as a compact view.
+  private async loadConceptualSources(projectId: string, sourceVersionIds: string[]) {
+    const unique = [...new Set(sourceVersionIds)];
+    if (unique.length !== sourceVersionIds.length)
+      throw new UnprocessableEntityException('Las versiones fuente no pueden repetirse.');
+    const sources = await this.prisma.artifactVersion.findMany({
+      where: {
+        id: { in: unique },
+        projectId,
+        status: { in: await sourceStatuses(this.prisma, projectId) },
+        artifact: { artifactTypeCode: { in: ELIGIBLE_SOURCE_TYPES.CONCEPTUAL_DOMAIN_MODEL } },
+      },
+      include: {
+        artifact: true,
+        structuredAnalysisDetail: true,
+        requirementDetail: { select: { name: true, requirementType: true } },
+        useCaseDetail: { select: { name: true, objective: true, primaryActor: true } },
+      },
+      orderBy: { artifact: { code: 'asc' } },
+    });
+    if (sources.length !== unique.length)
+      throw new UnprocessableEntityException(
+        'La generación requiere versiones exactas APPROVED de un tipo elegible del mismo proyecto.',
+      );
+    const diagrams = sources.filter(
+      (source) => source.artifact.artifactTypeCode === 'CLASS_DIAGRAM',
+    );
+    if (diagrams.length !== 1)
+      throw new UnprocessableEntityException(
+        'Seleccione exactamente un diagrama de clases aprobado como base del modelo conceptual.',
+      );
+    const diagram = classDiagramContentSchema.safeParse(
+      diagrams[0]!.structuredAnalysisDetail?.content,
+    );
+    if (!diagram.success)
+      throw new UnprocessableEntityException('El diagrama de clases seleccionado no es válido.');
+    if (!diagram.data.classes.some((cls) => cls.stereotype === 'ENTITY'))
+      throw new UnprocessableEntityException(
+        'El diagrama de clases no tiene clases de entidad para llevar al modelo.',
+      );
+    const plans = sources.filter(
+      (source) => source.artifact.artifactTypeCode === 'GENERATION_PLAN',
+    );
+    const plan = plans.length
+      ? generationPlanContentSchema.safeParse(plans[0]!.structuredAnalysisDetail?.content)
+      : null;
+    return {
+      sources,
+      classes: diagram.data.classes,
+      classRelationships: diagram.data.relationships,
+      planModules: plan?.success
+        ? plan.data.modules.map((module) => ({
+            name: module.name,
+            purpose: module.purpose,
+            entityNames: module.entityNames,
+          }))
+        : [],
+    };
+  }
+
+  private async generateConceptualInBatches(
+    projectId: string,
+    kind: StructuredAnalysisKind,
+    sourceVersionIds: string[],
+    progress?: StructuredGenerationProgress,
+  ) {
+    const { sources, classes, classRelationships, planModules } = await this.loadConceptualSources(
+      projectId,
+      sourceVersionIds,
+    );
+    const analysis = {
+      requirements: sources
+        .filter((source) => source.requirementDetail)
+        .map((source) => ({
+          code: source.artifact.code,
+          name: source.requirementDetail!.name,
+          type: source.requirementDetail!.requirementType,
+        })),
+      useCases: sources
+        .filter((source) => source.useCaseDetail)
+        .map((source) => ({
+          code: source.artifact.code,
+          name: source.useCaseDetail!.name,
+          objective: source.useCaseDetail!.objective,
+        })),
+    };
+    const plan = planConceptualBatches(classes);
+    const runner = createStepRunner({
+      prisma: this.prisma,
+      ai: this.ai,
+      projectId,
+      language: await getProjectLanguage(this.prisma, projectId),
+      progress,
+    });
+    let drawn: ConceptualDrawn = { entities: [], relationships: [] };
+    try {
+      for (const [position, batch] of plan.entries()) {
+        progress?.update(position, plan.length, 0);
+        // What the model leaves out of a batch is asked for again (twice at
+        // most) before the entity is made from the class itself.
+        let remaining = batch;
+        for (
+          let attempt = 0;
+          attempt < CONCEPTUAL_BATCH_ATTEMPTS && remaining.length;
+          attempt += 1
+        ) {
+          await runner.run(
+            position * CONCEPTUAL_BATCH_ATTEMPTS + attempt,
+            {
+              promptKey: 'conceptual-domain-model.generate',
+              promptVersion: 3,
+              payload: {
+                targetClasses: remaining.map((cls) => ({
+                  localId: cls.localId,
+                  name: cls.name,
+                  description: cls.description,
+                  attributes: cls.attributes.map(({ name, type, required }) => ({
+                    name,
+                    type,
+                    required,
+                  })),
+                  relatedSourceCodes: cls.relatedSourceCodes,
+                })),
+                classRelationships: relationshipsToCarry(classes, classRelationships, batch),
+                existingEntities: drawn.entities.map((entity) => ({
+                  localId: entity.localId,
+                  name: entity.name,
+                  classLocalId: entity.classLocalId,
+                })),
+                plan: planModules,
+                analysis,
+              },
+              schema: conceptualBatchOutputSchema,
+              schemaName: 'conceptual_model_batch',
+              maxOutputTokens: 12_288,
+            },
+            (output) => {
+              drawn = mergeConceptualBatch(drawn, output, remaining);
+            },
+          );
+          remaining = classesWithoutEntity(drawn, remaining);
+        }
+        drawn = fillMissingConceptualEntities(drawn, remaining);
+        progress?.update(position + 1, plan.length, 0);
+      }
+      const content = finishConceptualModel(
+        completeConceptualRelationships(drawn, classRelationships),
+      );
+      const id = await this.persistGeneration(
+        projectId,
+        kind,
+        runner.lastRunId,
         sources.map((source) => source.id),
         [content as unknown as Content],
       );
