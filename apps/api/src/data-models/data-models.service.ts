@@ -15,6 +15,8 @@ import {
 import { DiagramProviderError, type DiagramProvider } from '@caseflow-ai/integrations';
 import {
   DATA_MODEL_MAX_OUTPUT_TOKENS,
+  dataModelBatchOutputSchema,
+  dataModelDiscoveryOutputSchema,
   dataModelGenerationOutputSchema,
   type DataModelInput,
 } from '@caseflow-ai/contracts';
@@ -28,11 +30,31 @@ import {
   type BudgetItem,
 } from '../common/source-budget';
 import type { DiagramKind, DiagramSourceFormat, Prisma } from '../generated/prisma/client';
+import {
+  createStepRunner,
+  type StructuredGenerationProgress,
+} from '../structured-analysis/structured-step-runner';
+import {
+  DATA_MODEL_BATCH_ATTEMPTS,
+  cleanDiscovery,
+  entitiesWithoutDetail,
+  fillMissingEntities,
+  finishDataModel,
+  mergeDataModelBatch,
+  planDataModelBatches,
+  type Drawn,
+} from './data-model-batches';
 import { DiagramEngine } from './diagram-engine';
 import { DIAGRAM_PROVIDER } from './diagram-provider.token';
 import { sanitizeDiagramSvg } from './svg-sanitizer';
 
 type Tx = Prisma.TransactionClient;
+type SourceRow = {
+  type: string;
+  code: string;
+  requirement: Record<string, unknown> | null;
+  useCase: Record<string, unknown> | null;
+};
 type RenderedDiagram = { source: string; svg: string; generatorVersion: string };
 const detailInclude = {
   entities: {
@@ -53,6 +75,72 @@ function mapDiagramProviderError(error: DiagramProviderError): never {
     throw new UnprocessableEntityException({ message: error.message, code: error.code });
   throw new ServiceUnavailableException({ message: error.message, code: error.code });
 }
+
+type SourceWithDetail = Prisma.ArtifactVersionGetPayload<{
+  include: {
+    artifact: true;
+    requirementDetail: true;
+    useCaseDetail: {
+      include: {
+        secondaryActors: true;
+        preconditions: true;
+        postconditions: true;
+        mainFlowSteps: true;
+        alternativeFlows: { include: { steps: true } };
+      };
+    };
+  };
+}>;
+// What the model reads of an approved requirement or use case.
+const sourceRow = (source: SourceWithDetail) => ({
+  type: source.artifact.artifactTypeCode,
+  code: source.artifact.code,
+  requirement: source.requirementDetail
+    ? {
+        requirementType: source.requirementDetail.requirementType,
+        name: source.requirementDetail.name,
+        description: source.requirementDetail.description,
+        priority: source.requirementDetail.priority,
+      }
+    : null,
+  useCase: source.useCaseDetail
+    ? {
+        name: source.useCaseDetail.name,
+        objective: source.useCaseDetail.objective,
+        primaryActor: source.useCaseDetail.primaryActor,
+        secondaryActors: source.useCaseDetail.secondaryActors.map(({ name }) => name),
+        preconditions: source.useCaseDetail.preconditions.map(({ description }) => description),
+        postconditions: source.useCaseDetail.postconditions.map(({ description }) => description),
+        mainFlow: source.useCaseDetail.mainFlowSteps.map(({ actor, action }) => ({
+          actor,
+          action,
+        })),
+        alternativeFlows: source.useCaseDetail.alternativeFlows.map(
+          ({ name, condition, steps }) => ({
+            name,
+            condition,
+            steps: steps.map(({ actor, action }) => ({ actor, action })),
+          }),
+        ),
+      }
+    : null,
+});
+const sourceDetailInclude = {
+  artifact: true,
+  requirementDetail: true,
+  useCaseDetail: {
+    include: {
+      secondaryActors: { orderBy: { position: 'asc' as const } },
+      preconditions: { orderBy: { position: 'asc' as const } },
+      postconditions: { orderBy: { position: 'asc' as const } },
+      mainFlowSteps: { orderBy: { position: 'asc' as const } },
+      alternativeFlows: {
+        orderBy: { position: 'asc' as const },
+        include: { steps: { orderBy: { position: 'asc' as const } } },
+      },
+    },
+  },
+};
 
 @Injectable()
 export class DataModelsService {
@@ -245,47 +333,7 @@ export class DataModelsService {
           {
             role: 'user',
             content: JSON.stringify({
-              sources: fitSources(
-                sources.map((source) => ({
-                  type: source.artifact.artifactTypeCode,
-                  code: source.artifact.code,
-                  requirement: source.requirementDetail
-                    ? {
-                        requirementType: source.requirementDetail.requirementType,
-                        name: source.requirementDetail.name,
-                        description: source.requirementDetail.description,
-                        priority: source.requirementDetail.priority,
-                      }
-                    : null,
-                  useCase: source.useCaseDetail
-                    ? {
-                        name: source.useCaseDetail.name,
-                        objective: source.useCaseDetail.objective,
-                        primaryActor: source.useCaseDetail.primaryActor,
-                        secondaryActors: source.useCaseDetail.secondaryActors.map(
-                          ({ name }) => name,
-                        ),
-                        preconditions: source.useCaseDetail.preconditions.map(
-                          ({ description }) => description,
-                        ),
-                        postconditions: source.useCaseDetail.postconditions.map(
-                          ({ description }) => description,
-                        ),
-                        mainFlow: source.useCaseDetail.mainFlowSteps.map(({ actor, action }) => ({
-                          actor,
-                          action,
-                        })),
-                        alternativeFlows: source.useCaseDetail.alternativeFlows.map(
-                          ({ name, condition, steps }) => ({
-                            name,
-                            condition,
-                            steps: steps.map(({ actor, action }) => ({ actor, action })),
-                          }),
-                        ),
-                      }
-                    : null,
-                })),
-              ),
+              sources: fitSources(sources.map(sourceRow)),
             }),
           },
         ],
@@ -293,30 +341,12 @@ export class DataModelsService {
         schemaName: 'data_model_generation',
         maxOutputTokens: DATA_MODEL_MAX_OUTPUT_TOKENS,
       });
-      const generationId = await this.prisma.$transaction(async (tx) => {
-        const generation = await tx.dataModelGeneration.create({
-          data: { projectId, aiRunId: result.metadata.runId },
-        });
-        await tx.dataModelGenerationSource.createMany({
-          data: sources.map((source) => ({
-            generationId: generation.id,
-            artifactVersionId: source.id,
-            sourceId: source.id,
-          })),
-        });
-        for (const candidate of result.data.candidates)
-          await tx.dataModelCandidate.create({
-            data: {
-              generationId: generation.id,
-              candidateId: candidate.candidateId,
-              title: candidate.title,
-              modelKind: candidate.modelKind,
-              entities: candidate.entities,
-              relationships: candidate.relationships,
-            },
-          });
-        return generation.id;
-      });
+      const generationId = await this.persistGeneration(
+        projectId,
+        result.metadata.runId,
+        sources.map((source) => source.id),
+        result.data.candidates,
+      );
       return this.getGeneration(projectId, generationId);
     } catch (error) {
       if (error instanceof AIError)
@@ -324,6 +354,203 @@ export class DataModelsService {
       throw error;
     }
   }
+  private persistGeneration(
+    projectId: string,
+    aiRunId: string,
+    sourceIds: string[],
+    candidates: {
+      candidateId: string;
+      title: string;
+      modelKind: 'ER';
+      entities: unknown;
+      relationships: unknown;
+    }[],
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const generation = await tx.dataModelGeneration.create({ data: { projectId, aiRunId } });
+      await tx.dataModelGenerationSource.createMany({
+        data: sourceIds.map((id) => ({
+          generationId: generation.id,
+          artifactVersionId: id,
+          sourceId: id,
+        })),
+      });
+      for (const candidate of candidates)
+        await tx.dataModelCandidate.create({
+          data: {
+            generationId: generation.id,
+            candidateId: candidate.candidateId,
+            title: candidate.title,
+            modelKind: candidate.modelKind,
+            entities: candidate.entities as Prisma.InputJsonValue,
+            relationships: candidate.relationships as Prisma.InputJsonValue,
+          },
+        });
+      return generation.id;
+    });
+  }
+
+  // DEC-144: the exact approved requirements and use cases of a batched run.
+  async checkBatchedSources(projectId: string, sourceVersionIds: string[]) {
+    return this.loadBatchedSources(projectId, sourceVersionIds);
+  }
+  private async loadBatchedSources(projectId: string, sourceVersionIds: string[]) {
+    if (new Set(sourceVersionIds).size !== sourceVersionIds.length)
+      throw new UnprocessableEntityException('Las versiones fuente no pueden repetirse.');
+    const sources = await this.prisma.artifactVersion.findMany({
+      where: {
+        id: { in: sourceVersionIds },
+        projectId,
+        status: { in: await sourceStatuses(this.prisma, projectId) },
+        artifact: { artifactTypeCode: { in: ['REQUIREMENT', 'USE_CASE'] } },
+      },
+      include: sourceDetailInclude,
+      orderBy: { artifact: { code: 'asc' } },
+    });
+    if (sources.length !== sourceVersionIds.length)
+      throw new UnprocessableEntityException(
+        'La generación requiere versiones exactas APPROVED de requisitos o casos de uso del proyecto.',
+      );
+    return sources;
+  }
+
+  // A data model of a hundred requirements and use cases is too long for one
+  // response. Discovery names the entities the sources support; then a few
+  // entities at a time get their attributes and relationships. Each validated
+  // answer is a checkpoint, and nothing is published until the end.
+  async generateInBatches(
+    projectId: string,
+    sourceVersionIds: string[],
+    progress?: StructuredGenerationProgress,
+  ) {
+    const sources = await this.loadBatchedSources(projectId, sourceVersionIds);
+    const rows = sources.map(sourceRow);
+    const runner = createStepRunner({
+      prisma: this.prisma,
+      ai: this.ai,
+      projectId,
+      language: await getProjectLanguage(this.prisma, projectId),
+      progress,
+      parts: {
+        find: (jobId, position) =>
+          this.prisma.dataModelGenerationPart.findUnique({
+            where: { jobId_position: { jobId, position } },
+          }),
+        save: async (jobId, position, aiRunId, content) => {
+          await this.prisma.dataModelGenerationPart.upsert({
+            where: { jobId_position: { jobId, position } },
+            create: { jobId, position, aiRunId, content: content as Prisma.InputJsonValue },
+            update: { aiRunId, content: content as Prisma.InputJsonValue },
+          });
+        },
+      },
+    });
+    try {
+      progress?.update(0, 1, 0);
+      let title = 'Modelo de datos';
+      let discovered: ReturnType<typeof cleanDiscovery> = [];
+      await runner.run(
+        0,
+        {
+          promptKey: 'data-model.generate',
+          promptVersion: 3,
+          payload: { sources: this.fitRows(rows) },
+          schema: dataModelDiscoveryOutputSchema,
+          schemaName: 'data_model_discovery',
+          maxOutputTokens: 12_288,
+        },
+        (output) => {
+          title = output.title;
+          discovered = cleanDiscovery(output.entities);
+        },
+      );
+      const batches = planDataModelBatches(discovered);
+      const total = batches.length + 1;
+      progress?.update(1, total, 0);
+      let drawn: Drawn = { entities: [], relationships: [] };
+      for (const [position, batch] of batches.entries()) {
+        let remaining = batch;
+        for (
+          let attempt = 0;
+          attempt < DATA_MODEL_BATCH_ATTEMPTS && remaining.length;
+          attempt += 1
+        ) {
+          // Only the sources the entities of this round cite are sent.
+          const codes = new Set(remaining.flatMap((entity) => entity.relatedSourceCodes));
+          await runner.run(
+            1 + position * DATA_MODEL_BATCH_ATTEMPTS + attempt,
+            {
+              promptKey: 'data-model.detail',
+              promptVersion: 1,
+              payload: {
+                targetEntities: remaining.map((entity) => ({
+                  localId: entity.localId,
+                  name: entity.name,
+                  description: entity.description,
+                })),
+                sources: this.fitRows(rows.filter((row) => codes.has(row.code))),
+                allEntities: discovered.map((entity) => ({
+                  localId: entity.localId,
+                  name: entity.name,
+                })),
+                existingEntities: drawn.entities.map((entity) => entity.localId),
+              },
+              schema: dataModelBatchOutputSchema,
+              schemaName: 'data_model_batch',
+              maxOutputTokens: 12_288,
+            },
+            (output) => {
+              drawn = mergeDataModelBatch(drawn, output, remaining, discovered);
+            },
+          );
+          remaining = entitiesWithoutDetail(drawn, remaining);
+        }
+        drawn = fillMissingEntities(drawn, remaining);
+        progress?.update(position + 2, total, 0);
+      }
+      const model = finishDataModel(title, drawn);
+      const generationId = await this.persistGeneration(
+        projectId,
+        runner.lastRunId,
+        sources.map((source) => source.id),
+        [
+          {
+            candidateId: 'candidate-1',
+            title: model.title,
+            modelKind: model.modelKind,
+            entities: model.entities,
+            relationships: model.relationships,
+          },
+        ],
+      );
+      return this.getGeneration(projectId, generationId);
+    } catch (error) {
+      if (error instanceof AIError)
+        throw new ServiceUnavailableException({ message: error.message, code: error.code });
+      throw error;
+    }
+  }
+
+  // DEC-140: past a hundred sources the analysis goes in with less detail.
+  private fitRows(rows: SourceRow[]) {
+    return fitToBudget(
+      rows.map((row): BudgetItem<SourceRow> =>
+        row.useCase
+          ? {
+              kind: 'USE_CASE',
+              levels: useCaseLevels(row.useCase).map((useCase) => ({ ...row, useCase })),
+            }
+          : {
+              kind: 'REQUIREMENT',
+              levels: requirementLevels(row.requirement!).map((requirement) => ({
+                ...row,
+                requirement,
+              })),
+            },
+      ),
+    ).items;
+  }
+
   async getGeneration(projectId: string, id: string) {
     const generation = await this.prisma.dataModelGeneration.findFirst({
       where: { id, projectId },

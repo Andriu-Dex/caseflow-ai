@@ -37,6 +37,7 @@ import type {
   RequirementBulkAction,
   UseCaseBulkAction,
   UseCaseGenerationJob,
+  DataModelGenerationJob,
   StructuredGenerationJob,
   UseCaseBulkResponse,
   RequirementBulkResponse,
@@ -641,6 +642,22 @@ export const api = {
         requirementVersionIds,
         useCaseVersionIds,
       }),
+    // DEC-144: the model is generated in the background, in batches.
+    startGeneration: (
+      projectId: string,
+      requirementVersionIds: string[],
+      useCaseVersionIds: string[],
+    ) =>
+      post<DataModelGenerationJob>(`/projects/${projectId}/data-models/generation-jobs`, {
+        requirementVersionIds,
+        useCaseVersionIds,
+      }),
+    latestGeneration: (projectId: string) =>
+      get<{ job: DataModelGenerationJob | null }>(
+        `/projects/${projectId}/data-models/generation-jobs/latest`,
+      ),
+    generation: (projectId: string, generationId: string) =>
+      get<GenerationResult>(`/projects/${projectId}/data-models/generations/${generationId}`),
     accept: (projectId: string, generationId: string, candidateIds: string[]) =>
       post(`/projects/${projectId}/data-models/generations/${generationId}/accept`, {
         candidateIds,

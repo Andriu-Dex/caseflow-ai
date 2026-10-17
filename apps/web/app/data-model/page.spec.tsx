@@ -6,7 +6,7 @@ import { TestProviders } from '../../lib/test-utils';
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
-  generate: vi.fn(),
+  startGeneration: vi.fn(),
   getDiagram: vi.fn(),
   transition: vi.fn(),
   archive: vi.fn(),
@@ -17,7 +17,9 @@ vi.mock('../../lib/api', () => ({
   api: {
     dataModels: {
       list: (...args: unknown[]) => mocks.list(...args),
-      generate: (...args: unknown[]) => mocks.generate(...args),
+      startGeneration: (...args: unknown[]) => mocks.startGeneration(...args),
+      latestGeneration: vi.fn(async () => ({ job: null })),
+      generation: vi.fn(),
       getDiagram: (...args: unknown[]) => mocks.getDiagram(...args),
       transition: (...args: unknown[]) => mocks.transition(...args),
       diagramPngUrl: () => '/api/diagram.png',
@@ -157,6 +159,25 @@ describe('DataModelPage', () => {
     expect(screen.getByText('Modelo de datos de Restaurante')).toBeInTheDocument();
     expect(screen.getByText('2 entidades')).toBeInTheDocument();
     expect(screen.getByText('1 relación')).toBeInTheDocument();
+  });
+
+  it('starts the background generation with the approved requirements and use cases', async () => {
+    const user = userEvent.setup();
+    mocks.startGeneration.mockResolvedValue({
+      id: 'job-1',
+      status: 'QUEUED',
+      generationId: null,
+      errorMessage: null,
+      completedBatches: 0,
+      totalBatches: 0,
+      outputChars: 0,
+      sourceVersionIds: ['rv1', 'uv1'],
+      createdAt: '2026-10-17T00:00:00.000Z',
+    });
+    renderPage();
+
+    await user.click(await screen.findByRole('button', { name: /generar con ia/i }));
+    expect(mocks.startGeneration).toHaveBeenCalledWith('p1', ['rv1'], ['uv1']);
   });
 
   it('expands entities and relationships with structured attribute details', async () => {

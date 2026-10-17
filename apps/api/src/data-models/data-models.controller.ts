@@ -2,11 +2,12 @@ import { UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../identity/jwt-auth.guard';
 import { ProjectMembershipGuard } from '../identity/project-membership.guard';
 
-import { Body, Controller, Get, Param, Post, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Request, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   acceptDataModelCandidatesRequestSchema,
+  dataModelGenerationJobSchema,
   dataModelGenerationResponseSchema,
   dataModelInputSchema,
   dataModelListResponseSchema,
@@ -23,13 +24,17 @@ import { pngResponse } from '../common/png-response';
 import { uuidParamPipe } from '../common/uuid-param.pipe';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ApiUuidParam, ApiZodBody, ApiZodResponse } from '../openapi/zod-openapi';
+import { DataModelGenerationJobsService } from './data-model-generation-jobs.service';
 import { DataModelsService } from './data-models.service';
 
 @ApiTags('data-models')
 @UseGuards(JwtAuthGuard, ProjectMembershipGuard)
 @Controller('projects/:projectId/data-models')
 export class DataModelsController {
-  constructor(private readonly service: DataModelsService) {}
+  constructor(
+    private readonly service: DataModelsService,
+    private readonly jobs: DataModelGenerationJobsService,
+  ) {}
   @Post()
   @ApiOperation({
     operationId: 'createDataModel',
@@ -62,6 +67,47 @@ export class DataModelsController {
     body: z.output<typeof generateDataModelRequestSchema>,
   ) {
     return this.service.generate(projectId, body.requirementVersionIds, body.useCaseVersionIds);
+  }
+  // DEC-144: drawn in batches in the background.
+  @Post('generation-jobs')
+  @HttpCode(202)
+  @ApiOperation({
+    operationId: 'startDataModelGeneration',
+    summary: 'Generar el modelo de datos por lotes en segundo plano',
+  })
+  @ApiZodBody(generateDataModelRequestSchema)
+  @ApiZodResponse(202, 'Data model generation job.', dataModelGenerationJobSchema)
+  startGeneration(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Body(new ZodValidationPipe(generateDataModelRequestSchema))
+    body: z.output<typeof generateDataModelRequestSchema>,
+    @Request() request: { user: { id: string } },
+  ) {
+    return this.jobs.start(
+      projectId,
+      [...body.requirementVersionIds, ...body.useCaseVersionIds],
+      request.user.id,
+    );
+  }
+  @Get('generation-jobs/latest')
+  @ApiOperation({
+    operationId: 'getLatestDataModelGeneration',
+    summary: 'Consultar el último trabajo del modelo de datos',
+  })
+  latestGeneration(@Param('projectId', uuidParamPipe) projectId: string) {
+    return this.jobs.latest(projectId);
+  }
+  @Get('generation-jobs/:jobId')
+  @ApiOperation({
+    operationId: 'getDataModelGenerationJob',
+    summary: 'Consultar avance de un trabajo del modelo de datos',
+  })
+  @ApiZodResponse(200, 'Data model generation job.', dataModelGenerationJobSchema)
+  generationJob(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('jobId', uuidParamPipe) jobId: string,
+  ) {
+    return this.jobs.get(projectId, jobId);
   }
   @Get('generations/:generationId')
   @ApiOperation({
