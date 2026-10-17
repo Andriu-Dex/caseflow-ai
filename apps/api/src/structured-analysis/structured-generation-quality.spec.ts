@@ -30,21 +30,54 @@ describe('structured generation provenance checks', () => {
     ]);
   });
 
-  it('does not expect a class for a non-functional requirement', () => {
+  it('says once, not once per source, that many sources are not cited', () => {
+    const sources = Array.from({ length: 40 }, (_, i) => ({
+      code: `RF-${String(i + 1).padStart(3, '0')}`,
+      type: 'REQUIREMENT',
+    }));
+    const findings = evaluateStructuredGeneration(
+      'SOFTWARE_ARCHITECTURE',
+      {
+        style: 'Modular',
+        components: [{ localId: 'api', name: 'API', relatedSourceCodes: ['RF-001'] }],
+      },
+      sources,
+    ).filter((finding) => finding.code === 'UNCOVERED_SOURCE');
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.message).toBe(
+      '39 de las 40 fuentes no aparecen citadas en la propuesta (RF-002, RF-003, RF-004, RF-005, RF-006 y 34 más). Revise si debería reflejar algo de ellas.',
+    );
+  });
+
+  it('does not ask a class diagram or a conceptual model to cite every requirement or use case', () => {
+    const sources = [
+      { code: 'RF-001', type: 'REQUIREMENT', requirementType: 'FUNCTIONAL' },
+      { code: 'RF-002', type: 'REQUIREMENT', requirementType: 'FUNCTIONAL' },
+      { code: 'CU-001', type: 'USE_CASE' },
+    ];
+    const findings = evaluateStructuredGeneration(
+      'CLASS_DIAGRAM',
+      { classes: [{ localId: 'order', name: 'Pedido', relatedSourceCodes: ['RF-001'] }] },
+      sources,
+    );
+    expect(findings.map((finding) => finding.code)).not.toContain('UNCOVERED_SOURCE');
+  });
+
+  it('still expects a class diagram to start from the data model it is built on', () => {
     const findings = evaluateStructuredGeneration(
       'CLASS_DIAGRAM',
       { classes: [{ localId: 'order', name: 'Pedido', relatedSourceCodes: ['RF-001'] }] },
       [
         { code: 'RF-001', type: 'REQUIREMENT', requirementType: 'FUNCTIONAL' },
-        { code: 'RF-002', type: 'REQUIREMENT', requirementType: 'FUNCTIONAL' },
         { code: 'RNF-001', type: 'REQUIREMENT', requirementType: 'NON_FUNCTIONAL' },
+        { code: 'MD-001', type: 'DATA_MODEL' },
       ],
     );
     expect(findings).toEqual([
       expect.objectContaining({
         code: 'UNCOVERED_SOURCE',
         message:
-          'Ningún elemento de la propuesta proviene de RF-002. Revise si debería incluir algo de esa fuente.',
+          'Ningún elemento de la propuesta proviene de MD-001. Revise si debería incluir algo de esa fuente.',
       }),
     ]);
   });
