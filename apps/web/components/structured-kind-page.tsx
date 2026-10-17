@@ -809,6 +809,7 @@ const BATCHED_LABELS: Partial<Record<StructuredAnalysisKind, string>> = {
   UI_BLUEPRINT: 'el plano de interfaz',
   CONCEPTUAL_DOMAIN_MODEL: 'el modelo conceptual',
   GENERATION_PLAN: 'el plan de generación',
+  IMPLEMENTATION_PLAN: 'el plan de implementación',
 };
 
 export function StructuredKindPage({
@@ -1100,13 +1101,26 @@ export function StructuredKindPage({
                 queryKey={['structured-generation-job', kind, projectId]}
                 latest={() => api.structuredAnalysis.latestGenerationJob(projectId, kind)}
                 start={() =>
-                  api.structuredAnalysis.startGenerationJob(projectId, kind, selectedIds)
+                  usesBaseline
+                    ? api.structuredAnalysis.startImplementationPlanJob(
+                        projectId,
+                        chosenBaselineId!,
+                      )
+                    : api.structuredAnalysis.startGenerationJob(projectId, kind, selectedIds)
                 }
                 fetchGeneration={(generationId) =>
                   api.structuredAnalysis.generation(projectId, kind, generationId)
                 }
-                jobSelection={(job) => job.sourceVersionIds}
-                selection={selectedIds}
+                jobSelection={(job) =>
+                  usesBaseline
+                    ? job.designBaselineId
+                      ? [job.designBaselineId]
+                      : []
+                    : job.sourceVersionIds
+                }
+                selection={
+                  usesBaseline ? (chosenBaselineId ? [chosenBaselineId] : []) : selectedIds
+                }
                 onCompleted={setGeneration}
                 title={`Generando ${BATCHED_LABELS[kind] ?? 'el artefacto'} por lotes`}
                 progressLabel={`Lotes de ${BATCHED_LABELS[kind] ?? 'el artefacto'} validados`}

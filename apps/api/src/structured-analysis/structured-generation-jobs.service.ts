@@ -50,6 +50,7 @@ export class StructuredGenerationJobsService implements OnApplicationBootstrap {
     kind: StructuredAnalysisKind,
     sourceVersionIds: string[],
     userId: string,
+    designBaselineId?: string,
   ) {
     if (!(BATCHED_STRUCTURED_KINDS as readonly string[]).includes(kind))
       throw new BadRequestException('Este tipo de artefacto no se genera por lotes.');
@@ -62,7 +63,7 @@ export class StructuredGenerationJobsService implements OnApplicationBootstrap {
       },
     });
     if (!member) throw new ForbiddenException('No tiene permisos para generar en este proyecto.');
-    await this.structured.checkBatchedSources(projectId, kind, sourceVersionIds);
+    await this.structured.checkBatchedSources(projectId, kind, sourceVersionIds, designBaselineId);
     const job = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM projects WHERE id=${projectId}::uuid FOR NO KEY UPDATE`;
       const active = await tx.structuredGenerationJob.findFirst({
@@ -74,7 +75,8 @@ export class StructuredGenerationJobsService implements OnApplicationBootstrap {
           !sameSet(
             active.sources.map((s) => s.artifactVersionId),
             sourceVersionIds,
-          )
+          ) ||
+          (active.designBaselineId ?? null) !== (designBaselineId ?? null)
         )
           throw new ConflictException(
             'Hay una generación en curso con otra selección. Espere a que termine antes de generar de nuevo.',
@@ -88,6 +90,7 @@ export class StructuredGenerationJobsService implements OnApplicationBootstrap {
       });
       const resumable =
         previous &&
+        (previous.designBaselineId ?? null) === (designBaselineId ?? null) &&
         sameSet(
           previous.sources.map((s) => s.artifactVersionId),
           sourceVersionIds,
@@ -110,6 +113,7 @@ export class StructuredGenerationJobsService implements OnApplicationBootstrap {
             data: {
               projectId,
               kind,
+              designBaselineId,
               sources: {
                 create: sourceVersionIds.map((artifactVersionId, position) => ({
                   artifactVersionId,
@@ -133,12 +137,29 @@ export class StructuredGenerationJobsService implements OnApplicationBootstrap {
       return row;
     });
     if (job.status === 'QUEUED' && !this.running.has(job.id)) {
-      const task = this.run(job.id, projectId, kind, sourceVersionIds, userId)
+      const task = this.run(job.id, projectId, kind, sourceVersionIds, userId, designBaselineId)
         .catch(() => this.logger.warn('Could not execute a queued structured generation job.'))
         .finally(() => this.running.delete(job.id));
       this.running.set(job.id, task);
     }
     return this.present(job);
+  }
+
+  // An implementation plan is drawn from what a design baseline froze.
+  async startFromBaseline(
+    projectId: string,
+    kind: StructuredAnalysisKind,
+    designBaselineId: string,
+    userId: string,
+  ) {
+    const sourceVersionIds = await this.structured.designBaselineSources(
+      projectId,
+      kind,
+      designBaselineId,
+    );
+    if (!sourceVersionIds.length)
+      throw new BadRequestException('La línea base de diseño no tiene fuentes para este tipo.');
+    return this.start(projectId, kind, sourceVersionIds, userId, designBaselineId);
   }
 
   async latest(projectId: string, kind: StructuredAnalysisKind) {
@@ -181,6 +202,7 @@ export class StructuredGenerationJobsService implements OnApplicationBootstrap {
     kind: StructuredAnalysisKind,
     sourceVersionIds: string[],
     userId: string,
+    designBaselineId?: string,
   ) {
     let pending: Promise<unknown> = Promise.resolve();
     let lastWrite = 0;
@@ -206,6 +228,7 @@ export class StructuredGenerationJobsService implements OnApplicationBootstrap {
         kind,
         sourceVersionIds,
         { jobId, update },
+        designBaselineId,
       );
       await pending;
       await this.finish(jobId, projectId, userId, 'COMPLETED', null, generation.id);
