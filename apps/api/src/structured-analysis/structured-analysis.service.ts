@@ -117,6 +117,7 @@ import { sanitizeDiagramSvg } from '../data-models/svg-sanitizer';
 import { StageCurrencyService } from '../readiness/stage-currency';
 import {
   evaluateStructuredGeneration,
+  cleanSourceCodes,
   withUseCaseProvenance,
   type GenerationSourceReference,
 } from './structured-generation-quality';
@@ -614,14 +615,23 @@ export class StructuredAnalysisService {
     }
   }
 
-  private persistGeneration(
+  private async persistGeneration(
     projectId: string,
     kind: StructuredAnalysisKind,
     aiRunId: string,
     sourceIds: string[],
-    contents: Content[],
+    rawContents: Content[],
     designBaselineId?: string,
   ) {
+    const allowed = new Set(
+      (
+        await this.prisma.artifactVersion.findMany({
+          where: { id: { in: sourceIds }, projectId },
+          select: { artifact: { select: { code: true } } },
+        })
+      ).map((version) => version.artifact.code),
+    );
+    const contents = rawContents.map((content) => cleanSourceCodes(content, allowed));
     return this.prisma.$transaction(async (tx) => {
       const generation = await tx.structuredAnalysisGeneration.create({
         data: { projectId, kind, aiRunId },

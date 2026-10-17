@@ -28,6 +28,37 @@ const STRUCTURE_KINDS: StructuredAnalysisKind[] = ['CLASS_DIAGRAM', 'CONCEPTUAL_
 const ANALYSIS_TYPES = ['REQUIREMENT', 'USE_CASE'];
 const LISTED_UNCOVERED = 5;
 
+const CODE_LIST_KEYS = new Set([
+  'relatedSourceCodes',
+  'relatedUseCaseCodes',
+  'relatedRequirementCodes',
+]);
+
+// The model sometimes writes a code with a word stuck to it ("RF-196 focus").
+// Wherever a proposal lists codes, such a code is read as the selected source it
+// starts with, instead of leaving the user an error about a typo. A code that is
+// not a selected source in any reading is kept, so the review still flags it.
+export function cleanSourceCodes<T>(value: T, allowed: Set<string>): T {
+  if (Array.isArray(value)) return value.map((item) => cleanSourceCodes(item, allowed)) as T;
+  if (!value || typeof value !== 'object') return value;
+  const result: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value)) {
+    result[key] =
+      CODE_LIST_KEYS.has(key) && Array.isArray(item)
+        ? [
+            ...new Set(
+              item.flatMap((code) => {
+                if (typeof code !== 'string') return [];
+                const token = code.trim().split(/[\s,;:]+/)[0] ?? '';
+                return allowed.has(code) || !allowed.has(token) ? [code] : [token];
+              }),
+            ),
+          ]
+        : cleanSourceCodes(item, allowed);
+  }
+  return result as T;
+}
+
 // A node or screen that relates a use case also names it among the sources
 // that justify it: the relation is the justification, so the model is not
 // asked (and the user not warned) to repeat it.
@@ -277,10 +308,15 @@ export function evaluateStructuredGeneration(
     });
   // One notice for all of them: with a hundred sources, a line each buries the
   // findings that matter.
+  // A system architecture answers the non-functional requirements and the
+  // design inputs; not every functional requirement or use case has a place in it.
+  const notExpected = (source: GenerationSourceReference) =>
+    (STRUCTURE_KINDS.includes(kind) && ANALYSIS_TYPES.includes(source.type)) ||
+    (kind === 'SYSTEM_ARCHITECTURE' &&
+      (source.type === 'USE_CASE' ||
+        (source.type === 'REQUIREMENT' && source.requirementType === 'FUNCTIONAL')));
   const uncovered = sources.filter(
-    (source) =>
-      !referenced.has(source.code) &&
-      !(STRUCTURE_KINDS.includes(kind) && ANALYSIS_TYPES.includes(source.type)),
+    (source) => !referenced.has(source.code) && !notExpected(source),
   );
   if (uncovered.length) {
     const listed = uncovered.slice(0, LISTED_UNCOVERED).map((source) => source.code);

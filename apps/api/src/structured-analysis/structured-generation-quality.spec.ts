@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  cleanSourceCodes,
   evaluateStructuredGeneration,
   withUseCaseProvenance,
 } from './structured-generation-quality';
@@ -426,5 +427,52 @@ describe('withUseCaseProvenance', () => {
     expect(codes(withUseCaseProvenance('NAVIGATION_TREE', content))).not.toContain(
       'MISSING_USE_CASE_PROVENANCE',
     );
+  });
+});
+
+describe('cleanSourceCodes', () => {
+  const allowed = new Set(['RF-196', 'CU-001']);
+  it('reads a code with text stuck to it as the selected source it starts with', () => {
+    const cleaned = cleanSourceCodes(
+      {
+        nodes: [
+          {
+            relatedSourceCodes: ['RF-196 focus', 'CU-001', 'CU-001,', 'RF-196'],
+            relatedUseCaseCodes: ['CU-001: acceso'],
+            label: 'RF-196 focus',
+          },
+        ],
+      },
+      allowed,
+    );
+    expect(cleaned.nodes[0]!.relatedSourceCodes).toEqual(['RF-196', 'CU-001']);
+    expect(cleaned.nodes[0]!.relatedUseCaseCodes).toEqual(['CU-001']);
+    // Other text is not touched.
+    expect(cleaned.nodes[0]!.label).toBe('RF-196 focus');
+  });
+  it('keeps a code that is no selected source, so the review still flags it', () => {
+    const cleaned = cleanSourceCodes({ relatedSourceCodes: ['XX-9', 'XX-9 y más'] }, allowed);
+    expect(cleaned.relatedSourceCodes).toEqual(['XX-9', 'XX-9 y más']);
+  });
+});
+
+describe('uncovered sources of a system architecture', () => {
+  it('expects the non-functional requirements and design inputs, not every functional one', () => {
+    const sources = [
+      { code: 'RF-001', type: 'REQUIREMENT', requirementType: 'FUNCTIONAL' },
+      { code: 'RNF-001', type: 'REQUIREMENT', requirementType: 'NON_FUNCTIONAL' },
+      { code: 'CU-001', type: 'USE_CASE' },
+    ];
+    const content = {
+      boundary: 'B',
+      nodes: [{ localId: 'a', name: 'A', kind: 'RUNTIME', relatedSourceCodes: [] }],
+      links: [],
+    };
+    const message = evaluateStructuredGeneration('SYSTEM_ARCHITECTURE', content, sources).find(
+      (f) => f.code === 'UNCOVERED_SOURCE',
+    )!.message;
+    expect(message).toContain('RNF-001');
+    expect(message).not.toContain('RF-001');
+    expect(message).not.toContain('CU-001');
   });
 });
