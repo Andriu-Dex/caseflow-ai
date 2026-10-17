@@ -21,7 +21,7 @@ export const STRUCTURED_ANALYSIS_KINDS = [
 export type StructuredAnalysisKind = (typeof STRUCTURED_ANALYSIS_KINDS)[number];
 
 // DEC-142: the kinds generated in batches in the background.
-export const BATCHED_STRUCTURED_KINDS = ['CLASS_DIAGRAM'] as const;
+export const BATCHED_STRUCTURED_KINDS = ['CLASS_DIAGRAM', 'UI_BLUEPRINT'] as const;
 export const startStructuredGenerationRequestSchema = z
   .object({
     sourceVersionIds: z
@@ -219,8 +219,12 @@ const screenSchema = z
     states: z.array(text(200)).max(10).default([]),
   })
   .strict();
+// DEC-143: a batch draws the screens of a few navigation views.
+export const uiBlueprintBatchOutputSchema = z
+  .object({ screens: z.array(screenSchema).min(1).max(20) })
+  .strict();
 export const uiBlueprintContentSchema = z
-  .object({ screens: z.array(screenSchema).min(1).max(100) })
+  .object({ screens: z.array(screenSchema).min(1).max(200) })
   .strict()
   .superRefine((value, ctx) => {
     if (!uniqueBy(value.screens, (screen) => screen.localId))

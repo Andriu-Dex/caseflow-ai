@@ -7263,6 +7263,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-140 | Los análisis grandes no se rechazan: el modelo de datos, los artefactos de diseño y los diagramas aceptan hasta 500 fuentes, y lo que se envía a la IA se ajusta a un presupuesto de entrada reduciendo primero el detalle de los casos de uso y después el de los requisitos, sin omitir ninguno (§221.21) | Accepted |
 | DEC-141 | Diagramas grandes legibles: el de casos de uso agrupa los casos de cada actor primario en un paquete y da a las líneas de cada actor su propio color; el visor desplaza con la rueda, hace zoom con Ctrl + rueda y resalta las conexiones del elemento señalado o pulsado (§221.22) | Accepted |
 | DEC-142 | El diagrama de clases se genera por lotes en segundo plano (ocho entidades del modelo de datos por lote), con avance visible, punto de control por lote y reanudación; lo que el modelo omite de una entidad se completa desde el modelo de datos; las ejecuciones de IA que quedaron «en ejecución» por un reinicio se cierran como fallidas al arrancar (§221.23) | Accepted |
+| DEC-143 | El plano de interfaz se genera por lotes en segundo plano, vista a vista del árbol de navegación aprobado (seis por lote), con el mismo mecanismo de trabajos, avance, puntos de control y reanudación; lo que el modelo omite se vuelve a pedir y, como último recurso, se dibuja una pantalla simple desde el árbol de navegación (§221.24) | Accepted |
 
 ---
 
@@ -7699,7 +7700,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-142)
+# 221. Extensiones de V2 (DEC-116 a DEC-143)
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
@@ -7934,6 +7935,14 @@ El servidor bloquea congelar diseño y construir mientras quedan pasos por rehac
 - **Reanudación:** cada lote validado queda guardado; si el trabajo falla, generar de nuevo con la misma selección continúa desde el último lote terminado. Nada se publica hasta el final, y entonces se crea una sola generación con un candidato, que sigue el mismo camino de revisión y aceptación.
 - **Ejecuciones de IA interrumpidas:** al arrancar, la API cierra como fallidas (`interrupted_by_restart`) las ejecuciones que quedaron «en ejecución»: la API es el único proceso que llama a la IA, así que ninguna puede seguir viva. Antes quedaban así para siempre.
 - **Límites del contrato:** un diagrama de clases admite hasta 150 clases y 400 relaciones (antes 80 y 200).
+
+## 221.24 Plano de interfaz por lotes (DEC-143)
+
+- **Por qué:** un plano de más de cien pantallas, cada una con secciones, acciones, datos, formularios y estados, no cabe en una sola respuesta: se cortaba o tardaba minutos y se perdía si el servidor se reiniciaba.
+- **Mecanismo:** el mismo de DEC-142: `POST …/ui-blueprint/generation-jobs` (202), `GET …/generation-jobs/latest` y `GET …/generation-jobs/:jobId`, un trabajo activo por proyecto y tipo, avance, punto de control por respuesta y reanudación. Se elige exactamente un árbol de navegación aprobado; los casos de uso, el modelo de datos y las arquitecturas elegidos entran como material de las pantallas.
+- **Lotes:** las vistas del árbol de navegación (todos los nodos salvo las secciones), de seis en seis, en su orden. Cada lote recibe sus vistas, los casos de uso que pasan por ellas en versión resumida, las entidades del modelo de datos con sus atributos, los componentes de la arquitectura y las pantallas ya dibujadas. Prompt `ui-blueprint.generate@3`; `@1` y `@2` se conservan.
+- **Validación:** toda pantalla pertenece a una vista del lote (una vista con varias pantallas es válida); una pantalla de una vista ya dibujada se descarta y una de una vista inexistente rechaza el lote. Los casos de uso o fuentes que una pantalla cita y no están en la selección se quitan de la pantalla en lugar de hacer fallar la ejecución; los `localId` repetidos entre lotes se hacen únicos. Un plano admite hasta 200 pantallas (antes 100).
+- **Lo que el modelo omite:** las vistas sin pantalla se piden de nuevo (hasta dos veces más, cada respuesta con su punto de control); si siguen sin pantalla, se dibuja una simple desde el árbol de navegación (nombre de la vista, descripción o etiqueta, y sus casos de uso), de modo que la regla de cobertura entre navegación y plano (DEC-121) se cumpla siempre.
 
 ## 221.4 Fuera de alcance de estas extensiones
 

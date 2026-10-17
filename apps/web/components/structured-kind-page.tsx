@@ -803,6 +803,12 @@ function renderContentDetail(kind: StructuredAnalysisKind, content: unknown) {
 
 // Shared page for the four StructuredAnalysis kinds (Navegación,
 // Arquitectura de software, Arquitectura de sistema, UI Blueprint).
+// What each kind generated in batches is called in the progress card.
+const BATCHED_LABELS: Partial<Record<StructuredAnalysisKind, string>> = {
+  CLASS_DIAGRAM: 'el diagrama de clases',
+  UI_BLUEPRINT: 'el plano de interfaz',
+};
+
 export function StructuredKindPage({
   kind,
   title,
@@ -1100,8 +1106,8 @@ export function StructuredKindPage({
                 jobSelection={(job) => job.sourceVersionIds}
                 selection={selectedIds}
                 onCompleted={setGeneration}
-                title="Generando el diagrama de clases por lotes"
-                progressLabel="Lotes del diagrama de clases validados"
+                title={`Generando ${BATCHED_LABELS[kind] ?? 'el artefacto'} por lotes`}
+                progressLabel={`Lotes de ${BATCHED_LABELS[kind] ?? 'el artefacto'} validados`}
                 startLabel={() => 'Generar'}
               >
                 <Button
