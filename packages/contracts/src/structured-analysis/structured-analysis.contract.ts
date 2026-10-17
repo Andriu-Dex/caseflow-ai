@@ -290,8 +290,8 @@ export const generationPlanContentSchema = z
     summary: text(2000),
     modules: z.array(planModuleSchema).min(1).max(50),
     actors: z.array(planActorSchema).max(30).default([]),
-    workflows: z.array(planWorkflowSchema).max(50).default([]),
-    screens: z.array(planScreenSchema).max(100).default([]),
+    workflows: z.array(planWorkflowSchema).max(100).default([]),
+    screens: z.array(planScreenSchema).max(200).default([]),
     integrations: z.array(planIntegrationSchema).max(20).default([]),
     authentication: z
       .object({
@@ -320,6 +320,32 @@ export const generationPlanContentSchema = z
     });
   });
 export type GenerationPlanContent = z.output<typeof generationPlanContentSchema>;
+// DEC-144: the plan is drawn in two stages. The outline gives everything but
+// the workflows and screens; each batch of modules then gives theirs.
+export const planOutlineSchema = z
+  .object({
+    summary: text(2000),
+    modules: z.array(planModuleSchema).min(1).max(50),
+    actors: z.array(planActorSchema).max(30).default([]),
+    integrations: z.array(planIntegrationSchema).max(20).default([]),
+    authentication: z
+      .object({
+        required: z.boolean(),
+        strategy: text(300).optional(),
+        roles: z.array(text(100)).max(20).default([]),
+      })
+      .strict(),
+    technicalConstraints: z.array(text(500)).max(50).default([]),
+    risks: z.array(planRiskSchema).max(50).default([]),
+  })
+  .strict();
+export type PlanOutline = z.output<typeof planOutlineSchema>;
+export const planDetailBatchOutputSchema = z
+  .object({
+    workflows: z.array(planWorkflowSchema).max(40).default([]),
+    screens: z.array(planScreenSchema).min(1).max(80),
+  })
+  .strict();
 
 // ---- CONCEPTUAL_DOMAIN_MODEL (spec §157) ------------------------------------
 // Entities and relationships only. Deliberately not the physical model: no
