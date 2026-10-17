@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Param,
   Post,
   Request,
@@ -15,6 +16,8 @@ import {
   conceptualDomainModelContentSchema,
   generateStructuredAnalysisRequestSchema,
   generateImplementationPlanRequestSchema,
+  startStructuredGenerationRequestSchema,
+  structuredGenerationJobSchema,
   generationPlanContentSchema,
   implementationPlanArtifactsResponseSchema,
   implementationPlanContentSchema,
@@ -29,6 +32,7 @@ import { uuidParamPipe } from '../common/uuid-param.pipe';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ApiZodBody, ApiZodResponse } from '../openapi/zod-openapi';
 import { StructuredAnalysisService } from './structured-analysis.service';
+import { StructuredGenerationJobsService } from './structured-generation-jobs.service';
 import { BaseStructuredAnalysisController, inputSchema } from './structured-analysis.controller';
 import { generateOpenApi } from '../code-generation/openapi.generator';
 import { generatePrismaSchema } from '../code-generation/prisma-schema.generator';
@@ -145,8 +149,49 @@ export class ConceptualDomainModelController extends BaseStructuredAnalysisContr
   protected readonly kind = 'CONCEPTUAL_DOMAIN_MODEL' as const;
   protected readonly contentSchema = conceptualDomainModelContentSchema;
 
-  constructor(service: StructuredAnalysisService) {
+  constructor(
+    service: StructuredAnalysisService,
+    private readonly jobs: StructuredGenerationJobsService,
+  ) {
     super(service);
+  }
+
+  // DEC-144: drawn in batches in the background.
+  @Post('generation-jobs')
+  @HttpCode(202)
+  @ApiOperation({
+    operationId: 'startConceptualDomainModelGeneration',
+    summary: 'Generar el modelo conceptual por lotes en segundo plano',
+  })
+  @ApiZodBody(startStructuredGenerationRequestSchema)
+  @ApiZodResponse(202, 'ConceptualDomainModel generation job.', structuredGenerationJobSchema)
+  startGeneration(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Body(new ZodValidationPipe(startStructuredGenerationRequestSchema))
+    body: z.output<typeof startStructuredGenerationRequestSchema>,
+    @Request() request: { user: { id: string } },
+  ) {
+    return this.jobs.start(projectId, this.kind, body.sourceVersionIds, request.user.id);
+  }
+  @Get('generation-jobs/latest')
+  @ApiOperation({
+    operationId: 'getLatestConceptualDomainModelGeneration',
+    summary: 'Consultar el último trabajo de el modelo conceptual',
+  })
+  latestGeneration(@Param('projectId', uuidParamPipe) projectId: string) {
+    return this.jobs.latest(projectId, this.kind);
+  }
+  @Get('generation-jobs/:jobId')
+  @ApiOperation({
+    operationId: 'getConceptualDomainModelGenerationJob',
+    summary: 'Consultar avance de un trabajo de el modelo conceptual',
+  })
+  @ApiZodResponse(200, 'ConceptualDomainModel generation job.', structuredGenerationJobSchema)
+  generationJob(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('jobId', uuidParamPipe) jobId: string,
+  ) {
+    return this.jobs.get(projectId, this.kind, jobId);
   }
 
   @Post()

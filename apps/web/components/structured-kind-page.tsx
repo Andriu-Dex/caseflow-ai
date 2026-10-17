@@ -807,6 +807,7 @@ function renderContentDetail(kind: StructuredAnalysisKind, content: unknown) {
 const BATCHED_LABELS: Partial<Record<StructuredAnalysisKind, string>> = {
   CLASS_DIAGRAM: 'el diagrama de clases',
   UI_BLUEPRINT: 'el plano de interfaz',
+  CONCEPTUAL_DOMAIN_MODEL: 'el modelo conceptual',
 };
 
 export function StructuredKindPage({

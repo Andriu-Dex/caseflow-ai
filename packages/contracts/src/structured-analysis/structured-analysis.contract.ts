@@ -21,7 +21,13 @@ export const STRUCTURED_ANALYSIS_KINDS = [
 export type StructuredAnalysisKind = (typeof STRUCTURED_ANALYSIS_KINDS)[number];
 
 // DEC-142: the kinds generated in batches in the background.
-export const BATCHED_STRUCTURED_KINDS = ['CLASS_DIAGRAM', 'UI_BLUEPRINT'] as const;
+export const BATCHED_STRUCTURED_KINDS = [
+  'CLASS_DIAGRAM',
+  'UI_BLUEPRINT',
+  'CONCEPTUAL_DOMAIN_MODEL',
+  'GENERATION_PLAN',
+  'IMPLEMENTATION_PLAN',
+] as const;
 export const startStructuredGenerationRequestSchema = z
   .object({
     sourceVersionIds: z
@@ -30,6 +36,10 @@ export const startStructuredGenerationRequestSchema = z
       .max(500)
       .refine((ids) => new Set(ids).size === ids.length, 'Las fuentes no pueden repetirse.'),
   })
+  .strict();
+// An implementation plan is not drawn from a free selection but from a baseline.
+export const startImplementationPlanGenerationRequestSchema = z
+  .object({ designBaselineId: z.uuid() })
   .strict();
 export const structuredGenerationJobSchema = z.object({
   id: z.uuid(),
@@ -41,6 +51,7 @@ export const structuredGenerationJobSchema = z.object({
   outputChars: z.number().int().nonnegative(),
   generationId: z.uuid().nullable(),
   errorMessage: z.string().nullable(),
+  designBaselineId: z.uuid().nullable().default(null),
   sourceVersionIds: z.array(z.uuid()),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
@@ -370,6 +381,13 @@ export const conceptualDomainModelContentSchema = z
     });
   });
 export type ConceptualDomainModelContent = z.output<typeof conceptualDomainModelContentSchema>;
+// DEC-144: a batch gives the entities of a few classes of the class diagram.
+export const conceptualBatchOutputSchema = z
+  .object({
+    entities: z.array(conceptualEntitySchema).min(1).max(20),
+    relationships: z.array(conceptualRelationshipSchema).max(60).default([]),
+  })
+  .strict();
 
 // ---- IMPLEMENTATION_PLAN (spec §161) ----------------------------------------
 // "How exactly will the approved system be built?" Produced after the Design

@@ -7264,6 +7264,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-141 | Diagramas grandes legibles: el de casos de uso agrupa los casos de cada actor primario en un paquete y da a las líneas de cada actor su propio color; el visor desplaza con la rueda, hace zoom con Ctrl + rueda y resalta las conexiones del elemento señalado o pulsado (§221.22) | Accepted |
 | DEC-142 | El diagrama de clases se genera por lotes en segundo plano (ocho entidades del modelo de datos por lote), con avance visible, punto de control por lote y reanudación; lo que el modelo omite de una entidad se completa desde el modelo de datos; las ejecuciones de IA que quedaron «en ejecución» por un reinicio se cierran como fallidas al arrancar (§221.23) | Accepted |
 | DEC-143 | El plano de interfaz se genera por lotes en segundo plano, vista a vista del árbol de navegación aprobado (seis por lote), con el mismo mecanismo de trabajos, avance, puntos de control y reanudación; lo que el modelo omite se vuelve a pedir y, como último recurso, se dibuja una pantalla simple desde el árbol de navegación (§221.24) | Accepted |
+| DEC-144 | El modelo conceptual se genera por lotes en segundo plano, clase a clase del diagrama de clases aprobado (ocho por lote), con el mismo mecanismo de trabajos, avance, puntos de control y reanudación; lo que el modelo omite se vuelve a pedir y, como último recurso, la entidad sale de la propia clase, y las relaciones del diagrama que no llegaron se trasladan con su cardinalidad (§221.25) | Accepted |
 
 ---
 
@@ -7700,7 +7701,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-143)
+# 221. Extensiones de V2 (DEC-116 a DEC-144)
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
@@ -7944,6 +7945,13 @@ El servidor bloquea congelar diseño y construir mientras quedan pasos por rehac
 - **Validación:** toda pantalla pertenece a una vista del lote (una vista con varias pantallas es válida); una pantalla de una vista ya dibujada se descarta y una de una vista inexistente rechaza el lote. Los casos de uso o fuentes que una pantalla cita y no están en la selección se quitan de la pantalla en lugar de hacer fallar la ejecución; los `localId` repetidos entre lotes se hacen únicos. Un plano admite hasta 200 pantallas (antes 100).
 - **Lo que el modelo omite:** las vistas sin pantalla se piden de nuevo (hasta dos veces más, cada respuesta con su punto de control); si siguen sin pantalla, se dibuja una simple desde el árbol de navegación (nombre de la vista, descripción o etiqueta, y sus casos de uso), de modo que la regla de cobertura entre navegación y plano (DEC-121) se cumpla siempre.
 - **Margen de salida mientras llegan los lotes:** lo mínimo que se pide a la IA como salida (DEC-131: un proveedor que declara más recibe su propio tope) se amplió para los tipos que aún van en una sola petición, calculado para un proyecto de cien requisitos y casos de uso: modelo de datos 24 576 tokens (antes 12 288; las respuestas medidas llegaron a 16–21 mil), plan de implementación 32 768 (antes 16 384), plan de generación y modelo conceptual 16 384 (antes 8 192), navegación y arquitectura de software 12 288 (antes 8 192) y, para la generación directa del plano de interfaz, 16 384. Una respuesta cortada es una respuesta inválida, y una petición con más margen también tiene más tiempo antes de agotarse.
+
+## 221.25 Planes y modelos por lotes (DEC-144)
+
+- **Por qué:** el modelo conceptual, los planes de generación e implementación y el modelo de datos tienen el mismo problema que el diagrama de clases y el plano de interfaz: una sola respuesta larga que se corta, tarda minutos y se pierde si el servidor se reinicia.
+- **Mecanismo común:** trabajos `structured_generation_jobs` con sus fuentes y puntos de control (`structured_generation_parts`), un paso reanudable (`createStepRunner`) que valida cada respuesta antes de guardarla y un trabajo activo por proyecto y tipo; nada se publica hasta que terminan todos los lotes. Al arrancar la API los trabajos interrumpidos se cierran como fallidos y, al reintentar, continúan desde el último punto de control.
+- **Modelo conceptual:** `POST …/conceptual-domain-model/generation-jobs` (202), `GET …/generation-jobs/latest` y `GET …/generation-jobs/:jobId`. Se elige exactamente un diagrama de clases aprobado; los requisitos, casos de uso y el plan de generación elegidos entran en versión resumida. Cada lote son hasta ocho clases persistidas (estereotipo ENTITY) con sus atributos y las relaciones del diagrama cuyo extremo posterior está en el lote. Prompt `conceptual-domain-model.generate@3`.
+- **Validación y relleno:** toda entidad pertenece a una clase del lote (la de una clase ya hecha se descarta; la de una clase inexistente rechaza el lote). Las clases sin entidad se piden de nuevo (hasta dos veces más); si siguen sin ella, la entidad se hace de la clase (nombre, descripción y atributos). Al final cada relación del diagrama entre clases de entidad une sus entidades; si el modelo no la trasladó, se añade con la cardinalidad leída de las multiplicidades. Un modelo admite hasta 100 entidades.
 
 ## 221.4 Fuera de alcance de estas extensiones
 
