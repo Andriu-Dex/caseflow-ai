@@ -95,6 +95,10 @@ services:
     restart: unless-stopped
     environment:
       KROKI_MERMAID_HOST: kroki-mermaid
+      # PlantUML cuts a PNG at 4096 px by default, so a big component or class
+      # diagram was downloaded with its right side missing while the SVG was
+      # whole. Memory is the only cost.
+      PLANTUML_LIMIT_SIZE: '16384'
     depends_on:
       kroki-mermaid:
         condition: service_healthy
