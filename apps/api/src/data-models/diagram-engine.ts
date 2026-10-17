@@ -194,6 +194,7 @@ function inTreeOrder<T extends { localId: string; parentLocalId?: string | undef
 
 // Line lengths of the component diagram: quality notes, then dependency labels.
 const NOTE_WIDTH = 40;
+const DEPLOYMENT_NOTE_WIDTH = 60;
 const LABEL_WIDTH = 45;
 
 // Navigation trees with more nodes than this are drawn left to right.
@@ -369,7 +370,12 @@ export class DiagramEngine {
   }
 
   // Deterministic PlantUML deployment representation from the structured
-  // System Architecture (spec §15).
+  // System Architecture (spec §15). Drawn left to right, with the link labels
+  // and the notes broken into short lines: with few nodes, each carrying many
+  // responsibilities and sources, the unbroken text made it about fourteen
+  // times wider than tall. A note keeps the node's responsibilities and the
+  // quality requirements (RNF) it answers; the other sources stay in the
+  // stored content and in the node's card.
   generateSystemDeploymentDiagram(model: SystemArchitectureDiagramModel): string {
     const nodeKeyword: Record<string, string> = {
       RUNTIME: 'node',
@@ -380,7 +386,7 @@ export class DiagramEngine {
       OTHER: 'node',
     };
     const nodes = [...model.nodes].sort((a, b) => compareOrdinal(a.localId, b.localId));
-    const lines = ['@startuml'];
+    const lines = ['@startuml', 'left to right direction'];
     for (const node of nodes)
       lines.push(
         `${nodeKeyword[node.kind] ?? 'node'} "${quote(node.name)}" as ${safeId(node.localId)}`,
@@ -389,20 +395,19 @@ export class DiagramEngine {
       const label = [link.protocol, link.description].filter(Boolean).map((x) => quote(x!));
       lines.push(
         `${safeId(link.fromLocalId)} --> ${safeId(link.toLocalId)}${
-          label.length ? ` : "${label.join(' — ')}"` : ''
+          label.length ? ` : "${wrapText(label.join(' — '), LABEL_WIDTH)}"` : ''
         }`,
       );
     }
     for (const node of nodes) {
+      const quality = (node.relatedSourceCodes ?? []).filter((code) => /^RNF-/.test(code));
       const details = [
         ...(node.responsibilities ?? []),
-        ...(node.relatedSourceCodes?.length
-          ? [`Fuentes: ${node.relatedSourceCodes.join(', ')}`]
-          : []),
+        ...(quality.length ? [`Calidad: ${quality.join(', ')}`] : []),
       ];
       if (details.length)
         lines.push(
-          `note right of ${safeId(node.localId)} : ${details.map((detail) => quote(detail).replace(/[<>]/g, '')).join('\\n')}`,
+          `note right of ${safeId(node.localId)} : ${details.map((detail) => wrapText(quote(detail).replace(/[<>]/g, ''), DEPLOYMENT_NOTE_WIDTH)).join('\\n')}`,
         );
     }
     lines.push('@enduml');
