@@ -13,6 +13,8 @@ import { DiagramProviderError, type DiagramProvider } from '@caseflow-ai/integra
 import {
   STRUCTURED_ANALYSIS_CONTENT_SCHEMAS,
   classBatchOutputSchema,
+  navigationTreeContentSchema,
+  uiBlueprintBatchOutputSchema,
   designThemeContentSchema,
   designThemeContrastIssues,
   designThemeGenerationOutputSchema,
@@ -36,6 +38,15 @@ import {
   type ModelEntity,
   type ModelRelationship,
 } from './class-diagram-batches';
+import {
+  UI_BATCH_ATTEMPTS,
+  fillMissingScreens,
+  finishUiBlueprint,
+  mergeUiBatch,
+  nodesWithoutScreen,
+  planUiBatches,
+  type Screen,
+} from './ui-blueprint-batches';
 import {
   fitToBudget,
   requirementLevels,
@@ -638,21 +649,33 @@ export class StructuredAnalysisService {
     kind: StructuredAnalysisKind,
     sourceVersionIds: string[],
   ) {
-    await this.loadBatchedSources(projectId, kind, sourceVersionIds);
+    if (kind === 'UI_BLUEPRINT') await this.loadUiSources(projectId, sourceVersionIds);
+    else await this.loadBatchedSources(projectId, kind, sourceVersionIds);
   }
 
-  // DEC-142: a class diagram of a large data model in one response is too long
-  // to arrive whole, so it is drawn a few entities at a time. Each batch sees
-  // what the earlier ones drew; each validated result is checkpointed, so a
-  // failed run resumes where it stopped. Nothing is published until the end.
   async generateInBatches(
     projectId: string,
     kind: StructuredAnalysisKind,
     sourceVersionIds: string[],
     progress?: StructuredGenerationProgress,
   ) {
-    if (kind !== 'CLASS_DIAGRAM')
-      throw new UnprocessableEntityException('Este tipo de artefacto no se genera por lotes.');
+    if (kind === 'CLASS_DIAGRAM')
+      return this.generateClassDiagramInBatches(projectId, kind, sourceVersionIds, progress);
+    if (kind === 'UI_BLUEPRINT')
+      return this.generateUiBlueprintInBatches(projectId, kind, sourceVersionIds, progress);
+    throw new UnprocessableEntityException('Este tipo de artefacto no se genera por lotes.');
+  }
+
+  // DEC-142: a class diagram of a large data model in one response is too long
+  // to arrive whole, so it is drawn a few entities at a time. Each batch sees
+  // what the earlier ones drew; each validated result is checkpointed, so a
+  // failed run resumes where it stopped. Nothing is published until the end.
+  private async generateClassDiagramInBatches(
+    projectId: string,
+    kind: StructuredAnalysisKind,
+    sourceVersionIds: string[],
+    progress?: StructuredGenerationProgress,
+  ) {
     const { sources, model } = await this.loadBatchedSources(projectId, kind, sourceVersionIds);
     const entityName = new Map(model.entities.map((entity) => [entity.id, entity.name]));
     const entities: ModelEntity[] = model.entities.map((entity) => ({
@@ -761,6 +784,200 @@ export class StructuredAnalysisService {
         progress?.update(position + 1, plan.length, 0);
       }
       const content = finishClassDiagram(completeRelationships(drawn, relationships));
+      const id = await this.persistGeneration(
+        projectId,
+        kind,
+        lastRunId,
+        sources.map((source) => source.id),
+        [content as unknown as Content],
+      );
+      return this.getGeneration(projectId, kind, id);
+    } catch (error) {
+      if (error instanceof AIError)
+        throw new ServiceUnavailableException({ message: error.message, code: error.code });
+      throw error;
+    }
+  }
+
+  // DEC-143: the approved sources of a UI blueprint drawn in batches. It is
+  // drawn view by view of one approved navigation tree; the use cases, data
+  // model and architectures chosen go in as what each screen is made of.
+  private async loadUiSources(projectId: string, sourceVersionIds: string[]) {
+    const unique = [...new Set(sourceVersionIds)];
+    if (unique.length !== sourceVersionIds.length)
+      throw new UnprocessableEntityException('Las versiones fuente no pueden repetirse.');
+    const sources = await this.prisma.artifactVersion.findMany({
+      where: {
+        id: { in: unique },
+        projectId,
+        status: { in: await sourceStatuses(this.prisma, projectId) },
+        artifact: { artifactTypeCode: { in: ELIGIBLE_SOURCE_TYPES.UI_BLUEPRINT } },
+      },
+      include: {
+        artifact: true,
+        structuredAnalysisDetail: true,
+        useCaseDetail: {
+          include: {
+            secondaryActors: { orderBy: { position: 'asc' } },
+            postconditions: { orderBy: { position: 'asc' } },
+            mainFlowSteps: { orderBy: { position: 'asc' } },
+          },
+        },
+        dataModelDetail: {
+          include: {
+            entities: {
+              orderBy: { position: 'asc' },
+              include: { attributes: { orderBy: { position: 'asc' } } },
+            },
+          },
+        },
+      },
+      orderBy: { artifact: { code: 'asc' } },
+    });
+    if (sources.length !== unique.length)
+      throw new UnprocessableEntityException(
+        'La generación requiere versiones exactas APPROVED de un tipo elegible del mismo proyecto.',
+      );
+    const trees = sources.filter(
+      (source) => source.artifact.artifactTypeCode === 'NAVIGATION_TREE',
+    );
+    if (trees.length !== 1)
+      throw new UnprocessableEntityException(
+        'Seleccione exactamente un árbol de navegación aprobado como base del plano de interfaz.',
+      );
+    const tree = navigationTreeContentSchema.safeParse(trees[0]!.structuredAnalysisDetail?.content);
+    if (!tree.success)
+      throw new UnprocessableEntityException('El árbol de navegación seleccionado no es válido.');
+    return { sources, nodes: tree.data.nodes };
+  }
+
+  private async generateUiBlueprintInBatches(
+    projectId: string,
+    kind: StructuredAnalysisKind,
+    sourceVersionIds: string[],
+    progress?: StructuredGenerationProgress,
+  ) {
+    const { sources, nodes } = await this.loadUiSources(projectId, sourceVersionIds);
+    const useCases = new Map(
+      sources
+        .filter((source) => source.useCaseDetail)
+        .map((source) => {
+          const detail = source.useCaseDetail!;
+          return [
+            source.artifact.code,
+            {
+              code: source.artifact.code,
+              name: detail.name,
+              objective: detail.objective,
+              primaryActor: detail.primaryActor,
+              secondaryActors: detail.secondaryActors.map((actor) => actor.name),
+              postconditions: detail.postconditions.map((item) => item.description),
+              mainFlow: detail.mainFlowSteps.map((step) => step.action),
+            },
+          ] as const;
+        }),
+    );
+    const dataModel = sources
+      .filter((source) => source.dataModelDetail)
+      .flatMap((source) =>
+        source.dataModelDetail!.entities.map((entity) => ({
+          name: entity.name,
+          attributes: entity.attributes.map((attribute) => attribute.name),
+        })),
+      );
+    const architecture = sources
+      .filter((source) =>
+        ['SOFTWARE_ARCHITECTURE', 'SYSTEM_ARCHITECTURE'].includes(source.artifact.artifactTypeCode),
+      )
+      .map((source) => {
+        const content = source.structuredAnalysisDetail?.content as
+          { components?: { name: string }[]; nodes?: { name: string }[] } | undefined;
+        return {
+          code: source.artifact.code,
+          elements: (content?.components ?? content?.nodes ?? []).map((element) => element.name),
+        };
+      });
+    const options = {
+      knownNodeIds: new Set<string>(),
+      useCaseCodes: new Set(useCases.keys()),
+      sourceCodes: new Set(sources.map((source) => source.artifact.code)),
+    };
+    const plan = planUiBatches(nodes);
+    if (!plan.length)
+      throw new UnprocessableEntityException(
+        'El árbol de navegación no tiene vistas para las que dibujar pantallas.',
+      );
+    const language = await getProjectLanguage(this.prisma, projectId);
+    let screens: Screen[] = [];
+    let lastRunId = '';
+    try {
+      for (const [position, batch] of plan.entries()) {
+        progress?.update(position, plan.length, 0);
+        // The model sometimes answers with only part of a batch: the views it
+        // left out are asked for again (twice at most) before a plain screen is
+        // made from the navigation tree. Each answer is a checkpoint of its own.
+        let remaining = batch;
+        for (let attempt = 0; attempt < UI_BATCH_ATTEMPTS && remaining.length; attempt += 1) {
+          const part = position * UI_BATCH_ATTEMPTS + attempt;
+          const cached = progress
+            ? await this.prisma.structuredGenerationPart.findUnique({
+                where: { jobId_position: { jobId: progress.jobId, position: part } },
+              })
+            : null;
+          let output: z.infer<typeof uiBlueprintBatchOutputSchema>;
+          if (cached) {
+            output = uiBlueprintBatchOutputSchema.parse(cached.content);
+            lastRunId = cached.aiRunId;
+          } else {
+            const codes = [...new Set(remaining.flatMap((node) => node.relatedUseCaseCodes))];
+            const result = await this.ai.generateStructured({
+              projectId,
+              language,
+              promptKey: 'ui-blueprint.generate',
+              promptVersion: 3,
+              messages: [
+                {
+                  role: 'user',
+                  content: JSON.stringify({
+                    targetNodes: remaining,
+                    useCases: codes.flatMap((code) => useCases.get(code) ?? []),
+                    dataModel,
+                    architecture,
+                    existingScreens: screens.map((screen) => ({
+                      localId: screen.localId,
+                      name: screen.name,
+                      navigationNodeLocalId: screen.navigationNodeLocalId,
+                    })),
+                  }),
+                },
+              ],
+              outputSchema: uiBlueprintBatchOutputSchema,
+              schemaName: 'ui_blueprint_batch',
+              maxOutputTokens: 12_288,
+            });
+            output = result.data;
+            lastRunId = result.metadata.runId;
+          }
+          // Domain validation happens here, before anything is checkpointed.
+          screens = mergeUiBatch(screens, output, remaining, options);
+          if (progress && !cached)
+            await this.prisma.structuredGenerationPart.upsert({
+              where: { jobId_position: { jobId: progress.jobId, position: part } },
+              create: {
+                jobId: progress.jobId,
+                position: part,
+                aiRunId: lastRunId,
+                content: output,
+              },
+              update: { aiRunId: lastRunId, content: output },
+            });
+          remaining = nodesWithoutScreen(screens, remaining);
+        }
+        screens = fillMissingScreens(screens, remaining);
+        batch.forEach((node) => options.knownNodeIds.add(node.localId));
+        progress?.update(position + 1, plan.length, 0);
+      }
+      const content = finishUiBlueprint(screens);
       const id = await this.persistGeneration(
         projectId,
         kind,
