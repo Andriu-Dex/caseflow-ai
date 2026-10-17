@@ -7,6 +7,7 @@ import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   NAVIGATION_NODE_KINDS,
   SYSTEM_NODE_KINDS,
+  designThemeContrastIssues,
   type ClassDiagramContent,
   type ConceptualDomainModelContent,
   type DesignThemeContent,
@@ -51,12 +52,15 @@ import {
   Monitor,
   MousePointerClick,
   Network,
+  Palette,
   Pencil,
   Plus,
   Search,
   Server,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
+  SunMoon,
   Users,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -427,6 +431,27 @@ function getArtifactMetrics(kind: StructuredAnalysisKind, content: unknown): Art
       });
     }
     return metrics;
+  }
+  if (kind === 'DESIGN_THEME') {
+    const theme = content as DesignThemeContent;
+    const modeLabel =
+      theme.mode === 'BOTH'
+        ? 'Modo claro y oscuro'
+        : theme.mode === 'LIGHT'
+          ? 'Solo modo claro'
+          : 'Solo modo oscuro';
+    const issues = designThemeContrastIssues(theme);
+    const tokenCount = (theme.light ? 13 : 0) + (theme.dark ? 13 : 0);
+    return [
+      { singular: modeLabel, plural: modeLabel, count: 1, icon: SunMoon },
+      { singular: 'token de color', plural: 'tokens de color', count: tokenCount, icon: Palette },
+      {
+        singular: issues.length === 0 ? 'WCAG AA verificado' : `${issues.length} alertas WCAG`,
+        plural: issues.length === 0 ? 'WCAG AA verificado' : `${issues.length} alertas WCAG`,
+        count: 1,
+        icon: issues.length === 0 ? ShieldCheck : ShieldAlert,
+      },
+    ];
   }
   return [];
 }
@@ -2151,18 +2176,42 @@ export function StructuredKindPage({
             </>
           )}
           {isTheme ? (
-            <label className="mt-3 flex flex-col gap-1 text-sm">
-              <span className="text-xs text-muted-foreground">
-                Ajuste opcional para las tres propuestas:
-              </span>
-              <input
-                className="rounded-md border border-input bg-background px-2 py-1.5"
-                maxLength={500}
-                placeholder="Por ejemplo: más cálida, verde corporativo, tonos sobrios"
-                value={instruction}
-                onChange={(e) => setInstruction(e.target.value)}
-              />
-            </label>
+            <div className="mt-3 flex flex-col gap-2 text-sm">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-muted-foreground">
+                  Ajuste opcional para las tres propuestas:
+                </span>
+                <input
+                  className="rounded-md border border-input bg-background px-2 py-1.5"
+                  maxLength={500}
+                  placeholder="Por ejemplo: más cálida, verde corporativo, tonos sobrios"
+                  value={instruction}
+                  onChange={(e) => setInstruction(e.target.value)}
+                />
+              </label>
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                  <Sparkles className="size-3 text-primary" aria-hidden="true" />
+                  Sugerencias rápidas:
+                </span>
+                {[
+                  'Azul corporativo moderno',
+                  'Tonos cálidos gourmet',
+                  'Verde esmeralda tecnológico',
+                  'Monocromático elegante',
+                  'Púrpura creativo',
+                ].map((sugg) => (
+                  <button
+                    key={sugg}
+                    type="button"
+                    onClick={() => setInstruction(sugg)}
+                    className="rounded-full bg-muted/80 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors border border-border/40 cursor-pointer"
+                  >
+                    {sugg}
+                  </button>
+                ))}
+              </div>
+            </div>
           ) : null}
           {sourceGroups.length > 0 ? (
             <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/50 pt-2.5 text-xs text-muted-foreground">
