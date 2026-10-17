@@ -4,30 +4,43 @@ import { BATCHED_STRUCTURED_KINDS } from '@caseflow-ai/contracts';
 import { GenerationOverlay } from './generation-overlay';
 import { BatchedGenerationPanel } from './batched-generation-panel';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import type {
-  ClassDiagramContent,
-  ConceptualDomainModelContent,
-  DesignThemeContent,
-  DiagramResponse,
-  GenerationPlanContent,
-  ImplementationPlanContent,
-  NavigationTreeContent,
-  SoftwareArchitectureContent,
-  StructuredAnalysisKind,
-  StructuredAnalysisResponse,
-  SystemArchitectureContent,
-  UiBlueprintContent,
+import {
+  NAVIGATION_NODE_KINDS,
+  type ClassDiagramContent,
+  type ConceptualDomainModelContent,
+  type DesignThemeContent,
+  type DiagramResponse,
+  type GenerationPlanContent,
+  type ImplementationPlanContent,
+  type NavigationTreeContent,
+  type SoftwareArchitectureContent,
+  type StructuredAnalysisKind,
+  type StructuredAnalysisResponse,
+  type SystemArchitectureContent,
+  type UiBlueprintContent,
 } from '@caseflow-ai/contracts';
 import {
   Box,
   CheckCircle2,
+  Compass,
+  CornerDownRight,
   Database,
   Eye,
   EyeOff,
+  FileCode,
+  FileEdit,
+  FileText,
+  FolderTree,
+  Globe,
+  Home,
   Layers,
+  Layout,
   Link2,
+  ListFilter,
   Pencil,
   Plus,
+  Search,
+  ShieldCheck,
   Sparkles,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -154,6 +167,52 @@ const KINDS_WITH_DIAGRAM: ReadonlySet<StructuredAnalysisKind> = new Set([
   'SYSTEM_ARCHITECTURE',
 ]);
 
+export const NAVIGATION_NODE_LABELS: Record<
+  (typeof NAVIGATION_NODE_KINDS)[number],
+  { label: string; color: string; icon: React.ComponentType<{ className?: string }> }
+> = {
+  HOME: {
+    label: 'Inicio',
+    color: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20',
+    icon: Home,
+  },
+  SECTION: {
+    label: 'Sección',
+    color: 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border-indigo-500/20',
+    icon: FolderTree,
+  },
+  LIST: {
+    label: 'Listado',
+    color: 'bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/20',
+    icon: ListFilter,
+  },
+  DETAIL: {
+    label: 'Detalle',
+    color: 'bg-sky-500/10 text-sky-700 dark:text-sky-400 border-sky-500/20',
+    icon: FileText,
+  },
+  FORM: {
+    label: 'Formulario',
+    color: 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20',
+    icon: FileEdit,
+  },
+  VIEW: {
+    label: 'Vista',
+    color: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20',
+    icon: Layout,
+  },
+  AUTH: {
+    label: 'Autenticación',
+    color: 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20',
+    icon: ShieldCheck,
+  },
+  OTHER: {
+    label: 'Otro',
+    color: 'bg-slate-500/10 text-slate-700 dark:text-slate-400 border-slate-500/20',
+    icon: Compass,
+  },
+};
+
 interface SourceOption {
   versionId: string;
   code: string;
@@ -214,14 +273,25 @@ function getArtifactMetrics(kind: StructuredAnalysisKind, content: unknown): Art
   }
   if (kind === 'NAVIGATION_TREE') {
     const nt = content as NavigationTreeContent;
-    return [
+    const nodes = nt.nodes ?? [];
+    const routesCount = nodes.filter((n) => Boolean(n.route)).length;
+    const metrics: ArtifactMetric[] = [
       {
-        singular: 'nodo de navegación',
-        plural: 'nodos de navegación',
-        count: nt.nodes?.length ?? 0,
+        singular: 'pantalla o nodo',
+        plural: 'pantallas y nodos',
+        count: nodes.length,
         icon: Layers,
       },
     ];
+    if (routesCount > 0) {
+      metrics.push({
+        singular: 'ruta web',
+        plural: 'rutas web',
+        count: routesCount,
+        icon: Globe,
+      });
+    }
+    return metrics;
   }
   if (kind === 'SOFTWARE_ARCHITECTURE') {
     const sa = content as SoftwareArchitectureContent;
@@ -256,36 +326,226 @@ function getArtifactMetrics(kind: StructuredAnalysisKind, content: unknown): Art
   return [];
 }
 
+type NavigationNode = NavigationTreeContent['nodes'][number];
+
+function NavigationNodeCard({
+  node,
+  isRoot,
+  parentLabel,
+}: {
+  node: NavigationNode;
+  isRoot?: boolean;
+  parentLabel?: string;
+}) {
+  const meta = NAVIGATION_NODE_LABELS[node.kind] ?? NAVIGATION_NODE_LABELS.OTHER;
+  const Icon = meta.icon;
+
+  return (
+    <div
+      className={`flex flex-col gap-1.5 rounded-lg border border-border/80 bg-card p-3 shadow-2xs transition-colors hover:border-border ${
+        isRoot ? 'ring-1 ring-primary/10' : ''
+      }`}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-1.5">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <Icon className="size-4 text-primary shrink-0" aria-hidden="true" />
+          <span className="font-semibold text-sm text-foreground truncate">{node.label}</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span
+            className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${meta.color}`}
+          >
+            <Icon className="size-3" aria-hidden="true" />
+            {meta.label}
+          </span>
+          {node.route ? (
+            <span
+              className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium text-foreground border border-border/40"
+              title={`Ruta URL: ${node.route}`}
+            >
+              <Globe className="size-3 text-muted-foreground" aria-hidden="true" />
+              {node.route}
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+        <span className="flex items-center gap-1 font-mono text-xs text-muted-foreground">
+          <FileCode className="size-3 text-muted-foreground/70" aria-hidden="true" />
+          {node.viewName}
+        </span>
+        {parentLabel ? (
+          <span className="text-muted-foreground">
+            En sección: <strong className="text-foreground font-normal">{parentLabel}</strong>
+          </span>
+        ) : null}
+      </div>
+
+      {node.description ? (
+        <p className="text-xs text-muted-foreground line-clamp-2">{node.description}</p>
+      ) : null}
+
+      {node.relatedUseCaseCodes?.length > 0 || (node.relatedSourceCodes?.length ?? 0) > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 pt-1.5 border-t border-border/30 text-[11px]">
+          {node.relatedUseCaseCodes?.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="text-muted-foreground">Casos de uso:</span>
+              {node.relatedUseCaseCodes.map((code) => (
+                <span
+                  key={code}
+                  className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-mono font-medium text-primary border border-primary/20"
+                >
+                  {code}
+                </span>
+              ))}
+            </div>
+          ) : null}
+          {node.relatedSourceCodes && node.relatedSourceCodes.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="text-muted-foreground">Fuentes:</span>
+              {node.relatedSourceCodes.map((code) => (
+                <span
+                  key={code}
+                  className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono font-medium text-muted-foreground"
+                >
+                  {code}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function NavigationTreeDetail({ content }: { content: NavigationTreeContent }) {
+  const [query, setQuery] = useState('');
+  const nodes = content.nodes ?? [];
+
+  const nodeMap = new Map(nodes.map((n) => [n.localId, n]));
+  const childrenMap = new Map<string, typeof nodes>();
+  const rootNodes: typeof nodes = [];
+
+  for (const node of nodes) {
+    if (node.parentLocalId && nodeMap.has(node.parentLocalId)) {
+      const list = childrenMap.get(node.parentLocalId) ?? [];
+      list.push(node);
+      childrenMap.set(node.parentLocalId, list);
+    } else {
+      rootNodes.push(node);
+    }
+  }
+
+  const trimmed = query.trim().toLowerCase();
+  const isFiltering = trimmed.length > 0;
+  const filteredNodes = isFiltering
+    ? nodes.filter((n) => {
+        const text = [
+          n.label,
+          n.route ?? '',
+          n.viewName,
+          n.description ?? '',
+          n.kind,
+          NAVIGATION_NODE_LABELS[n.kind]?.label ?? '',
+          ...(n.relatedUseCaseCodes ?? []),
+          ...(n.relatedSourceCodes ?? []),
+        ]
+          .join(' ')
+          .toLowerCase();
+        return text.includes(trimmed);
+      })
+    : [];
+
+  return (
+    <div className="mt-4 flex flex-col gap-3 border-t border-border/60 pt-4 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+          <FolderTree className="size-3.5 text-primary" aria-hidden="true" />
+          Estructura de navegación ({nodes.length} {nodes.length === 1 ? 'nodo' : 'nodos'})
+        </h4>
+        {nodes.length > 2 ? (
+          <div className="relative w-full sm:w-64">
+            <Search
+              className="pointer-events-none absolute left-2.5 top-2.5 size-3.5 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar por nombre, ruta, vista o CU…"
+              className="h-8 w-full rounded-md border border-input bg-background pl-8 pr-3 text-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
+          </div>
+        ) : null}
+      </div>
+
+      {isFiltering ? (
+        <div className="flex flex-col gap-2">
+          <div className="text-xs text-muted-foreground">
+            {filteredNodes.length === 1
+              ? '1 coincidencia'
+              : `${filteredNodes.length} coincidencias`}
+          </div>
+          {filteredNodes.length === 0 ? (
+            <p className="rounded-md border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+              No se encontraron nodos ni pantallas que coincidan con «{query}».
+            </p>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {filteredNodes.map((node) => (
+                <NavigationNodeCard
+                  key={node.localId}
+                  node={node}
+                  parentLabel={
+                    node.parentLocalId ? nodeMap.get(node.parentLocalId)?.label : undefined
+                  }
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {rootNodes.map((root) => {
+            const children = childrenMap.get(root.localId) ?? [];
+            return (
+              <div
+                key={root.localId}
+                className="rounded-lg border border-border/80 bg-muted/20 p-3 shadow-2xs transition-colors hover:border-border"
+              >
+                <NavigationNodeCard node={root} isRoot />
+
+                {children.length > 0 ? (
+                  <div className="mt-2.5 flex flex-col gap-2 border-l-2 border-border/70 pl-3 sm:pl-4 ml-2 sm:ml-3">
+                    {children.map((child) => (
+                      <div key={child.localId} className="flex items-start gap-1.5">
+                        <CornerDownRight
+                          className="size-3.5 text-muted-foreground mt-2 shrink-0"
+                          aria-hidden="true"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <NavigationNodeCard node={child} parentLabel={root.label} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function renderContentDetail(kind: StructuredAnalysisKind, content: unknown) {
   switch (kind) {
     case 'NAVIGATION_TREE': {
-      const { nodes } = content as NavigationTreeContent;
-      return (
-        <ul className="mt-2 flex flex-col gap-1 border-t border-border pt-2 text-sm">
-          {nodes.map((node) => (
-            <li key={node.localId}>
-              <strong>{node.label}</strong>{' '}
-              <span className="text-muted-foreground">
-                ({node.kind} · {node.viewName}
-                {node.route ? ` · ${node.route}` : ''})
-              </span>
-              {node.description ? ` — ${node.description}` : ''}
-              {node.relatedUseCaseCodes.length > 0 ? (
-                <span className="text-muted-foreground">
-                  {' '}
-                  · Casos de uso: {node.relatedUseCaseCodes.join(', ')}
-                </span>
-              ) : null}
-              {node.relatedSourceCodes?.length ? (
-                <span className="text-muted-foreground">
-                  {' '}
-                  · Fuentes: {node.relatedSourceCodes.join(', ')}
-                </span>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      );
+      return <NavigationTreeDetail content={content as NavigationTreeContent} />;
     }
     case 'SOFTWARE_ARCHITECTURE': {
       const { style, components, dependencies, decisions } = content as SoftwareArchitectureContent;
