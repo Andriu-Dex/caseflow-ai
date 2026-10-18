@@ -27,6 +27,7 @@ export class InterruptedJobsRecovery implements OnApplicationBootstrap {
     // or mockup already marked, so it retries that stage instead of waiting.
     const steps: [string, () => Promise<number>][] = [
       ['mockup job', () => this.mockups.markInterrupted(bootedAt)],
+      ['queued mockup job', () => this.mockups.requeuePending()],
       ['generation run', () => this.generationRuns.markInterrupted(bootedAt)],
       ['sandbox run', () => this.sandboxRuns.markInterrupted(bootedAt)],
       ['workflow run', () => this.workflowRuns.resumeInterrupted(bootedAt)],
