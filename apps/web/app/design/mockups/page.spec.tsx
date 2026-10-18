@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   refine: vi.fn(),
   refineScreen: vi.fn(),
   getJob: vi.fn(),
+  create: vi.fn(),
   latestJob: vi.fn<(...args: unknown[]) => Promise<{ job: MockupJobResponse | null }>>(
     async () => ({
       job: null,
@@ -38,6 +39,7 @@ vi.mock('../../../lib/api', () => ({
       screenImageUrl: mocks.screenImageUrl,
       screenHtmlUrl: mocks.screenHtmlUrl,
       transition: vi.fn(),
+      create: (...args: unknown[]) => mocks.create(...args),
       refine: (...args: unknown[]) => mocks.refine(...args),
       refineScreen: (...args: unknown[]) => mocks.refineScreen(...args),
       getJob: (...args: unknown[]) => mocks.getJob(...args),
@@ -431,5 +433,30 @@ describe('MockupsPage background generation (DEC-146)', () => {
     expect(bar).toHaveAttribute('aria-valuenow', '2');
     expect(bar).toHaveAttribute('aria-valuemax', '5');
     await waitFor(() => expect(mocks.getJob).toHaveBeenCalledWith('p1', 'job-9'));
+  });
+
+  it('offers to continue a generation that stopped with screens already drawn', async () => {
+    const user = userEvent.setup();
+    const stopped = {
+      id: 'job-8',
+      status: 'FAILED',
+      completedScreens: 76,
+      totalScreens: 77,
+      uiBlueprintVersionId: 'blueprint-version-1',
+      deviceType: 'DESKTOP',
+      errorMessage: 'Faltan 1 de 77 pantallas. Vuelva a generar el boceto.',
+    } as MockupJobResponse;
+    mocks.latestJob.mockResolvedValueOnce({ job: stopped });
+    mocks.create.mockResolvedValue({ ...stopped, status: 'QUEUED' });
+    mocks.getJob.mockResolvedValue({ ...stopped, status: 'COMPLETED', completedScreens: 77 });
+    render(
+      <TestProviders>
+        <MockupsPage />
+      </TestProviders>,
+    );
+    expect(await screen.findByText(/76 de 77/)).toBeInTheDocument();
+    expect(screen.getByText(/Faltan 1 de 77 pantallas/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Continuar la generación' }));
+    expect(mocks.create).toHaveBeenCalledWith('p1', 'blueprint-version-1', 'DESKTOP');
   });
 });

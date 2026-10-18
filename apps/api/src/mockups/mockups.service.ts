@@ -341,6 +341,9 @@ export class MockupsService {
     status: string;
     resultArtifactId: string | null;
     errorMessage: string | null;
+    uiBlueprintVersionId?: string;
+    deviceType?: string;
+    existingMockupId?: string | null;
     completedScreens?: number;
     totalScreens?: number;
     createdAt: Date;
@@ -352,6 +355,8 @@ export class MockupsService {
       status: job.status as MockupJobResponse['status'],
       resultArtifactId: job.resultArtifactId,
       errorMessage: job.errorMessage,
+      ...(job.uiBlueprintVersionId ? { uiBlueprintVersionId: job.uiBlueprintVersionId } : {}),
+      ...(job.deviceType ? { deviceType: job.deviceType as MockupDeviceType } : {}),
       completedScreens: job.completedScreens ?? 0,
       totalScreens: job.totalScreens ?? 0,
       createdAt: job.createdAt.toISOString(),
