@@ -31,6 +31,7 @@ describe('Mockups drawn screen by screen', () => {
   const queued: string[] = [];
   const asked: string[] = [];
   let projects = 0;
+  const contexts = new Map<string, unknown>();
   let failing = new Set<string>();
   let unavailable = false;
 
@@ -43,7 +44,8 @@ describe('Mockups drawn screen by screen', () => {
         projects += 1;
         return `stitch-${projects}`;
       },
-      generateScreen: async (stitchProjectId, target) => {
+      generateScreen: async (stitchProjectId, target, _device, _refinement, _theme, context) => {
+        contexts.set(target.localId, context);
         asked.push(target.localId);
         if (failing.has(target.localId))
           throw new MockupProviderError('MOCKUP_PROVIDER_TIMEOUT', 'La pantalla tardó demasiado.');
@@ -138,5 +140,82 @@ describe('Mockups drawn screen by screen', () => {
     await service.runJob(job.id);
     await service.runJob(job.id);
     expect((await service.getJob(projectId, job.id)).status).toBe('COMPLETED');
+  });
+
+  it('gives every screen the application name and the menu of the approved navigation (DEC-147)', async () => {
+    const workspace = await createWorkspace(ctx.prisma, 'Una sola aplicación');
+    const pid = (
+      await ctx.projects.create({ workspaceId: workspace.id, name: 'Restaurante Mateos' })
+    ).id;
+    const tree = await ctx.structuredAnalysis.create(pid, 'NAVIGATION_TREE', 'Navegación', {
+      nodes: [
+        { localId: 'login', label: 'Iniciar sesión', viewName: 'Acceso', kind: 'AUTH' },
+        { localId: 'home', label: 'Inicio', viewName: 'Inicio', kind: 'HOME' },
+        {
+          localId: 'sales',
+          label: 'Ventas',
+          viewName: 'Ventas',
+          kind: 'SECTION',
+          parentLocalId: 'home',
+        },
+        {
+          localId: 'sale-form',
+          label: 'Registrar venta',
+          viewName: 'Venta',
+          kind: 'FORM',
+          parentLocalId: 'sales',
+        },
+        {
+          localId: 'stock',
+          label: 'Inventario',
+          viewName: 'Inventario',
+          kind: 'LIST',
+          parentLocalId: 'home',
+        },
+      ],
+    });
+    for (const status of ['IN_REVIEW', 'APPROVED'] as const)
+      await ctx.structuredAnalysis.transition(
+        pid,
+        'NAVIGATION_TREE',
+        tree.id,
+        tree.version.id,
+        status,
+      );
+    const onNode = (localId: string, node: string) => ({
+      ...screen(localId),
+      navigationNodeLocalId: node,
+    });
+    const blueprint = await ctx.structuredAnalysis.create(pid, 'UI_BLUEPRINT', 'Plano', {
+      screens: [
+        onNode('acceso', 'login'),
+        onNode('inicio', 'home'),
+        onNode('venta', 'sale-form'),
+        onNode('existencias', 'stock'),
+      ],
+    });
+    for (const status of ['IN_REVIEW', 'APPROVED'] as const)
+      await ctx.structuredAnalysis.transition(
+        pid,
+        'UI_BLUEPRINT',
+        blueprint.id,
+        blueprint.version.id,
+        status,
+      );
+    await approved(ctx, pid, 'DESIGN_THEME');
+    const job = await service.create(pid, blueprint.version.id);
+    await service.runJob(job.id);
+    expect((await service.getJob(pid, job.id)).status).toBe('COMPLETED');
+    const menu = ['Ventas', 'Inventario'];
+    expect(contexts.get('venta')).toEqual(
+      expect.objectContaining({ appName: 'Restaurante Mateos', menu }),
+    );
+    // A screen belongs to the menu entry that is its node or an ancestor of it; the sign-in has none.
+    const active = (id: string) =>
+      (contexts.get(id) as { activeMenuByScreen: Record<string, string | null> })
+        .activeMenuByScreen[id];
+    expect(active('venta')).toBe('Ventas');
+    expect(active('existencias')).toBe('Inventario');
+    expect(active('acceso')).toBeNull();
   });
 });

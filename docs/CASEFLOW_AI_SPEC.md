@@ -7267,6 +7267,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-144 | El modelo conceptual se genera por lotes en segundo plano, clase a clase del diagrama de clases aprobado (ocho por lote), con el mismo mecanismo de trabajos, avance, puntos de control y reanudación; lo que el modelo omite se vuelve a pedir y, como último recurso, la entidad sale de la propia clase, y las relaciones del diagrama que no llegaron se trasladan con su cardinalidad (§221.25); lo mismo con el plan de generación (esqueleto y detalle por módulos) y con el plan de implementación (esqueleto, entidades y rutas, a partir de la línea base de diseño) y con el modelo de datos (descubrimiento y detalle por entidades) | Accepted |
 | DEC-145 | Lo archivado se puede ver y restaurar: `GET …/artifacts/archived?types=` lista los artefactos archivados y `POST …/artifacts/:id/restore` los devuelve al trabajo, con auditoría de ambos (`ARTIFACT_ARCHIVED`/`ARTIFACT_RESTORED`). Restaurar nunca se rechaza por lo que cambió mientras tanto: cuenta como cambio de su paso (DEC-137) y lo que depende de él queda por rehacer; si ya hay otro aprobado de un tipo que el proyecto usa una vez, se avisa (§221.26) | Accepted |
 | DEC-146 | Los bocetos de Stitch se generan pantalla por pantalla en segundo plano: unas pocas a la vez (`STITCH_CONCURRENCY`, 4 por defecto), cada una con su propio límite de tiempo y hasta tres intentos, guardando cada pantalla en cuanto llega; un trabajo que se detiene se reanuda con las que faltan al volver a generar el mismo boceto, y solo si no se obtuvo ninguna pantalla se usa el esquema interno, diciendo por qué (§221.27) | Accepted |
+| DEC-147 | Las pantallas de un boceto comparten el nombre de la aplicación (el del proyecto) y el menú principal de la navegación aprobada, con la entrada de cada pantalla resaltada; no se pide al generador datos de seguridad, usuarios ni fechas inventados, códigos internos ni varias vistas de estados (§221.27) | Accepted |
 
 ---
 
@@ -7703,7 +7704,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-146)
+# 221. Extensiones de V2 (DEC-116 a DEC-147)
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
@@ -7979,6 +7980,7 @@ El servidor bloquea congelar diseño y construir mientras quedan pasos por rehac
 - **Punto de control:** cada pantalla se guarda en cuanto llega: sus archivos en el almacenamiento y una fila en `mockup_generation_parts`. El trabajo informa el avance (`completedScreens` de `totalScreens`). Si faltan pantallas al terminar, el trabajo queda fallido con cuáles faltan y por qué; generar el mismo boceto otra vez (mismo plano, dispositivo e instrucción) reanuda ese trabajo y solo pide las que faltan, en el mismo proyecto de Stitch. Un reinicio del servidor deja el trabajo fallido y se reanuda igual; un trabajo que sigue en cola al arrancar la API (porque el aviso del worker no llegó mientras la API no respondía) se vuelve a encolar.
 - **Ejecución:** la llamada interna que ejecuta el trabajo responde de inmediato (202) y el trabajo sigue en el servidor, porque dura mucho más de lo que una petición HTTP espera. La página muestra el avance sin bloquearse, ofrece «Continuar la generación» cuando un trabajo se detuvo con pantallas ya dibujadas, retoma el seguimiento de una generación en curso al volver a abrirse (`GET …/mockups/jobs/latest`) y espera hasta dos horas.
 - **Respaldo:** solo si no se obtuvo ninguna pantalla (por ejemplo, Stitch no responde) y no hay una instrucción de edición, el boceto se genera con el esquema interno; el trabajo termina con un aviso que dice por qué. Con pantallas ya generadas nunca se reemplaza todo por el esquema: se reanuda.
+- **Una sola aplicación (DEC-147):** cada pantalla se genera por separado, y sin un contexto común el generador inventaba una marca distinta por pantalla (en un plano de 77 aparecieron 58 nombres de producto), datos de seguridad y personas ficticios, códigos de casos de uso visibles y matrices con todos los estados. Ahora cada pantalla recibe el nombre del proyecto como nombre de la aplicación y el menú principal de la navegación aprobada (las entradas bajo el inicio, sin el acceso ni acciones como cerrar sesión), con la entrada a la que pertenece resaltada: la de su nodo o la de su ascendiente; el inicio resalta la primera y el acceso no lleva menú. Además el prompt pide datos de ejemplo breves y neutros, no mostrar códigos internos (ya no se le envían los casos de uso relacionados) y dibujar una sola vista en su estado normal.
 
 ## 221.4 Fuera de alcance de estas extensiones
 

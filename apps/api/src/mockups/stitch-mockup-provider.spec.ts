@@ -68,7 +68,9 @@ describe('StitchMockupProvider', () => {
     );
     expect(prompt).toContain('Precio total');
     expect(prompt).toContain('Error de validación');
-    expect(prompt).toContain('CU-001');
+    // The internal codes are not given to the generator: they came back as visible labels.
+    expect(prompt).not.toContain('CU-001');
+    expect(prompt).toContain('No muestres códigos internos');
   });
 
   it('asks Stitch to use the approved palette (DEC-118)', () => {
@@ -208,5 +210,55 @@ describe('StitchMockupProvider screen by screen (DEC-146)', () => {
       createProject: async (title: string) => ({ id: `id-${title}` }),
     });
     await expect(provider.screens.createProject('X')).resolves.toBe('id-X');
+  });
+});
+
+describe('StitchMockupProvider one application (DEC-147)', () => {
+  const buildPrompt = (...args: unknown[]) => {
+    const provider = new StitchMockupProvider({ apiKey: 'test', timeoutMs: 100 });
+    return (provider as unknown as { buildPrompt: (...a: unknown[]) => string }).buildPrompt(
+      ...args,
+    );
+  };
+  const screen = {
+    localId: 'ventas',
+    name: 'Ventas',
+    purpose: 'Registrar ventas',
+    targetActors: [],
+    sections: [],
+    primaryActions: [],
+    secondaryActions: [],
+    forms: [],
+    principalData: [],
+    states: [],
+    relatedUseCaseCodes: ['CU-001'],
+  };
+  const context = {
+    appName: 'Restaurante Mateos',
+    menu: ['Inicio', 'Ventas', 'Inventario'],
+    activeMenuByScreen: { ventas: 'Ventas', acceso: null },
+  };
+  it('gives every screen the same name and menu and marks the one it belongs to', () => {
+    const prompt = buildPrompt(screen, 'DESKTOP', undefined, undefined, context);
+    expect(prompt).toContain('«Restaurante Mateos»');
+    expect(prompt).toContain('Inicio · Ventas · Inventario');
+    expect(prompt).toContain('Resalta como activa la entrada «Ventas»');
+    expect(prompt).toContain('No inventes datos de seguridad');
+    expect(prompt).toContain('una sola vista');
+  });
+  it('draws a screen without a menu entry, such as the sign-in, without the menu', () => {
+    const prompt = buildPrompt(
+      { ...screen, localId: 'acceso' },
+      'DESKTOP',
+      undefined,
+      undefined,
+      context,
+    );
+    expect(prompt).toContain('«Restaurante Mateos»');
+    expect(prompt).toContain('no lleva el menú principal');
+    expect(prompt).not.toContain('Inicio · Ventas');
+  });
+  it('adds nothing about an application when there is no context', () => {
+    expect(buildPrompt(screen, 'DESKTOP')).not.toContain('misma aplicación');
   });
 });
