@@ -459,4 +459,25 @@ describe('MockupsPage background generation (DEC-146)', () => {
     await user.click(screen.getByRole('button', { name: 'Continuar la generación' }));
     expect(mocks.create).toHaveBeenCalledWith('p1', 'blueprint-version-1', 'DESKTOP');
   });
+
+  it('scrolls a screen with the wheel and zooms it only with Ctrl + wheel, in the dialog', async () => {
+    const user = userEvent.setup();
+    render(
+      <TestProviders>
+        <MockupsPage />
+      </TestProviders>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Ampliar pantalla Inicio' }));
+    const box = await screen.findByLabelText(/Vista ampliable/);
+    await waitFor(() => expect(screen.getByText('100%')).toBeInTheDocument());
+
+    // The plain wheel does not zoom.
+    fireEvent.wheel(box, { deltaY: -100 });
+    expect(screen.getByText('100%')).toBeInTheDocument();
+    // Ctrl + wheel does, up and down.
+    fireEvent.wheel(box, { deltaY: -100, ctrlKey: true });
+    expect(screen.getByText('125%')).toBeInTheDocument();
+    fireEvent.wheel(box, { deltaY: 100, ctrlKey: true });
+    expect(screen.getByText('100%')).toBeInTheDocument();
+  });
 });
