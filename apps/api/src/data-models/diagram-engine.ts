@@ -192,13 +192,52 @@ function inTreeOrder<T extends { localId: string; parentLocalId?: string | undef
   return ordered;
 }
 
-// Line lengths of the component diagram: quality notes, then dependency labels.
+// The renderer (Mermaid) draws at most 500 links and reads at most 50,000
+// characters of source; some room is left in the second.
+export const TRACEABILITY_DIAGRAM_MAX_EDGES = 500;
+const TRACEABILITY_SOURCE_LIMIT = 45_000;
+
+// Line lengths of the component and deployment diagrams: notes, then dependency labels.
 const NOTE_WIDTH = 40;
 const DEPLOYMENT_NOTE_WIDTH = 60;
 const LABEL_WIDTH = 45;
 
 // Navigation trees with more nodes than this are drawn left to right.
 const LEFT_TO_RIGHT_FROM = 20;
+
+// A graph with more links than the renderer draws keeps the ones that say the
+// most: first one link for every artifact (so none disappears from the
+// drawing), taken in the order of the codes, then the rest in that order. The
+// choice is deterministic, and the caller is told how many were left out.
+export function limitTraceabilityEdges(
+  model: TraceabilityDiagramModel,
+  max = TRACEABILITY_DIAGRAM_MAX_EDGES,
+): { model: TraceabilityDiagramModel; omitted: number } {
+  if (model.edges.length <= max) return { model, omitted: 0 };
+  const code = new Map(model.nodes.map((node) => [node.id, node.code]));
+  const ordered = [...model.edges].sort(
+    (a, b) =>
+      compareOrdinal(code.get(a.toId) ?? '', code.get(b.toId) ?? '') ||
+      compareOrdinal(code.get(a.fromId) ?? '', code.get(b.fromId) ?? ''),
+  );
+  const kept = new Set<(typeof ordered)[number]>();
+  const covered = new Set<string>();
+  for (const edge of ordered) {
+    if (kept.size >= max) break;
+    if (covered.has(edge.fromId) && covered.has(edge.toId)) continue;
+    kept.add(edge);
+    covered.add(edge.fromId);
+    covered.add(edge.toId);
+  }
+  for (const edge of ordered) {
+    if (kept.size >= max) break;
+    kept.add(edge);
+  }
+  return {
+    model: { nodes: model.nodes, edges: ordered.filter((edge) => kept.has(edge)) },
+    omitted: model.edges.length - kept.size,
+  };
+}
 
 @Injectable()
 export class DiagramEngine {
@@ -310,19 +349,54 @@ export class DiagramEngine {
   // demand, never persisted, since the graph itself is already recomputed on
   // every request). Node ids are real UUIDs, so safeId() is what keeps them
   // valid Mermaid identifiers.
+  //
+  // The renderer refuses a source longer than 50,000 characters, and a project
+  // with hundreds of artifacts and a thousand links is well past it (the UUID
+  // ids alone are most of an edge line). When the source does not fit, it is
+  // written again in the shortest form that does, one step at a time: short
+  // sequential ids, then titles cut to 40 characters, then codes only.
   generateTraceabilityFlowchart(model: TraceabilityDiagramModel): string {
     const nodes = [...model.nodes].sort((a, b) => compareOrdinal(a.code, b.code));
     const edges = [...model.edges].sort(
       (a, b) => compareOrdinal(a.fromId, b.fromId) || compareOrdinal(a.toId, b.toId),
     );
-    const lines = ['flowchart TD'];
-    for (const node of nodes) {
-      const fullTitle = `${node.code}: ${node.title}`;
-      const title = wrapText(fullTitle, 60);
-      lines.push(`  ${safeId(node.id)}["${quote(title)}"]`);
+    const build = (
+      compactIds: boolean,
+      title: (node: { code: string; title: string }) => string,
+    ) => {
+      const ids = new Map(
+        nodes.map((node, index) => [node.id, compactIds ? `n${index}` : safeId(node.id)]),
+      );
+      // Many artifacts go down, one stage after another across: a hundred of them
+      // on a top-down row would be tens of thousands of pixels wide.
+      const lines = [nodes.length > LEFT_TO_RIGHT_FROM ? 'flowchart LR' : 'flowchart TD'];
+      for (const node of nodes) lines.push(`  ${ids.get(node.id)}["${quote(title(node))}"]`);
+      for (const edge of edges) {
+        const from = ids.get(edge.fromId);
+        const to = ids.get(edge.toId);
+        if (from && to) lines.push(`  ${from} --> ${to}`);
+      }
+      return lines.join('\n');
+    };
+    const full = (node: { code: string; title: string }) =>
+      wrapText(`${node.code}: ${node.title}`, 60);
+    const cut = (node: { code: string; title: string }) =>
+      wrapText(
+        `${node.code}: ${node.title.length > 40 ? `${node.title.slice(0, 39)}…` : node.title}`,
+        60,
+      );
+    const attempts: [boolean, (node: { code: string; title: string }) => string][] = [
+      [false, full],
+      [true, full],
+      [true, cut],
+      [true, (node) => node.code],
+    ];
+    let source = '';
+    for (const [compactIds, title] of attempts) {
+      source = build(compactIds, title);
+      if (source.length <= TRACEABILITY_SOURCE_LIMIT) break;
     }
-    for (const edge of edges) lines.push(`  ${safeId(edge.fromId)} --> ${safeId(edge.toId)}`);
-    return lines.join('\n');
+    return source;
   }
 
   // Deterministic PlantUML component diagram from the structured Software

@@ -38,6 +38,8 @@ const getGraph = vi.fn().mockResolvedValue({
   edges: [{ type: 'REQUIREMENT_SOURCE_FOR_USE_CASE', fromId: 'v1', toId: 'v2' }],
   truncated: true,
 });
+const toastWarning = vi.hoisted(() => vi.fn());
+vi.mock('sonner', () => ({ toast: { warning: toastWarning, error: vi.fn(), success: vi.fn() } }));
 const getDiagram = vi.fn().mockResolvedValue({
   source: 'flowchart TD\n  v1["RF-001: Registrar pedido"]',
   sourceFormat: 'MERMAID_FLOWCHART',
@@ -134,6 +136,23 @@ describe('TraceabilityPage — diagram view', () => {
     await user.click(screen.getByRole('tab', { name: 'Grafo' }));
     await waitFor(() => expect(getDiagram).toHaveBeenCalledWith('p1'));
     expect(await screen.findByText('Ver código fuente')).toBeInTheDocument();
+  });
+});
+
+describe('TraceabilityPage — links the drawing leaves out', () => {
+  it('warns once, in a toast, when the graph has more links than the drawing holds', async () => {
+    const user = userEvent.setup();
+    getDiagram.mockResolvedValueOnce({
+      source: 'flowchart TD',
+      sourceFormat: 'MERMAID_FLOWCHART',
+      svg: '<svg xmlns="http://www.w3.org/2000/svg"><g/></svg>',
+      omittedLinks: 500,
+    });
+    renderPage();
+    await screen.findByRole('button', { name: /RF-001/ });
+    await user.click(screen.getByRole('tab', { name: 'Grafo' }));
+    await waitFor(() => expect(toastWarning).toHaveBeenCalledTimes(1));
+    expect(toastWarning).toHaveBeenCalledWith(expect.stringContaining('faltan 500'));
   });
 });
 
