@@ -252,6 +252,20 @@ export class MockupsService {
     return count;
   }
 
+  // A job still QUEUED when the API starts may never run: the worker's call
+  // that should have started it can fail while the API is down (the queue
+  // then counts that delivery as done). Enqueuing it again is safe, because
+  // runJob only picks up a job that is still QUEUED.
+  async requeuePending(): Promise<number> {
+    const pending = await this.prisma.mockupGenerationJob.findMany({
+      where: { status: 'QUEUED' },
+      select: { id: true, projectId: true },
+    });
+    for (const job of pending)
+      await this.queue.add(MOCKUP_GENERATION_QUEUE, { jobId: job.id, projectId: job.projectId });
+    return pending.length;
+  }
+
   // Invoked only by the worker's authenticated internal callback (never
   // reachable from the browser) — runs the actual generation this job
   // describes and always leaves the job in a terminal status, even on an

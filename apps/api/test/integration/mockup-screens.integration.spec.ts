@@ -127,4 +127,16 @@ describe('Mockups drawn screen by screen', () => {
     const preview = await service.getPreview(projectId, done.resultArtifactId!);
     expect(preview.svg).toContain('esquema');
   });
+
+  it('enqueues again, on startup, a job left queued because its start never reached the API', async () => {
+    unavailable = false;
+    const job = await service.create(projectId, blueprintVersionId);
+    queued.length = 0;
+    expect(await service.requeuePending()).toBeGreaterThanOrEqual(1);
+    expect(queued).toContain(job.id);
+    // Running it twice is harmless: only a QUEUED job is picked up.
+    await service.runJob(job.id);
+    await service.runJob(job.id);
+    expect((await service.getJob(projectId, job.id)).status).toBe('COMPLETED');
+  });
 });
