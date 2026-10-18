@@ -9,7 +9,7 @@ import {
   type MockupResponse,
 } from '@caseflow-ai/contracts';
 import { useEffect, useId, useRef, useState } from 'react';
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import {
   Check,
   CheckCircle2,
@@ -587,7 +587,7 @@ function MockupPreview({
           <AuthedImage
             url={api.mockups.screenImageUrl(projectId, mockupId, screens[selectedScreenIndex]!.id)}
             alt={screens[selectedScreenIndex]!.screenName}
-            className="max-h-[var(--mockup-image-max-height)] max-w-full object-contain"
+            className="h-auto w-full object-contain"
           />
         </MockupScreenDialog>
       ) : null}
@@ -648,12 +648,74 @@ function MockupScreenDialog({
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [isFullscreen, setIsFullscreen] = useState(false);
   const dragStart = useRef<{ x: number; y: number; offsetX: number; offsetY: number } | null>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const zoomRef = useRef(zoom);
+  const offsetRef = useRef(offset);
+  zoomRef.current = zoom;
+  offsetRef.current = offset;
+
+  // The picture is drawn as wide as the box and as tall as it is, so a tall
+  // screen is looked at by scrolling: the wheel moves it up and down (Shift, or a
+  // sideways wheel, left and right) and Ctrl + wheel zooms, like the diagram
+  // viewer. The offset never leaves the picture: the top edge is the start, and
+  // sideways it only moves once zoomed past the width of the box.
+  function clampOffset(x: number, y: number, scale = zoomRef.current) {
+    const box = viewportRef.current;
+    const content = contentRef.current;
+    if (!box || !content) return { x: 0, y: 0 };
+    const roomY = box.clientHeight - content.offsetHeight * scale;
+    const roomX = (content.offsetWidth * scale - box.clientWidth) / 2;
+    return {
+      x: Math.min(Math.max(0, roomX), Math.max(-Math.max(0, roomX), x)),
+      y: Math.min(0, Math.max(Math.min(0, roomY), y)),
+    };
+  }
 
   useEffect(() => {
     setZoom(1);
     setOffset({ x: 0, y: 0 });
     setIsFullscreen(false);
   }, [title, open]);
+
+  // React attaches wheel listeners as passive, which cannot stop the page from
+  // scrolling: a native listener is registered instead. It is attached when the
+  // dialog opens, because the box does not exist while it is closed.
+  useEffect(() => {
+    if (!open) return;
+    let detach: (() => void) | undefined;
+    const attach = () => {
+      const node = viewportRef.current;
+      if (!node) return false;
+      const onWheel = (event: WheelEvent) => {
+        event.preventDefault();
+        if (event.ctrlKey || event.metaKey) {
+          const next = Math.min(
+            4,
+            Math.max(1, zoomRef.current + (event.deltaY < 0 ? 0.25 : -0.25)),
+          );
+          setZoom(next);
+          setOffset(clampOffset(offsetRef.current.x, offsetRef.current.y, next));
+          return;
+        }
+        const sideways = event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY);
+        const delta = sideways ? event.deltaX || event.deltaY : event.deltaY;
+        const { x, y } = offsetRef.current;
+        setOffset(clampOffset(sideways ? x - delta : x, sideways ? y : y - delta));
+      };
+      node.addEventListener('wheel', onWheel, { passive: false });
+      detach = () => node.removeEventListener('wheel', onWheel);
+      return true;
+    };
+    if (!attach()) {
+      const timer = setInterval(() => attach() && clearInterval(timer), 50);
+      return () => {
+        clearInterval(timer);
+        detach?.();
+      };
+    }
+    return () => detach?.();
+  }, [open]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -679,6 +741,11 @@ function MockupScreenDialog({
               <span className="mx-1 text-border">•</span>
               <span className="inline-flex items-center gap-1 rounded border border-border/70 bg-background px-1.5 py-0.5 font-mono text-[10px]">
                 Rueda
+              </span>{' '}
+              Desplazar
+              <span className="mx-1 text-border">•</span>
+              <span className="inline-flex items-center gap-1 rounded border border-border/70 bg-background px-1.5 py-0.5 font-mono text-[10px]">
+                Ctrl + rueda
               </span>{' '}
               Zoom
               <span className="mx-1 text-border">•</span>
@@ -706,16 +773,10 @@ function MockupScreenDialog({
           </Button>
         </DialogClose>
         <div
-          className={`flex min-h-0 items-center justify-center overflow-hidden rounded-md bg-muted/30 p-2 md:p-4 ${zoom > 1 ? 'cursor-grab touch-none active:cursor-grabbing' : 'touch-pan-y'}`}
-          style={
-            {
-              '--mockup-image-max-height': isFullscreen
-                ? 'calc(100dvh - 11rem)'
-                : 'calc(78vh - 5rem)',
-            } as CSSProperties
-          }
+          ref={viewportRef}
+          className="flex min-h-0 cursor-grab touch-none items-start justify-center overflow-hidden rounded-md bg-muted/30 p-2 active:cursor-grabbing md:p-4"
           onPointerDown={(event) => {
-            if (zoom <= 1 || event.button !== 0) return;
+            if (event.button !== 0) return;
             dragStart.current = {
               x: event.clientX,
               y: event.clientY,
@@ -726,10 +787,12 @@ function MockupScreenDialog({
           }}
           onPointerMove={(event) => {
             if (!dragStart.current) return;
-            setOffset({
-              x: dragStart.current.offsetX + event.clientX - dragStart.current.x,
-              y: dragStart.current.offsetY + event.clientY - dragStart.current.y,
-            });
+            setOffset(
+              clampOffset(
+                dragStart.current.offsetX + event.clientX - dragStart.current.x,
+                dragStart.current.offsetY + event.clientY - dragStart.current.y,
+              ),
+            );
           }}
           onPointerUp={() => {
             dragStart.current = null;
@@ -737,17 +800,15 @@ function MockupScreenDialog({
           onPointerCancel={() => {
             dragStart.current = null;
           }}
-          onWheel={(event) => {
-            event.preventDefault();
-            const next = Math.min(4, Math.max(1, zoom + (event.deltaY < 0 ? 0.25 : -0.25)));
-            setZoom(next);
-            if (next === 1) setOffset({ x: 0, y: 0 });
-          }}
-          aria-label="Vista ampliable: use la rueda para acercar y arrastre para desplazarse"
+          aria-label="Vista ampliable: use la rueda para desplazarse, Ctrl con la rueda para acercar y arrastre para moverse"
         >
           <div
-            className="flex max-h-full max-w-full items-center justify-center transition-transform duration-100"
-            style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})` }}
+            ref={contentRef}
+            className="flex w-full max-w-full shrink-0 items-start justify-center"
+            style={{
+              transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
+              transformOrigin: 'top center',
+            }}
           >
             {children}
           </div>
@@ -763,6 +824,7 @@ function MockupScreenDialog({
               onClick={() => {
                 const next = Math.max(1, zoom - 0.25);
                 setZoom(next);
+                setOffset(clampOffset(offset.x, offset.y, next));
                 if (next === 1) setOffset({ x: 0, y: 0 });
               }}
             >
