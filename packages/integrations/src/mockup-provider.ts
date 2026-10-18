@@ -47,6 +47,17 @@ export interface EditedScreen {
 
 export type BlueprintScreen = UiBlueprintContent['screens'][number];
 
+// DEC-147: what every screen of one mockup shares, so they read as one
+// application: its name and its main menu, with the entry the screen belongs to.
+export interface MockupAppContext {
+  appName: string;
+  // Main menu entries, in order; empty when there is no navigation to show.
+  menu: string[];
+  // The menu entry of each screen (by blueprint localId); a screen with none,
+  // such as the sign-in, is drawn without the menu.
+  activeMenuByScreen: Record<string, string | null>;
+}
+
 // DEC-146: a provider that draws one screen at a time (Stitch takes about two
 // minutes a screen), so the caller can keep each screen as it arrives and
 // resume a long run instead of asking for every screen in one call.
@@ -59,6 +70,7 @@ export interface ScreenGenerator {
     deviceType: MockupDeviceType,
     refinement?: string,
     theme?: DesignThemeContent,
+    context?: MockupAppContext,
   ): Promise<GeneratedScreen>;
 }
 
@@ -81,6 +93,7 @@ export interface MockupProvider {
     deviceType?: MockupDeviceType,
     refinement?: string,
     theme?: DesignThemeContent,
+    context?: MockupAppContext,
   ): Promise<MockupGenerationResult>;
   // Optional: edit one previously generated screen in place at the provider.
   // Only providers that keep editable screens (Stitch) implement it.
@@ -119,11 +132,12 @@ export class FallbackMockupProvider implements MockupProvider {
     deviceType?: MockupDeviceType,
     refinement?: string,
     theme?: DesignThemeContent,
+    context?: MockupAppContext,
   ): Promise<MockupGenerationResult> {
     let lastError: unknown;
     for (const provider of this.providers) {
       try {
-        return await provider.generate(content, deviceType, refinement, theme);
+        return await provider.generate(content, deviceType, refinement, theme, context);
       } catch (cause) {
         this.onProviderFailure?.(provider.id, cause);
         lastError = cause;

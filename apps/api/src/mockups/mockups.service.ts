@@ -20,6 +20,7 @@ import {
 } from '@caseflow-ai/domain';
 import {
   designThemeContentSchema,
+  navigationTreeContentSchema,
   uiBlueprintContentSchema,
   type ArtifactVersionStatus,
   type DesignThemeContent,
@@ -34,6 +35,7 @@ import { sanitizeDiagramSvg } from '../data-models/svg-sanitizer';
 import {
   MockupProviderError,
   type MockupGenerationResult,
+  type MockupAppContext,
   type MockupProvider,
   type ScreenGenerator,
   type StorageProvider,
@@ -600,6 +602,7 @@ export class MockupsService {
     const content = uiBlueprintContentSchema.parse(source.structuredAnalysisDetail.content);
     const theme = await this.currentTheme(projectId);
     const designThemeVersionId = theme?.versionId ?? null;
+    const appContext = await this.appContext(projectId, content);
     const generator = this.mockupProvider.screens;
     if (generator && jobId)
       return this.generateScreenByScreen(
@@ -611,6 +614,7 @@ export class MockupsService {
         theme?.content,
         designThemeVersionId,
         generator,
+        appContext,
       );
     let generated: MockupGenerationResult;
     try {
@@ -619,6 +623,7 @@ export class MockupsService {
         deviceType,
         refinementPrompt ?? undefined,
         theme?.content,
+        appContext,
       );
     } catch (error) {
       if (error instanceof MockupProviderError)
@@ -658,6 +663,62 @@ export class MockupsService {
     return screens;
   }
 
+  // DEC-147: the name every screen carries and the main menu they share, taken
+  // from the project and its approved navigation tree: the entries one level
+  // under the home, but for the sign-in and actions like signing out. A screen belongs to the entry that is
+  // its navigation node or an ancestor of it.
+  private async appContext(
+    projectId: string,
+    content: ReturnType<typeof uiBlueprintContentSchema.parse>,
+  ): Promise<MockupAppContext> {
+    const [project, tree] = await Promise.all([
+      this.prisma.project.findUnique({ where: { id: projectId }, select: { name: true } }),
+      new FirstDeliverableSnapshotService(this.prisma).approvedArtifactVersion(
+        projectId,
+        'NAVIGATION_TREE',
+      ),
+    ]);
+    const appName = project?.name ?? 'Aplicación';
+    const detail = tree
+      ? await this.prisma.structuredAnalysisDetail.findUnique({
+          where: { artifactVersionId: tree.versionId },
+        })
+      : null;
+    const parsed = detail ? navigationTreeContentSchema.safeParse(detail.content) : null;
+    if (!parsed?.success)
+      return {
+        appName,
+        menu: [],
+        activeMenuByScreen: Object.fromEntries(content.screens.map((s) => [s.localId, null])),
+      };
+    const nodes = parsed.data.nodes;
+    const byId = new Map(nodes.map((node) => [node.localId, node]));
+    const home = nodes.find((node) => node.kind === 'HOME');
+    // Actions such as signing out, and the sign-in, are not menu entries.
+    const entries = nodes.filter(
+      (node) =>
+        node.kind !== 'AUTH' &&
+        node.kind !== 'OTHER' &&
+        (home ? node.parentLocalId === home.localId : !node.parentLocalId),
+    );
+    const entryOf = (localId: string | undefined) => {
+      // The home screen itself shows the menu with its first entry marked.
+      if (home && localId === home.localId) return entries[0]?.label ?? null;
+      for (let node = localId ? byId.get(localId) : undefined; node;) {
+        if (entries.some((entry) => entry.localId === node!.localId)) return node.label;
+        node = node.parentLocalId ? byId.get(node.parentLocalId) : undefined;
+      }
+      return null;
+    };
+    return {
+      appName,
+      menu: entries.slice(0, 12).map((entry) => entry.label),
+      activeMenuByScreen: Object.fromEntries(
+        content.screens.map((screen) => [screen.localId, entryOf(screen.navigationNodeLocalId)]),
+      ),
+    };
+  }
+
   // DEC-146: Stitch draws a screen in about two minutes, so a mockup of many
   // screens is drawn a few at a time, each with its own time limit and asked
   // for again when it fails. Each screen is kept as soon as it arrives (files
@@ -674,6 +735,7 @@ export class MockupsService {
     theme: DesignThemeContent | undefined,
     designThemeVersionId: string | null,
     generator: ScreenGenerator,
+    appContext: MockupAppContext,
   ): Promise<StoredGeneration> {
     const job = await this.prisma.mockupGenerationJob.findUniqueOrThrow({
       where: { id: jobId },
@@ -716,6 +778,7 @@ export class MockupsService {
               deviceType,
               refinementPrompt ?? undefined,
               theme,
+              appContext,
             );
             const assets = await this.storeScreenAssets(projectId, drawn.image, drawn.html);
             const part = await this.prisma.mockupGenerationPart.create({

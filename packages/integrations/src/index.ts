@@ -51,6 +51,7 @@ export {
 export type {
   BlueprintScreen,
   EditedScreen,
+  MockupAppContext,
   GeneratedScreen,
   MockupGenerationResult,
   MockupProvider,

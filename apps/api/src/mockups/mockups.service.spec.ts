@@ -46,6 +46,13 @@ const version = {
   mockupDetail,
 };
 
+// Without an approved navigation tree there is no menu: the screens still share the name.
+const appContext = {
+  appName: 'Aplicación',
+  menu: [],
+  activeMenuByScreen: { home: null },
+};
+
 function setup(provider: MockupProvider = new FakeMockupProvider()) {
   const tx = {
     project: { findUnique: vi.fn().mockResolvedValue({ id: 'project' }) },
@@ -67,7 +74,10 @@ function setup(provider: MockupProvider = new FakeMockupProvider()) {
     // A project created before DEC-118 without a theme: the standard design.
     project: { findUnique: vi.fn().mockResolvedValue({ designThemeRequired: false }) },
     artifact: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn() },
-    structuredAnalysisDetail: { findUniqueOrThrow: vi.fn() },
+    structuredAnalysisDetail: {
+      findUniqueOrThrow: vi.fn(),
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
     artifactVersion: {
       findFirst: vi.fn().mockResolvedValue({
         id: 'blueprint-version',
@@ -179,7 +189,13 @@ describe('MockupsService', () => {
     const provider: MockupProvider = { id: 'spy', generate };
     const { tx, createAndRun } = setup(provider);
     await createAndRun('blueprint-version', 'MOBILE');
-    expect(generate).toHaveBeenCalledWith(blueprintContent, 'MOBILE', undefined, undefined);
+    expect(generate).toHaveBeenCalledWith(
+      blueprintContent,
+      'MOBILE',
+      undefined,
+      undefined,
+      appContext,
+    );
     expect(tx.mockupDetail.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ deviceType: 'MOBILE' }) }),
     );
@@ -219,7 +235,13 @@ describe('MockupsService', () => {
     ]);
     prisma.structuredAnalysisDetail.findUniqueOrThrow.mockResolvedValue({ content: theme });
     await createAndRun('blueprint-version');
-    expect(generate).toHaveBeenCalledWith(blueprintContent, 'DESKTOP', undefined, theme);
+    expect(generate).toHaveBeenCalledWith(
+      blueprintContent,
+      'DESKTOP',
+      undefined,
+      theme,
+      appContext,
+    );
     expect(tx.mockupDetail.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ designThemeVersionId: 'theme-v1' }),
@@ -635,6 +657,7 @@ describe('MockupsService', () => {
       'DESKTOP',
       'Usa tonos verdes',
       undefined,
+      appContext,
     );
     expect(tx.mockupDetail.create).toHaveBeenCalledWith(
       expect.objectContaining({

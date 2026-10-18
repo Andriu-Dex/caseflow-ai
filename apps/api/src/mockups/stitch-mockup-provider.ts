@@ -9,6 +9,7 @@ import {
   type GeneratedScreen,
   type ProviderScreenRef,
   type MockupGenerationResult,
+  type MockupAppContext,
   type MockupProvider,
   type ScreenGenerator,
 } from '@caseflow-ai/integrations';
@@ -39,7 +40,7 @@ export class StitchMockupProvider implements MockupProvider {
         'Crear el proyecto del boceto excedió el tiempo límite.',
         'El proveedor de bocetos no está disponible.',
       ),
-    generateScreen: (projectId, screen, deviceType, refinement, theme) =>
+    generateScreen: (projectId, screen, deviceType, refinement, theme, context) =>
       this.withTimeout(
         async () =>
           this.drawScreen(
@@ -49,6 +50,7 @@ export class StitchMockupProvider implements MockupProvider {
             deviceType,
             refinement,
             theme,
+            context,
           ),
         `La pantalla «${screen.name}» excedió el tiempo límite.`,
         'El proveedor de bocetos no está disponible.',
@@ -69,9 +71,10 @@ export class StitchMockupProvider implements MockupProvider {
     deviceType: MockupDeviceType,
     refinement?: string,
     theme?: DesignThemeContent,
+    context?: MockupAppContext,
   ): Promise<GeneratedScreen> {
     const generated = await project.generate(
-      this.buildPrompt(screen, deviceType, refinement, theme),
+      this.buildPrompt(screen, deviceType, refinement, theme, context),
       deviceType,
     );
     const [imageUrl, htmlUrl] = await Promise.all([generated.getImage(), generated.getHtml()]);
@@ -96,9 +99,10 @@ export class StitchMockupProvider implements MockupProvider {
     deviceType: MockupDeviceType = 'DESKTOP',
     refinement?: string,
     theme?: DesignThemeContent,
+    context?: MockupAppContext,
   ): Promise<MockupGenerationResult> {
     return this.withTimeout(
-      () => this.generateWithSdk(content, deviceType, refinement, theme),
+      () => this.generateWithSdk(content, deviceType, refinement, theme, context),
       'La generación del boceto excedió el tiempo límite.',
       'El proveedor de bocetos no está disponible.',
     );
@@ -134,11 +138,12 @@ export class StitchMockupProvider implements MockupProvider {
     deviceType: MockupDeviceType,
     refinement?: string,
     theme?: DesignThemeContent,
+    context?: MockupAppContext,
   ): Promise<MockupGenerationResult> {
     const project = await (await this.sdk()).createProject(`CASEFlow ${Date.now()}`);
     const screens = await Promise.all(
       content.screens.map((screen) =>
-        this.drawScreen(project, project.id, screen, deviceType, refinement, theme),
+        this.drawScreen(project, project.id, screen, deviceType, refinement, theme, context),
       ),
     );
     if (screens.length === 0) throw new Error('Stitch returned no screens.');
@@ -257,7 +262,10 @@ export class StitchMockupProvider implements MockupProvider {
     deviceType: MockupDeviceType,
     refinement?: string,
     theme?: DesignThemeContent,
+    context?: MockupAppContext,
   ): string {
+    const menu = context?.menu ?? [];
+    const active = context?.activeMenuByScreen[screen.localId] ?? null;
     return [
       deviceType === 'MOBILE'
         ? 'Diseña una pantalla de aplicación móvil (una sola columna, orientación vertical), limpia y profesional,'
@@ -277,9 +285,18 @@ export class StitchMockupProvider implements MockupProvider {
         ? `Datos principales que debe representar: ${screen.principalData.join(', ')}.`
         : '',
       screen.states.length ? `Estados relevantes: ${screen.states.join(', ')}.` : '',
-      screen.relatedUseCaseCodes.length
-        ? `Casos de uso relacionados: ${screen.relatedUseCaseCodes.join(', ')}.`
+      // One application: the same name and the same menu on every screen.
+      context
+        ? `Esta pantalla es una de las de una misma aplicación llamada «${context.appName}»: usa exactamente ese nombre en la cabecera y no inventes otras marcas, logotipos ni nombres de producto.`
         : '',
+      menu.length && active
+        ? `Menú principal, idéntico en todas las pantallas y con el mismo orden: ${menu.join(' · ')}. Resalta como activa la entrada «${active}».`
+        : context
+          ? 'Esta pantalla no lleva el menú principal.'
+          : '',
+      // Plausible but plain content, in one view.
+      'No inventes datos de seguridad (hashes, firmas, certificados, tokens), ni usuarios, empresas o fechas reales: usa datos de ejemplo breves y neutros. No muestres códigos internos de requisitos ni de casos de uso (un identificador con letras y un número) ni referencias a ellos.',
+      'Dibuja una sola vista de la pantalla, en su estado normal; los demás estados se sugieren con mensajes o indicadores breves, nunca como una matriz de estados ni como varias versiones de la pantalla.',
       theme ? this.themePrompt(theme) : '',
       // Last, so it adjusts the design without replacing the blueprint above.
       refinement
