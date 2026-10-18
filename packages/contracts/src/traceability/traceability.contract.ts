@@ -106,5 +106,7 @@ export const traceabilityDiagramResponseSchema = z.object({
   source: z.string(),
   sourceFormat: z.literal('MERMAID_FLOWCHART'),
   svg: z.string(),
+  // Links the drawing leaves out because the renderer draws at most 500.
+  omittedLinks: z.number().int().nonnegative().default(0),
 });
 export type TraceabilityDiagramResponse = z.infer<typeof traceabilityDiagramResponseSchema>;

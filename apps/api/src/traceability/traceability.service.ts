@@ -18,7 +18,7 @@ import {
 } from '@caseflow-ai/contracts';
 import { DiagramProviderError, type DiagramProvider } from '@caseflow-ai/integrations';
 import { PrismaService } from '../database/prisma.service';
-import { DiagramEngine } from '../data-models/diagram-engine';
+import { DiagramEngine, limitTraceabilityEdges } from '../data-models/diagram-engine';
 import { DIAGRAM_PROVIDER } from '../data-models/diagram-provider.token';
 import { sanitizeDiagramSvg } from '../data-models/svg-sanitizer';
 
@@ -331,22 +331,33 @@ export class TraceabilityService {
   // A rendered, downloadable view of the same graph (spec §4.8): re-derived
   // and re-rendered on every request, exactly like every other diagram in the
   // product — nothing here is persisted.
-  private async buildDiagramSource(projectId: string): Promise<string | null> {
+  private async buildDiagramSource(
+    projectId: string,
+  ): Promise<{ source: string; omitted: number } | null> {
     const { nodes, edges } = await this.buildGraph(projectId);
     if (nodes.length === 0) return null;
-    const source = this.diagrams.generateTraceabilityFlowchart({ nodes, edges });
+    // The renderer draws at most 500 links: a bigger graph is drawn with the
+    // ones that say the most, and the response says how many were left out.
+    const { model, omitted } = limitTraceabilityEdges({ nodes, edges });
+    const source = this.diagrams.generateTraceabilityFlowchart(model);
     this.diagrams.validate('MERMAID_FLOWCHART', source);
-    return source;
+    return { source, omitted };
   }
 
   async buildDiagram(projectId: string): Promise<TraceabilityDiagramResponse> {
-    const source = await this.buildDiagramSource(projectId);
-    if (!source)
-      return { source: 'flowchart TD', sourceFormat: 'MERMAID_FLOWCHART', svg: EMPTY_DIAGRAM_SVG };
+    const built = await this.buildDiagramSource(projectId);
+    if (!built)
+      return {
+        source: 'flowchart TD',
+        sourceFormat: 'MERMAID_FLOWCHART',
+        svg: EMPTY_DIAGRAM_SVG,
+        omittedLinks: 0,
+      };
+    const { source, omitted } = built;
     try {
       const rendered = await this.diagramProvider.render({ format: 'MERMAID_FLOWCHART', source });
       const svg = sanitizeDiagramSvg(rendered.svg);
-      return { source, sourceFormat: 'MERMAID_FLOWCHART', svg };
+      return { source, sourceFormat: 'MERMAID_FLOWCHART', svg, omittedLinks: omitted };
     } catch (error) {
       if (error instanceof DiagramProviderError) {
         if (error.code === 'DIAGRAM_INVALID_SOURCE')
@@ -361,8 +372,9 @@ export class TraceabilityService {
   // a stored SVG (spec §4.8; PNG rasterization is unreliable client-side —
   // see apps/web/components/diagram-viewer.tsx).
   async getDiagramPng(projectId: string): Promise<Buffer> {
-    const source = await this.buildDiagramSource(projectId);
-    if (!source) throw new UnprocessableEntityException('No hay artefactos que graficar.');
+    const built = await this.buildDiagramSource(projectId);
+    if (!built) throw new UnprocessableEntityException('No hay artefactos que graficar.');
+    const { source } = built;
     try {
       const { png } = await this.diagramProvider.renderPng({
         format: 'MERMAID_FLOWCHART',

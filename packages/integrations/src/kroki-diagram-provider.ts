@@ -25,7 +25,9 @@ const KROKI_DIAGRAM_TYPE: Record<DiagramFormat, string> = {
 
 // Response bound applied while streaming, independent of any Content-Length
 // header the renderer may or may not send.
-const MAX_RESPONSE_BYTES = 5_000_000;
+// A PNG of a big diagram (a traceability graph of hundreds of artifacts) is
+// legitimately much larger than its SVG.
+const MAX_RESPONSE_BYTES = { svg: 5_000_000, png: 30_000_000 };
 
 export interface KrokiDiagramProviderConfig {
   baseUrl: string;
@@ -77,12 +79,12 @@ export class KrokiDiagramProvider implements DiagramProvider {
         );
       if (!response.ok) throw statusError(response.status);
       const contentLength = response.headers.get('content-length');
-      if (contentLength && Number(contentLength) > MAX_RESPONSE_BYTES)
+      if (contentLength && Number(contentLength) > MAX_RESPONSE_BYTES[outputFormat])
         throw new DiagramProviderError(
           'DIAGRAM_RESPONSE_TOO_LARGE',
           'La respuesta del renderizador excede el límite permitido.',
         );
-      return readBounded(response, MAX_RESPONSE_BYTES);
+      return readBounded(response, MAX_RESPONSE_BYTES[outputFormat]);
     } catch (cause) {
       if (cause instanceof DiagramProviderError) throw cause;
       if (controller.signal.aborted)

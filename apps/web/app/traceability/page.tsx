@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery, useMutation } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { useMemo, useState, useEffect, type ComponentType, type ReactNode } from 'react';
 import Link from 'next/link';
 import {
@@ -249,6 +250,15 @@ function TraceabilityContent({ projectId }: { projectId: string }) {
     queryFn: () => api.traceability.getDiagram(projectId),
     enabled: view === 'diagram',
   });
+
+  // The drawing holds at most 500 links; when there are more, say so once.
+  const omittedLinks = diagram.data?.omittedLinks ?? 0;
+  useEffect(() => {
+    if (omittedLinks > 0)
+      toast.warning(
+        `El grafo muestra los vínculos principales: faltan ${omittedLinks} por el límite del dibujo. La lista los incluye todos.`,
+      );
+  }, [omittedLinks]);
 
   const analyzeImpactMutation = useMutation({
     mutationFn: (versionId: string) => api.impactAnalysis.analyze(projectId, versionId),

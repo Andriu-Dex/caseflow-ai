@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DiagramEngine } from './diagram-engine';
+import { DiagramEngine, limitTraceabilityEdges } from './diagram-engine';
 
 describe('DiagramEngine', () => {
   const engine = new DiagramEngine();
@@ -240,6 +240,78 @@ describe('DiagramEngine', () => {
         '  v1 --> v2',
     );
     expect(() => engine.validate('MERMAID_FLOWCHART', source)).not.toThrow();
+  });
+
+  it('writes a traceability graph too long for the renderer in the shortest form that fits, step by step', () => {
+    const many = (count: number, title: string) => ({
+      nodes: Array.from({ length: count }, (_, i) => ({
+        id: `0000000${String(i).padStart(4, '0')}-aaaa-bbbb-cccc-dddddddddddd`,
+        code: `RF-${String(i).padStart(3, '0')}`,
+        title,
+      })),
+      edges: Array.from({ length: count - 1 }, (_, i) => ({
+        fromId: `0000000${String(i).padStart(4, '0')}-aaaa-bbbb-cccc-dddddddddddd`,
+        toId: `0000000${String(i + 1).padStart(4, '0')}-aaaa-bbbb-cccc-dddddddddddd`,
+      })),
+    });
+    const limit = 45_000;
+    // Fits as it is: the real ids stay.
+    expect(engine.generateTraceabilityFlowchart(many(10, 'Corto'))).toContain('0000000');
+    // Too long with the real ids: short ids, titles whole.
+    const compact = engine.generateTraceabilityFlowchart(
+      many(450, 'Título completo del artefacto'),
+    );
+    expect(compact.length).toBeLessThanOrEqual(limit);
+    expect(compact).toContain('n0["RF-000: Título completo del artefacto"]');
+    expect(compact).not.toContain('0000000');
+    // Still too long: the titles are cut, then only the codes are kept.
+    const cut = engine.generateTraceabilityFlowchart(many(450, 'x'.repeat(100)));
+    expect(cut.length).toBeLessThanOrEqual(limit);
+    expect(cut).toContain('…');
+    const codes = engine.generateTraceabilityFlowchart(many(900, 'x'.repeat(100)));
+    expect(codes).toContain('n0["RF-000"]');
+    // Every edge still joins the same artifacts.
+    expect(compact).toContain('n0 --> n1');
+    expect(() => engine.validate('MERMAID_FLOWCHART', codes)).not.toThrow();
+  });
+
+  it('keeps at most the links the renderer draws, one for every artifact first, and says how many were left out', () => {
+    const nodes = Array.from({ length: 60 }, (_, i) => ({
+      id: `n${i}`,
+      code: `RF-${String(i).padStart(3, '0')}`,
+      title: 'T',
+    }));
+    // A hub every artifact points to, plus a chain: far more links than the limit.
+    const edges = [
+      ...nodes.slice(1).map((node) => ({ fromId: node.id, toId: 'n0' })),
+      ...nodes.slice(1).map((node, i) => ({ fromId: nodes[i]!.id, toId: node.id })),
+    ];
+    expect(limitTraceabilityEdges({ nodes, edges }, 200)).toEqual({
+      model: { nodes, edges },
+      omitted: 0,
+    });
+    const { model, omitted } = limitTraceabilityEdges({ nodes, edges }, 70);
+    expect(model.edges).toHaveLength(70);
+    expect(omitted).toBe(edges.length - 70);
+    // No artifact disappears from the drawing.
+    const touched = new Set(model.edges.flatMap((edge) => [edge.fromId, edge.toId]));
+    expect(nodes.every((node) => touched.has(node.id))).toBe(true);
+    // Same input, same choice.
+    expect(limitTraceabilityEdges({ nodes, edges }, 70).model).toEqual(model);
+  });
+
+  it('draws a traceability graph of many artifacts left to right', () => {
+    const nodes = Array.from({ length: 30 }, (_, i) => ({
+      id: `n${i}`,
+      code: `RF-${i}`,
+      title: 'T',
+    }));
+    const first = (count: number) =>
+      engine
+        .generateTraceabilityFlowchart({ nodes: nodes.slice(0, count), edges: [] })
+        .split('\n')[0];
+    expect(first(30)).toBe('flowchart LR');
+    expect(first(5)).toBe('flowchart TD');
   });
 
   it('generates a deterministic PlantUML component diagram, with and without a dependency description', () => {
