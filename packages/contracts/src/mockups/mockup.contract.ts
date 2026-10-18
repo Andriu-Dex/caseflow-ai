@@ -75,6 +75,9 @@ export const mockupJobResponseSchema = z.object({
   errorMessage: z.string().nullable(),
   // DEC-146: screens drawn so far out of the mockup's total (0 of 0 when the
   // provider draws the whole mockup at once).
+  // What the job was asked to generate, so a stopped one can be resumed.
+  uiBlueprintVersionId: z.uuid().optional(),
+  deviceType: z.enum(['DESKTOP', 'MOBILE']).optional(),
   completedScreens: z.number().int().nonnegative().default(0),
   totalScreens: z.number().int().nonnegative().default(0),
   createdAt: z.iso.datetime(),

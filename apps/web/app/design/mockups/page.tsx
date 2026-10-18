@@ -858,6 +858,8 @@ function MockupsContent({ projectId }: { projectId: string }) {
   });
   const [creatingVersionId, setCreatingVersionId] = useState<string | null>(null);
   const [creatingJobStatus, setCreatingJobStatus] = useState<MockupUiStatus | null>(null);
+  // A generation that stopped with screens already drawn, to offer to continue it.
+  const [stopped, setStopped] = useState<MockupJobResponse | null>(null);
   // Screens drawn so far, when the provider draws them one by one.
   const [progress, setProgress] = useState<{ completed: number; total: number } | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
@@ -890,6 +892,7 @@ function MockupsContent({ projectId }: { projectId: string }) {
     enqueue: () => Promise<MockupJobResponse>,
   ): Promise<boolean> {
     setCreatingVersionId(busyKey);
+    setStopped(null);
     setCreatingJobStatus('SUBMITTING');
     try {
       const job = await enqueue();
@@ -918,6 +921,8 @@ function MockupsContent({ projectId }: { projectId: string }) {
         }
       } else if (result.job.status === 'FAILED') {
         toast.error(result.job.errorMessage ?? 'No se pudo generar el boceto.');
+        if (result.job.completedScreens > 0 && result.job.uiBlueprintVersionId)
+          setStopped(result.job);
       } else {
         toast.success('Boceto generado.');
         // Why it is the internal wireframe and not Stitch, when that happened.
@@ -948,6 +953,8 @@ function MockupsContent({ projectId }: { projectId: string }) {
       .then(({ job }) => {
         if (job && (job.status === 'QUEUED' || job.status === 'RUNNING'))
           void runMockupJob('job', () => Promise.resolve(job));
+        else if (job?.status === 'FAILED' && job.completedScreens > 0 && job.uiBlueprintVersionId)
+          setStopped(job);
       })
       .catch(() => undefined);
   }, [projectId]);
@@ -1124,6 +1131,40 @@ function MockupsContent({ projectId }: { projectId: string }) {
           </ul>
         )}
       </section>
+
+      {stopped && !creatingVersionId ? (
+        <div
+          role="status"
+          className="flex flex-col gap-3 rounded-lg border border-amber-300 bg-amber-50 p-5 dark:border-amber-700/60 dark:bg-amber-950/30"
+        >
+          <p className="text-sm font-semibold text-foreground">
+            La generación del boceto se detuvo: {stopped.completedScreens} de {stopped.totalScreens}{' '}
+            pantallas listas
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {stopped.errorMessage ??
+              'Las pantallas ya generadas se conservan; solo se piden las que faltan.'}
+          </p>
+          <div>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                const job = stopped;
+                void runMockupJob(job.uiBlueprintVersionId!, () =>
+                  api.mockups.create(
+                    projectId,
+                    job.uiBlueprintVersionId!,
+                    job.deviceType ?? 'DESKTOP',
+                  ),
+                );
+              }}
+            >
+              Continuar la generación
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       {creatingVersionId ? (
         <div
