@@ -39,7 +39,14 @@ import {
   type SandboxValidationStage,
   SANDBOX_VALIDATION_STAGES,
 } from '@caseflow-ai/contracts';
-import { Button } from '@caseflow-ai/ui';
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogTitle,
+} from '@caseflow-ai/ui';
 import { api, ApiError } from '../../../lib/api';
 import { PageHeading } from '../../../components/page-heading';
 import { DockerSetupAssistant } from '../../../components/docker-setup-assistant';
@@ -675,6 +682,122 @@ function RunValidation({ projectId, runId }: { projectId: string; runId: string 
   );
 }
 
+function ArchiveRunDialog({
+  run,
+  onOpenChange,
+  onConfirm,
+  isArchiving,
+}: {
+  run: GenerationRunResponse;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => Promise<void>;
+  isArchiving: boolean;
+}) {
+  return (
+    <Dialog open onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md p-5 gap-3.5">
+        <div className="flex items-start gap-3.5">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400">
+            <Archive className="size-5" aria-hidden="true" />
+          </div>
+          <div className="flex flex-col gap-1 min-w-0 flex-1">
+            <DialogTitle className="text-base font-bold tracking-tight text-foreground">
+              ¿Archivar generación de código?
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground leading-relaxed">
+              Se trasladará a la sección de archivadas para mantener despejada su vista de trabajo activa.
+            </DialogDescription>
+          </div>
+        </div>
+
+        {/* Ficha unificada de la corrida */}
+        <div className="rounded-xl border border-border/80 bg-muted/30 p-3.5 flex flex-col gap-2.5 w-full min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0 font-mono text-xs font-semibold text-foreground">
+              <Cpu className="size-3.5 text-primary shrink-0" aria-hidden="true" />
+              <span className="truncate">{run.targetTemplateIdentifier}</span>
+              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground font-semibold">
+                v{run.targetTemplateVersion}
+              </span>
+            </div>
+            <span className="text-[11px] text-muted-foreground shrink-0 font-mono">
+              {new Date(run.createdAt).toLocaleDateString('es-EC', {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                run.status === 'GENERATED'
+                  ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300'
+                  : run.status === 'FAILED'
+                    ? 'bg-destructive/15 text-destructive'
+                    : 'bg-muted text-foreground'
+              }`}
+            >
+              {run.status === 'GENERATED' ? (
+                <CheckCircle2 className="size-3 text-emerald-600 dark:text-emerald-400" />
+              ) : (
+                <XCircle className="size-3 text-destructive" />
+              )}
+              <span>{STATUS_LABELS[run.status]}</span>
+            </span>
+            {run.status === 'GENERATED' ? (
+              <span className="text-xs text-muted-foreground">
+                · {run.fileCount} archivos generados
+              </span>
+            ) : null}
+          </div>
+        </div>
+
+        {/* Mensaje de tranquilidad */}
+        <div className="flex items-center gap-2.5 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+          <ShieldCheck className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+          <span>
+            Los archivos, reportes de Docker y trazas se conservan intactos. Podrá reactivarla en cualquier momento.
+          </span>
+        </div>
+
+        <DialogFooter className="mt-1 flex items-center justify-end gap-2 border-t border-border/50 pt-3">
+          <Button
+            type="button"
+            variant="outline"
+            className="border-border/80 hover:bg-muted font-medium text-xs h-8.5 px-3.5"
+            onClick={() => onOpenChange(false)}
+            disabled={isArchiving}
+          >
+            Cancelar
+          </Button>
+          <Button
+            type="button"
+            disabled={isArchiving}
+            onClick={onConfirm}
+            className="gap-1.5 font-semibold shadow-xs bg-amber-600 hover:bg-amber-700 text-white dark:bg-amber-600 dark:hover:bg-amber-500 text-xs h-8.5 px-3.5"
+          >
+            {isArchiving ? (
+              <>
+                <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                Archivando…
+              </>
+            ) : (
+              <>
+                <Archive className="size-3.5" aria-hidden="true" />
+                Archivar
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function GenerationRunsContent({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
   const plans = useQuery({
@@ -703,6 +826,7 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
   const archivedRuns = (runs.data?.items ?? []).filter((run) => run.archivedAt);
   const [showArchived, setShowArchived] = useState(false);
   const [archivingId, setArchivingId] = useState<string>();
+  const [runToArchive, setRunToArchive] = useState<GenerationRunResponse | null>(null);
 
   async function setArchived(runId: string, archived: boolean) {
     setArchivingId(runId);
@@ -916,7 +1040,7 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
                         </strong>
                       </span>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2.5">
                       <span className="text-xs text-muted-foreground font-mono">
                         {run.targetTemplateIdentifier} v{run.targetTemplateVersion} ·{' '}
                         {new Date(run.createdAt).toLocaleString('es-EC')}
@@ -924,11 +1048,11 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
                       {isActive(run) ? null : (
                         <Button
                           type="button"
-                          variant="ghost"
+                          variant="outline"
                           size="sm"
-                          className="h-7 gap-1.5 text-xs text-muted-foreground"
+                          className="h-7 gap-1.5 text-xs font-medium border-border/80 bg-background/80 hover:bg-amber-500/10 hover:border-amber-500/40 hover:text-amber-800 dark:hover:bg-amber-950/20 dark:hover:text-amber-300 text-muted-foreground shadow-2xs transition-colors"
                           disabled={archivingId === run.id}
-                          onClick={() => void setArchived(run.id, true)}
+                          onClick={() => setRunToArchive(run)}
                         >
                           <Archive className="size-3.5" aria-hidden="true" />
                           Archivar
@@ -991,6 +1115,22 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
             </EmptyState>
           )}
         </QueryState>
+
+        {/* Modal de confirmación para archivar */}
+        {runToArchive ? (
+          <ArchiveRunDialog
+            run={runToArchive}
+            onOpenChange={(open) => {
+              if (!open) setRunToArchive(null);
+            }}
+            onConfirm={async () => {
+              await setArchived(runToArchive.id, true);
+              setRunToArchive(null);
+            }}
+            isArchiving={archivingId === runToArchive.id}
+          />
+        ) : null}
+
         {/* Archived runs, at the end like on the other screens: folded, each restorable. */}
         {archivedRuns.length ? (
           <section className="rounded-xl border border-border/80 bg-card shadow-2xs">
@@ -1008,6 +1148,7 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
               <Archive className="size-4" aria-hidden="true" />
               Archivadas ({archivedRuns.length})
             </button>
+
             {showArchived ? (
               <ul className="flex flex-col divide-y divide-border/60 border-t border-border/60">
                 {archivedRuns.map((run) => (
@@ -1018,14 +1159,37 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
                     <span className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
                       {run.targetTemplateIdentifier} v{run.targetTemplateVersion}
                     </span>
-                    <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                      {STATUS_LABELS[run.status]}
-                      {run.status === 'GENERATED' ? ` · ${run.fileCount} archivos` : ''} ·{' '}
-                      {new Date(run.createdAt).toLocaleString('es-EC')}
+
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold ${
+                        run.status === 'GENERATED'
+                          ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
+                          : run.status === 'FAILED'
+                            ? 'border border-destructive/30 bg-destructive/10 text-destructive'
+                            : 'border border-border/60 bg-muted text-foreground'
+                      }`}
+                    >
+                      {run.status === 'GENERATED' ? (
+                        <CheckCircle2 className="size-3 text-emerald-600 dark:text-emerald-400" />
+                      ) : (
+                        <XCircle className="size-3 text-destructive" />
+                      )}
+                      <span>{STATUS_LABELS[run.status]}</span>
+                      {run.status === 'GENERATED' ? (
+                        <span className="font-mono text-[10px] opacity-80">
+                          · {run.fileCount} archivos
+                        </span>
+                      ) : null}
                     </span>
+
+                    <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                      Generada: {new Date(run.createdAt).toLocaleString('es-EC')}
+                    </span>
+
                     <span className="text-xs text-muted-foreground">
                       Archivada el {new Date(run.archivedAt!).toLocaleDateString('es')}
                     </span>
+
                     <Button
                       type="button"
                       variant="outline"
@@ -1034,8 +1198,17 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
                       disabled={archivingId === run.id}
                       onClick={() => void setArchived(run.id, false)}
                     >
-                      <RotateCcw className="size-3.5" aria-hidden="true" />
-                      {archivingId === run.id ? 'Restaurando…' : 'Restaurar'}
+                      {archivingId === run.id ? (
+                        <>
+                          <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                          Restaurando…
+                        </>
+                      ) : (
+                        <>
+                          <RotateCcw className="size-3.5" aria-hidden="true" />
+                          Restaurar
+                        </>
+                      )}
                     </Button>
                   </li>
                 ))}
