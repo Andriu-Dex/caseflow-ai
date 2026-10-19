@@ -5,6 +5,7 @@ import {
   type ClassDiagramContent,
   type ImplementationPlanBody,
   type ImplementationSkeleton,
+  type LooseImplementationRoute,
   type UiBlueprintContent,
 } from '@caseflow-ai/contracts';
 import { conceptualCardinality, entityClasses } from './conceptual-model-batches';
@@ -292,7 +293,7 @@ const endpointKey = (endpoint: Pick<IpEndpoint, 'method' | 'path'>) =>
 // operation or endpoint that exists serves them.
 export function mergeRouteBatch(
   accumulated: RoutesAccumulated,
-  output: RoutesAccumulated,
+  output: { routes: LooseImplementationRoute[]; customEndpoints: IpEndpoint[] },
   targets: BlueprintScreen[],
   entities: IpEntity[],
   context: PlanContext,
@@ -332,14 +333,24 @@ export function mergeRouteBatch(
     const entity = route.entityLocalId ? entityById.get(route.entityLocalId) : undefined;
     const labels = new Set([...screen!.primaryActions, ...screen!.secondaryActions]);
     const seenLabels = new Set<string>();
-    const actions = route.actions.filter((action) => {
-      if (!labels.has(action.label) || seenLabels.has(action.label)) return false;
-      const served = action.operation
-        ? !!entity?.operations.includes(action.operation)
-        : endpointKeys.has(action.endpoint ?? '');
-      if (served) seenLabels.add(action.label);
-      return served;
-    });
+    // One server per action: the operation when the entity offers it, else the
+    // endpoint when it exists; an action neither serves is dropped.
+    const actions: IpRoute['actions'] = [];
+    for (const action of route.actions) {
+      if (!labels.has(action.label) || seenLabels.has(action.label)) continue;
+      const byOperation =
+        action.operation && entity?.operations.includes(action.operation)
+          ? { label: action.label, operation: action.operation }
+          : null;
+      const byEndpoint =
+        action.endpoint && endpointKeys.has(action.endpoint)
+          ? { label: action.label, endpoint: action.endpoint }
+          : null;
+      const served = byOperation ?? byEndpoint;
+      if (!served) continue;
+      seenLabels.add(action.label);
+      actions.push(served);
+    }
     routes.push({
       ...route,
       path: unique(route.path, paths, '-'),
