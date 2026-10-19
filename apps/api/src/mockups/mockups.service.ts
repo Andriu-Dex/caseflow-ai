@@ -27,6 +27,7 @@ import {
   type MockupDeviceType,
   type MockupJobResponse,
 } from '@caseflow-ai/contracts';
+import { assertCanGenerate } from '../common/generation-cancelled';
 import { provenanceGuard, sourceStatuses } from '../projects/source-statuses';
 import { PrismaService } from '../database/prisma.service';
 import { FirstDeliverableSnapshotService } from '../first-deliverable/first-deliverable-snapshot.service';
@@ -242,7 +243,8 @@ export class MockupsService {
   // The person stops a generation. Screens already drawn are kept (resume
   // continues from them); the loop sees the status before each Stitch call, so
   // calls already in flight finish but no new one starts.
-  async cancelJob(projectId: string, jobId: string): Promise<MockupJobResponse> {
+  async cancelJob(projectId: string, jobId: string, userId: string): Promise<MockupJobResponse> {
+    await assertCanGenerate(this.prisma, projectId, userId);
     const job = await this.prisma.mockupGenerationJob.findFirst({
       where: { id: jobId, projectId },
       include: { _count: { select: { parts: true } } },
@@ -251,7 +253,7 @@ export class MockupsService {
     if (job.status === 'QUEUED' || job.status === 'RUNNING') {
       const drawn = job._count.parts;
       await this.prisma.mockupGenerationJob.updateMany({
-        where: { id: jobId, status: { in: ['QUEUED', 'RUNNING'] } },
+        where: { id: jobId, projectId, status: { in: ['QUEUED', 'RUNNING'] } },
         data: {
           status: 'CANCELLED',
           errorMessage: job.totalScreens
