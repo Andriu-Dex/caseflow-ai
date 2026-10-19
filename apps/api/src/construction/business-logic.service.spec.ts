@@ -31,6 +31,22 @@ describe('reviewBusinessLogic', () => {
 });
 
 describe('unimplementedWarning', () => {
+  it('rejects a body cut off mid-expression, as the token limit leaves it', () => {
+    const cut = [
+      'const venta = await this.prisma.sale.findUnique({ where: { id: saleId } });',
+      'return {',
+      '  lineas: venta.lines.map((linea) => ({',
+      '    identificador: linea.id,',
+      '    rot',
+    ].join(String.fromCharCode(10));
+    const review = reviewBusinessLogic(cut);
+    expect(review.accepted).toBe(false);
+    expect(review).toMatchObject({
+      reason: expect.stringContaining('no es código TypeScript válido'),
+    });
+    expect(reviewBusinessLogic('const total: number = 1; return { total };').accepted).toBe(true);
+  });
+
   it('names only the packages outside the approved catalog', () => {
     const warning = unimplementedWarning(
       'Confirmar pedido',

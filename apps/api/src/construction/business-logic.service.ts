@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import ts from 'typescript';
 import { z } from 'zod';
 import { AIError, AIOrchestrator } from '@caseflow-ai/ai';
 import { findCatalogDependency, type TargetTemplateVersion } from '@caseflow-ai/domain';
@@ -36,8 +37,29 @@ const packageName = (specifier: string) =>
 export type BusinessLogicReview =
   { accepted: true } | { accepted: false; reason: string; packages: string[] };
 
+// Whether the body parses as the inside of an async TypeScript method: an
+// answer cut off by the token limit, or otherwise malformed, breaks the whole
+// generated project at lint time, so it is caught here instead.
+export function syntaxError(body: string): string | null {
+  const { diagnostics = [] } = ts.transpileModule(
+    `async function body() {
+${body}
+}
+`,
+    {
+      reportDiagnostics: true,
+      compilerOptions: { target: ts.ScriptTarget.ES2022 },
+    },
+  );
+  const first = diagnostics[0];
+  return first ? ts.flattenDiagnosticMessageText(first.messageText, ' ') : null;
+}
+
 // Pure check of one AI-proposed method body.
 export function reviewBusinessLogic(body: string): BusinessLogicReview {
+  const invalid = syntaxError(body);
+  if (invalid)
+    return { accepted: false, reason: `no es código TypeScript válido (${invalid})`, packages: [] };
   const packages = [...body.matchAll(IMPORT)].map((m) => packageName(m[1] ?? m[2]!));
   if (packages.length)
     return { accepted: false, reason: 'importa paquetes', packages: [...new Set(packages)] };
@@ -124,7 +146,8 @@ export class BusinessLogicService {
           messages: [{ role: 'user', content: JSON.stringify(context) }],
           outputSchema: businessLogicOutputSchema,
           schemaName: 'business_logic_generation',
-          maxOutputTokens: 2048,
+          // A body may be up to 6 000 characters: room for all of it.
+          maxOutputTokens: 6144,
         });
         const review = reviewBusinessLogic(result.data.body);
         if (review.accepted) {
