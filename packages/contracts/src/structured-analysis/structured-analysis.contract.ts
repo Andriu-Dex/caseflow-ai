@@ -296,7 +296,7 @@ export const generationPlanContentSchema = z
     authentication: z
       .object({
         required: z.boolean(),
-        strategy: text(300).optional(),
+        strategy: text(1000).optional(),
         roles: z.array(text(100)).max(20).default([]),
       })
       .strict(),
@@ -331,7 +331,7 @@ export const planOutlineSchema = z
     authentication: z
       .object({
         required: z.boolean(),
-        strategy: text(300).optional(),
+        strategy: text(1000).optional(),
         roles: z.array(text(100)).max(20).default([]),
       })
       .strict(),
