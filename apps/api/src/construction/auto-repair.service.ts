@@ -97,7 +97,8 @@ export class AutoRepairService {
         ],
         outputSchema: repairOutputSchema,
         schemaName: 'code_repair',
-        maxOutputTokens: 8192,
+        // A repair returns whole files (up to five): a long one did not fit in 8 192.
+        maxOutputTokens: 32_768,
       });
       proposal = result.data;
     } catch (error) {
