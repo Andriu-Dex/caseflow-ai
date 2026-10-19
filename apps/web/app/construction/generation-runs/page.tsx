@@ -18,6 +18,7 @@ import {
   FileCode,
   Layers,
   Layout,
+  Loader2,
   Play,
   RefreshCw,
   Search,
@@ -28,10 +29,11 @@ import {
   XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type {
-  GenerationRunResponse,
-  SandboxRunResponse,
-  SandboxValidationStage,
+import {
+  type GenerationRunResponse,
+  type SandboxRunResponse,
+  type SandboxValidationStage,
+  SANDBOX_VALIDATION_STAGES,
 } from '@caseflow-ai/contracts';
 import { Button } from '@caseflow-ai/ui';
 import { api, ApiError } from '../../../lib/api';
@@ -40,6 +42,8 @@ import { DockerSetupAssistant } from '../../../components/docker-setup-assistant
 import { QueryState, RequireActiveProject } from '../../../components/query-state';
 import { EmptyState } from '../../../components/artifact-actions';
 import { AuthedDownloadButton } from '../../../components/authed-media';
+import { ActiveGenerationProgress } from '../../../components/active-generation-progress';
+import { formatDuration, useElapsed } from '../../../components/generation-overlay';
 
 const STATUS_LABELS: Record<GenerationRunResponse['status'], string> = {
   QUEUED: 'En cola',
@@ -274,6 +278,322 @@ const sandboxErrored = (status: string) => status === 'ERROR';
 const generationActive = (status: string) => status === 'QUEUED' || status === 'GENERATING';
 const generationFailed = (status: string) => status === 'FAILED';
 
+function StageErrorEvidence({ stage, output }: { stage: SandboxValidationStage; output: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copyError() {
+    try {
+      await navigator.clipboard.writeText(output);
+      setCopied(true);
+      toast.success('Salida copiada al portapapeles');
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error('No se pudo copiar');
+    }
+  }
+
+  return (
+    <details
+      open
+      className="mt-2.5 rounded-lg border border-destructive/30 bg-card overflow-hidden shadow-2xs"
+    >
+      <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-destructive hover:text-destructive/80 flex items-center justify-between bg-destructive/10 select-none">
+        <span className="flex items-center gap-1.5">
+          <XCircle className="size-3.5 shrink-0 text-destructive" aria-hidden="true" />
+          Evidencia de {STAGE_LABELS[stage].toLowerCase()}
+        </span>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            copyError();
+          }}
+          className="inline-flex items-center gap-1 rounded border border-border/60 bg-background px-2 py-0.5 text-[11px] font-medium text-foreground hover:bg-muted transition-colors"
+        >
+          {copied ? <Check className="size-3 text-emerald-600" /> : <Copy className="size-3" />}
+          {copied ? 'Copiado' : 'Copiar salida'}
+        </button>
+      </summary>
+      <pre className="max-h-64 overflow-auto border-t border-border/40 bg-slate-950 p-3 font-mono text-[11px] text-slate-100 dark:bg-black/90 leading-relaxed select-text">
+        {output}
+      </pre>
+    </details>
+  );
+}
+
+function ValidationAttemptItem({
+  projectId,
+  attempt,
+}: {
+  projectId: string;
+  attempt: SandboxRunResponse;
+}) {
+  const isRunning = attempt.status === 'RUNNING' || attempt.status === 'QUEUED';
+  const elapsed = useElapsed(isRunning ? (attempt.startedAt ?? attempt.createdAt) : null);
+  const durationMs =
+    attempt.startedAt && attempt.finishedAt
+      ? new Date(attempt.finishedAt).getTime() - new Date(attempt.startedAt).getTime()
+      : 0;
+
+  const failedResult = attempt.stages.find((s) => !s.passed);
+  // When RUNNING and there is already a failed stage, the backend is actively
+  // executing the autoRepair LLM diagnostic and computing patches!
+  const isDiagnosingRepair = attempt.status === 'RUNNING' && Boolean(failedResult);
+
+  // Compute which stage is actively executing in Docker
+  const activeStage =
+    attempt.currentStage ??
+    (!failedResult && attempt.stages.length < SANDBOX_VALIDATION_STAGES.length
+      ? SANDBOX_VALIDATION_STAGES[attempt.stages.length]
+      : null);
+
+  return (
+    <li
+      className={`rounded-xl border p-4 shadow-2xs transition-all ${
+        attempt.status === 'READY'
+          ? 'border-emerald-500/40 bg-emerald-500/5 dark:bg-emerald-950/15'
+          : attempt.status === 'FAILED' || attempt.status === 'VALIDATION_FAILED'
+            ? 'border-destructive/30 bg-destructive/5'
+            : isRunning
+              ? 'border-primary/40 bg-card shadow-xs ring-1 ring-primary/20'
+              : 'border-border/80 bg-card'
+      }`}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/40 pb-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className={`flex size-6 items-center justify-center rounded-full text-xs font-bold ${
+              attempt.status === 'READY'
+                ? 'bg-emerald-500 text-white shadow-xs'
+                : attempt.status === 'FAILED' || attempt.status === 'VALIDATION_FAILED'
+                  ? 'bg-destructive text-white shadow-xs'
+                  : isRunning
+                    ? 'bg-primary text-primary-foreground animate-pulse'
+                    : 'bg-primary/10 text-primary'
+            }`}
+          >
+            {isRunning ? <Loader2 className="size-3.5 animate-spin" /> : attempt.attemptNumber}
+          </span>
+          <strong className="text-foreground text-xs font-semibold">
+            Intento {attempt.attemptNumber}: {SANDBOX_STATUS_LABELS[attempt.status]}
+            {attempt.status === 'RUNNING' && isDiagnosingRepair
+              ? ' · Auto-reparación en curso con IA'
+              : attempt.status === 'RUNNING' && (attempt.currentStage || activeStage)
+                ? ` · ${STAGE_LABELS[(attempt.currentStage || activeStage) as SandboxValidationStage] ?? 'Validando'}`
+                : ''}
+          </strong>
+
+          {isRunning ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 font-mono text-[11px] font-medium text-primary">
+              <Clock className="size-3 animate-spin" />
+              {formatDuration(elapsed)} transcurridos
+            </span>
+          ) : durationMs > 0 ? (
+            <span className="inline-flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
+              <Clock className="size-3" />
+              Duración: {formatDuration(durationMs)}
+            </span>
+          ) : null}
+        </div>
+
+        {attempt.status === 'READY' && attempt.snapshotId ? (
+          <AuthedDownloadButton
+            url={api.generationRuns.snapshotArchiveUrl(projectId, attempt.snapshotId)}
+            filename={`proyecto-generado-${attempt.snapshotId}.zip`}
+            className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 transition-colors disabled:opacity-50"
+          >
+            <Download className="size-4" aria-hidden="true" />
+            Descargar ZIP
+          </AuthedDownloadButton>
+        ) : null}
+      </div>
+
+      {/* Pipeline de Validación de 7 Etapas (Siempre visible) */}
+      <div className="mt-3 flex flex-col gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-1 text-[11px]">
+          <span className="font-semibold uppercase tracking-wider text-muted-foreground">
+            Pipeline de Validación (7 etapas):
+          </span>
+          <span className="font-mono text-muted-foreground text-[10px]">
+            {attempt.status === 'READY'
+              ? '7/7 etapas superadas'
+              : failedResult
+                ? `Falló en ${STAGE_LABELS[failedResult.stage]}`
+                : isRunning
+                  ? `${attempt.stages.length}/7 completadas`
+                  : `${attempt.stages.filter((s) => s.passed).length}/7 superadas`}
+          </span>
+        </div>
+
+        <ul className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2" aria-label="Etapas">
+          {SANDBOX_VALIDATION_STAGES.map((stageKey, idx) => {
+            const stageResult = attempt.stages.find((s) => s.stage === stageKey);
+            const isStagePassed = stageResult?.passed === true;
+            const isStageFailed = stageResult && !stageResult.passed;
+            const isStageActive =
+              isRunning &&
+              !failedResult &&
+              (stageKey === attempt.currentStage || stageKey === activeStage);
+            const isStageSkipped = !stageResult && Boolean(failedResult);
+
+            let badgeClass = 'border-border/60 bg-muted/15 text-muted-foreground/60';
+            let icon = (
+              <span className="flex size-4 items-center justify-center rounded-full bg-muted/40 font-mono text-[9px] text-muted-foreground">
+                {idx + 1}
+              </span>
+            );
+
+            if (isStagePassed) {
+              badgeClass =
+                'border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 font-medium';
+              icon = (
+                <CheckCircle2
+                  className="size-3.5 text-emerald-600 dark:text-emerald-400 shrink-0"
+                  aria-hidden="true"
+                />
+              );
+            } else if (isStageFailed) {
+              badgeClass = 'border-destructive/40 bg-destructive/10 text-destructive font-semibold';
+              icon = <XCircle className="size-3.5 text-destructive shrink-0" aria-hidden="true" />;
+            } else if (isStageActive) {
+              badgeClass =
+                'border-primary/50 bg-primary/10 text-primary font-semibold ring-1 ring-primary/30 shadow-2xs';
+              icon = (
+                <Loader2
+                  className="size-3.5 animate-spin text-primary shrink-0"
+                  aria-hidden="true"
+                />
+              );
+            } else if (isStageSkipped) {
+              badgeClass =
+                'border-border/30 bg-muted/10 text-muted-foreground/50 line-through decoration-muted-foreground/40';
+            }
+
+            return (
+              <li
+                key={stageKey}
+                className={`flex flex-col gap-1 rounded-lg border p-2 text-xs transition-colors ${badgeClass}`}
+              >
+                <div className="flex items-center gap-1.5 min-w-0">
+                  {icon}
+                  <span className="truncate font-medium">{STAGE_LABELS[stageKey]}</span>
+                </div>
+                <div className="text-[10px] font-mono leading-none">
+                  {isStagePassed ? (
+                    stageResult.durationMs > 0 ? (
+                      <span className="opacity-80">
+                        {(stageResult.durationMs / 1000).toFixed(1)}s
+                      </span>
+                    ) : (
+                      <span className="opacity-80">Ok</span>
+                    )
+                  ) : isStageFailed ? (
+                    <span className="text-destructive font-bold">
+                      {stageResult.timedOut ? '(tiempo agotado)' : 'Falló'}
+                    </span>
+                  ) : isStageActive ? (
+                    <span className="text-primary font-semibold flex items-center gap-1">
+                      <span className="size-1.5 rounded-full bg-primary animate-ping" />
+                      Ejecutando…
+                    </span>
+                  ) : isStageSkipped ? (
+                    <span className="text-muted-foreground/60 text-[9px]">Omitida</span>
+                  ) : (
+                    <span className="text-muted-foreground/60 text-[9px]">Pendiente</span>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+
+      {/* Banner de diagnóstico y auto-reparación activo */}
+      {isDiagnosingRepair && failedResult ? (
+        <div className="mt-3 overflow-hidden rounded-xl border border-amber-500/40 bg-linear-to-r from-amber-500/15 via-indigo-500/10 to-amber-500/15 p-3.5 shadow-2xs">
+          <div className="flex items-center gap-2 text-xs font-semibold text-amber-900 dark:text-amber-200">
+            <Sparkles className="size-4 animate-spin text-amber-500 shrink-0" />
+            <span>IA diagnosticando causa raíz y generando parche de auto-reparación…</span>
+            <span className="ml-auto rounded-full border border-amber-500/30 bg-amber-500/20 px-2 py-0.5 font-mono text-[10px] text-amber-800 dark:text-amber-300">
+              Ronda {attempt.attemptNumber} de 3
+            </span>
+          </div>
+          <p className="mt-1.5 text-xs text-muted-foreground leading-relaxed">
+            La etapa{' '}
+            <strong className="text-foreground font-semibold">
+              {STAGE_LABELS[failedResult.stage]}
+            </strong>{' '}
+            no superó la validación. El modelo está examinando los registros de error y el código
+            fuente generado para generar correcciones sin intervención humana. El siguiente intento
+            se lanzará automáticamente al aplicar el parche.
+          </p>
+          <div className="mt-2.5 flex items-center gap-2 text-[11px] font-mono text-amber-800 dark:text-amber-300">
+            <div className="flex items-center gap-1">
+              <span className="size-2 rounded-full bg-amber-500 animate-ping" />
+              <span>Calculando parche correctivo</span>
+            </div>
+            <span className="text-muted-foreground/60">·</span>
+            <span>Límite máximo: 3 rondas (AGENTS.md §27)</span>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Banner de ejecución en Docker */}
+      {isRunning && !isDiagnosingRepair ? (
+        <div className="mt-3 flex items-center gap-2.5 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+          <Loader2 className="size-3.5 animate-spin text-primary shrink-0" />
+          <span>
+            Ejecutando validación en contenedor Docker aislado: etapa{' '}
+            <strong className="text-foreground font-semibold">
+              {STAGE_LABELS[(attempt.currentStage || activeStage) as SandboxValidationStage] ??
+                'iniciando'}
+            </strong>
+            … Esto puede tomar 1 o 2 minutos.
+          </span>
+        </div>
+      ) : null}
+
+      {attempt.errorMessage ? (
+        <p className="mt-2.5 text-xs text-destructive font-medium bg-destructive/10 border border-destructive/20 rounded p-2">
+          {attempt.errorMessage}
+        </p>
+      ) : null}
+
+      {/* Evidencia de salidas fallidas */}
+      {attempt.stages
+        .filter((stage) => !stage.passed)
+        .map((stage) => (
+          <StageErrorEvidence key={stage.stage} stage={stage.stage} output={stage.output} />
+        ))}
+
+      {/* Resultados de la auto-reparación previa */}
+      {attempt.repair ? (
+        <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
+          <div className="flex items-center gap-1.5 text-amber-800 dark:text-amber-300 font-semibold mb-1">
+            <RefreshCw className="size-3.5" />
+            <span>
+              Ronda de reparación {attempt.repair.roundNumber}:{' '}
+              {REPAIR_LABELS[attempt.repair.status]}.
+            </span>
+          </div>
+          <p className="text-muted-foreground">{attempt.repair.explanation}</p>
+          {attempt.repair.patchedPaths.length ? (
+            <p className="mt-1 font-mono text-[11px] text-foreground">
+              Archivos modificados: {attempt.repair.patchedPaths.join(', ')}
+            </p>
+          ) : null}
+          {attempt.repair.findings.map((finding) => (
+            <p key={finding} className="mt-1 text-amber-800 dark:text-amber-300 font-medium">
+              Hallazgo: {finding}
+            </p>
+          ))}
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
 // Validation is a separate state from generation (AGENTS.md §25): only READY
 // offers the project for download.
 function RunValidation({ projectId, runId }: { projectId: string; runId: string }) {
@@ -334,131 +654,7 @@ function RunValidation({ projectId, runId }: { projectId: string; runId: string 
         {items.length ? (
           <ol className="flex flex-col gap-3">
             {items.map((attempt) => (
-              <li
-                key={attempt.id}
-                className={`rounded-xl border p-4 shadow-2xs transition-colors ${
-                  attempt.status === 'READY'
-                    ? 'border-emerald-500/30 bg-emerald-500/5 dark:bg-emerald-950/10'
-                    : attempt.status === 'FAILED' || attempt.status === 'VALIDATION_FAILED'
-                      ? 'border-destructive/30 bg-destructive/5'
-                      : 'border-border/80 bg-card'
-                }`}
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/40 pb-2.5">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`flex size-6 items-center justify-center rounded-full text-xs font-bold ${
-                        attempt.status === 'READY'
-                          ? 'bg-emerald-500 text-white'
-                          : attempt.status === 'FAILED' || attempt.status === 'VALIDATION_FAILED'
-                            ? 'bg-destructive text-white'
-                            : 'bg-primary/10 text-primary'
-                      }`}
-                    >
-                      {attempt.attemptNumber}
-                    </span>
-                    <strong>
-                      Intento {attempt.attemptNumber}: {SANDBOX_STATUS_LABELS[attempt.status]}
-                      {attempt.status === 'RUNNING' && attempt.currentStage
-                        ? ` · ${STAGE_LABELS[attempt.currentStage]}`
-                        : ''}
-                    </strong>
-                  </div>
-                  {attempt.status === 'READY' && attempt.snapshotId ? (
-                    <AuthedDownloadButton
-                      url={api.generationRuns.snapshotArchiveUrl(projectId, attempt.snapshotId)}
-                      filename={`proyecto-generado-${attempt.snapshotId}.zip`}
-                      className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 transition-colors disabled:opacity-50"
-                    >
-                      <Download className="size-4" aria-hidden="true" />
-                      Descargar ZIP
-                    </AuthedDownloadButton>
-                  ) : null}
-                </div>
-
-                {attempt.stages.length ? (
-                  <div className="mt-3 flex flex-col gap-1.5">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Pipeline de Validación (7 etapas):
-                    </span>
-                    <ul className="flex flex-wrap gap-1.5" aria-label="Etapas">
-                      {attempt.stages.map((stage) => (
-                        <li
-                          key={stage.stage}
-                          className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium ${
-                            stage.passed
-                              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                              : 'border-destructive/40 bg-destructive/10 text-destructive'
-                          }`}
-                        >
-                          {stage.passed ? (
-                            <CheckCircle2
-                              className="size-3.5 text-emerald-600 dark:text-emerald-400"
-                              aria-hidden="true"
-                            />
-                          ) : (
-                            <XCircle className="size-3.5 text-destructive" aria-hidden="true" />
-                          )}
-                          <span>{STAGE_LABELS[stage.stage]}</span>
-                          {stage.timedOut ? (
-                            <span className="text-[10px] text-destructive font-semibold">
-                              (tiempo agotado)
-                            </span>
-                          ) : null}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-
-                {attempt.errorMessage ? (
-                  <p className="mt-2.5 text-xs text-destructive font-medium bg-destructive/10 border border-destructive/20 rounded p-2">
-                    {attempt.errorMessage}
-                  </p>
-                ) : null}
-
-                {attempt.stages
-                  .filter((stage) => !stage.passed)
-                  .map((stage) => (
-                    <details
-                      key={stage.stage}
-                      className="mt-2.5 rounded-lg border border-border/60 bg-muted/20 p-2"
-                    >
-                      <summary className="cursor-pointer text-xs font-semibold text-foreground hover:text-primary">
-                        Evidencia de {STAGE_LABELS[stage.stage].toLowerCase()}
-                      </summary>
-                      <pre className="mt-1.5 max-h-64 overflow-auto rounded bg-muted/60 p-2.5 font-mono text-xs leading-relaxed">
-                        {stage.output}
-                      </pre>
-                    </details>
-                  ))}
-
-                {attempt.repair ? (
-                  <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
-                    <div className="flex items-center gap-1.5 text-amber-800 dark:text-amber-300 font-semibold mb-1">
-                      <RefreshCw className="size-3.5" />
-                      <span>
-                        Ronda de reparación {attempt.repair.roundNumber}:{' '}
-                        {REPAIR_LABELS[attempt.repair.status]}.
-                      </span>
-                    </div>
-                    <p className="text-muted-foreground">{attempt.repair.explanation}</p>
-                    {attempt.repair.patchedPaths.length ? (
-                      <p className="mt-1 font-mono text-[11px] text-foreground">
-                        Archivos modificados: {attempt.repair.patchedPaths.join(', ')}
-                      </p>
-                    ) : null}
-                    {attempt.repair.findings.map((finding) => (
-                      <p
-                        key={finding}
-                        className="mt-1 text-amber-800 dark:text-amber-300 font-medium"
-                      >
-                        Hallazgo: {finding}
-                      </p>
-                    ))}
-                  </div>
-                ) : null}
-              </li>
+              <ValidationAttemptItem key={attempt.id} projectId={projectId} attempt={attempt} />
             ))}
           </ol>
         ) : (
@@ -497,9 +693,10 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
   const [openRunId, setOpenRunId] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
   const chosenPlan = planVersionId ?? approvedPlans[0]?.version.id;
+  const hasActiveRun = (runs.data?.items ?? []).some(isActive);
 
   async function start() {
-    if (!chosenPlan) return;
+    if (!chosenPlan || hasActiveRun) return;
     setSubmitting(true);
     try {
       const run = await api.generationRuns.start(projectId, chosenPlan);
@@ -575,6 +772,7 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
                   className="rounded-md border border-input bg-background px-2.5 py-1.5 text-xs font-medium"
                   value={chosenPlan ?? ''}
                   onChange={(e) => setPlanVersionId(e.target.value)}
+                  disabled={hasActiveRun}
                 >
                   {approvedPlans.map((plan) => (
                     <option key={plan.version.id} value={plan.version.id}>
@@ -583,15 +781,50 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
                   ))}
                 </select>
               </label>
-              <Button
-                type="button"
-                className="self-start text-xs gap-1.5 font-semibold h-8"
-                disabled={submitting || !chosenPlan}
-                onClick={start}
-              >
-                <Play className="size-3.5" aria-hidden="true" />
-                {submitting ? 'Iniciando…' : 'Generar proyecto'}
-              </Button>
+              <div className="flex flex-col gap-2">
+                <Button
+                  type="button"
+                  className={`self-start text-xs gap-1.5 font-semibold h-8 transition-all ${
+                    hasActiveRun
+                      ? 'border border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300 hover:bg-amber-500/10 cursor-not-allowed opacity-90'
+                      : ''
+                  }`}
+                  disabled={submitting || !chosenPlan || hasActiveRun}
+                  onClick={start}
+                >
+                  {submitting ? (
+                    <>
+                      <Sparkles className="size-3.5 animate-spin text-primary" aria-hidden="true" />
+                      Iniciando…
+                    </>
+                  ) : hasActiveRun ? (
+                    <>
+                      <Clock
+                        className="size-3.5 animate-pulse text-amber-600 dark:text-amber-400"
+                        aria-hidden="true"
+                      />
+                      Generación en curso…
+                    </>
+                  ) : (
+                    <>
+                      <Play className="size-3.5" aria-hidden="true" />
+                      Generar proyecto
+                    </>
+                  )}
+                </Button>
+                {hasActiveRun ? (
+                  <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+                    <AlertTriangle
+                      className="size-3.5 shrink-0 text-amber-600 dark:text-amber-400"
+                      aria-hidden="true"
+                    />
+                    <span>
+                      Ya hay una generación de código en proceso para este proyecto. Espere a que
+                      finalice para poder iniciar una nueva.
+                    </span>
+                  </div>
+                ) : null}
+              </div>
             </div>
           ) : (
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
@@ -686,6 +919,8 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
                       </ul>
                     </div>
                   ) : null}
+                  {isActive(run) ? <ActiveGenerationProgress run={run} /> : null}
+
                   {run.status === 'GENERATED' ? (
                     <Button
                       type="button"
