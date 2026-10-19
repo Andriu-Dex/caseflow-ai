@@ -54,6 +54,27 @@ describe('API client session restore', () => {
     const refreshes = fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/auth/refresh'));
     expect(refreshes).toHaveLength(1);
   });
+
+  it('says why the server rejected a payload, not only that it was rejected', async () => {
+    fetchMock.mockImplementation(async (url: string) =>
+      url.endsWith('/auth/refresh')
+        ? json(200, { accessToken: 'header.e30.signature' })
+        : json(400, {
+            message: 'La solicitud no es válida.',
+            errors: [
+              {
+                path: 'customEndpoints.3',
+                message: 'El endpoint referencia un módulo inexistente.',
+              },
+            ],
+          }),
+    );
+    const api = await freshApi();
+
+    await expect(api.projects.get('p1')).rejects.toMatchObject({
+      message: 'La solicitud no es válida. El endpoint referencia un módulo inexistente.',
+    });
+  });
 });
 
 describe('API client while the server restarts', () => {

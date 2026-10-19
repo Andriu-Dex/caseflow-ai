@@ -313,9 +313,15 @@ export async function openFileInNewTab(url: string): Promise<void> {
 
 async function extractErrorMessage(response: Response): Promise<string> {
   try {
-    const body = (await response.json()) as { message?: string | string[] };
+    const body = (await response.json()) as {
+      message?: string | string[];
+      errors?: { message?: string }[];
+    };
     if (Array.isArray(body.message)) return body.message.join(' ');
-    if (typeof body.message === 'string') return body.message;
+    // A rejected payload says what is wrong in it (the first reason is enough).
+    const reason = body.errors?.find((error) => error.message)?.message;
+    if (typeof body.message === 'string')
+      return reason ? `${body.message} ${reason}` : body.message;
   } catch {
     // Non-JSON error body: fall through to the generic message below.
   }
