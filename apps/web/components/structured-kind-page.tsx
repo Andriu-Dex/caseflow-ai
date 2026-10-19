@@ -551,6 +551,65 @@ function getArtifactMetrics(kind: StructuredAnalysisKind, content: unknown): Art
     }
     return metrics;
   }
+  if (kind === 'IMPLEMENTATION_PLAN') {
+    const plan = content as ImplementationPlanContent;
+    const modulesCount = plan.modules?.length ?? 0;
+    const entitiesCount = plan.entities?.length ?? 0;
+    const endpointsCount = plan.customEndpoints?.length ?? 0;
+    const routesCount = plan.routes?.length ?? 0;
+    const testsCount = plan.tests?.length ?? 0;
+    const envVarsCount = plan.envVars?.length ?? 0;
+
+    const metrics: ArtifactMetric[] = [
+      {
+        singular: 'módulo NestJS',
+        plural: 'módulos NestJS',
+        count: modulesCount,
+        icon: Package,
+      },
+    ];
+    if (entitiesCount > 0) {
+      metrics.push({
+        singular: 'entidad física',
+        plural: 'entidades físicas',
+        count: entitiesCount,
+        icon: Database,
+      });
+    }
+    if (endpointsCount > 0) {
+      metrics.push({
+        singular: 'endpoint de negocio',
+        plural: 'endpoints de negocio',
+        count: endpointsCount,
+        icon: Globe,
+      });
+    }
+    if (routesCount > 0) {
+      metrics.push({
+        singular: 'ruta frontend',
+        plural: 'rutas frontend',
+        count: routesCount,
+        icon: Layout,
+      });
+    }
+    if (testsCount > 0) {
+      metrics.push({
+        singular: 'prueba planificada',
+        plural: 'pruebas planificadas',
+        count: testsCount,
+        icon: CheckCircle2,
+      });
+    }
+    if (envVarsCount > 0) {
+      metrics.push({
+        singular: 'variable de entorno',
+        plural: 'variables de entorno',
+        count: envVarsCount,
+        icon: Cpu,
+      });
+    }
+    return metrics;
+  }
   return [];
 }
 
@@ -2196,6 +2255,9 @@ export function StructuredKindPage({
                       )
                     : api.structuredAnalysis.startGenerationJob(projectId, kind, selectedIds)
                 }
+                cancel={(jobId) =>
+                  api.structuredAnalysis.cancelGenerationJob(projectId, kind, jobId)
+                }
                 fetchGeneration={(generationId) =>
                   api.structuredAnalysis.generation(projectId, kind, generationId)
                 }
@@ -2255,7 +2317,6 @@ export function StructuredKindPage({
                   }}
                 >
                   <Plus className="size-4" aria-hidden="true" />
-                cancel={(jobId) => api.structuredAnalysis.cancelGenerationJob(projectId, kind, jobId)}
                   Crear manualmente
                 </Button>
               </>
