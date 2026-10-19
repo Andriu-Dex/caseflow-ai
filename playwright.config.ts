@@ -34,7 +34,8 @@ export default defineConfig({
         'npx pnpm@11.27.0 --filter @caseflow-ai/api run build && npx pnpm@11.27.0 --filter @caseflow-ai/api run start',
       url: `http://localhost:${API_PORT}/health/live`,
       timeout: 120_000,
-      reuseExistingServer: false,
+      // Locally, servers already started by hand are reused; CI always starts its own.
+      reuseExistingServer: !process.env.CI,
       env: {
         DATABASE_URL: E2E_DATABASE_URL,
         API_PORT: String(API_PORT),
@@ -56,7 +57,8 @@ export default defineConfig({
         'npx pnpm@11.27.0 --filter @caseflow-ai/web run build && npx pnpm@11.27.0 --filter @caseflow-ai/web run start',
       url: `http://localhost:${WEB_PORT}`,
       timeout: 120_000,
-      reuseExistingServer: false,
+      // Locally, servers already started by hand are reused; CI always starts its own.
+      reuseExistingServer: !process.env.CI,
       env: {
         NEXT_PUBLIC_API_URL: `http://localhost:${API_PORT}`,
       },

@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { expect, test } from '@playwright/test';
+import { expect, test } from './auth';
 
 // E2E Scenario A — the mandatory no-AI professor-demo flow (spec: "CASEflow
 // remains usable without external AI"). The whole API runs with
@@ -18,8 +18,8 @@ test('professor can progress a project from zero to an approved Requirement with
   // --- Create the project through the UI (no fixed/hardcoded project id) ---
   await page.getByRole('button', { name: 'Nuevo proyecto' }).click();
   await page.getByLabel('Nombre del nuevo proyecto').fill(projectName);
-  await page.getByRole('button', { name: 'Crear', exact: true }).click();
-  await expect(page.getByRole('combobox', { name: 'Proyecto activo' })).toHaveValue(/.+/);
+  await page.getByRole('button', { name: 'Crear proyecto' }).click();
+  await expect(page.getByRole('combobox', { name: 'Proyecto activo' })).toContainText(projectName);
   await expect(page.getByRole('heading', { name: projectName })).toBeVisible();
 
   // --- Create a TEXT/NOTES Project Source ---
@@ -36,6 +36,8 @@ test('professor can progress a project from zero to an approved Requirement with
   await sourceCard.getByRole('button', { name: 'Ver detalle' }).click();
 
   // --- Provide the manual interpretation/report (no AI provider running) ---
+  // The report is optional and folded away: open it first.
+  await sourceCard.getByText('Reporte de la fuente').click();
   const manualSummaryBox = sourceCard.getByPlaceholder(
     'O escriba un resumen manual del contenido…',
   );
@@ -85,11 +87,12 @@ test('professor can progress a project from zero to an approved Requirement with
   await nav.getByRole('link', { name: 'Inicio' }).click();
   await expect(page.getByText(/etapas completas/)).toBeVisible();
   const main = page.getByRole('main');
-  // Anchored to a leading ✓ so this can never ambiguously match the "Ir a
-  // ..." next-action link or an unsatisfied "· ..." stage cell — it only
-  // resolves once the stage is genuinely satisfied, which is exactly what
-  // this assertion is waiting for.
-  await expect(main.getByRole('link', { name: /^✓.*Fuentes del proyecto/ })).toBeVisible();
-  await expect(main.getByRole('link', { name: /^✓.*Contexto del proyecto/ })).toBeVisible();
-  await expect(main.getByRole('link', { name: /^✓.*Requisitos/ })).toBeVisible();
+  // A stage link announces its state ("Completada: ..." or "Pendiente: ..."), so
+  // this only resolves once the stage is genuinely satisfied, which is exactly
+  // what this assertion is waiting for.
+  await expect(main.getByRole('link', { name: /^Completada: Fuentes del proyecto/ })).toBeVisible();
+  await expect(
+    main.getByRole('link', { name: /^Completada: Contexto del proyecto/ }),
+  ).toBeVisible();
+  await expect(main.getByRole('link', { name: /^Completada: Requisitos/ })).toBeVisible();
 });
