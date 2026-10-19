@@ -139,4 +139,48 @@ describe('GenerationRunsPage', () => {
     expect(screen.queryByText('Descargar ZIP')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Validar proyecto/ })).not.toBeInTheDocument();
   });
+
+  it('renders executive header banner and bottom navigation links', async () => {
+    render(<GenerationRunsPage />, { wrapper: TestProviders });
+    expect(await screen.findByText('Generación de Código Fuente y Sandbox')).toBeInTheDocument();
+    expect(screen.getAllByText(/Fase de Construcción · Paso 5 de 5/i).length).toBeGreaterThan(0);
+
+    const prevLink = screen.getByRole('link', { name: /Anterior: Plan de implementación/i });
+    expect(prevLink).toHaveAttribute('href', '/construction/implementation-plan');
+
+    const nextLink = screen.getByRole('link', { name: /Ver Estado del Proyecto/i });
+    expect(nextLink).toHaveAttribute('href', '/readiness');
+  });
+
+  it('filters generated files with search input and copies code', async () => {
+    const user = userEvent.setup();
+    // Mock navigator.clipboard
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+      writable: true,
+    });
+
+    render(<GenerationRunsPage />, { wrapper: TestProviders });
+
+    await user.click(await screen.findByRole('button', { name: 'Ver archivos' }));
+    expect(await screen.findByRole('button', { name: /main\.ts/ })).toBeInTheDocument();
+
+    const searchInput = screen.getByLabelText('Filtrar archivos');
+    await user.type(searchInput, 'controller');
+
+    expect(screen.getByText('No hay archivos que coincidan con el filtro.')).toBeInTheDocument();
+
+    await user.clear(searchInput);
+    await user.type(searchInput, 'main');
+    expect(screen.getByRole('button', { name: /main\.ts/ })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /main\.ts/ }));
+    expect(await screen.findByText('bootstrap();')).toBeInTheDocument();
+
+    const copyBtn = screen.getByRole('button', { name: /Copiar código/i });
+    await user.click(copyBtn);
+    expect(writeText).toHaveBeenCalledWith('bootstrap();');
+  });
 });
