@@ -30,7 +30,6 @@ import { Button } from '@caseflow-ai/ui';
 import { api, ApiError } from '../../../lib/api';
 import { PageHeading } from '../../../components/page-heading';
 import { QueryState, RequireActiveProject } from '../../../components/query-state';
-import { ConstructionFooter } from '../../../components/construction-footer';
 import { EmptyState } from '../../../components/artifact-actions';
 
 type StructuredRole = Exclude<DesignBaselineRole, 'MOCKUP'>;
@@ -616,8 +615,6 @@ function DesignBaselineContent({ projectId }: { projectId: string }) {
           )}
         </QueryState>
       </section>
-
-      <ConstructionFooter projectId={projectId} step={3} />
     </div>
   );
 }

@@ -147,7 +147,7 @@ describe('DesignBaselinePage', () => {
     expect(screen.getByRole('button', { name: /aprobar y congelar/i })).toBeDisabled();
   });
 
-  it('renders KPI overview cards and footer navigation', async () => {
+  it('renders KPI overview cards', async () => {
     render(
       <TestProviders>
         <DesignBaselinePage />
@@ -159,15 +159,6 @@ describe('DesignBaselinePage', () => {
     expect(screen.getByText('Artefactos Requeridos')).toBeInTheDocument();
     expect(screen.getByText('Boceto Visual')).toBeInTheDocument();
     expect(screen.getByText('Líneas Base Congeladas')).toBeInTheDocument();
-
-    // Footer navigation
-    const prevLink = screen.getByRole('link', { name: /Anterior: Modelo conceptual/i });
-    expect(prevLink).toHaveAttribute('href', '/construction/conceptual-model');
-
-    const nextLink = screen.getByRole('link', { name: /Siguiente: Plan de implementación/i });
-    expect(nextLink).toHaveAttribute('href', '/construction/implementation-plan');
-
-    expect(screen.getByText('Fase de Construcción · Paso 3 de 5')).toBeInTheDocument();
   });
 
   it('populates name input when clicking suggestion chips', async () => {

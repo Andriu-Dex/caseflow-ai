@@ -1,7 +1,6 @@
 'use client';
 
 import { RequireActiveProject } from '../../../components/query-state';
-import { ConstructionFooter } from '../../../components/construction-footer';
 import { StructuredKindPage } from '../../../components/structured-kind-page';
 
 export default function ConceptualModelPage() {
@@ -14,8 +13,6 @@ export default function ConceptualModelPage() {
             title="Modelo conceptual"
             projectId={projectId}
           />
-
-          <ConstructionFooter projectId={projectId} step={2} />
         </div>
       )}
     </RequireActiveProject>

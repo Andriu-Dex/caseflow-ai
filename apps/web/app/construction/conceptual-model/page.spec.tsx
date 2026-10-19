@@ -101,7 +101,7 @@ beforeEach(() => {
 });
 
 describe('ConceptualModelPage', () => {
-  it('renders page heading and bottom navigation links', async () => {
+  it('renders the page heading', async () => {
     render(
       <TestProviders>
         <ConceptualModelPage />
@@ -113,28 +113,6 @@ describe('ConceptualModelPage', () => {
         screen.getByRole('heading', { name: 'Modelo conceptual', level: 1 }),
       ).toBeInTheDocument();
     });
-
-    // Check footer navigation buttons
-    const prevLink = screen.getByRole('link', { name: /Anterior: Plan de generación/i });
-    expect(prevLink).toHaveAttribute('href', '/construction/generation-plan');
-
-    const nextLink = screen.getByRole('link', { name: /Siguiente: Aprobación de diseño/i });
-    expect(nextLink).toHaveAttribute('href', '/construction/design-baseline');
-
-    expect(screen.getByText('Fase de Construcción · Paso 2 de 5')).toBeInTheDocument();
-  });
-
-  it('disables the next step button, with the reason, while the previous one is not approved', async () => {
-    mocks.list.mockImplementation(async () => ({ items: [] }));
-    render(
-      <TestProviders>
-        <ConceptualModelPage />
-      </TestProviders>,
-    );
-    const next = await screen.findByRole('button', { name: /Siguiente: Aprobación de diseño/i });
-    expect(next).toBeDisabled();
-    expect(next).toHaveAttribute('title', expect.stringContaining('Plan de generación'));
-    expect(screen.queryByRole('link', { name: /Siguiente:/i })).not.toBeInTheDocument();
   });
 
   it('renders KPI metrics badges for the conceptual model in the version card', async () => {

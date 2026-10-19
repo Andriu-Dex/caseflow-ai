@@ -140,16 +140,10 @@ describe('GenerationRunsPage', () => {
     expect(screen.queryByRole('button', { name: /Validar proyecto/ })).not.toBeInTheDocument();
   });
 
-  it('renders executive header banner and bottom navigation links', async () => {
+  it('renders executive header banner', async () => {
     render(<GenerationRunsPage />, { wrapper: TestProviders });
     expect(await screen.findByText('Generación de Código Fuente y Sandbox')).toBeInTheDocument();
     expect(screen.getAllByText(/Fase de Construcción · Paso 5 de 5/i).length).toBeGreaterThan(0);
-
-    const prevLink = screen.getByRole('link', { name: /Anterior: Plan de implementación/i });
-    expect(prevLink).toHaveAttribute('href', '/construction/implementation-plan');
-
-    const nextLink = screen.getByRole('link', { name: /Ver Estado del Proyecto/i });
-    expect(nextLink).toHaveAttribute('href', '/readiness');
   });
 
   it('filters generated files with search input and copies code', async () => {

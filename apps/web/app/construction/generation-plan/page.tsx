@@ -1,7 +1,6 @@
 'use client';
 
 import { RequireActiveProject } from '../../../components/query-state';
-import { ConstructionFooter } from '../../../components/construction-footer';
 import { StructuredKindPage } from '../../../components/structured-kind-page';
 
 export default function GenerationPlanPage() {
@@ -14,8 +13,6 @@ export default function GenerationPlanPage() {
             title="Plan de generación"
             projectId={projectId}
           />
-
-          <ConstructionFooter projectId={projectId} step={1} />
         </div>
       )}
     </RequireActiveProject>

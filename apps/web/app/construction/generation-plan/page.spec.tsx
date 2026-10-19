@@ -101,7 +101,7 @@ beforeEach(() => {
 });
 
 describe('GenerationPlanPage', () => {
-  it('renders page heading and bottom navigation links', async () => {
+  it('renders the page heading', async () => {
     render(
       <TestProviders>
         <GenerationPlanPage />
@@ -113,15 +113,6 @@ describe('GenerationPlanPage', () => {
         screen.getByRole('heading', { name: 'Plan de generación', level: 1 }),
       ).toBeInTheDocument();
     });
-
-    // Check footer navigation buttons
-    const prevLink = screen.getByRole('link', { name: /Anterior: Trazabilidad/i });
-    expect(prevLink).toHaveAttribute('href', '/traceability');
-
-    const nextLink = screen.getByRole('link', { name: /Siguiente: Modelo Conceptual/i });
-    expect(nextLink).toHaveAttribute('href', '/construction/conceptual-model');
-
-    expect(screen.getByText('Fase de Construcción · Paso 1 de 5')).toBeInTheDocument();
   });
 
   it('renders KPI metrics badges for the generation plan in the version card', async () => {
