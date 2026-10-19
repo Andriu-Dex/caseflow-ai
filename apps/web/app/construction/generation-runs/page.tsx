@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useFailureToast } from '../../../lib/use-failure-toast';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -29,12 +29,14 @@ import {
   Server,
   ShieldCheck,
   Sparkles,
+  Terminal,
   X,
   XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   type GenerationRunResponse,
+  type ImplementationPlanContent,
   type SandboxRunResponse,
   type SandboxValidationStage,
   SANDBOX_VALIDATION_STAGES,
@@ -55,6 +57,11 @@ import { EmptyState } from '../../../components/artifact-actions';
 import { AuthedDownloadButton } from '../../../components/authed-media';
 import { ActiveGenerationProgress } from '../../../components/active-generation-progress';
 import { formatDuration, useElapsed } from '../../../components/generation-overlay';
+import { Confetti } from '../../../components/confetti';
+import {
+  ProjectQuickstartDialog,
+  HIDE_QUICKSTART_KEY,
+} from '../../../components/project-quickstart-dialog';
 
 const STATUS_LABELS: Record<GenerationRunResponse['status'], string> = {
   QUEUED: 'En cola',
@@ -335,11 +342,16 @@ function StageErrorEvidence({ stage, output }: { stage: SandboxValidationStage; 
 
 function ValidationAttemptItem({
   projectId,
+  run,
   attempt,
+  primaryRole,
 }: {
   projectId: string;
+  run: GenerationRunResponse;
   attempt: SandboxRunResponse;
+  primaryRole?: string;
 }) {
+  const [quickstartOpen, setQuickstartOpen] = useState(false);
   const isRunning = attempt.status === 'RUNNING' || attempt.status === 'QUEUED';
   const elapsed = useElapsed(isRunning ? (attempt.startedAt ?? attempt.createdAt) : null);
   const durationMs =
@@ -409,14 +421,35 @@ function ValidationAttemptItem({
         </div>
 
         {attempt.status === 'READY' && attempt.snapshotId ? (
-          <AuthedDownloadButton
-            url={api.generationRuns.snapshotArchiveUrl(projectId, attempt.snapshotId)}
-            filename={`proyecto-generado-${attempt.snapshotId}.zip`}
-            className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 transition-colors disabled:opacity-50"
-          >
-            <Download className="size-4" aria-hidden="true" />
-            Descargar ZIP
-          </AuthedDownloadButton>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setQuickstartOpen(true)}
+              className="inline-flex items-center gap-1.5 h-8 rounded-lg border border-border/80 bg-background px-3 text-xs font-semibold text-foreground shadow-2xs hover:border-primary/40 hover:bg-primary/5 hover:text-primary transition-all duration-150"
+            >
+              <Terminal className="size-3.5" aria-hidden="true" />
+              Cómo probarlo
+            </Button>
+            <AuthedDownloadButton
+              url={api.generationRuns.snapshotArchiveUrl(projectId, attempt.snapshotId)}
+              filename={`proyecto-generado-${attempt.snapshotId}.zip`}
+              onClick={() => {
+                try {
+                  if (localStorage.getItem(HIDE_QUICKSTART_KEY) !== 'true') {
+                    setQuickstartOpen(true);
+                  }
+                } catch {
+                  // ignore
+                }
+              }}
+              className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 transition-colors disabled:opacity-50"
+            >
+              <Download className="size-4" aria-hidden="true" />
+              Descargar ZIP
+            </AuthedDownloadButton>
+          </div>
         ) : null}
       </div>
 
@@ -601,18 +634,40 @@ function ValidationAttemptItem({
           ))}
         </div>
       ) : null}
+
+      {quickstartOpen ? (
+        <ProjectQuickstartDialog
+          open={quickstartOpen}
+          onOpenChange={setQuickstartOpen}
+          targetTemplateIdentifier={run.targetTemplateIdentifier}
+          targetTemplateVersion={run.targetTemplateVersion}
+          primaryRole={primaryRole}
+        />
+      ) : null}
     </li>
   );
 }
 
 // Validation is a separate state from generation (AGENTS.md §25): only READY
 // offers the project for download.
-function RunValidation({ projectId, runId }: { projectId: string; runId: string }) {
+function RunValidation({
+  projectId,
+  run,
+  primaryRole,
+}: {
+  projectId: string;
+  run: GenerationRunResponse;
+  primaryRole?: string;
+}) {
   const queryClient = useQueryClient();
   const [starting, setStarting] = useState(false);
+  const [showConfetti, setShowConfetti] = useState(false);
+  const prevStatusesRef = useRef<Map<string, string>>(new Map());
+  const celebratedAttemptsRef = useRef<Set<string>>(new Set());
+
   const attempts = useQuery({
-    queryKey: ['sandbox-runs', projectId, runId],
-    queryFn: () => api.generationRuns.sandboxRuns(projectId, runId),
+    queryKey: ['sandbox-runs', projectId, run.id],
+    queryFn: () => api.generationRuns.sandboxRuns(projectId, run.id),
     refetchInterval: (query) => (query.state.data?.items.some(sandboxActive) ? 3000 : false),
   });
   useFailureToast(
@@ -625,12 +680,30 @@ function RunValidation({ projectId, runId }: { projectId: string; runId: string 
   const last = items.at(-1);
   const canStart = !last || last.status === 'ERROR';
 
+  useEffect(() => {
+    for (const item of items) {
+      const prevStatus = prevStatusesRef.current.get(item.id);
+      if (
+        prevStatus &&
+        (prevStatus === 'RUNNING' || prevStatus === 'QUEUED') &&
+        item.status === 'READY' &&
+        !celebratedAttemptsRef.current.has(item.id)
+      ) {
+        celebratedAttemptsRef.current.add(item.id);
+        setShowConfetti(true);
+        toast.success('¡Proyecto validado con éxito! Se superaron las 7 etapas de Docker Sandbox.');
+        break;
+      }
+      prevStatusesRef.current.set(item.id, item.status);
+    }
+  }, [items]);
+
   async function start() {
     setStarting(true);
     try {
-      await api.generationRuns.validate(projectId, runId);
+      await api.generationRuns.validate(projectId, run.id);
       toast.success('Validación encolada.');
-      await queryClient.invalidateQueries({ queryKey: ['sandbox-runs', projectId, runId] });
+      await queryClient.invalidateQueries({ queryKey: ['sandbox-runs', projectId, run.id] });
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'No se pudo iniciar la validación.');
     } finally {
@@ -640,6 +713,8 @@ function RunValidation({ projectId, runId }: { projectId: string; runId: string 
 
   return (
     <div className="mt-4 flex flex-col gap-3.5 border-t border-border/60 pt-3.5">
+      {showConfetti ? <Confetti onComplete={() => setShowConfetti(false)} /> : null}
+
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <ShieldCheck className="size-4 text-primary" />
@@ -665,7 +740,13 @@ function RunValidation({ projectId, runId }: { projectId: string; runId: string 
         {items.length ? (
           <ol className="flex flex-col gap-3">
             {items.map((attempt) => (
-              <ValidationAttemptItem key={attempt.id} projectId={projectId} attempt={attempt} />
+              <ValidationAttemptItem
+                key={attempt.id}
+                projectId={projectId}
+                run={run}
+                attempt={attempt}
+                primaryRole={primaryRole}
+              />
             ))}
           </ol>
         ) : (
@@ -705,7 +786,8 @@ function ArchiveRunDialog({
               ¿Archivar generación de código?
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground leading-relaxed">
-              Se trasladará a la sección de archivadas para mantener despejada su vista de trabajo activa.
+              Se trasladará a la sección de archivadas para mantener despejada su vista de trabajo
+              activa.
             </DialogDescription>
           </div>
         </div>
@@ -758,9 +840,13 @@ function ArchiveRunDialog({
 
         {/* Mensaje de tranquilidad */}
         <div className="flex items-center gap-2.5 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-          <ShieldCheck className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+          <ShieldCheck
+            className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+            aria-hidden="true"
+          />
           <span>
-            Los archivos, reportes de Docker y trazas se conservan intactos. Podrá reactivarla en cualquier momento.
+            Los archivos, reportes de Docker y trazas se conservan intactos. Podrá reactivarla en
+            cualquier momento.
           </span>
         </div>
 
@@ -820,6 +906,16 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
   const [openRunId, setOpenRunId] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
   const chosenPlan = planVersionId ?? approvedPlans[0]?.version.id;
+  // The first role of the plan this run was generated from (the roles are in the
+  // plan's content, not in its version): the one the dev token example uses.
+  const primaryRoleOf = (run: GenerationRunResponse): string | undefined => {
+    const plan = (plans.data?.items ?? []).find(
+      (p) => p.version.id === run.implementationPlanVersionId,
+    );
+    return plan?.kind === 'IMPLEMENTATION_PLAN'
+      ? (plan.content as ImplementationPlanContent).authentication.roles[0]
+      : undefined;
+  };
   const hasActiveRun = (runs.data?.items ?? []).some(isActive);
   // Archived runs leave the list but stay as history, and can be restored.
   const visibleRuns = (runs.data?.items ?? []).filter((run) => !run.archivedAt);
@@ -1104,7 +1200,11 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
                     </div>
                   ) : null}
                   {run.status === 'GENERATED' ? (
-                    <RunValidation projectId={projectId} runId={run.id} />
+                    <RunValidation
+                      projectId={projectId}
+                      run={run}
+                      primaryRole={primaryRoleOf(run)}
+                    />
                   ) : null}
                 </li>
               ))}

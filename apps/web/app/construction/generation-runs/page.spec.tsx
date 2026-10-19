@@ -43,6 +43,7 @@ const run = {
   targetTemplateIdentifier: 'CASEFLOW_WEB_TS_V1',
   targetTemplateVersion: 1,
   createdAt: '2026-10-01T00:00:00.000Z',
+  implementationPlanVersionId: 'pv1',
   errorMessage: null,
   warnings: ['La acción «Confirmar pedido» quedó sin implementar (responde 501).'],
 };
@@ -56,6 +57,8 @@ beforeEach(() => {
       {
         code: 'PI-001',
         title: 'Plan',
+        kind: 'IMPLEMENTATION_PLAN',
+        content: { authentication: { required: true, roles: ['Administrador', 'Cajero'] } },
         version: { id: 'pv1', versionNumber: 1, status: 'APPROVED' },
       },
       {
@@ -230,5 +233,53 @@ describe('GenerationRunsPage', () => {
     // The active progress component must render with its title and phase indicators
     expect(screen.getByText(/Construyendo Modular Monolith TypeScript/i)).toBeInTheDocument();
     expect(screen.getByText(/Backend NestJS/i)).toBeInTheDocument();
+  });
+
+  it('renders "Cómo probarlo" button and opens quickstart dialog when validation is READY', async () => {
+    const user = userEvent.setup();
+    const stage = (name: string) => ({
+      stage: name,
+      passed: true,
+      exitCode: 0,
+      timedOut: false,
+      durationMs: 100,
+      output: 'ok',
+    });
+    mocks.sandboxRuns.mockResolvedValue({
+      items: [
+        {
+          id: 's-ready',
+          attemptNumber: 1,
+          status: 'READY',
+          currentStage: null,
+          errorMessage: null,
+          stages: [
+            stage('INSTALL'),
+            stage('LINT'),
+            stage('TYPECHECK'),
+            stage('TEST'),
+            stage('BUILD'),
+            stage('STRUCTURE'),
+            stage('TRACEABILITY'),
+          ],
+          repair: null,
+          snapshotId: 'snap-1',
+        },
+      ],
+    });
+
+    render(<GenerationRunsPage />, { wrapper: TestProviders });
+
+    // Both "Descargar ZIP" and "Cómo probarlo" should appear
+    expect(await screen.findByRole('button', { name: /Descargar ZIP/i })).toBeInTheDocument();
+    const quickstartBtn = screen.getByRole('button', { name: /Cómo probarlo/i });
+    expect(quickstartBtn).toBeInTheDocument();
+
+    await user.click(quickstartBtn);
+    expect(
+      await screen.findByRole('dialog', { name: /¿Cómo probar el proyecto en tu máquina\?/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/1\. Preparación/i)).toBeInTheDocument(); // The token example uses the first role of the plan the run came from.
+    expect(screen.getAllByText(/dev-token -- Administrador/).length).toBeGreaterThan(0);
   });
 });
