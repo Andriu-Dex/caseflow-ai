@@ -27,7 +27,7 @@ import {
   computeConstructionStepState,
   computeStepState,
   CONSTRUCTION_STEP_NUMBER,
-  CONSTRUCTION_STEPS,
+  firstBlockingConstructionStep,
   PIPELINE_STEPS,
   ROUTE_STEP_NUMBER,
   ROUTE_STAGE_KEYS,
@@ -231,15 +231,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       // The prompt routes approve these steps automatically, and while the
       // state is loading nothing is locked.
       if (buildOnly || !construction.data) return null;
-      const done = (step: { href: string }) =>
-        computeConstructionStepState(step.href, construction.data) === 'satisfied';
-      // Same as planning: a step already reached is not locked again when an
-      // earlier one changes.
-      if (CONSTRUCTION_STEPS.some((step) => step.step >= constructionTarget && done(step)))
-        return null;
-      return (
-        CONSTRUCTION_STEPS.find((step) => step.step < constructionTarget && !done(step)) ?? null
-      );
+      return firstBlockingConstructionStep(href, construction.data);
     }
     const target = ROUTE_STEP_NUMBER[href];
     if (!target || !stages) return null;
