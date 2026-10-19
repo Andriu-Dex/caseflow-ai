@@ -24,12 +24,15 @@ import { Separator } from '@caseflow-ai/ui';
 import { api } from '../lib/api';
 import { useActiveProject } from '../lib/active-project';
 import {
+  computeConstructionStepState,
   computeStepState,
+  CONSTRUCTION_STEP_NUMBER,
   PIPELINE_STEPS,
   ROUTE_STEP_NUMBER,
   ROUTE_STAGE_KEYS,
   STAGE_LINKS,
 } from '../lib/stage-links';
+import { useConstructionState } from '../lib/use-construction-state';
 import { StageOutdatedBanner } from './stage-outdated-banner';
 import { ProjectSwitcher } from './project-switcher';
 
@@ -157,6 +160,11 @@ export function AppShell({ children }: { children: ReactNode }) {
     queryFn: () => api.projects.get(projectId!),
     enabled: Boolean(projectId) && pathname !== '/login' && pathname !== '/register',
   });
+  const construction = useConstructionState(
+    Boolean(projectId) && pathname !== '/login' && pathname !== '/register'
+      ? (projectId ?? undefined)
+      : undefined,
+  );
   const route = project.data?.workflowRoute;
   // The prompt routes run their own gates server-side: construction is
   // reachable without walking the twelve planning steps by hand.
@@ -359,8 +367,14 @@ export function AppShell({ children }: { children: ReactNode }) {
                       item.href === '/'
                         ? pathname === '/'
                         : pathname === item.href || pathname.startsWith(item.href + '/');
-                    const step = ROUTE_STEP_NUMBER[item.href];
-                    const state = step ? computeStepState(item.href, stages) : 'unknown';
+                    const planningStep = ROUTE_STEP_NUMBER[item.href];
+                    const constructionStep = CONSTRUCTION_STEP_NUMBER[item.href];
+                    const step = planningStep ?? constructionStep;
+                    const state = planningStep
+                      ? computeStepState(item.href, stages)
+                      : constructionStep
+                        ? computeConstructionStepState(item.href, construction.data)
+                        : 'unknown';
                     const locked = Boolean(firstBlockingStep(item.href));
                     return (
                       <li key={item.href}>
