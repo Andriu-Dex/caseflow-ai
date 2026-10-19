@@ -596,9 +596,23 @@ export const implementationEntityBatchOutputSchema = z
       .max(20),
   })
   .strict();
+// The model sometimes names both an operation and an endpoint for an action, or
+// neither: that is settled when the batch is merged (the plan itself stays
+// strict), instead of failing the whole batch.
+const looseRouteActionSchema = z
+  .object({
+    label: text(200),
+    operation: z.enum(IMPLEMENTATION_CRUD_OPERATIONS).optional(),
+    endpoint: text(220).optional(),
+  })
+  .strict();
+const looseRouteSchema = implementationRouteSchema.extend({
+  actions: z.array(looseRouteActionSchema).max(20).default([]),
+});
+export type LooseImplementationRoute = z.output<typeof looseRouteSchema>;
 export const implementationRoutesBatchOutputSchema = z
   .object({
-    routes: z.array(implementationRouteSchema).min(1).max(40),
+    routes: z.array(looseRouteSchema).min(1).max(40),
     customEndpoints: z.array(implementationEndpointSchema).max(40).default([]),
   })
   .strict();

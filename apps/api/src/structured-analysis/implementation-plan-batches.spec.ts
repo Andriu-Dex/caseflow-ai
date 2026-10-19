@@ -242,6 +242,35 @@ describe('routes', () => {
     expect(merged.routes[0]!.actions).toEqual([{ label: 'Nuevo pedido', operation: 'CREATE' }]);
     expect(merged.routes[0]).toMatchObject({ moduleLocalId: 'orders', entityLocalId: 'o' });
   });
+  it('settles an action the model gave both an operation and an endpoint, or neither', () => {
+    const merged = merge(
+      [
+        route({
+          actions: [
+            // Both: the operation the entity offers wins.
+            { label: 'Nuevo pedido', operation: 'CREATE', endpoint: 'POST /orders/:id/new' },
+            // Both, but the entity does not offer the operation: the endpoint serves it.
+            { label: 'Confirmar', operation: 'DELETE', endpoint: 'POST /orders/:id/confirm' },
+            // Neither: dropped.
+            { label: 'Ver' },
+          ],
+        }),
+      ],
+      [
+        {
+          moduleLocalId: 'orders',
+          method: 'POST',
+          path: '/orders/:id/confirm',
+          summary: 'Confirmar',
+          roles: [],
+        },
+      ] as never,
+    );
+    expect(merged.routes[0]!.actions).toEqual([
+      { label: 'Nuevo pedido', operation: 'CREATE' },
+      { label: 'Confirmar', endpoint: 'POST /orders/:id/confirm' },
+    ]);
+  });
   it('makes paths unique, refuses a screen of no batch and asks for the missing ones again', () => {
     const merged = merge([route(), route()]);
     expect(merged.routes.map((r) => r.path)).toEqual(['/orders', '/orders-2']);
