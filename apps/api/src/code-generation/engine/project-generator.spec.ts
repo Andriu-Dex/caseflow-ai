@@ -339,6 +339,49 @@ describe('screen actions (DEC-121)', () => {
     );
   });
 
+  it('takes endpoint parameters from the page URL, adds extra submits and runs queries with no screen', () => {
+    const more = byPath(
+      generateProject(
+        ctx(
+          basePlan({
+            routes: [
+              {
+                path: '/orders/[orderid]/review',
+                screenName: 'Revisar pedido',
+                moduleLocalId: 'sales',
+                kind: 'FORM',
+                entityLocalId: 'order',
+                actions: [
+                  { label: 'Guardar', operation: 'UPDATE' },
+                  { label: 'Guardar borrador', operation: 'UPDATE' },
+                  { label: 'Confirmar', endpoint: 'POST /orders/:orderId/confirm' },
+                ],
+              },
+              {
+                path: '/reports',
+                screenName: 'Reporte',
+                moduleLocalId: 'sales',
+                kind: 'CUSTOM',
+                entityLocalId: 'order',
+                actions: [{ label: 'Consultar pedidos', operation: 'GET' }],
+              },
+            ],
+          }),
+        ),
+      ),
+    );
+    const review = more.get('apps/web/app/orders/[orderid]/review/page.tsx')!.content;
+    expect(review).toContain('const { orderid } = useParams<{ orderid: string }>();');
+    expect(review).toContain('run={() => api.postOrdersConfirm({ orderId: orderid }, {})}');
+    expect(review).toContain(
+      'variant="outline" disabled={isSubmitting} data-action={"Guardar borrador"}',
+    );
+    // No list or detail screen for orders: consulting runs the query.
+    expect(more.get('apps/web/app/reports/page.tsx')!.content).toContain(
+      'data-action={"Consultar pedidos"} run={() => api.listOrders()}',
+    );
+  });
+
   it('opens the form in edit mode when the entity can be read and updated', () => {
     const form = page('apps/web/app/orders/new/page.tsx');
     expect(form).toContain("new URLSearchParams(window.location.search).get('id')");
