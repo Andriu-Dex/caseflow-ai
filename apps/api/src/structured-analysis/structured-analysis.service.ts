@@ -62,6 +62,7 @@ import {
   type ModelRelationship,
 } from './class-diagram-batches';
 import {
+  IP_ACTION_ATTEMPTS,
   IP_BATCH_ATTEMPTS,
   addRelations,
   classesWithoutPlanEntity,
@@ -1663,12 +1664,16 @@ export class StructuredAnalysisService {
           remaining = screensWithoutRoute(routes, remaining);
         }
         routes = fillMissingRoutes(routes, remaining, context);
-        // What the batch left unserved is asked for once more, with the
-        // endpoints that serve it (finishRoutes settles whatever remains).
-        const pending = pendingActions(routes, batch, entities);
-        if (pending.length) {
+        // What the batch left unserved is asked for with the endpoints that
+        // serve it, up to twice (finishRoutes settles whatever remains).
+        for (let attempt = 0; attempt < IP_ACTION_ATTEMPTS; attempt += 1) {
+          const pending = pendingActions(routes, batch, entities);
+          if (!pending.length) break;
           await runner.run(
-            routeBase + routeBatches.length * IP_BATCH_ATTEMPTS + position,
+            routeBase +
+              routeBatches.length * IP_BATCH_ATTEMPTS +
+              position * IP_ACTION_ATTEMPTS +
+              attempt,
             {
               promptKey: 'implementation-plan.actions',
               promptVersion: 1,

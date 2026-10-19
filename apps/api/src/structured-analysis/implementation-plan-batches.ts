@@ -15,6 +15,8 @@ import { conceptualCardinality, entityClasses } from './conceptual-model-batches
 export const IP_BATCH_SIZE = 8;
 // Times a batch is asked for: once, and twice more for what it left out.
 export const IP_BATCH_ATTEMPTS = 3;
+// Times the actions a routes batch left unserved are asked for.
+export const IP_ACTION_ATTEMPTS = 2;
 
 export type IpModule = ImplementationPlanBody['modules'][number];
 export type IpEntity = ImplementationPlanBody['entities'][number];
@@ -293,6 +295,11 @@ const endpointKey = (endpoint: Pick<IpEndpoint, 'method' | 'path'>) =>
 // Adds one batch's routes and custom endpoints. A route shows one of the
 // batch's screens; its actions are kept only when the screen has them and an
 // operation or endpoint that exists serves them.
+// The model writes path parameters in lower case ([saleid], :saleid); they are
+// camelCase names, so a trailing "id" is capitalised.
+export const camelParams = (value: string) =>
+  value.replace(/([:[])([a-z][a-z0-9]*[a-z0-9])id(?![A-Za-z0-9])/g, '$1$2Id');
+
 // What serves an action: the operation when the entity offers it, else the
 // endpoint when it exists; null when neither does.
 function serveAction(
@@ -315,6 +322,20 @@ export function mergeRouteBatch(
   context: PlanContext,
   allScreenIds: Set<string>,
 ): RoutesAccumulated {
+  output = {
+    routes: output.routes.map((route) => ({
+      ...route,
+      path: camelParams(route.path),
+      actions: route.actions.map((action) => ({
+        ...action,
+        ...(action.endpoint ? { endpoint: camelParams(action.endpoint) } : {}),
+      })),
+    })),
+    customEndpoints: output.customEndpoints.map((endpoint) => ({
+      ...endpoint,
+      path: camelParams(endpoint.path),
+    })),
+  };
   const routes = [...accumulated.routes];
   const endpoints = [...accumulated.customEndpoints];
   const endpointKeys = new Set(endpoints.map(endpointKey));
@@ -419,6 +440,16 @@ export function mergeActionBatch(
   context: PlanContext,
 ): RoutesAccumulated {
   const screenById = new Map(screens.map((screen) => [screen.localId, screen]));
+  output = {
+    ...output,
+    routes: output.routes.map((route) => ({
+      ...route,
+      actions: route.actions.map((action) => ({
+        ...action,
+        ...(action.endpoint ? { endpoint: camelParams(action.endpoint) } : {}),
+      })),
+    })),
+  };
   const withEndpoints = mergeRouteBatch(
     accumulated,
     { routes: [], customEndpoints: output.customEndpoints },

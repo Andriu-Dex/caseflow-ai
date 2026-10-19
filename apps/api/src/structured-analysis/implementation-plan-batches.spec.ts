@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   addRelations,
+  camelParams,
   classesWithoutPlanEntity,
   cleanSkeleton,
   derivedTests,
@@ -428,6 +429,14 @@ describe('route actions and provenance fallbacks', () => {
     expect(merged.customEndpoints.map((endpoint) => endpoint.path)).toEqual([
       '/sales/:saleId/confirm',
     ]);
+  });
+  it('writes lower-case path parameters in camelCase', () => {
+    expect(camelParams('/checkout/[saleid]/lines/:lineid')).toBe(
+      '/checkout/[saleId]/lines/:lineId',
+    );
+    expect(camelParams('POST /sales/:saleid/confirm')).toBe('POST /sales/:saleId/confirm');
+    // Already right, or just "id", stays as it is.
+    expect(camelParams('/a/[saleId]/b/:id')).toBe('/a/[saleId]/b/:id');
   });
   it('cites the design sources it comes from when the model cited none, and keeps what it cited', () => {
     const filled = fillProvenance(
