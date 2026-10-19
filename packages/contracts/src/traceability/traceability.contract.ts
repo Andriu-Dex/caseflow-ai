@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import { ARTIFACT_ORIGINS, ARTIFACT_VERSION_STATUSES } from '../artifacts/artifact.contract';
+import {
+  APPROVAL_ORIGINS,
+  ARTIFACT_ORIGINS,
+  ARTIFACT_VERSION_STATUSES,
+} from '../artifacts/artifact.contract';
 
 // Project-scoped First Deliverable provenance graph (requirements.md Phase F).
 // Every edge corresponds to a real persisted exact-version relationship —
@@ -16,6 +20,11 @@ export const TRACEABILITY_ARTIFACT_TYPES = [
   'SYSTEM_ARCHITECTURE',
   'UI_BLUEPRINT',
   'MOCKUP',
+  'GENERATION_PLAN',
+  'CONCEPTUAL_DOMAIN_MODEL',
+  'IMPLEMENTATION_PLAN',
+  'DESIGN_THEME',
+  'CLASS_DIAGRAM',
 ] as const;
 export type TraceabilityArtifactType = (typeof TRACEABILITY_ARTIFACT_TYPES)[number];
 
@@ -27,6 +36,7 @@ export const TRACEABILITY_EDGE_TYPES = [
   'SOURCE_FOR_DIAGRAM',
   'SOURCE_FOR_STRUCTURED_ANALYSIS',
   'UI_BLUEPRINT_SOURCE_FOR_MOCKUP',
+  'DESIGN_THEME_SOURCE_FOR_MOCKUP',
 ] as const;
 export type TraceabilityEdgeType = (typeof TRACEABILITY_EDGE_TYPES)[number];
 
@@ -57,6 +67,8 @@ export const traceabilityNodeSchema = z.object({
   versionNumber: z.number().int().min(1),
   status: z.enum(ARTIFACT_VERSION_STATUSES),
   origin: z.enum(ARTIFACT_ORIGINS),
+  // Who approved it (DEC-116); null while not approved.
+  approvalOrigin: z.enum(APPROVAL_ORIGINS).nullable(),
   title: z.string(),
   isCurrent: z.boolean(),
   generation: traceabilityGenerationSchema.nullable(),
@@ -94,5 +106,7 @@ export const traceabilityDiagramResponseSchema = z.object({
   source: z.string(),
   sourceFormat: z.literal('MERMAID_FLOWCHART'),
   svg: z.string(),
+  // Links the drawing leaves out because the renderer draws at most 500.
+  omittedLinks: z.number().int().nonnegative().default(0),
 });
 export type TraceabilityDiagramResponse = z.infer<typeof traceabilityDiagramResponseSchema>;

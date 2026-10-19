@@ -43,7 +43,7 @@ function file(overrides: Partial<UploadedSourceFile> = {}): UploadedSourceFile {
 }
 const metadata = {
   title: 'Notas',
-  sourceKind: 'NOTES' as const,
+  sourceKind: 'OTHER' as const,
   purpose: 'Notas de reunión',
   description: 'Contenido de prueba.',
 };
@@ -79,12 +79,17 @@ function setup() {
     artifactVersion: { findFirst: vi.fn(), update: vi.fn(), count: vi.fn().mockResolvedValue(0) },
     sourceProcessingJob: {
       findFirst: vi.fn(),
+      findMany: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
     sourceDetail: { findFirst: vi.fn().mockResolvedValue(null) },
     sourceReportCandidate: { create: vi.fn(), findFirst: vi.fn() },
     sourceReportDetail: { create: vi.fn() },
+    sourceReportJob: {
+      findMany: vi.fn().mockResolvedValue([]),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    },
   };
   const ai = { generateStructured: vi.fn() };
   const storage = new FakeStorageProvider();
@@ -243,7 +248,11 @@ describe('SourcesService', () => {
       body: Buffer.from('audio'),
       contentType: 'audio/mpeg',
     });
-    const extractor = { extract: vi.fn().mockResolvedValue({ state: 'UNSUPPORTED' }) };
+    const extractor = {
+      extract: vi
+        .fn()
+        .mockResolvedValue({ state: 'UNSUPPORTED', reason: 'TRANSCRIPTION_UNAVAILABLE' }),
+    };
     const service = new SourcesService(
       prisma as unknown as PrismaService,
       ai as unknown as AIOrchestrator,
@@ -256,6 +265,52 @@ describe('SourcesService', () => {
     expect(prisma.sourceProcessingJob.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'UNSUPPORTED' }) }),
     );
+  });
+
+  it('re-queues on startup the jobs a restart cut off or left orphaned in the queue', async () => {
+    const { prisma, ai, storage } = setup();
+    const startedAt = new Date('2026-01-01T10:00:00Z');
+    prisma.sourceProcessingJob.findMany.mockResolvedValue([
+      { id: 'cut-off', projectId: 'project', status: 'RUNNING' },
+      { id: 'taken-meanwhile', projectId: 'project', status: 'RUNNING' },
+      { id: 'orphaned', projectId: 'project', status: 'QUEUED' },
+    ]);
+    prisma.sourceProcessingJob.updateMany
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 })
+      .mockResolvedValueOnce({ count: 1 });
+    // A report cut off mid-way resumes too (DEC-127).
+    prisma.sourceReportJob.findMany.mockResolvedValue([
+      { id: 'report', projectId: 'project', status: 'RUNNING' },
+    ]);
+    const queue = { add: vi.fn().mockResolvedValue(undefined) };
+    const service = new SourcesService(
+      prisma as unknown as PrismaService,
+      ai as unknown as AIOrchestrator,
+      new SourceContentExtractor(),
+      storage,
+      {} as never,
+      queue as never,
+    );
+
+    await expect(service.recoverInterruptedJobs(startedAt)).resolves.toBe(3);
+    expect(prisma.sourceProcessingJob.findMany).toHaveBeenCalledWith({
+      where: { status: { in: ['RUNNING', 'QUEUED'] }, updatedAt: { lt: startedAt } },
+      select: { id: true, projectId: true, status: true },
+    });
+    expect(prisma.sourceProcessingJob.updateMany).toHaveBeenCalledWith({
+      where: { id: 'cut-off', status: 'RUNNING' },
+      data: { status: 'QUEUED', errorMessage: null, failureReason: null },
+    });
+    expect(prisma.sourceProcessingJob.updateMany).toHaveBeenCalledWith({
+      where: { id: 'orphaned', status: 'QUEUED' },
+      data: { status: 'QUEUED', errorMessage: null, failureReason: null },
+    });
+    expect(queue.add.mock.calls.map((call) => call[1])).toEqual([
+      { jobId: 'cut-off', projectId: 'project' },
+      { jobId: 'orphaned', projectId: 'project' },
+      { jobId: 'report', projectId: 'project', kind: 'REPORT' },
+    ]);
   });
 
   it('allows a stale running job to be retried without replacing the source', async () => {
@@ -280,7 +335,9 @@ describe('SourcesService', () => {
       id: 'artifact',
     });
     expect(prisma.sourceProcessingJob.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { status: 'QUEUED', errorMessage: null } }),
+      expect.objectContaining({
+        data: { status: 'QUEUED', errorMessage: null, failureReason: null },
+      }),
     );
     expect(queue.add).toHaveBeenCalledOnce();
   });
@@ -370,6 +427,7 @@ describe('SourcesService', () => {
         .fn()
         .mockRejectedValue(new StorageProviderError('STORAGE_PROVIDER_UNAVAILABLE', 'down')),
       getObject: vi.fn(),
+      deleteObject: vi.fn(),
     };
     const service = new SourcesService(
       prisma as unknown as PrismaService,

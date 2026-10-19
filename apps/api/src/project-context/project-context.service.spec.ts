@@ -176,7 +176,8 @@ describe('ProjectContextService', () => {
         where: expect.objectContaining({
           id: { in: ['source-version-1'] },
           projectId,
-          status: 'APPROVED',
+          // Outside EXPRESS only approved versions are sources (DEC-119).
+          status: { in: ['APPROVED'] },
           artifact: { artifactTypeCode: 'PROJECT_SOURCE' },
         }),
       }),
@@ -263,6 +264,9 @@ describe('ProjectContextService', () => {
         aiRunId: 'run-1',
         content,
         sourceVersionIds: ['source-version-1'],
+        // This source version has no report, and it fits whole.
+        reportSourceVersionIds: [],
+        partialSourceVersionIds: [],
       },
     });
   });

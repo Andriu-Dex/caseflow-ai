@@ -8,6 +8,8 @@ export const AI_ERROR_CODES = [
   'AI_RATE_LIMITED',
   'AI_INVALID_OUTPUT',
   'AI_PROVIDER_ERROR',
+  // No configured provider accepts a request this large: split the work.
+  'AI_INPUT_TOO_LARGE',
 ] as const;
 export type AIErrorCode = (typeof AI_ERROR_CODES)[number];
 export type AICapability = 'STRUCTURED_OUTPUT';
@@ -19,14 +21,43 @@ const LANGUAGE_NAMES: Record<AIGenerationLanguage, string> = {
 };
 const MAX_OUTPUT_TOKENS_LIMIT = 1_000_000;
 
+// Which quota a rate limit hit: the per-minute one recovers in seconds, the
+// daily one only at the provider's daily reset.
+export type AIQuota = 'MINUTE' | 'DAY';
+export interface AIFailureDiagnostics {
+  model?: string;
+  reason:
+    | 'max_output_tokens'
+    | 'max_messages'
+    | 'content_filter'
+    | 'steered'
+    | 'unknown_incomplete'
+    | 'stream_ended'
+    | 'invalid_schema';
+  outputChars: number;
+  // Where the answer broke the schema (paths and messages, never the values).
+  issues?: string[];
+  usage?: AIUsage | null;
+}
 export class AIError extends Error {
+  readonly retryAfterMs?: number;
+  readonly quota?: AIQuota;
+  readonly diagnostics?: AIFailureDiagnostics;
   constructor(
     public readonly code: AIErrorCode,
     message: string,
-    options?: { cause?: unknown },
+    options?: {
+      cause?: unknown;
+      retryAfterMs?: number;
+      quota?: AIQuota;
+      diagnostics?: AIFailureDiagnostics;
+    },
   ) {
     super(message, options);
     this.name = 'AIError';
+    this.retryAfterMs = options?.retryAfterMs;
+    this.quota = options?.quota;
+    this.diagnostics = options?.diagnostics;
   }
   toJSON(): { code: AIErrorCode; message: string } {
     return { code: this.code, message: this.message };
@@ -51,6 +82,10 @@ export interface AIProviderRequest {
   maxOutputTokens?: number;
   timeoutMs: number;
   signal?: AbortSignal;
+  // Called as a streamed answer arrives, with the characters written so far,
+  // so a long generation can show real progress (DEC-132). Providers that
+  // answer in one piece never call it.
+  onProgress?: (outputChars: number) => void;
 }
 export interface AIProviderResponse {
   provider: string;
@@ -62,8 +97,59 @@ export interface AIProviderResponse {
 }
 export interface AIProvider {
   readonly id: string;
+  // The largest request, in input tokens, it can serve right now; undefined
+  // when unknown. Callers split longer work into parts that fit.
+  readonly maxInputTokens?: number;
   generateStructured(request: AIProviderRequest): Promise<AIProviderResponse>;
+  // What each underlying provider can take right now (DEC-127).
+  status?(): AIProviderStatus[];
 }
+
+export interface AIProviderStatus {
+  id: string;
+  maxInputTokens?: number;
+  // Set while a spent quota keeps it out: when it is expected back.
+  unavailableUntil?: string;
+  quota?: AIQuota;
+}
+
+// Conservative token estimate (about 3 characters per token, below the 3.5-4
+// of Spanish and English prose), so a request estimated to fit really does.
+export const estimateTokens = (text: string) => Math.ceil(text.length / 3);
+export const estimateRequestTokens = (request: AIProviderRequest) =>
+  estimateTokens(
+    request.systemInstructions +
+      request.messages.map((m) => m.content).join('') +
+      JSON.stringify(request.outputSchema),
+  );
+
+// Bigger requests take longer: 30 s more per 10 000 tokens read, and 10 s
+// more per 1 000 tokens the answer may write (writing is the slow part), up
+// to 3 minutes.
+export const MAX_AI_TIMEOUT_MS = 180_000;
+
+// How much a provider may write (DEC-131): what the task needs at least,
+// raised to what the provider declares it can write. A provider without a
+// declared ceiling gets exactly what the task asks for.
+export const outputAllowance = (requested: number | undefined, ceiling: number | undefined) =>
+  ceiling === undefined ? requested : Math.max(ceiling, requested ?? 0);
+
+// A long answer takes as long as it writes. The deadline therefore grows with
+// what the provider may write, at no less than 20 tokens per second (a
+// reasoning model measured about 27, reasoning included). A stalled
+// connection is still cut after 5 minutes without data by fetch itself
+// (undici bodyTimeout), so a large allowance never means waiting on a dead one.
+// ponytail: one fixed rate for every model; per-provider rates if one is slower.
+export const MIN_OUTPUT_TOKENS_PER_SECOND = 20;
+export const writingTimeoutMs = (outputTokens: number | undefined) =>
+  outputTokens ? Math.ceil(outputTokens / MIN_OUTPUT_TOKENS_PER_SECOND) * 1000 : 0;
+export const scaledTimeoutMs = (baseMs: number, inputTokens: number, maxOutputTokens = 0) =>
+  Math.min(
+    MAX_AI_TIMEOUT_MS,
+    baseMs +
+      Math.floor(inputTokens / 10_000) * 30_000 +
+      Math.floor(maxOutputTokens / 1_000) * 10_000,
+  );
 
 export interface PromptDefinition {
   key: string;
@@ -109,7 +195,12 @@ export interface AIRunCompletion {
 export interface AIRunRecorder {
   start(input: AIRunStart): Promise<string>;
   succeed(id: string, completion: AIRunCompletion): Promise<void>;
-  fail(id: string, errorCode: AIErrorCode, latencyMs: number): Promise<void>;
+  fail(
+    id: string,
+    errorCode: AIErrorCode,
+    latencyMs: number,
+    diagnostics?: AIFailureDiagnostics,
+  ): Promise<void>;
 }
 export interface ValidatedGenerationCandidate<T> {
   data: T;
@@ -139,6 +230,7 @@ export interface StructuredGenerationInput<T> {
   temperature?: number;
   maxOutputTokens?: number;
   timeoutMs?: number;
+  onProgress?: (outputChars: number) => void;
 }
 
 export class AIOrchestrator {
@@ -148,6 +240,10 @@ export class AIOrchestrator {
     private readonly recorder: AIRunRecorder,
     private readonly defaultTimeoutMs = 30_000,
   ) {}
+  // How much input one request can carry right now (undefined: unknown).
+  get maxInputTokens(): number | undefined {
+    return this.provider.maxInputTokens;
+  }
   async generateStructured<T>(
     input: StructuredGenerationInput<T>,
   ): Promise<ValidatedGenerationCandidate<T>> {
@@ -165,6 +261,9 @@ export class AIOrchestrator {
       throw new AIError('AI_PROVIDER_ERROR', 'La procedencia de contexto requiere un proyecto.');
     const prompt = this.prompts.get(input.promptKey, input.promptVersion);
     const started = Date.now();
+    const inputTokens = estimateTokens(
+      prompt.systemInstructions + input.messages.map((m) => m.content).join(''),
+    );
     const runId = await this.recorder.start({
       projectId: input.projectId,
       sourceArtifactVersionId: input.sourceArtifactVersionId,
@@ -197,7 +296,10 @@ export class AIOrchestrator {
         model: input.model,
         temperature: input.temperature,
         maxOutputTokens: input.maxOutputTokens,
-        timeoutMs: input.timeoutMs ?? this.defaultTimeoutMs,
+        onProgress: input.onProgress,
+        timeoutMs:
+          input.timeoutMs ??
+          scaledTimeoutMs(this.defaultTimeoutMs, inputTokens, input.maxOutputTokens),
       };
       // A model occasionally produces output that fails schema validation
       // (AI_INVALID_OUTPUT) on an otherwise-healthy provider — worth one retry
@@ -216,7 +318,17 @@ export class AIOrchestrator {
       if (!response || !candidate)
         throw new AIError('AI_INVALID_OUTPUT', 'La salida de IA no cumple el esquema requerido.');
       if (!candidate.success)
-        throw new AIError('AI_INVALID_OUTPUT', 'La salida de IA no cumple el esquema requerido.');
+        throw new AIError('AI_INVALID_OUTPUT', 'La salida de IA no cumple el esquema requerido.', {
+          diagnostics: {
+            model: response.model,
+            reason: 'invalid_schema',
+            outputChars: JSON.stringify(response.payload ?? null).length,
+            usage: response.usage,
+            issues: candidate.error.issues
+              .slice(0, 8)
+              .map((issue) => `${issue.path.join('.') || '(raíz)'}: ${issue.message}`),
+          },
+        });
       await this.recorder.succeed(runId, {
         provider: response.provider,
         model: response.model,
@@ -240,7 +352,9 @@ export class AIOrchestrator {
       };
     } catch (cause) {
       const error = normalizeAIError(cause);
-      await this.recorder.fail(runId, error.code, Date.now() - started);
+      if (error.diagnostics)
+        await this.recorder.fail(runId, error.code, Date.now() - started, error.diagnostics);
+      else await this.recorder.fail(runId, error.code, Date.now() - started);
       throw error;
     }
   }
@@ -252,25 +366,142 @@ export class DisabledAIProvider implements AIProvider {
     throw new AIError('AI_NOT_CONFIGURED', 'La generación con IA no está configurada.');
   }
 }
-// Tries each free-tier provider in order (e.g. Groq, then Gemini) and falls
-// through to the next on any failure — including rate limits, since free
-// tiers are the whole point. The actually-serving provider's own id is what
+// What a provider accepts, as configured (DEC-127). Free tiers differ in
+// opposite ways: Groq takes many small requests (8 000 tokens per minute),
+// Gemini few large ones (20 requests a day, a 1M-token context).
+export interface ProviderCapacity {
+  // Largest single request, in input tokens.
+  maxInputTokens?: number;
+  // A request above this is rejected outright, however long one waits.
+  tokensPerMinute?: number;
+  // Where the daily quota resets, e.g. America/Los_Angeles for Gemini.
+  dayResetTimeZone?: string;
+}
+const capOf = (capacity: ProviderCapacity) =>
+  Math.min(capacity.maxInputTokens ?? Infinity, capacity.tokensPerMinute ?? Infinity);
+
+// Milliseconds until the next midnight in a time zone.
+export function msUntilMidnight(timeZone: string, now: Date): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(now);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  const elapsedMs = (((get('hour') % 24) * 60 + get('minute')) * 60 + get('second')) * 1000;
+  return 86_400_000 - elapsedMs;
+}
+
+const MAX_RATE_LIMIT_WAITS = 3;
+const MAX_WAIT_MS = 65_000;
+
+// Routes each request by size (DEC-127): providers are tried in order, but
+// only those whose capacity fits the request, skipping any whose quota is
+// spent; any other failure falls through to the next, as free tiers fail
+// often. When every fitting provider is only rate limited for the minute,
+// it waits and tries again. The actually-serving provider's own id is what
 // ends up on the recorded AIRun (via response.provider), not this one's.
+// ponytail: quota state lives in memory, so a restart may spend one request
+// rediscovering a spent daily quota.
 export class FallbackAIProvider implements AIProvider {
   readonly id = 'fallback';
-  constructor(private readonly providers: readonly AIProvider[]) {
+  private readonly slots: {
+    provider: AIProvider;
+    capacity: ProviderCapacity;
+    cap: number;
+    blockedUntil: number;
+    blockedBy?: AIQuota;
+  }[];
+  private readonly now: () => number;
+  private readonly sleep: (ms: number) => Promise<void>;
+  constructor(
+    providers: ReadonlyArray<AIProvider | { provider: AIProvider; capacity: ProviderCapacity }>,
+    options: { now?: () => number; sleep?: (ms: number) => Promise<void> } = {},
+  ) {
     if (providers.length === 0)
       throw new Error('FallbackAIProvider requires at least one provider.');
+    this.slots = providers.map((entry) => {
+      const { provider, capacity } =
+        'generateStructured' in entry ? { provider: entry, capacity: {} } : entry;
+      return { provider, capacity, cap: capOf(capacity), blockedUntil: 0 };
+    });
+    this.now = options.now ?? Date.now;
+    this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   }
+
+  status(): AIProviderStatus[] {
+    return this.slots.map((slot) => {
+      const blocked = slot.blockedUntil > this.now();
+      return {
+        id: slot.provider.id,
+        ...(Number.isFinite(slot.cap) ? { maxInputTokens: slot.cap } : {}),
+        ...(blocked
+          ? {
+              unavailableUntil: new Date(slot.blockedUntil).toISOString(),
+              quota: slot.blockedBy ?? 'MINUTE',
+            }
+          : {}),
+      };
+    });
+  }
+
+  // The largest request some provider whose daily quota is not spent can take.
+  get maxInputTokens(): number | undefined {
+    const caps = this.slots
+      .filter((slot) => slot.blockedUntil - this.now() <= MAX_WAIT_MS)
+      .map((slot) => slot.cap);
+    const max = Math.max(...caps);
+    return Number.isFinite(max) ? max : undefined;
+  }
+
+  // A spent daily quota waits for the configured reset (Gemini suggests
+  // retrying in seconds even then); otherwise the provider's own hint.
+  private blockFor(capacity: ProviderCapacity, error: AIError): number {
+    if (error.quota === 'DAY' && capacity.dayResetTimeZone)
+      return msUntilMidnight(capacity.dayResetTimeZone, new Date(this.now()));
+    return error.retryAfterMs ?? (error.quota === 'DAY' ? 3_600_000 : 60_000);
+  }
+
   async generateStructured(request: AIProviderRequest): Promise<AIProviderResponse> {
+    const tokens = estimateRequestTokens(request);
+    const fitting = this.slots.filter((slot) => tokens <= slot.cap);
+    if (fitting.length === 0)
+      throw new AIError(
+        'AI_INPUT_TOO_LARGE',
+        'La información seleccionada es demasiado grande para los proveedores de IA disponibles ahora. Si el de mayor capacidad agotó su cuota diaria (vea Ajustes de IA), inténtelo cuando se reinicie o seleccione menos elementos.',
+      );
     let lastError: unknown;
-    for (const provider of this.providers) {
-      try {
-        return await provider.generateStructured(request);
-      } catch (cause) {
-        lastError = cause;
+    for (let wait = 0; ; wait += 1) {
+      for (const slot of fitting) {
+        if (slot.blockedUntil > this.now()) continue;
+        try {
+          return await slot.provider.generateStructured(request);
+        } catch (cause) {
+          lastError = cause;
+          if (!(cause instanceof AIError)) continue;
+          if (cause.code === 'AI_INPUT_TOO_LARGE') slot.cap = Math.min(slot.cap, tokens - 1);
+          if (cause.code === 'AI_RATE_LIMITED') {
+            slot.blockedUntil = this.now() + this.blockFor(slot.capacity, cause);
+            slot.blockedBy = cause.quota ?? 'MINUTE';
+          }
+        }
       }
+      // Only worth waiting when a fitting provider frees up within a minute.
+      const soonest = Math.min(
+        ...fitting.filter((slot) => tokens <= slot.cap).map((slot) => slot.blockedUntil),
+      );
+      const delay = soonest - this.now();
+      if (wait >= MAX_RATE_LIMIT_WAITS || delay <= 0 || delay > MAX_WAIT_MS) break;
+      await this.sleep(delay);
     }
+    if (lastError === undefined)
+      throw new AIError(
+        'AI_RATE_LIMITED',
+        'Se agotó la cuota de los proveedores de IA que admiten esta solicitud.',
+        { quota: 'DAY' },
+      );
     throw normalizeAIError(lastError);
   }
 }

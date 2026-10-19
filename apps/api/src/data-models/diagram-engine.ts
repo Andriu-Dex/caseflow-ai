@@ -14,27 +14,108 @@ export type ERDiagramModel = {
     name?: string;
   }[];
 };
+// Distinguishable on a white background; the package tints are the same hues,
+// light enough to sit behind the use case ellipses.
+const ACTOR_COLORS = [
+  '#1565C0',
+  '#C62828',
+  '#2E7D32',
+  '#EF6C00',
+  '#6A1B9A',
+  '#00838F',
+  '#AD1457',
+  '#4E342E',
+];
+const GROUP_FILLS = [
+  '#E3F2FD',
+  '#FFEBEE',
+  '#E8F5E9',
+  '#FFF3E0',
+  '#F3E5F5',
+  '#E0F7FA',
+  '#FCE4EC',
+  '#EFEBE9',
+];
 export type UseCaseDiagramModel = {
   systemName: string;
-  useCases: { code: string; name: string; actors: string[] }[];
+  useCases: {
+    code: string;
+    name: string;
+    actors: string[];
+    // Codes of other use cases; one outside the diagram is left out.
+    relations?: { kind: 'INCLUDE' | 'EXTEND'; targetCode: string }[];
+  }[];
 };
 export type NavigationDiagramModel = {
   nodes: { localId: string; label: string; parentLocalId?: string }[];
 };
 export type SoftwareArchitectureDiagramModel = {
-  components: { localId: string; name: string }[];
+  // A component whose localId other components name as their layer is drawn
+  // as a package that contains them.
+  components: {
+    localId: string;
+    name: string;
+    layerLocalId?: string;
+    responsibilities?: string[];
+    relatedSourceCodes?: string[];
+  }[];
   dependencies: { fromLocalId: string; toLocalId: string; description?: string }[];
 };
 export type SystemArchitectureDiagramModel = {
-  nodes: { localId: string; name: string; kind: string }[];
-  links: { fromLocalId: string; toLocalId: string; description?: string }[];
+  nodes: {
+    localId: string;
+    name: string;
+    kind: string;
+    responsibilities?: string[];
+    relatedSourceCodes?: string[];
+  }[];
+  links: { fromLocalId: string; toLocalId: string; protocol?: string; description?: string }[];
 };
 export type TraceabilityDiagramModel = {
   nodes: { id: string; code: string; title: string }[];
   edges: { fromId: string; toId: string }[];
 };
+export type ClassDiagramModel = {
+  classes: {
+    localId: string;
+    name: string;
+    stereotype?: string;
+    attributes: { name: string; type: string; visibility?: string }[];
+    methods: {
+      name: string;
+      parameters: { name: string; type: string }[];
+      returnType?: string;
+      visibility?: string;
+    }[];
+  }[];
+  relationships: {
+    fromLocalId: string;
+    toLocalId: string;
+    kind: string;
+    label?: string;
+    fromMultiplicity?: string;
+    toMultiplicity?: string;
+  }[];
+};
 export type DiagramFormat =
-  'MERMAID_ER' | 'PLANTUML' | 'MERMAID_FLOWCHART' | 'PLANTUML_COMPONENT' | 'PLANTUML_DEPLOYMENT';
+  | 'MERMAID_ER'
+  | 'PLANTUML'
+  | 'MERMAID_FLOWCHART'
+  | 'PLANTUML_COMPONENT'
+  | 'PLANTUML_DEPLOYMENT'
+  | 'MERMAID_CLASS';
+const visibilitySymbol: Record<string, string> = { PUBLIC: '+', PRIVATE: '-', PROTECTED: '#' };
+// Mermaid writes generics with '~' (List~Pedido~) and has no room for braces.
+const classText = (value: string) =>
+  quote(value)
+    .replace(/[<>]/g, '~')
+    .replace(/[{}:;]/g, ' ');
+const relationshipArrow: Record<string, string> = {
+  ASSOCIATION: '-->',
+  AGGREGATION: 'o--',
+  COMPOSITION: '*--',
+  DEPENDENCY: '..>',
+};
 const cardinality: Record<string, string> = {
   ONE: '||',
   ZERO_OR_ONE: 'o|',
@@ -42,6 +123,10 @@ const cardinality: Record<string, string> = {
   ZERO_OR_MORE: 'o{',
 };
 const safeId = (value: string) => value.replace(/[^A-Za-z0-9_]/g, '_');
+// Mermaid attribute names are plain identifiers: "Denominación" has to become
+// "Denominacion", not "Denominaci_n", which reads as a mistake in the diagram.
+const attributeId = (value: string) =>
+  safeId(value.normalize('NFD').replace(/\p{Diacritic}/gu, ''));
 const quote = (value: string) => value.replace(/["\n\r]/g, ' ').trim();
 
 // Ordinal (code-unit) comparison, never localeCompare: the same input must
@@ -79,6 +164,81 @@ function wrapText(text: string, maxLineLength: number = 40): string {
 
   return lines.join('\\n');
 }
+// The renderer places siblings in the order they are declared, so nodes are
+// declared as the tree reads: each node followed by its children, in the order
+// of the model. Sorting them by identifier scattered the children of a node
+// across the drawing. Nodes the walk does not reach (a cycle, a missing
+// parent) follow in model order, so none is lost.
+function inTreeOrder<T extends { localId: string; parentLocalId?: string | undefined }>(
+  nodes: T[],
+): T[] {
+  const ids = new Set(nodes.map((node) => node.localId));
+  const children = new Map<string | undefined, T[]>();
+  for (const node of nodes) {
+    const parent =
+      node.parentLocalId && ids.has(node.parentLocalId) ? node.parentLocalId : undefined;
+    children.set(parent, [...(children.get(parent) ?? []), node]);
+  }
+  const ordered: T[] = [];
+  const seen = new Set<string>();
+  const visit = (node: T) => {
+    if (seen.has(node.localId)) return;
+    seen.add(node.localId);
+    ordered.push(node);
+    for (const child of children.get(node.localId) ?? []) visit(child);
+  };
+  for (const root of children.get(undefined) ?? []) visit(root);
+  for (const node of nodes) visit(node);
+  return ordered;
+}
+
+// The renderer (Mermaid) draws at most 500 links and reads at most 50,000
+// characters of source; some room is left in the second.
+export const TRACEABILITY_DIAGRAM_MAX_EDGES = 500;
+const TRACEABILITY_SOURCE_LIMIT = 45_000;
+
+// Line lengths of the component and deployment diagrams: notes, then dependency labels.
+const NOTE_WIDTH = 40;
+const DEPLOYMENT_NOTE_WIDTH = 60;
+const LABEL_WIDTH = 45;
+
+// Navigation trees with more nodes than this are drawn left to right.
+const LEFT_TO_RIGHT_FROM = 20;
+
+// A graph with more links than the renderer draws keeps the ones that say the
+// most: first one link for every artifact (so none disappears from the
+// drawing), taken in the order of the codes, then the rest in that order. The
+// choice is deterministic, and the caller is told how many were left out.
+export function limitTraceabilityEdges(
+  model: TraceabilityDiagramModel,
+  max = TRACEABILITY_DIAGRAM_MAX_EDGES,
+): { model: TraceabilityDiagramModel; omitted: number } {
+  if (model.edges.length <= max) return { model, omitted: 0 };
+  const code = new Map(model.nodes.map((node) => [node.id, node.code]));
+  const ordered = [...model.edges].sort(
+    (a, b) =>
+      compareOrdinal(code.get(a.toId) ?? '', code.get(b.toId) ?? '') ||
+      compareOrdinal(code.get(a.fromId) ?? '', code.get(b.fromId) ?? ''),
+  );
+  const kept = new Set<(typeof ordered)[number]>();
+  const covered = new Set<string>();
+  for (const edge of ordered) {
+    if (kept.size >= max) break;
+    if (covered.has(edge.fromId) && covered.has(edge.toId)) continue;
+    kept.add(edge);
+    covered.add(edge.fromId);
+    covered.add(edge.toId);
+  }
+  for (const edge of ordered) {
+    if (kept.size >= max) break;
+    kept.add(edge);
+  }
+  return {
+    model: { nodes: model.nodes, edges: ordered.filter((edge) => kept.has(edge)) },
+    omitted: model.edges.length - kept.size,
+  };
+}
+
 @Injectable()
 export class DiagramEngine {
   generateER(model: ERDiagramModel): string {
@@ -86,11 +246,10 @@ export class DiagramEngine {
     for (const entity of model.entities) {
       lines.push(`  ${safeId(entity.localId)}["${quote(entity.name)}"] {`);
       for (const attribute of entity.attributes) {
-        const flags = [attribute.primaryKey ? 'PK' : '', attribute.unique ? 'UK' : '']
-          .filter(Boolean)
-          .join(',');
+        // A primary key is unique already: "PK,UK" only repeats it.
+        const flags = attribute.primaryKey ? 'PK' : attribute.unique ? 'UK' : '';
         lines.push(
-          `    ${attribute.type.toLowerCase()} ${safeId(attribute.name)}${flags ? ` ${flags}` : ''}`,
+          `    ${attribute.type.toLowerCase()} ${attributeId(attribute.name)}${flags ? ` ${flags}` : ''}`,
         );
       }
       lines.push('  }');
@@ -106,6 +265,11 @@ export class DiagramEngine {
     return lines.join('\n');
   }
 
+  // A large system draws hundreds of lines, so the diagram helps the eye: the
+  // use cases of each primary actor sit together in their own tinted package,
+  // and every actor's lines have their own colour, so a line can be followed
+  // from its actor to its use case. Use case numbers follow the code order,
+  // whatever the grouping, so the same input always gives the same source.
   generateUseCase(model: UseCaseDiagramModel): string {
     // Normalize actor identity per use case first so malformed/historical
     // duplicate entries (e.g. the primary actor repeated in secondaryActors)
@@ -118,27 +282,61 @@ export class DiagramEngine {
       compareOrdinal,
     );
     const sortedUseCases = [...useCases].sort((a, b) => compareOrdinal(a.code, b.code));
+    const numbered = sortedUseCases.map((useCase, index) => ({ ...useCase, number: index + 1 }));
     const lines = ['@startuml', 'left to right direction'];
     actors.forEach((actor, index) => lines.push(`actor "${quote(actor)}" as A${index + 1}`));
     lines.push(`rectangle "${quote(model.systemName)}" {`);
-    sortedUseCases.forEach((useCase, index) =>
-      lines.push(`  usecase "${quote(useCase.name)}" as U${index + 1}`),
-    );
+    const groups = [
+      ...actors.map((actor, index) => ({
+        title: `Casos de uso de ${quote(actor)}`,
+        fill: ` ${GROUP_FILLS[index % GROUP_FILLS.length]}`,
+        members: numbered.filter((useCase) => useCase.actors[0] === actor),
+      })),
+      {
+        title: 'Sin actor primario',
+        fill: '',
+        members: numbered.filter((useCase) => useCase.actors.length === 0),
+      },
+    ];
+    for (const group of groups) {
+      if (!group.members.length) continue;
+      lines.push(`  package "${group.title}"${group.fill} {`);
+      for (const useCase of group.members)
+        lines.push(`    usecase "${quote(useCase.name)}" as U${useCase.number}`);
+      lines.push('  }');
+    }
     lines.push('}');
+    numbered.forEach((useCase) =>
+      useCase.actors.forEach((actor) => {
+        const index = actors.indexOf(actor);
+        lines.push(
+          `A${index + 1} -[${ACTOR_COLORS[index % ACTOR_COLORS.length]}]- U${useCase.number}`,
+        );
+      }),
+    );
+    const codes = sortedUseCases.map((useCase) => useCase.code);
     sortedUseCases.forEach((useCase, useCaseIndex) =>
-      useCase.actors.forEach((actor) =>
-        lines.push(`A${actors.indexOf(actor) + 1} -- U${useCaseIndex + 1}`),
-      ),
+      [...(useCase.relations ?? [])]
+        .sort((a, b) => compareOrdinal(a.targetCode, b.targetCode))
+        .forEach(({ kind, targetCode }) => {
+          const target = codes.indexOf(targetCode);
+          if (target >= 0)
+            lines.push(
+              `U${useCaseIndex + 1} ..> U${target + 1} : <<${kind === 'INCLUDE' ? 'include' : 'extend'}>>`,
+            );
+        }),
     );
     lines.push('@enduml');
     return lines.join('\n');
   }
 
   // Deterministic Mermaid flowchart from the structured Navigation Tree
-  // (spec §13.4). AI never produces this source directly.
+  // (spec §13.4). AI never produces this source directly. A big tree has far
+  // more nodes per level than levels, so it is drawn left to right (depth
+  // across, breadth down); top-down would make it many times wider than tall.
   generateNavigationFlowchart(model: NavigationDiagramModel): string {
-    const nodes = [...model.nodes].sort((a, b) => compareOrdinal(a.localId, b.localId));
-    const lines = ['flowchart TD'];
+    const nodes = inTreeOrder(model.nodes);
+    const lines = [nodes.length > LEFT_TO_RIGHT_FROM ? 'flowchart LR' : 'flowchart TD'];
     for (const node of nodes) lines.push(`  ${safeId(node.localId)}["${quote(node.label)}"]`);
     for (const node of nodes)
       if (node.parentLocalId)
@@ -151,40 +349,107 @@ export class DiagramEngine {
   // demand, never persisted, since the graph itself is already recomputed on
   // every request). Node ids are real UUIDs, so safeId() is what keeps them
   // valid Mermaid identifiers.
+  //
+  // The renderer refuses a source longer than 50,000 characters, and a project
+  // with hundreds of artifacts and a thousand links is well past it (the UUID
+  // ids alone are most of an edge line). When the source does not fit, it is
+  // written again in the shortest form that does, one step at a time: short
+  // sequential ids, then titles cut to 40 characters, then codes only.
   generateTraceabilityFlowchart(model: TraceabilityDiagramModel): string {
     const nodes = [...model.nodes].sort((a, b) => compareOrdinal(a.code, b.code));
     const edges = [...model.edges].sort(
       (a, b) => compareOrdinal(a.fromId, b.fromId) || compareOrdinal(a.toId, b.toId),
     );
-    const lines = ['flowchart TD'];
-    for (const node of nodes) {
-      const fullTitle = `${node.code}: ${node.title}`;
-      const title = wrapText(fullTitle, 60);
-      lines.push(`  ${safeId(node.id)}["${quote(title)}"]`);
+    const build = (
+      compactIds: boolean,
+      title: (node: { code: string; title: string }) => string,
+    ) => {
+      const ids = new Map(
+        nodes.map((node, index) => [node.id, compactIds ? `n${index}` : safeId(node.id)]),
+      );
+      // Many artifacts go down, one stage after another across: a hundred of them
+      // on a top-down row would be tens of thousands of pixels wide.
+      const lines = [nodes.length > LEFT_TO_RIGHT_FROM ? 'flowchart LR' : 'flowchart TD'];
+      for (const node of nodes) lines.push(`  ${ids.get(node.id)}["${quote(title(node))}"]`);
+      for (const edge of edges) {
+        const from = ids.get(edge.fromId);
+        const to = ids.get(edge.toId);
+        if (from && to) lines.push(`  ${from} --> ${to}`);
+      }
+      return lines.join('\n');
+    };
+    const full = (node: { code: string; title: string }) =>
+      wrapText(`${node.code}: ${node.title}`, 60);
+    const cut = (node: { code: string; title: string }) =>
+      wrapText(
+        `${node.code}: ${node.title.length > 40 ? `${node.title.slice(0, 39)}…` : node.title}`,
+        60,
+      );
+    const attempts: [boolean, (node: { code: string; title: string }) => string][] = [
+      [false, full],
+      [true, full],
+      [true, cut],
+      [true, (node) => node.code],
+    ];
+    let source = '';
+    for (const [compactIds, title] of attempts) {
+      source = build(compactIds, title);
+      if (source.length <= TRACEABILITY_SOURCE_LIMIT) break;
     }
-    for (const edge of edges) lines.push(`  ${safeId(edge.fromId)} --> ${safeId(edge.toId)}`);
-    return lines.join('\n');
+    return source;
   }
 
   // Deterministic PlantUML component diagram from the structured Software
-  // Architecture (spec §14.3).
+  // Architecture (spec §14.3). Drawn left to right, with the dependency labels
+  // broken into short lines. A component's layer is the name of the package
+  // that holds it. Each component carries a short note with the quality
+  // requirements (RNF) it answers; its responsibilities and other sources are
+  // not drawn, since a note of several lines per component hid the structure.
+  // They stay in the stored content and in the component's card.
   generateSoftwareComponentDiagram(model: SoftwareArchitectureDiagramModel): string {
     const components = [...model.components].sort((a, b) => compareOrdinal(a.localId, b.localId));
-    const lines = ['@startuml'];
+    const layers = [
+      ...new Set(components.flatMap((c) => (c.layerLocalId ? [c.layerLocalId] : []))),
+    ].sort(compareOrdinal);
+    const lines = ['@startuml', 'left to right direction'];
+    // ponytail: one level of layers; a layer inside another layer is drawn flat.
+    for (const layer of layers) {
+      const name = components.find((c) => c.localId === layer)?.name ?? layer;
+      lines.push(`package "${quote(name)}" as ${safeId(layer)} {`);
+      for (const component of components)
+        if (component.layerLocalId === layer && !layers.includes(component.localId))
+          lines.push(`  component "${quote(component.name)}" as ${safeId(component.localId)}`);
+      lines.push('}');
+    }
     for (const component of components)
-      lines.push(`component "${quote(component.name)}" as ${safeId(component.localId)}`);
+      if (!component.layerLocalId && !layers.includes(component.localId))
+        lines.push(`component "${quote(component.name)}" as ${safeId(component.localId)}`);
     for (const dependency of model.dependencies)
       lines.push(
         `${safeId(dependency.fromLocalId)} --> ${safeId(dependency.toLocalId)}${
-          dependency.description ? ` : "${quote(dependency.description)}"` : ''
+          dependency.description
+            ? ` : "${wrapText(quote(dependency.description), LABEL_WIDTH)}"`
+            : ''
         }`,
       );
+    for (const component of components) {
+      const quality = (component.relatedSourceCodes ?? []).filter((code) => /^RNF-/.test(code));
+      if (quality.length)
+        lines.push(
+          `note right of ${safeId(component.localId)} : ${wrapText(`Calidad: ${quality.join(', ')}`, NOTE_WIDTH)}`,
+        );
+    }
     lines.push('@enduml');
     return lines.join('\n');
   }
 
   // Deterministic PlantUML deployment representation from the structured
-  // System Architecture (spec §15).
+  // System Architecture (spec §15). Drawn left to right, with the link labels
+  // and the notes broken into short lines: with few nodes, each carrying many
+  // responsibilities and sources, the unbroken text made it about fourteen
+  // times wider than tall. A note keeps the node's responsibilities and the
+  // quality requirements (RNF) it answers; the other sources stay in the
+  // stored content and in the node's card.
   generateSystemDeploymentDiagram(model: SystemArchitectureDiagramModel): string {
     const nodeKeyword: Record<string, string> = {
       RUNTIME: 'node',
@@ -195,18 +460,74 @@ export class DiagramEngine {
       OTHER: 'node',
     };
     const nodes = [...model.nodes].sort((a, b) => compareOrdinal(a.localId, b.localId));
-    const lines = ['@startuml'];
+    const lines = ['@startuml', 'left to right direction'];
     for (const node of nodes)
       lines.push(
         `${nodeKeyword[node.kind] ?? 'node'} "${quote(node.name)}" as ${safeId(node.localId)}`,
       );
-    for (const link of model.links)
+    for (const link of model.links) {
+      const label = [link.protocol, link.description].filter(Boolean).map((x) => quote(x!));
       lines.push(
         `${safeId(link.fromLocalId)} --> ${safeId(link.toLocalId)}${
-          link.description ? ` : "${quote(link.description)}"` : ''
+          label.length ? ` : "${wrapText(label.join(' — '), LABEL_WIDTH)}"` : ''
         }`,
       );
+    }
+    for (const node of nodes) {
+      const quality = (node.relatedSourceCodes ?? []).filter((code) => /^RNF-/.test(code));
+      const details = [
+        ...(node.responsibilities ?? []),
+        ...(quality.length ? [`Calidad: ${quality.join(', ')}`] : []),
+      ];
+      if (details.length)
+        lines.push(
+          `note right of ${safeId(node.localId)} : ${details.map((detail) => wrapText(quote(detail).replace(/[<>]/g, ''), DEPLOYMENT_NOTE_WIDTH)).join('\\n')}`,
+        );
+    }
     lines.push('@enduml');
+    return lines.join('\n');
+  }
+
+  // Deterministic Mermaid classDiagram from the structured domain class
+  // diagram (DEC-121): same input, byte-identical source.
+  generateClassDiagram(model: ClassDiagramModel): string {
+    const classes = [...model.classes].sort((a, b) => compareOrdinal(a.localId, b.localId));
+    const lines = ['classDiagram'];
+    for (const cls of classes) {
+      lines.push(`  class ${safeId(cls.localId)}["${classText(cls.name)}"] {`);
+      if (cls.stereotype && cls.stereotype !== 'ENTITY')
+        lines.push(
+          `    <<${cls.stereotype === 'VALUE_OBJECT' ? 'value object' : cls.stereotype.toLowerCase()}>>`,
+        );
+      for (const attribute of cls.attributes)
+        lines.push(
+          `    ${visibilitySymbol[attribute.visibility ?? 'PRIVATE'] ?? '-'}${classText(attribute.type)} ${classText(attribute.name)}`,
+        );
+      for (const method of cls.methods)
+        lines.push(
+          `    ${visibilitySymbol[method.visibility ?? 'PUBLIC'] ?? '+'}${classText(method.name)}(${method.parameters
+            .map((parameter) => `${classText(parameter.type)} ${classText(parameter.name)}`)
+            .join(', ')})${method.returnType ? ` ${classText(method.returnType)}` : ''}`,
+        );
+      lines.push('  }');
+    }
+    for (const relationship of model.relationships) {
+      const from = safeId(relationship.fromLocalId);
+      const to = safeId(relationship.toLocalId);
+      const label = relationship.label ? ` : ${classText(relationship.label)}` : '';
+      if (relationship.kind === 'INHERITANCE') {
+        // "from" specializes "to": Parent <|-- Child.
+        lines.push(`  ${to} <|-- ${from}${label}`);
+        continue;
+      }
+      const fromMultiplicity = relationship.fromMultiplicity
+        ? ` "${relationship.fromMultiplicity}"`
+        : '';
+      const toMultiplicity = relationship.toMultiplicity ? `"${relationship.toMultiplicity}" ` : '';
+      lines.push(
+        `  ${from}${fromMultiplicity} ${relationshipArrow[relationship.kind] ?? '-->'} ${toMultiplicity}${to}${label}`,
+      );
+    }
     return lines.join('\n');
   }
 
@@ -218,16 +539,18 @@ export class DiagramEngine {
     const valid =
       format === 'MERMAID_ER'
         ? source.startsWith('erDiagram\n') && !/[<>;]/.test(source)
-        : format === 'MERMAID_FLOWCHART'
-          ? // No '<>;' block here: '>' is required by the flowchart's own
-            // "-->" arrow syntax. As with PLANTUML below, this is a cheap
-            // structural pre-check only — the real renderer + sanitizeDiagramSvg()
-            // are the compatibility/security authority (see class doc comment).
-            source.startsWith('flowchart TD\n')
-          : source.startsWith('@startuml\n') &&
-            source.endsWith('\n@enduml') &&
-            !source.includes('!include') &&
-            !source.includes('!pragma');
+        : format === 'MERMAID_CLASS'
+          ? source.startsWith('classDiagram\n') && !source.includes(';')
+          : format === 'MERMAID_FLOWCHART'
+            ? // No '<>;' block here: '>' is required by the flowchart's own
+              // "-->" arrow syntax. As with PLANTUML below, this is a cheap
+              // structural pre-check only — the real renderer + sanitizeDiagramSvg()
+              // are the compatibility/security authority (see class doc comment).
+              /^flowchart (TD|LR)\n/.test(source)
+            : source.startsWith('@startuml\n') &&
+              source.endsWith('\n@enduml') &&
+              !source.includes('!include') &&
+              !source.includes('!pragma');
     if (!valid || source.length > 250_000)
       throw new UnprocessableEntityException('Fuente de diagrama no válida.');
   }

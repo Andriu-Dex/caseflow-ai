@@ -221,7 +221,7 @@ describe('DataModelsService', () => {
     expect(ai.generateStructured).toHaveBeenCalledWith(
       expect.objectContaining({
         promptKey: 'data-model.generate',
-        maxOutputTokens: 12_288,
+        maxOutputTokens: 24_576,
         language: 'EN',
       }),
     );

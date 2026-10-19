@@ -12,7 +12,13 @@ export {
   projectListResponseSchema,
   projectResponseSchema,
   PROJECT_LANGUAGES,
+  PROJECT_LIST_SORTS,
+  PROJECT_LIST_STATUSES,
   updateProjectLanguageRequestSchema,
+  updateProjectRequestSchema,
+  deleteProjectRequestSchema,
+  upgradeWorkflowRouteRequestSchema,
+  WORKFLOW_ROUTES,
 } from './projects/project.contract';
 export type {
   CreateProjectRequest,
@@ -21,21 +27,33 @@ export type {
   ProjectResponse,
   ProjectLanguage,
   UpdateProjectLanguageRequest,
+  UpdateProjectRequest,
+  DeleteProjectRequest,
+  UpgradeWorkflowRouteRequest,
+  WorkflowRoute,
 } from './projects/project.contract';
 
 export {
+  APPROVAL_ORIGINS,
   ARTIFACT_ORIGINS,
   ARTIFACT_VERSION_STATUSES,
+  archivedArtifactSchema,
+  archivedArtifactsResponseSchema,
+  listArchivedArtifactsQuerySchema,
+  restoreArtifactResponseSchema,
   artifactResponseSchema,
   artifactVersionResponseSchema,
   createArtifactRequestSchema,
   createArtifactVersionRequestSchema,
 } from './artifacts/artifact.contract';
+export type { ApprovalOrigin } from './artifacts/artifact.contract';
 export * from './requirements/requirement.contract';
 export * from './use-cases/use-case.contract';
 export * from './data-models/data-model.contract';
 export * from './sources/source.contract';
 export * from './structured-analysis/structured-analysis.contract';
+export * from './structured-analysis/design-theme.contract';
+export * from './structured-analysis/class-diagram.contract';
 export * from './mockups/mockup.contract';
 export * from './staleness/staleness.contract';
 export * from './traceability/traceability.contract';
@@ -46,12 +64,19 @@ export * from './knowledge-base/knowledge-base.contract';
 export * from './impact-analysis/impact-analysis.contract';
 export * from './consistency-engine/consistency-engine.contract';
 export * from './baselines/baselines.contract';
+export * from './construction/construction-foundation.contract';
+export * from './construction/design-baseline.contract';
+export * from './construction/generation-run.contract';
+export * from './construction/sandbox-run.contract';
+export * from './construction/workflow-run.contract';
 
 export {
   PROJECT_CONTEXT_COLLECTION_LIMIT,
   PROJECT_CONTEXT_SCOPE_TYPES,
   projectContextActorInputSchema,
   projectContextCandidateSchema,
+  projectContextGenerationJobSchema,
+  latestProjectContextGenerationJobSchema,
   projectContextGenerationContentSchema,
   projectContextRequestSchema,
   projectContextResponseSchema,
@@ -59,11 +84,15 @@ export {
 } from './project-context/project-context.contract';
 export type {
   ProjectContextCandidate,
+  ProjectContextGenerationJob,
   ProjectContextGenerationContent,
   ProjectContextRequest,
   ProjectContextResponse,
 } from './project-context/project-context.contract';
 export type {
+  ArchivedArtifact,
+  ArchivedArtifactsResponse,
+  RestoreArtifactResponse,
   ArtifactOrigin,
   ArtifactResponse,
   ArtifactVersionResponse,

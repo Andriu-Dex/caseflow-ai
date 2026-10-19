@@ -11,6 +11,7 @@ describe('MockupsController', () => {
       list: vi.fn().mockResolvedValue({}),
       get: vi.fn().mockResolvedValue({}),
       getJob: vi.fn().mockResolvedValue({}),
+      cancelJob: vi.fn().mockResolvedValue({}),
       getPreview: vi.fn().mockResolvedValue({}),
       version: vi.fn().mockResolvedValue({}),
       transition: vi.fn().mockResolvedValue({}),
@@ -27,6 +28,7 @@ describe('MockupsController', () => {
     await controller.list('p');
     await controller.get('p', 'm');
     await controller.getJob('p', 'j');
+    await controller.cancelJob('p', 'j', { user: { id: 'u' } });
     await controller.preview('p', 'm');
     await controller.version('p', 'm', { uiBlueprintVersionId: 'b2', deviceType: 'MOBILE' });
     await controller.transition('p', 'm', 'v', { status: 'IN_REVIEW' });
@@ -38,6 +40,7 @@ describe('MockupsController', () => {
     expect(service.list).toHaveBeenCalledWith('p');
     expect(service.get).toHaveBeenCalledWith('p', 'm');
     expect(service.getJob).toHaveBeenCalledWith('p', 'j');
+    expect(service.cancelJob).toHaveBeenCalledWith('p', 'j', 'u');
     expect(service.getPreview).toHaveBeenCalledWith('p', 'm');
     expect(service.version).toHaveBeenCalledWith('p', 'm', 'b2', 'MOBILE');
     expect(service.transition).toHaveBeenCalledWith('p', 'm', 'v', 'IN_REVIEW');

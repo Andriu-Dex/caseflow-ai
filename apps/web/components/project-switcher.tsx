@@ -5,16 +5,23 @@ import { Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { ProjectLanguage } from '@caseflow-ai/contracts';
 import { toast } from 'sonner';
-import { Button, Input } from '@caseflow-ai/ui';
-import { api, ApiError } from '../lib/api';
+import {
+  Button,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@caseflow-ai/ui';
+import { api } from '../lib/api';
+import { NewProjectDialog } from './new-project-dialog';
+import { UpgradeRouteButton, WorkflowRouteBadge } from './workflow-route';
 import { useActiveProject } from '../lib/active-project';
 
 export function ProjectSwitcher() {
   const { projectId, setProjectId } = useActiveProject();
   const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
-  const [name, setName] = useState('');
-  const [error, setError] = useState<string | null>(null);
 
   const workspaces = useQuery({
     queryKey: ['workspaces'],
@@ -23,8 +30,11 @@ export function ProjectSwitcher() {
   const workspaceId = workspaces.data?.items[0]?.id;
 
   const projects = useQuery({
-    queryKey: ['projects', workspaceId],
-    queryFn: () => api.projects.list(workspaceId!),
+    // Only active projects, most recently touched first; the Projects page
+    // has the full, filterable list.
+    queryKey: ['projects', workspaceId, 'switcher'],
+    queryFn: () =>
+      api.projects.list(workspaceId!, { status: 'ACTIVE', sort: 'UPDATED', limit: 100 }),
     enabled: Boolean(workspaceId),
   });
 
@@ -41,73 +51,65 @@ export function ProjectSwitcher() {
   }
 
   const items = projects.data?.items ?? [];
-
-  async function handleCreate() {
-    if (!name.trim() || !workspaceId) return;
-    setError(null);
-    try {
-      const created = await api.projects.create({ workspaceId, name: name.trim() });
-      await queryClient.invalidateQueries({ queryKey: ['projects', workspaceId] });
-      setProjectId(created.id);
-      setName('');
-      setCreating(false);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'No se pudo crear el proyecto.');
-    }
-  }
+  const active = items.find((project) => project.id === projectId);
 
   return (
     <div className="flex items-center gap-2">
-      <label htmlFor="project-select" className="sr-only">
-        Proyecto activo
-      </label>
-      <select
-        id="project-select"
-        className="h-9 rounded-md border border-input bg-background px-2 text-sm shadow-xs"
-        value={projectId ?? ''}
-        onChange={(e) => setProjectId(e.target.value || null)}
+      <Select
+        value={projectId ?? undefined}
+        onValueChange={(val) => setProjectId(val || null)}
+        disabled={items.length === 0}
       >
-        <option value="" disabled>
-          {items.length ? 'Seleccionar proyecto…' : 'Sin proyectos todavía'}
-        </option>
-        {items.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name}
-          </option>
-        ))}
-      </select>
+        <SelectTrigger className="h-9 w-[220px] bg-background shadow-xs font-medium">
+          <SelectValue
+            placeholder={items.length ? 'Seleccionar proyecto…' : 'Sin proyectos todavía'}
+          />
+        </SelectTrigger>
+        <SelectContent position="popper">
+          {items.map((p) => (
+            <SelectItem key={p.id} value={p.id}>
+              {p.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
       {projectId ? (
         <ProjectLanguageSelect
           key={projectId}
           projectId={projectId}
-          language={items.find((project) => project.id === projectId)?.language ?? 'ES'}
+          language={active?.language ?? 'ES'}
           onChanged={() => queryClient.invalidateQueries({ queryKey: ['projects', workspaceId] })}
         />
       ) : null}
-      {creating ? (
-        <span className="flex items-center gap-1">
-          <Input
-            autoFocus
-            aria-label="Nombre del nuevo proyecto"
-            className="h-9 w-48"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Nombre del proyecto"
+      {active ? (
+        <>
+          <WorkflowRouteBadge route={active.workflowRoute} />
+          <UpgradeRouteButton
+            key={active.id}
+            projectId={active.id}
+            route={active.workflowRoute}
+            onUpgraded={() =>
+              Promise.all([
+                queryClient.invalidateQueries({ queryKey: ['projects', workspaceId] }),
+                queryClient.invalidateQueries({ queryKey: ['project', active.id] }),
+              ])
+            }
           />
-          <Button type="button" size="sm" onClick={handleCreate}>
-            Crear
-          </Button>
-          <Button type="button" size="sm" variant="ghost" onClick={() => setCreating(false)}>
-            Cancelar
-          </Button>
-        </span>
-      ) : (
-        <Button type="button" size="sm" variant="outline" onClick={() => setCreating(true)}>
-          <Plus className="size-4" aria-hidden="true" />
-          Nuevo proyecto
-        </Button>
-      )}
-      {error ? <span className="text-sm text-destructive">{error}</span> : null}
+        </>
+      ) : null}
+      <Button type="button" size="sm" variant="outline" onClick={() => setCreating(true)}>
+        <Plus className="size-4" aria-hidden="true" />
+        Nuevo proyecto
+      </Button>
+      <NewProjectDialog
+        open={creating}
+        onOpenChange={setCreating}
+        workspaceId={workspaceId}
+        onCreated={async (id) => {
+          await queryClient.invalidateQueries({ queryKey: ['projects', workspaceId] });
+          setProjectId(id);
+        }}
+      />
     </div>
   );
 }
@@ -142,21 +144,21 @@ function ProjectLanguageSelect({
   }
 
   return (
-    <>
-      <label htmlFor="project-language" className="sr-only">
-        Idioma de generación con IA
-      </label>
-      <select
-        id="project-language"
+    <Select
+      value={selected}
+      disabled={saving}
+      onValueChange={(val) => void handleChange(val as ProjectLanguage)}
+    >
+      <SelectTrigger
         aria-label="Idioma de generación con IA"
-        className="h-9 rounded-md border border-input bg-background px-2 text-sm shadow-xs"
-        value={selected}
-        disabled={saving}
-        onChange={(event) => void handleChange(event.target.value as ProjectLanguage)}
+        className="h-9 w-[130px] bg-background shadow-xs font-medium"
       >
-        <option value="ES">Español</option>
-        <option value="EN">English</option>
-      </select>
-    </>
+        <SelectValue placeholder="Idioma" />
+      </SelectTrigger>
+      <SelectContent position="popper">
+        <SelectItem value="ES">Español</SelectItem>
+        <SelectItem value="EN">English</SelectItem>
+      </SelectContent>
+    </Select>
   );
 }

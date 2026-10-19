@@ -3,14 +3,28 @@ import { JwtAuthGuard } from '../identity/jwt-auth.guard';
 import { ProjectMembershipGuard } from '../identity/project-membership.guard';
 import { WorkspaceMembershipGuard } from '../identity/workspace-membership.guard';
 
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Query, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   createProjectRequestSchema,
+  deleteProjectRequestSchema,
   listProjectsQuerySchema,
   projectListResponseSchema,
   projectResponseSchema,
   updateProjectLanguageRequestSchema,
+  updateProjectRequestSchema,
+  upgradeWorkflowRouteRequestSchema,
   type ProjectListResponse,
   type ProjectResponse,
 } from '@caseflow-ai/contracts';
@@ -61,7 +75,7 @@ export class ProjectsController {
     query: z.output<typeof listProjectsQuerySchema>,
     @Req() req: AuthenticatedRequest,
   ): Promise<ProjectListResponse> {
-    return this.projects.list(query.workspaceId, query.limit, query.offset, req.user.id);
+    return this.projects.list(query, req.user.id);
   }
 
   @Get(':projectId')
@@ -78,20 +92,27 @@ export class ProjectsController {
   @HttpCode(204)
   @ApiOperation({
     operationId: 'deleteProject',
-    summary: 'Permanently delete a project that has never had anything approved',
+    summary: 'Permanently delete a project and all its history, after typing its exact name',
   })
   @ApiUuidParam('projectId', 'Project identifier.')
   @ApiErrorResponse(400, 'The project identifier is invalid.')
   @ApiErrorResponse(404, 'The project does not exist.')
-  @ApiErrorResponse(422, 'The project has approved history and cannot be deleted.')
-  delete(@Param('projectId', uuidParamPipe) projectId: string): Promise<void> {
-    return this.projects.delete(projectId);
+  @ApiZodBody(deleteProjectRequestSchema)
+  @ApiErrorResponse(403, 'Only the project owner or a workspace owner or admin may delete it.')
+  @ApiErrorResponse(422, 'The typed name does not match the project name.')
+  delete(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Body(new ZodValidationPipe(deleteProjectRequestSchema))
+    body: z.output<typeof deleteProjectRequestSchema>,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<void> {
+    return this.projects.delete(projectId, body.confirmName, req.user.id);
   }
 
   @Post(':projectId/archive')
   @ApiOperation({
     operationId: 'archiveProject',
-    summary: 'Archive a project that has approved history (alternative to deletion)',
+    summary: 'Archive a project: hidden from active use, history kept (alternative to deletion)',
   })
   @ApiUuidParam('projectId', 'Project identifier.')
   @ApiZodResponse(200, 'The archived project.', projectResponseSchema)
@@ -99,6 +120,35 @@ export class ProjectsController {
   @ApiErrorResponse(422, 'The project is already archived.')
   archive(@Param('projectId', uuidParamPipe) projectId: string): Promise<ProjectResponse> {
     return this.projects.archive(projectId);
+  }
+
+  @Patch(':projectId')
+  @ApiOperation({
+    operationId: 'updateProject',
+    summary: 'Rename a project or change its description',
+  })
+  @ApiUuidParam('projectId', 'Project identifier.')
+  @ApiZodBody(updateProjectRequestSchema)
+  @ApiZodResponse(200, 'The updated project.', projectResponseSchema)
+  @ApiErrorResponse(400, 'The name or description is invalid.')
+  @ApiErrorResponse(404, 'The project does not exist.')
+  update(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Body(new ZodValidationPipe(updateProjectRequestSchema))
+    body: z.output<typeof updateProjectRequestSchema>,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<ProjectResponse> {
+    return this.projects.update(projectId, body, req.user.id);
+  }
+
+  @Post(':projectId/unarchive')
+  @ApiOperation({ operationId: 'unarchiveProject', summary: 'Restore an archived project' })
+  @ApiUuidParam('projectId', 'Project identifier.')
+  @ApiZodResponse(200, 'The restored project.', projectResponseSchema)
+  @ApiErrorResponse(404, 'The project does not exist.')
+  @ApiErrorResponse(422, 'The project is not archived.')
+  unarchive(@Param('projectId', uuidParamPipe) projectId: string): Promise<ProjectResponse> {
+    return this.projects.unarchive(projectId);
   }
 
   @Post(':projectId/language')
@@ -117,5 +167,25 @@ export class ProjectsController {
     body: z.output<typeof updateProjectLanguageRequestSchema>,
   ): Promise<ProjectResponse> {
     return this.projects.updateLanguage(projectId, body.language);
+  }
+
+  @Post(':projectId/workflow-route')
+  @HttpCode(200)
+  @ApiOperation({
+    operationId: 'upgradeProjectWorkflowRoute',
+    summary: 'Move a project up to a workflow route with more human review',
+  })
+  @ApiUuidParam('projectId', 'Project identifier.')
+  @ApiZodBody(upgradeWorkflowRouteRequestSchema)
+  @ApiZodResponse(200, 'The updated project.', projectResponseSchema)
+  @ApiErrorResponse(404, 'The project does not exist.')
+  @ApiErrorResponse(422, 'The route would move down or stay the same.')
+  upgradeWorkflowRoute(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Body(new ZodValidationPipe(upgradeWorkflowRouteRequestSchema))
+    body: z.output<typeof upgradeWorkflowRouteRequestSchema>,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<ProjectResponse> {
+    return this.projects.upgradeWorkflowRoute(projectId, body.workflowRoute, req.user.id);
   }
 }

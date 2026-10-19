@@ -2,6 +2,7 @@
   "name": "@caseflow-ai/domain",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
   "description": "CASEFlow AI domain package (foundation placeholder)",
   "type": "commonjs",
   "main": "./dist/index.js",

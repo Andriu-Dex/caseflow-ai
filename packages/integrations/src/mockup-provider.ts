@@ -1,4 +1,8 @@
-import type { MockupDeviceType, UiBlueprintContent } from '@caseflow-ai/contracts';
+import type {
+  DesignThemeContent,
+  MockupDeviceType,
+  UiBlueprintContent,
+} from '@caseflow-ai/contracts';
 
 export const MOCKUP_PROVIDER_ERROR_CODES = [
   'MOCKUP_NOT_CONFIGURED',
@@ -41,14 +45,55 @@ export interface EditedScreen {
   providerRef: ProviderScreenRef;
 }
 
+export type BlueprintScreen = UiBlueprintContent['screens'][number];
+
+// DEC-147: what every screen of one mockup shares, so they read as one
+// application: its name and its main menu, with the entry the screen belongs to.
+export interface MockupAppContext {
+  appName: string;
+  // Main menu entries, in order; empty when there is no navigation to show.
+  menu: string[];
+  // The menu entry of each screen (by blueprint localId); a screen with none,
+  // such as the sign-in, is drawn without the menu.
+  activeMenuByScreen: Record<string, string | null>;
+}
+
+// DEC-146: a provider that draws one screen at a time (Stitch takes about two
+// minutes a screen), so the caller can keep each screen as it arrives and
+// resume a long run instead of asking for every screen in one call.
+export interface ScreenGenerator {
+  // The provider project the screens of one mockup go to.
+  createProject(title: string): Promise<string>;
+  generateScreen(
+    projectId: string,
+    screen: BlueprintScreen,
+    deviceType: MockupDeviceType,
+    refinement?: string,
+    theme?: DesignThemeContent,
+    context?: MockupAppContext,
+  ): Promise<GeneratedScreen>;
+}
+
 export interface MockupProvider {
+  // Present when the provider can draw screen by screen.
+  readonly screens?: ScreenGenerator;
+  // Draws the mockup without the screen-by-screen provider: the deterministic
+  // fallback used when that provider produced no screen at all.
+  generateFallback?(
+    content: UiBlueprintContent,
+    deviceType?: MockupDeviceType,
+    theme?: DesignThemeContent,
+  ): Promise<MockupGenerationResult>;
   readonly id: string;
   // `refinement` is an extra user instruction layered on the blueprint; a
   // deterministic provider may ignore it (callers check the result kind).
+  // `theme` is the approved project palette (DEC-118); absent = standard design.
   generate(
     content: UiBlueprintContent,
     deviceType?: MockupDeviceType,
     refinement?: string,
+    theme?: DesignThemeContent,
+    context?: MockupAppContext,
   ): Promise<MockupGenerationResult>;
   // Optional: edit one previously generated screen in place at the provider.
   // Only providers that keep editable screens (Stitch) implement it.
@@ -69,15 +114,30 @@ export class FallbackMockupProvider implements MockupProvider {
   ) {
     if (!providers.length) throw new Error('FallbackMockupProvider requires a provider.');
   }
+  get screens(): ScreenGenerator | undefined {
+    return this.providers.find((provider) => provider.screens)?.screens;
+  }
+  async generateFallback(
+    content: UiBlueprintContent,
+    deviceType?: MockupDeviceType,
+    theme?: DesignThemeContent,
+  ): Promise<MockupGenerationResult> {
+    const fallback = this.providers.find((provider) => !provider.screens);
+    if (!fallback)
+      throw new MockupProviderError('MOCKUP_NOT_CONFIGURED', 'No hay un esquema de respaldo.');
+    return fallback.generate(content, deviceType, undefined, theme);
+  }
   async generate(
     content: UiBlueprintContent,
     deviceType?: MockupDeviceType,
     refinement?: string,
+    theme?: DesignThemeContent,
+    context?: MockupAppContext,
   ): Promise<MockupGenerationResult> {
     let lastError: unknown;
     for (const provider of this.providers) {
       try {
-        return await provider.generate(content, deviceType, refinement);
+        return await provider.generate(content, deviceType, refinement, theme, context);
       } catch (cause) {
         this.onProviderFailure?.(provider.id, cause);
         lastError = cause;

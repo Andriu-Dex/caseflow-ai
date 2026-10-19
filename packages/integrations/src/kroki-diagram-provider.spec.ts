@@ -70,6 +70,22 @@ describe('KrokiDiagramProvider', () => {
     ).rejects.toMatchObject({ code: 'DIAGRAM_RESPONSE_TOO_LARGE' });
   });
 
+  it('allows a PNG much larger than an SVG, since a big diagram is a big image', async () => {
+    const big = (format: 'svg' | 'png') =>
+      vi.fn().mockResolvedValue(
+        new Response(format === 'png' ? Buffer.alloc(100) : '<svg/>', {
+          status: 200,
+          headers: { 'Content-Length': String(10_000_000) },
+        }),
+      );
+    await expect(
+      provider(big('png')).renderPng({ format: 'MERMAID_ER', source: 'erDiagram' }),
+    ).resolves.toHaveProperty('png');
+    await expect(
+      provider(big('svg')).render({ format: 'MERMAID_ER', source: 'erDiagram' }),
+    ).rejects.toMatchObject({ code: 'DIAGRAM_RESPONSE_TOO_LARGE' });
+  });
+
   it('normalizes a timeout without retries', async () => {
     const fetchMock = vi.fn(
       (_url, init) =>

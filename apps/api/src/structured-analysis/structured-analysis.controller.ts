@@ -2,12 +2,14 @@ import { UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../identity/jwt-auth.guard';
 import { ProjectMembershipGuard } from '../identity/project-membership.guard';
 
-import { Body, Controller, Get, Param, Post, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Request, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   acceptStructuredAnalysisCandidatesRequestSchema,
   generateStructuredAnalysisRequestSchema,
+  startStructuredGenerationRequestSchema,
+  structuredGenerationJobSchema,
   navigationTreeContentSchema,
   softwareArchitectureContentSchema,
   structuredAnalysisGenerationResponseSchema,
@@ -24,12 +26,13 @@ import { uuidParamPipe } from '../common/uuid-param.pipe';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ApiZodBody, ApiZodResponse } from '../openapi/zod-openapi';
 import { StructuredAnalysisService } from './structured-analysis.service';
+import { StructuredGenerationJobsService } from './structured-generation-jobs.service';
 
-function inputSchema<T extends ZodType>(contentSchema: T) {
+export function inputSchema<T extends ZodType>(contentSchema: T) {
   return z.object({ title: z.string().trim().min(1).max(200), content: contentSchema }).strict();
 }
 
-abstract class BaseStructuredAnalysisController {
+export abstract class BaseStructuredAnalysisController {
   protected abstract readonly kind: StructuredAnalysisKind;
   protected abstract readonly contentSchema: ZodType;
   constructor(protected readonly service: StructuredAnalysisService) {}
@@ -50,8 +53,10 @@ abstract class BaseStructuredAnalysisController {
   ) {
     return this.service.version(projectId, this.kind, id, body.title, body.content);
   }
-  generate(projectId: string, body: { sourceVersionIds: string[] }) {
-    return this.service.generate(projectId, this.kind, body.sourceVersionIds);
+  generate(projectId: string, body: { sourceVersionIds: string[]; instruction?: string }) {
+    return this.service.generate(projectId, this.kind, body.sourceVersionIds, {
+      instruction: body.instruction,
+    });
   }
   generation(projectId: string, generationId: string) {
     return this.service.getGeneration(projectId, this.kind, generationId);
@@ -64,8 +69,16 @@ abstract class BaseStructuredAnalysisController {
     artifactId: string,
     versionId: string,
     body: { status: 'DRAFT' | 'IN_REVIEW' | 'APPROVED' | 'CHANGES_REQUESTED' },
+    actorUserId: string | null = null,
   ) {
-    return this.service.transition(projectId, this.kind, artifactId, versionId, body.status);
+    return this.service.transition(
+      projectId,
+      this.kind,
+      artifactId,
+      versionId,
+      body.status,
+      actorUserId,
+    );
   }
   diagram(projectId: string, id: string) {
     return this.service.getDiagram(projectId, this.kind, id);
@@ -191,6 +204,7 @@ export class NavigationController extends BaseStructuredAnalysisController {
 }
 
 @ApiTags('software-architecture')
+@UseGuards(JwtAuthGuard, ProjectMembershipGuard)
 @Controller('projects/:projectId/software-architecture')
 export class SoftwareArchitectureController extends BaseStructuredAnalysisController {
   constructor(service: StructuredAnalysisService) {
@@ -326,6 +340,7 @@ export class SoftwareArchitectureController extends BaseStructuredAnalysisContro
 }
 
 @ApiTags('system-architecture')
+@UseGuards(JwtAuthGuard, ProjectMembershipGuard)
 @Controller('projects/:projectId/system-architecture')
 export class SystemArchitectureController extends BaseStructuredAnalysisController {
   constructor(service: StructuredAnalysisService) {
@@ -458,10 +473,66 @@ export class SystemArchitectureController extends BaseStructuredAnalysisControll
 }
 
 @ApiTags('ui-blueprint')
+@UseGuards(JwtAuthGuard, ProjectMembershipGuard)
 @Controller('projects/:projectId/ui-blueprint')
 export class UiBlueprintController extends BaseStructuredAnalysisController {
-  constructor(service: StructuredAnalysisService) {
+  constructor(
+    service: StructuredAnalysisService,
+    private readonly jobs: StructuredGenerationJobsService,
+  ) {
     super(service);
+  }
+
+  // DEC-143: the blueprint is drawn in batches in the background.
+  @Post('generation-jobs')
+  @HttpCode(202)
+  @ApiOperation({
+    operationId: 'startUiBlueprintGeneration',
+    summary: 'Generar el plano de interfaz por lotes en segundo plano',
+  })
+  @ApiZodBody(startStructuredGenerationRequestSchema)
+  @ApiZodResponse(202, 'UI blueprint generation job.', structuredGenerationJobSchema)
+  startGeneration(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Body(new ZodValidationPipe(startStructuredGenerationRequestSchema))
+    body: z.output<typeof startStructuredGenerationRequestSchema>,
+    @Request() request: { user: { id: string } },
+  ) {
+    return this.jobs.start(projectId, this.kind, body.sourceVersionIds, request.user.id);
+  }
+  @Get('generation-jobs/latest')
+  @ApiOperation({
+    operationId: 'getLatestUiBlueprintGeneration',
+    summary: 'Consultar el último trabajo del plano de interfaz',
+  })
+  latestGeneration(@Param('projectId', uuidParamPipe) projectId: string) {
+    return this.jobs.latest(projectId, this.kind);
+  }
+  @Post('generation-jobs/:jobId/cancel')
+  @HttpCode(200)
+  @ApiOperation({
+    operationId: 'cancelUiBlueprintGenerationJob',
+    summary: 'Cancelar un trabajo del plano de interfaz',
+  })
+  @ApiZodResponse(200, 'UI blueprint generation job.', structuredGenerationJobSchema)
+  cancelGeneration(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('jobId', uuidParamPipe) jobId: string,
+    @Request() request: { user: { id: string } },
+  ) {
+    return this.jobs.cancel(projectId, this.kind, jobId, request.user.id);
+  }
+  @Get('generation-jobs/:jobId')
+  @ApiOperation({
+    operationId: 'getUiBlueprintGenerationJob',
+    summary: 'Consultar avance de un trabajo del plano de interfaz',
+  })
+  @ApiZodResponse(200, 'UI blueprint generation job.', structuredGenerationJobSchema)
+  generationJob(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('jobId', uuidParamPipe) jobId: string,
+  ) {
+    return this.jobs.get(projectId, this.kind, jobId);
   }
 
   protected readonly kind = 'UI_BLUEPRINT' as const;

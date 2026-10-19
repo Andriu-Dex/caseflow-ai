@@ -6,6 +6,7 @@ import {
   type DiagramProvider,
 } from '@caseflow-ai/integrations';
 import { DataModelsController, UseCaseDiagramsController } from './data-models.controller';
+import { DataModelGenerationJobsService } from './data-model-generation-jobs.service';
 import { DataModelsService } from './data-models.service';
 import { DiagramEngine } from './diagram-engine';
 import { DIAGRAM_PROVIDER } from './diagram-provider.token';
@@ -16,6 +17,7 @@ import { AIModule } from '../ai/ai.module';
   controllers: [DataModelsController, UseCaseDiagramsController],
   providers: [
     DataModelsService,
+    DataModelGenerationJobsService,
     DiagramEngine,
     {
       provide: DIAGRAM_PROVIDER,

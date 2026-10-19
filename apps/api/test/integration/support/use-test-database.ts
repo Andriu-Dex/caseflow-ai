@@ -19,3 +19,4 @@ process.env.DATABASE_URL = testUrl;
 // Integration tests are deterministic and network-free even when a developer's
 // ignored .env enables a live provider for manual compatibility validation.
 process.env.AI_PROVIDER = 'disabled';
+process.env.MOCKUP_PROVIDER = 'disabled';

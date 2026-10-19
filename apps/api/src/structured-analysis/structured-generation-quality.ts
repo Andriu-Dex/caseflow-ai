@@ -1,15 +1,87 @@
 import {
+  classDiagramContentSchema,
+  conceptualDomainModelContentSchema,
+  designThemeContentSchema,
+  designThemeContrastIssues,
+  generationPlanContentSchema,
+  implementationPlanContentSchema,
   navigationTreeContentSchema,
   softwareArchitectureContentSchema,
   systemArchitectureContentSchema,
   uiBlueprintContentSchema,
   type StructuredAnalysisKind,
 } from '@caseflow-ai/contracts';
+import { coherenceGaps, upstreamFromSources } from '../consistency-engine/coherence-rules';
 
 export interface GenerationSourceReference {
   code: string;
   type: string;
   content?: unknown;
+  requirementType?: string;
+}
+
+// A class or an entity is not made per requirement or per use case: the
+// analysis is covered by the coverage rules (DEC-121), which say what must be
+// reflected. Not citing one of them is expected there, so only the design
+// inputs those kinds are built from (the data model) are expected to be cited.
+const STRUCTURE_KINDS: StructuredAnalysisKind[] = ['CLASS_DIAGRAM', 'CONCEPTUAL_DOMAIN_MODEL'];
+const ANALYSIS_TYPES = ['REQUIREMENT', 'USE_CASE'];
+const LISTED_UNCOVERED = 5;
+
+const CODE_LIST_KEYS = new Set([
+  'relatedSourceCodes',
+  'relatedUseCaseCodes',
+  'relatedRequirementCodes',
+]);
+
+// The model sometimes writes a code with a word stuck to it ("RF-196 focus").
+// Wherever a proposal lists codes, such a code is read as the selected source it
+// starts with, instead of leaving the user an error about a typo. A code that is
+// not a selected source in any reading is kept, so the review still flags it.
+export function cleanSourceCodes<T>(value: T, allowed: Set<string>): T {
+  if (Array.isArray(value)) return value.map((item) => cleanSourceCodes(item, allowed)) as T;
+  if (!value || typeof value !== 'object') return value;
+  const result: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value)) {
+    result[key] =
+      CODE_LIST_KEYS.has(key) && Array.isArray(item)
+        ? [
+            ...new Set(
+              item.flatMap((code) => {
+                if (typeof code !== 'string') return [];
+                const token = code.trim().split(/[\s,;:]+/)[0] ?? '';
+                return allowed.has(code) || !allowed.has(token) ? [code] : [token];
+              }),
+            ),
+          ]
+        : cleanSourceCodes(item, allowed);
+  }
+  return result as T;
+}
+
+// A node or screen that relates a use case also names it among the sources
+// that justify it: the relation is the justification, so the model is not
+// asked (and the user not warned) to repeat it.
+export function withUseCaseProvenance<T extends object>(
+  kind: StructuredAnalysisKind,
+  content: T,
+): T {
+  const key = kind === 'NAVIGATION_TREE' ? 'nodes' : kind === 'UI_BLUEPRINT' ? 'screens' : null;
+  const items = key ? (content as Record<string, unknown>)[key] : null;
+  if (!key || !Array.isArray(items)) return content;
+  return {
+    ...content,
+    [key]: items.map((item: { relatedUseCaseCodes?: string[]; relatedSourceCodes?: string[] }) =>
+      item.relatedUseCaseCodes?.length
+        ? {
+            ...item,
+            relatedSourceCodes: [
+              ...new Set([...(item.relatedSourceCodes ?? []), ...item.relatedUseCaseCodes]),
+            ],
+          }
+        : item,
+    ),
+  };
 }
 
 export interface GenerationQualityFinding {
@@ -24,13 +96,43 @@ export function evaluateStructuredGeneration(
   kind: StructuredAnalysisKind,
   content: unknown,
   sources: GenerationSourceReference[],
+  // DEC-121: in projects with mandatory coherence, coverage gaps are errors.
+  options: { strict?: boolean } = {},
 ): GenerationQualityFinding[] {
+  // A theme cites no sources; its review concern is accessibility. Low
+  // contrast is a warning here (the candidate can still be fixed after
+  // accepting it) and blocks approval later.
+  if (kind === 'DESIGN_THEME')
+    return designThemeContrastIssues(designThemeContentSchema.parse(content)).map((issue) => ({
+      severity: 'WARNING',
+      code: 'LOW_CONTRAST',
+      message: issue.message,
+    }));
   const findings: GenerationQualityFinding[] = [];
   const allowed = new Set(sources.map((source) => source.code));
   const useCaseCodes = new Set(
     sources.filter((source) => source.type === 'USE_CASE').map((source) => source.code),
   );
   const referenced = new Set<string>();
+  // DEC-121: elements of the selected upstream artifacts, referenced by localId.
+  const sourceItems = <T>(type: string, read: (content: unknown) => T[]) =>
+    sources.filter((source) => source.type === type).flatMap((source) => read(source.content));
+  const classes = sourceItems('CLASS_DIAGRAM', (c) => {
+    const parsed = classDiagramContentSchema.safeParse(c);
+    return parsed.success ? parsed.data.classes : [];
+  });
+  const screens = sourceItems('UI_BLUEPRINT', (c) => {
+    const parsed = uiBlueprintContentSchema.safeParse(c);
+    return parsed.success ? parsed.data.screens : [];
+  });
+  const checkClass = (label: string, classLocalId: string | undefined) => {
+    if (classLocalId && !classes.some((cls) => cls.localId === classLocalId))
+      findings.push({
+        severity: 'ERROR',
+        code: 'UNKNOWN_CLASS',
+        message: `${label} representa la clase «${classLocalId}», que no está en el diagrama de clases seleccionado.`,
+      });
+  };
 
   const checkReferences = (label: string, codes: string[]) => {
     if (codes.length === 0) {
@@ -88,7 +190,85 @@ export function evaluateStructuredGeneration(
     const parsed = systemArchitectureContentSchema.parse(content);
     for (const node of parsed.nodes)
       checkReferences(`El nodo «${node.name}»`, node.relatedSourceCodes ?? []);
-  } else {
+  } else if (kind === 'GENERATION_PLAN') {
+    const parsed = generationPlanContentSchema.parse(content);
+    const requirementCodes = new Set(
+      sources.filter((source) => source.type === 'REQUIREMENT').map((source) => source.code),
+    );
+    for (const module of parsed.modules) {
+      const label = `El módulo «${module.name}»`;
+      checkReferences(label, module.relatedSourceCodes ?? []);
+      checkUseCases(label, module.relatedUseCaseCodes, module.relatedSourceCodes ?? []);
+      for (const code of module.relatedRequirementCodes) {
+        if (!requirementCodes.has(code))
+          findings.push({
+            severity: 'ERROR',
+            code: 'UNKNOWN_REQUIREMENT',
+            message: `${label} cita el requisito ${code}, que no fue seleccionado.`,
+          });
+        else referenced.add(code);
+      }
+    }
+    for (const workflow of parsed.workflows) {
+      const label = `El flujo «${workflow.name}»`;
+      checkReferences(label, workflow.relatedSourceCodes ?? []);
+      checkUseCases(label, workflow.relatedUseCaseCodes, workflow.relatedSourceCodes ?? []);
+    }
+    for (const screen of parsed.screens)
+      checkReferences(`La pantalla «${screen.name}»`, screen.relatedSourceCodes ?? []);
+  } else if (kind === 'CLASS_DIAGRAM') {
+    const parsed = classDiagramContentSchema.parse(content);
+    for (const cls of parsed.classes)
+      checkReferences(`La clase «${cls.name}»`, cls.relatedSourceCodes ?? []);
+  } else if (kind === 'CONCEPTUAL_DOMAIN_MODEL') {
+    const parsed = conceptualDomainModelContentSchema.parse(content);
+    for (const entity of parsed.entities) {
+      checkReferences(`La entidad «${entity.name}»`, entity.relatedSourceCodes ?? []);
+      checkClass(`La entidad «${entity.name}»`, entity.classLocalId);
+    }
+  } else if (kind === 'IMPLEMENTATION_PLAN') {
+    const parsed = implementationPlanContentSchema.parse(content);
+    for (const module of parsed.modules)
+      checkReferences(`El módulo ${module.name}`, module.relatedSourceCodes ?? []);
+    for (const entity of parsed.entities) {
+      checkReferences(`La entidad ${entity.name}`, entity.relatedSourceCodes ?? []);
+      checkClass(`La entidad ${entity.name}`, entity.classLocalId);
+    }
+    for (const endpoint of parsed.customEndpoints) {
+      checkReferences(
+        `El endpoint ${endpoint.method} ${endpoint.path}`,
+        endpoint.relatedSourceCodes ?? [],
+      );
+      // Numbered by the generator when nothing named the endpoint of an action.
+      if (/\/actions\/\d+$/.test(endpoint.path))
+        findings.push({
+          severity: 'WARNING',
+          code: 'GENERIC_ENDPOINT',
+          message: `El endpoint ${endpoint.method} ${endpoint.path} se generó con un nombre genérico; conviene renombrarlo según la acción que atiende («${endpoint.summary}»).`,
+        });
+    }
+    for (const route of parsed.routes) {
+      checkReferences(`La ruta ${route.path}`, route.relatedSourceCodes ?? []);
+      if (!route.screenLocalId) continue;
+      const screen = screens.find((s) => s.localId === route.screenLocalId);
+      if (!screen) {
+        findings.push({
+          severity: 'ERROR',
+          code: 'UNKNOWN_SCREEN',
+          message: `La ruta ${route.path} muestra la pantalla «${route.screenLocalId}», que no está en el plano de interfaz seleccionado.`,
+        });
+        continue;
+      }
+      const screenActions = new Set([...screen.primaryActions, ...screen.secondaryActions]);
+      for (const action of route.actions)
+        if (!screenActions.has(action.label))
+          findings.push({
+            severity: 'ERROR',
+            code: 'UNKNOWN_SCREEN_ACTION',
+            message: `La ruta ${route.path} atiende la acción «${action.label}», que la pantalla «${screen.name}» no tiene.`,
+          });
+    }
+  } else if (kind === 'UI_BLUEPRINT') {
     const parsed = uiBlueprintContentSchema.parse(content);
     const navigationNodes = sources
       .filter((source) => source.type === 'NAVIGATION_TREE')
@@ -126,13 +306,44 @@ export function evaluateStructuredGeneration(
         });
     }
   }
-  for (const source of sources) {
-    if (!referenced.has(source.code))
-      findings.push({
-        severity: 'WARNING',
-        code: 'UNCOVERED_SOURCE',
-        message: `La fuente ${source.code} no está citada por ningún elemento de la propuesta.`,
-      });
+  // DEC-121: coverage against the selected sources; blocking where coherence
+  // is mandatory.
+  for (const gap of coherenceGaps(kind, content, upstreamFromSources(sources)))
+    findings.push({
+      severity: options.strict === false ? 'WARNING' : 'ERROR',
+      code: 'COVERAGE_GAP',
+      message: gap.message,
+    });
+  // One notice for all of them: with a hundred sources, a line each buries the
+  // findings that matter.
+  // A system architecture answers the non-functional requirements and the
+  // design inputs; not every functional requirement or use case has a place in it.
+  // A generation plan is the other way round: its modules, workflows and screens
+  // cite requirements and use cases, but a quality requirement has no element to
+  // cite it (its technical constraints carry no sources), so one left uncited is
+  // not something the user could fix in the proposal.
+  const notExpected = (source: GenerationSourceReference) =>
+    (STRUCTURE_KINDS.includes(kind) && ANALYSIS_TYPES.includes(source.type)) ||
+    (kind === 'SYSTEM_ARCHITECTURE' &&
+      (source.type === 'USE_CASE' ||
+        (source.type === 'REQUIREMENT' && source.requirementType === 'FUNCTIONAL'))) ||
+    (kind === 'GENERATION_PLAN' &&
+      source.type === 'REQUIREMENT' &&
+      source.requirementType !== 'FUNCTIONAL');
+  const uncovered = sources.filter(
+    (source) => !referenced.has(source.code) && !notExpected(source),
+  );
+  if (uncovered.length) {
+    const listed = uncovered.slice(0, LISTED_UNCOVERED).map((source) => source.code);
+    const more = uncovered.length - listed.length;
+    findings.push({
+      severity: 'WARNING',
+      code: 'UNCOVERED_SOURCE',
+      message:
+        uncovered.length === 1
+          ? `Ningún elemento de la propuesta proviene de ${listed[0]}. Revise si debería incluir algo de esa fuente.`
+          : `${uncovered.length} de las ${sources.length} fuentes no aparecen citadas en la propuesta (${listed.join(', ')}${more > 0 ? ` y ${more} más` : ''}). Revise si debería reflejar algo de ellas.`,
+    });
   }
   return findings;
 }

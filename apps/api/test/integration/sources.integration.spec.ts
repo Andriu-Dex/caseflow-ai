@@ -121,7 +121,7 @@ describe('Project Source intake integration', () => {
       projectId,
       {
         title: 'Foto de pizarra',
-        sourceKind: 'NOTES',
+        sourceKind: 'IMAGE',
         purpose: 'Lluvia de ideas del equipo',
         description: 'Contenido de prueba.',
       },
@@ -196,7 +196,7 @@ describe('Project Source intake integration', () => {
       projectId,
       {
         title: 'Notas de entrevista',
-        sourceKind: 'NOTES',
+        sourceKind: 'TEXT',
         purpose: 'Entrevista con finanzas',
         description: 'Contenido de prueba.',
       },
@@ -258,7 +258,7 @@ describe('Project Source intake integration', () => {
       projectId,
       {
         title: 'Fuente privada',
-        sourceKind: 'NOTES',
+        sourceKind: 'TEXT',
         purpose: 'Interna',
         description: 'Contenido de prueba.',
       },

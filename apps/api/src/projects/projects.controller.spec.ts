@@ -53,20 +53,26 @@ describe('ProjectsController (validation and routing)', () => {
 
     expect(ok.status).toBe(201);
     expect(service.create).toHaveBeenCalledTimes(1);
-    expect(service.create).toHaveBeenCalledWith({ workspaceId, name: 'Nuevo' }, 'test-user');
+    expect(service.create).toHaveBeenCalledWith(
+      { workspaceId, name: 'Nuevo', workflowRoute: 'FULL' },
+      'test-user',
+    );
     expect(invalid.status).toBe(400);
     expect(invalid.body.message).toBe('La solicitud no es válida.');
   });
 
   it('GET /projects requires workspaceId and applies pagination defaults', async () => {
-    service.list.mockResolvedValue({ items: [], limit: 50, offset: 0 });
+    service.list.mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
 
     const missing = await request(app.getHttpServer()).get('/projects');
     const ok = await request(app.getHttpServer()).get('/projects').query({ workspaceId });
 
     expect(missing.status).toBe(400);
     expect(ok.status).toBe(200);
-    expect(service.list).toHaveBeenCalledWith(workspaceId, 50, 0, 'test-user');
+    expect(service.list).toHaveBeenCalledWith(
+      { workspaceId, limit: 50, offset: 0, status: 'ALL', sort: 'OLDEST' },
+      'test-user',
+    );
   });
 
   it('GET /projects/:projectId rejects a non-UUID id before reaching the service', async () => {

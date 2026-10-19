@@ -2,6 +2,27 @@ import { describe, expect, it } from 'vitest';
 import { loadAIConfig, loadDiagramRendererConfig, loadStorageConfig } from './index';
 
 describe('loadAIConfig', () => {
+  // DEC-117: the desktop edition's ChatGPT plan, through the loopback broker.
+  it('reads the ChatGPT plan provider and requires its broker', () => {
+    expect(
+      loadAIConfig({
+        AI_PROVIDER: 'chatgpt',
+        AI_MODEL: 'gpt-x',
+        CHATGPT_BROKER_URL: 'http://127.0.0.1:4803',
+        CHATGPT_BROKER_SECRET: 'x'.repeat(43),
+      }),
+    ).toEqual({
+      provider: 'chatgpt',
+      model: 'gpt-x',
+      timeoutMs: 120_000,
+      brokerUrl: 'http://127.0.0.1:4803',
+      brokerSecret: 'x'.repeat(43),
+    });
+    expect(() =>
+      loadAIConfig({ AI_PROVIDER: 'chatgpt', AI_MODEL: 'gpt-x', CHATGPT_BROKER_SECRET: 'short' }),
+    ).toThrow();
+  });
+
   it('defaults safely to disabled without secrets', () =>
     expect(loadAIConfig({})).toEqual({ provider: 'disabled' }));
   it('validates openai-compatible settings', () =>
@@ -73,6 +94,51 @@ describe('loadAIConfig', () => {
         AI_PROVIDER_3_BASE_URL: 'https://unreachable.test/v1',
       }),
     ).toMatchObject({ chain: [{ id: 'provider_1' }] }));
+
+  it('reads what each provider plan accepts (DEC-127)', () => {
+    const slot = {
+      AI_PROVIDER: 'fallback',
+      AI_PROVIDER_1_BASE_URL: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      AI_PROVIDER_1_API_KEY: 'gemini-secret',
+      AI_PROVIDER_1_MODEL: 'gemini-3.8-flash',
+      AI_PROVIDER_1_MAX_INPUT_TOKENS: '1048576',
+      AI_PROVIDER_1_TOKENS_PER_MINUTE: '250000',
+      AI_PROVIDER_1_DAY_RESET_TIMEZONE: 'America/Los_Angeles',
+      AI_PROVIDER_1_MAX_OUTPUT_TOKENS: '65536',
+    };
+    expect(loadAIConfig(slot)).toMatchObject({
+      chain: [
+        {
+          maxInputTokens: 1_048_576,
+          tokensPerMinute: 250_000,
+          dayResetTimeZone: 'America/Los_Angeles',
+          maxOutputTokens: 65_536,
+        },
+      ],
+    });
+    expect(() =>
+      loadAIConfig({ ...slot, AI_PROVIDER_1_DAY_RESET_TIMEZONE: 'Marte/Olimpo' }),
+    ).toThrow('Zona horaria');
+  });
+
+  it('accepts the ChatGPT broker only on this machine (DEC-128)', () => {
+    const chatgpt = {
+      AI_PROVIDER: 'chatgpt',
+      AI_MODEL: 'gpt-x',
+      AI_MAX_INPUT_TOKENS: '200000',
+      AI_MAX_OUTPUT_TOKENS: '64000',
+      CHATGPT_BROKER_URL: 'http://127.0.0.1:47833',
+      CHATGPT_BROKER_SECRET: 'x'.repeat(32),
+    };
+    expect(loadAIConfig(chatgpt)).toMatchObject({
+      provider: 'chatgpt',
+      maxInputTokens: 200_000,
+      maxOutputTokens: 64_000,
+    });
+    expect(() =>
+      loadAIConfig({ ...chatgpt, CHATGPT_BROKER_URL: 'https://broker.example.com' }),
+    ).toThrow('este equipo');
+  });
 
   it('rejects an empty fallback chain', () =>
     expect(() => loadAIConfig({ AI_PROVIDER: 'fallback' })).toThrow());

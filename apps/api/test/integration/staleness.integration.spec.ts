@@ -6,7 +6,7 @@ async function approveSource(ctx: TestContext, projectId: string, title: string,
     projectId,
     {
       title,
-      sourceKind: 'NOTES',
+      sourceKind: 'TEXT',
       purpose: 'Conocimiento del proyecto',
       description: 'Contenido de prueba.',
     },
@@ -32,6 +32,7 @@ const useCase = (requirementVersionId: string) => ({
   mainFlow: [{ actor: 'Usuario', action: 'Registra' }],
   alternativeFlows: [],
   relatedRequirementVersionIds: [requirementVersionId],
+  relations: [],
 });
 
 describe('Staleness / potential-impact integration', () => {
@@ -51,7 +52,7 @@ describe('Staleness / potential-impact integration', () => {
       objective: 'o',
       scopeItems: [],
       actors: [{ name: 'Usuario' }],
-      needs: [],
+      needs: [{ description: 'Registrar datos' }],
       constraints: [],
       businessRules: [],
       sourceVersionIds: [approvedSource.version.id],
@@ -77,7 +78,7 @@ describe('Staleness / potential-impact integration', () => {
       objective: 'o',
       scopeItems: [],
       actors: [{ name: 'Usuario' }],
-      needs: [],
+      needs: [{ description: 'Registrar datos' }],
       constraints: [],
       businessRules: [],
       sourceVersionIds: [sourceV1.version.id],
@@ -106,6 +107,7 @@ describe('Staleness / potential-impact integration', () => {
               actors: ['Usuario'],
               preconditions: [],
               postconditions: [],
+              contextItemCodes: ['N-1'],
               dependencyCandidateIds: [],
             },
           ],
@@ -116,7 +118,7 @@ describe('Staleness / potential-impact integration', () => {
       new PromptRegistry([
         {
           key: 'requirements.generate',
-          version: 2,
+          version: 3,
           capability: 'STRUCTURED_OUTPUT',
           purpose: 'requirements_generation',
           systemInstructions: 'policy',
@@ -125,7 +127,7 @@ describe('Staleness / potential-impact integration', () => {
       new PrismaAIRunRecorder(ctx.prisma),
     );
     const requirementsService = new RequirementsService(ctx.prisma, ai, {
-      retrieve: async () => [],
+      searchSources: async () => [],
     } as never);
     const generation = await requirementsService.generate(projectId, context.version.id);
     const accepted = await requirementsService.accept(projectId, generation.id, [
@@ -186,6 +188,43 @@ describe('Staleness / potential-impact integration', () => {
     expect(rfRow.status).toBe('APPROVED');
   });
 
+  it('never reports staleness for a source that is current, even if an older approved version of it is also linked (legacy data)', async () => {
+    const workspace = await createWorkspace(ctx.prisma, 'Staleness Duplicate Links');
+    const projectId = (await ctx.projects.create({ workspaceId: workspace.id, name: 'P' })).id;
+    const sourceV1 = await approveSource(ctx, projectId, 'Notas', 'v1');
+    const v2 = await ctx.sources.submitManualTranscript(
+      projectId,
+      sourceV1.artifactId,
+      'Contenido actualizado',
+    );
+    await ctx.sources.transition(projectId, sourceV1.artifactId, v2.version.id, 'IN_REVIEW');
+    await ctx.sources.transition(projectId, sourceV1.artifactId, v2.version.id, 'APPROVED');
+
+    const context = await ctx.projectContext.create(projectId, {
+      problemStatement: 'p',
+      objective: 'o',
+      scopeItems: [],
+      actors: [{ name: 'Usuario' }],
+      needs: [{ description: 'Registrar datos' }],
+      constraints: [],
+      businessRules: [],
+      sourceVersionIds: [v2.version.id],
+    });
+    // The write path now rejects linking two versions of the same source at
+    // once (see project-context.service.ts), but data created before that
+    // guard existed must still be read sensibly — reproduce it directly.
+    await ctx.prisma.projectContextSource.create({
+      data: { projectContextVersionId: context.version.id, sourceVersionId: sourceV1.version.id },
+    });
+    await ctx.projectContext.transition(projectId, context.version.id, 'IN_REVIEW');
+    await ctx.projectContext.transition(projectId, context.version.id, 'APPROVED');
+
+    const result = await ctx.staleness.analyzeProject(projectId);
+    const contextEntry = result.entries.find((e) => e.artifactType === 'PROJECT_CONTEXT')!;
+    expect(contextEntry.impactState).toBe('CURRENT');
+    expect(contextEntry.reasons).toEqual([]);
+  });
+
   it('flags a brand-new APPROVED source that the context never linked at all', async () => {
     const workspace = await createWorkspace(ctx.prisma, 'Staleness New Source');
     const projectId = (await ctx.projects.create({ workspaceId: workspace.id, name: 'P' })).id;
@@ -195,7 +234,7 @@ describe('Staleness / potential-impact integration', () => {
       objective: 'o',
       scopeItems: [],
       actors: [{ name: 'Usuario' }],
-      needs: [],
+      needs: [{ description: 'Registrar datos' }],
       constraints: [],
       businessRules: [],
       sourceVersionIds: [linkedSource.version.id],

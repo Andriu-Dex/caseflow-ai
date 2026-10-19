@@ -27,6 +27,9 @@ export default defineConfig({
       '**/dist/**',
       '**/.next/**',
       'apps/web/**',
+      // Desktop packaging copies of the API and web (apps/desktop/build).
+      'apps/desktop/build/**',
+      'apps/desktop/release/**',
     ],
     coverage: {
       provider: 'v8',

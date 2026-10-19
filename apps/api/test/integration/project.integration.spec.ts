@@ -1,5 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createTestContext, createWorkspace, type TestContext } from './support/test-app';
+import {
+  createTestContext,
+  createUnauthorizedUser,
+  createWorkspace,
+  type TestContext,
+} from './support/test-app';
 
 describe('Project persistence', () => {
   let ctx: TestContext;
@@ -84,6 +89,34 @@ describe('Project persistence', () => {
     expect(page.items.map((item) => item.id)).toEqual([second.id]);
   });
 
+  it('filters by text, status and route, reports the total and restores archived projects', async () => {
+    const workspace = await createWorkspace(ctx.prisma, 'Filtros');
+    const shop = await ctx.projects.create({ workspaceId: workspace.id, name: 'Tienda Norte' });
+    await ctx.projects.create({
+      workspaceId: workspace.id,
+      name: 'Biblioteca',
+      description: 'Préstamos de la tienda escolar',
+      workflowRoute: 'EXPRESS',
+    });
+    await ctx.projects.create({ workspaceId: workspace.id, name: 'Clínica' });
+    await ctx.projects.archive(shop.id);
+
+    const names = async (filters: Parameters<typeof ctx.projects.list>[3]) =>
+      (await ctx.projects.list(workspace.id, 50, 0, filters)).items.map((p) => p.name);
+    expect(await names({ search: 'TIENDA', sort: 'NAME' })).toEqual(['Biblioteca', 'Tienda Norte']);
+    expect(await names({ status: 'ARCHIVED' })).toEqual(['Tienda Norte']);
+    expect(await names({ status: 'ACTIVE', sort: 'NAME' })).toEqual(['Biblioteca', 'Clínica']);
+    expect(await names({ workflowRoute: 'EXPRESS' })).toEqual(['Biblioteca']);
+
+    const page = await ctx.projects.list(workspace.id, 2, 2, { sort: 'NAME' });
+    expect(page).toMatchObject({ total: 3, limit: 2, offset: 2 });
+    expect(page.items.map((p) => p.name)).toEqual(['Tienda Norte']);
+
+    const restored = await ctx.projects.unarchive(shop.id);
+    expect(restored.archivedAt).toBeNull();
+    await expect(ctx.projects.unarchive(shop.id)).rejects.toThrow('El proyecto no está archivado.');
+  });
+
   describe('deletion', () => {
     it('permanently deletes a project that has nothing approved, cascading its artifacts', async () => {
       const workspace = await createWorkspace(ctx.prisma);
@@ -100,7 +133,7 @@ describe('Project persistence', () => {
       await ctx.projectContext.transition(project.id, context.version.id, 'IN_REVIEW');
       // Never approved — stays IN_REVIEW.
 
-      await ctx.projects.delete(project.id);
+      await ctx.projects.delete(project.id, 'Descartable', ctx.userId);
 
       await expect(ctx.projects.get(project.id)).rejects.toThrow('Proyecto no encontrado.');
       const remainingArtifacts = await ctx.prisma.artifact.count({
@@ -109,7 +142,8 @@ describe('Project persistence', () => {
       expect(remainingArtifacts).toBe(0);
     });
 
-    it('refuses to delete a project that has any approved artifact', async () => {
+    // DEC-134: approved history goes too, and who deleted it is kept.
+    it('deletes a project with approved history and records who deleted it', async () => {
       const workspace = await createWorkspace(ctx.prisma);
       const project = await ctx.projects.create({
         workspaceId: workspace.id,
@@ -127,14 +161,67 @@ describe('Project persistence', () => {
       await ctx.projectContext.transition(project.id, context.version.id, 'IN_REVIEW');
       await ctx.projectContext.transition(project.id, context.version.id, 'APPROVED');
 
-      await expect(ctx.projects.delete(project.id)).rejects.toThrow('artefactos aprobados');
+      await ctx.projects.delete(project.id, ' Con historial ', ctx.userId);
+
+      await expect(ctx.projects.get(project.id)).rejects.toThrow('Proyecto no encontrado.');
+      expect(await ctx.prisma.artifactVersion.count({ where: { projectId: project.id } })).toBe(0);
+      expect(await ctx.prisma.auditEvent.count({ where: { projectId: project.id } })).toBe(0);
+      expect(
+        await ctx.prisma.projectDeletion.findFirstOrThrow({ where: { projectId: project.id } }),
+      ).toMatchObject({
+        workspaceId: workspace.id,
+        projectName: 'Con historial',
+        deletedByUserId: ctx.userId,
+      });
+      // Outside a project deletion the history stays protected.
+      const kept = await ctx.projects.create({ workspaceId: workspace.id, name: 'Protegido' });
+      const keptContext = await ctx.projectContext.create(kept.id, {
+        problemStatement: 'p',
+        objective: 'o',
+        scopeItems: [],
+        actors: [{ name: 'a' }],
+        needs: [],
+        constraints: [],
+        businessRules: [],
+      });
+      await ctx.projectContext.transition(kept.id, keptContext.version.id, 'IN_REVIEW');
+      await ctx.projectContext.transition(kept.id, keptContext.version.id, 'APPROVED');
+      await expect(
+        ctx.prisma.artifactVersion.delete({ where: { id: keptContext.version.id } }),
+      ).rejects.toThrow();
+    });
+
+    it('requires the exact name, and only its owner or a workspace owner or admin', async () => {
+      const workspace = await createWorkspace(ctx.prisma);
+      const project = await ctx.projects.create({ workspaceId: workspace.id, name: 'Tienda' });
+      await expect(ctx.projects.delete(project.id, 'tienda', ctx.userId)).rejects.toThrow(
+        'no coincide',
+      );
+
+      const member = await createUnauthorizedUser(ctx);
+      await ctx.prisma.workspaceMembership.create({
+        data: { workspaceId: workspace.id, userId: member.id, role: 'MEMBER' },
+      });
+      await ctx.prisma.projectMembership.create({
+        data: { projectId: project.id, userId: member.id, role: 'EDITOR' },
+      });
+      await expect(ctx.projects.delete(project.id, 'Tienda', member.id)).rejects.toThrow(
+        'Solo el propietario',
+      );
       await expect(ctx.projects.get(project.id)).resolves.toBeDefined();
+
+      const admin = await createUnauthorizedUser(ctx);
+      await ctx.prisma.workspaceMembership.create({
+        data: { workspaceId: workspace.id, userId: admin.id, role: 'ADMIN' },
+      });
+      await ctx.projects.delete(project.id, 'Tienda', admin.id);
+      await expect(ctx.projects.get(project.id)).rejects.toThrow('Proyecto no encontrado.');
     });
 
     it('rejects deleting a project that does not exist', async () => {
-      await expect(ctx.projects.delete('00000000-0000-4000-8000-000000000000')).rejects.toThrow(
-        'Proyecto no encontrado.',
-      );
+      await expect(
+        ctx.projects.delete('00000000-0000-4000-8000-000000000000', 'x', ctx.userId),
+      ).rejects.toThrow('Proyecto no encontrado.');
     });
   });
 

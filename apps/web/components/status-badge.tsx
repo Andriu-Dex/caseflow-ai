@@ -12,27 +12,31 @@ const STATUS_META: Record<
   DRAFT: {
     label: 'Borrador',
     icon: PenLine,
-    className: 'bg-muted text-foreground/80 border-input',
+    className: 'bg-muted text-foreground/80 border-input dark:bg-muted/40',
   },
   GENERATED: {
     label: 'Generado por IA',
     icon: Sparkles,
-    className: 'bg-purple-50 text-purple-700 border-purple-300',
+    className:
+      'bg-purple-50 text-purple-700 border-purple-300 dark:bg-purple-900/35 dark:text-purple-300 dark:border-purple-700/70',
   },
   IN_REVIEW: {
     label: 'En revisión',
     icon: Clock,
-    className: 'bg-amber-50 text-amber-700 border-amber-300',
+    className:
+      'bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/35 dark:text-amber-300 dark:border-amber-700/70',
   },
   APPROVED: {
     label: 'Aprobado',
     icon: CheckCircle2,
-    className: 'bg-emerald-50 text-emerald-700 border-emerald-300',
+    className:
+      'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-900/35 dark:text-emerald-300 dark:border-emerald-700/70',
   },
   CHANGES_REQUESTED: {
     label: 'Cambios solicitados',
     icon: AlertTriangle,
-    className: 'bg-destructive/5 text-destructive border-destructive/40',
+    className:
+      'bg-destructive/5 text-destructive border-destructive/40 dark:bg-destructive/25 dark:border-destructive/60',
   },
 };
 
@@ -54,7 +58,7 @@ export function StatusBadge({ status }: { status: ArtifactVersionStatus }) {
 // so the two concepts are never visually confusable.
 export function CandidateBadge() {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-dashed border-purple-300 bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">
+    <span className="inline-flex items-center gap-1 rounded-full border border-dashed border-purple-300 bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700 dark:border-purple-800 dark:bg-purple-950/30 dark:text-purple-400">
       <Sparkles aria-hidden="true" className="size-3.5" />
       Propuesta de IA
     </span>

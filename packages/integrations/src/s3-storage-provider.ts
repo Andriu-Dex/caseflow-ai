@@ -1,4 +1,5 @@
 import {
+  DeleteObjectCommand,
   GetObjectCommand,
   NoSuchKey,
   PutObjectCommand,
@@ -60,6 +61,15 @@ export class S3StorageProvider implements StorageProvider {
       const body = response.Body;
       if (!body) throw new StorageProviderError('STORAGE_OBJECT_NOT_FOUND', 'El objeto no existe.');
       return Buffer.from(await body.transformToByteArray());
+    } catch (cause) {
+      throw normalizeError(cause);
+    }
+  }
+
+  // S3 deletes idempotently: a missing key also succeeds.
+  async deleteObject(key: string): Promise<void> {
+    try {
+      await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
     } catch (cause) {
       throw normalizeError(cause);
     }

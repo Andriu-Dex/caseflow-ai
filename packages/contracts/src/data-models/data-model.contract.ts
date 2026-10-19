@@ -1,10 +1,10 @@
 import { z } from 'zod';
 import { ARTIFACT_VERSION_STATUSES } from '../artifacts/artifact.contract';
 
-export const DATA_MODEL_ENTITY_LIMIT = 60;
+export const DATA_MODEL_ENTITY_LIMIT = 100;
 export const DATA_MODEL_ATTRIBUTE_LIMIT = 50;
-export const DATA_MODEL_RELATIONSHIP_LIMIT = 150;
-export const DATA_MODEL_MAX_OUTPUT_TOKENS = 12_288;
+export const DATA_MODEL_RELATIONSHIP_LIMIT = 300;
+export const DATA_MODEL_MAX_OUTPUT_TOKENS = 24_576;
 export const CONCEPTUAL_ATTRIBUTE_TYPES = [
   'STRING',
   'TEXT',
@@ -48,8 +48,18 @@ const relationshipSchema = z
     sourceEntityId: text(80),
     targetEntityId: text(80),
     name: text(120).optional(),
-    sourceCardinality: z.enum(DATA_MODEL_CARDINALITIES),
-    targetCardinality: z.enum(DATA_MODEL_CARDINALITIES),
+    // Crow's foot convention, as the ER diagram draws it (DEC-130): each side
+    // says how many of its own entity relate to ONE instance of the other.
+    sourceCardinality: z
+      .enum(DATA_MODEL_CARDINALITIES)
+      .describe(
+        'Cuántas instancias de la entidad origen se relacionan con UNA de la entidad destino.',
+      ),
+    targetCardinality: z
+      .enum(DATA_MODEL_CARDINALITIES)
+      .describe(
+        'Cuántas instancias de la entidad destino se relacionan con UNA de la entidad origen.',
+      ),
     description: text(1000).optional(),
   })
   .strict();
@@ -147,10 +157,53 @@ export const dataModelGenerationOutputSchema = z
         path: ['candidates'],
       });
   });
+// DEC-144: the model is drawn in two stages. Discovery names the entities the
+// sources support; each batch of entities then gives their attributes and the
+// relationships that join them to the entities of earlier batches.
+export const dataModelDiscoveryOutputSchema = z
+  .object({
+    title: text(200),
+    entities: z
+      .array(
+        z
+          .object({
+            localId: text(80),
+            name: text(120),
+            description: text(2000).optional(),
+            relatedSourceCodes: z.array(text(40)).max(100).default([]),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(DATA_MODEL_ENTITY_LIMIT),
+  })
+  .strict();
+export const dataModelBatchOutputSchema = z
+  .object({
+    entities: z.array(entitySchema).min(1).max(20),
+    relationships: z.array(relationshipSchema).max(60).default([]),
+  })
+  .strict();
+export const dataModelGenerationJobSchema = z.object({
+  id: z.uuid(),
+  projectId: z.uuid(),
+  status: z.enum(['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED']),
+  completedBatches: z.number().int().nonnegative(),
+  totalBatches: z.number().int().nonnegative(),
+  outputChars: z.number().int().nonnegative(),
+  generationId: z.uuid().nullable(),
+  errorMessage: z.string().nullable(),
+  sourceVersionIds: z.array(z.uuid()),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+export type DataModelGenerationJob = z.infer<typeof dataModelGenerationJobSchema>;
+export type DataModelBatchEntity = z.output<typeof entitySchema>;
+export type DataModelBatchRelationship = z.output<typeof relationshipSchema>;
 export const generateDataModelRequestSchema = z
   .object({
-    requirementVersionIds: z.array(z.uuid()).max(100).default([]),
-    useCaseVersionIds: z.array(z.uuid()).max(100).default([]),
+    requirementVersionIds: z.array(z.uuid()).max(500).default([]),
+    useCaseVersionIds: z.array(z.uuid()).max(500).default([]),
   })
   .strict()
   .refine(
@@ -198,5 +251,5 @@ export type DiagramResponse = z.infer<typeof diagramResponseSchema>;
 export const diagramListResponseSchema = z.object({ items: z.array(diagramResponseSchema) });
 export const manualDiagramVersionRequestSchema = z.object({ source: text(50_000) }).strict();
 export const generateDiagramRequestSchema = z
-  .object({ sourceVersionIds: z.array(z.uuid()).min(1).max(100) })
+  .object({ sourceVersionIds: z.array(z.uuid()).min(1).max(500) })
   .strict();

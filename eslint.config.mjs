@@ -9,6 +9,7 @@ export default tseslint.config(
       '**/node_modules/**',
       '**/dist/**',
       '**/build/**',
+      '**/release/**',
       '**/.next/**',
       '**/out/**',
       '**/coverage/**',

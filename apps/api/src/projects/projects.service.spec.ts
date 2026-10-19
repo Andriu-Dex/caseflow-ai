@@ -17,7 +17,13 @@ const projectRow = {
 describe('ProjectsService (rule branches)', () => {
   const prisma = {
     workspace: { findUnique: vi.fn() },
-    project: { create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
+    project: {
+      create: vi.fn(),
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      update: vi.fn(),
+      count: vi.fn(),
+    },
     projectMembership: { create: vi.fn() },
     artifactVersion: { count: vi.fn(), findMany: vi.fn() },
     $transaction: vi.fn(async (callback: (tx: typeof prisma) => unknown) => callback(prisma)),
@@ -36,7 +42,7 @@ describe('ProjectsService (rule branches)', () => {
     const result = await service.create({ workspaceId, name: 'P' }, 'user-1');
 
     expect(prisma.project.create).toHaveBeenCalledWith({
-      data: { workspaceId, name: 'P', description: null },
+      data: { workspaceId, name: 'P', description: null, workflowRoute: 'FULL' },
     });
     expect(prisma.projectMembership.create).toHaveBeenCalledWith({
       data: { projectId: projectRow.id, userId: 'user-1', role: 'OWNER' },
@@ -57,7 +63,12 @@ describe('ProjectsService (rule branches)', () => {
     prisma.project.findMany.mockResolvedValue([projectRow]);
     prisma.artifactVersion.findMany.mockResolvedValue([]);
 
-    const result = await service.list(workspaceId, 10, 20, 'user-1');
+    prisma.project.count.mockResolvedValue(31);
+
+    const result = await service.list(
+      { workspaceId, limit: 10, offset: 20, status: 'ALL', sort: 'OLDEST' },
+      'user-1',
+    );
 
     expect(prisma.project.findMany).toHaveBeenCalledWith({
       where: { workspaceId, projectMemberships: { some: { userId: 'user-1' } } },
@@ -65,8 +76,44 @@ describe('ProjectsService (rule branches)', () => {
       take: 10,
       skip: 20,
     });
-    expect(result).toMatchObject({ limit: 10, offset: 20 });
+    expect(result).toMatchObject({ total: 31, limit: 10, offset: 20 });
     expect(result.items).toHaveLength(1);
+  });
+
+  it('filters by status, route and text, with a stable sort', async () => {
+    prisma.project.findMany.mockResolvedValue([]);
+    prisma.project.count.mockResolvedValue(0);
+
+    await service.list(
+      {
+        workspaceId,
+        limit: 12,
+        offset: 0,
+        status: 'ARCHIVED',
+        workflowRoute: 'EXPRESS',
+        search: 'tienda',
+        sort: 'NAME',
+      },
+      'user-1',
+    );
+
+    const where = {
+      workspaceId,
+      projectMemberships: { some: { userId: 'user-1' } },
+      archivedAt: { not: null },
+      workflowRoute: 'EXPRESS',
+      OR: [
+        { name: { contains: 'tienda', mode: 'insensitive' } },
+        { description: { contains: 'tienda', mode: 'insensitive' } },
+      ],
+    };
+    expect(prisma.project.findMany).toHaveBeenCalledWith({
+      where,
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+      take: 12,
+      skip: 0,
+    });
+    expect(prisma.project.count).toHaveBeenCalledWith({ where });
   });
 
   it('reports a missing project as not found', async () => {
