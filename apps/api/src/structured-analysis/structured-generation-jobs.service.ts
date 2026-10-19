@@ -259,10 +259,12 @@ export class StructuredGenerationJobsService implements OnApplicationBootstrap {
       );
     };
     try {
-      await this.prisma.structuredGenerationJob.update({
-        where: { id: jobId },
+      // Claimed atomically: a job cancelled while queued must not start.
+      const claimed = await this.prisma.structuredGenerationJob.updateMany({
+        where: { id: jobId, projectId, status: 'QUEUED' },
         data: { status: 'RUNNING' },
       });
+      if (!claimed.count) return;
       const generation = await this.structured.generateInBatches(
         projectId,
         kind,

@@ -223,10 +223,12 @@ export class UseCaseGenerationJobsService implements OnApplicationBootstrap {
       );
     };
     try {
-      await this.prisma.useCaseGenerationJob.update({
-        where: { id: jobId },
+      // Claimed atomically: a job cancelled while queued must not start.
+      const claimed = await this.prisma.useCaseGenerationJob.updateMany({
+        where: { id: jobId, projectId, status: 'QUEUED' },
         data: { status: 'RUNNING' },
       });
+      if (!claimed.count) return;
       const generation = await this.useCases.generateInBatches(projectId, requirementVersionIds, {
         jobId,
         update,

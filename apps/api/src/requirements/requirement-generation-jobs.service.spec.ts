@@ -175,6 +175,12 @@ describe('Requirement generation job lifecycle', () => {
     expect(row.status).toBe('CANCELLED');
     expect(row.generationId).toBeNull();
   });
+  it('does not start a job that was cancelled while it was still queued', async () => {
+    prisma.requirementGenerationJob.updateMany.mockResolvedValueOnce({ count: 0 });
+    await service().start(projectId, contextId, 'user');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(requirements.generate).not.toHaveBeenCalled();
+  });
   it('refuses to cancel for a user without permission', async () => {
     prisma.projectMembership.findFirst.mockResolvedValueOnce(null);
     await expect(service().cancel(projectId, row.id, 'viewer')).rejects.toThrow(

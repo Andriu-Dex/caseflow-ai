@@ -218,10 +218,12 @@ export class DataModelGenerationJobsService implements OnApplicationBootstrap {
       );
     };
     try {
-      await this.prisma.dataModelGenerationJob.update({
-        where: { id: jobId },
+      // Claimed atomically: a job cancelled while queued must not start.
+      const claimed = await this.prisma.dataModelGenerationJob.updateMany({
+        where: { id: jobId, projectId, status: 'QUEUED' },
         data: { status: 'RUNNING' },
       });
+      if (!claimed.count) return;
       const generation = await this.dataModels.generateInBatches(projectId, sourceVersionIds, {
         jobId,
         update,

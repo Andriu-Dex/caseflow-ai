@@ -235,10 +235,12 @@ export class RequirementGenerationJobsService implements OnApplicationBootstrap 
       );
     };
     try {
-      await this.prisma.requirementGenerationJob.update({
-        where: { id: jobId },
+      // Claimed atomically: a job cancelled while queued must not start.
+      const claimed = await this.prisma.requirementGenerationJob.updateMany({
+        where: { id: jobId, projectId, status: 'QUEUED' },
         data: { status: 'RUNNING' },
       });
+      if (!claimed.count) return;
       const generation = await this.requirements.generate(projectId, sourceContextVersionId, {
         jobId,
         update,
