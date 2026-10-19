@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   latest: vi.fn(),
   start: vi.fn(),
   generation: vi.fn(),
+  cancel: vi.fn(),
   error: vi.fn(),
 }));
 vi.mock('../lib/api', () => ({
@@ -16,6 +17,7 @@ vi.mock('../lib/api', () => ({
       latestGeneration: (...args: unknown[]) => mocks.latest(...args),
       startGeneration: (...args: unknown[]) => mocks.start(...args),
       generation: (...args: unknown[]) => mocks.generation(...args),
+      cancelGeneration: (...args: unknown[]) => mocks.cancel(...args),
     },
   },
   ApiError: class extends Error {},
@@ -32,7 +34,12 @@ const job = (status: string, ids = ['rv1', 'rv2']) => ({
   totalBatches: 5,
   outputChars: 0,
   generationId: status === 'COMPLETED' ? 'gen1' : null,
-  errorMessage: status === 'FAILED' ? 'Proveedor no disponible.' : null,
+  errorMessage:
+    status === 'FAILED'
+      ? 'Proveedor no disponible.'
+      : status === 'CANCELLED'
+        ? 'Se canceló la generación.'
+        : null,
   requirementVersionIds: ids,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
@@ -74,6 +81,20 @@ describe('UseCaseGenerationPanel', () => {
     mount();
     expect(await screen.findByRole('button', { name: 'Reanudar generación' })).toBeEnabled();
     expect(screen.getByRole('alert')).toHaveTextContent('Proveedor no disponible.');
+  });
+
+  it('cancels a running job after asking, then offers to resume it', async () => {
+    mocks.latest.mockResolvedValue({ job: job('RUNNING') });
+    mocks.cancel.mockResolvedValue(job('CANCELLED'));
+    const user = userEvent.setup();
+    mount();
+    await user.click(await screen.findByRole('button', { name: 'Cancelar la generación' }));
+    expect(mocks.cancel).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Sí, cancelar' }));
+    expect(mocks.cancel).toHaveBeenCalledWith('p1', 'job1');
+    expect(await screen.findByRole('button', { name: 'Reanudar generación' })).toBeEnabled();
+    expect(screen.getByRole('status')).toHaveTextContent('Se canceló la generación.');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('starts a new run, not a resume, when the selection changed', async () => {

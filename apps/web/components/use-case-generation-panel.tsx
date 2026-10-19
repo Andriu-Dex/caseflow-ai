@@ -19,6 +19,7 @@ export function UseCaseGenerationPanel({
       queryKey={['use-case-generation-job', projectId]}
       latest={() => api.useCases.latestGeneration(projectId)}
       start={() => api.useCases.startGeneration(projectId, requirementVersionIds)}
+      cancel={(jobId) => api.useCases.cancelGeneration(projectId, jobId)}
       fetchGeneration={(generationId) => api.useCases.generation(projectId, generationId)}
       jobSelection={(job) => job.requirementVersionIds}
       selection={requirementVersionIds}

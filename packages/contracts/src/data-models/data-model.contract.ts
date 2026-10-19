@@ -187,7 +187,7 @@ export const dataModelBatchOutputSchema = z
 export const dataModelGenerationJobSchema = z.object({
   id: z.uuid(),
   projectId: z.uuid(),
-  status: z.enum(['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED']),
+  status: z.enum(['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED']),
   completedBatches: z.number().int().nonnegative(),
   totalBatches: z.number().int().nonnegative(),
   outputChars: z.number().int().nonnegative(),

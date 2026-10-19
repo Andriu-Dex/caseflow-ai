@@ -66,8 +66,8 @@ beforeEach(() => {
   prisma.$transaction.mockImplementation((callback) => callback(prisma));
   prisma.$queryRaw.mockResolvedValue([{ id: projectId }]);
   prisma.requirementGenerationJob.findFirst.mockImplementation(({ where }) => {
+    if (where.status?.in?.includes('CANCELLED')) return previous ? row : null;
     if (where.status?.in) return active ? { ...row, status: 'RUNNING' } : null;
-    if (where.status === 'FAILED') return previous ? row : null;
     if (where.projectId !== projectId) return null;
     return row;
   });
@@ -141,6 +141,46 @@ describe('Requirement generation job lifecycle', () => {
     await vi.waitFor(() => expect(requirements.generate).toHaveBeenCalledTimes(2));
     await vi.waitFor(() => expect(row.status).toBe('FAILED'));
     expect(row.errorMessage).not.toContain('private');
+  });
+  it('cancels a running job: the run stops at its next batch and the job stays cancelled', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let stoppedBy: unknown = null;
+    requirements.generate.mockImplementation(async (_project, _context, progress) => {
+      progress.update(0, 2, 0);
+      await gate;
+      try {
+        progress.update(1, 2, 0);
+      } catch (error) {
+        stoppedBy = error;
+        throw error;
+      }
+      return { id: generationId };
+    });
+    const jobs = service();
+    await jobs.start(projectId, contextId, 'user');
+    await vi.waitFor(() => expect(requirements.generate).toHaveBeenCalled());
+    row.status = 'RUNNING';
+    await jobs.cancel(projectId, row.id, 'user');
+    expect(row.status).toBe('CANCELLED');
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'REQUIREMENT_GENERATION_FINISHED',
+        metadata: { status: 'CANCELLED' },
+      }),
+    );
+    release();
+    await vi.waitFor(() => expect(stoppedBy).not.toBeNull());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(row.status).toBe('CANCELLED');
+    expect(row.generationId).toBeNull();
+  });
+  it('refuses to cancel for a user without permission', async () => {
+    prisma.projectMembership.findFirst.mockResolvedValueOnce(null);
+    await expect(service().cancel(projectId, row.id, 'viewer')).rejects.toThrow(
+      'No tiene permisos',
+    );
+    expect(prisma.requirementGenerationJob.updateMany).not.toHaveBeenCalled();
   });
   it('closes interrupted jobs on startup and supports an empty history', async () => {
     const jobs = service();

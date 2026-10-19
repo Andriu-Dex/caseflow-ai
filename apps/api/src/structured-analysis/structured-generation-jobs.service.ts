@@ -14,6 +14,11 @@ import {
   type StructuredAnalysisKind,
 } from '@caseflow-ai/contracts';
 import { AuditService } from '../audit/audit.service';
+import {
+  CANCELLED_MESSAGE,
+  GenerationCancelledError,
+  assertCanGenerate,
+} from '../common/generation-cancelled';
 import { INTERRUPTED_BY_RESTART } from '../common/interrupted';
 import { PrismaService } from '../database/prisma.service';
 import { StructuredAnalysisService } from './structured-analysis.service';
@@ -28,6 +33,8 @@ const sameSet = (a: string[], b: string[]) =>
 export class StructuredGenerationJobsService implements OnApplicationBootstrap {
   private readonly logger = new Logger(StructuredGenerationJobsService.name);
   private readonly running = new Map<string, Promise<void>>();
+  // Jobs the person cancelled whose run has not stopped yet.
+  private readonly cancelled = new Set<string>();
   constructor(
     private readonly prisma: PrismaService,
     private readonly structured: StructuredAnalysisService,
@@ -84,10 +91,16 @@ export class StructuredGenerationJobsService implements OnApplicationBootstrap {
         return active;
       }
       const previous = await tx.structuredGenerationJob.findFirst({
-        where: { projectId, kind, status: 'FAILED' },
+        where: { projectId, kind, status: { in: ['FAILED', 'CANCELLED'] } },
         orderBy: { createdAt: 'desc' },
         include: { sources: true },
       });
+      // The run of a cancelled job stops at its next batch: resuming it before
+      // then would leave the job queued with nothing to run it.
+      if (previous && this.running.has(previous.id))
+        throw new ConflictException(
+          'La cancelación anterior aún se está completando. Espere unos segundos y reanude.',
+        );
       const resumable =
         previous &&
         (previous.designBaselineId ?? null) === (designBaselineId ?? null) &&
@@ -139,7 +152,10 @@ export class StructuredGenerationJobsService implements OnApplicationBootstrap {
     if (job.status === 'QUEUED' && !this.running.has(job.id)) {
       const task = this.run(job.id, projectId, kind, sourceVersionIds, userId, designBaselineId)
         .catch(() => this.logger.warn('Could not execute a queued structured generation job.'))
-        .finally(() => this.running.delete(job.id));
+        .finally(() => {
+          this.running.delete(job.id);
+          this.cancelled.delete(job.id);
+        });
       this.running.set(job.id, task);
     }
     return this.present(job);
@@ -196,6 +212,29 @@ export class StructuredGenerationJobsService implements OnApplicationBootstrap {
     });
   }
 
+  // The person stops the run. What the finished batches saved is kept, so the
+  // same generation can be resumed. The run stops at its next batch: a call
+  // already made to the AI finishes first.
+  async cancel(projectId: string, kind: StructuredAnalysisKind, jobId: string, userId: string) {
+    await assertCanGenerate(this.prisma, projectId, userId);
+    const { count } = await this.prisma.structuredGenerationJob.updateMany({
+      where: { id: jobId, projectId, kind, status: { in: ['QUEUED', 'RUNNING'] } },
+      data: { status: 'CANCELLED', errorMessage: CANCELLED_MESSAGE },
+    });
+    if (count) {
+      this.cancelled.add(jobId);
+      await this.audit.record({
+        projectId,
+        actorUserId: userId,
+        action: 'STRUCTURED_GENERATION_FINISHED',
+        entityType: 'STRUCTURED_GENERATION_JOB',
+        entityId: jobId,
+        metadata: { status: 'CANCELLED' },
+      });
+    }
+    return this.get(projectId, kind, jobId);
+  }
+
   private async run(
     jobId: string,
     projectId: string,
@@ -208,6 +247,7 @@ export class StructuredGenerationJobsService implements OnApplicationBootstrap {
     let lastWrite = 0;
     let lastBatch = -1;
     const update = (completedBatches: number, totalBatches: number, outputChars: number) => {
+      if (this.cancelled.has(jobId)) throw new GenerationCancelledError();
       if (completedBatches === lastBatch && Date.now() - lastWrite < 1500) return;
       lastBatch = completedBatches;
       lastWrite = Date.now();
@@ -233,6 +273,7 @@ export class StructuredGenerationJobsService implements OnApplicationBootstrap {
       await pending;
       await this.finish(jobId, projectId, userId, 'COMPLETED', null, generation.id);
     } catch (error) {
+      if (error instanceof GenerationCancelledError) return;
       await pending.catch(() => undefined);
       const body = error instanceof HttpException ? error.getResponse() : null;
       const message =

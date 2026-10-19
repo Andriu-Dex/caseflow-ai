@@ -13,6 +13,11 @@ import { PrismaService } from '../database/prisma.service';
 import { RequirementsService } from './requirements.service';
 import { sourceStatuses } from '../projects/source-statuses';
 import { AuditService } from '../audit/audit.service';
+import {
+  CANCELLED_MESSAGE,
+  GenerationCancelledError,
+  assertCanGenerate,
+} from '../common/generation-cancelled';
 import { INTERRUPTED_BY_RESTART } from '../common/interrupted';
 import { z } from 'zod';
 
@@ -20,6 +25,8 @@ import { z } from 'zod';
 export class RequirementGenerationJobsService implements OnApplicationBootstrap {
   private readonly logger = new Logger(RequirementGenerationJobsService.name);
   private readonly running = new Map<string, Promise<void>>();
+  // Jobs the person cancelled whose run has not stopped yet.
+  private readonly cancelled = new Set<string>();
   private readonly concurrency = z.coerce
     .number()
     .int()
@@ -83,9 +90,15 @@ export class RequirementGenerationJobsService implements OnApplicationBootstrap 
         return active;
       }
       const previous = await tx.requirementGenerationJob.findFirst({
-        where: { projectId, sourceContextVersionId, status: 'FAILED' },
+        where: { projectId, sourceContextVersionId, status: { in: ['FAILED', 'CANCELLED'] } },
         orderBy: { createdAt: 'desc' },
       });
+      // The run of a cancelled job stops at its next batch: resuming it before
+      // then would leave the job queued with nothing to run it.
+      if (previous && this.running.has(previous.id))
+        throw new ConflictException(
+          'La cancelación anterior aún se está completando. Espere unos segundos y reanude.',
+        );
       // The result and the job's result pointer commit together; recover that result after a restart.
       const row = previous
         ? await tx.requirementGenerationJob.update({
@@ -113,7 +126,10 @@ export class RequirementGenerationJobsService implements OnApplicationBootstrap 
     if (job.status === 'QUEUED' && !this.running.has(job.id)) {
       const task = this.runQueued(job.id, projectId, sourceContextVersionId, userId)
         .catch(() => this.logger.warn('Could not execute a queued requirement generation job.'))
-        .finally(() => this.running.delete(job.id));
+        .finally(() => {
+          this.running.delete(job.id);
+          this.cancelled.delete(job.id);
+        });
       this.running.set(job.id, task);
     }
     return requirementGenerationJobSchema.parse({
@@ -173,6 +189,29 @@ export class RequirementGenerationJobsService implements OnApplicationBootstrap 
     });
   }
 
+  // The person stops the run. What the finished batches saved is kept, so the
+  // same generation can be resumed. The run stops at its next batch: a call
+  // already made to the AI finishes first.
+  async cancel(projectId: string, jobId: string, userId: string) {
+    await assertCanGenerate(this.prisma, projectId, userId);
+    const { count } = await this.prisma.requirementGenerationJob.updateMany({
+      where: { id: jobId, projectId, status: { in: ['QUEUED', 'RUNNING'] } },
+      data: { status: 'CANCELLED', errorMessage: CANCELLED_MESSAGE },
+    });
+    if (count) {
+      this.cancelled.add(jobId);
+      await this.audit.record({
+        projectId,
+        actorUserId: userId,
+        action: 'REQUIREMENT_GENERATION_FINISHED',
+        entityType: 'REQUIREMENT_GENERATION_JOB',
+        entityId: jobId,
+        metadata: { status: 'CANCELLED' },
+      });
+    }
+    return this.get(projectId, jobId);
+  }
+
   // Same local-process execution boundary as context jobs (DEC-132); checkpoints survive restart.
   private async run(
     jobId: string,
@@ -184,6 +223,7 @@ export class RequirementGenerationJobsService implements OnApplicationBootstrap 
     let lastWrite = 0;
     let lastBatch = -1;
     const update = (completedBatches: number, totalBatches: number, outputChars: number) => {
+      if (this.cancelled.has(jobId)) throw new GenerationCancelledError();
       if (completedBatches === lastBatch && Date.now() - lastWrite < 1500) return;
       lastBatch = completedBatches;
       lastWrite = Date.now();
@@ -206,6 +246,7 @@ export class RequirementGenerationJobsService implements OnApplicationBootstrap 
       await pending;
       await this.finish(jobId, projectId, userId, 'COMPLETED', null, generation.id);
     } catch (error) {
+      if (error instanceof GenerationCancelledError) return;
       await pending.catch(() => undefined);
       const body = error instanceof HttpException ? error.getResponse() : null;
       const message =

@@ -97,6 +97,20 @@ export class DataModelsController {
   latestGeneration(@Param('projectId', uuidParamPipe) projectId: string) {
     return this.jobs.latest(projectId);
   }
+  @Post('generation-jobs/:jobId/cancel')
+  @HttpCode(200)
+  @ApiOperation({
+    operationId: 'cancelDataModelGenerationJob',
+    summary: 'Cancelar un trabajo del modelo de datos',
+  })
+  @ApiZodResponse(200, 'Data model generation job.', dataModelGenerationJobSchema)
+  cancelGeneration(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('jobId', uuidParamPipe) jobId: string,
+    @Request() request: { user: { id: string } },
+  ) {
+    return this.jobs.cancel(projectId, jobId, request.user.id);
+  }
   @Get('generation-jobs/:jobId')
   @ApiOperation({
     operationId: 'getDataModelGenerationJob',

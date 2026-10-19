@@ -170,6 +170,7 @@ function DataModelContent({ projectId }: { projectId: string }) {
                   approvedUseCaseIds,
                 )
               }
+              cancel={(jobId) => api.dataModels.cancelGeneration(projectId, jobId)}
               fetchGeneration={(generationId) => api.dataModels.generation(projectId, generationId)}
               jobSelection={(job) => job.sourceVersionIds}
               selection={[...approvedRequirementIds, ...approvedUseCaseIds]}

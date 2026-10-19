@@ -6,9 +6,11 @@ import { Button } from '@caseflow-ai/ui';
 import { Loader2, RefreshCw, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { ApiError, type GenerationResult } from '../lib/api';
+import { GenerationCancelButton } from './generation-cancel-button';
 import { GenerationProgressCard } from './generation-progress-card';
 
 interface BatchedJob {
+  id: string;
   status: string;
   generationId: string | null;
   errorMessage: string | null;
@@ -30,6 +32,7 @@ export function BatchedGenerationPanel<Job extends BatchedJob>({
   queryKey,
   latest,
   start,
+  cancel,
   fetchGeneration,
   jobSelection,
   selection,
@@ -42,6 +45,8 @@ export function BatchedGenerationPanel<Job extends BatchedJob>({
   queryKey: readonly unknown[];
   latest: () => Promise<{ job: Job | null }>;
   start: () => Promise<Job>;
+  // Stops the running job; without it the generation cannot be cancelled.
+  cancel?: (jobId: string) => Promise<Job>;
   fetchGeneration: (generationId: string) => Promise<GenerationResult>;
   jobSelection: (job: Job) => string[];
   selection: string[];
@@ -66,7 +71,8 @@ export function BatchedGenerationPanel<Job extends BatchedJob>({
   const generationId = job?.generationId;
   const jobStatus = job?.status;
   const running = !!job && ['QUEUED', 'RUNNING'].includes(job.status);
-  const resumable = jobStatus === 'FAILED' && !!job && sameSelection(jobSelection(job), selection);
+  const stopped = jobStatus === 'FAILED' || jobStatus === 'CANCELLED';
+  const resumable = stopped && !!job && sameSelection(jobSelection(job), selection);
 
   // The generation getter and the callback are the caller's: held in refs so a
   // new function on each render does not reload the proposals.
@@ -145,6 +151,12 @@ export function BatchedGenerationPanel<Job extends BatchedJob>({
         <GenerationProgressCard job={job} title={title} progressLabel={progressLabel} />
       ) : null}
 
+      {job && running && cancel ? (
+        <GenerationCancelButton
+          onCancel={async () => client.setQueryData(queryKey, { job: await cancel(job.id) })}
+        />
+      ) : null}
+
       {loadError ? (
         <p role="alert" className="text-sm text-destructive">
           No se pudieron cargar las propuestas completas.{' '}
@@ -160,7 +172,13 @@ export function BatchedGenerationPanel<Job extends BatchedJob>({
         </p>
       ) : null}
 
-      {resumable ? (
+      {resumable && jobStatus === 'CANCELLED' ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          {job?.errorMessage}
+        </p>
+      ) : null}
+
+      {resumable && jobStatus === 'FAILED' ? (
         <p role="alert" className="text-sm text-destructive">
           {job?.errorMessage} Los lotes completos se conservan para reanudar.
         </p>
