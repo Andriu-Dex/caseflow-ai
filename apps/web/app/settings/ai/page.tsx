@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
-  CheckCircle2,
   CirclePause,
   Clock,
   Cpu,
@@ -16,6 +15,8 @@ import {
   MessageSquare,
   Play,
   ShieldCheck,
+  Sparkles,
+  Zap,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -45,57 +46,82 @@ const time = (iso: string) =>
     minute: '2-digit',
   });
 
+const PROVIDER_ICONS: Record<string, typeof Cpu> = {
+  groq: Zap,
+  gemini: Sparkles,
+  chatgpt: MessageSquare,
+  openai_compatible: Cpu,
+};
+
 // DEC-127: what each configured provider can take now. A request goes to the
 // first one it fits in; work too large for all of them is split into parts.
 function ProvidersCard({ status }: { status: AIStatus }) {
   return (
-    <Card>
-      <CardContent className="flex flex-col gap-3">
-        <h2 className="flex items-center gap-2 font-medium">
-          <Cpu className="size-4 text-primary" aria-hidden="true" />
-          Proveedores de IA
-        </h2>
+    <Card className="border-border/80 shadow-xs">
+      <CardContent className="flex flex-col gap-4 pt-6">
+        <div className="flex items-start gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary border border-primary/20 shadow-xs">
+            <Cpu className="size-4.5" aria-hidden="true" />
+          </div>
+          <div>
+            <h2 className="text-base font-bold text-foreground">Proveedores de IA</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Estado, capacidades de contexto y disponibilidad de los motores de inferencia.
+            </p>
+          </div>
+        </div>
+
         {!status.available ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground rounded-lg border border-border/60 bg-muted/30 p-3.5">
             La IA no está configurada en esta instalación. Todo se puede hacer manualmente.
           </p>
         ) : (
           <>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
               Cada solicitud va al primer proveedor en el que cabe. Lo que no cabe en ninguno (por
               ejemplo, el reporte de una fuente larga) se procesa por partes.
             </p>
-            <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
-              {status.providers.map((provider) => (
-                <li
-                  key={provider.id}
-                  className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2"
-                >
-                  <span className="font-medium text-foreground">
-                    {PROVIDER_NAMES[provider.id] ?? provider.id}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {provider.maxInputTokens
-                      ? `Hasta ${provider.maxInputTokens.toLocaleString('es')} tokens por solicitud`
-                      : 'Tamaño de solicitud no declarado'}
-                  </span>
-                  <span className="ml-auto inline-flex items-center gap-1 text-xs">
-                    {provider.unavailableUntil ? (
-                      <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-400">
-                        <Clock className="size-3.5" aria-hidden="true" />
-                        {provider.quota === 'DAY'
-                          ? `Cuota diaria agotada; vuelve ${time(provider.unavailableUntil)}`
-                          : `En pausa hasta ${time(provider.unavailableUntil)}`}
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400">
-                        <CheckCircle2 className="size-3.5" aria-hidden="true" />
-                        Disponible
-                      </span>
-                    )}
-                  </span>
-                </li>
-              ))}
+            <ul className="flex flex-col gap-2.5">
+              {status.providers.map((provider) => {
+                const Icon = PROVIDER_ICONS[provider.id] ?? Cpu;
+                return (
+                  <li
+                    key={provider.id}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-border/70 bg-card p-3.5 shadow-2xs hover:border-border transition-colors"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground border border-border/50">
+                        <Icon className="size-4 text-primary" aria-hidden="true" />
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                        <span className="font-semibold text-sm text-foreground">
+                          {PROVIDER_NAMES[provider.id] ?? provider.id}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {provider.maxInputTokens
+                            ? `Hasta ${provider.maxInputTokens.toLocaleString('es')} tokens por solicitud`
+                            : 'Tamaño de solicitud no declarado'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+                      {provider.unavailableUntil ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-400 border border-amber-500/25">
+                          <Clock className="size-3.5" aria-hidden="true" />
+                          {provider.quota === 'DAY'
+                            ? `Cuota diaria agotada; vuelve ${time(provider.unavailableUntil)}`
+                            : `En pausa hasta ${time(provider.unavailableUntil)}`}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400 border border-emerald-500/25">
+                          <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          Disponible
+                        </span>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           </>
         )}
@@ -435,8 +461,18 @@ export default function AISettingsPage() {
   const developmentPlan = aiStatus.data?.providers.some((p) => p.id === 'chatgpt') ?? false;
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold text-foreground">Ajustes de IA</h1>
-      <Card>
+      <div className="flex items-center gap-3">
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-xs">
+          <Cpu className="size-5" aria-hidden="true" />
+        </div>
+        <div>
+          <h1 className="text-xl font-bold tracking-tight text-foreground">Ajustes de IA</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Configure los proveedores de inferencia, consulte cuotas y conecte su plan de ChatGPT.
+          </p>
+        </div>
+      </div>
+      <Card className="border-border/80 shadow-xs">
         <CardContent className="flex flex-col gap-3">
           <h2 className="flex items-center gap-2 font-medium">
             <MessageSquare className="size-4 text-primary" aria-hidden="true" />
