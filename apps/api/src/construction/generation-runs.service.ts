@@ -1,3 +1,4 @@
+import { assertCanGenerate } from '../common/generation-cancelled';
 import { INTERRUPTED_BY_RESTART } from '../common/interrupted';
 import { createHash } from 'node:crypto';
 import {
@@ -49,6 +50,7 @@ type RunRow = {
   createdAt: Date;
   startedAt: Date | null;
   finishedAt: Date | null;
+  archivedAt: Date | null;
   _count: { files: number };
 };
 
@@ -260,6 +262,50 @@ export class GenerationRunsService {
     return { items: rows.map((row) => this.map(row)) };
   }
 
+  // A person hides a run from the list (or shows it again). Nothing is
+  // deleted: the run, its files, validations and snapshot stay as history.
+  async setArchived(
+    projectId: string,
+    runId: string,
+    userId: string,
+    archived: boolean,
+  ): Promise<GenerationRunResponse> {
+    await assertCanGenerate(this.prisma, projectId, userId);
+    const run = await this.prisma.generationRun.findFirst({
+      where: { id: runId, projectId },
+      include: {
+        sandboxRuns: { where: { status: { in: ['QUEUED', 'RUNNING'] } }, select: { id: true } },
+      },
+    });
+    if (!run) throw new NotFoundException('Corrida de generación no encontrada.');
+    if (
+      archived &&
+      (run.status === 'QUEUED' || run.status === 'GENERATING' || run.sandboxRuns.length)
+    )
+      throw new ConflictException(
+        'No se puede archivar una generación mientras se genera o se valida.',
+      );
+    if (Boolean(run.archivedAt) !== archived)
+      await this.prisma.$transaction(async (tx) => {
+        await tx.generationRun.update({
+          where: { id: runId },
+          data: { archivedAt: archived ? new Date() : null },
+        });
+        await this.audit.record(
+          {
+            projectId,
+            actorUserId: userId,
+            action: archived ? 'GENERATION_RUN_ARCHIVED' : 'GENERATION_RUN_RESTORED',
+            entityType: 'GENERATION_RUN',
+            entityId: runId,
+            metadata: {},
+          },
+          tx,
+        );
+      });
+    return this.get(projectId, runId);
+  }
+
   async get(projectId: string, runId: string): Promise<GenerationRunResponse> {
     const row = await this.prisma.generationRun.findFirst({
       where: { id: runId, projectId },
@@ -363,6 +409,7 @@ export class GenerationRunsService {
       createdAt: row.createdAt.toISOString(),
       startedAt: row.startedAt?.toISOString() ?? null,
       finishedAt: row.finishedAt?.toISOString() ?? null,
+      archivedAt: row.archivedAt?.toISOString() ?? null,
     };
   }
 }

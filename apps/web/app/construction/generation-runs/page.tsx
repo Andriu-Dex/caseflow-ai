@@ -6,6 +6,8 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
+  Archive,
+  ArchiveRestore,
   ArrowRight,
   Check,
   CheckCircle2,
@@ -694,6 +696,28 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
   const [submitting, setSubmitting] = useState(false);
   const chosenPlan = planVersionId ?? approvedPlans[0]?.version.id;
   const hasActiveRun = (runs.data?.items ?? []).some(isActive);
+  // Archived runs leave the list but stay as history, and can be restored.
+  const visibleRuns = (runs.data?.items ?? []).filter((run) => !run.archivedAt);
+  const archivedRuns = (runs.data?.items ?? []).filter((run) => run.archivedAt);
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivingId, setArchivingId] = useState<string>();
+
+  async function setArchived(runId: string, archived: boolean) {
+    setArchivingId(runId);
+    try {
+      await (archived
+        ? api.generationRuns.archive(projectId, runId)
+        : api.generationRuns.restore(projectId, runId));
+      await queryClient.invalidateQueries({ queryKey: ['generation-runs', projectId] });
+      toast.success(archived ? 'Generación archivada.' : 'Generación restaurada.');
+    } catch (error) {
+      toast.error(
+        error instanceof ApiError ? error.message : 'No se pudo actualizar la generación.',
+      );
+    } finally {
+      setArchivingId(undefined);
+    }
+  }
 
   async function start() {
     if (!chosenPlan || hasActiveRun) return;
@@ -851,13 +875,52 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
             <Layers className="size-3.5 text-primary" />
-            Generaciones Realizadas ({runs.data?.items.length ?? 0})
+            Generaciones Realizadas ({visibleRuns.length})
           </h2>
+          {archivedRuns.length ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 text-xs text-muted-foreground"
+              aria-expanded={showArchived}
+              onClick={() => setShowArchived(!showArchived)}
+            >
+              <Archive className="size-3.5" aria-hidden="true" />
+              {showArchived ? 'Ocultar archivadas' : `Archivadas (${archivedRuns.length})`}
+            </Button>
+          ) : null}
         </div>
+        {showArchived && archivedRuns.length ? (
+          <ul className="flex flex-col gap-2 rounded-xl border border-dashed border-border bg-muted/20 p-3">
+            {archivedRuns.map((run) => (
+              <li
+                key={run.id}
+                className="flex flex-wrap items-center justify-between gap-2 text-xs"
+              >
+                <span className="text-muted-foreground">
+                  {STATUS_LABELS[run.status]} · {new Date(run.createdAt).toLocaleString('es-EC')} ·
+                  archivada el {new Date(run.archivedAt!).toLocaleString('es-EC')}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1.5 text-xs"
+                  disabled={archivingId === run.id}
+                  onClick={() => void setArchived(run.id, false)}
+                >
+                  <ArchiveRestore className="size-3.5" aria-hidden="true" />
+                  Restaurar
+                </Button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         <QueryState isLoading={runs.isLoading} error={runs.error}>
-          {runs.data?.items.length ? (
+          {visibleRuns.length ? (
             <ul className="flex flex-col gap-3">
-              {runs.data.items.map((run) => (
+              {visibleRuns.map((run) => (
                 <li
                   key={run.id}
                   className="rounded-xl border border-border/80 bg-card p-4 shadow-2xs"
@@ -890,10 +953,25 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
                         </strong>
                       </span>
                     </div>
-                    <span className="text-xs text-muted-foreground font-mono">
-                      {run.targetTemplateIdentifier} v{run.targetTemplateVersion} ·{' '}
-                      {new Date(run.createdAt).toLocaleString('es-EC')}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground font-mono">
+                        {run.targetTemplateIdentifier} v{run.targetTemplateVersion} ·{' '}
+                        {new Date(run.createdAt).toLocaleString('es-EC')}
+                      </span>
+                      {isActive(run) ? null : (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 gap-1.5 text-xs text-muted-foreground"
+                          disabled={archivingId === run.id}
+                          onClick={() => void setArchived(run.id, true)}
+                        >
+                          <Archive className="size-3.5" aria-hidden="true" />
+                          Archivar
+                        </Button>
+                      )}
+                    </div>
                   </div>
                   {run.errorMessage ? (
                     <p

@@ -904,6 +904,10 @@ export const api = {
       post<GenerationRunResponse>(`/projects/${projectId}/generation-runs`, {
         implementationPlanVersionId,
       }),
+    archive: (projectId: string, runId: string) =>
+      post<GenerationRunResponse>(`/projects/${projectId}/generation-runs/${runId}/archive`),
+    restore: (projectId: string, runId: string) =>
+      post<GenerationRunResponse>(`/projects/${projectId}/generation-runs/${runId}/restore`),
     files: (projectId: string, runId: string) =>
       get<{ items: GeneratedFileSummary[] }>(
         `/projects/${projectId}/generation-runs/${runId}/files`,

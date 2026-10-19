@@ -28,6 +28,8 @@ export const generationRunResponseSchema = z.object({
   createdAt: z.iso.datetime(),
   startedAt: z.iso.datetime().nullable(),
   finishedAt: z.iso.datetime().nullable(),
+  // Hidden from the list; the run stays as history and can be restored.
+  archivedAt: z.iso.datetime().nullable(),
 });
 export type GenerationRunResponse = z.infer<typeof generationRunResponseSchema>;
 export const generationRunListResponseSchema = z.object({
