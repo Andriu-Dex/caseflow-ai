@@ -177,4 +177,37 @@ describe('GenerationRunsPage', () => {
     await user.click(copyBtn);
     expect(writeText).toHaveBeenCalledWith('bootstrap();');
   });
+
+  it('disables the generate button and shows active progress when a generation is in progress', async () => {
+    mocks.listRuns.mockResolvedValue({
+      items: [
+        {
+          id: 'run-active',
+          status: 'GENERATING',
+          fileCount: 0,
+          targetTemplateIdentifier: 'CASEFLOW_WEB_TS_V1',
+          targetTemplateVersion: 1,
+          createdAt: new Date().toISOString(),
+          startedAt: new Date().toISOString(),
+          errorMessage: null,
+          warnings: [],
+        },
+      ],
+    });
+
+    render(<GenerationRunsPage />, { wrapper: TestProviders });
+
+    // The button must be disabled and say "Generación en curso…"
+    const button = await screen.findByRole('button', { name: /Generación en curso…/i });
+    expect(button).toBeDisabled();
+
+    // The warning message must be shown
+    expect(
+      screen.getByText(/Ya hay una generación de código en proceso para este proyecto/i),
+    ).toBeInTheDocument();
+
+    // The active progress component must render with its title and phase indicators
+    expect(screen.getByText(/Construyendo Modular Monolith TypeScript/i)).toBeInTheDocument();
+    expect(screen.getByText(/Backend NestJS/i)).toBeInTheDocument();
+  });
 });
