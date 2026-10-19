@@ -160,10 +160,21 @@ export function DataModelManualForm({
         <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary border border-primary/20">
           <Database className="size-4" aria-hidden="true" />
         </span>
-        <div>
-          <h2 className="text-base font-semibold text-foreground">
-            {initial ? `Editar ${initial.code}` : 'Nuevo modelo de datos'}
-          </h2>
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-semibold text-foreground">
+              {initial ? `Editar ${initial.code}` : 'Nuevo modelo de datos'}
+            </h2>
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
+                initial
+                  ? 'border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400'
+                  : 'border border-primary/30 bg-primary/10 text-primary'
+              }`}
+            >
+              {initial ? 'Modo edición' : 'Nueva versión'}
+            </span>
+          </div>
           <p className="text-xs text-muted-foreground">
             Defina las entidades, atributos y relaciones conceptuales del dominio.
           </p>
@@ -466,13 +477,25 @@ export function DataModelManualForm({
         </Button>
       </fieldset>
 
-      <div className="flex items-center gap-2 pt-2 border-t border-border/50">
-        <Button type="submit" disabled={submitting}>
-          {submitting ? 'Guardando…' : initial ? 'Guardar cambios' : 'Crear modelo de datos'}
-        </Button>
-        <Button type="button" variant="ghost" onClick={onCancel}>
-          Cancelar
-        </Button>
+      <div className="sticky bottom-4 z-30 mt-2 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/90 bg-card/95 px-4 py-3 shadow-xl backdrop-blur-md ring-1 ring-black/5 dark:bg-slate-900/95 dark:ring-white/10">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Database className="size-3.5 text-primary" aria-hidden="true" />
+          <span className="font-medium text-foreground">
+            {entities.length} {entities.length === 1 ? 'entidad' : 'entidades'}
+          </span>
+          <span>•</span>
+          <span>
+            {relationships.length} {relationships.length === 1 ? 'relación' : 'relaciones'}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button type="button" variant="ghost" size="sm" onClick={onCancel} disabled={submitting}>
+            Cancelar
+          </Button>
+          <Button type="submit" size="sm" disabled={submitting} className="shadow-xs font-medium">
+            {submitting ? 'Guardando…' : initial ? 'Guardar cambios' : 'Crear modelo de datos'}
+          </Button>
+        </div>
       </div>
     </form>
   );

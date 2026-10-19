@@ -70,12 +70,14 @@ function Row({ children, onRemove }: { children: ReactNode; onRemove: () => void
 }
 
 function Section({
+  id,
   title,
   hint,
   onAdd,
   addLabel,
   children,
 }: {
+  id?: string;
   title: string;
   hint?: string;
   onAdd?: () => void;
@@ -83,7 +85,7 @@ function Section({
   children: ReactNode;
 }) {
   return (
-    <fieldset className="flex flex-col gap-2">
+    <fieldset id={id} className="flex flex-col gap-2 scroll-mt-20">
       <legend className="mb-1 text-sm font-medium text-foreground">{title}</legend>
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
       {children}
@@ -353,7 +355,37 @@ export function ImplementationPlanManualForm({
         </select>
       </label>
 
-      <Section title="Autenticación y roles">
+      <nav
+        aria-label="Secciones del plan de implementación"
+        className="flex flex-wrap items-center gap-1.5 rounded-lg border border-border/70 bg-muted/40 p-2 text-xs"
+      >
+        <span className="font-medium text-muted-foreground mr-1">Secciones:</span>
+        {[
+          { id: 'section-auth', label: 'Autenticación' },
+          { id: 'section-modules', label: 'Módulos' },
+          { id: 'section-entities', label: 'Entidades' },
+          { id: 'section-endpoints', label: 'Endpoints' },
+          { id: 'section-screens', label: 'Pantallas' },
+          { id: 'section-env', label: 'Variables' },
+          { id: 'section-tests', label: 'Pruebas' },
+        ].map((sec) => (
+          <button
+            key={sec.id}
+            type="button"
+            onClick={() => {
+              const el = document.getElementById(sec.id);
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }
+            }}
+            className="rounded-md border border-border/80 bg-background/90 px-2.5 py-1 font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground shadow-2xs cursor-pointer"
+          >
+            {sec.label}
+          </button>
+        ))}
+      </nav>
+
+      <Section id="section-auth" title="Autenticación y roles">
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
@@ -366,6 +398,7 @@ export function ImplementationPlanManualForm({
       </Section>
 
       <Section
+        id="section-modules"
         title="Módulos backend"
         hint="Nombres en inglés PascalCase, p. ej. Orders."
         addLabel="Agregar módulo"
@@ -395,6 +428,7 @@ export function ImplementationPlanManualForm({
       </Section>
 
       <Section
+        id="section-entities"
         title="Entidades persistentes"
         hint="Nombres en inglés: entidad en PascalCase singular (Order), campos en camelCase (unitPrice). id, createdAt y updatedAt se agregan solos."
         addLabel="Agregar entidad"
@@ -638,6 +672,7 @@ export function ImplementationPlanManualForm({
       </Section>
 
       <Section
+        id="section-endpoints"
         title="Endpoints de negocio (no CRUD)"
         hint="Solo acciones que no son crear/editar/eliminar, p. ej. POST /orders/:orderId/confirm."
         addLabel="Agregar endpoint"
@@ -698,6 +733,7 @@ export function ImplementationPlanManualForm({
       </Section>
 
       <Section
+        id="section-screens"
         title="Pantallas del frontend"
         hint="Rutas Next.js en minúsculas, p. ej. /orders/[orderId]."
         addLabel="Agregar pantalla"
@@ -798,6 +834,7 @@ export function ImplementationPlanManualForm({
       </datalist>
 
       <Section
+        id="section-env"
         title="Variables de entorno"
         hint="Solo nombre y descripción; nunca valores reales."
         addLabel="Agregar variable"
@@ -824,6 +861,7 @@ export function ImplementationPlanManualForm({
       </Section>
 
       <Section
+        id="section-tests"
         title="Pruebas planificadas"
         addLabel="Agregar prueba"
         onAdd={() => tests.add({ moduleLocalId: '', kind: 'UNIT', description: '' })}
