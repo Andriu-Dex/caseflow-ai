@@ -181,4 +181,16 @@
     width: 0;
     height: 0;
   }
+
+  /* Handle browser autofill smoothly in dark mode without blinding white blocks */
+  .dark input:-webkit-autofill,
+  .dark input:-webkit-autofill:hover,
+  .dark input:-webkit-autofill:focus,
+  .dark textarea:-webkit-autofill,
+  .dark select:-webkit-autofill {
+    -webkit-box-shadow: 0 0 0px 1000px oklch(0.18 0.015 265) inset !important;
+    -webkit-text-fill-color: oklch(0.95 0.005 265) !important;
+    caret-color: oklch(0.95 0.005 265) !important;
+    transition: background-color 5000s ease-in-out 0s;
+  }
 }

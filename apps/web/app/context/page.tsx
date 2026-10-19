@@ -516,25 +516,35 @@ function ContextForm({
         )}
       </fieldset>
 
-      <div className="mt-2 flex items-center justify-end border-t border-border pt-4">
-        <Button
-          variant="default"
-          size="default"
-          type="submit"
-          disabled={submitting}
-          className="min-w-[150px] shadow-sm transition-all active:scale-[0.98]"
-        >
-          {submitting ? (
-            <span className="flex items-center gap-2">
-              <span className="size-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
-              Guardando...
-            </span>
-          ) : hasExisting ? (
-            'Guardar nueva versión'
-          ) : (
-            'Crear Contexto'
-          )}
-        </Button>
+      <div className="sticky bottom-4 z-30 mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/90 bg-card/95 px-4 py-3 shadow-xl backdrop-blur-md ring-1 ring-black/5 dark:bg-slate-900/95 dark:ring-white/10">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <FileText className="size-3.5 text-primary" aria-hidden="true" />
+          <span className="font-medium text-foreground">
+            {hasExisting ? 'Versión actual existente' : 'Nuevo contexto de proyecto'}
+          </span>
+          <span>•</span>
+          <span>{sourceVersionIds.length} fuentes seleccionadas</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="default"
+            size="sm"
+            type="submit"
+            disabled={submitting}
+            className="min-w-[150px] shadow-sm transition-all active:scale-[0.98] font-medium"
+          >
+            {submitting ? (
+              <span className="flex items-center gap-2">
+                <span className="size-3.5 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
+                Guardando...
+              </span>
+            ) : hasExisting ? (
+              'Guardar nueva versión'
+            ) : (
+              'Crear Contexto'
+            )}
+          </Button>
+        </div>
       </div>
     </form>
   );
