@@ -1,6 +1,7 @@
 import { INTERRUPTED_BY_RESTART } from '../common/interrupted';
 import { createHash } from 'node:crypto';
 import {
+  ConflictException,
   Inject,
   Injectable,
   Logger,
@@ -71,6 +72,14 @@ export class GenerationRunsService {
     implementationPlanVersionId: string,
   ): Promise<GenerationRunResponse> {
     await this.currency?.assertCurrent(projectId);
+    const active = await this.prisma.generationRun.findFirst({
+      where: { projectId, status: { in: ['QUEUED', 'GENERATING'] } },
+    });
+    if (active) {
+      throw new ConflictException(
+        'Ya existe una generación de código en curso para este proyecto. Espere a que finalice.',
+      );
+    }
     const plan = await this.approvedPlan(projectId, implementationPlanVersionId);
     await this.designBaselines.assertApproved(projectId, plan.designBaselineId);
     const template = findTargetTemplate(TEMPLATE_IDENTIFIER)!;
