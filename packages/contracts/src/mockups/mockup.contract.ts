@@ -61,7 +61,7 @@ export type MockupResponse = z.infer<typeof mockupResponseSchema>;
 
 export const mockupListResponseSchema = z.object({ items: z.array(mockupResponseSchema) });
 
-export const MOCKUP_JOB_STATUSES = ['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED'] as const;
+export const MOCKUP_JOB_STATUSES = ['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED'] as const;
 export type MockupJobStatus = (typeof MOCKUP_JOB_STATUSES)[number];
 
 // The synchronous create/version calls now only enqueue the real

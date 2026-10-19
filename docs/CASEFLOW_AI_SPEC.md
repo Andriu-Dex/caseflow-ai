@@ -7268,6 +7268,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-145 | Lo archivado se puede ver y restaurar: `GET …/artifacts/archived?types=` lista los artefactos archivados y `POST …/artifacts/:id/restore` los devuelve al trabajo, con auditoría de ambos (`ARTIFACT_ARCHIVED`/`ARTIFACT_RESTORED`). Restaurar nunca se rechaza por lo que cambió mientras tanto: cuenta como cambio de su paso (DEC-137) y lo que depende de él queda por rehacer; si ya hay otro aprobado de un tipo que el proyecto usa una vez, se avisa (§221.26) | Accepted |
 | DEC-146 | Los bocetos de Stitch se generan pantalla por pantalla en segundo plano: unas pocas a la vez (`STITCH_CONCURRENCY`, 4 por defecto), cada una con su propio límite de tiempo y hasta tres intentos, guardando cada pantalla en cuanto llega; un trabajo que se detiene se reanuda con las que faltan al volver a generar el mismo boceto, y solo si no se obtuvo ninguna pantalla se usa el esquema interno, diciendo por qué (§221.27) | Accepted |
 | DEC-147 | Las pantallas de un boceto comparten el nombre de la aplicación (el del proyecto) y el menú principal de la navegación aprobada, con la entrada de cada pantalla resaltada; no se pide al generador datos de seguridad, usuarios ni fechas inventados, códigos internos ni varias vistas de estados (§221.27) | Accepted |
+| DEC-148 | Generar un boceto con Stitch se confirma antes (pantallas, tiempo estimado y uso de créditos) y una generación en curso se puede cancelar: las pantallas ya dibujadas se conservan y se reanuda con las que faltan (§221.27) | Accepted |
 
 ---
 
@@ -7704,7 +7705,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-147)
+# 221. Extensiones de V2 (DEC-116 a DEC-148)
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
@@ -7983,6 +7984,7 @@ El servidor bloquea congelar diseño y construir mientras quedan pasos por rehac
 - **Ejecución:** la llamada interna que ejecuta el trabajo responde de inmediato (202) y el trabajo sigue en el servidor, porque dura mucho más de lo que una petición HTTP espera. La página muestra el avance sin bloquearse, ofrece «Continuar la generación» cuando un trabajo se detuvo con pantallas ya dibujadas, retoma el seguimiento de una generación en curso al volver a abrirse (`GET …/mockups/jobs/latest`) y espera hasta dos horas.
 - **Respaldo:** solo si no se obtuvo ninguna pantalla (por ejemplo, Stitch no responde) y no hay una instrucción de edición, el boceto se genera con el esquema interno; el trabajo termina con un aviso que dice por qué. Con pantallas ya generadas nunca se reemplaza todo por el esquema: se reanuda.
 - **Una sola aplicación (DEC-147):** cada pantalla se genera por separado, y sin un contexto común el generador inventaba una marca distinta por pantalla (en un plano de 77 aparecieron 58 nombres de producto), datos de seguridad y personas ficticios, códigos de casos de uso visibles y matrices con todos los estados. Ahora cada pantalla recibe el nombre del proyecto como nombre de la aplicación y el menú principal de la navegación aprobada (las entradas bajo el inicio, sin el acceso ni acciones como cerrar sesión), con la entrada a la que pertenece resaltada: la de su nodo o la de su ascendiente; el inicio resalta la primera y el acceso no lleva menú. Además el prompt pide datos de ejemplo breves y neutros, no mostrar códigos internos (ya no se le envían los casos de uso relacionados) y dibujar una sola vista en su estado normal.
+- **Confirmar y cancelar (DEC-148):** un boceto de decenas de pantallas tarda decenas de minutos y gasta créditos, así que «Generar boceto» abre antes un aviso con el número de pantallas, el tiempo estimado y el uso de créditos. Una generación en cola o en curso se cancela con `POST /projects/{projectId}/mockups/jobs/{jobId}/cancel` (estado `CANCELLED`): el trabajo comprueba el estado antes de cada llamada a Stitch, las que ya estaban en vuelo terminan y no se inicia ninguna más; el cierre del trabajo no sobrescribe `CANCELLED`, las pantallas guardadas se conservan y volver a generar el mismo boceto reanuda con las que faltan.
 
 ## 221.4 Fuera de alcance de estas extensiones
 

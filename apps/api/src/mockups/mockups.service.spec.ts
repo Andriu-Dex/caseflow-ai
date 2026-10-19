@@ -178,8 +178,8 @@ describe('MockupsService', () => {
       where: { id: jobId, status: 'QUEUED' },
       data: { status: 'RUNNING' },
     });
-    expect(prisma.mockupGenerationJob.update).toHaveBeenLastCalledWith({
-      where: { id: jobId },
+    expect(prisma.mockupGenerationJob.updateMany).toHaveBeenLastCalledWith({
+      where: { id: jobId, status: 'RUNNING' },
       data: { status: 'COMPLETED', resultArtifactId: artifact.id },
     });
   });
@@ -270,8 +270,8 @@ describe('MockupsService', () => {
       existingMockupId: null,
     });
     await expect(service.runJob(job.id)).resolves.toBeUndefined();
-    expect(prisma.mockupGenerationJob.update).toHaveBeenLastCalledWith({
-      where: { id: job.id },
+    expect(prisma.mockupGenerationJob.updateMany).toHaveBeenLastCalledWith({
+      where: { id: job.id, status: 'RUNNING' },
       data: { status: 'FAILED', errorMessage: 'No se pudo generar el boceto.' },
     });
   });
@@ -283,6 +283,80 @@ describe('MockupsService', () => {
     expect(prisma.mockupGenerationJob.findFirst).toHaveBeenCalledWith({
       where: { id: 'job-1', projectId: 'other-project' },
     });
+  });
+
+  it('cancels a running job keeping its screens, and leaves a finished job as it was', async () => {
+    const { service, prisma } = setup();
+    prisma.mockupGenerationJob.findFirst.mockResolvedValueOnce({
+      id: 'job-1',
+      status: 'RUNNING',
+      totalScreens: 77,
+      _count: { parts: 12 },
+    });
+    prisma.mockupGenerationJob.findFirst.mockResolvedValueOnce({
+      id: 'job-1',
+      status: 'CANCELLED',
+    });
+    await service.cancelJob('project', 'job-1').catch(() => undefined);
+    expect(prisma.mockupGenerationJob.updateMany).toHaveBeenCalledWith({
+      where: { id: 'job-1', status: { in: ['QUEUED', 'RUNNING'] } },
+      data: { status: 'CANCELLED', errorMessage: 'Se canceló con 12 de 77 pantallas generadas.' },
+    });
+
+    prisma.mockupGenerationJob.updateMany.mockClear();
+    prisma.mockupGenerationJob.findFirst.mockResolvedValue({
+      id: 'job-2',
+      status: 'COMPLETED',
+      totalScreens: 1,
+      _count: { parts: 1 },
+    });
+    await service.cancelJob('project', 'job-2').catch(() => undefined);
+    expect(prisma.mockupGenerationJob.updateMany).not.toHaveBeenCalled();
+
+    prisma.mockupGenerationJob.findFirst.mockResolvedValue(null);
+    await expect(service.cancelJob('other', 'job-1')).rejects.toThrow('no encontrado');
+  });
+
+  it('stops asking Stitch for screens once the job is cancelled', async () => {
+    const { service, prisma } = setup();
+    const job = { id: 'job-1', stitchProjectId: 'sp', parts: [] };
+    const content = {
+      screens: Array.from({ length: 12 }, (_, i) => ({ localId: `s${i}`, name: `s${i}` })),
+    };
+    const drawn: string[] = [];
+    const generator = {
+      createProject: vi.fn(),
+      generateScreen: vi.fn(async (_p: string, screen: { localId: string }) => {
+        drawn.push(screen.localId);
+        return { screenName: screen.localId, image: new Uint8Array([1]), html: '<p/>' };
+      }),
+    };
+    Object.assign(prisma.mockupGenerationJob, {
+      findUniqueOrThrow: vi.fn().mockResolvedValue(job),
+      // The person cancels after the first screen was drawn.
+      count: vi.fn(async () => (drawn.length >= 1 ? 1 : 0)),
+    });
+    Object.assign(prisma, {
+      mockupGenerationPart: { create: vi.fn(async ({ data }: { data: object }) => data) },
+    });
+    const run = (
+      service as unknown as {
+        generateScreenByScreen: (...args: unknown[]) => Promise<unknown>;
+      }
+    ).generateScreenByScreen(
+      'job-1',
+      'project',
+      content,
+      'DESKTOP',
+      null,
+      undefined,
+      null,
+      generator,
+      {},
+    );
+    await expect(run).rejects.toThrow();
+    // Calls already in flight finish (at most the concurrency), but no new one starts.
+    expect(drawn.length).toBeLessThan(12);
   });
 
   it('stores Stitch screens and exposes scoped download URLs', async () => {
@@ -503,8 +577,8 @@ describe('MockupsService', () => {
   it('rejects incomplete or foreign provider screen lists before persistence', async () => {
     const missing = setup(new FakeMockupProvider({ kind: 'STITCH', screens: [] }));
     const missingJobId = await missing.createAndRun('blueprint-version');
-    expect(missing.prisma.mockupGenerationJob.update).toHaveBeenLastCalledWith({
-      where: { id: missingJobId },
+    expect(missing.prisma.mockupGenerationJob.updateMany).toHaveBeenLastCalledWith({
+      where: { id: missingJobId, status: 'RUNNING' },
       data: { status: 'FAILED', errorMessage: 'El proveedor devolvió pantallas incompletas.' },
     });
     expect(missing.tx.mockupDetail.create).not.toHaveBeenCalled();
@@ -523,8 +597,8 @@ describe('MockupsService', () => {
       }),
     );
     const foreignJobId = await foreign.createAndRun('blueprint-version');
-    expect(foreign.prisma.mockupGenerationJob.update).toHaveBeenLastCalledWith({
-      where: { id: foreignJobId },
+    expect(foreign.prisma.mockupGenerationJob.updateMany).toHaveBeenLastCalledWith({
+      where: { id: foreignJobId, status: 'RUNNING' },
       data: { status: 'FAILED', errorMessage: 'El proveedor devolvió pantallas inesperadas.' },
     });
     expect(foreign.tx.mockupDetail.create).not.toHaveBeenCalled();
@@ -545,8 +619,8 @@ describe('MockupsService', () => {
     const { storage, tx, prisma, createAndRun } = setup(provider);
     vi.spyOn(storage, 'putObject').mockRejectedValue(new Error('storage secret'));
     const jobId = await createAndRun('blueprint-version');
-    expect(prisma.mockupGenerationJob.update).toHaveBeenLastCalledWith({
-      where: { id: jobId },
+    expect(prisma.mockupGenerationJob.updateMany).toHaveBeenLastCalledWith({
+      where: { id: jobId, status: 'RUNNING' },
       data: { status: 'FAILED', errorMessage: 'No se pudieron guardar los archivos del boceto.' },
     });
     expect(tx.mockupDetail.create).not.toHaveBeenCalled();
@@ -790,8 +864,8 @@ describe('MockupsService', () => {
     });
     expect(list.imageStorageKey).not.toBe('list.png');
     expect(await storage.getObject(list.imageStorageKey)).toEqual(Buffer.from('new'));
-    expect(prisma.mockupGenerationJob.update).toHaveBeenLastCalledWith({
-      where: { id: 'job-1' },
+    expect(prisma.mockupGenerationJob.updateMany).toHaveBeenLastCalledWith({
+      where: { id: 'job-1', status: 'RUNNING' },
       data: { status: 'COMPLETED', resultArtifactId: artifact.id },
     });
   });
@@ -810,8 +884,8 @@ describe('MockupsService', () => {
     });
     await service.runJob('job-1');
     expect(tx.mockupDetail.create).not.toHaveBeenCalled();
-    expect(prisma.mockupGenerationJob.update).toHaveBeenLastCalledWith({
-      where: { id: 'job-1' },
+    expect(prisma.mockupGenerationJob.updateMany).toHaveBeenLastCalledWith({
+      where: { id: 'job-1', status: 'RUNNING' },
       data: {
         status: 'FAILED',
         errorMessage: 'Stitch no está disponible para editar la pantalla.',
@@ -831,8 +905,8 @@ describe('MockupsService', () => {
     });
     await service.runJob('job-1');
     expect(tx.mockupDetail.create).not.toHaveBeenCalled();
-    expect(prisma.mockupGenerationJob.update).toHaveBeenLastCalledWith({
-      where: { id: 'job-1' },
+    expect(prisma.mockupGenerationJob.updateMany).toHaveBeenLastCalledWith({
+      where: { id: 'job-1', status: 'RUNNING' },
       data: {
         status: 'FAILED',
         errorMessage: 'Stitch no está disponible; no se pudo aplicar la edición del boceto.',
@@ -871,8 +945,8 @@ describe('MockupsService', () => {
     });
     tx.$queryRaw.mockResolvedValueOnce([]);
     await service.runJob(job.id);
-    expect(prisma.mockupGenerationJob.update).toHaveBeenLastCalledWith({
-      where: { id: job.id },
+    expect(prisma.mockupGenerationJob.updateMany).toHaveBeenLastCalledWith({
+      where: { id: job.id, status: 'RUNNING' },
       data: { status: 'FAILED', errorMessage: 'No se pudo generar el boceto.' },
     });
   });

@@ -1396,6 +1396,7 @@ enum MockupJobStatus {
   RUNNING
   COMPLETED
   FAILED
+  CANCELLED
 
   @@map("mockup_job_status")
 }
