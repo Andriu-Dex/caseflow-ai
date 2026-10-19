@@ -1518,7 +1518,7 @@ export class StructuredAnalysisService {
         0,
         {
           promptKey: 'implementation-plan.skeleton',
-          promptVersion: 1,
+          promptVersion: 2,
           payload: {
             planModules: plan.modules.map((module) => ({
               name: module.name,
@@ -1624,7 +1624,7 @@ export class StructuredAnalysisService {
             routeBase + position * IP_BATCH_ATTEMPTS + attempt,
             {
               promptKey: 'implementation-plan.routes',
-              promptVersion: 1,
+              promptVersion: 2,
               payload: {
                 targetScreens: remaining.map((screen) => ({
                   localId: screen.localId,
