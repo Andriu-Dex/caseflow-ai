@@ -7,7 +7,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   Archive,
-  ArchiveRestore,
+  ChevronDown,
+  ChevronRight,
   ArrowRight,
   Check,
   CheckCircle2,
@@ -23,6 +24,7 @@ import {
   Loader2,
   Play,
   RefreshCw,
+  RotateCcw,
   Search,
   Server,
   ShieldCheck,
@@ -877,46 +879,7 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
             <Layers className="size-3.5 text-primary" />
             Generaciones Realizadas ({visibleRuns.length})
           </h2>
-          {archivedRuns.length ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-7 gap-1.5 text-xs text-muted-foreground"
-              aria-expanded={showArchived}
-              onClick={() => setShowArchived(!showArchived)}
-            >
-              <Archive className="size-3.5" aria-hidden="true" />
-              {showArchived ? 'Ocultar archivadas' : `Archivadas (${archivedRuns.length})`}
-            </Button>
-          ) : null}
         </div>
-        {showArchived && archivedRuns.length ? (
-          <ul className="flex flex-col gap-2 rounded-xl border border-dashed border-border bg-muted/20 p-3">
-            {archivedRuns.map((run) => (
-              <li
-                key={run.id}
-                className="flex flex-wrap items-center justify-between gap-2 text-xs"
-              >
-                <span className="text-muted-foreground">
-                  {STATUS_LABELS[run.status]} · {new Date(run.createdAt).toLocaleString('es-EC')} ·
-                  archivada el {new Date(run.archivedAt!).toLocaleString('es-EC')}
-                </span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-7 gap-1.5 text-xs"
-                  disabled={archivingId === run.id}
-                  onClick={() => void setArchived(run.id, false)}
-                >
-                  <ArchiveRestore className="size-3.5" aria-hidden="true" />
-                  Restaurar
-                </Button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
         <QueryState isLoading={runs.isLoading} error={runs.error}>
           {visibleRuns.length ? (
             <ul className="flex flex-col gap-3">
@@ -1028,6 +991,58 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
             </EmptyState>
           )}
         </QueryState>
+        {/* Archived runs, at the end like on the other screens: folded, each restorable. */}
+        {archivedRuns.length ? (
+          <section className="rounded-xl border border-border/80 bg-card shadow-2xs">
+            <button
+              type="button"
+              onClick={() => setShowArchived(!showArchived)}
+              aria-expanded={showArchived}
+              className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium text-muted-foreground hover:text-foreground"
+            >
+              {showArchived ? (
+                <ChevronDown className="size-4" aria-hidden="true" />
+              ) : (
+                <ChevronRight className="size-4" aria-hidden="true" />
+              )}
+              <Archive className="size-4" aria-hidden="true" />
+              Archivadas ({archivedRuns.length})
+            </button>
+            {showArchived ? (
+              <ul className="flex flex-col divide-y divide-border/60 border-t border-border/60">
+                {archivedRuns.map((run) => (
+                  <li
+                    key={run.id}
+                    className="flex flex-wrap items-center gap-3 px-4 py-2.5 text-sm"
+                  >
+                    <span className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
+                      {run.targetTemplateIdentifier} v{run.targetTemplateVersion}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                      {STATUS_LABELS[run.status]}
+                      {run.status === 'GENERATED' ? ` · ${run.fileCount} archivos` : ''} ·{' '}
+                      {new Date(run.createdAt).toLocaleString('es-EC')}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      Archivada el {new Date(run.archivedAt!).toLocaleDateString('es')}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      disabled={archivingId === run.id}
+                      onClick={() => void setArchived(run.id, false)}
+                    >
+                      <RotateCcw className="size-3.5" aria-hidden="true" />
+                      {archivingId === run.id ? 'Restaurando…' : 'Restaurar'}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </section>
+        ) : null}
       </section>
     </div>
   );
