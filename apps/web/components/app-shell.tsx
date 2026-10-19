@@ -27,6 +27,7 @@ import {
   computeConstructionStepState,
   computeStepState,
   CONSTRUCTION_STEP_NUMBER,
+  CONSTRUCTION_STEPS,
   PIPELINE_STEPS,
   ROUTE_STEP_NUMBER,
   ROUTE_STAGE_KEYS,
@@ -225,6 +226,21 @@ export function AppShell({ children }: { children: ReactNode }) {
   // backend independently enforces every real precondition regardless of
   // whether the UI lets a user click through in sequence.
   function firstBlockingStep(href: string): { label: string } | null {
+    const constructionTarget = CONSTRUCTION_STEP_NUMBER[href];
+    if (constructionTarget) {
+      // The prompt routes approve these steps automatically, and while the
+      // state is loading nothing is locked.
+      if (buildOnly || !construction.data) return null;
+      const done = (step: { href: string }) =>
+        computeConstructionStepState(step.href, construction.data) === 'satisfied';
+      // Same as planning: a step already reached is not locked again when an
+      // earlier one changes.
+      if (CONSTRUCTION_STEPS.some((step) => step.step >= constructionTarget && done(step)))
+        return null;
+      return (
+        CONSTRUCTION_STEPS.find((step) => step.step < constructionTarget && !done(step)) ?? null
+      );
+    }
     const target = ROUTE_STEP_NUMBER[href];
     if (!target || !stages) return null;
     const state = computeStepState(href, stages);
