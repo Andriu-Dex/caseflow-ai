@@ -161,6 +161,31 @@ export const pagePath = (routePath: string) =>
 const toWebRoot = (routePath: string) =>
   '../'.repeat(routePath.split('/').filter(Boolean).length + 1);
 const dynamicParam = (routePath: string) => routePath.match(/\[([a-zA-Z0-9]+)\]/)?.[1];
+// Every URL parameter of a route, in order: /sales/[saleId]/lines -> ["saleId"].
+const routeParamNames = (routePath: string) =>
+  [...routePath.matchAll(/\[([a-zA-Z0-9]+)\]/g)].map((m) => m[1]!);
+// The URL parameter that identifies a record of this entity on the page, if
+// any: [id], or [<name>Id] where <name> ends the entity name ([eventId] for
+// CateringEvent).
+const entityParam = (entity: Entity | undefined, names: string[]) =>
+  entity
+    ? names.find((name) => {
+        const lower = name.toLowerCase();
+        return (
+          lower === 'id' ||
+          (lower.endsWith('id') &&
+            lower.length > 2 &&
+            entity.name.toLowerCase().endsWith(lower.slice(0, -2)))
+        );
+      })
+    : undefined;
+// Reads the URL parameters a page body uses.
+const paramsHook = (names: string[], body: string) => {
+  const used = names.filter((name) => new RegExp(`\\b${name}\\b`).test(body));
+  return used.length
+    ? `\n  const { ${used.join(', ')} } = useParams<{ ${used.map((n) => `${n}: string`).join('; ')} }>();`
+    : '';
+};
 
 function display(field: Field, accessor: string): string {
   switch (field.type) {
@@ -217,6 +242,8 @@ const withId = (path: string, idExpr: string) =>
 
 interface ActionTarget {
   idExpr?: string;
+  // The page's URL parameters ([saleId] -> "saleId"), each a variable in scope.
+  routeParams?: string[];
   onDone?: string;
   onDelete?: string;
 }
@@ -239,11 +266,23 @@ function actionControl(
         return form ? linkControl(label, `"${form.path}"`) : null;
       case 'LIST': {
         const list = entityRoute(plan, entity, 'LIST');
-        return list ? linkControl(label, `"${list.path}"`) : null;
+        // With no list screen, the query is run from here.
+        return list
+          ? linkControl(label, `"${list.path}"`)
+          : buttonControl(label, `() => api.list${pluralize(entity.name)}()`, target.onDone);
       }
       case 'GET': {
         const detail = entityRoute(plan, entity, 'DETAIL');
-        return detail && idExpr ? linkControl(label, withId(detail.path, idExpr)) : null;
+        if (detail && idExpr) return linkControl(label, withId(detail.path, idExpr));
+        // Without its detail screen, consulting runs the query from here; with
+        // no record at hand it opens (or runs) the entity's list.
+        if (idExpr)
+          return buttonControl(label, `() => api.get${entity.name}(${idExpr})`, target.onDone);
+        if (!entity.operations.includes('LIST')) return null;
+        const list = entityRoute(plan, entity, 'LIST');
+        return list
+          ? linkControl(label, `"${list.path}"`)
+          : buttonControl(label, `() => api.list${pluralize(entity.name)}()`, target.onDone);
       }
       case 'UPDATE':
         return form && idExpr && entity.operations.includes('GET')
@@ -263,9 +302,21 @@ function actionControl(
   const endpoint = customEndpoint(plan, action);
   if (!endpoint) return null;
   const params = pathParams(endpoint.path);
-  if (params.length > 1 || (params.length === 1 && !idExpr)) return null;
+  // Each path parameter comes from the page's URL parameter of the same name
+  // (case aside), or, when it is the only one, from the record at hand.
+  const routeParams = target.routeParams ?? [];
+  const values = params.map(
+    (param) =>
+      routeParams.find((name) => name.toLowerCase() === param.toLowerCase()) ??
+      (params.length === 1 ? (idExpr ?? routeParams.at(-1)) : undefined),
+  );
+  if (values.some((value) => !value)) return null;
   const args = [
-    ...(params.length ? [params[0] === 'id' ? idExpr! : `{ ${params[0]}: ${idExpr} }`] : []),
+    ...(params.length === 1 && params[0] === 'id'
+      ? [values[0]!]
+      : params.length
+        ? [`{ ${params.map((param, i) => `${param}: ${values[i]}`).join(', ')} }`]
+        : []),
     ...(['POST', 'PATCH', 'PUT'].includes(endpoint.method) ? ['{}'] : []),
   ];
   return buttonControl(
@@ -435,13 +486,18 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
   const schema = createSchemaName(entity.name);
   // Editing reuses the form when the plan exposes reading and updating.
   const editable = entity.operations.includes('UPDATE') && entity.operations.includes('GET');
-  // The submit button realises the form's own create/update action.
+  // The submit button realises the form's own create/update action; other
+  // create/update actions of the same form are further submit buttons.
   const own = route.actions.find((a) => a.operation === 'CREATE' || a.operation === 'UPDATE');
+  const submits = route.actions.filter(
+    (a) => a !== own && (a.operation === 'CREATE' || a.operation === 'UPDATE'),
+  );
+  const names = routeParamNames(route.path);
   const header = controls(
     plan,
     entity,
-    route.actions.filter((a) => a !== own && !isItemAction(plan, a)),
-    {},
+    route.actions.filter((a) => a !== own && !submits.includes(a)),
+    { idExpr: entityParam(entity, names), routeParams: names },
   );
   const relationTargets = inputRelations(entity)
     .map((relation) => ({
@@ -516,11 +572,12 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
         ? api.update${entity.name}(editId, values as Parameters<typeof api.update${entity.name}>[1])
         : api.create${entity.name}(values as Parameters<typeof api.create${entity.name}>[0]))`
     : `api.create${entity.name}(values as Parameters<typeof api.create${entity.name}>[0])`;
+  const hook = paramsHook(names, header.join('\n'));
   const headerBlock = header.length
     ? `      <div className="flex flex-wrap gap-2">\n${indent(header.join('\n'), 8)}\n      </div>\n`
     : '';
   const extraImports = [
-    "import { useRouter } from 'next/navigation';",
+    `import { ${hook ? 'useParams, ' : ''}useRouter } from 'next/navigation';`,
     editable ? "import { useEffect, useState } from 'react';" : '',
     "import { useForm } from 'react-hook-form';",
     "import { zodResolver } from '@hookform/resolvers/zod';",
@@ -534,9 +591,11 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
       <h1 className="text-xl font-semibold">${route.screenName.replace(/[<>{}]/g, '')}</h1>
 ${headerBlock}      <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4 rounded-lg border p-4">
 ${[...inputs, ...relationInputs].join('\n')}
-        <Button type="submit" disabled={isSubmitting}${own ? ` ${actionMarker(own.label)}` : ''}>
-          {isSubmitting ? 'Guardando…' : ${own ? JSON.stringify(own.label) : "'Guardar'"}}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button type="submit" disabled={isSubmitting}${own ? ` ${actionMarker(own.label)}` : ''}>
+            {isSubmitting ? 'Guardando…' : ${own ? JSON.stringify(own.label) : "'Guardar'"}}
+          </Button>
+${submits.map((a) => `          <Button type="submit" variant="outline" disabled={isSubmitting} ${actionMarker(a.label)}>\n            ${text(a.label)}\n          </Button>\n`).join('')}        </div>
       </form>
     </div>`;
   return `'use client';
@@ -552,7 +611,7 @@ type FormInput = z.input<typeof ${schema}>;
 type FormOutput = z.output<typeof ${schema}>;
 
 export default function ${entity.name}FormPage() {
-  const router = useRouter();
+  const router = useRouter();${hook}
   const queryClient = useQueryClient();
 ${optionQueries.join('\n')}${optionQueries.length ? '\n' : ''}  const {
     register,
@@ -601,12 +660,12 @@ function simplePage(plan: Plan, route: Route): string {
   const links = plan.routes.filter(
     (r) => r !== route && r.moduleLocalId === route.moduleLocalId && !r.path.includes('['),
   );
-  const header = controls(
-    plan,
-    entity,
-    route.actions.filter((a) => !isItemAction(plan, a)),
-    {},
-  );
+  const names = routeParamNames(route.path);
+  const header = controls(plan, entity, route.actions, {
+    idExpr: entityParam(entity, names),
+    routeParams: names,
+  });
+  const hook = paramsHook(names, header.join('\n'));
   const body = `    <div className="flex flex-col gap-4">
       <h1 className="text-xl font-semibold">${route.screenName.replace(/[<>{}]/g, '')}</h1>
       <p className="text-sm text-muted-foreground">${module.description.replace(/[<>{}]/g, '')}</p>
@@ -618,10 +677,12 @@ ${links.map((l) => `        <li>\n          <Link className="block rounded-lg bo
 `
       : ''
   }    </div>`;
+  const client = body.includes('<ActionButton') || Boolean(hook);
   const imports = pageImports(body, toWebRoot(route.path), [
+    hook ? "import { useParams } from 'next/navigation';" : '',
     body.includes('<ActionButton') ? `import { api } from '${toWebRoot(route.path)}lib/api';` : '',
   ]);
-  return `${body.includes('<ActionButton') ? "'use client';\n\n" : ''}${imports ? `${imports}\n\n` : ''}export default function ${upperFirst(route.screenName.replace(/[^A-Za-z0-9]/g, '')) || 'Screen'}Page() {
+  return `${client ? "'use client';\n\n" : ''}${imports ? `${imports}\n\n` : ''}export default function ${upperFirst(route.screenName.replace(/[^A-Za-z0-9]/g, '')) || 'Screen'}Page() {${hook}
   return (
 ${body}
   );
