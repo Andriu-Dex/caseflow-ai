@@ -280,6 +280,6 @@ describe('GenerationRunsPage', () => {
       await screen.findByRole('dialog', { name: /¿Cómo probar el proyecto en tu máquina\?/i }),
     ).toBeInTheDocument();
     expect(screen.getByText(/1\. Preparación/i)).toBeInTheDocument(); // The token example uses the first role of the plan the run came from.
-    expect(screen.getAllByText(/dev-token -- Administrador/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/dev-token -- "Administrador"/).length).toBeGreaterThan(0);
   });
 });
