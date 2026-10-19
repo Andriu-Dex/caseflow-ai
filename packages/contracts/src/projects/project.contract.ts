@@ -3,29 +3,58 @@ import { z } from 'zod';
 export const PROJECT_LANGUAGES = ['ES', 'EN'] as const;
 export type ProjectLanguage = (typeof PROJECT_LANGUAGES)[number];
 
+// DEC-116: how much of the planning a person reviews. Ordered from least to
+// most review; a project can only move up this list.
+export const WORKFLOW_ROUTES = ['BUILD_ONLY', 'EXPRESS', 'FULL'] as const;
+export type WorkflowRoute = (typeof WORKFLOW_ROUTES)[number];
+
+const projectName = z
+  .string({ error: 'El nombre es obligatorio.' })
+  .trim()
+  .min(1, 'El nombre es obligatorio.')
+  .max(200, 'El nombre no puede superar los 200 caracteres.');
+const projectDescription = z
+  .string()
+  .trim()
+  .max(5000, 'La descripción no puede superar los 5000 caracteres.')
+  .nullish();
+
 export const createProjectRequestSchema = z
   .object({
     workspaceId: z.uuid({ error: 'El identificador del workspace no es válido.' }),
-    name: z
-      .string({ error: 'El nombre es obligatorio.' })
-      .trim()
-      .min(1, 'El nombre es obligatorio.')
-      .max(200, 'El nombre no puede superar los 200 caracteres.'),
-    description: z
-      .string()
-      .trim()
-      .max(5000, 'La descripción no puede superar los 5000 caracteres.')
-      .nullish(),
+    name: projectName,
+    description: projectDescription,
+    workflowRoute: z.enum(WORKFLOW_ROUTES).default('FULL'),
   })
   .strict();
 
 export type CreateProjectRequest = z.input<typeof createProjectRequestSchema>;
+
+// Renaming only changes how the project is shown; its artifacts and history
+// are tied to its id.
+export const updateProjectRequestSchema = z
+  .object({ name: projectName, description: projectDescription })
+  .strict();
+export type UpdateProjectRequest = z.input<typeof updateProjectRequestSchema>;
+
+// DEC-134: deleting a project requires typing its exact name; the server
+// checks it, not only the page.
+export const deleteProjectRequestSchema = z.object({ confirmName: z.string().max(200) }).strict();
+export type DeleteProjectRequest = z.input<typeof deleteProjectRequestSchema>;
+
+export const PROJECT_LIST_STATUSES = ['ALL', 'ACTIVE', 'ARCHIVED'] as const;
+export const PROJECT_LIST_SORTS = ['OLDEST', 'RECENT', 'UPDATED', 'NAME'] as const;
 
 export const listProjectsQuerySchema = z
   .object({
     workspaceId: z.uuid({ error: 'El identificador del workspace no es válido.' }),
     limit: z.coerce.number().int().min(1).max(100).default(50),
     offset: z.coerce.number().int().min(0).default(0),
+    // Name or description contains this text (case-insensitive).
+    search: z.string().trim().max(100).optional(),
+    status: z.enum(PROJECT_LIST_STATUSES).default('ALL'),
+    workflowRoute: z.enum(WORKFLOW_ROUTES).optional(),
+    sort: z.enum(PROJECT_LIST_SORTS).default('OLDEST'),
   })
   .strict();
 
@@ -37,6 +66,7 @@ export const projectResponseSchema = z.object({
   name: z.string(),
   description: z.string().nullable(),
   language: z.enum(PROJECT_LANGUAGES),
+  workflowRoute: z.enum(WORKFLOW_ROUTES),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
   archivedAt: z.iso.datetime().nullable(),
@@ -50,6 +80,8 @@ export type ProjectResponse = z.infer<typeof projectResponseSchema>;
 
 export const projectListResponseSchema = z.object({
   items: z.array(projectResponseSchema),
+  // Projects matching the filters, across every page.
+  total: z.number().int(),
   limit: z.number().int(),
   offset: z.number().int(),
 });
@@ -59,5 +91,11 @@ export type ProjectListResponse = z.infer<typeof projectListResponseSchema>;
 export const updateProjectLanguageRequestSchema = z
   .object({ language: z.enum(PROJECT_LANGUAGES) })
   .strict();
+
+export const upgradeWorkflowRouteRequestSchema = z
+  .object({ workflowRoute: z.enum(WORKFLOW_ROUTES) })
+  .strict();
+
+export type UpgradeWorkflowRouteRequest = z.input<typeof upgradeWorkflowRouteRequestSchema>;
 
 export type UpdateProjectLanguageRequest = z.input<typeof updateProjectLanguageRequestSchema>;

@@ -1,12 +1,65 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, CheckCircle2, Clock, FolderKanban, Info } from 'lucide-react';
+import {
+  ArrowRight,
+  BookOpen,
+  CheckCircle2,
+  Circle,
+  Clock,
+  Info,
+  Package,
+  PenTool,
+  Search,
+} from 'lucide-react';
 import Link from 'next/link';
 import { Badge, Card, CardContent, CardHeader } from '@caseflow-ai/ui';
 import { api } from '../lib/api';
 import { QueryState, RequireActiveProject } from '../components/query-state';
 import { STAGE_LINKS } from '../lib/stage-links';
+import { DismissibleHint } from '../components/dismissible-hint';
+import { WORKFLOW_ROUTE_LABELS } from '../components/workflow-route';
+
+const DASHBOARD_PHASES = [
+  {
+    id: 'knowledge',
+    title: 'Conocimiento',
+    icon: BookOpen,
+    keys: ['SOURCES', 'CONTEXT'],
+  },
+  {
+    id: 'analysis',
+    title: 'Análisis',
+    icon: Search,
+    keys: [
+      'REQUIREMENTS',
+      'USE_CASES',
+      'USE_CASE_DIAGRAM',
+      'DATA_MODEL',
+      'ER_DIAGRAM',
+      'CLASS_DIAGRAM',
+    ],
+  },
+  {
+    id: 'design',
+    title: 'Diseño',
+    icon: PenTool,
+    keys: [
+      'NAVIGATION',
+      'SOFTWARE_ARCHITECTURE',
+      'SYSTEM_ARCHITECTURE',
+      'UI_BLUEPRINT',
+      'DESIGN_THEME',
+      'MOCKUPS',
+    ],
+  },
+  {
+    id: 'deliverables',
+    title: 'Entregables',
+    icon: Package,
+    keys: ['IMPACT'],
+  },
+];
 
 function HomeContent({ projectId }: { projectId: string }) {
   const project = useQuery({
@@ -29,17 +82,42 @@ function HomeContent({ projectId }: { projectId: string }) {
       e.impactState === 'NEWER_APPROVED_KNOWLEDGE_AVAILABLE',
   );
 
+  const groupedStages = DASHBOARD_PHASES.map((phase) => ({
+    ...phase,
+    stages: readiness.data?.stages.filter((s) => phase.keys.includes(s.key)) ?? [],
+  })).filter((phase) => phase.stages.length > 0);
+
   return (
     <div className="flex flex-col gap-6">
-      <Card className="border-t-4 border-t-primary">
-        <CardContent>
+      <Card className="border-t-4 border-t-primary shadow-xs">
+        <CardContent className="pt-6">
           <QueryState isLoading={project.isLoading} error={project.error}>
-            <h1 className="text-3xl font-bold tracking-tight text-foreground">
-              {project.data?.name}
-            </h1>
-            {project.data?.description ? (
-              <p className="mt-1 text-sm text-muted-foreground">{project.data.description}</p>
-            ) : null}
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
+                    {project.data?.name}
+                  </h1>
+                  {project.data?.workflowRoute ? (
+                    <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary border border-primary/20">
+                      Ruta:{' '}
+                      {WORKFLOW_ROUTE_LABELS[project.data.workflowRoute] ??
+                        project.data.workflowRoute}
+                    </span>
+                  ) : null}
+                </div>
+                <DismissibleHint id="news-v2-routes-theme" label="Novedades">
+                  Novedades: cada proyecto tiene ahora una ruta (Completa, Exprés o Solo
+                  construcción), y hay un paso «Tema y colores» antes de los bocetos. Preparación /
+                  Exportar y Líneas Base están en su propio grupo «Entregables» del menú.
+                </DismissibleHint>
+              </div>
+              {project.data?.description ? (
+                <p className="text-sm text-muted-foreground leading-relaxed mt-0.5">
+                  {project.data.description}
+                </p>
+              ) : null}
+            </div>
           </QueryState>
         </CardContent>
       </Card>
@@ -69,42 +147,96 @@ function HomeContent({ projectId }: { projectId: string }) {
               </span>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-6">
-                {readiness.data.stages.map((stage) => (
-                  <Link
-                    key={stage.key}
-                    href={STAGE_LINKS[stage.key] ?? '/readiness'}
-                    title={stage.summary}
-                    className={`rounded-md border px-2 py-2 text-center text-xs font-medium transition-colors ${
-                      stage.satisfied
-                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                        : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted'
-                    }`}
-                  >
-                    {stage.satisfied ? '✓' : '·'} {stage.label}
-                  </Link>
-                ))}
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                {groupedStages.map((phase) => {
+                  const Icon = phase.icon;
+                  const allSatisfied = phase.stages.every((s) => s.satisfied);
+                  return (
+                    <div
+                      key={phase.id}
+                      className="flex flex-col gap-3 rounded-xl border border-border/50 bg-muted/20 p-4"
+                    >
+                      <div className="flex items-center gap-2">
+                        <div
+                          className={`flex size-7 shrink-0 items-center justify-center rounded-md ${
+                            allSatisfied
+                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400'
+                              : 'bg-primary/10 text-primary'
+                          }`}
+                        >
+                          <Icon className="size-4" aria-hidden="true" />
+                        </div>
+                        <h3 className="text-sm font-semibold uppercase tracking-tight text-foreground/80">
+                          {phase.title}
+                        </h3>
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        {phase.stages.map((stage) => (
+                          <Link
+                            key={stage.key}
+                            href={STAGE_LINKS[stage.key] ?? '/readiness'}
+                            title={stage.summary}
+                            className={`group flex items-center justify-between rounded-lg border px-3 py-2 text-sm transition-all hover:shadow-sm ${
+                              stage.satisfied
+                                ? 'border-emerald-200/60 bg-emerald-50/50 text-emerald-800 hover:border-emerald-300 dark:border-emerald-900/50 dark:bg-emerald-900/10 dark:text-emerald-400 dark:hover:border-emerald-800'
+                                : 'border-border/60 bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                            }`}
+                          >
+                            <span className="flex items-center gap-2.5 truncate">
+                              {stage.satisfied ? (
+                                <CheckCircle2
+                                  className="size-4 shrink-0 text-emerald-600 dark:text-emerald-500"
+                                  aria-hidden="true"
+                                />
+                              ) : (
+                                <Circle
+                                  className="size-4 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-primary/50"
+                                  aria-hidden="true"
+                                />
+                              )}
+                              <span className="truncate font-medium">{stage.label}</span>
+                            </span>
+                            {!stage.satisfied && (
+                              <ArrowRight
+                                className="size-3.5 shrink-0 -translate-x-2 opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-100"
+                                aria-hidden="true"
+                              />
+                            )}
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
 
               {nextStage ? (
-                <div className="mt-4 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                  <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                  <span>
-                    <strong>Siguiente paso:</strong> {nextStage.nextAction ?? nextStage.summary}{' '}
-                    <Link
-                      href={STAGE_LINKS[nextStage.key] ?? '/readiness'}
-                      className="inline-flex items-center gap-0.5 underline"
-                    >
-                      Ir a {nextStage.label}
-                      <ArrowRight className="size-3.5" aria-hidden="true" />
-                    </Link>
-                  </span>
+                <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-amber-200/90 bg-amber-50/80 p-4 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-200">
+                  <div className="flex items-start gap-2.5">
+                    <Info
+                      className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400"
+                      aria-hidden="true"
+                    />
+                    <div>
+                      <strong className="font-semibold text-foreground">Siguiente paso:</strong>{' '}
+                      <span className="text-muted-foreground">
+                        {nextStage.nextAction ?? nextStage.summary}
+                      </span>
+                    </div>
+                  </div>
+                  <Link
+                    href={STAGE_LINKS[nextStage.key] ?? '/readiness'}
+                    className="inline-flex items-center gap-1.5 self-start sm:self-auto rounded-lg bg-primary px-3.5 py-1.5 text-xs font-semibold text-primary-foreground shadow-xs hover:bg-primary/90 transition-all shrink-0"
+                  >
+                    Ir a {nextStage.label}
+                    <ArrowRight className="size-3.5" aria-hidden="true" />
+                  </Link>
                 </div>
               ) : null}
 
               <Link
                 href="/readiness"
-                className="mt-3 inline-flex items-center gap-1 text-sm text-muted-foreground underline"
+                className="mt-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors underline"
               >
                 Ver detalle completo de preparación
                 <ArrowRight className="size-3.5" aria-hidden="true" />
@@ -147,13 +279,6 @@ function HomeContent({ projectId }: { projectId: string }) {
 export default function HomePage() {
   return (
     <div className="flex flex-col gap-4">
-      <Link
-        href="/projects"
-        className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground underline"
-      >
-        <FolderKanban className="size-4" aria-hidden="true" />
-        Ver Proyectos
-      </Link>
       <RequireActiveProject>
         {(projectId) => <HomeContent projectId={projectId} />}
       </RequireActiveProject>

@@ -12,8 +12,12 @@ function setup() {
       findMany: vi.fn().mockResolvedValue([]),
       findFirst: vi.fn().mockResolvedValue(null),
     },
-    artifactVersion: { findMany: vi.fn().mockResolvedValue([]) },
+    artifactVersion: {
+      findMany: vi.fn().mockResolvedValue([]),
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
     diagramDetail: { findUnique: vi.fn().mockResolvedValue(null) },
+    project: { findUnique: vi.fn().mockResolvedValue({ designThemeRequired: true }) },
   };
   const requirements = { qualityReport: vi.fn().mockResolvedValue({ issues: [] }) };
   const staleness = { analyzeProject: vi.fn().mockResolvedValue({ entries: [] }) };
@@ -38,7 +42,7 @@ describe('ReadinessService', () => {
     const { service } = setup();
     const result = await service.evaluate('p');
     expect(result.ready).toBe(false);
-    expect(result.stages).toHaveLength(13);
+    expect(result.stages).toHaveLength(15);
     // IMPACT is vacuously satisfied (no staleness detected) even when every
     // other stage is unsatisfied for lack of any artifact at all.
     expect(result.stages.filter((s) => s.key !== 'IMPACT').every((s) => !s.satisfied)).toBe(true);
@@ -88,7 +92,11 @@ describe('ReadinessService', () => {
               versions: [
                 {
                   ...approvedVersion(1),
-                  diagramDetail: { sources: [{ sourceArtifactVersionId: 'uc-v1' }] },
+                  diagramDetail: {
+                    sources: Array.from({ length: 4 }, (_, i) => ({
+                      sourceArtifactVersionId: `uc-v${i}`,
+                    })),
+                  },
                 },
               ],
             },
@@ -100,6 +108,7 @@ describe('ReadinessService', () => {
             'SOFTWARE_ARCHITECTURE',
             'SYSTEM_ARCHITECTURE',
             'UI_BLUEPRINT',
+            'DESIGN_THEME',
           ].includes(where.artifactTypeCode)
         )
           return Promise.resolve([
@@ -114,7 +123,12 @@ describe('ReadinessService', () => {
             {
               id: 'mck',
               code: 'MCK-001',
-              versions: [{ ...approvedVersion(1), mockupDetail: { uiBlueprintVersionId: 'v-1' } }],
+              versions: [
+                {
+                  ...approvedVersion(1),
+                  mockupDetail: { uiBlueprintVersionId: 'v-1', designThemeVersionId: 'v-1' },
+                },
+              ],
             },
           ]);
         return Promise.resolve([]);
@@ -162,6 +176,7 @@ describe('ReadinessService', () => {
     expect(result.stages.find((s) => s.key === 'DATA_MODEL')?.satisfied).toBe(true);
     expect(result.stages.find((s) => s.key === 'ER_DIAGRAM')?.satisfied).toBe(true);
     expect(result.stages.find((s) => s.key === 'NAVIGATION')?.satisfied).toBe(true);
+    expect(result.stages.find((s) => s.key === 'DESIGN_THEME')?.satisfied).toBe(true);
     expect(result.stages.find((s) => s.key === 'MOCKUPS')?.satisfied).toBe(true);
     const impact = result.stages.find((s) => s.key === 'IMPACT')!;
     expect(impact.satisfied).toBe(true);
@@ -173,6 +188,58 @@ describe('ReadinessService', () => {
     ).toBe(true);
     // User-facing text only: no raw English state codes.
     expect(impact.warnings.join(' ')).not.toMatch(/POTENTIALLY_AFFECTED|DOWNSTREAM_REVIEW/);
+  });
+
+  // DEC-118: a project created before the theme step keeps the standard design.
+  it('satisfies the theme stage with the standard design for older projects', async () => {
+    const { prisma, service } = setup();
+    prisma.project.findUnique.mockResolvedValue({ designThemeRequired: false });
+    prisma.artifact.findMany.mockImplementation(
+      ({ where }: { where: { artifactTypeCode: string } }) =>
+        Promise.resolve(
+          where.artifactTypeCode === 'UI_BLUEPRINT'
+            ? [{ id: 'ui', code: 'UI-001', versions: [{ id: 'ui-v1', versionNumber: 1 }] }]
+            : where.artifactTypeCode === 'MOCKUP'
+              ? [
+                  {
+                    id: 'mck',
+                    code: 'MCK-001',
+                    versions: [
+                      {
+                        id: 'mck-v1',
+                        mockupDetail: { uiBlueprintVersionId: 'ui-v1', designThemeVersionId: null },
+                      },
+                    ],
+                  },
+                ]
+              : [],
+        ),
+    );
+    const result = await service.evaluate('p');
+    const theme = result.stages.find((s) => s.key === 'DESIGN_THEME')!;
+    expect(theme).toMatchObject({
+      satisfied: true,
+      summary: 'Este proyecto usa el diseño estándar de CASEFlow.',
+    });
+    expect(result.stages.find((s) => s.key === 'MOCKUPS')?.satisfied).toBe(true);
+  });
+
+  it('blocks mockups of a new project until its theme is approved', async () => {
+    const { prisma, service } = setup();
+    prisma.artifact.findMany.mockImplementation(
+      ({ where }: { where: { artifactTypeCode: string } }) =>
+        Promise.resolve(
+          where.artifactTypeCode === 'UI_BLUEPRINT'
+            ? [{ id: 'ui', code: 'UI-001', versions: [{ id: 'ui-v1', versionNumber: 1 }] }]
+            : [],
+        ),
+    );
+    const result = await service.evaluate('p');
+    expect(result.stages.find((s) => s.key === 'DESIGN_THEME')?.satisfied).toBe(false);
+    expect(result.stages.find((s) => s.key === 'MOCKUPS')).toMatchObject({
+      satisfied: false,
+      blockers: ['Apruebe el tema y los colores antes de generar los bocetos.'],
+    });
   });
 
   it('blocks IMPACT when the current Context is flagged as newer-knowledge-available', async () => {

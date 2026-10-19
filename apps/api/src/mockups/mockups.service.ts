@@ -1,3 +1,5 @@
+import { INTERRUPTED_BY_RESTART } from '../common/interrupted';
+import type { ApprovalOrigin } from '@caseflow-ai/contracts';
 import { randomUUID } from 'node:crypto';
 import JSZip from 'jszip';
 import {
@@ -17,18 +19,26 @@ import {
   type MockupGenerationJobPayload,
 } from '@caseflow-ai/domain';
 import {
+  designThemeContentSchema,
+  navigationTreeContentSchema,
   uiBlueprintContentSchema,
   type ArtifactVersionStatus,
+  type DesignThemeContent,
   type MockupDeviceType,
   type MockupJobResponse,
 } from '@caseflow-ai/contracts';
+import { assertCanGenerate } from '../common/generation-cancelled';
+import { provenanceGuard, sourceStatuses } from '../projects/source-statuses';
 import { PrismaService } from '../database/prisma.service';
+import { FirstDeliverableSnapshotService } from '../first-deliverable/first-deliverable-snapshot.service';
 import type { Prisma } from '../generated/prisma/client';
 import { sanitizeDiagramSvg } from '../data-models/svg-sanitizer';
 import {
   MockupProviderError,
   type MockupGenerationResult,
+  type MockupAppContext,
   type MockupProvider,
+  type ScreenGenerator,
   type StorageProvider,
 } from '@caseflow-ai/integrations';
 import { MOCKUP_GENERATOR_VERSION } from './mockup-renderer';
@@ -38,8 +48,15 @@ import { STORAGE_PROVIDER } from './storage-provider.token';
 
 type Tx = Prisma.TransactionClient;
 const MOCKUP_CODE_PREFIX = 'MCK';
-const MAX_MOCKUP_ARCHIVE_BYTES = 50_000_000;
+// What one ZIP of the screens may hold: a mockup of 77 Stitch screens is about
+// 60 MB, and the images are the only thing in it.
+const MAX_MOCKUP_ARCHIVE_BYTES = 300_000_000;
 const logger = new Logger('MockupsService');
+// DEC-146: Stitch screens drawn at the same time, and times each is asked for.
+class JobCancelledError extends Error {}
+
+const SCREEN_CONCURRENCY = Math.min(8, Math.max(1, Number(process.env.STITCH_CONCURRENCY) || 4));
+const SCREEN_ATTEMPTS = 3;
 
 function safeFileName(value: string, fallback: string): string {
   return (
@@ -62,8 +79,13 @@ type StoredScreen = {
   stitchScreenId: string | null;
   refinementPrompt: string | null;
 };
-type StoredGeneration =
-  { kind: 'INTERNAL_WIREFRAME'; svg: string } | { kind: 'STITCH'; screens: StoredScreen[] };
+type StoredGeneration = (
+  { kind: 'INTERNAL_WIREFRAME'; svg: string } | { kind: 'STITCH'; screens: StoredScreen[] }
+) & {
+  designThemeVersionId: string | null;
+  // Shown with the result: why it is the internal wireframe instead of Stitch.
+  notice?: string;
+};
 
 @Injectable()
 export class MockupsService {
@@ -83,7 +105,20 @@ export class MockupsService {
     deviceType: MockupDeviceType = 'DESKTOP',
   ): Promise<MockupJobResponse> {
     await this.assertApprovedBlueprint(projectId, uiBlueprintVersionId);
+    await this.currentTheme(projectId);
     return this.enqueueJob(projectId, uiBlueprintVersionId, null, deviceType);
+  }
+
+  // For a route orchestration that already runs as a job (DEC-116): the
+  // generation is recorded like any other job but runs inline, never queued.
+  async generateNow(projectId: string, uiBlueprintVersionId: string): Promise<MockupJobResponse> {
+    await this.assertApprovedBlueprint(projectId, uiBlueprintVersionId);
+    await this.currentTheme(projectId);
+    const job = await this.prisma.mockupGenerationJob.create({
+      data: { projectId, uiBlueprintVersionId, deviceType: 'DESKTOP' },
+    });
+    await this.runJob(job.id);
+    return this.getJob(projectId, job.id);
   }
 
   async version(
@@ -93,6 +128,7 @@ export class MockupsService {
     deviceType: MockupDeviceType = 'DESKTOP',
   ): Promise<MockupJobResponse> {
     await this.assertApprovedBlueprint(projectId, uiBlueprintVersionId);
+    await this.currentTheme(projectId);
     const exists = await this.prisma.artifact.findFirst({
       where: { id: mockupId, projectId, artifactTypeCode: 'MOCKUP' },
       select: { id: true },
@@ -156,6 +192,31 @@ export class MockupsService {
     refinementPrompt: string | null = null,
     screenLocalId: string | null = null,
   ): Promise<MockupJobResponse> {
+    // DEC-146: the same request after a run that stopped with screens already
+    // drawn continues that run, so only the missing screens are asked for.
+    const resumable = screenLocalId
+      ? null
+      : await this.prisma.mockupGenerationJob.findFirst({
+          where: {
+            projectId,
+            uiBlueprintVersionId,
+            existingMockupId,
+            deviceType,
+            refinementPrompt,
+            screenLocalId: null,
+            status: { in: ['FAILED', 'CANCELLED'] },
+            parts: { some: {} },
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+    if (resumable) {
+      const resumed = await this.prisma.mockupGenerationJob.update({
+        where: { id: resumable.id },
+        data: { status: 'QUEUED', errorMessage: null },
+      });
+      await this.queue.add(MOCKUP_GENERATION_QUEUE, { jobId: resumed.id, projectId });
+      return this.mapJob(resumed);
+    }
     const job = await this.prisma.mockupGenerationJob.create({
       data: {
         projectId,
@@ -170,6 +231,40 @@ export class MockupsService {
     return this.mapJob(job);
   }
 
+  // The page follows a generation that is still running after it is reopened.
+  async latestJob(projectId: string): Promise<{ job: MockupJobResponse | null }> {
+    const job = await this.prisma.mockupGenerationJob.findFirst({
+      where: { projectId },
+      orderBy: { updatedAt: 'desc' },
+    });
+    return { job: job ? this.mapJob(job) : null };
+  }
+
+  // The person stops a generation. Screens already drawn are kept (resume
+  // continues from them); the loop sees the status before each Stitch call, so
+  // calls already in flight finish but no new one starts.
+  async cancelJob(projectId: string, jobId: string, userId: string): Promise<MockupJobResponse> {
+    await assertCanGenerate(this.prisma, projectId, userId);
+    const job = await this.prisma.mockupGenerationJob.findFirst({
+      where: { id: jobId, projectId },
+      include: { _count: { select: { parts: true } } },
+    });
+    if (!job) throw new NotFoundException('Trabajo no encontrado.');
+    if (job.status === 'QUEUED' || job.status === 'RUNNING') {
+      const drawn = job._count.parts;
+      await this.prisma.mockupGenerationJob.updateMany({
+        where: { id: jobId, projectId, status: { in: ['QUEUED', 'RUNNING'] } },
+        data: {
+          status: 'CANCELLED',
+          errorMessage: job.totalScreens
+            ? `Se canceló con ${drawn} de ${job.totalScreens} pantallas generadas.`
+            : 'Se canceló la generación.',
+        },
+      });
+    }
+    return this.getJob(projectId, jobId);
+  }
+
   async getJob(projectId: string, jobId: string): Promise<MockupJobResponse> {
     const job = await this.prisma.mockupGenerationJob.findFirst({
       where: { id: jobId, projectId },
@@ -178,16 +273,44 @@ export class MockupsService {
     return this.mapJob(job);
   }
 
+  // A mockup still RUNNING when the API starts was cut off by a restart. It is
+  // not repeated automatically (Stitch is slow, has a quota and may already
+  // have produced it): the person generates it again.
+  async markInterrupted(bootedAt: Date): Promise<number> {
+    const { count } = await this.prisma.mockupGenerationJob.updateMany({
+      where: { status: 'RUNNING', updatedAt: { lt: bootedAt } },
+      data: { status: 'FAILED', errorMessage: INTERRUPTED_BY_RESTART },
+    });
+    return count;
+  }
+
+  // A job still QUEUED when the API starts may never run: the worker's call
+  // that should have started it can fail while the API is down (the queue
+  // then counts that delivery as done). Enqueuing it again is safe, because
+  // runJob only picks up a job that is still QUEUED.
+  async requeuePending(): Promise<number> {
+    const pending = await this.prisma.mockupGenerationJob.findMany({
+      where: { status: 'QUEUED' },
+      select: { id: true, projectId: true },
+    });
+    for (const job of pending)
+      await this.queue.add(MOCKUP_GENERATION_QUEUE, { jobId: job.id, projectId: job.projectId });
+    return pending.length;
+  }
+
   // Invoked only by the worker's authenticated internal callback (never
   // reachable from the browser) — runs the actual generation this job
   // describes and always leaves the job in a terminal status, even on an
   // unexpected failure, so polling never hangs on RUNNING forever.
   async runJob(jobId: string): Promise<void> {
-    const job = await this.prisma.mockupGenerationJob.findUniqueOrThrow({ where: { id: jobId } });
-    await this.prisma.mockupGenerationJob.update({
-      where: { id: jobId },
+    // Only a QUEUED job is picked up: a redelivered job (or one already marked
+    // as interrupted) must not run again behind the user's back.
+    const { count } = await this.prisma.mockupGenerationJob.updateMany({
+      where: { id: jobId, status: 'QUEUED' },
       data: { status: 'RUNNING' },
     });
+    if (!count) return;
+    const job = await this.prisma.mockupGenerationJob.findUniqueOrThrow({ where: { id: jobId } });
     try {
       const screenEdit = Boolean(job.screenLocalId && job.existingMockupId && job.refinementPrompt);
       const generated = screenEdit
@@ -203,6 +326,7 @@ export class MockupsService {
             job.uiBlueprintVersionId,
             job.deviceType,
             job.refinementPrompt,
+            job.id,
           );
       const result = await this.prisma.$transaction((tx) =>
         job.existingMockupId
@@ -218,11 +342,16 @@ export class MockupsService {
             )
           : this.createInTx(tx, job.projectId, job.uiBlueprintVersionId, job.deviceType, generated),
       );
-      await this.prisma.mockupGenerationJob.update({
-        where: { id: jobId },
-        data: { status: 'COMPLETED', resultArtifactId: result.id },
+      await this.prisma.mockupGenerationJob.updateMany({
+        where: { id: jobId, status: 'RUNNING' },
+        data: {
+          status: 'COMPLETED',
+          resultArtifactId: result.id,
+          ...(generated.notice ? { errorMessage: generated.notice } : {}),
+        },
       });
     } catch (error) {
+      if (error instanceof JobCancelledError) return;
       const message =
         error instanceof ServiceUnavailableException ||
         error instanceof UnprocessableEntityException
@@ -232,8 +361,8 @@ export class MockupsService {
         `Mockup job "${jobId}" failed: ${message}`,
         error instanceof Error ? error.stack : undefined,
       );
-      await this.prisma.mockupGenerationJob.update({
-        where: { id: jobId },
+      await this.prisma.mockupGenerationJob.updateMany({
+        where: { id: jobId, status: 'RUNNING' },
         data: { status: 'FAILED', errorMessage: message },
       });
     }
@@ -245,6 +374,11 @@ export class MockupsService {
     status: string;
     resultArtifactId: string | null;
     errorMessage: string | null;
+    uiBlueprintVersionId?: string;
+    deviceType?: string;
+    existingMockupId?: string | null;
+    completedScreens?: number;
+    totalScreens?: number;
     createdAt: Date;
     updatedAt: Date;
   }): MockupJobResponse {
@@ -254,6 +388,10 @@ export class MockupsService {
       status: job.status as MockupJobResponse['status'],
       resultArtifactId: job.resultArtifactId,
       errorMessage: job.errorMessage,
+      ...(job.uiBlueprintVersionId ? { uiBlueprintVersionId: job.uiBlueprintVersionId } : {}),
+      ...(job.deviceType ? { deviceType: job.deviceType as MockupDeviceType } : {}),
+      completedScreens: job.completedScreens ?? 0,
+      totalScreens: job.totalScreens ?? 0,
       createdAt: job.createdAt.toISOString(),
       updatedAt: job.updatedAt.toISOString(),
     };
@@ -267,7 +405,7 @@ export class MockupsService {
       where: {
         id: uiBlueprintVersionId,
         projectId,
-        status: 'APPROVED',
+        status: { in: await sourceStatuses(this.prisma, projectId) },
         artifact: { artifactTypeCode: 'UI_BLUEPRINT' },
       },
       select: { id: true },
@@ -276,6 +414,51 @@ export class MockupsService {
       throw new UnprocessableEntityException(
         'Se requiere una versión exacta APPROVED de plano de interfaz del mismo proyecto.',
       );
+  }
+
+  // DEC-118: mockups are painted with the project's current approved theme.
+  // Projects that require one cannot generate mockups without it; older
+  // projects without a theme keep the standard design (null).
+  private async currentTheme(
+    projectId: string,
+  ): Promise<{ versionId: string; content: DesignThemeContent } | null> {
+    const [approvedTheme, project] = await Promise.all([
+      new FirstDeliverableSnapshotService(this.prisma).approvedArtifactVersion(
+        projectId,
+        'DESIGN_THEME',
+      ),
+      this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { designThemeRequired: true, workflowRoute: true },
+      }),
+    ]);
+    // DEC-119: in EXPRESS the latest theme draft is a provisional source.
+    const theme =
+      approvedTheme ??
+      (project?.workflowRoute === 'EXPRESS'
+        ? await this.prisma.artifactVersion
+            .findFirst({
+              where: {
+                projectId,
+                status: { in: await sourceStatuses(this.prisma, projectId) },
+                artifact: { artifactTypeCode: 'DESIGN_THEME', archivedAt: null },
+              },
+              orderBy: { createdAt: 'desc' },
+              select: { id: true },
+            })
+            .then((version) => (version ? { versionId: version.id } : null))
+        : null);
+    if (!theme) {
+      if (project?.designThemeRequired)
+        throw new UnprocessableEntityException(
+          'Apruebe el tema y los colores antes de generar los bocetos.',
+        );
+      return null;
+    }
+    const detail = await this.prisma.structuredAnalysisDetail.findUniqueOrThrow({
+      where: { artifactVersionId: theme.versionId },
+    });
+    return { versionId: theme.versionId, content: designThemeContentSchema.parse(detail.content) };
   }
 
   async list(projectId: string) {
@@ -402,6 +585,9 @@ export class MockupsService {
     artifactId: string,
     versionId: string,
     status: ArtifactVersionStatus,
+    // HUMAN_BULK for an EXPRESS bulk approval (DEC-116); otherwise the
+    // database records HUMAN, or AUTOMATIC in BUILD_ONLY.
+    approvalOrigin?: ApprovalOrigin,
   ) {
     const version = await this.prisma.artifactVersion.findFirst({
       where: { id: versionId, projectId, artifactId, artifact: { artifactTypeCode: 'MOCKUP' } },
@@ -409,14 +595,17 @@ export class MockupsService {
     if (!version) throw new NotFoundException('Versión no encontrada.');
     if (!canTransitionArtifactVersionStatus(version.status, status))
       throw new UnprocessableEntityException('Transición de estado no permitida.');
-    return this.prisma.artifactVersion.update({
-      where: { id: versionId },
-      data: {
-        status,
-        submittedAt: status === 'IN_REVIEW' ? new Date() : version.submittedAt,
-        approvedAt: status === 'APPROVED' ? new Date() : version.approvedAt,
-      },
-    });
+    return provenanceGuard(
+      this.prisma.artifactVersion.update({
+        where: { id: versionId },
+        data: {
+          status,
+          submittedAt: status === 'IN_REVIEW' ? new Date() : version.submittedAt,
+          approvedAt: status === 'APPROVED' ? new Date() : version.approvedAt,
+          approvalOrigin: status === 'APPROVED' ? approvalOrigin : undefined,
+        },
+      }),
+    );
   }
 
   // Rendered/sanitized before any transaction opens, matching the established
@@ -426,12 +615,13 @@ export class MockupsService {
     uiBlueprintVersionId: string,
     deviceType: MockupDeviceType,
     refinementPrompt: string | null = null,
+    jobId: string | null = null,
   ): Promise<StoredGeneration> {
     const source = await this.prisma.artifactVersion.findFirst({
       where: {
         id: uiBlueprintVersionId,
         projectId,
-        status: 'APPROVED',
+        status: { in: await sourceStatuses(this.prisma, projectId) },
         artifact: { artifactTypeCode: 'UI_BLUEPRINT' },
       },
       include: { structuredAnalysisDetail: true },
@@ -441,12 +631,30 @@ export class MockupsService {
         'Se requiere una versión exacta APPROVED de plano de interfaz del mismo proyecto.',
       );
     const content = uiBlueprintContentSchema.parse(source.structuredAnalysisDetail.content);
+    const theme = await this.currentTheme(projectId);
+    const designThemeVersionId = theme?.versionId ?? null;
+    const appContext = await this.appContext(projectId, content);
+    const generator = this.mockupProvider.screens;
+    if (generator && jobId)
+      return this.generateScreenByScreen(
+        jobId,
+        projectId,
+        content,
+        deviceType,
+        refinementPrompt,
+        theme?.content,
+        designThemeVersionId,
+        generator,
+        appContext,
+      );
     let generated: MockupGenerationResult;
     try {
       generated = await this.mockupProvider.generate(
         content,
         deviceType,
         refinementPrompt ?? undefined,
+        theme?.content,
+        appContext,
       );
     } catch (error) {
       if (error instanceof MockupProviderError)
@@ -459,7 +667,7 @@ export class MockupsService {
         'Stitch no está disponible; no se pudo aplicar la edición del boceto.',
       );
     if (generated.kind === 'INTERNAL_WIREFRAME')
-      return { kind: generated.kind, svg: sanitizeDiagramSvg(generated.svg) };
+      return { kind: generated.kind, svg: sanitizeDiagramSvg(generated.svg), designThemeVersionId };
     if (
       generated.screens.length !== content.screens.length ||
       new Set(generated.screens.map((screen) => screen.screenLocalId)).size !==
@@ -469,7 +677,11 @@ export class MockupsService {
     const expectedIds = new Set(content.screens.map((screen) => screen.localId));
     if (generated.screens.some((screen) => !expectedIds.has(screen.screenLocalId)))
       throw new ServiceUnavailableException('El proveedor devolvió pantallas inesperadas.');
-    const screens: StoredGeneration & { kind: 'STITCH' } = { kind: 'STITCH', screens: [] };
+    const screens: StoredGeneration & { kind: 'STITCH' } = {
+      kind: 'STITCH',
+      screens: [],
+      designThemeVersionId,
+    };
     for (const screen of generated.screens)
       screens.screens.push({
         screenLocalId: screen.screenLocalId,
@@ -480,6 +692,217 @@ export class MockupsService {
         refinementPrompt: null,
       });
     return screens;
+  }
+
+  // DEC-147: the name every screen carries and the main menu they share, taken
+  // from the project and its approved navigation tree: the entries one level
+  // under the home, but for the sign-in and actions like signing out. A screen belongs to the entry that is
+  // its navigation node or an ancestor of it.
+  private async appContext(
+    projectId: string,
+    content: ReturnType<typeof uiBlueprintContentSchema.parse>,
+  ): Promise<MockupAppContext> {
+    const [project, tree] = await Promise.all([
+      this.prisma.project.findUnique({ where: { id: projectId }, select: { name: true } }),
+      new FirstDeliverableSnapshotService(this.prisma).approvedArtifactVersion(
+        projectId,
+        'NAVIGATION_TREE',
+      ),
+    ]);
+    const appName = project?.name ?? 'Aplicación';
+    const detail = tree
+      ? await this.prisma.structuredAnalysisDetail.findUnique({
+          where: { artifactVersionId: tree.versionId },
+        })
+      : null;
+    const parsed = detail ? navigationTreeContentSchema.safeParse(detail.content) : null;
+    if (!parsed?.success)
+      return {
+        appName,
+        menu: [],
+        activeMenuByScreen: Object.fromEntries(content.screens.map((s) => [s.localId, null])),
+      };
+    const nodes = parsed.data.nodes;
+    const byId = new Map(nodes.map((node) => [node.localId, node]));
+    const home = nodes.find((node) => node.kind === 'HOME');
+    // Actions such as signing out, and the sign-in, are not menu entries.
+    const entries = nodes.filter(
+      (node) =>
+        node.kind !== 'AUTH' &&
+        node.kind !== 'OTHER' &&
+        (home ? node.parentLocalId === home.localId : !node.parentLocalId),
+    );
+    const entryOf = (localId: string | undefined) => {
+      // The home screen itself shows the menu with its first entry marked.
+      if (home && localId === home.localId) return entries[0]?.label ?? null;
+      for (let node = localId ? byId.get(localId) : undefined; node;) {
+        if (entries.some((entry) => entry.localId === node!.localId)) return node.label;
+        node = node.parentLocalId ? byId.get(node.parentLocalId) : undefined;
+      }
+      return null;
+    };
+    return {
+      appName,
+      menu: entries.slice(0, 12).map((entry) => entry.label),
+      activeMenuByScreen: Object.fromEntries(
+        content.screens.map((screen) => [screen.localId, entryOf(screen.navigationNodeLocalId)]),
+      ),
+    };
+  }
+
+  // DEC-146: Stitch draws a screen in about two minutes, so a mockup of many
+  // screens is drawn a few at a time, each with its own time limit and asked
+  // for again when it fails. Each screen is kept as soon as it arrives (files
+  // in storage, a row per screen), so a run that stops — a failure, a restart —
+  // continues with the missing screens when the person generates it again.
+  // Only when no screen at all could be drawn does the mockup fall back to the
+  // internal wireframe, and the result says why.
+  private async generateScreenByScreen(
+    jobId: string,
+    projectId: string,
+    content: ReturnType<typeof uiBlueprintContentSchema.parse>,
+    deviceType: MockupDeviceType,
+    refinementPrompt: string | null,
+    theme: DesignThemeContent | undefined,
+    designThemeVersionId: string | null,
+    generator: ScreenGenerator,
+    appContext: MockupAppContext,
+  ): Promise<StoredGeneration> {
+    const job = await this.prisma.mockupGenerationJob.findUniqueOrThrow({
+      where: { id: jobId },
+      include: { parts: true },
+    });
+    const wanted = new Set(content.screens.map((screen) => screen.localId));
+    const done = new Map(
+      job.parts
+        .filter((part) => wanted.has(part.screenLocalId))
+        .map((part) => [part.screenLocalId, part]),
+    );
+    await this.prisma.mockupGenerationJob.update({
+      where: { id: jobId },
+      data: { totalScreens: content.screens.length, completedScreens: done.size },
+    });
+    const pending = content.screens.filter((screen) => !done.has(screen.localId));
+    const failures: { name: string; error: unknown }[] = [];
+    let stitchProjectId = job.stitchProjectId;
+    try {
+      if (pending.length && !stitchProjectId) {
+        stitchProjectId = await generator.createProject(`CASEFlow ${new Date().toISOString()}`);
+        await this.prisma.mockupGenerationJob.update({
+          where: { id: jobId },
+          data: { stitchProjectId },
+        });
+      }
+    } catch (error) {
+      failures.push({ name: 'proyecto', error });
+    }
+    let next = 0;
+    let cancelled = false;
+    const isCancelled = async () => {
+      if (!cancelled)
+        cancelled =
+          (await this.prisma.mockupGenerationJob.count({
+            where: { id: jobId, status: 'CANCELLED' },
+          })) > 0;
+      return cancelled;
+    };
+    const drawNext = async () => {
+      while (stitchProjectId && next < pending.length && !(await isCancelled())) {
+        const screen = pending[next++]!;
+        let lastError: unknown = null;
+        for (let attempt = 0; attempt < SCREEN_ATTEMPTS; attempt += 1) {
+          if (await isCancelled()) break;
+          try {
+            const drawn = await generator.generateScreen(
+              stitchProjectId,
+              screen,
+              deviceType,
+              refinementPrompt ?? undefined,
+              theme,
+              appContext,
+            );
+            const assets = await this.storeScreenAssets(projectId, drawn.image, drawn.html);
+            const part = await this.prisma.mockupGenerationPart.create({
+              data: {
+                jobId,
+                screenLocalId: screen.localId,
+                screenName: drawn.screenName,
+                ...assets,
+                stitchProjectId: drawn.providerRef?.projectId ?? stitchProjectId,
+                stitchScreenId: drawn.providerRef?.screenId ?? null,
+              },
+            });
+            done.set(screen.localId, part);
+            await this.prisma.mockupGenerationJob.update({
+              where: { id: jobId },
+              data: { completedScreens: { increment: 1 } },
+            });
+            lastError = null;
+            break;
+          } catch (error) {
+            lastError = error;
+          }
+        }
+        if (lastError) {
+          failures.push({ name: screen.name, error: lastError });
+          logger.warn(
+            `Mockup screen "${screen.localId}" of job "${jobId}" failed: ${
+              lastError instanceof Error ? lastError.message : String(lastError)
+            }`,
+          );
+        }
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(SCREEN_CONCURRENCY, Math.max(pending.length, 1)) }, drawNext),
+    );
+
+    // The cancel already left the job CANCELLED; nothing else is saved.
+    if (await isCancelled()) throw new JobCancelledError();
+
+    if (failures.length) {
+      const reason =
+        failures[0]!.error instanceof MockupProviderError
+          ? failures[0]!.error.message
+          : 'El proveedor de bocetos no está disponible.';
+      // Nothing drawn and nothing to keep: the internal wireframe, as before.
+      if (!done.size && !refinementPrompt && this.mockupProvider.generateFallback) {
+        const fallback = await this.mockupProvider.generateFallback(content, deviceType, theme);
+        if (fallback.kind === 'INTERNAL_WIREFRAME')
+          return {
+            kind: 'INTERNAL_WIREFRAME',
+            svg: sanitizeDiagramSvg(fallback.svg),
+            designThemeVersionId,
+            notice: `Stitch no generó ninguna pantalla (${reason}); se creó el esquema interno.`,
+          };
+      }
+      const missing = content.screens.length - done.size;
+      const names = failures
+        .filter((failure) => failure.name !== 'proyecto')
+        .slice(0, 3)
+        .map((failure) => `«${failure.name}»`)
+        .join(', ');
+      throw new ServiceUnavailableException(
+        `Faltan ${missing} de ${content.screens.length} pantallas${names ? ` (${names}${missing > 3 ? ' y otras' : ''})` : ''}: ${reason} Vuelva a generar el boceto para completarlas; las ${done.size} ya generadas se conservan.`,
+      );
+    }
+    return {
+      kind: 'STITCH',
+      designThemeVersionId,
+      screens: content.screens.map((screen) => {
+        const part = done.get(screen.localId)!;
+        return {
+          screenLocalId: part.screenLocalId,
+          screenName: part.screenName,
+          imageStorageKey: part.imageStorageKey,
+          imageContentType: part.imageContentType,
+          htmlStorageKey: part.htmlStorageKey,
+          stitchProjectId: part.stitchProjectId,
+          stitchScreenId: part.stitchScreenId,
+          refinementPrompt: null,
+        };
+      }),
+    };
   }
 
   // Edits one screen at the provider and returns the full screen set for the
@@ -513,6 +936,8 @@ export class MockupsService {
     const assets = await this.storeScreenAssets(projectId, edited.image, edited.html);
     return {
       kind: 'STITCH',
+      // An in-place edit keeps the palette the screens were painted with.
+      designThemeVersionId: detail.designThemeVersionId,
       screens: detail.screens.map((s) =>
         s.id === target.id
           ? {
@@ -637,6 +1062,7 @@ export class MockupsService {
         uiBlueprintVersionId,
         deviceType,
         refinementPrompt,
+        designThemeVersionId: generated.designThemeVersionId,
         generatorKind: generated.kind,
         generatorVersion:
           generated.kind === 'STITCH' ? 'stitch-sdk-0.3.5' : MOCKUP_GENERATOR_VERSION,
@@ -723,7 +1149,9 @@ export class MockupsService {
         throw new PayloadTooLargeException('El archivo de pantallas supera el límite de descarga.');
       zip.file(`${String(index + 1).padStart(2, '0')}-${safeName}.${extension}`, body);
     }
-    const body = await zip.generateAsync({ type: 'nodebuffer' });
+    // The images are PNG already: storing them as they are is faster than
+    // compressing them again and makes a ZIP of the same size.
+    const body = await zip.generateAsync({ type: 'nodebuffer', compression: 'STORE' });
     return { body, fileName: `${mockup.code}-pantallas.zip` };
   }
 
@@ -749,7 +1177,11 @@ export class MockupsService {
       status: string;
       origin: string;
       createdAt: Date;
-      mockupDetail: { uiBlueprintVersionId: string; deviceType: MockupDeviceType } | null;
+      mockupDetail: {
+        uiBlueprintVersionId: string;
+        designThemeVersionId: string | null;
+        deviceType: MockupDeviceType;
+      } | null;
     },
   ) {
     return {
@@ -757,6 +1189,7 @@ export class MockupsService {
       projectId: artifact.projectId,
       code: artifact.code,
       uiBlueprintVersionId: version.mockupDetail!.uiBlueprintVersionId,
+      designThemeVersionId: version.mockupDetail!.designThemeVersionId,
       deviceType: version.mockupDetail!.deviceType,
       version: {
         id: version.id,

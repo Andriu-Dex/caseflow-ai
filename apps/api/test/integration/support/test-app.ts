@@ -1,4 +1,6 @@
 import { IdentityModule } from '../../../src/identity/identity.module';
+import type { NestExpressApplication } from '@nestjs/platform-express';
+import { configureBodyLimits } from '../../../src/common/body-limits';
 import { JwtAuthGuard } from '../../../src/identity/jwt-auth.guard';
 import { JwtService } from '@nestjs/jwt';
 import {
@@ -7,7 +9,13 @@ import {
   type INestApplication,
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { FakeDiagramProvider, FakeStorageProvider } from '@caseflow-ai/integrations';
+import type { AIProvider } from '@caseflow-ai/ai';
+import { AI_PROVIDER } from '../../../src/ai/ai.module';
+import {
+  FakeDiagramProvider,
+  FakeSandboxExecutionProvider,
+  FakeStorageProvider,
+} from '@caseflow-ai/integrations';
 import { Client } from 'pg';
 import { randomUUID } from 'crypto';
 import cookieParser from 'cookie-parser';
@@ -29,6 +37,8 @@ import { DIAGRAM_PROVIDER } from '../../../src/data-models/diagram-provider.toke
 import { SourcesModule } from '../../../src/sources/sources.module';
 import { SourcesService } from '../../../src/sources/sources.service';
 import { SOURCE_QUEUE } from '../../../src/sources/source-queue.token';
+import { CONSTRUCTION_QUEUE_TOKEN } from '../../../src/construction/construction-queue.token';
+import { SANDBOX_EXECUTION_PROVIDER } from '../../../src/construction/sandbox-provider.token';
 import { STORAGE_PROVIDER } from '../../../src/sources/storage-provider.token';
 import { StructuredAnalysisModule } from '../../../src/structured-analysis/structured-analysis.module';
 import { StructuredAnalysisService } from '../../../src/structured-analysis/structured-analysis.service';
@@ -46,6 +56,8 @@ import { WorkspacesModule } from '../../../src/workspaces/workspaces.module';
 import { ImpactAnalysisModule } from '../../../src/impact-analysis/impact-analysis.module';
 import { ConsistencyEngineModule } from '../../../src/consistency-engine/consistency-engine.module';
 import { BaselinesModule } from '../../../src/baselines/baselines.module';
+import { AuditModule } from '../../../src/audit/audit.service';
+import { ConstructionModule } from '../../../src/construction/construction.module';
 import { getTestConnectionString, resetTestData } from './test-database';
 import type { CreateProjectRequest, ProjectResponse } from '@caseflow-ai/contracts';
 
@@ -61,7 +73,12 @@ export interface TestContext {
   prisma: PrismaService;
   projects: Omit<ProjectsService, 'create' | 'list'> & {
     create(input: CreateProjectRequest): Promise<ProjectResponse>;
-    list(workspaceId: string, limit: number, offset: number): ReturnType<ProjectsService['list']>;
+    list(
+      workspaceId: string,
+      limit: number,
+      offset: number,
+      filters?: Partial<Parameters<ProjectsService['list']>[0]>,
+    ): ReturnType<ProjectsService['list']>;
   };
   artifacts: ArtifactsService;
   projectContext: ProjectContextService;
@@ -84,7 +101,10 @@ export interface TestContext {
 }
 
 // Boots the real Nest modules against the isolated test database.
-export async function createTestContext(): Promise<TestContext> {
+// `aiProvider` replaces the configured AI provider (e.g. a scripted fake).
+export async function createTestContext(
+  options: { aiProvider?: AIProvider } = {},
+): Promise<TestContext> {
   const connectionString = getTestConnectionString();
 
   const sql = new Client({ connectionString });
@@ -96,7 +116,7 @@ export async function createTestContext(): Promise<TestContext> {
     prisma?: PrismaService;
     defaultUserId?: string;
   } = {};
-  const moduleRef = await Test.createTestingModule({
+  const builder = Test.createTestingModule({
     imports: [
       DatabaseModule.forRoot({ connectionString }),
       ProjectsModule,
@@ -117,12 +137,18 @@ export async function createTestContext(): Promise<TestContext> {
       ImpactAnalysisModule,
       ConsistencyEngineModule,
       BaselinesModule,
+      AuditModule,
+      ConstructionModule,
     ],
   })
     .overrideProvider(DIAGRAM_PROVIDER)
     .useValue(new FakeDiagramProvider({ svg: FAKE_DIAGRAM_SVG }))
     .overrideProvider(STORAGE_PROVIDER)
     .useValue(new FakeStorageProvider())
+    .overrideProvider(SANDBOX_EXECUTION_PROVIDER)
+    .useValue(new FakeSandboxExecutionProvider())
+    .overrideProvider(CONSTRUCTION_QUEUE_TOKEN)
+    .useValue({ add: async () => undefined, close: async () => undefined })
     .overrideProvider(SOURCE_QUEUE)
     .useValue({ add: async () => undefined, close: async () => undefined })
     .overrideGuard(JwtAuthGuard)
@@ -148,10 +174,15 @@ export async function createTestContext(): Promise<TestContext> {
         request.user = user;
         return true;
       },
-    })
-    .compile();
+    });
+  const moduleRef = await (
+    options.aiProvider
+      ? builder.overrideProvider(AI_PROVIDER).useValue(options.aiProvider)
+      : builder
+  ).compile();
 
-  const app = moduleRef.createNestApplication();
+  const app = moduleRef.createNestApplication<NestExpressApplication>();
+  configureBodyLimits(app);
   app.use(cookieParser());
   await app.init();
   const jwtService = app.get(JwtService);
@@ -196,12 +227,15 @@ export async function createTestContext(): Promise<TestContext> {
           };
         }
         if (property === 'list') {
-          return (workspaceId: string, limit: number, offset: number) =>
-            (Reflect.get(target, 'list') as ProjectsService['list']).call(
+          return (
+            workspaceId: string,
+            limit: number,
+            offset: number,
+            filters: Partial<Parameters<ProjectsService['list']>[0]> = {},
+          ) =>
+            (Reflect.get(target, 'list') as unknown as ProjectsService['list']).call(
               target,
-              workspaceId,
-              limit,
-              offset,
+              { workspaceId, limit, offset, status: 'ALL', sort: 'OLDEST', ...filters },
               user.id,
             );
         }

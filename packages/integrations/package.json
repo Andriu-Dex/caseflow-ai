@@ -2,6 +2,7 @@
   "name": "@caseflow-ai/integrations",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
   "description": "CASEFlow AI external integration adapters",
   "type": "commonjs",
   "main": "./dist/index.js",
@@ -15,7 +16,7 @@
   },
   "scripts": {
     "build": "tsc --build",
-    "typecheck": "pnpm --filter @caseflow-ai/ai run build && tsc --noEmit --pretty"
+    "typecheck": "pnpm --filter @caseflow-ai/contracts run build && pnpm --filter @caseflow-ai/ai run build && tsc --noEmit --pretty"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1137.0",

@@ -51,6 +51,8 @@ export const mockupResponseSchema = z.object({
   projectId: z.uuid(),
   code: z.string(),
   uiBlueprintVersionId: z.uuid(),
+  // Approved theme the mockup was painted with (DEC-118); null = standard design.
+  designThemeVersionId: z.uuid().nullable(),
   deviceType: z.enum(MOCKUP_DEVICE_TYPES),
   version: mockupVersionSchema,
   createdAt: z.iso.datetime(),
@@ -59,7 +61,13 @@ export type MockupResponse = z.infer<typeof mockupResponseSchema>;
 
 export const mockupListResponseSchema = z.object({ items: z.array(mockupResponseSchema) });
 
-export const MOCKUP_JOB_STATUSES = ['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED'] as const;
+export const MOCKUP_JOB_STATUSES = [
+  'QUEUED',
+  'RUNNING',
+  'COMPLETED',
+  'FAILED',
+  'CANCELLED',
+] as const;
 export type MockupJobStatus = (typeof MOCKUP_JOB_STATUSES)[number];
 
 // The synchronous create/version calls now only enqueue the real
@@ -71,6 +79,13 @@ export const mockupJobResponseSchema = z.object({
   status: z.enum(MOCKUP_JOB_STATUSES),
   resultArtifactId: z.uuid().nullable(),
   errorMessage: z.string().nullable(),
+  // DEC-146: screens drawn so far out of the mockup's total (0 of 0 when the
+  // provider draws the whole mockup at once).
+  // What the job was asked to generate, so a stopped one can be resumed.
+  uiBlueprintVersionId: z.uuid().optional(),
+  deviceType: z.enum(['DESKTOP', 'MOBILE']).optional(),
+  completedScreens: z.number().int().nonnegative().default(0),
+  totalScreens: z.number().int().nonnegative().default(0),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });

@@ -37,11 +37,22 @@ export class StalenessService {
         })
       : [];
     const linkedArtifactIds = new Set(linkedSourceVersions.map((v) => v.artifactId));
+    // A context is only meant to cite one version per source; if it somehow
+    // cites more than one (legacy data — the write path rejects this now),
+    // judge each source by the newest version the context cites, not by
+    // every version independently, or an already-current source would
+    // report both "up to date" and "has a newer version" at once.
+    const highestLinkedByArtifact = new Map<string, (typeof linkedSourceVersions)[number]>();
+    for (const linked of linkedSourceVersions) {
+      const current = highestLinkedByArtifact.get(linked.artifactId);
+      if (!current || linked.versionNumber > current.versionNumber)
+        highestLinkedByArtifact.set(linked.artifactId, linked);
+    }
 
     const reasons: StalenessReason[] = [];
 
     // A source already linked to the context now has a newer APPROVED version.
-    for (const linked of linkedSourceVersions) {
+    for (const linked of highestLinkedByArtifact.values()) {
       const latest = await this.prisma.artifactVersion.findFirst({
         where: { artifactId: linked.artifactId },
         orderBy: { versionNumber: 'desc' },

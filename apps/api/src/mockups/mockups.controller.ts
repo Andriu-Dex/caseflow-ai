@@ -2,7 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../identity/jwt-auth.guard';
 import { ProjectMembershipGuard } from '../identity/project-membership.guard';
 
-import { Body, Controller, Get, HttpCode, Param, Post, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Request, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
@@ -41,6 +41,28 @@ export class MockupsController {
     body: z.output<typeof createMockupRequestSchema>,
   ) {
     return this.service.create(projectId, body.uiBlueprintVersionId, body.deviceType);
+  }
+
+  // Declared before 'jobs/:jobId' so "latest" is not read as an identifier.
+  @Get('jobs/latest')
+  @ApiOperation({
+    operationId: 'getLatestMockupJob',
+    summary: 'Consultar el último trabajo de bocetos',
+  })
+  latestJob(@Param('projectId', uuidParamPipe) projectId: string) {
+    return this.service.latestJob(projectId);
+  }
+
+  @Post('jobs/:jobId/cancel')
+  @HttpCode(200)
+  @ApiOperation({ operationId: 'cancelMockupJob', summary: 'Cancelar la generación de un boceto' })
+  @ApiZodResponse(200, 'Mockup generation job.', mockupJobResponseSchema)
+  cancelJob(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('jobId', uuidParamPipe) jobId: string,
+    @Request() request: { user: { id: string } },
+  ) {
+    return this.service.cancelJob(projectId, jobId, request.user.id);
   }
 
   @Get('jobs/:jobId')

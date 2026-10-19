@@ -6,6 +6,7 @@ import { Button } from '@caseflow-ai/ui';
 import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { api, ApiError, type ArtifactVersionStatus } from '../lib/api';
+import { DismissibleHint } from './dismissible-hint';
 
 export const isPendingApproval = (status: ArtifactVersionStatus) =>
   status === 'DRAFT' || status === 'GENERATED';
@@ -23,10 +24,14 @@ export async function approveDirectly(
 export function ApproveAllButton({
   pending,
   approve,
+  approveMany,
   onDone,
 }: {
   pending: { id: string; code: string }[];
   approve: (id: string) => Promise<unknown>;
+  // One atomic call for all of them (DEC-138); it reports its own result, so
+  // none is left half approved. Without it, each is approved on its own.
+  approveMany?: (ids: string[]) => Promise<unknown>;
   onDone: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -34,6 +39,17 @@ export function ApproveAllButton({
 
   async function run() {
     setBusy(true);
+    if (approveMany) {
+      try {
+        await approveMany(pending.map((p) => p.id));
+      } catch {
+        // The caller already explained why; nothing was approved.
+      } finally {
+        setBusy(false);
+        onDone();
+      }
+      return;
+    }
     const results = await Promise.allSettled(pending.map((p) => approve(p.id)));
     const failed = pending.filter((_, i) => results[i]!.status === 'rejected');
     setBusy(false);
@@ -164,3 +180,15 @@ export function StaleNotice() {
 
 export const AI_UNAVAILABLE_HINT =
   'Si la generación automática no está disponible en este momento, puede crearlo manualmente.';
+
+// Help, not an alert (E3): closed once, it stays closed on every page.
+export function AiUnavailableHint() {
+  return (
+    <span className="mt-2 inline-flex items-center gap-1 text-xs text-muted-foreground">
+      ¿La IA no está disponible?
+      <DismissibleHint id="ai-unavailable" label="Qué hacer si la IA no está disponible">
+        {AI_UNAVAILABLE_HINT}
+      </DismissibleHint>
+    </span>
+  );
+}

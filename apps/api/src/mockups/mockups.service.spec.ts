@@ -46,6 +46,13 @@ const version = {
   mockupDetail,
 };
 
+// Without an approved navigation tree there is no menu: the screens still share the name.
+const appContext = {
+  appName: 'Aplicación',
+  menu: [],
+  activeMenuByScreen: { home: null },
+};
+
 function setup(provider: MockupProvider = new FakeMockupProvider()) {
   const tx = {
     project: { findUnique: vi.fn().mockResolvedValue({ id: 'project' }) },
@@ -64,7 +71,14 @@ function setup(provider: MockupProvider = new FakeMockupProvider()) {
   let jobSeq = 0;
   const prisma = {
     $transaction: vi.fn((callback) => callback(tx)),
-    artifact: { findMany: vi.fn(), findFirst: vi.fn() },
+    // A project created before DEC-118 without a theme: the standard design.
+    projectMembership: { findFirst: vi.fn().mockResolvedValue({ role: 'OWNER' }) },
+    project: { findUnique: vi.fn().mockResolvedValue({ designThemeRequired: false }) },
+    artifact: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn() },
+    structuredAnalysisDetail: {
+      findUniqueOrThrow: vi.fn(),
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
     artifactVersion: {
       findFirst: vi.fn().mockResolvedValue({
         id: 'blueprint-version',
@@ -74,6 +88,8 @@ function setup(provider: MockupProvider = new FakeMockupProvider()) {
     },
     mockupScreenDetail: { findFirst: vi.fn() },
     mockupGenerationJob: {
+      // runJob claims a QUEUED job; every job these tests run is queued.
+      updateMany: vi.fn(async () => ({ count: 1 })),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
         id: `job-${++jobSeq}`,
         status: 'QUEUED',
@@ -144,7 +160,8 @@ describe('MockupsService', () => {
         where: expect.objectContaining({
           id: 'blueprint-version',
           projectId: 'project',
-          status: 'APPROVED',
+          // Outside EXPRESS only approved versions are sources (DEC-119).
+          status: { in: ['APPROVED'] },
           artifact: { artifactTypeCode: 'UI_BLUEPRINT' },
         }),
       }),
@@ -157,12 +174,13 @@ describe('MockupsService', () => {
         }),
       }),
     );
-    expect(prisma.mockupGenerationJob.update).toHaveBeenCalledWith({
-      where: { id: jobId },
+    // Claimed only while still QUEUED, so a redelivered job never runs twice.
+    expect(prisma.mockupGenerationJob.updateMany).toHaveBeenCalledWith({
+      where: { id: jobId, status: 'QUEUED' },
       data: { status: 'RUNNING' },
     });
-    expect(prisma.mockupGenerationJob.update).toHaveBeenLastCalledWith({
-      where: { id: jobId },
+    expect(prisma.mockupGenerationJob.updateMany).toHaveBeenLastCalledWith({
+      where: { id: jobId, status: 'RUNNING' },
       data: { status: 'COMPLETED', resultArtifactId: artifact.id },
     });
   });
@@ -172,10 +190,73 @@ describe('MockupsService', () => {
     const provider: MockupProvider = { id: 'spy', generate };
     const { tx, createAndRun } = setup(provider);
     await createAndRun('blueprint-version', 'MOBILE');
-    expect(generate).toHaveBeenCalledWith(blueprintContent, 'MOBILE', undefined);
+    expect(generate).toHaveBeenCalledWith(
+      blueprintContent,
+      'MOBILE',
+      undefined,
+      undefined,
+      appContext,
+    );
     expect(tx.mockupDetail.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ deviceType: 'MOBILE' }) }),
     );
+  });
+
+  // DEC-118: mockups are painted with the current approved theme and record it.
+  it('passes the approved theme to the provider and records its version', async () => {
+    const generate = vi.fn().mockResolvedValue({ kind: 'INTERNAL_WIREFRAME', svg: '<svg/>' });
+    const { tx, prisma, createAndRun } = setup({ id: 'spy', generate });
+    const theme = {
+      name: 'Océano',
+      mode: 'LIGHT',
+      light: Object.fromEntries(
+        [
+          'background',
+          'foreground',
+          'primary',
+          'primaryForeground',
+          'secondary',
+          'secondaryForeground',
+          'accent',
+          'accentForeground',
+          'muted',
+          'mutedForeground',
+          'destructive',
+          'destructiveForeground',
+          'border',
+        ].map((token) => [token, '#123456']),
+      ),
+    };
+    prisma.artifact.findMany.mockResolvedValue([
+      {
+        id: 'theme',
+        code: 'TEM-001',
+        versions: [{ id: 'theme-v1', versionNumber: 1, approvedAt: now, createdAt: now }],
+      },
+    ]);
+    prisma.structuredAnalysisDetail.findUniqueOrThrow.mockResolvedValue({ content: theme });
+    await createAndRun('blueprint-version');
+    expect(generate).toHaveBeenCalledWith(
+      blueprintContent,
+      'DESKTOP',
+      undefined,
+      theme,
+      appContext,
+    );
+    expect(tx.mockupDetail.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ designThemeVersionId: 'theme-v1' }),
+      }),
+    );
+  });
+
+  it('refuses to generate mockups for a new project without an approved theme', async () => {
+    const { service, prisma } = setup();
+    prisma.project.findUnique.mockResolvedValue({ designThemeRequired: true });
+    await expect(service.create('project', 'blueprint-version')).rejects.toThrow(
+      'Apruebe el tema y los colores antes de generar los bocetos.',
+    );
+    expect(prisma.mockupGenerationJob.create).not.toHaveBeenCalled();
   });
 
   it('marks the job FAILED instead of throwing when generation fails', async () => {
@@ -190,8 +271,8 @@ describe('MockupsService', () => {
       existingMockupId: null,
     });
     await expect(service.runJob(job.id)).resolves.toBeUndefined();
-    expect(prisma.mockupGenerationJob.update).toHaveBeenLastCalledWith({
-      where: { id: job.id },
+    expect(prisma.mockupGenerationJob.updateMany).toHaveBeenLastCalledWith({
+      where: { id: job.id, status: 'RUNNING' },
       data: { status: 'FAILED', errorMessage: 'No se pudo generar el boceto.' },
     });
   });
@@ -203,6 +284,89 @@ describe('MockupsService', () => {
     expect(prisma.mockupGenerationJob.findFirst).toHaveBeenCalledWith({
       where: { id: 'job-1', projectId: 'other-project' },
     });
+  });
+
+  it('cancels a running job keeping its screens, and leaves a finished job as it was', async () => {
+    const { service, prisma } = setup();
+    prisma.mockupGenerationJob.findFirst.mockResolvedValueOnce({
+      id: 'job-1',
+      status: 'RUNNING',
+      totalScreens: 77,
+      _count: { parts: 12 },
+    });
+    prisma.mockupGenerationJob.findFirst.mockResolvedValueOnce({
+      id: 'job-1',
+      status: 'CANCELLED',
+    });
+    await service.cancelJob('project', 'job-1', 'u').catch(() => undefined);
+    expect(prisma.mockupGenerationJob.updateMany).toHaveBeenCalledWith({
+      where: { id: 'job-1', projectId: 'project', status: { in: ['QUEUED', 'RUNNING'] } },
+      data: { status: 'CANCELLED', errorMessage: 'Se canceló con 12 de 77 pantallas generadas.' },
+    });
+
+    prisma.mockupGenerationJob.updateMany.mockClear();
+    prisma.mockupGenerationJob.findFirst.mockResolvedValue({
+      id: 'job-2',
+      status: 'COMPLETED',
+      totalScreens: 1,
+      _count: { parts: 1 },
+    });
+    await service.cancelJob('project', 'job-2', 'u').catch(() => undefined);
+    expect(prisma.mockupGenerationJob.updateMany).not.toHaveBeenCalled();
+
+    prisma.mockupGenerationJob.findFirst.mockResolvedValue(null);
+    await expect(service.cancelJob('other', 'job-1', 'u')).rejects.toThrow('no encontrado');
+  });
+
+  it('refuses to cancel a job for a user without permission', async () => {
+    const { service, prisma } = setup();
+    prisma.projectMembership.findFirst.mockResolvedValue(null);
+    await expect(service.cancelJob('project', 'job-1', 'viewer')).rejects.toThrow(
+      'No tiene permisos',
+    );
+    expect(prisma.mockupGenerationJob.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('stops asking Stitch for screens once the job is cancelled', async () => {
+    const { service, prisma } = setup();
+    const job = { id: 'job-1', stitchProjectId: 'sp', parts: [] };
+    const content = {
+      screens: Array.from({ length: 12 }, (_, i) => ({ localId: `s${i}`, name: `s${i}` })),
+    };
+    const drawn: string[] = [];
+    const generator = {
+      createProject: vi.fn(),
+      generateScreen: vi.fn(async (_p: string, screen: { localId: string }) => {
+        drawn.push(screen.localId);
+        return { screenName: screen.localId, image: new Uint8Array([1]), html: '<p/>' };
+      }),
+    };
+    Object.assign(prisma.mockupGenerationJob, {
+      findUniqueOrThrow: vi.fn().mockResolvedValue(job),
+      // The person cancels after the first screen was drawn.
+      count: vi.fn(async () => (drawn.length >= 1 ? 1 : 0)),
+    });
+    Object.assign(prisma, {
+      mockupGenerationPart: { create: vi.fn(async ({ data }: { data: object }) => data) },
+    });
+    const run = (
+      service as unknown as {
+        generateScreenByScreen: (...args: unknown[]) => Promise<unknown>;
+      }
+    ).generateScreenByScreen(
+      'job-1',
+      'project',
+      content,
+      'DESKTOP',
+      null,
+      undefined,
+      null,
+      generator,
+      {},
+    );
+    await expect(run).rejects.toThrow();
+    // Calls already in flight finish (at most the concurrency), but no new one starts.
+    expect(drawn.length).toBeLessThan(12);
   });
 
   it('stores Stitch screens and exposes scoped download URLs', async () => {
@@ -389,17 +553,42 @@ describe('MockupsService', () => {
         },
       ],
     });
-    vi.spyOn(storage, 'getObject').mockResolvedValue(Buffer.alloc(50_000_001));
+    vi.spyOn(storage, 'getObject').mockResolvedValue(Buffer.alloc(300_000_001));
     await expect(service.downloadMockupScreensZip('project', 'artifact')).rejects.toThrow(
       'supera el límite',
     );
   });
 
+  it('downloads the ZIP of a mockup of many screens, about 60 MB of images, which the old limit refused', async () => {
+    const { service, prisma, storage } = setup();
+    const screens = Array.from({ length: 3 }, (_, i) => ({
+      id: `s${i}`,
+      screenLocalId: `p${i}`,
+      screenName: `Pantalla ${i}`,
+      imageStorageKey: `mockups/project/${i}.png`,
+      imageContentType: 'image/png',
+      htmlStorageKey: `mockups/project/${i}.html`,
+    }));
+    prisma.artifact.findFirst.mockResolvedValue({
+      ...artifact,
+      versions: [
+        {
+          ...version,
+          mockupDetail: { ...mockupDetail, generatorKind: 'STITCH', svg: null, screens },
+        },
+      ],
+    });
+    vi.spyOn(storage, 'getObject').mockResolvedValue(Buffer.alloc(20_000_000));
+    const { body } = await service.downloadMockupScreensZip('project', 'artifact');
+    expect(body.length).toBeGreaterThan(60_000_000);
+    expect(Object.keys((await JSZip.loadAsync(body)).files)).toHaveLength(3);
+  });
+
   it('rejects incomplete or foreign provider screen lists before persistence', async () => {
     const missing = setup(new FakeMockupProvider({ kind: 'STITCH', screens: [] }));
     const missingJobId = await missing.createAndRun('blueprint-version');
-    expect(missing.prisma.mockupGenerationJob.update).toHaveBeenLastCalledWith({
-      where: { id: missingJobId },
+    expect(missing.prisma.mockupGenerationJob.updateMany).toHaveBeenLastCalledWith({
+      where: { id: missingJobId, status: 'RUNNING' },
       data: { status: 'FAILED', errorMessage: 'El proveedor devolvió pantallas incompletas.' },
     });
     expect(missing.tx.mockupDetail.create).not.toHaveBeenCalled();
@@ -418,8 +607,8 @@ describe('MockupsService', () => {
       }),
     );
     const foreignJobId = await foreign.createAndRun('blueprint-version');
-    expect(foreign.prisma.mockupGenerationJob.update).toHaveBeenLastCalledWith({
-      where: { id: foreignJobId },
+    expect(foreign.prisma.mockupGenerationJob.updateMany).toHaveBeenLastCalledWith({
+      where: { id: foreignJobId, status: 'RUNNING' },
       data: { status: 'FAILED', errorMessage: 'El proveedor devolvió pantallas inesperadas.' },
     });
     expect(foreign.tx.mockupDetail.create).not.toHaveBeenCalled();
@@ -440,8 +629,8 @@ describe('MockupsService', () => {
     const { storage, tx, prisma, createAndRun } = setup(provider);
     vi.spyOn(storage, 'putObject').mockRejectedValue(new Error('storage secret'));
     const jobId = await createAndRun('blueprint-version');
-    expect(prisma.mockupGenerationJob.update).toHaveBeenLastCalledWith({
-      where: { id: jobId },
+    expect(prisma.mockupGenerationJob.updateMany).toHaveBeenLastCalledWith({
+      where: { id: jobId, status: 'RUNNING' },
       data: { status: 'FAILED', errorMessage: 'No se pudieron guardar los archivos del boceto.' },
     });
     expect(tx.mockupDetail.create).not.toHaveBeenCalled();
@@ -572,7 +761,13 @@ describe('MockupsService', () => {
       refinementPrompt: 'Usa tonos verdes',
     });
     await service.runJob('job-1');
-    expect(generate).toHaveBeenCalledWith(blueprintContent, 'DESKTOP', 'Usa tonos verdes');
+    expect(generate).toHaveBeenCalledWith(
+      blueprintContent,
+      'DESKTOP',
+      'Usa tonos verdes',
+      undefined,
+      appContext,
+    );
     expect(tx.mockupDetail.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ refinementPrompt: 'Usa tonos verdes' }),
@@ -679,8 +874,8 @@ describe('MockupsService', () => {
     });
     expect(list.imageStorageKey).not.toBe('list.png');
     expect(await storage.getObject(list.imageStorageKey)).toEqual(Buffer.from('new'));
-    expect(prisma.mockupGenerationJob.update).toHaveBeenLastCalledWith({
-      where: { id: 'job-1' },
+    expect(prisma.mockupGenerationJob.updateMany).toHaveBeenLastCalledWith({
+      where: { id: 'job-1', status: 'RUNNING' },
       data: { status: 'COMPLETED', resultArtifactId: artifact.id },
     });
   });
@@ -699,8 +894,8 @@ describe('MockupsService', () => {
     });
     await service.runJob('job-1');
     expect(tx.mockupDetail.create).not.toHaveBeenCalled();
-    expect(prisma.mockupGenerationJob.update).toHaveBeenLastCalledWith({
-      where: { id: 'job-1' },
+    expect(prisma.mockupGenerationJob.updateMany).toHaveBeenLastCalledWith({
+      where: { id: 'job-1', status: 'RUNNING' },
       data: {
         status: 'FAILED',
         errorMessage: 'Stitch no está disponible para editar la pantalla.',
@@ -720,8 +915,8 @@ describe('MockupsService', () => {
     });
     await service.runJob('job-1');
     expect(tx.mockupDetail.create).not.toHaveBeenCalled();
-    expect(prisma.mockupGenerationJob.update).toHaveBeenLastCalledWith({
-      where: { id: 'job-1' },
+    expect(prisma.mockupGenerationJob.updateMany).toHaveBeenLastCalledWith({
+      where: { id: 'job-1', status: 'RUNNING' },
       data: {
         status: 'FAILED',
         errorMessage: 'Stitch no está disponible; no se pudo aplicar la edición del boceto.',
@@ -760,8 +955,8 @@ describe('MockupsService', () => {
     });
     tx.$queryRaw.mockResolvedValueOnce([]);
     await service.runJob(job.id);
-    expect(prisma.mockupGenerationJob.update).toHaveBeenLastCalledWith({
-      where: { id: job.id },
+    expect(prisma.mockupGenerationJob.updateMany).toHaveBeenLastCalledWith({
+      where: { id: job.id, status: 'RUNNING' },
       data: { status: 'FAILED', errorMessage: 'No se pudo generar el boceto.' },
     });
   });

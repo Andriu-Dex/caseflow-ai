@@ -71,6 +71,10 @@ test('professor can progress a project from zero to an approved Requirement with
   await page
     .getByLabel('Descripción', { exact: true })
     .fill('El sistema debe permitir registrar un pedido con sus datos básicos.');
+  // Every requirement declares why it exists (DEC-126); this context lists
+  // no needs to cite, so it is the user's own justified decision.
+  await page.getByRole('radio', { name: 'Decisión propia' }).click();
+  await page.getByLabel('Justificación').fill('Lo pidió el cliente en la entrevista.');
   await page.getByRole('button', { name: 'Crear requisito' }).click();
 
   const requirementRow = page.locator('li').filter({ hasText: 'Registrar pedido' });

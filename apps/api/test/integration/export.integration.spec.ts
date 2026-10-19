@@ -10,9 +10,10 @@ import { renderExportHtml } from '../../src/export/export-html';
 import type { KnowledgeBaseService } from '../../src/knowledge-base/knowledge-base.service';
 import { StructuredAnalysisService } from '../../src/structured-analysis/structured-analysis.service';
 import { UseCasesService } from '../../src/use-cases/use-cases.service';
+import { approved } from './support/construction-fixtures';
 import { createTestContext, createWorkspace, type TestContext } from './support/test-app';
 
-const disabledKb: Pick<KnowledgeBaseService, 'retrieve'> = { retrieve: async () => [] };
+const disabledKb: Pick<KnowledgeBaseService, 'searchSources'> = { searchSources: async () => [] };
 
 const FAKE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><g></g></svg>';
 
@@ -44,7 +45,7 @@ async function approveSource(ctx: TestContext, projectId: string, title = 'Notas
     projectId,
     {
       title,
-      sourceKind: 'NOTES',
+      sourceKind: 'TEXT',
       purpose: 'Conocimiento del proyecto',
       description: 'Contenido de prueba.',
     },
@@ -60,7 +61,7 @@ async function approveContext(ctx: TestContext, projectId: string, sourceVersion
     objective: 'o',
     scopeItems: [],
     actors: [{ name: 'Usuario' }],
-    needs: [],
+    needs: [{ description: 'Registrar datos' }],
     constraints: [],
     businessRules: [],
     sourceVersionIds,
@@ -113,7 +114,7 @@ describe('Export (First Deliverable, Phase H)', () => {
       objective: 'o',
       scopeItems: [],
       actors: [{ name: 'Usuario' }],
-      needs: [],
+      needs: [{ description: 'Registrar datos' }],
       constraints: [],
       businessRules: [],
       sourceVersionIds: [source.id],
@@ -141,7 +142,7 @@ describe('Export (First Deliverable, Phase H)', () => {
 
     const snapshot = await ctx.export.buildSnapshot(projectId);
     expect(snapshot.readiness).toMatchObject({ projectId, ready: false });
-    expect(snapshot.readiness.stages).toHaveLength(13);
+    expect(snapshot.readiness.stages).toHaveLength(15);
     expect(snapshot.stalenessSummary).toMatchObject({ projectId, entries: [] });
     expect(snapshot.traceabilitySummary).toEqual({ nodeCount: 0, edgeCount: 0, truncated: false });
   });
@@ -215,6 +216,9 @@ describe('Export (First Deliverable, Phase H)', () => {
       blueprint.version.id,
       'APPROVED',
     );
+
+    // New projects paint their mockups with an approved theme (DEC-118).
+    await approved(ctx, projectId, 'DESIGN_THEME');
 
     const mockupJob = await ctx.mockups.create(projectId, blueprint.version.id);
     await ctx.mockups.runJob(mockupJob.id);
@@ -336,7 +340,7 @@ describe('Export (First Deliverable, Phase H)', () => {
       await import('../../src/requirements/requirements.service')
     ).RequirementsService(
       ctx.prisma,
-      fakeAi(ctx, 'requirements.generate', 2, {
+      fakeAi(ctx, 'requirements.generate', 3, {
         candidates: [
           {
             candidateId: 'rc1',
@@ -347,6 +351,7 @@ describe('Export (First Deliverable, Phase H)', () => {
             actors: ['Usuario'],
             preconditions: [],
             postconditions: [],
+            contextItemCodes: ['N-1'],
             dependencyCandidateIds: [],
           },
         ],
@@ -372,7 +377,7 @@ describe('Export (First Deliverable, Phase H)', () => {
 
     const useCasesService = new UseCasesService(
       ctx.prisma,
-      fakeAi(ctx, 'use-cases.generate', 1, {
+      fakeAi(ctx, 'use-cases.generate', 2, {
         candidates: [
           {
             candidateId: 'uc1',
@@ -398,7 +403,7 @@ describe('Export (First Deliverable, Phase H)', () => {
 
     const dataModelsService = new DataModelsService(
       ctx.prisma,
-      fakeAi(ctx, 'data-model.generate', 1, {
+      fakeAi(ctx, 'data-model.generate', 2, {
         candidates: [
           {
             candidateId: 'dm1',
@@ -477,7 +482,7 @@ describe('Export (First Deliverable, Phase H)', () => {
 
     const softwareArchitectureService = new StructuredAnalysisService(
       ctx.prisma,
-      fakeAi(ctx, 'software-architecture.generate', 2, {
+      fakeAi(ctx, 'software-architecture.generate', 3, {
         style: 'Monolito modular',
         components: [{ localId: 'api', name: 'API' }],
         dependencies: [],
@@ -515,7 +520,7 @@ describe('Export (First Deliverable, Phase H)', () => {
 
     const systemArchitectureService = new StructuredAnalysisService(
       ctx.prisma,
-      fakeAi(ctx, 'system-architecture.generate', 2, {
+      fakeAi(ctx, 'system-architecture.generate', 3, {
         boundary: 'Sistema',
         nodes: [{ localId: 'server', name: 'Servidor', kind: 'RUNTIME' as const }],
         links: [],
@@ -551,13 +556,23 @@ describe('Export (First Deliverable, Phase H)', () => {
     const uiBlueprintService = new StructuredAnalysisService(
       ctx.prisma,
       fakeAi(ctx, 'ui-blueprint.generate', 2, {
-        screens: [{ localId: 'home', name: 'Inicio', purpose: 'Ver panel' }],
+        screens: [
+          {
+            localId: 'home',
+            name: 'Inicio',
+            purpose: 'Ver panel',
+            navigationNodeLocalId: 'home',
+            relatedUseCaseCodes: ['CU-001'],
+            relatedSourceCodes: ['CU-001'],
+          },
+        ],
       }),
       new DiagramEngine(),
       new FakeDiagramProvider({ svg: FAKE_SVG }),
     );
     const blueprintGeneration = await uiBlueprintService.generate(projectId, 'UI_BLUEPRINT', [
       navAccepted.version.id,
+      ucAccepted.version.id,
     ]);
     const blueprintAccepted = (
       await uiBlueprintService.accept(projectId, 'UI_BLUEPRINT', blueprintGeneration.id, [
@@ -578,6 +593,9 @@ describe('Export (First Deliverable, Phase H)', () => {
       blueprintAccepted.version.id,
       'APPROVED',
     );
+
+    // New projects paint their mockups with an approved theme (DEC-118).
+    await approved(ctx, projectId, 'DESIGN_THEME');
 
     const mockupJob = await ctx.mockups.create(projectId, blueprintAccepted.version.id);
     await ctx.mockups.runJob(mockupJob.id);
@@ -606,7 +624,7 @@ describe('Export (First Deliverable, Phase H)', () => {
     expect(snapshot.mockups).toHaveLength(1);
 
     expect(snapshot.readiness).toBeTruthy();
-    expect(snapshot.readiness.stages).toHaveLength(13);
+    expect(snapshot.readiness.stages).toHaveLength(15);
     expect(snapshot.stalenessSummary).toBeTruthy();
     expect(snapshot.traceabilitySummary.nodeCount).toBeGreaterThan(0);
 

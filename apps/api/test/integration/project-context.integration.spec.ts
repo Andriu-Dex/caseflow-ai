@@ -4,9 +4,14 @@ import {
   projectContextResponseSchema,
   type ProjectContextRequest,
 } from '@caseflow-ai/contracts';
-import { AIOrchestrator, FakeAIProvider, PromptRegistry } from '@caseflow-ai/ai';
+import {
+  AIOrchestrator,
+  FakeAIProvider,
+  FallbackAIProvider,
+  PromptRegistry,
+} from '@caseflow-ai/ai';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { PrismaAIRunRecorder } from '../../src/ai/ai-run-recorder';
 import { ProjectContextService } from '../../src/project-context/project-context.service';
 import { createTestContext, createWorkspaceWithOwner, type TestContext } from './support/test-app';
@@ -193,7 +198,7 @@ describe('Project Context integration', () => {
       project.id,
       {
         title: 'Entrevista',
-        sourceKind: 'NOTES',
+        sourceKind: 'TEXT',
         purpose: 'Notas de la entrevista con finanzas',
         description: 'Contenido de prueba.',
       },
@@ -222,11 +227,45 @@ describe('Project Context integration', () => {
     ]);
   });
 
+  it('rejects a context that cites two versions of the same source at once', async () => {
+    const project = await createProject(ctx, 'Sources Duplicate Artifact');
+    const source = await ctx.sources.create(
+      project.id,
+      {
+        title: 'Entrevista',
+        sourceKind: 'TEXT',
+        purpose: 'p',
+        description: 'Contenido de prueba.',
+      },
+      { originalname: 'n.txt', mimetype: 'text/plain', size: 4, buffer: Buffer.from('abcd') },
+    );
+    await ctx.sources.transition(project.id, source.id, source.version.id, 'IN_REVIEW');
+    const v1 = await ctx.sources.transition(project.id, source.id, source.version.id, 'APPROVED');
+    const draftV2 = await ctx.sources.submitManualTranscript(
+      project.id,
+      source.id,
+      'Contenido actualizado',
+    );
+    await ctx.sources.transition(project.id, source.id, draftV2.version.id, 'IN_REVIEW');
+    const v2 = await ctx.sources.transition(project.id, source.id, draftV2.version.id, 'APPROVED');
+
+    // Citing two versions of the same source at once is never meaningful
+    // provenance (v2 supersedes v1) — and it used to make a brand-new
+    // context immediately contradict itself in staleness ("up to date" and
+    // "has a newer version" at once).
+    await expect(
+      service.create(project.id, {
+        ...contextInput(' duplicada'),
+        sourceVersionIds: [v1.id, v2.id],
+      }),
+    ).rejects.toMatchObject({ status: 422 });
+  });
+
   it('rejects a draft (unapproved) or cross-project source as Project Context provenance', async () => {
     const project = await createProject(ctx, 'Sources Reject');
     const draft = await ctx.sources.create(
       project.id,
-      { title: 'Borrador', sourceKind: 'NOTES', purpose: 'p', description: 'Contenido de prueba.' },
+      { title: 'Borrador', sourceKind: 'TEXT', purpose: 'p', description: 'Contenido de prueba.' },
       { originalname: 'n.txt', mimetype: 'text/plain', size: 4, buffer: Buffer.from('abcd') },
     );
     await expect(
@@ -239,7 +278,7 @@ describe('Project Context integration', () => {
     const otherProject = await createProject(ctx, 'Sources Other');
     const otherSource = await ctx.sources.create(
       otherProject.id,
-      { title: 'Otro', sourceKind: 'NOTES', purpose: 'p', description: 'Contenido de prueba.' },
+      { title: 'Otro', sourceKind: 'TEXT', purpose: 'p', description: 'Contenido de prueba.' },
       { originalname: 'n.txt', mimetype: 'text/plain', size: 4, buffer: Buffer.from('abcd') },
     );
     await ctx.sources.transition(
@@ -287,7 +326,7 @@ describe('Project Context integration', () => {
     async function createApprovedSource(ctxParam: TestContext, projectId: string, title: string) {
       const source = await ctxParam.sources.create(
         projectId,
-        { title, sourceKind: 'NOTES', purpose: 'Prueba', description: 'Contenido de prueba.' },
+        { title, sourceKind: 'TEXT', purpose: 'Prueba', description: 'Contenido de prueba.' },
         {
           originalname: 'n.txt',
           mimetype: 'text/plain',
@@ -306,7 +345,9 @@ describe('Project Context integration', () => {
       const content = {
         problemStatement: 'Problema generado',
         objective: 'Objetivo generado',
-        actors: ['Coordinador'],
+        // DEC-131: actor roles and scope come in the proposal too.
+        actors: [{ name: 'Coordinador', description: 'Aprueba los pedidos' }],
+        scopeItems: [{ type: 'OUT_OF_SCOPE', description: 'Facturación electrónica' }],
         needs: ['Visibilidad en tiempo real'],
         constraints: [],
         businessRules: ['Bloquear morosos'],
@@ -322,7 +363,7 @@ describe('Project Context integration', () => {
         new PromptRegistry([
           {
             key: 'project-context.generate',
-            version: 1,
+            version: 5,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'project_context_generation',
             systemInstructions: 'policy',
@@ -342,6 +383,341 @@ describe('Project Context integration', () => {
       expect(
         await ctx.prisma.projectContextCandidate.findUnique({ where: { id: candidate.id } }),
       ).toMatchObject({ projectId: project.id });
+    });
+
+    // DEC-132: generated in the background, followed by its latest job.
+    it('generates in the background, reports progress and closes jobs cut off by a restart', async () => {
+      const project = await createProject(ctx, 'AI Background');
+      await createApprovedSource(ctx, project.id, 'Entrevista de fondo');
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      const content = {
+        problemStatement: 'Problema',
+        objective: 'Objetivo',
+        actors: [{ name: 'Coordinador' }],
+        needs: ['Registrar pedidos'],
+        constraints: [],
+        businessRules: [],
+      };
+      // A streamed provider: reports what it has written, then answers.
+      const streaming = {
+        id: 'streaming',
+        async generateStructured(request: { onProgress?: (chars: number) => void }) {
+          request.onProgress?.(3_500);
+          await gate;
+          return { provider: 'streaming', model: 'm', payload: content, usage: null, latencyMs: 1 };
+        },
+      };
+      const ai = new AIOrchestrator(
+        streaming,
+        new PromptRegistry([
+          {
+            key: 'project-context.generate',
+            version: 5,
+            capability: 'STRUCTURED_OUTPUT',
+            purpose: 'project_context_generation',
+            systemInstructions: 'policy',
+          },
+        ]),
+        new PrismaAIRunRecorder(ctx.prisma),
+      );
+      const service = new ProjectContextService(ctx.prisma, ai);
+
+      const started = await service.startGeneration(project.id);
+      expect(started.status).toMatch(/QUEUED|RUNNING/);
+      // Asking again while it runs returns the same generation.
+      expect((await service.startGeneration(project.id)).id).toBe(started.id);
+      await vi.waitFor(async () =>
+        expect((await service.latestGeneration(project.id)).job).toMatchObject({
+          status: 'RUNNING',
+          outputChars: 3_500,
+        }),
+      );
+      release();
+      await vi.waitFor(async () =>
+        expect((await service.latestGeneration(project.id)).job).toMatchObject({
+          status: 'COMPLETED',
+          candidate: { content: { problemStatement: 'Problema' } },
+        }),
+      );
+
+      // The next one expects what the previous proposals took.
+      const runs = await ctx.prisma.aIRun.findMany({
+        where: { promptKey: 'project-context.generate', status: 'SUCCEEDED' },
+        orderBy: { startedAt: 'desc' },
+        take: 5,
+      });
+      expect(runs.length).toBeGreaterThan(0);
+
+      // A job left open by a restart is closed with the restart message.
+      const orphan = await ctx.prisma.contextGenerationJob.create({
+        data: { projectId: project.id, status: 'RUNNING', updatedAt: new Date(Date.now() - 1_000) },
+      });
+      await service.onApplicationBootstrap();
+      expect(
+        await ctx.prisma.contextGenerationJob.findUniqueOrThrow({ where: { id: orphan.id } }),
+      ).toMatchObject({ status: 'FAILED', errorMessage: expect.stringContaining('reinició') });
+
+      // A project with nothing approved can still be deleted with its
+      // generations and their proposals.
+      const draft = await createProject(ctx, 'AI Background Delete');
+      const finished = await ctx.prisma.contextGenerationJob.findFirstOrThrow({
+        where: { projectId: project.id, status: 'COMPLETED' },
+        include: { candidate: true },
+      });
+      const run = await ctx.prisma.aIRun.create({
+        data: {
+          projectId: draft.id,
+          provider: 'streaming',
+          capability: 'STRUCTURED_OUTPUT',
+          purpose: 'project_context_generation',
+          promptKey: 'project-context.generate',
+          promptVersion: 5,
+          inputHash: 'a'.repeat(64),
+          status: 'SUCCEEDED',
+          completedAt: new Date(),
+          outputHash: 'b'.repeat(64),
+        },
+      });
+      const candidate = await ctx.prisma.projectContextCandidate.create({
+        data: {
+          projectId: draft.id,
+          aiRunId: run.id,
+          content: finished.candidate!.content as object,
+          sourceVersionIds: [],
+        },
+      });
+      await ctx.prisma.contextGenerationJob.create({
+        data: { projectId: draft.id, status: 'COMPLETED', candidateId: candidate.id },
+      });
+      await ctx.projects.delete(draft.id, 'AI Background Delete', ctx.userId);
+      expect(await ctx.prisma.project.findUnique({ where: { id: draft.id } })).toBeNull();
+    });
+
+    it('uses only the latest APPROVED version of a source, never an older approved one too', async () => {
+      const project = await createProject(ctx, 'AI Latest Version');
+      const v1 = await createApprovedSource(ctx, project.id, 'Entrevista');
+      const draftV2 = await ctx.sources.submitManualTranscript(
+        project.id,
+        v1.artifactId,
+        'Contenido actualizado',
+      );
+      await ctx.sources.transition(project.id, v1.artifactId, draftV2.version.id, 'IN_REVIEW');
+      const v2 = await ctx.sources.transition(
+        project.id,
+        v1.artifactId,
+        draftV2.version.id,
+        'APPROVED',
+      );
+
+      const content = {
+        problemStatement: 'Problema generado',
+        objective: 'Objetivo generado',
+        actors: [],
+        needs: [],
+        constraints: [],
+        businessRules: [],
+      };
+      const ai = new AIOrchestrator(
+        new FakeAIProvider({
+          provider: 'fake',
+          model: 'fake-v1',
+          payload: content,
+          usage: null,
+          latencyMs: 1,
+        }),
+        new PromptRegistry([
+          {
+            key: 'project-context.generate',
+            version: 5,
+            capability: 'STRUCTURED_OUTPUT',
+            purpose: 'project_context_generation',
+            systemInstructions: 'policy',
+          },
+        ]),
+        new PrismaAIRunRecorder(ctx.prisma),
+      );
+      const service = new ProjectContextService(ctx.prisma, ai);
+
+      const candidate = await service.generate(project.id);
+
+      // Only v2 — v1 is still APPROVED (immutable history), but it is no
+      // longer current knowledge, so it must never be cited alongside v2.
+      expect(candidate.sourceVersionIds).toEqual([v2.id]);
+    });
+
+    // DEC-124: an approved report guides the proposal, only for the exact
+    // version cited, and the candidate records which reports were used.
+    it('passes the report of each exact cited version as guidance and records it', async () => {
+      const project = await createProject(ctx, 'AI With Reports');
+      const report = {
+        summary: 'Reunión con administración',
+        actors: ['Coordinador'],
+        businessConcepts: [],
+        candidateBusinessRules: [],
+        candidateConstraints: [],
+        needs: ['Ver reservas'],
+        importantFacts: [],
+        ambiguities: [],
+      };
+      // With a report on the version that is approved.
+      const draft = await ctx.sources.create(
+        project.id,
+        { title: 'Con reporte', sourceKind: 'TEXT', purpose: 'Prueba', description: '' },
+        { originalname: 'a.txt', mimetype: 'text/plain', size: 4, buffer: Buffer.from('abcd') },
+      );
+      await ctx.sources.submitManualReport(project.id, draft.id, report);
+      await ctx.sources.transition(project.id, draft.id, draft.version.id, 'IN_REVIEW');
+      const reported = await ctx.sources.transition(
+        project.id,
+        draft.id,
+        draft.version.id,
+        'APPROVED',
+      );
+      // A report on an older version: its corrected, approved v2 has none.
+      const old = await ctx.sources.create(
+        project.id,
+        { title: 'Corregida', sourceKind: 'TEXT', purpose: 'Prueba', description: '' },
+        { originalname: 'b.txt', mimetype: 'text/plain', size: 4, buffer: Buffer.from('efgh') },
+      );
+      await ctx.sources.submitManualReport(project.id, old.id, report);
+      await ctx.sources.transition(project.id, old.id, old.version.id, 'IN_REVIEW');
+      await ctx.sources.transition(project.id, old.id, old.version.id, 'APPROVED');
+      const corrected = await ctx.sources.submitManualTranscript(
+        project.id,
+        old.id,
+        'Texto corregido',
+      );
+      await ctx.sources.transition(project.id, old.id, corrected.version.id, 'IN_REVIEW');
+      const v2 = await ctx.sources.transition(project.id, old.id, corrected.version.id, 'APPROVED');
+
+      const content = {
+        problemStatement: 'Problema',
+        objective: 'Objetivo',
+        actors: [{ name: 'Coordinador' }],
+        needs: [],
+        constraints: [],
+        businessRules: [],
+      };
+      const fake = new FakeAIProvider({
+        provider: 'fake',
+        model: 'fake-v1',
+        payload: content,
+        usage: null,
+        latencyMs: 1,
+      });
+      const requests: { messages: { content: string }[] }[] = [];
+      const provider = {
+        id: fake.id,
+        generateStructured: (request: Parameters<typeof fake.generateStructured>[0]) => {
+          requests.push(request as never);
+          return fake.generateStructured(request);
+        },
+      };
+      const ai = new AIOrchestrator(
+        provider as never,
+        new PromptRegistry([
+          {
+            key: 'project-context.generate',
+            version: 5,
+            capability: 'STRUCTURED_OUTPUT',
+            purpose: 'project_context_generation',
+            systemInstructions: 'policy',
+          },
+        ]),
+        new PrismaAIRunRecorder(ctx.prisma),
+      );
+
+      const candidate = await new ProjectContextService(ctx.prisma, ai).generate(project.id);
+
+      const sent = JSON.parse(requests[0]!.messages.at(-1)!.content) as {
+        title: string;
+        report?: unknown;
+      }[];
+      expect(sent.find((s) => s.title === 'Con reporte')?.report).toEqual(report);
+      expect(sent.find((s) => s.title === 'Corregida')).not.toHaveProperty('report');
+      expect(candidate.sourceVersionIds.sort()).toEqual([reported.id, v2.id].sort());
+      expect(candidate.reportSourceVersionIds).toEqual([reported.id]);
+      expect(
+        await ctx.prisma.projectContextCandidate.findUniqueOrThrow({ where: { id: candidate.id } }),
+      ).toMatchObject({ reportSourceVersionIds: [reported.id] });
+    });
+
+    // DEC-127: the proposal reads a bounded input that fits the provider;
+    // a long source is sent as excerpts and recorded as such.
+    it('fits the smallest provider by sending long sources as excerpts', async () => {
+      const project = await createProject(ctx, 'AI Long Sources');
+      const approve = async (title: string, text: string) => {
+        const created = await ctx.sources.create(
+          project.id,
+          { title, sourceKind: 'TEXT', purpose: 'Prueba', description: '' },
+          {
+            originalname: 'fuente.md',
+            mimetype: 'text/markdown',
+            size: Buffer.byteLength(text),
+            buffer: Buffer.from(text),
+          },
+        );
+        await ctx.sources.transition(project.id, created.id, created.version.id, 'IN_REVIEW');
+        return ctx.sources.transition(project.id, created.id, created.version.id, 'APPROVED');
+      };
+      const short = await approve('Corta', 'El cliente registra pedidos.');
+      const long = await approve(
+        'Larga',
+        Array.from(
+          { length: 40 },
+          (_, i) => `# Capítulo ${i + 1}\n\n${'Detalle del proceso de pedidos. '.repeat(40)}`,
+        ).join('\n\n'),
+      );
+      const content = {
+        problemStatement: 'Problema',
+        objective: 'Objetivo',
+        actors: [],
+        needs: [],
+        constraints: [],
+        businessRules: [],
+      };
+      const fake = new FakeAIProvider({
+        provider: 'fake',
+        model: 'fake-v1',
+        payload: content,
+        usage: null,
+        latencyMs: 1,
+      });
+      const ai = new AIOrchestrator(
+        // Groq-sized: the long source alone would not fit.
+        new FallbackAIProvider([{ provider: fake, capacity: { tokensPerMinute: 8_000 } }]),
+        new PromptRegistry([
+          {
+            key: 'project-context.generate',
+            version: 5,
+            capability: 'STRUCTURED_OUTPUT',
+            purpose: 'project_context_generation',
+            systemInstructions: 'policy',
+          },
+        ]),
+        new PrismaAIRunRecorder(ctx.prisma),
+      );
+
+      const candidate = await new ProjectContextService(ctx.prisma, ai).generate(project.id);
+
+      const sent = JSON.parse(fake.lastRequest!.messages[0]!.content) as {
+        title: string;
+        extractedText?: string;
+        partial?: boolean;
+        excerpts?: unknown[];
+      }[];
+      expect(sent.find((s) => s.title === 'Corta')).toMatchObject({
+        extractedText: 'El cliente registra pedidos.',
+      });
+      const excerpted = sent.find((s) => s.title === 'Larga')!;
+      expect(excerpted.partial).toBe(true);
+      expect(excerpted.excerpts!.length).toBeGreaterThan(0);
+      expect(candidate.sourceVersionIds.sort()).toEqual([short.id, long.id].sort());
+      expect(candidate.partialSourceVersionIds).toEqual([long.id]);
+      expect(
+        await ctx.prisma.projectContextCandidate.findUniqueOrThrow({ where: { id: candidate.id } }),
+      ).toMatchObject({ partialSourceVersionIds: [long.id] });
     });
 
     it('rejects generation for a project without any usable approved source', async () => {

@@ -48,6 +48,7 @@ const requirement = {
   preconditions: [],
   postconditions: [],
   dependencyArtifactIds: [],
+  origin: { kind: 'USER_DECISION' as const, justification: 'Decisión del equipo.' },
 };
 
 function fakeAIOrchestrator(
@@ -182,7 +183,7 @@ describe('Structured Analysis (Navigation/Architecture/UI Blueprint) integration
     const generation = await service.generate(projectId, 'NAVIGATION_TREE', [
       approvedRequirementId,
     ]);
-    expect(provider.lastRequest?.maxOutputTokens).toBe(4096);
+    expect(provider.lastRequest?.maxOutputTokens).toBe(12_288);
     expect(generation.candidates).toHaveLength(1);
     expect(generation.candidates[0]?.content).toMatchObject(navigation);
 
@@ -361,7 +362,7 @@ describe('Structured Analysis (Navigation/Architecture/UI Blueprint) integration
       ctx,
       'software-architecture.generate',
       softwareArchitecture,
-      2,
+      3,
     );
     const service = new StructuredAnalysisService(
       ctx.prisma,

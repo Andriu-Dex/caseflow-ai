@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { OpenAICompatibleProvider } from './index';
+import { OpenAICompatibleProvider, rateLimitDetails } from './index';
 
 const request = {
   capability: 'STRUCTURED_OUTPUT' as const,
@@ -63,9 +63,33 @@ describe('OpenAICompatibleProvider', () => {
     expect(result).toMatchObject({ payload: { ok: true }, usage: { totalTokens: 3 } });
   });
 
+  it('writes up to its declared output ceiling (DEC-131)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          model: 'configured-model',
+          choices: [{ message: { content: '{"ok":true}' } }],
+          usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    await new OpenAICompatibleProvider({
+      baseUrl: 'https://provider.test/v1/',
+      apiKey: 'top-secret',
+      model: 'configured-model',
+      timeoutMs: 100,
+      maxOutputTokens: 32_000,
+      fetch: fetchMock,
+    }).generateStructured(request);
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body)).max_tokens).toBe(32_000);
+  });
+
   it.each([
     [429, 'AI_RATE_LIMITED'],
-    [413, 'AI_RATE_LIMITED'],
+    // One request above the tokens per minute: only a smaller one can pass.
+    [413, 'AI_INPUT_TOO_LARGE'],
     [503, 'AI_PROVIDER_UNAVAILABLE'],
     [400, 'AI_PROVIDER_ERROR'],
   ])('normalizes HTTP %s', async (status, code) => {
@@ -153,9 +177,63 @@ describe('OpenAICompatibleProvider', () => {
           ),
         ),
     ) as unknown as typeof fetch;
+    // No output budget: the deadline is only the configured 100 ms (DEC-131).
     await expect(
-      provider(fetchMock).generateStructured({ ...request, timeoutMs: 1 }),
+      provider(fetchMock).generateStructured({
+        ...request,
+        timeoutMs: 1,
+        maxOutputTokens: undefined,
+      }),
     ).rejects.toMatchObject({ code: 'AI_TIMEOUT' });
     expect(fetchMock).toHaveBeenCalledOnce();
   });
+
+  it('says so when the answer was cut at its output limit', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          model: 'm',
+          choices: [{ finish_reason: 'length', message: { content: '{"nodes": [{"id": "a"' } }],
+        }),
+      ),
+    );
+    await expect(provider(fetchMock).generateStructured(request)).rejects.toMatchObject({
+      code: 'AI_INVALID_OUTPUT',
+      message: expect.stringContaining('se cortó'),
+    });
+  });
+
+  it('tells how long to wait and whether the daily quota is spent', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response('Rate limit reached on tokens per day (TPD)', {
+        status: 429,
+        headers: { 'retry-after': '7.5' },
+      }),
+    );
+    await expect(provider(fetchMock).generateStructured(request)).rejects.toMatchObject({
+      code: 'AI_RATE_LIMITED',
+      quota: 'DAY',
+      retryAfterMs: 7500,
+    });
+  });
+});
+
+describe('rateLimitDetails', () => {
+  it.each([
+    [
+      null,
+      'Rate limit reached for tokens per minute (TPM). Please try again in 7.66s.',
+      { retryAfterMs: 7660, quota: 'MINUTE' },
+    ],
+    ['2', 'tokens per minute', { retryAfterMs: 2000, quota: 'MINUTE' }],
+    [
+      null,
+      'Quota exceeded for metric: generate_content_free_tier_requests, quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier. Please retry in 41.2s.',
+      { retryAfterMs: 41200, quota: 'DAY' },
+    ],
+    [null, 'Please try again in 850ms', { retryAfterMs: 850, quota: 'MINUTE' }],
+    [null, 'Too many requests', { quota: 'MINUTE' }],
+  ])('reads retry-after %s with body %s', (header, body, expected) =>
+    expect(rateLimitDetails(header, body)).toEqual(expected),
+  );
 });

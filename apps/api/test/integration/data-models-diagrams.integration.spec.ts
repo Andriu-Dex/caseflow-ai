@@ -52,6 +52,7 @@ const requirement = {
   preconditions: [],
   postconditions: [],
   dependencyArtifactIds: [],
+  origin: { kind: 'USER_DECISION' as const, justification: 'Decisión del equipo.' },
 };
 
 describe('Data Model + Diagram Engine integration', () => {
@@ -77,6 +78,7 @@ describe('Data Model + Diagram Engine integration', () => {
       mainFlow: [{ actor: 'Usuario', action: 'Registra' }],
       alternativeFlows: [],
       relatedRequirementVersionIds: [approvedRequirementId],
+      relations: [],
     });
     await ctx.useCases.transition(projectId, useCase.id, useCase.version.id, 'IN_REVIEW');
     await ctx.useCases.transition(projectId, useCase.id, useCase.version.id, 'APPROVED');
@@ -117,7 +119,7 @@ describe('Data Model + Diagram Engine integration', () => {
       new PromptRegistry([
         {
           key: 'data-model.generate',
-          version: 1,
+          version: 2,
           capability: 'STRUCTURED_OUTPUT',
           purpose: 'conceptual_data_model_generation',
           systemInstructions: 'policy',
@@ -136,7 +138,7 @@ describe('Data Model + Diagram Engine integration', () => {
       [approvedRequirementId],
       [approvedUseCaseId],
     );
-    expect(provider.lastRequest?.maxOutputTokens).toBe(12_288);
+    expect(provider.lastRequest?.maxOutputTokens).toBe(24_576);
     expect(
       await ctx.prisma.artifact.count({ where: { projectId, artifactTypeCode: 'DATA_MODEL' } }),
     ).toBe(1);
@@ -234,6 +236,7 @@ describe('Data Model + Diagram Engine integration', () => {
       mainFlow: [{ actor: 'Usuario', action: 'Registra' }],
       alternativeFlows: [],
       relatedRequirementVersionIds: [req.version.id],
+      relations: [],
     });
     await ctx.useCases.transition(scoped, useCase.id, useCase.version.id, 'IN_REVIEW');
     await ctx.useCases.transition(scoped, useCase.id, useCase.version.id, 'APPROVED');
@@ -304,7 +307,7 @@ describe('Data Model + Diagram Engine integration', () => {
       new PromptRegistry([
         {
           key: 'data-model.generate',
-          version: 1,
+          version: 2,
           capability: 'STRUCTURED_OUTPUT',
           purpose: 'conceptual_data_model_generation',
           systemInstructions: 'policy',

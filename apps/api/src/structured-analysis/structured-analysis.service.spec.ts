@@ -29,6 +29,23 @@ const version = {
   structuredAnalysisDetail: detail,
 };
 
+// Black on white everywhere: every WCAG AA pair is 21:1.
+const ACCESSIBLE_PALETTE = {
+  background: '#ffffff',
+  foreground: '#000000',
+  primary: '#000000',
+  primaryForeground: '#ffffff',
+  secondary: '#000000',
+  secondaryForeground: '#ffffff',
+  accent: '#000000',
+  accentForeground: '#ffffff',
+  muted: '#ffffff',
+  mutedForeground: '#000000',
+  destructive: '#000000',
+  destructiveForeground: '#ffffff',
+  border: '#000000',
+};
+
 function setup() {
   const tx = {
     project: { findUnique: vi.fn().mockResolvedValue({ id: 'project' }) },
@@ -45,12 +62,14 @@ function setup() {
       create: vi.fn().mockResolvedValue(version),
       findUniqueOrThrow: vi.fn().mockResolvedValue(version),
       findFirstOrThrow: vi.fn().mockResolvedValue(version),
+      update: vi.fn(),
     },
+    auditEvent: { create: vi.fn() },
     structuredAnalysisDetail: { create: vi.fn() },
     diagramDetail: { create: vi.fn() },
     structuredAnalysisGeneration: { create: vi.fn(), findFirst: vi.fn() },
     structuredAnalysisGenerationSource: { createMany: vi.fn() },
-    structuredAnalysisCandidate: { create: vi.fn(), update: vi.fn() },
+    structuredAnalysisCandidate: { createMany: vi.fn(), update: vi.fn() },
     $queryRaw: vi.fn().mockResolvedValue([{ last_number: 1 }]),
   };
   const prisma = {
@@ -63,6 +82,7 @@ function setup() {
       update: vi.fn(),
     },
     structuredAnalysisGeneration: { findFirst: vi.fn() },
+    structuredAnalysisDetail: { findUniqueOrThrow: vi.fn() },
   };
   const ai = { generateStructured: vi.fn() };
   return {
@@ -364,10 +384,105 @@ describe('StructuredAnalysisService', () => {
     expect(tx.artifact.create).not.toHaveBeenCalled();
   });
 
+  it('audits the approval of construction gates, and only those, in the same transaction', async () => {
+    const { service, prisma, tx } = setup();
+    prisma.artifactVersion.findFirst.mockResolvedValue({
+      id: 'version',
+      status: 'IN_REVIEW',
+      versionNumber: 2,
+    });
+    tx.artifactVersion.update.mockResolvedValue({ id: 'version', status: 'APPROVED' });
+    await service.transition('project', 'GENERATION_PLAN', 'plan', 'version', 'APPROVED', 'user');
+    expect(tx.auditEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        projectId: 'project',
+        actorUserId: 'user',
+        action: 'GENERATION_PLAN_APPROVED',
+        entityId: 'version',
+      }),
+    });
+
+    tx.auditEvent.create.mockClear();
+    await service.transition('project', 'NAVIGATION_TREE', 'nav', 'version', 'APPROVED', 'user');
+    expect(tx.auditEvent.create).not.toHaveBeenCalled();
+  });
+
+  // DEC-118: one AI answer, three alternative palettes, plus the user's adjustment.
+  it('stores each proposed palette as its own candidate and forwards the adjustment', async () => {
+    const { service, prisma, tx, ai } = setup();
+    prisma.artifactVersion.findMany.mockResolvedValue([
+      {
+        id: 'ui-v1',
+        title: 'Plano',
+        artifact: { code: 'UI-001', artifactTypeCode: 'UI_BLUEPRINT' },
+        structuredAnalysisDetail: { content: { screens: [] } },
+      },
+    ]);
+    const palettes = ['Océano', 'Bosque', 'Arena'].map((name) => ({
+      name,
+      mode: 'LIGHT',
+      light: ACCESSIBLE_PALETTE,
+    }));
+    ai.generateStructured.mockResolvedValue({ data: { palettes }, metadata: { runId: 'run' } });
+    tx.structuredAnalysisGeneration.create.mockResolvedValue({ id: 'generation' });
+    prisma.structuredAnalysisGeneration.findFirst.mockResolvedValue({
+      id: 'generation',
+      sources: [],
+      candidates: [],
+    });
+    await service.generate('project', 'DESIGN_THEME', ['ui-v1'], { instruction: 'más cálida' });
+    const input = ai.generateStructured.mock.calls[0]![0];
+    expect(input.promptKey).toBe('design-theme.generate');
+    expect(input.messages[1]).toEqual({
+      role: 'user',
+      content: 'Ajuste solicitado por el usuario: más cálida',
+    });
+    const created = tx.structuredAnalysisCandidate.createMany.mock.calls[0]![0].data;
+    expect(created.map((c: { candidateId: string }) => c.candidateId)).toEqual([
+      'candidate-1',
+      'candidate-2',
+      'candidate-3',
+    ]);
+    expect(created.map((c: { content: { name: string } }) => c.content.name)).toEqual([
+      'Océano',
+      'Bosque',
+      'Arena',
+    ]);
+  });
+
+  it('refuses to approve a theme below WCAG AA contrast and audits an accessible one', async () => {
+    const { service, prisma, tx } = setup();
+    prisma.artifactVersion.findFirst.mockResolvedValue({
+      id: 'version',
+      status: 'IN_REVIEW',
+      versionNumber: 1,
+    });
+    prisma.structuredAnalysisDetail.findUniqueOrThrow.mockResolvedValue({
+      content: {
+        name: 'Gris',
+        mode: 'LIGHT',
+        light: { ...ACCESSIBLE_PALETTE, foreground: '#eeeeee' },
+      },
+    });
+    await expect(
+      service.transition('project', 'DESIGN_THEME', 'theme', 'version', 'APPROVED', 'user'),
+    ).rejects.toThrow('WCAG AA');
+    expect(tx.artifactVersion.update).not.toHaveBeenCalled();
+
+    prisma.structuredAnalysisDetail.findUniqueOrThrow.mockResolvedValue({
+      content: { name: 'Nítido', mode: 'LIGHT', light: ACCESSIBLE_PALETTE },
+    });
+    tx.artifactVersion.update.mockResolvedValue({ id: 'version', status: 'APPROVED' });
+    await service.transition('project', 'DESIGN_THEME', 'theme', 'version', 'APPROVED', 'user');
+    expect(tx.auditEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ action: 'DESIGN_THEME_APPROVED', entityId: 'version' }),
+    });
+  });
+
   it('enforces the artifact lifecycle transition rules', async () => {
-    const { service, prisma } = setup();
+    const { service, prisma, tx } = setup();
     prisma.artifactVersion.findFirst.mockResolvedValue({ id: 'version', status: 'DRAFT' });
-    prisma.artifactVersion.update.mockResolvedValue({ id: 'version', status: 'IN_REVIEW' });
+    tx.artifactVersion.update.mockResolvedValue({ id: 'version', status: 'IN_REVIEW' });
     await expect(
       service.transition('project', 'NAVIGATION_TREE', 'artifact', 'version', 'IN_REVIEW'),
     ).resolves.toMatchObject({ status: 'IN_REVIEW' });

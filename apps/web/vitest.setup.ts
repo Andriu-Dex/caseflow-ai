@@ -6,3 +6,14 @@ afterEach(() => {
   cleanup();
   window.localStorage.clear();
 });
+
+if (typeof HTMLCanvasElement !== 'undefined') {
+  HTMLCanvasElement.prototype.getContext = (() => ({
+    clearRect: () => {},
+    save: () => {},
+    translate: () => {},
+    rotate: () => {},
+    fillRect: () => {},
+    restore: () => {},
+  })) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+}

@@ -1,11 +1,17 @@
-import type { MockupDeviceType, UiBlueprintContent } from '@caseflow-ai/contracts';
+import type {
+  DesignThemeContent,
+  MockupDeviceType,
+  UiBlueprintContent,
+} from '@caseflow-ai/contracts';
 import {
   MockupProviderError,
   type EditedScreen,
   type GeneratedScreen,
   type ProviderScreenRef,
   type MockupGenerationResult,
+  type MockupAppContext,
   type MockupProvider,
+  type ScreenGenerator,
 } from '@caseflow-ai/integrations';
 
 export interface StitchMockupProviderConfig {
@@ -19,18 +25,84 @@ export interface StitchMockupProviderConfig {
 const importSdk = new Function('return import("stitch-sdk")') as () => Promise<
   typeof import('stitch-sdk')
 >;
+type StitchScreen = Awaited<ReturnType<import('stitch-sdk').Project['generate']>>;
 
 export class StitchMockupProvider implements MockupProvider {
   readonly id = 'stitch';
   constructor(private readonly config: StitchMockupProviderConfig) {}
 
+  // DEC-146: one screen per call, each with its own time limit (the limit
+  // bounds one screen, not the whole mockup).
+  readonly screens: ScreenGenerator = {
+    createProject: (title) =>
+      this.withTimeout(
+        async () => (await (await this.sdk()).createProject(title)).id,
+        'Crear el proyecto del boceto excedió el tiempo límite.',
+        'El proveedor de bocetos no está disponible.',
+      ),
+    generateScreen: (projectId, screen, deviceType, refinement, theme, context) =>
+      this.withTimeout(
+        async () =>
+          this.drawScreen(
+            (await this.sdk()).project(projectId),
+            projectId,
+            screen,
+            deviceType,
+            refinement,
+            theme,
+            context,
+          ),
+        `La pantalla «${screen.name}» excedió el tiempo límite.`,
+        'El proveedor de bocetos no está disponible.',
+      ),
+  };
+
+  private async sdk() {
+    const { Stitch, StitchToolClient } = await importSdk();
+    return new Stitch(
+      new StitchToolClient({ apiKey: this.config.apiKey, timeout: this.config.timeoutMs }),
+    );
+  }
+
+  private async drawScreen(
+    project: { generate: (prompt: string, deviceType: MockupDeviceType) => Promise<StitchScreen> },
+    projectId: string,
+    screen: UiBlueprintContent['screens'][number],
+    deviceType: MockupDeviceType,
+    refinement?: string,
+    theme?: DesignThemeContent,
+    context?: MockupAppContext,
+  ): Promise<GeneratedScreen> {
+    const generated = await project.generate(
+      this.buildPrompt(screen, deviceType, refinement, theme, context),
+      deviceType,
+    );
+    const [imageUrl, htmlUrl] = await Promise.all([generated.getImage(), generated.getHtml()]);
+    const [image, html] = await Promise.all([
+      this.download(
+        this.fullResolutionImageUrl(imageUrl, generated.data?.width, deviceType),
+        'image',
+      ),
+      this.download(htmlUrl, 'html'),
+    ]);
+    return {
+      screenLocalId: screen.localId,
+      screenName: screen.name,
+      image: { body: image.body, contentType: image.contentType },
+      html: html.body.toString('utf8'),
+      providerRef: { projectId, screenId: generated.id },
+    };
+  }
+
   async generate(
     content: UiBlueprintContent,
     deviceType: MockupDeviceType = 'DESKTOP',
     refinement?: string,
+    theme?: DesignThemeContent,
+    context?: MockupAppContext,
   ): Promise<MockupGenerationResult> {
     return this.withTimeout(
-      () => this.generateWithSdk(content, deviceType, refinement),
+      () => this.generateWithSdk(content, deviceType, refinement, theme, context),
       'La generación del boceto excedió el tiempo límite.',
       'El proveedor de bocetos no está disponible.',
     );
@@ -65,34 +137,14 @@ export class StitchMockupProvider implements MockupProvider {
     content: UiBlueprintContent,
     deviceType: MockupDeviceType,
     refinement?: string,
+    theme?: DesignThemeContent,
+    context?: MockupAppContext,
   ): Promise<MockupGenerationResult> {
-    const { Stitch, StitchToolClient } = await importSdk();
-    const sdk = new Stitch(
-      new StitchToolClient({ apiKey: this.config.apiKey, timeout: this.config.timeoutMs }),
-    );
-    const project = await sdk.createProject(`CASEFlow ${Date.now()}`);
+    const project = await (await this.sdk()).createProject(`CASEFlow ${Date.now()}`);
     const screens = await Promise.all(
-      content.screens.map(async (screen): Promise<GeneratedScreen> => {
-        const generated = await project.generate(
-          this.buildPrompt(screen, deviceType, refinement),
-          deviceType,
-        );
-        const [imageUrl, htmlUrl] = await Promise.all([generated.getImage(), generated.getHtml()]);
-        const [image, html] = await Promise.all([
-          this.download(
-            this.fullResolutionImageUrl(imageUrl, generated.data?.width, deviceType),
-            'image',
-          ),
-          this.download(htmlUrl, 'html'),
-        ]);
-        return {
-          screenLocalId: screen.localId,
-          screenName: screen.name,
-          image: { body: image.body, contentType: image.contentType },
-          html: html.body.toString('utf8'),
-          providerRef: { projectId: project.id, screenId: generated.id },
-        };
-      }),
+      content.screens.map((screen) =>
+        this.drawScreen(project, project.id, screen, deviceType, refinement, theme, context),
+      ),
     );
     if (screens.length === 0) throw new Error('Stitch returned no screens.');
     return { kind: 'STITCH', screens };
@@ -134,6 +186,20 @@ export class StitchMockupProvider implements MockupProvider {
 
   private buildEditPrompt(prompt: string): string {
     return `Modifica solo lo indicado y conserva el resto del diseño, el contenido y la estructura de la pantalla: ${prompt}`;
+  }
+
+  // Stitch draws one design: the light palette when the app supports both.
+  private themePrompt(theme: DesignThemeContent): string {
+    const palette = theme.light ?? theme.dark!;
+    return [
+      `Usa exactamente esta paleta de colores (${theme.light ? 'modo claro' : 'modo oscuro'}):`,
+      `fondo ${palette.background}, texto ${palette.foreground},`,
+      `color primario ${palette.primary} con texto ${palette.primaryForeground},`,
+      `secundario ${palette.secondary} con texto ${palette.secondaryForeground},`,
+      `acento ${palette.accent} con texto ${palette.accentForeground},`,
+      `superficies atenuadas ${palette.muted} con texto ${palette.mutedForeground},`,
+      `acciones destructivas ${palette.destructive} y bordes ${palette.border}.`,
+    ].join(' ');
   }
 
   private fullResolutionImageUrl(
@@ -195,7 +261,11 @@ export class StitchMockupProvider implements MockupProvider {
     screen: UiBlueprintContent['screens'][number],
     deviceType: MockupDeviceType,
     refinement?: string,
+    theme?: DesignThemeContent,
+    context?: MockupAppContext,
   ): string {
+    const menu = context?.menu ?? [];
+    const active = context?.activeMenuByScreen[screen.localId] ?? null;
     return [
       deviceType === 'MOBILE'
         ? 'Diseña una pantalla de aplicación móvil (una sola columna, orientación vertical), limpia y profesional,'
@@ -215,9 +285,19 @@ export class StitchMockupProvider implements MockupProvider {
         ? `Datos principales que debe representar: ${screen.principalData.join(', ')}.`
         : '',
       screen.states.length ? `Estados relevantes: ${screen.states.join(', ')}.` : '',
-      screen.relatedUseCaseCodes.length
-        ? `Casos de uso relacionados: ${screen.relatedUseCaseCodes.join(', ')}.`
+      // One application: the same name and the same menu on every screen.
+      context
+        ? `Esta pantalla es una de las de una misma aplicación llamada «${context.appName}»: usa exactamente ese nombre en la cabecera y no inventes otras marcas, logotipos ni nombres de producto.`
         : '',
+      menu.length && active
+        ? `Menú principal, idéntico en todas las pantallas y con el mismo orden: ${menu.join(' · ')}. Resalta como activa la entrada «${active}».`
+        : context
+          ? 'Esta pantalla no lleva el menú principal.'
+          : '',
+      // Plausible but plain content, in one view.
+      'No inventes datos de seguridad (hashes, firmas, certificados, tokens), ni usuarios, empresas o fechas reales: usa datos de ejemplo breves y neutros. No muestres códigos internos de requisitos ni de casos de uso (un identificador con letras y un número) ni referencias a ellos.',
+      'Dibuja una sola vista de la pantalla, en su estado normal; los demás estados se sugieren con mensajes o indicadores breves, nunca como una matriz de estados ni como varias versiones de la pantalla.',
+      theme ? this.themePrompt(theme) : '',
       // Last, so it adjusts the design without replacing the blueprint above.
       refinement
         ? `Ajustes solicitados por el usuario (aplícalos sin eliminar el contenido anterior): ${refinement}`
