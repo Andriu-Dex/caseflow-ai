@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   refine: vi.fn(),
   refineScreen: vi.fn(),
   getJob: vi.fn(),
+  cancelJob: vi.fn(),
   create: vi.fn(),
   latestJob: vi.fn<(...args: unknown[]) => Promise<{ job: MockupJobResponse | null }>>(
     async () => ({
@@ -43,6 +44,7 @@ vi.mock('../../../lib/api', () => ({
       refine: (...args: unknown[]) => mocks.refine(...args),
       refineScreen: (...args: unknown[]) => mocks.refineScreen(...args),
       getJob: (...args: unknown[]) => mocks.getJob(...args),
+      cancelJob: (...args: unknown[]) => mocks.cancelJob(...args),
       latestJob: (...args: unknown[]) => mocks.latestJob(...args),
     },
     structuredAnalysis: { list: (...args: unknown[]) => mocks.listBlueprints(...args) },
@@ -520,4 +522,56 @@ describe('MockupsPage background generation (DEC-146)', () => {
     );
     await waitFor(() => expect(mocks.create).toHaveBeenCalledWith('p1', 'bp-version-1', 'DESKTOP'));
   });
+
+  it('cancels a running generation after asking, and offers to continue what was drawn', async () => {
+    const user = userEvent.setup();
+    mocks.listBlueprints.mockResolvedValue({
+      items: [
+        {
+          id: 'bp-1',
+          code: 'UI-002',
+          version: { id: 'bp-version-1', status: 'APPROVED' },
+          content: { screens: [{ localId: 's1' }, { localId: 's2' }] },
+        },
+      ],
+    });
+    const base = {
+      id: 'job-1',
+      uiBlueprintVersionId: 'bp-version-1',
+      deviceType: 'DESKTOP',
+      totalScreens: 2,
+      completedScreens: 1,
+    };
+    let cancelled = false;
+    mocks.create.mockResolvedValue({ ...base, status: 'RUNNING' });
+    mocks.getJob.mockImplementation(async () =>
+      cancelled
+        ? {
+            ...base,
+            status: 'CANCELLED',
+            errorMessage: 'Se canceló con 1 de 2 pantallas generadas.',
+          }
+        : { ...base, status: 'RUNNING' },
+    );
+    mocks.cancelJob.mockImplementation(async () => {
+      cancelled = true;
+      return { ...base, status: 'CANCELLED' };
+    });
+    render(
+      <TestProviders>
+        <MockupsPage />
+      </TestProviders>,
+    );
+    await user.click(await screen.findByRole('button', { name: /Generar boceto/ }));
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Generar boceto' }),
+    );
+    await user.click(await screen.findByRole('button', { name: 'Cancelar la generación' }));
+    expect(mocks.cancelJob).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Sí, cancelar' }));
+    expect(mocks.cancelJob).toHaveBeenCalledWith('p1', 'job-1');
+    expect(
+      await screen.findByRole('button', { name: 'Continuar la generación' }, { timeout: 5000 }),
+    ).toBeInTheDocument();
+  }, 10_000);
 });

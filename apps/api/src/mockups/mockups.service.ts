@@ -52,6 +52,8 @@ const MOCKUP_CODE_PREFIX = 'MCK';
 const MAX_MOCKUP_ARCHIVE_BYTES = 300_000_000;
 const logger = new Logger('MockupsService');
 // DEC-146: Stitch screens drawn at the same time, and times each is asked for.
+class JobCancelledError extends Error {}
+
 const SCREEN_CONCURRENCY = Math.min(8, Math.max(1, Number(process.env.STITCH_CONCURRENCY) || 4));
 const SCREEN_ATTEMPTS = 3;
 
@@ -201,7 +203,7 @@ export class MockupsService {
             deviceType,
             refinementPrompt,
             screenLocalId: null,
-            status: 'FAILED',
+            status: { in: ['FAILED', 'CANCELLED'] },
             parts: { some: {} },
           },
           orderBy: { createdAt: 'desc' },
@@ -235,6 +237,30 @@ export class MockupsService {
       orderBy: { updatedAt: 'desc' },
     });
     return { job: job ? this.mapJob(job) : null };
+  }
+
+  // The person stops a generation. Screens already drawn are kept (resume
+  // continues from them); the loop sees the status before each Stitch call, so
+  // calls already in flight finish but no new one starts.
+  async cancelJob(projectId: string, jobId: string): Promise<MockupJobResponse> {
+    const job = await this.prisma.mockupGenerationJob.findFirst({
+      where: { id: jobId, projectId },
+      include: { _count: { select: { parts: true } } },
+    });
+    if (!job) throw new NotFoundException('Trabajo no encontrado.');
+    if (job.status === 'QUEUED' || job.status === 'RUNNING') {
+      const drawn = job._count.parts;
+      await this.prisma.mockupGenerationJob.updateMany({
+        where: { id: jobId, status: { in: ['QUEUED', 'RUNNING'] } },
+        data: {
+          status: 'CANCELLED',
+          errorMessage: job.totalScreens
+            ? `Se canceló con ${drawn} de ${job.totalScreens} pantallas generadas.`
+            : 'Se canceló la generación.',
+        },
+      });
+    }
+    return this.getJob(projectId, jobId);
   }
 
   async getJob(projectId: string, jobId: string): Promise<MockupJobResponse> {
@@ -314,8 +340,8 @@ export class MockupsService {
             )
           : this.createInTx(tx, job.projectId, job.uiBlueprintVersionId, job.deviceType, generated),
       );
-      await this.prisma.mockupGenerationJob.update({
-        where: { id: jobId },
+      await this.prisma.mockupGenerationJob.updateMany({
+        where: { id: jobId, status: 'RUNNING' },
         data: {
           status: 'COMPLETED',
           resultArtifactId: result.id,
@@ -323,6 +349,7 @@ export class MockupsService {
         },
       });
     } catch (error) {
+      if (error instanceof JobCancelledError) return;
       const message =
         error instanceof ServiceUnavailableException ||
         error instanceof UnprocessableEntityException
@@ -332,8 +359,8 @@ export class MockupsService {
         `Mockup job "${jobId}" failed: ${message}`,
         error instanceof Error ? error.stack : undefined,
       );
-      await this.prisma.mockupGenerationJob.update({
-        where: { id: jobId },
+      await this.prisma.mockupGenerationJob.updateMany({
+        where: { id: jobId, status: 'RUNNING' },
         data: { status: 'FAILED', errorMessage: message },
       });
     }
@@ -768,11 +795,21 @@ export class MockupsService {
       failures.push({ name: 'proyecto', error });
     }
     let next = 0;
+    let cancelled = false;
+    const isCancelled = async () => {
+      if (!cancelled)
+        cancelled =
+          (await this.prisma.mockupGenerationJob.count({
+            where: { id: jobId, status: 'CANCELLED' },
+          })) > 0;
+      return cancelled;
+    };
     const drawNext = async () => {
-      while (stitchProjectId && next < pending.length) {
+      while (stitchProjectId && next < pending.length && !(await isCancelled())) {
         const screen = pending[next++]!;
         let lastError: unknown = null;
         for (let attempt = 0; attempt < SCREEN_ATTEMPTS; attempt += 1) {
+          if (await isCancelled()) break;
           try {
             const drawn = await generator.generateScreen(
               stitchProjectId,
@@ -817,6 +854,9 @@ export class MockupsService {
     await Promise.all(
       Array.from({ length: Math.min(SCREEN_CONCURRENCY, Math.max(pending.length, 1)) }, drawNext),
     );
+
+    // The cancel already left the job CANCELLED; nothing else is saved.
+    if (await isCancelled()) throw new JobCancelledError();
 
     if (failures.length) {
       const reason =

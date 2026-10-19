@@ -84,7 +84,7 @@ export async function pollMockupJob(
   for (;;) {
     const job = await getJob();
     onStatus?.(job.status, job);
-    if (job.status === 'COMPLETED' || job.status === 'FAILED') return { timedOut: false, job };
+    if (job.status !== 'QUEUED' && job.status !== 'RUNNING') return { timedOut: false, job };
     if (now() >= deadline) return { timedOut: true, status: job.status };
     await delay(MOCKUP_POLL_INTERVAL_MS);
   }
@@ -930,6 +930,10 @@ function MockupsContent({ projectId }: { projectId: string }) {
   const [stopped, setStopped] = useState<MockupJobResponse | null>(null);
   // Screens drawn so far, when the provider draws them one by one.
   const [progress, setProgress] = useState<{ completed: number; total: number } | null>(null);
+  // The running job and whether the person is being asked to confirm its cancel.
+  const runningJobId = useRef<string | null>(null);
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [deviceTypes, setDeviceTypes] = useState<Record<string, MockupDeviceType>>({});
   const approvedBlueprints = (blueprints.data?.items ?? []).filter(
@@ -964,6 +968,7 @@ function MockupsContent({ projectId }: { projectId: string }) {
     setCreatingJobStatus('SUBMITTING');
     try {
       const job = await enqueue();
+      runningJobId.current = job.id;
       setCreatingJobStatus(job.status);
       const result = await pollMockupJob(
         () => api.mockups.getJob(projectId, job.id),
@@ -987,6 +992,10 @@ function MockupsContent({ projectId }: { projectId: string }) {
           toast.error('La generación está tardando más de lo esperado. Revise la lista más tarde.');
           invalidate();
         }
+      } else if (result.job.status === 'CANCELLED') {
+        toast.info(result.job.errorMessage ?? 'Se canceló la generación.');
+        if (result.job.completedScreens > 0 && result.job.uiBlueprintVersionId)
+          setStopped(result.job);
       } else if (result.job.status === 'FAILED') {
         toast.error(result.job.errorMessage ?? 'No se pudo generar el boceto.');
         if (result.job.completedScreens > 0 && result.job.uiBlueprintVersionId)
@@ -1003,6 +1012,9 @@ function MockupsContent({ projectId }: { projectId: string }) {
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'No se pudo generar el boceto.');
     } finally {
+      runningJobId.current = null;
+      setConfirmingCancel(false);
+      setCancelling(false);
       setCreatingVersionId(null);
       setCreatingJobStatus(null);
       setProgress(null);
@@ -1021,11 +1033,27 @@ function MockupsContent({ projectId }: { projectId: string }) {
       .then(({ job }) => {
         if (job && (job.status === 'QUEUED' || job.status === 'RUNNING'))
           void runMockupJob('job', () => Promise.resolve(job));
-        else if (job?.status === 'FAILED' && job.completedScreens > 0 && job.uiBlueprintVersionId)
+        else if (
+          (job?.status === 'FAILED' || job?.status === 'CANCELLED') &&
+          job.completedScreens > 0 &&
+          job.uiBlueprintVersionId
+        )
           setStopped(job);
       })
       .catch(() => undefined);
   }, [projectId]);
+
+  async function cancelGeneration() {
+    const jobId = runningJobId.current;
+    if (!jobId) return;
+    setCancelling(true);
+    try {
+      await api.mockups.cancelJob(projectId, jobId);
+    } catch (err) {
+      setCancelling(false);
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo cancelar la generación.');
+    }
+  }
 
   const transitionFor = (m: MockupResponse) => (status: ArtifactVersionStatus) =>
     api.mockups.transition(projectId, m.id, m.version.id, status);
@@ -1346,6 +1374,44 @@ function MockupsContent({ projectId }: { projectId: string }) {
               Generando las pantallas
             </li>
           </ol>
+          {creatingJobStatus === 'QUEUED' || creatingJobStatus === 'RUNNING' ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {confirmingCancel ? (
+                <>
+                  <span className="text-sm text-muted-foreground">
+                    ¿Cancelar? Las pantallas ya generadas se conservan.
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="destructive"
+                    disabled={cancelling}
+                    onClick={() => void cancelGeneration()}
+                  >
+                    {cancelling ? 'Cancelando…' : 'Sí, cancelar'}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={cancelling}
+                    onClick={() => setConfirmingCancel(false)}
+                  >
+                    Seguir generando
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setConfirmingCancel(true)}
+                >
+                  Cancelar la generación
+                </Button>
+              )}
+            </div>
+          ) : null}
           <p className="text-xs text-muted-foreground">
             {progress
               ? 'Si se interrumpe, vuelva a generar el boceto: solo se piden las pantallas que faltan.'

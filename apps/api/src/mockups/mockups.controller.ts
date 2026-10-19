@@ -53,6 +53,17 @@ export class MockupsController {
     return this.service.latestJob(projectId);
   }
 
+  @Post('jobs/:jobId/cancel')
+  @HttpCode(200)
+  @ApiOperation({ operationId: 'cancelMockupJob', summary: 'Cancelar la generación de un boceto' })
+  @ApiZodResponse(200, 'Mockup generation job.', mockupJobResponseSchema)
+  cancelJob(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('jobId', uuidParamPipe) jobId: string,
+  ) {
+    return this.service.cancelJob(projectId, jobId);
+  }
+
   @Get('jobs/:jobId')
   @ApiOperation({ operationId: 'getMockupJob', summary: 'Consultar el estado de generación' })
   @ApiZodResponse(200, 'Mockup generation job.', mockupJobResponseSchema)
