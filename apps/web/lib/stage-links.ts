@@ -104,3 +104,56 @@ export function computeStepState(
   if (nextStage && keys.includes(nextStage.key)) return 'next';
   return 'pending';
 }
+
+// Sequential position of each route within the 5-step Construction Pipeline (AGENTS.md §10)
+export const CONSTRUCTION_STEP_NUMBER: Record<string, number> = {
+  '/construction/generation-plan': 1,
+  '/construction/conceptual-model': 2,
+  '/construction/design-baseline': 3,
+  '/construction/implementation-plan': 4,
+  '/construction/generation-runs': 5,
+};
+
+export const TOTAL_CONSTRUCTION_STEPS = 5;
+
+export const CONSTRUCTION_STEPS: { step: number; href: string; label: string }[] = [
+  { step: 1, href: '/construction/generation-plan', label: 'Plan de generación' },
+  { step: 2, href: '/construction/conceptual-model', label: 'Modelo conceptual' },
+  { step: 3, href: '/construction/design-baseline', label: 'Aprobación de diseño' },
+  { step: 4, href: '/construction/implementation-plan', label: 'Plan de implementación' },
+  { step: 5, href: '/construction/generation-runs', label: 'Generación de código' },
+];
+
+export interface ConstructionState {
+  hasApprovedGenerationPlan: boolean;
+  hasApprovedConceptualModel: boolean;
+  hasDesignBaseline: boolean;
+  hasApprovedImplementationPlan: boolean;
+  hasGeneratedCode: boolean;
+}
+
+// Computes the state for a construction step (satisfied, next, pending, unknown)
+export function computeConstructionStepState(
+  href: string,
+  state?: ConstructionState,
+): StepReadiness {
+  if (!state) return 'unknown';
+  const step = CONSTRUCTION_STEP_NUMBER[href];
+  if (!step) return 'unknown';
+
+  const satisfies = [
+    state.hasApprovedGenerationPlan,
+    state.hasApprovedConceptualModel,
+    state.hasDesignBaseline,
+    state.hasApprovedImplementationPlan,
+    state.hasGeneratedCode,
+  ];
+
+  if (satisfies[step - 1]) return 'satisfied';
+
+  // The first unsatisfied step is 'next', subsequent ones are 'pending'
+  const firstUnsatisfiedIndex = satisfies.findIndex((s) => !s);
+  if (firstUnsatisfiedIndex === step - 1) return 'next';
+
+  return 'pending';
+}

@@ -4,7 +4,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppShell } from './app-shell';
 import { TestProviders } from '../lib/test-utils';
 
-const mocks = vi.hoisted(() => ({ readinessGet: vi.fn(), projectGet: vi.fn(), warning: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  readinessGet: vi.fn(),
+  projectGet: vi.fn(),
+  warning: vi.fn(),
+  structuredAnalysisList: vi.fn(),
+  designBaselinesList: vi.fn(),
+  generationRunsList: vi.fn(),
+}));
 
 vi.mock('sonner', () => ({ toast: { warning: (...args: unknown[]) => mocks.warning(...args) } }));
 
@@ -14,6 +21,9 @@ vi.mock('../lib/api', () => ({
   api: {
     readiness: { get: (...args: unknown[]) => mocks.readinessGet(...args) },
     projects: { get: (...args: unknown[]) => mocks.projectGet(...args) },
+    structuredAnalysis: { list: (...args: unknown[]) => mocks.structuredAnalysisList(...args) },
+    designBaselines: { list: (...args: unknown[]) => mocks.designBaselinesList(...args) },
+    generationRuns: { list: (...args: unknown[]) => mocks.generationRunsList(...args) },
   },
   ApiError: class ApiError extends Error {},
   restoreSession: vi.fn(),
@@ -21,6 +31,9 @@ vi.mock('../lib/api', () => ({
 
 beforeEach(() => {
   mocks.warning.mockReset();
+  mocks.structuredAnalysisList.mockReset().mockResolvedValue({ items: [] });
+  mocks.designBaselinesList.mockReset().mockResolvedValue({ items: [] });
+  mocks.generationRunsList.mockReset().mockResolvedValue({ items: [] });
   window.localStorage.removeItem('caseflow.sidebarCollapsed');
   window.localStorage.setItem('caseflow.activeProjectId', 'p1');
   mocks.projectGet.mockResolvedValue({ id: 'p1', workflowRoute: 'FULL' });
@@ -108,6 +121,46 @@ describe('AppShell construction group', () => {
     const constructionIndex = links.findIndex((t) => /Plan de generación/.test(t));
     expect(traceabilityIndex).toBeGreaterThan(-1);
     expect(constructionIndex).toBeGreaterThan(traceabilityIndex);
+  });
+
+  it('numbers construction steps 1 to 5 and replaces number with checkmark when satisfied', async () => {
+    mocks.readinessGet.mockResolvedValue({ ready: true, stages: [] });
+    mocks.structuredAnalysisList.mockImplementation((_pid, kind) => {
+      if (kind === 'GENERATION_PLAN') {
+        return Promise.resolve({ items: [{ version: { status: 'APPROVED' } }] });
+      }
+      return Promise.resolve({ items: [] });
+    });
+
+    render(
+      <TestProviders>
+        <AppShell>content</AppShell>
+      </TestProviders>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole('link', { name: /Plan de generación/ })).toBeInTheDocument(),
+    );
+
+    // Step 1 is approved -> shows checkmark icon inside its circular badge (not number 1)
+    const step1Link = screen.getByRole('link', { name: /Plan de generación/ });
+    expect(step1Link.querySelector('svg')).toBeInTheDocument();
+
+    // Step 2 is not yet approved -> shows number 2
+    const step2Link = screen.getByRole('link', { name: /Modelo conceptual/ });
+    expect(step2Link).toHaveTextContent('2');
+
+    // Step 3 shows number 3
+    const step3Link = screen.getByRole('link', { name: /Aprobación de diseño/ });
+    expect(step3Link).toHaveTextContent('3');
+
+    // Step 4 shows number 4
+    const step4Link = screen.getByRole('link', { name: /Plan de implementación/ });
+    expect(step4Link).toHaveTextContent('4');
+
+    // Step 5 shows number 5
+    const step5Link = screen.getByRole('link', { name: /Generación de código/ });
+    expect(step5Link).toHaveTextContent('5');
   });
 });
 

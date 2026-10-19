@@ -6,11 +6,16 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { api } from '../lib/api';
 import {
+  computeConstructionStepState,
   computeStepState,
+  CONSTRUCTION_STEPS,
+  CONSTRUCTION_STEP_NUMBER,
   PIPELINE_STEPS,
   ROUTE_STEP_NUMBER,
+  TOTAL_CONSTRUCTION_STEPS,
   TOTAL_PIPELINE_STEPS,
 } from '../lib/stage-links';
+import { useConstructionState } from '../lib/use-construction-state';
 
 // Reinforces "where am I in the process" on every pipeline stage page
 // (spec: Home is the map, each stage confirms its own position in it) —
@@ -22,20 +27,41 @@ import {
 export function PageHeading({ title, projectId }: { title: string; projectId?: string }) {
   const pathname = usePathname();
   const step = ROUTE_STEP_NUMBER[pathname];
+  const constructionStep = CONSTRUCTION_STEP_NUMBER[pathname];
+
   const readiness = useQuery({
     queryKey: ['readiness', projectId],
-    queryFn: () => api.readiness.get(projectId!),
-    enabled: Boolean(projectId),
+    queryFn: () =>
+      api.readiness?.get ? api.readiness.get(projectId!) : Promise.resolve(undefined),
+    enabled: Boolean(projectId) && Boolean(step),
   });
+
+  const construction = useConstructionState(constructionStep ? projectId : undefined);
+
   const stages = readiness.data?.stages;
-  const state = step ? computeStepState(pathname, stages) : 'unknown';
-  const next = step ? PIPELINE_STEPS.find((s) => s.step === step + 1) : undefined;
+  const state = step
+    ? computeStepState(pathname, stages)
+    : constructionStep
+      ? computeConstructionStepState(pathname, construction.data)
+      : 'unknown';
+
+  const next = step
+    ? PIPELINE_STEPS.find((s) => s.step === step + 1)
+    : constructionStep
+      ? constructionStep < TOTAL_CONSTRUCTION_STEPS
+        ? CONSTRUCTION_STEPS.find((s) => s.step === constructionStep + 1)
+        : { step: 6, href: '/readiness', label: 'Preparación / Exportar' }
+      : undefined;
 
   return (
     <div>
       {step ? (
         <p className="text-xs font-medium tracking-wide text-primary uppercase">
           Paso {step} de {TOTAL_PIPELINE_STEPS}
+        </p>
+      ) : constructionStep ? (
+        <p className="text-xs font-medium tracking-wide text-primary uppercase">
+          Fase de Construcción · Paso {constructionStep} de {TOTAL_CONSTRUCTION_STEPS}
         </p>
       ) : null}
       <h1 className="text-xl font-semibold text-foreground">{title}</h1>
