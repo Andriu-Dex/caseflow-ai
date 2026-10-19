@@ -87,6 +87,16 @@ function CodeSnippet({ code, onCopy, copied, comment }: CodeSnippetProps) {
   );
 }
 
+// The role comes from the plan (text a person or the AI wrote) and ends up in a
+// command the user pastes into a terminal: only letters, digits, spaces,
+// underscores and hyphens are accepted, and the role goes in double quotes (a
+// role such as "Encargado de sucursal" is one argument). Anything else shows a
+// placeholder instead of being put into the command.
+export function devTokenCommand(role: string): string {
+  const safe = /^[\p{L}\p{N} _-]{1,60}$/u.test(role) ? role : '<rol>';
+  return `pnpm --filter ./apps/api run dev-token -- "${safe}"`;
+}
+
 export function ProjectQuickstartDialog({
   open,
   onOpenChange,
@@ -372,14 +382,10 @@ pnpm run dev`;
                       </span>
                     </div>
                     <CodeSnippet
-                      code={`pnpm --filter ./apps/api run dev-token -- ${primaryRole}`}
+                      code={devTokenCommand(primaryRole)}
                       copied={copiedKey === 'dev-token'}
                       onCopy={() =>
-                        copyToClipboard(
-                          `pnpm --filter ./apps/api run dev-token -- ${primaryRole}`,
-                          'dev-token',
-                          'Comando token',
-                        )
+                        copyToClipboard(devTokenCommand(primaryRole), 'dev-token', 'Comando token')
                       }
                     />
                   </div>

@@ -1,3 +1,4 @@
+import { devTokenCommand } from './project-quickstart-dialog';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -39,7 +40,9 @@ describe('ProjectQuickstartDialog', () => {
     expect(
       screen.getByText('docker compose -f docker/docker-compose.yml up -d'),
     ).toBeInTheDocument();
-    expect(screen.getByText('pnpm --filter ./apps/api run dev-token -- ADMIN')).toBeInTheDocument();
+    expect(
+      screen.getByText('pnpm --filter ./apps/api run dev-token -- "ADMIN"'),
+    ).toBeInTheDocument();
     expect(screen.getByText('pnpm run dev')).toBeInTheDocument();
 
     // Check copying full workflow
@@ -68,5 +71,26 @@ describe('ProjectQuickstartDialog', () => {
     await user.click(checkbox);
     expect(checkbox).not.toBeChecked();
     expect(localStorage.getItem(HIDE_QUICKSTART_KEY)).toBeNull();
+  });
+});
+
+describe('devTokenCommand', () => {
+  it('quotes a role with spaces and accents as one argument', () => {
+    expect(devTokenCommand('Encargado de sucursal')).toBe(
+      'pnpm --filter ./apps/api run dev-token -- "Encargado de sucursal"',
+    );
+  });
+  it('never puts shell syntax from a role into the command', () => {
+    const newline = String.fromCharCode(10);
+    for (const role of [
+      'Admin"; rm -rf ~; "',
+      'a$(whoami)',
+      'a`id`',
+      'a & b',
+      `a${newline}b`,
+      '',
+    ]) {
+      expect(devTokenCommand(role)).toBe('pnpm --filter ./apps/api run dev-token -- "<rol>"');
+    }
   });
 });
