@@ -150,17 +150,56 @@ describe('AppShell construction group', () => {
     const step2Link = screen.getByRole('link', { name: /Modelo conceptual/ });
     expect(step2Link).toHaveTextContent('2');
 
-    // Step 3 shows number 3
-    const step3Link = screen.getByRole('link', { name: /Aprobación de diseño/ });
-    expect(step3Link).toHaveTextContent('3');
+    // Steps 3 to 5 wait for the ones before them: a lock instead of the number.
+    for (const name of [/Aprobación de diseño/, /Plan de implementación/, /Generación de código/]) {
+      const link = screen.getByRole('link', { name });
+      expect(link.querySelector('svg')).toBeInTheDocument();
+      expect(link).toHaveAttribute('title', expect.stringMatching(/loqueado/));
+    }
+  });
+});
 
-    // Step 4 shows number 4
-    const step4Link = screen.getByRole('link', { name: /Plan de implementación/ });
-    expect(step4Link).toHaveTextContent('4');
-
-    // Step 5 shows number 5
-    const step5Link = screen.getByRole('link', { name: /Generación de código/ });
-    expect(step5Link).toHaveTextContent('5');
+describe('AppShell construction order', () => {
+  const approvedPlan = () =>
+    mocks.structuredAnalysisList.mockImplementation((_pid, kind) =>
+      Promise.resolve({
+        items: kind === 'GENERATION_PLAN' ? [{ version: { status: 'APPROVED' } }] : [],
+      }),
+    );
+  it('does not open a construction step while the previous one is not approved, and says which', async () => {
+    mocks.readinessGet.mockResolvedValue({ ready: true, stages: [] });
+    approvedPlan();
+    render(
+      <TestProviders>
+        <AppShell>content</AppShell>
+      </TestProviders>,
+    );
+    // Step 2 follows the approved plan, so it opens; step 3 waits for step 2.
+    await waitFor(() =>
+      expect(
+        screen.getByRole('link', { name: /Plan de generación/ }).querySelector('svg'),
+      ).not.toBeNull(),
+    );
+    await userEvent.click(screen.getByRole('link', { name: /Aprobación de diseño/ }));
+    expect(mocks.warning).toHaveBeenCalledWith(
+      'Complete primero "Modelo conceptual" antes de continuar con este paso.',
+    );
+    mocks.warning.mockClear();
+    expect(screen.getByRole('link', { name: /Modelo conceptual/ })).not.toHaveAttribute(
+      'title',
+      expect.stringMatching(/loqueado/),
+    );
+  });
+  it('does not lock construction in the BUILD_ONLY route', async () => {
+    mocks.readinessGet.mockResolvedValue({ ready: true, stages: [] });
+    mocks.projectGet.mockResolvedValue({ id: 'p1', workflowRoute: 'BUILD_ONLY' });
+    render(
+      <TestProviders>
+        <AppShell>content</AppShell>
+      </TestProviders>,
+    );
+    const link = await screen.findByRole('link', { name: /Generación de código/ });
+    expect(link).not.toHaveAttribute('title', expect.stringMatching(/loqueado/));
   });
 });
 
