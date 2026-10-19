@@ -47,7 +47,9 @@ import { STORAGE_PROVIDER } from './storage-provider.token';
 
 type Tx = Prisma.TransactionClient;
 const MOCKUP_CODE_PREFIX = 'MCK';
-const MAX_MOCKUP_ARCHIVE_BYTES = 50_000_000;
+// What one ZIP of the screens may hold: a mockup of 77 Stitch screens is about
+// 60 MB, and the images are the only thing in it.
+const MAX_MOCKUP_ARCHIVE_BYTES = 300_000_000;
 const logger = new Logger('MockupsService');
 // DEC-146: Stitch screens drawn at the same time, and times each is asked for.
 const SCREEN_CONCURRENCY = Math.min(8, Math.max(1, Number(process.env.STITCH_CONCURRENCY) || 4));
@@ -1105,7 +1107,9 @@ export class MockupsService {
         throw new PayloadTooLargeException('El archivo de pantallas supera el límite de descarga.');
       zip.file(`${String(index + 1).padStart(2, '0')}-${safeName}.${extension}`, body);
     }
-    const body = await zip.generateAsync({ type: 'nodebuffer' });
+    // The images are PNG already: storing them as they are is faster than
+    // compressing them again and makes a ZIP of the same size.
+    const body = await zip.generateAsync({ type: 'nodebuffer', compression: 'STORE' });
     return { body, fileName: `${mockup.code}-pantallas.zip` };
   }
 

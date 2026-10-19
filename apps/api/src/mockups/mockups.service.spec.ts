@@ -469,10 +469,35 @@ describe('MockupsService', () => {
         },
       ],
     });
-    vi.spyOn(storage, 'getObject').mockResolvedValue(Buffer.alloc(50_000_001));
+    vi.spyOn(storage, 'getObject').mockResolvedValue(Buffer.alloc(300_000_001));
     await expect(service.downloadMockupScreensZip('project', 'artifact')).rejects.toThrow(
       'supera el límite',
     );
+  });
+
+  it('downloads the ZIP of a mockup of many screens, about 60 MB of images, which the old limit refused', async () => {
+    const { service, prisma, storage } = setup();
+    const screens = Array.from({ length: 3 }, (_, i) => ({
+      id: `s${i}`,
+      screenLocalId: `p${i}`,
+      screenName: `Pantalla ${i}`,
+      imageStorageKey: `mockups/project/${i}.png`,
+      imageContentType: 'image/png',
+      htmlStorageKey: `mockups/project/${i}.html`,
+    }));
+    prisma.artifact.findFirst.mockResolvedValue({
+      ...artifact,
+      versions: [
+        {
+          ...version,
+          mockupDetail: { ...mockupDetail, generatorKind: 'STITCH', svg: null, screens },
+        },
+      ],
+    });
+    vi.spyOn(storage, 'getObject').mockResolvedValue(Buffer.alloc(20_000_000));
+    const { body } = await service.downloadMockupScreensZip('project', 'artifact');
+    expect(body.length).toBeGreaterThan(60_000_000);
+    expect(Object.keys((await JSZip.loadAsync(body)).files)).toHaveLength(3);
   });
 
   it('rejects incomplete or foreign provider screen lists before persistence', async () => {
