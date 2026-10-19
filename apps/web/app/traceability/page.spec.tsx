@@ -399,4 +399,22 @@ describe('TraceabilityPage — construction transition & milestone', () => {
       '/readiness',
     );
   });
+
+  it('resets celebration key in sessionStorage when planning becomes incomplete', async () => {
+    sessionStorage.setItem('caseflow.celebrated-construction.p1', 'true');
+    getReadiness.mockResolvedValueOnce({
+      projectId: 'p1',
+      generatedAt: new Date().toISOString(),
+      ready: false,
+      stages: [],
+      blockers: [],
+      warnings: [],
+    });
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(sessionStorage.getItem('caseflow.celebrated-construction.p1')).toBeNull();
+    });
+  });
 });

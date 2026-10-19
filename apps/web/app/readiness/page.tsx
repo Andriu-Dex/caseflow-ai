@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   AlertCircle,
@@ -24,6 +24,7 @@ import { api, downloadFile } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { STAGE_LINKS } from '../../lib/stage-links';
 import { HtmlPreviewDialog } from '../../components/html-preview-dialog';
+import { Confetti } from '../../components/confetti';
 
 const CONSISTENCY_RULE_LABELS: Record<string, string> = {
   'Mockup Association': 'Asociación de boceto',
@@ -55,6 +56,7 @@ function ReadinessContent({ projectId }: { projectId: string }) {
   const [filter, setFilter] = useState<'all' | 'satisfied' | 'pending'>('all');
   const [downloading, setDownloading] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [showConfetti, setShowConfetti] = useState(false);
 
   const stages = readiness.data?.stages ?? [];
   const done = stages.filter((s) => s.satisfied).length;
@@ -62,6 +64,26 @@ function ReadinessContent({ projectId }: { projectId: string }) {
   const percentage = total > 0 ? Math.round((done / total) * 100) : 0;
   const isReady = readiness.data?.ready ?? false;
   const nothingApproved = readiness.data !== undefined && done === 0;
+
+  useEffect(() => {
+    const key = `caseflow.celebrated-readiness.${projectId}`;
+    if (isReady) {
+      try {
+        if (!sessionStorage.getItem(key)) {
+          sessionStorage.setItem(key, 'true');
+          setShowConfetti(true);
+        }
+      } catch {
+        setShowConfetti(true);
+      }
+    } else {
+      try {
+        sessionStorage.removeItem(key);
+      } catch {
+        // Storage access might fail in restricted environments
+      }
+    }
+  }, [isReady, projectId]);
 
   const filteredStages = useMemo(() => {
     if (filter === 'satisfied') return stages.filter((s) => s.satisfied);
@@ -83,7 +105,8 @@ function ReadinessContent({ projectId }: { projectId: string }) {
   const issues = consistency.data?.issues ?? [];
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 relative">
+      {showConfetti && <Confetti onComplete={() => setShowConfetti(false)} />}
       {/* Page Heading & Status */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
@@ -171,6 +194,42 @@ function ReadinessContent({ projectId }: { projectId: string }) {
           </div>
         </div>
       </div>
+
+      {/* Milestone Banner: Construcción Desbloqueada */}
+      {isReady ? (
+        <div className="rounded-2xl border-2 border-emerald-500/40 bg-gradient-to-br from-emerald-500/10 via-card to-primary/5 p-5 shadow-xs transition-all">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start gap-3.5">
+              <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">
+                <Sparkles className="size-5.5 text-emerald-600 dark:text-emerald-400 animate-pulse" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-xs font-semibold text-emerald-800 dark:text-emerald-300 border border-emerald-500/30">
+                    <ShieldCheck className="size-3.5" />
+                    Planificación Completada (13 de 13)
+                  </span>
+                </div>
+                <h2 className="text-base font-bold text-foreground">
+                  ¡Fase de Construcción Desbloqueada!
+                </h2>
+                <p className="text-xs text-muted-foreground leading-relaxed max-w-2xl">
+                  Se han completado y aprobado todas las etapas del pipeline de planificación. Ahora
+                  puede avanzar al primer paso de la fase de construcción para formular el plan de
+                  generación y generar el software.
+                </p>
+              </div>
+            </div>
+            <Link
+              href="/construction/generation-plan"
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-xs hover:bg-primary/90 transition-colors shrink-0"
+            >
+              <span>Ir a Plan de Generación</span>
+              <ArrowRight className="size-3.5" />
+            </Link>
+          </div>
+        </div>
+      ) : null}
 
       {/* Export Deliverables Card */}
       <section className="flex flex-col gap-3 rounded-xl border border-border/80 bg-card p-5 shadow-2xs">
