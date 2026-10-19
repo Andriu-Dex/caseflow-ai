@@ -610,6 +610,24 @@ const looseRouteSchema = implementationRouteSchema.extend({
   actions: z.array(looseRouteActionSchema).max(20).default([]),
 });
 export type LooseImplementationRoute = z.output<typeof looseRouteSchema>;
+// The actions of existing routes that nothing served yet, and the endpoints
+// that serve them (a short follow-up to a routes batch).
+export const implementationActionsOutputSchema = z
+  .object({
+    routes: z
+      .array(
+        z
+          .object({
+            screenLocalId: localId(),
+            actions: z.array(looseRouteActionSchema).max(20).default([]),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(40),
+    customEndpoints: z.array(implementationEndpointSchema).max(40).default([]),
+  })
+  .strict();
 export const implementationRoutesBatchOutputSchema = z
   .object({
     routes: z.array(looseRouteSchema).min(1).max(40),

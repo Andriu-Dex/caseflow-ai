@@ -7,6 +7,7 @@ import { UI_BLUEPRINT_BATCH_PROMPT } from '../structured-analysis/ui-blueprint-p
 import {
   CONCEPTUAL_BATCH_PROMPT,
   IP_ENTITY_PROMPT,
+  IP_ACTIONS_PROMPT,
   IP_ROUTES_PROMPT,
   IP_SKELETON_PROMPT,
   PLAN_DETAIL_PROMPT,
@@ -424,6 +425,13 @@ import {
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'implementation_plan_generation',
             systemInstructions: IP_ENTITY_PROMPT,
+          },
+          {
+            key: 'implementation-plan.actions',
+            version: 1,
+            capability: 'STRUCTURED_OUTPUT',
+            purpose: 'implementation_plan_generation',
+            systemInstructions: IP_ACTIONS_PROMPT,
           },
           {
             key: 'implementation-plan.routes',

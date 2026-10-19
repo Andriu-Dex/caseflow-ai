@@ -8,8 +8,10 @@ import {
   fillMissingRoutes,
   fillProvenance,
   finishRoutes,
+  mergeActionBatch,
   mergeEntityBatch,
   mergeRouteBatch,
+  pendingActions,
   screensWithoutRoute,
   type BlueprintScreen,
   type ClassRelationship,
@@ -307,11 +309,11 @@ describe('routes', () => {
     // 'Confirmar' has no CRUD operation and is not a read: its own POST serves it.
     expect(done.routes[0]!.actions).toEqual([
       { label: 'Nuevo pedido', operation: 'CREATE' },
-      { label: 'Confirmar', endpoint: 'POST /orders/confirmar' },
+      { label: 'Confirmar', endpoint: 'POST /orders/actions/1' },
     ]);
     // The unused endpoint is dropped; only the one of the action remains.
     expect(done.customEndpoints.map((endpoint) => `${endpoint.method} ${endpoint.path}`)).toEqual([
-      'POST /orders/confirmar',
+      'POST /orders/actions/1',
     ]);
   });
 });
@@ -359,13 +361,73 @@ describe('route actions and provenance fallbacks', () => {
       ['Cajero', 'Administrador'],
     );
     expect(done.routes[0]!.actions).toEqual([
-      { label: 'Confirmar la venta', endpoint: 'POST /ventas/:ventaId/confirmar-la-venta' },
+      { label: 'Confirmar la venta', endpoint: 'POST /ventas/:ventaId/actions/1' },
       {
         label: 'Guardar cambios del borrador',
-        endpoint: 'POST /ventas/:ventaId/guardar-cambios-del-borrador',
+        endpoint: 'POST /ventas/:ventaId/actions/2',
       },
     ]);
     expect(done.customEndpoints.every((endpoint) => endpoint.roles.join() === 'Cajero')).toBe(true);
+  });
+  it('asks the model only for the writing actions nothing serves, and attaches what it answers', () => {
+    const sale = screen('sale', {
+      primaryActions: ['Confirmar la venta', 'Ver', 'Nuevo pedido'],
+      secondaryActions: [],
+    });
+    const orders = [entity('o', 'co', { operations: ['GET', 'CREATE'] })];
+    const base = {
+      routes: [
+        {
+          ...reportRoute,
+          screenLocalId: 'sale',
+          path: '/sales/[saleId]',
+          entityLocalId: 'o',
+          actions: [],
+        } as never,
+      ],
+      customEndpoints: [],
+    };
+    // 'Ver' and 'Nuevo pedido' are settled by CRUD operations, so only one is pending.
+    expect(pendingActions(base, [sale], orders)).toEqual([
+      {
+        screenLocalId: 'sale',
+        path: '/sales/[saleId]',
+        entityLocalId: 'o',
+        pendingActions: ['Confirmar la venta'],
+      },
+    ]);
+    const merged = mergeActionBatch(
+      base,
+      {
+        routes: [
+          {
+            screenLocalId: 'sale',
+            actions: [
+              { label: 'Confirmar la venta', endpoint: 'POST /sales/:saleId/confirm' },
+              { label: 'Otra', operation: 'GET' },
+            ],
+          },
+        ],
+        customEndpoints: [
+          {
+            moduleLocalId: 'orders',
+            method: 'POST',
+            path: '/sales/:saleId/confirm',
+            summary: 'Confirmar',
+            roles: [],
+          },
+        ] as never,
+      },
+      [sale],
+      orders,
+      context,
+    );
+    expect(merged.routes[0]!.actions).toEqual([
+      { label: 'Confirmar la venta', endpoint: 'POST /sales/:saleId/confirm' },
+    ]);
+    expect(merged.customEndpoints.map((endpoint) => endpoint.path)).toEqual([
+      '/sales/:saleId/confirm',
+    ]);
   });
   it('cites the design sources it comes from when the model cited none, and keeps what it cited', () => {
     const filled = fillProvenance(

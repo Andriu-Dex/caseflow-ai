@@ -358,6 +358,27 @@ describe('references by identifier across stages (DEC-121)', () => {
     ).toEqual(['UNKNOWN_SCREEN']);
   });
 
+  it('warns about an endpoint the generator numbered instead of naming', () => {
+    const content = {
+      ...plan({ classLocalId: 'order', screenLocalId: 'orders', label: 'Exportar' }),
+      customEndpoints: [
+        {
+          moduleLocalId: 'sales',
+          method: 'POST',
+          path: '/orders/actions/1',
+          summary: 'Acción «Confirmar»',
+          roles: [],
+        },
+      ],
+    };
+    const warning = evaluateStructuredGeneration('IMPLEMENTATION_PLAN', content, [
+      classDiagram,
+      blueprint,
+    ]).find((finding) => finding.code === 'GENERIC_ENDPOINT');
+    expect(warning).toMatchObject({ severity: 'WARNING' });
+    expect(warning!.message).toContain('/orders/actions/1');
+  });
+
   it('checks the class each conceptual entity refines', () => {
     const findings = evaluateStructuredGeneration(
       'CONCEPTUAL_DOMAIN_MODEL',

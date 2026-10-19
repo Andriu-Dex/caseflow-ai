@@ -293,6 +293,20 @@ const endpointKey = (endpoint: Pick<IpEndpoint, 'method' | 'path'>) =>
 // Adds one batch's routes and custom endpoints. A route shows one of the
 // batch's screens; its actions are kept only when the screen has them and an
 // operation or endpoint that exists serves them.
+// What serves an action: the operation when the entity offers it, else the
+// endpoint when it exists; null when neither does.
+function serveAction(
+  action: { label: string; operation?: IpEntity['operations'][number]; endpoint?: string },
+  entity: IpEntity | undefined,
+  endpointKeys: Set<string>,
+): IpRoute['actions'][number] | null {
+  if (action.operation && entity?.operations.includes(action.operation))
+    return { label: action.label, operation: action.operation };
+  if (action.endpoint && endpointKeys.has(action.endpoint))
+    return { label: action.label, endpoint: action.endpoint };
+  return null;
+}
+
 export function mergeRouteBatch(
   accumulated: RoutesAccumulated,
   output: { routes: LooseImplementationRoute[]; customEndpoints: IpEndpoint[] },
@@ -340,15 +354,7 @@ export function mergeRouteBatch(
     const actions: IpRoute['actions'] = [];
     for (const action of route.actions) {
       if (!labels.has(action.label) || seenLabels.has(action.label)) continue;
-      const byOperation =
-        action.operation && entity?.operations.includes(action.operation)
-          ? { label: action.label, operation: action.operation }
-          : null;
-      const byEndpoint =
-        action.endpoint && endpointKeys.has(action.endpoint)
-          ? { label: action.label, endpoint: action.endpoint }
-          : null;
-      const served = byOperation ?? byEndpoint;
+      const served = serveAction(action, entity, endpointKeys);
       if (!served) continue;
       seenLabels.add(action.label);
       actions.push(served);
@@ -365,6 +371,81 @@ export function mergeRouteBatch(
     });
   }
   return { routes, customEndpoints: endpoints };
+}
+
+// The primary actions of the routes of these screens that nothing serves yet
+// and that no CRUD operation of the route's entity would (finishRoutes does
+// that one): what the model is asked for once more.
+export function pendingActions(
+  accumulated: RoutesAccumulated,
+  targets: BlueprintScreen[],
+  entities: IpEntity[],
+) {
+  const entityById = new Map(entities.map((entity) => [entity.localId, entity]));
+  const screens = new Map(targets.map((screen) => [screen.localId, screen]));
+  return accumulated.routes.flatMap((route) => {
+    const screen = route.screenLocalId ? screens.get(route.screenLocalId) : undefined;
+    if (!screen) return [];
+    const entity = route.entityLocalId ? entityById.get(route.entityLocalId) : undefined;
+    const served = new Set(route.actions.map((action) => action.label));
+    const pending = screen.primaryActions.filter((label) => {
+      if (served.has(label)) return false;
+      const operation = ACTION_OPERATIONS.find(([pattern]) => pattern.test(label))?.[1];
+      return !(operation && entity?.operations.includes(operation));
+    });
+    return pending.length
+      ? [
+          {
+            screenLocalId: screen.localId,
+            path: route.path,
+            entityLocalId: route.entityLocalId,
+            pendingActions: pending,
+          },
+        ]
+      : [];
+  });
+}
+
+// Adds the endpoints of the follow-up and attaches each pending action to its
+// route when the operation or the endpoint it names exists.
+export function mergeActionBatch(
+  accumulated: RoutesAccumulated,
+  output: {
+    routes: { screenLocalId: string; actions: LooseImplementationRoute['actions'] }[];
+    customEndpoints: IpEndpoint[];
+  },
+  screens: BlueprintScreen[],
+  entities: IpEntity[],
+  context: PlanContext,
+): RoutesAccumulated {
+  const screenById = new Map(screens.map((screen) => [screen.localId, screen]));
+  const withEndpoints = mergeRouteBatch(
+    accumulated,
+    { routes: [], customEndpoints: output.customEndpoints },
+    [],
+    entities,
+    context,
+    new Set(),
+  );
+  const endpointKeys = new Set(withEndpoints.customEndpoints.map(endpointKey));
+  const entityById = new Map(entities.map((entity) => [entity.localId, entity]));
+  const routes = withEndpoints.routes.map((route) => {
+    const given = output.routes.find((item) => item.screenLocalId === route.screenLocalId);
+    if (!given) return route;
+    const entity = route.entityLocalId ? entityById.get(route.entityLocalId) : undefined;
+    const taken = new Set(route.actions.map((action) => action.label));
+    const added: IpRoute['actions'] = [];
+    const own = new Set(screenById.get(route.screenLocalId ?? '')?.primaryActions ?? []);
+    for (const action of given.actions) {
+      if (taken.has(action.label) || !own.has(action.label)) continue;
+      const served = serveAction(action, entity, endpointKeys);
+      if (!served) continue;
+      taken.add(action.label);
+      added.push(served);
+    }
+    return added.length ? { ...route, actions: [...route.actions, ...added] } : route;
+  });
+  return { routes, customEndpoints: withEndpoints.customEndpoints };
 }
 
 export const screensWithoutRoute = (accumulated: RoutesAccumulated, targets: BlueprintScreen[]) => {
@@ -433,8 +514,7 @@ export function finishRoutes(
     return extra.length ? { ...route, actions: [...route.actions, ...extra] } : route;
   });
   // An action still unserved is served by an endpoint of its route: a query
-  // (GET at the route's path, shared) when it only reads, else a POST for the
-  // action itself. Roles come from the route's entity, or are all of them.
+  // (GET at the route's path, shared) when it only reads, else a numbered POST. Roles come from the route's entity, or are all of them.
   const endpoints = [...accumulated.customEndpoints];
   const known = new Set(endpoints.map(endpointKey));
   const served = routes.map((route) => {
@@ -444,9 +524,12 @@ export function finishRoutes(
     const entity = route.entityLocalId ? entityById.get(route.entityLocalId) : undefined;
     const done = new Set(route.actions.map((action) => action.label));
     const extra: IpRoute['actions'] = [];
+    let generic = [...known].filter((key) => key.startsWith(`POST ${apiPath}/actions/`)).length;
     for (const label of screen.primaryActions.filter((item) => !done.has(item))) {
       const reads = READ_ACTION.test(label);
-      const path = reads ? apiPath : `${apiPath}/${slug(label).split('-').slice(0, 4).join('-')}`;
+      // A writing action nothing named gets a neutral, numbered endpoint of its
+      // route (the quality check asks for it to be renamed).
+      const path = reads ? apiPath : `${apiPath}/actions/${++generic}`;
       const endpoint = `${reads ? 'GET' : 'POST'} ${path}`;
       if (!known.has(endpoint)) {
         known.add(endpoint);

@@ -234,11 +234,19 @@ export function evaluateStructuredGeneration(
       checkReferences(`La entidad ${entity.name}`, entity.relatedSourceCodes ?? []);
       checkClass(`La entidad ${entity.name}`, entity.classLocalId);
     }
-    for (const endpoint of parsed.customEndpoints)
+    for (const endpoint of parsed.customEndpoints) {
       checkReferences(
         `El endpoint ${endpoint.method} ${endpoint.path}`,
         endpoint.relatedSourceCodes ?? [],
       );
+      // Numbered by the generator when nothing named the endpoint of an action.
+      if (/\/actions\/\d+$/.test(endpoint.path))
+        findings.push({
+          severity: 'WARNING',
+          code: 'GENERIC_ENDPOINT',
+          message: `El endpoint ${endpoint.method} ${endpoint.path} se generó con un nombre genérico; conviene renombrarlo según la acción que atiende («${endpoint.summary}»).`,
+        });
+    }
     for (const route of parsed.routes) {
       checkReferences(`La ruta ${route.path}`, route.relatedSourceCodes ?? []);
       if (!route.screenLocalId) continue;
