@@ -554,7 +554,7 @@ export function UseCaseManualForm({
             </Section>
           </div>
 
-          <DialogFooter className="border-t border-border px-6 py-4">
+          <DialogFooter className="sticky bottom-0 z-10 border-t border-border bg-card/95 backdrop-blur-md px-6 py-4">
             <Button type="button" variant="ghost" onClick={onCancel}>
               Cancelar
             </Button>

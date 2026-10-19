@@ -16,7 +16,7 @@ import { api, ApiError } from '../lib/api';
 import { csv } from '../lib/use-rows';
 import { TagInput } from './tag-input';
 import { Button } from '@caseflow-ai/ui';
-import { Trash2, Plus } from 'lucide-react';
+import { Trash2, Plus, Check, Sparkles } from 'lucide-react';
 
 // Creating, or editing (`initial` given): an edit submits a complete new
 // version that starts again as a draft; the previous version stays intact.
@@ -56,25 +56,65 @@ export function ManualFormShell({
   onCancel: () => void;
   children: React.ReactNode;
 }) {
+  const submitText = submitting ? 'Guardando…' : editing ? 'Guardar cambios' : 'Crear';
+
   return (
     <form
       onSubmit={onSubmit}
-      className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4"
+      className="relative flex flex-col gap-5 rounded-xl border border-border/80 bg-card p-5 shadow-xs transition-colors"
     >
-      <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+      {/* Top Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-3.5">
+        <div className="flex items-center gap-2.5">
+          <h2 className="text-sm font-semibold tracking-tight text-foreground">{title}</h2>
+          {editing ? (
+            <span className="rounded-full border border-blue-500/30 bg-blue-500/10 px-2 py-0.5 text-[11px] font-medium text-blue-600 dark:text-blue-400">
+              Modo edición
+            </span>
+          ) : (
+            <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+              Nueva versión
+            </span>
+          )}
+        </div>
+        <p className="hidden text-xs text-muted-foreground sm:block">
+          {editing
+            ? 'Los cambios generarán una nueva versión pendiente de aprobación.'
+            : 'Complete los campos para registrar una versión candidata.'}
+        </p>
+      </div>
+
       {children}
-      <div className="flex gap-2">
-        <Button type="submit" disabled={submitting}>
-          {submitting ? 'Guardando…' : editing ? 'Guardar cambios' : 'Crear'}
-        </Button>
-        <Button
-          variant="ghost"
-          type="button"
-          onClick={onCancel}
-          className="text-muted-foreground underline"
-        >
-          Cancelar
-        </Button>
+
+      {/* Floating Sticky Action Bar for Long Forms */}
+      <div className="sticky bottom-4 z-30 mt-2 flex items-center justify-between gap-3 rounded-xl border border-border/90 bg-card/95 px-4 py-3 shadow-xl backdrop-blur-md ring-1 ring-black/5 dark:bg-slate-900/95 dark:ring-white/10">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Sparkles className="size-4 shrink-0 text-primary" aria-hidden="true" />
+          <span className="font-medium text-foreground">{title}</span>
+          <span className="hidden sm:inline text-muted-foreground/80">
+            • {editing ? 'Guardar creará una nueva versión candidata' : 'Crear versión'}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            type="button"
+            onClick={onCancel}
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            Cancelar
+          </Button>
+          <Button
+            type="submit"
+            size="sm"
+            disabled={submitting}
+            className="gap-1.5 text-xs font-semibold shadow-xs"
+          >
+            <Check className="size-3.5" aria-hidden="true" />
+            {submitText}
+          </Button>
+        </div>
       </div>
     </form>
   );
