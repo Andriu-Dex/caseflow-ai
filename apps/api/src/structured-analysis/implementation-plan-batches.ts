@@ -409,7 +409,7 @@ const ACTION_OPERATIONS: [RegExp, IpEntity['operations'][number]][] = [
 // the CRUD operation its label names, when the route's entity offers it; an
 // endpoint no action uses is dropped.
 const READ_ACTION =
-  /(consult|^ver|exhib|exam|list|busc|filtr|compar|descarg|export|revis|mostr|abrir|detalle|actualizar la consulta)/i;
+  /(consult|^verb|exhib|exam|list|busc|filtr|compar|descarg|export|revis|mostr|abrir|detalle|actualizar la consulta)/i;
 
 export function finishRoutes(
   accumulated: RoutesAccumulated,
