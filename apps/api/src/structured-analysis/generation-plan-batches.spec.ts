@@ -66,6 +66,19 @@ describe('cleanOutline', () => {
       relatedSourceCodes: ['RF-001', 'CU-001'],
     });
   });
+  it('keeps each entity in one module, the first that lists it', () => {
+    const cleaned = cleanOutline(
+      outline([
+        mod('a', { name: 'A', entityNames: ['Usuario', 'Sesión'] }),
+        mod('b', { name: 'B', entityNames: ['usuario', 'Rol'] }),
+      ]),
+      codes,
+    );
+    expect(cleaned.modules.map((module) => module.entityNames)).toEqual([
+      ['Usuario', 'Sesión'],
+      ['Rol'],
+    ]);
+  });
   it('makes module ids unique and refuses a repeated name', () => {
     const cleaned = cleanOutline(outline([mod('m'), mod('m', { name: 'Otro' })]), codes);
     expect(cleaned.modules.map((module) => module.localId)).toEqual(['m', 'm-2']);
