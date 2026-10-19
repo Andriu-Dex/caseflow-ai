@@ -211,6 +211,38 @@ describe('completing the model from the class diagram', () => {
     ]);
     expect(completeRelationships(done, [relationship]).relationships).toHaveLength(1);
   });
+  it('keeps two different relationships between the same two entities', () => {
+    const full = fillMissingEntities(empty, classes);
+    const relationship = (label: string): ClassRelationship => ({
+      fromLocalId: 'a',
+      toLocalId: 'b',
+      kind: 'ASSOCIATION',
+      label,
+      fromMultiplicity: '*',
+      toMultiplicity: '*',
+    });
+    // The model carried over only "opera en": the second one is still added.
+    const carried = {
+      ...full,
+      relationships: [
+        {
+          fromLocalId: full.entities[0]!.localId,
+          toLocalId: full.entities[1]!.localId,
+          name: 'opera en',
+          cardinality: 'MANY_TO_MANY' as const,
+        },
+      ],
+    };
+    const done = completeRelationships(carried, [
+      relationship('opera en'),
+      relationship('es responsable de'),
+    ]);
+    expect(done.relationships.map((r) => r.name)).toEqual(['opera en', 'es responsable de']);
+    expect(
+      completeRelationships(done, [relationship('opera en'), relationship('es responsable de')])
+        .relationships,
+    ).toHaveLength(2);
+  });
   it('checks the whole model once it is assembled', () => {
     expect(finishConceptualModel(fillMissingEntities(empty, classes)).entities).toHaveLength(2);
     expect(() => finishConceptualModel({ entities: [], relationships: [] })).toThrow('inválidas');
