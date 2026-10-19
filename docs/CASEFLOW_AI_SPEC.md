@@ -7990,4 +7990,4 @@ El servidor bloquea congelar diseño y construir mientras quedan pasos por rehac
 
 ## 221.4 Fuera de alcance de estas extensiones
 
-Interfaz bilingüe completa (EN/ES) y vista previa en vivo del software generado (§177.2): planificadas para después de cerrar v2.
+Interfaz bilingüe completa (EN/ES) y vista previa en vivo del software generado (§177.2): planificadas para después de cerrar v2. El detalle de cada una y del resto de lo pendiente está en `docs/V3_PROPOSALS.md`.
