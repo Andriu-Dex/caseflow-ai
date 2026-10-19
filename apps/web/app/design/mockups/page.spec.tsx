@@ -474,10 +474,50 @@ describe('MockupsPage background generation (DEC-146)', () => {
     // The plain wheel does not zoom.
     fireEvent.wheel(box, { deltaY: -100 });
     expect(screen.getByText('100%')).toBeInTheDocument();
-    // Ctrl + wheel does, up and down.
-    fireEvent.wheel(box, { deltaY: -100, ctrlKey: true });
-    expect(screen.getByText('125%')).toBeInTheDocument();
+    // Ctrl + wheel does, up and down. The native listener is attached a moment
+    // after the dialog opens, so the first wheel is repeated until it is there.
+    await waitFor(() => {
+      fireEvent.wheel(box, { deltaY: -100, ctrlKey: true });
+      expect(screen.getByText('125%')).toBeInTheDocument();
+    });
     fireEvent.wheel(box, { deltaY: 100, ctrlKey: true });
     expect(screen.getByText('100%')).toBeInTheDocument();
+  });
+
+  it('asks before generating a mockup with Stitch, with the screens and the time, and does nothing if cancelled', async () => {
+    const user = userEvent.setup();
+    mocks.listBlueprints.mockResolvedValue({
+      items: [
+        {
+          id: 'bp-1',
+          code: 'UI-002',
+          version: { id: 'bp-version-1', status: 'APPROVED' },
+          content: { screens: Array.from({ length: 77 }, (_, i) => ({ localId: `s${i}` })) },
+        },
+      ],
+    });
+    mocks.create.mockResolvedValue({ id: 'job-1', status: 'QUEUED' });
+    mocks.getJob.mockResolvedValue({ id: 'job-1', status: 'COMPLETED' });
+    render(
+      <TestProviders>
+        <MockupsPage />
+      </TestProviders>,
+    );
+    await user.click(await screen.findByRole('button', { name: /Generar boceto/ }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/77 pantallas de escritorio/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/unos 40 minutos/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/créditos de Stitch/)).toBeInTheDocument();
+    expect(mocks.create).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(mocks.create).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: /Generar boceto/ }));
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Generar boceto' }),
+    );
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledWith('p1', 'bp-version-1', 'DESKTOP'));
   });
 });
