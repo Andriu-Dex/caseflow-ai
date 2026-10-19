@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   file: vi.fn(),
   sandboxRuns: vi.fn(),
   validate: vi.fn(),
+  archive: vi.fn(),
+  restore: vi.fn(),
 }));
 
 vi.mock('../../../lib/api', () => ({
@@ -24,6 +26,8 @@ vi.mock('../../../lib/api', () => ({
       file: (...args: unknown[]) => mocks.file(...args),
       sandboxRuns: (...args: unknown[]) => mocks.sandboxRuns(...args),
       validate: (...args: unknown[]) => mocks.validate(...args),
+      archive: (...args: unknown[]) => mocks.archive(...args),
+      restore: (...args: unknown[]) => mocks.restore(...args),
       snapshotArchiveUrl: (p: string, s: string) => `/api/${p}/${s}.zip`,
     },
     readiness: { get: vi.fn(async () => ({ stages: [] })) },
@@ -86,6 +90,21 @@ describe('GenerationRunsPage', () => {
     expect(screen.queryByRole('option', { name: /PI-002/ })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Generar proyecto' }));
     await waitFor(() => expect(mocks.start).toHaveBeenCalledWith('p1', 'pv1'));
+  });
+
+  it('archives a run out of the list and restores it from the archived ones', async () => {
+    const archived = { ...run, id: 'run-old', archivedAt: '2026-10-02T00:00:00.000Z' };
+    mocks.listRuns.mockResolvedValue({ items: [run, archived] });
+    mocks.archive.mockResolvedValue({});
+    mocks.restore.mockResolvedValue({});
+    render(<GenerationRunsPage />, { wrapper: TestProviders });
+    // Only the visible run is counted and shown with its button.
+    expect(await screen.findByText(/Generaciones Realizadas \(1\)/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Archivar' }));
+    await waitFor(() => expect(mocks.archive).toHaveBeenCalledWith('p1', 'run-1'));
+    await userEvent.click(screen.getByRole('button', { name: 'Archivadas (1)' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Restaurar' }));
+    await waitFor(() => expect(mocks.restore).toHaveBeenCalledWith('p1', 'run-old'));
   });
 
   it('shows warnings, files and their traceability', async () => {

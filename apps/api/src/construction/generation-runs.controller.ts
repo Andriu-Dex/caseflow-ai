@@ -75,6 +75,33 @@ export class GenerationRunsController {
     return this.service.list(projectId);
   }
 
+  @Post(':runId/archive')
+  @HttpCode(200)
+  @ApiOperation({ operationId: 'archiveGenerationRun', summary: 'Archivar una generación' })
+  @ApiZodResponse(200, 'Generation run.', generationRunResponseSchema)
+  archive(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('runId', uuidParamPipe) runId: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.service.setArchived(projectId, runId, req.user.id, true);
+  }
+
+  @Post(':runId/restore')
+  @HttpCode(200)
+  @ApiOperation({
+    operationId: 'restoreGenerationRun',
+    summary: 'Restaurar una generación archivada',
+  })
+  @ApiZodResponse(200, 'Generation run.', generationRunResponseSchema)
+  restore(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('runId', uuidParamPipe) runId: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.service.setArchived(projectId, runId, req.user.id, false);
+  }
+
   @Get(':runId')
   @ApiOperation({ operationId: 'getGenerationRun', summary: 'Consultar una corrida' })
   @ApiZodResponse(200, 'Generation run.', generationRunResponseSchema)
