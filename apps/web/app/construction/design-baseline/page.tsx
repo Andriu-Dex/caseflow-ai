@@ -1,13 +1,10 @@
 'use client';
 
-import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertCircle,
   AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
   Box,
   CheckCircle2,
   Clock,
@@ -21,7 +18,6 @@ import {
   Palette,
   Server,
   ShieldCheck,
-  Sparkles,
   Tag,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -34,6 +30,7 @@ import { Button } from '@caseflow-ai/ui';
 import { api, ApiError } from '../../../lib/api';
 import { PageHeading } from '../../../components/page-heading';
 import { QueryState, RequireActiveProject } from '../../../components/query-state';
+import { ConstructionFooter } from '../../../components/construction-footer';
 import { EmptyState } from '../../../components/artifact-actions';
 
 type StructuredRole = Exclude<DesignBaselineRole, 'MOCKUP'>;
@@ -620,27 +617,7 @@ function DesignBaselineContent({ projectId }: { projectId: string }) {
         </QueryState>
       </section>
 
-      {/* Navegación Inferior (Footer Navigation) */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-6 border-t border-border mt-2">
-        <Link href="/construction/conceptual-model">
-          <Button variant="outline" size="sm" className="gap-2 text-xs">
-            <ArrowLeft className="size-3.5" />
-            Anterior: Modelo conceptual (Paso 2)
-          </Button>
-        </Link>
-
-        <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-          <Sparkles className="size-3.5 text-primary" />
-          <span>Fase de Construcción · Paso 3 de 5</span>
-        </div>
-
-        <Link href="/construction/implementation-plan">
-          <Button size="sm" className="gap-2 text-xs font-semibold">
-            Siguiente: Plan de implementación (Paso 4)
-            <ArrowRight className="size-3.5" />
-          </Button>
-        </Link>
-      </div>
+      <ConstructionFooter projectId={projectId} step={3} />
     </div>
   );
 }

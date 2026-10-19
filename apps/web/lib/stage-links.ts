@@ -157,3 +157,17 @@ export function computeConstructionStepState(
 
   return 'pending';
 }
+
+// The construction step that must be finished before this one opens, or null.
+// A step already reached is not locked again when an earlier one changes.
+export function firstBlockingConstructionStep(
+  href: string,
+  state?: ConstructionState,
+): { label: string } | null {
+  const target = CONSTRUCTION_STEP_NUMBER[href];
+  if (!target || !state) return null;
+  const done = (step: { href: string }) =>
+    computeConstructionStepState(step.href, state) === 'satisfied';
+  if (CONSTRUCTION_STEPS.some((step) => step.step >= target && done(step))) return null;
+  return CONSTRUCTION_STEPS.find((step) => step.step < target && !done(step)) ?? null;
+}

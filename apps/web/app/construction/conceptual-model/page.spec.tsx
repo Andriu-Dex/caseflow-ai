@@ -95,6 +95,7 @@ beforeEach(() => {
     if (kind === 'CONCEPTUAL_DOMAIN_MODEL') {
       return { items: [conceptualArtifact] };
     }
+    if (kind === 'GENERATION_PLAN') return { items: [{ version: { status: 'APPROVED' } }] };
     return { items: [] };
   });
 });
@@ -121,6 +122,19 @@ describe('ConceptualModelPage', () => {
     expect(nextLink).toHaveAttribute('href', '/construction/design-baseline');
 
     expect(screen.getByText('Fase de Construcción · Paso 2 de 5')).toBeInTheDocument();
+  });
+
+  it('disables the next step button, with the reason, while the previous one is not approved', async () => {
+    mocks.list.mockImplementation(async () => ({ items: [] }));
+    render(
+      <TestProviders>
+        <ConceptualModelPage />
+      </TestProviders>,
+    );
+    const next = await screen.findByRole('button', { name: /Siguiente: Aprobación de diseño/i });
+    expect(next).toBeDisabled();
+    expect(next).toHaveAttribute('title', expect.stringContaining('Plan de generación'));
+    expect(screen.queryByRole('link', { name: /Siguiente:/i })).not.toBeInTheDocument();
   });
 
   it('renders KPI metrics badges for the conceptual model in the version card', async () => {

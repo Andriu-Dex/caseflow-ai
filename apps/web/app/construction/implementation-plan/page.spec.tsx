@@ -144,6 +144,10 @@ beforeEach(() => {
     if (kind === 'IMPLEMENTATION_PLAN') {
       return { items: [planArtifact] };
     }
+    // The earlier steps are approved, so the next one is open.
+    if (kind === 'GENERATION_PLAN' || kind === 'CONCEPTUAL_DOMAIN_MODEL') {
+      return { items: [{ version: { status: 'APPROVED' } }] };
+    }
     return { items: [] };
   });
 });

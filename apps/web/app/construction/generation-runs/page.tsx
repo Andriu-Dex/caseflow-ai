@@ -6,7 +6,6 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
-  ArrowLeft,
   ArrowRight,
   Check,
   CheckCircle2,
@@ -39,6 +38,7 @@ import { api, ApiError } from '../../../lib/api';
 import { PageHeading } from '../../../components/page-heading';
 import { DockerSetupAssistant } from '../../../components/docker-setup-assistant';
 import { QueryState, RequireActiveProject } from '../../../components/query-state';
+import { ConstructionFooter } from '../../../components/construction-footer';
 import { EmptyState } from '../../../components/artifact-actions';
 import { AuthedDownloadButton } from '../../../components/authed-media';
 
@@ -718,27 +718,7 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
         </QueryState>
       </section>
 
-      {/* Navigation Footer */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-6 border-t border-border mt-2">
-        <Link href="/construction/implementation-plan">
-          <Button variant="outline" size="sm" className="gap-2 text-xs">
-            <ArrowLeft className="size-3.5" />
-            Anterior: Plan de implementación (Paso 4)
-          </Button>
-        </Link>
-
-        <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-          <Sparkles className="size-3.5 text-primary" />
-          <span>Fase de Construcción · Paso 5 de 5 (Hito Final)</span>
-        </div>
-
-        <Link href="/readiness">
-          <Button size="sm" className="gap-2 text-xs font-semibold">
-            Ver Estado del Proyecto (Readiness)
-            <ArrowRight className="size-3.5" />
-          </Button>
-        </Link>
-      </div>
+      <ConstructionFooter projectId={projectId} step={5} />
     </div>
   );
 }
