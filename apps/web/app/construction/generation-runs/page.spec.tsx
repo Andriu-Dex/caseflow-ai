@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import GenerationRunsPage from './page';
@@ -101,6 +101,8 @@ describe('GenerationRunsPage', () => {
     // Only the visible run is counted and shown with its button.
     expect(await screen.findByText(/Generaciones Realizadas \(1\)/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Archivar' }));
+    const dialog = await screen.findByRole('dialog', { name: /Archivar generación de código/i });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Archivar' }));
     await waitFor(() => expect(mocks.archive).toHaveBeenCalledWith('p1', 'run-1'));
     await userEvent.click(screen.getByRole('button', { name: 'Archivadas (1)' }));
     await userEvent.click(screen.getByRole('button', { name: 'Restaurar' }));
