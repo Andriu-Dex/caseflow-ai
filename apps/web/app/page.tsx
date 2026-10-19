@@ -194,6 +194,10 @@ function HomeContent({ projectId }: { projectId: string }) {
                                   aria-hidden="true"
                                 />
                               )}
+                              {/* The icon alone says nothing to a screen reader. */}
+                              <span className="sr-only">
+                                {stage.satisfied ? 'Completada: ' : 'Pendiente: '}
+                              </span>
                               <span className="truncate font-medium">{stage.label}</span>
                             </span>
                             {!stage.satisfied && (

@@ -60,7 +60,10 @@ export function ProjectSwitcher() {
         onValueChange={(val) => setProjectId(val || null)}
         disabled={items.length === 0}
       >
-        <SelectTrigger className="h-9 w-[220px] bg-background shadow-xs font-medium">
+        <SelectTrigger
+          aria-label="Proyecto activo"
+          className="h-9 w-[220px] bg-background shadow-xs font-medium"
+        >
           <SelectValue
             placeholder={items.length ? 'Seleccionar proyecto…' : 'Sin proyectos todavía'}
           />
