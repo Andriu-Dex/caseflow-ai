@@ -807,8 +807,10 @@ export class MockupsService {
       return cancelled;
     };
     const drawNext = async () => {
-      while (stitchProjectId && next < pending.length && !(await isCancelled())) {
-        const screen = pending[next++]!;
+      // The screen is taken after the await: another drawer may have taken the last one meanwhile.
+      while (stitchProjectId && !(await isCancelled())) {
+        const screen = pending[next++];
+        if (!screen) break;
         let lastError: unknown = null;
         for (let attempt = 0; attempt < SCREEN_ATTEMPTS; attempt += 1) {
           if (await isCancelled()) break;
