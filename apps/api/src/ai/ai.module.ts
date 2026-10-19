@@ -435,7 +435,7 @@ import {
           {
             // Batched generation plan (DEC-144): outline, then modules' detail.
             key: 'generation-plan.generate',
-            version: 2,
+            version: 3,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'generation_plan_generation',
             systemInstructions: PLAN_OUTLINE_PROMPT,

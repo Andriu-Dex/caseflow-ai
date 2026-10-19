@@ -45,14 +45,24 @@ export function planDetailBatches(modules: PlanModule[]): PlanModule[][] {
 // also among its justifying sources.
 export function cleanOutline(outline: PlanOutline, codes: PlanCodes): PlanOutline {
   const seen = new Set<string>();
+  // Each entity has one owner module: the first that lists it (the prompt asks
+  // for the owner, this only guards against a repeat).
+  const owned = new Set<string>();
   const modules = outline.modules.map((module) => {
     let localId = module.localId;
     for (let n = 2; seen.has(localId); n += 1) localId = `${module.localId}-${n}`;
     seen.add(localId);
     const relatedUseCaseCodes = only(module.relatedUseCaseCodes, codes.useCases);
+    const entityNames = module.entityNames.filter((name) => {
+      const entity = key(name);
+      if (owned.has(entity)) return false;
+      owned.add(entity);
+      return true;
+    });
     return {
       ...module,
       localId,
+      entityNames,
       relatedRequirementCodes: only(module.relatedRequirementCodes, codes.requirements),
       relatedUseCaseCodes,
       relatedSourceCodes: [

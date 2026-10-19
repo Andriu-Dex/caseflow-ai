@@ -1361,7 +1361,7 @@ export class StructuredAnalysisService {
         0,
         {
           promptKey: 'generation-plan.generate',
-          promptVersion: 2,
+          promptVersion: 3,
           payload: { analysis, design },
           schema: planOutlineSchema,
           schemaName: 'generation_plan_outline',
