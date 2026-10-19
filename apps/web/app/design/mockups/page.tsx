@@ -50,6 +50,7 @@ import {
 import { api, ApiError, type ArtifactVersionStatus } from '../../../lib/api';
 import { QueryState, RequireActiveProject } from '../../../components/query-state';
 import { ArchivedArtifacts } from '../../../components/archived-artifacts';
+import { MockupGenerationConfirm } from '../../../components/mockup-generation-confirm';
 import { PageHeading } from '../../../components/page-heading';
 import { StatusBadge } from '../../../components/status-badge';
 import { TrustedDiagram } from '../../../components/trusted-svg';
@@ -923,6 +924,8 @@ function MockupsContent({ projectId }: { projectId: string }) {
   });
   const [creatingVersionId, setCreatingVersionId] = useState<string | null>(null);
   const [creatingJobStatus, setCreatingJobStatus] = useState<MockupUiStatus | null>(null);
+  // The generation waiting for the person to confirm it (it is long and costs credits).
+  const [confirming, setConfirming] = useState<{ id: string; screens: number | null } | null>(null);
   // A generation that stopped with screens already drawn, to offer to continue it.
   const [stopped, setStopped] = useState<MockupJobResponse | null>(null);
   // Screens drawn so far, when the provider draws them one by one.
@@ -1175,7 +1178,7 @@ function MockupsContent({ projectId }: { projectId: string }) {
                       variant="outline"
                       size="sm"
                       disabled={creatingVersionId === b.version.id}
-                      onClick={() => createMockup(b.version.id)}
+                      onClick={() => setConfirming({ id: b.version.id, screens: screensCount })}
                       className="border-primary/40 hover:bg-primary/5 hover:text-primary"
                     >
                       {creatingVersionId === b.version.id ? (
@@ -1196,6 +1199,18 @@ function MockupsContent({ projectId }: { projectId: string }) {
           </ul>
         )}
       </section>
+
+      <MockupGenerationConfirm
+        open={confirming !== null}
+        screens={confirming?.screens ?? null}
+        device={confirming ? (deviceTypes[confirming.id] ?? 'DESKTOP') : 'DESKTOP'}
+        onCancel={() => setConfirming(null)}
+        onConfirm={() => {
+          const id = confirming!.id;
+          setConfirming(null);
+          void createMockup(id);
+        }}
+      />
 
       {stopped && !creatingVersionId ? (
         <div
