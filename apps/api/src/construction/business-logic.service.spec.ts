@@ -78,7 +78,10 @@ describe('BusinessLogicService.implement', () => {
         localId: 'order',
         name: 'Order',
         moduleLocalId: 'sales',
-        fields: [{ name: 'total', type: 'DECIMAL' }],
+        fields: [
+          { name: 'total', type: 'DECIMAL' },
+          { name: 'note', type: 'TEXT', required: false },
+        ],
         operations: ['LIST'],
       },
     ],
@@ -107,6 +110,17 @@ describe('BusinessLogicService.implement', () => {
     );
     expect(Object.values(result.implementations)).toEqual(['return { ok: true };']);
     expect(result.warnings).toEqual([]);
+  });
+
+  it('tells the model which fields may be null', async () => {
+    const generate = vi.fn().mockResolvedValue({ data: { body: 'return { ok: true };' } });
+    await implement(generate);
+    const context = JSON.parse(generate.mock.calls[0]![0].messages[0].content);
+    expect(context.prismaDelegates[0].fields).toEqual([
+      'id',
+      'total: DECIMAL',
+      'note: TEXT | null',
+    ]);
   });
 
   it('keeps the 501 stub and warns when the proposal is rejected', async () => {

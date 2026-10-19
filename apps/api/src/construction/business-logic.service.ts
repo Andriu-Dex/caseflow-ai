@@ -127,11 +127,15 @@ export class BusinessLogicService {
           fields: [
             'id',
             ...e.fields.map(
+              // An optional field may be null: said so, the body checks it
+              // instead of failing the generated project's typecheck.
               (f) =>
-                `${f.name}: ${f.type}${f.type === 'ENUM' ? ` (${f.enumValues.join('|')})` : ''}`,
+                `${f.name}: ${f.type}${f.type === 'ENUM' ? ` (${f.enumValues.join('|')})` : ''}${f.required ? '' : ' | null'}`,
             ),
             ...e.relations.map((r) =>
-              r.kind === 'MANY_TO_MANY' ? `${r.name}: relation[]` : `${r.name}Id: string`,
+              r.kind === 'MANY_TO_MANY'
+                ? `${r.name}: relation[]`
+                : `${r.name}Id: string${r.required ? '' : ' | null'}`,
             ),
           ],
         })),
@@ -142,7 +146,7 @@ export class BusinessLogicService {
           projectId,
           language,
           promptKey: 'business-logic.generate',
-          promptVersion: 2,
+          promptVersion: 3,
           messages: [{ role: 'user', content: JSON.stringify(context) }],
           outputSchema: businessLogicOutputSchema,
           schemaName: 'business_logic_generation',
