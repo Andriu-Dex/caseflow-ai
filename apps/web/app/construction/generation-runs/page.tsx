@@ -38,7 +38,6 @@ import { api, ApiError } from '../../../lib/api';
 import { PageHeading } from '../../../components/page-heading';
 import { DockerSetupAssistant } from '../../../components/docker-setup-assistant';
 import { QueryState, RequireActiveProject } from '../../../components/query-state';
-import { ConstructionFooter } from '../../../components/construction-footer';
 import { EmptyState } from '../../../components/artifact-actions';
 import { AuthedDownloadButton } from '../../../components/authed-media';
 
@@ -717,8 +716,6 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
           )}
         </QueryState>
       </section>
-
-      <ConstructionFooter projectId={projectId} step={5} />
     </div>
   );
 }

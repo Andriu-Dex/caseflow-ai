@@ -153,7 +153,7 @@ beforeEach(() => {
 });
 
 describe('ImplementationPlanPage', () => {
-  it('renders page heading and bottom navigation links', async () => {
+  it('renders the page heading', async () => {
     render(
       <TestProviders>
         <ImplementationPlanPage />
@@ -165,15 +165,6 @@ describe('ImplementationPlanPage', () => {
         screen.getByRole('heading', { name: 'Plan de implementación', level: 1 }),
       ).toBeInTheDocument();
     });
-
-    // Check footer navigation buttons
-    const prevLink = screen.getByRole('link', { name: /Anterior: Aprobación de diseño/i });
-    expect(prevLink).toHaveAttribute('href', '/construction/design-baseline');
-
-    const nextLink = screen.getByRole('link', { name: /Siguiente: Generación de código/i });
-    expect(nextLink).toHaveAttribute('href', '/construction/generation-runs');
-
-    expect(screen.getByText('Fase de Construcción · Paso 4 de 5')).toBeInTheDocument();
   });
 
   it('renders KPI metric badges in the version card', async () => {
