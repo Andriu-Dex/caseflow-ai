@@ -251,7 +251,9 @@ export function addRelations(entities: IpEntity[], relationships: ClassRelations
     const a = byClass.get(relationship.fromLocalId);
     const b = byClass.get(relationship.toLocalId);
     if (!a || !b || a === b) continue;
-    const pair = [a.localId, b.localId].sort().join('|');
+    // Two entities may be related in more than one way: only the same label
+    // between them is a repeat.
+    const pair = `${[a.localId, b.localId].sort().join('|')}|${key(relationship.label ?? relationship.kind)}`;
     if (joined.has(pair)) continue;
     joined.add(pair);
     const { swap, cardinality } = conceptualCardinality(relationship);
@@ -398,7 +400,7 @@ export function fillMissingRoutes(
 const ACTION_OPERATIONS: [RegExp, IpEntity['operations'][number]][] = [
   [/(crear|nuev[oa]|registr|agreg|añad|alta|create|new|add)/i, 'CREATE'],
   [/(edit|modific|actualiz|update)/i, 'UPDATE'],
-  [/(elimin|borr|quit|delete|remove)/i, 'DELETE'],
+  [/(elimin|borrar|quitar|delete|remove)/i, 'DELETE'],
   [/(ver|detalle|consult|abrir|view|detail|open)/i, 'GET'],
   [/(list|busc|filtr|search|filter)/i, 'LIST'],
 ];
@@ -406,10 +408,14 @@ const ACTION_OPERATIONS: [RegExp, IpEntity['operations'][number]][] = [
 // Last word on routes: a primary action no operation serves yet is served by
 // the CRUD operation its label names, when the route's entity offers it; an
 // endpoint no action uses is dropped.
+const READ_ACTION =
+  /(consult|^ver|exhib|exam|list|busc|filtr|compar|descarg|export|revis|mostr|abrir|detalle|actualizar la consulta)/i;
+
 export function finishRoutes(
   accumulated: RoutesAccumulated,
   screens: BlueprintScreen[],
   entities: IpEntity[],
+  roles: string[] = [],
 ): RoutesAccumulated {
   const entityById = new Map(entities.map((entity) => [entity.localId, entity]));
   const screenById = new Map(screens.map((screen) => [screen.localId, screen]));
@@ -426,33 +432,44 @@ export function finishRoutes(
       });
     return extra.length ? { ...route, actions: [...route.actions, ...extra] } : route;
   });
-  // An action still unserved (a report to consult, say) is served by the query
-  // of its own route: a GET endpoint at the route's path.
+  // An action still unserved is served by an endpoint of its route: a query
+  // (GET at the route's path, shared) when it only reads, else a POST for the
+  // action itself. Roles come from the route's entity, or are all of them.
   const endpoints = [...accumulated.customEndpoints];
   const known = new Set(endpoints.map(endpointKey));
   const served = routes.map((route) => {
     const screen = route.screenLocalId ? screenById.get(route.screenLocalId) : undefined;
     const apiPath = route.path.replace(/\[([a-z][A-Za-z0-9]*)\]/g, ':$1');
     if (!screen || apiPath === '/') return route;
+    const entity = route.entityLocalId ? entityById.get(route.entityLocalId) : undefined;
     const done = new Set(route.actions.map((action) => action.label));
-    const pending = screen.primaryActions.filter((label) => !done.has(label));
-    if (!pending.length) return route;
-    const endpoint = `GET ${apiPath}`;
-    if (!known.has(endpoint)) {
-      known.add(endpoint);
-      endpoints.push({
-        moduleLocalId: route.moduleLocalId,
-        method: 'GET',
-        path: apiPath,
-        summary: `Consulta de los datos de la pantalla «${screen.name}».`.slice(0, 300),
-        ...(route.entityLocalId ? { entityLocalId: route.entityLocalId } : {}),
-        roles: [],
-      });
+    const extra: IpRoute['actions'] = [];
+    for (const label of screen.primaryActions.filter((item) => !done.has(item))) {
+      const reads = READ_ACTION.test(label);
+      const path = reads ? apiPath : `${apiPath}/${slug(label).split('-').slice(0, 4).join('-')}`;
+      const endpoint = `${reads ? 'GET' : 'POST'} ${path}`;
+      if (!known.has(endpoint)) {
+        known.add(endpoint);
+        const allowed = (reads ? entity?.readRoles : entity?.writeRoles)?.length
+          ? reads
+            ? entity!.readRoles
+            : entity!.writeRoles
+          : roles;
+        endpoints.push({
+          moduleLocalId: route.moduleLocalId,
+          method: reads ? 'GET' : 'POST',
+          path,
+          summary: (reads
+            ? `Consulta de los datos de la pantalla «${screen.name}».`
+            : `Acción «${label}» de la pantalla «${screen.name}».`
+          ).slice(0, 300),
+          ...(route.entityLocalId ? { entityLocalId: route.entityLocalId } : {}),
+          roles: allowed,
+        });
+      }
+      extra.push({ label, endpoint });
     }
-    return {
-      ...route,
-      actions: [...route.actions, ...pending.map((label) => ({ label, endpoint }))],
-    };
+    return extra.length ? { ...route, actions: [...route.actions, ...extra] } : route;
   });
   const used = new Set(served.flatMap((route) => route.actions.map((a) => a.endpoint)));
   return {

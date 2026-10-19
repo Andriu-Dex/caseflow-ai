@@ -200,6 +200,13 @@ describe('addRelations', () => {
     expect(a!.relations.map((r) => r.kind)).toEqual(['MANY_TO_MANY']);
     expect(b!.relations).toEqual([]);
   });
+  it('keeps two differently labelled relations between the same two entities', () => {
+    const [a] = addRelations(entities, [
+      rel({ label: 'opera en', fromMultiplicity: '*', toMultiplicity: '*' }),
+      rel({ label: 'es responsable de', fromMultiplicity: '*', toMultiplicity: '*' }),
+    ]);
+    expect(a!.relations).toHaveLength(2);
+  });
 });
 
 describe('routes', () => {
@@ -297,14 +304,14 @@ describe('routes', () => {
       [home],
       orders,
     );
-    // 'Confirmar' has no CRUD operation: the route's own query serves it.
+    // 'Confirmar' has no CRUD operation and is not a read: its own POST serves it.
     expect(done.routes[0]!.actions).toEqual([
       { label: 'Nuevo pedido', operation: 'CREATE' },
-      { label: 'Confirmar', endpoint: 'GET /orders' },
+      { label: 'Confirmar', endpoint: 'POST /orders/confirmar' },
     ]);
-    // The unused endpoint is dropped; only the route's query remains.
+    // The unused endpoint is dropped; only the one of the action remains.
     expect(done.customEndpoints.map((endpoint) => `${endpoint.method} ${endpoint.path}`)).toEqual([
-      'GET /orders',
+      'POST /orders/confirmar',
     ]);
   });
 });
@@ -329,6 +336,36 @@ describe('route actions and provenance fallbacks', () => {
       { label: 'Consultar reporte', endpoint: 'GET /reportes/:periodoId' },
     ]);
     expect(done.customEndpoints).toMatchObject([{ method: 'GET', path: '/reportes/:periodoId' }]);
+  });
+  it('serves a writing action by its own POST, not a GET, and does not read "borrador" as delete', () => {
+    const sale = screen('sale', {
+      primaryActions: ['Confirmar la venta', 'Guardar cambios del borrador'],
+      secondaryActions: [],
+    });
+    const done = finishRoutes(
+      {
+        routes: [
+          {
+            ...reportRoute,
+            screenLocalId: 'sale',
+            path: '/ventas/[ventaId]',
+            entityLocalId: 'o',
+          } as never,
+        ],
+        customEndpoints: [],
+      },
+      [sale],
+      [entity('o', 'co', { operations: ['GET', 'DELETE'], writeRoles: ['Cajero'] })],
+      ['Cajero', 'Administrador'],
+    );
+    expect(done.routes[0]!.actions).toEqual([
+      { label: 'Confirmar la venta', endpoint: 'POST /ventas/:ventaId/confirmar-la-venta' },
+      {
+        label: 'Guardar cambios del borrador',
+        endpoint: 'POST /ventas/:ventaId/guardar-cambios-del-borrador',
+      },
+    ]);
+    expect(done.customEndpoints.every((endpoint) => endpoint.roles.join() === 'Cajero')).toBe(true);
   });
   it('cites the design sources it comes from when the model cited none, and keeps what it cited', () => {
     const filled = fillProvenance(
