@@ -6,6 +6,7 @@ import { Button } from '@caseflow-ai/ui';
 import { Sparkles, RefreshCw, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, ApiError, type GenerationResult } from '../lib/api';
+import { GenerationCancelButton } from './generation-cancel-button';
 import { GenerationProgressCard } from './generation-progress-card';
 
 export function RequirementGenerationPanel({
@@ -34,7 +35,9 @@ export function RequirementGenerationPanel({
   const generationId = job?.generationId;
   const jobStatus = job?.status;
   const sourceContextVersionId = job?.sourceContextVersionId;
-  const resumable = jobStatus === 'FAILED' && sourceContextVersionId === contextVersionId;
+  const resumable =
+    (jobStatus === 'FAILED' || jobStatus === 'CANCELLED') &&
+    sourceContextVersionId === contextVersionId;
   const running = !!job && ['QUEUED', 'RUNNING'].includes(job.status);
 
   useEffect(() => {
@@ -138,7 +141,23 @@ export function RequirementGenerationPanel({
         />
       ) : null}
 
-      {resumable ? (
+      {job && running ? (
+        <GenerationCancelButton
+          onCancel={async () =>
+            client.setQueryData(['requirement-generation-job', projectId], {
+              job: await api.requirements.cancelGeneration(projectId, job.id),
+            })
+          }
+        />
+      ) : null}
+
+      {resumable && jobStatus === 'CANCELLED' ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          {job?.errorMessage}
+        </p>
+      ) : null}
+
+      {resumable && jobStatus === 'FAILED' ? (
         <p role="alert" className="text-sm text-destructive">
           {job?.errorMessage} Los lotes completos se conservan para reanudar.
         </p>

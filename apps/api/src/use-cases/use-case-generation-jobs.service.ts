@@ -9,6 +9,11 @@ import {
 } from '@nestjs/common';
 import { useCaseGenerationJobSchema } from '@caseflow-ai/contracts';
 import { AuditService } from '../audit/audit.service';
+import {
+  CANCELLED_MESSAGE,
+  GenerationCancelledError,
+  assertCanGenerate,
+} from '../common/generation-cancelled';
 import { INTERRUPTED_BY_RESTART } from '../common/interrupted';
 import { PrismaService } from '../database/prisma.service';
 import { UseCasesService } from './use-cases.service';
@@ -23,6 +28,8 @@ const sameSet = (a: string[], b: string[]) =>
 export class UseCaseGenerationJobsService implements OnApplicationBootstrap {
   private readonly logger = new Logger(UseCaseGenerationJobsService.name);
   private readonly running = new Map<string, Promise<void>>();
+  // Jobs the person cancelled whose run has not stopped yet.
+  private readonly cancelled = new Set<string>();
   constructor(
     private readonly prisma: PrismaService,
     private readonly useCases: UseCasesService,
@@ -71,10 +78,16 @@ export class UseCaseGenerationJobsService implements OnApplicationBootstrap {
         return active;
       }
       const previous = await tx.useCaseGenerationJob.findFirst({
-        where: { projectId, status: 'FAILED' },
+        where: { projectId, status: { in: ['FAILED', 'CANCELLED'] } },
         orderBy: { createdAt: 'desc' },
         include: { sources: true },
       });
+      // The run of a cancelled job stops at its next batch: resuming it before
+      // then would leave the job queued with nothing to run it.
+      if (previous && this.running.has(previous.id))
+        throw new ConflictException(
+          'La cancelación anterior aún se está completando. Espere unos segundos y reanude.',
+        );
       const resumable =
         previous &&
         sameSet(
@@ -123,7 +136,10 @@ export class UseCaseGenerationJobsService implements OnApplicationBootstrap {
     if (job.status === 'QUEUED' && !this.running.has(job.id)) {
       const task = this.run(job.id, projectId, requirementVersionIds, userId)
         .catch(() => this.logger.warn('Could not execute a queued use case generation job.'))
-        .finally(() => this.running.delete(job.id));
+        .finally(() => {
+          this.running.delete(job.id);
+          this.cancelled.delete(job.id);
+        });
       this.running.set(job.id, task);
     }
     return this.present(job);
@@ -162,6 +178,29 @@ export class UseCaseGenerationJobsService implements OnApplicationBootstrap {
     });
   }
 
+  // The person stops the run. What the finished batches saved is kept, so the
+  // same generation can be resumed. The run stops at its next batch: a call
+  // already made to the AI finishes first.
+  async cancel(projectId: string, jobId: string, userId: string) {
+    await assertCanGenerate(this.prisma, projectId, userId);
+    const { count } = await this.prisma.useCaseGenerationJob.updateMany({
+      where: { id: jobId, projectId, status: { in: ['QUEUED', 'RUNNING'] } },
+      data: { status: 'CANCELLED', errorMessage: CANCELLED_MESSAGE },
+    });
+    if (count) {
+      this.cancelled.add(jobId);
+      await this.audit.record({
+        projectId,
+        actorUserId: userId,
+        action: 'USE_CASE_GENERATION_FINISHED',
+        entityType: 'USE_CASE_GENERATION_JOB',
+        entityId: jobId,
+        metadata: { status: 'CANCELLED' },
+      });
+    }
+    return this.get(projectId, jobId);
+  }
+
   private async run(
     jobId: string,
     projectId: string,
@@ -172,6 +211,7 @@ export class UseCaseGenerationJobsService implements OnApplicationBootstrap {
     let lastWrite = 0;
     let lastBatch = -1;
     const update = (completedBatches: number, totalBatches: number, outputChars: number) => {
+      if (this.cancelled.has(jobId)) throw new GenerationCancelledError();
       if (completedBatches === lastBatch && Date.now() - lastWrite < 1500) return;
       lastBatch = completedBatches;
       lastWrite = Date.now();
@@ -194,6 +234,7 @@ export class UseCaseGenerationJobsService implements OnApplicationBootstrap {
       await pending;
       await this.finish(jobId, projectId, userId, 'COMPLETED', null, generation.id);
     } catch (error) {
+      if (error instanceof GenerationCancelledError) return;
       await pending.catch(() => undefined);
       const body = error instanceof HttpException ? error.getResponse() : null;
       const message =

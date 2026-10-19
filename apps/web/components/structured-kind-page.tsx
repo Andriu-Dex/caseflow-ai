@@ -2255,6 +2255,7 @@ export function StructuredKindPage({
                   }}
                 >
                   <Plus className="size-4" aria-hidden="true" />
+                cancel={(jobId) => api.structuredAnalysis.cancelGenerationJob(projectId, kind, jobId)}
                   Crear manualmente
                 </Button>
               </>

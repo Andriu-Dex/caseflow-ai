@@ -80,6 +80,20 @@ export class ClassDiagramController extends BaseStructuredAnalysisController {
   latestGeneration(@Param('projectId', uuidParamPipe) projectId: string) {
     return this.jobs.latest(projectId, this.kind);
   }
+  @Post('generation-jobs/:jobId/cancel')
+  @HttpCode(200)
+  @ApiOperation({
+    operationId: 'cancelClassDiagramGenerationJob',
+    summary: 'Cancelar un trabajo del diagrama de clases',
+  })
+  @ApiZodResponse(200, 'Class diagram generation job.', structuredGenerationJobSchema)
+  cancelGeneration(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('jobId', uuidParamPipe) jobId: string,
+    @Request() request: { user: { id: string } },
+  ) {
+    return this.jobs.cancel(projectId, this.kind, jobId, request.user.id);
+  }
   @Get('generation-jobs/:jobId')
   @ApiOperation({
     operationId: 'getClassDiagramGenerationJob',

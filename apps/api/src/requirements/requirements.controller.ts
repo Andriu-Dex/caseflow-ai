@@ -158,6 +158,20 @@ export class RequirementsController {
   latestGeneration(@Param('projectId', uuidParamPipe) p: string) {
     return this.jobs.latest(p);
   }
+  @Post('generation-jobs/:jobId/cancel')
+  @HttpCode(200)
+  @ApiOperation({
+    operationId: 'cancelRequirementGenerationJob',
+    summary: 'Cancelar un trabajo de requisitos',
+  })
+  @ApiZodResponse(200, 'Requirement generation job.', requirementGenerationJobSchema)
+  cancelGeneration(
+    @Param('projectId', uuidParamPipe) p: string,
+    @Param('jobId', uuidParamPipe) jobId: string,
+    @Request() request: { user: { id: string } },
+  ) {
+    return this.jobs.cancel(p, jobId, request.user.id);
+  }
   @Get('generation-jobs/:jobId')
   @ApiOperation({
     operationId: 'getRequirementGenerationJob',

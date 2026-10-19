@@ -139,6 +139,20 @@ export class UseCasesController {
   latestGeneration(@Param('projectId', uuidParamPipe) p: string) {
     return this.jobs.latest(p);
   }
+  @Post('generation-jobs/:jobId/cancel')
+  @HttpCode(200)
+  @ApiOperation({
+    operationId: 'cancelUseCaseGenerationJob',
+    summary: 'Cancelar un trabajo de casos de uso',
+  })
+  @ApiZodResponse(200, 'Use case generation job.', useCaseGenerationJobSchema)
+  cancelGeneration(
+    @Param('projectId', uuidParamPipe) p: string,
+    @Param('jobId', uuidParamPipe) jobId: string,
+    @Request() request: { user: { id: string } },
+  ) {
+    return this.jobs.cancel(p, jobId, request.user.id);
+  }
   @Get('generation-jobs/:jobId')
   @ApiOperation({
     operationId: 'getUseCaseGenerationJob',

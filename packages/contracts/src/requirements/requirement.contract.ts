@@ -299,7 +299,7 @@ export const requirementGenerationJobSchema = z.object({
   id: z.uuid(),
   projectId: z.uuid(),
   sourceContextVersionId: z.uuid(),
-  status: z.enum(['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED']),
+  status: z.enum(['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED']),
   completedBatches: z.number().int().nonnegative(),
   totalBatches: z.number().int().nonnegative(),
   outputChars: z.number().int().nonnegative(),

@@ -89,6 +89,20 @@ export class GenerationPlanController extends BaseStructuredAnalysisController {
   latestGeneration(@Param('projectId', uuidParamPipe) projectId: string) {
     return this.jobs.latest(projectId, this.kind);
   }
+  @Post('generation-jobs/:jobId/cancel')
+  @HttpCode(200)
+  @ApiOperation({
+    operationId: 'cancelGenerationPlanGenerationJob',
+    summary: 'Cancelar un trabajo del plan de generación',
+  })
+  @ApiZodResponse(200, 'GenerationPlan generation job.', structuredGenerationJobSchema)
+  cancelGeneration(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('jobId', uuidParamPipe) jobId: string,
+    @Request() request: { user: { id: string } },
+  ) {
+    return this.jobs.cancel(projectId, this.kind, jobId, request.user.id);
+  }
   @Get('generation-jobs/:jobId')
   @ApiOperation({
     operationId: 'getGenerationPlanGenerationJob',
@@ -222,6 +236,20 @@ export class ConceptualDomainModelController extends BaseStructuredAnalysisContr
   })
   latestGeneration(@Param('projectId', uuidParamPipe) projectId: string) {
     return this.jobs.latest(projectId, this.kind);
+  }
+  @Post('generation-jobs/:jobId/cancel')
+  @HttpCode(200)
+  @ApiOperation({
+    operationId: 'cancelConceptualDomainModelGenerationJob',
+    summary: 'Cancelar un trabajo de el modelo conceptual',
+  })
+  @ApiZodResponse(200, 'ConceptualDomainModel generation job.', structuredGenerationJobSchema)
+  cancelGeneration(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('jobId', uuidParamPipe) jobId: string,
+    @Request() request: { user: { id: string } },
+  ) {
+    return this.jobs.cancel(projectId, this.kind, jobId, request.user.id);
   }
   @Get('generation-jobs/:jobId')
   @ApiOperation({
@@ -363,6 +391,20 @@ export class ImplementationPlanController extends BaseStructuredAnalysisControll
   })
   latestGeneration(@Param('projectId', uuidParamPipe) projectId: string) {
     return this.jobs.latest(projectId, this.kind);
+  }
+  @Post('generation-jobs/:jobId/cancel')
+  @HttpCode(200)
+  @ApiOperation({
+    operationId: 'cancelImplementationPlanGenerationJob',
+    summary: 'Cancelar un trabajo del plan de implementación',
+  })
+  @ApiZodResponse(200, 'ImplementationPlan generation job.', structuredGenerationJobSchema)
+  cancelGeneration(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('jobId', uuidParamPipe) jobId: string,
+    @Request() request: { user: { id: string } },
+  ) {
+    return this.jobs.cancel(projectId, this.kind, jobId, request.user.id);
   }
   @Get('generation-jobs/:jobId')
   @ApiOperation({

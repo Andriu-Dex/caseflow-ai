@@ -45,7 +45,7 @@ export const structuredGenerationJobSchema = z.object({
   id: z.uuid(),
   projectId: z.uuid(),
   kind: z.enum(STRUCTURED_ANALYSIS_KINDS),
-  status: z.enum(['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED']),
+  status: z.enum(['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED']),
   completedBatches: z.number().int().nonnegative(),
   totalBatches: z.number().int().nonnegative(),
   outputChars: z.number().int().nonnegative(),

@@ -508,6 +508,20 @@ export class UiBlueprintController extends BaseStructuredAnalysisController {
   latestGeneration(@Param('projectId', uuidParamPipe) projectId: string) {
     return this.jobs.latest(projectId, this.kind);
   }
+  @Post('generation-jobs/:jobId/cancel')
+  @HttpCode(200)
+  @ApiOperation({
+    operationId: 'cancelUiBlueprintGenerationJob',
+    summary: 'Cancelar un trabajo del plano de interfaz',
+  })
+  @ApiZodResponse(200, 'UI blueprint generation job.', structuredGenerationJobSchema)
+  cancelGeneration(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('jobId', uuidParamPipe) jobId: string,
+    @Request() request: { user: { id: string } },
+  ) {
+    return this.jobs.cancel(projectId, this.kind, jobId, request.user.id);
+  }
   @Get('generation-jobs/:jobId')
   @ApiOperation({
     operationId: 'getUiBlueprintGenerationJob',

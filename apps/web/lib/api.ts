@@ -559,6 +559,11 @@ export const api = {
       post<RequirementGenerationJob>(`/projects/${projectId}/requirements/generation-jobs`, {
         sourceContextVersionId,
       }),
+    cancelGeneration: (projectId: string, jobId: string) =>
+      post<RequirementGenerationJob>(
+        `/projects/${projectId}/requirements/generation-jobs/${jobId}/cancel`,
+        {},
+      ),
     latestGeneration: (projectId: string) =>
       get<{ job: RequirementGenerationJob | null }>(
         `/projects/${projectId}/requirements/generation-jobs/latest`,
@@ -599,6 +604,11 @@ export const api = {
       post<UseCaseGenerationJob>(`/projects/${projectId}/use-cases/generation-jobs`, {
         requirementVersionIds,
       }),
+    cancelGeneration: (projectId: string, jobId: string) =>
+      post<UseCaseGenerationJob>(
+        `/projects/${projectId}/use-cases/generation-jobs/${jobId}/cancel`,
+        {},
+      ),
     latestGeneration: (projectId: string) =>
       get<{ job: UseCaseGenerationJob | null }>(
         `/projects/${projectId}/use-cases/generation-jobs/latest`,
@@ -661,6 +671,11 @@ export const api = {
         requirementVersionIds,
         useCaseVersionIds,
       }),
+    cancelGeneration: (projectId: string, jobId: string) =>
+      post<DataModelGenerationJob>(
+        `/projects/${projectId}/data-models/generation-jobs/${jobId}/cancel`,
+        {},
+      ),
     latestGeneration: (projectId: string) =>
       get<{ job: DataModelGenerationJob | null }>(
         `/projects/${projectId}/data-models/generation-jobs/latest`,
@@ -740,6 +755,11 @@ export const api = {
       post<StructuredGenerationJob>(`/projects/${projectId}/implementation-plan/generation-jobs`, {
         designBaselineId,
       }),
+    cancelGenerationJob: (projectId: string, kind: StructuredAnalysisKind, jobId: string) =>
+      post<StructuredGenerationJob>(
+        `/projects/${projectId}/${api.structuredAnalysis.basePath(kind)}/generation-jobs/${jobId}/cancel`,
+        {},
+      ),
     latestGenerationJob: (projectId: string, kind: StructuredAnalysisKind) =>
       get<{ job: StructuredGenerationJob | null }>(
         `/projects/${projectId}/${api.structuredAnalysis.basePath(kind)}/generation-jobs/latest`,
