@@ -388,3 +388,115 @@ describe('screen actions (DEC-121)', () => {
     expect(form).toContain('api.updateOrder(editId,');
   });
 });
+
+describe('forms and pages for every field type', () => {
+  const field = (name: string, type: string, extra: Record<string, unknown> = {}) => ({
+    name,
+    type,
+    ...extra,
+  });
+  const plan = basePlan({
+    entities: [
+      {
+        localId: 'catalog',
+        name: 'Catalog',
+        moduleLocalId: 'sales',
+        fields: [field('title', 'STRING')],
+        operations: ['LIST'],
+      },
+      {
+        localId: 'hidden',
+        name: 'Hidden',
+        moduleLocalId: 'sales',
+        fields: [field('label', 'STRING')],
+        operations: ['CREATE'],
+      },
+      {
+        localId: 'thing',
+        name: 'Thing',
+        moduleLocalId: 'sales',
+        fields: [
+          field('notes', 'TEXT', { required: false }),
+          field('detail', 'TEXT'),
+          field('count', 'INT'),
+          field('active', 'BOOLEAN'),
+          field('dueOn', 'DATE', { required: false }),
+          field('startsAt', 'DATETIME'),
+          field('kind', 'ENUM', { enumValues: ['A', 'B'], required: false }),
+          field('level', 'ENUM', { enumValues: ['LOW', 'HIGH'] }),
+          field('price', 'DECIMAL'),
+          field('code', 'STRING', { required: false }),
+        ],
+        relations: [
+          { name: 'catalog', kind: 'MANY_TO_ONE', targetEntityLocalId: 'catalog', required: false },
+          { name: 'hidden', kind: 'MANY_TO_ONE', targetEntityLocalId: 'hidden', required: true },
+        ],
+        operations: ['LIST', 'GET', 'CREATE', 'UPDATE', 'DELETE'],
+      },
+    ],
+    customEndpoints: [],
+    routes: [
+      {
+        path: '/things',
+        screenName: 'Cosas',
+        moduleLocalId: 'sales',
+        kind: 'LIST',
+        entityLocalId: 'thing',
+      },
+      {
+        path: '/things/new',
+        screenName: 'Nueva cosa',
+        moduleLocalId: 'sales',
+        kind: 'FORM',
+        entityLocalId: 'thing',
+      },
+      {
+        path: '/hidden/new',
+        screenName: 'Nuevo oculto',
+        moduleLocalId: 'sales',
+        kind: 'FORM',
+        entityLocalId: 'hidden',
+      },
+      { path: '/', screenName: 'Inicio', moduleLocalId: 'sales', kind: 'CUSTOM' },
+    ],
+    tests: [
+      { moduleLocalId: 'sales', kind: 'E2E', description: 'Crear cosa' },
+      { moduleLocalId: 'sales', kind: 'UNIT', description: 'Reglas' },
+    ],
+  });
+  const generated = byPath(generateProject(ctx(plan)));
+  const form = generated.get('apps/web/app/things/new/page.tsx')!.content;
+
+  it('renders a control for each field type, optional or not', () => {
+    expect(form).toContain('<textarea id="notes"');
+    expect(form).toContain('type="number" step="1"');
+    expect(form).toContain('type="checkbox"');
+    expect(form).toContain('type="date"');
+    expect(form).toContain('type="datetime-local"');
+    expect(form).toContain('inputMode="decimal"');
+    // An optional list starts with an empty choice; a required one does not.
+    expect(form).toContain('<option value="">—</option>');
+    expect(form).toContain('<option value="LOW">');
+    expect(form).toContain('(opcional)');
+  });
+
+  it('lists the related records to choose from, or asks for the identifier when it cannot', () => {
+    expect(form).toContain('catalogOptions');
+    expect(form).toContain('placeholder="Identificador"');
+  });
+
+  it('edits an existing record and offers only the form the entity needs', () => {
+    expect(form).toContain('api.updateThing(editId,');
+    const create = generated.get('apps/web/app/hidden/new/page.tsx')!.content;
+    expect(create).not.toContain('updateHidden');
+    expect(create).toContain('api.createHidden(');
+  });
+
+  it('serves the home page and adds the end-to-end script only when the plan has such tests', () => {
+    expect(generated.get('apps/web/app/page.tsx')!.content).toContain('Inicio');
+    const web = JSON.parse(generated.get('apps/web/package.json')!.content);
+    expect(JSON.stringify(web)).toContain('playwright');
+    const without = byPath(generateProject(ctx(basePlan({ tests: [] }))));
+    expect(without.get('apps/web/package.json')!.content).not.toContain('playwright');
+  });
+});
