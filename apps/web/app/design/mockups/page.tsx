@@ -10,7 +10,10 @@ import {
 } from '@caseflow-ai/contracts';
 import { useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import Link from 'next/link';
 import {
+  ArrowLeft,
+  ArrowRight,
   Check,
   CheckCircle2,
   ChevronLeft,
@@ -1427,6 +1430,22 @@ function MockupsContent({ projectId }: { projectId: string }) {
           </ul>
         )}
       </QueryState>
+
+      {/* Navigation Footer */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-6 border-t border-border mt-4">
+        <Link href="/design/theme">
+          <Button variant="outline" size="sm" className="gap-2 text-xs">
+            <ArrowLeft className="size-3.5" />
+            Anterior: Tema visual (Paso 11)
+          </Button>
+        </Link>
+        <Link href="/traceability">
+          <Button size="sm" className="gap-2 text-xs font-semibold">
+            Siguiente: Trazabilidad (Paso 13)
+            <ArrowRight className="size-3.5" />
+          </Button>
+        </Link>
+      </div>
 
       <ArchivedArtifacts projectId={projectId} types={['MOCKUP']} onRestored={invalidate} />
     </div>

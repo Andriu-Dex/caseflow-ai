@@ -57,6 +57,14 @@ const analyzeImpact = vi.fn().mockResolvedValue({
   transitivelyAffected: [],
   recommendedReviewOrder: ['v2'],
 });
+const getReadiness = vi.fn().mockResolvedValue({
+  projectId: 'p1',
+  generatedAt: new Date().toISOString(),
+  ready: true,
+  stages: [],
+  blockers: [],
+  warnings: [],
+});
 
 vi.mock('../../lib/api', () => ({
   api: {
@@ -67,15 +75,33 @@ vi.mock('../../lib/api', () => ({
     },
     staleness: { get: (...args: unknown[]) => getStaleness(...args) },
     impactAnalysis: { analyze: (...args: unknown[]) => analyzeImpact(...args) },
+    readiness: { get: (...args: unknown[]) => getReadiness(...args) },
   },
   ApiError: class ApiError extends Error {},
   restoreSession: vi.fn(),
 }));
 
 beforeEach(() => {
+  HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({
+    clearRect: vi.fn(),
+    save: vi.fn(),
+    translate: vi.fn(),
+    rotate: vi.fn(),
+    scale: vi.fn(),
+    fillRect: vi.fn(),
+    restore: vi.fn(),
+  });
   window.localStorage.setItem('caseflow.activeProjectId', 'p1');
   getGraph.mockClear();
   getDiagram.mockClear();
+  getReadiness.mockReset().mockResolvedValue({
+    projectId: 'p1',
+    generatedAt: new Date().toISOString(),
+    ready: true,
+    stages: [],
+    blockers: [],
+    warnings: [],
+  });
 });
 
 function renderPage() {
@@ -328,5 +354,49 @@ describe('TraceabilityPage — enhanced UX and controls', () => {
 
     expect(screen.getByRole('button', { name: /RF-001/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /CU-001/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('TraceabilityPage — construction transition & milestone', () => {
+  it('renders milestone celebration card with action to start construction when planning is complete', async () => {
+    getReadiness.mockResolvedValueOnce({
+      projectId: 'p1',
+      generatedAt: new Date().toISOString(),
+      ready: true,
+      stages: [],
+      blockers: [],
+      warnings: [],
+    });
+
+    renderPage();
+
+    expect(
+      await screen.findByText('¡Fase de Planificación Completada con Éxito!'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Planificación Completada (13/13)')).toBeInTheDocument();
+
+    const startBtn = screen.getByRole('link', { name: /Iniciar Fase de Construcción/i });
+    expect(startBtn).toHaveAttribute('href', '/construction/generation-plan');
+  });
+
+  it('renders locked status notice when planning is incomplete', async () => {
+    getReadiness.mockResolvedValueOnce({
+      projectId: 'p1',
+      generatedAt: new Date().toISOString(),
+      ready: false,
+      stages: [],
+      blockers: [],
+      warnings: [],
+    });
+
+    renderPage();
+
+    expect(await screen.findByText('Siguiente fase: Construcción de Software')).toBeInTheDocument();
+    expect(screen.getByText('Fase 2: Construcción (Bloqueada)')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Construcción Bloqueada/i })).toBeDisabled();
+    expect(screen.getByRole('link', { name: /Revisar Preparación/i })).toHaveAttribute(
+      'href',
+      '/readiness',
+    );
   });
 });

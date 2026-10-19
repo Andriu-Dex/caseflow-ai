@@ -335,9 +335,15 @@ export function AppShell({ children }: { children: ReactNode }) {
               <div key={i}>
                 {group.label ? (
                   <div
-                    className={`mb-1.5 px-2 text-[11px] font-semibold tracking-widest text-sidebar-foreground/50 uppercase ${label}`}
+                    className={`mb-1.5 flex items-center justify-between px-2 text-[11px] font-semibold tracking-widest text-sidebar-foreground/50 uppercase ${label}`}
                   >
-                    {group.label}
+                    <span>{group.label}</span>
+                    {isConstruction ? (
+                      <span className="inline-flex items-center gap-1 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-medium tracking-normal text-emerald-400 normal-case">
+                        <Sparkles className="size-2.5 text-emerald-400" />
+                        Desbloqueada
+                      </span>
+                    ) : null}
                   </div>
                 ) : null}
                 <ul className="flex flex-col gap-0.5">

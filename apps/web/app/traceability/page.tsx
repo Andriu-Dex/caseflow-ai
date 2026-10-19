@@ -8,25 +8,30 @@ import {
   Activity,
   AlertTriangle,
   ArrowDown,
+  ArrowRight,
   ArrowUp,
   Boxes,
   CheckCircle2,
   ChevronDown,
+  ClipboardCheck,
   Compass,
   Database,
   ExternalLink,
   FileText,
   GitBranch,
+  Hammer,
   Image as ImageIcon,
   Layers,
   ListChecks,
   ListTodo,
+  Lock,
   Network,
   Palette,
   Rocket,
   Search,
   Server,
   Shapes,
+  ShieldCheck,
   Sparkles,
   Workflow,
   X,
@@ -43,6 +48,7 @@ import { StatusBadge } from '../../components/status-badge';
 import { ApprovalOriginBadge } from '../../components/workflow-route';
 import { DiagramViewer } from '../../components/diagram-viewer';
 import { EmptyState } from '../../components/artifact-actions';
+import { ConfettiCelebration } from '../../components/confetti-celebration';
 import { Badge, Button, Input, Tabs, TabsContent, TabsList, TabsTrigger } from '@caseflow-ai/ui';
 
 const ARTIFACT_TYPE_LABELS: Record<TraceabilityNode['artifactType'], string> = {
@@ -229,6 +235,28 @@ function TraceabilityContent({ projectId }: { projectId: string }) {
     queryFn: () => api.staleness.get(projectId),
   });
 
+  const readiness = useQuery({
+    queryKey: ['readiness', projectId],
+    queryFn: () => api.readiness.get(projectId),
+  });
+
+  const isPlanningComplete = readiness.data?.ready === true;
+  const [showConfetti, setShowConfetti] = useState(false);
+
+  useEffect(() => {
+    if (isPlanningComplete) {
+      const key = `caseflow.celebrated-construction.${projectId}`;
+      try {
+        if (!window.localStorage.getItem(key)) {
+          setShowConfetti(true);
+          window.localStorage.setItem(key, 'true');
+        }
+      } catch {
+        setShowConfetti(true);
+      }
+    }
+  }, [isPlanningComplete, projectId]);
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [view, setView] = useState<'list' | 'diagram'>('list');
@@ -315,7 +343,8 @@ function TraceabilityContent({ projectId }: { projectId: string }) {
   const selectedRoute = selected ? ARTIFACT_TYPE_ROUTES[selected.artifactType] : null;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 relative">
+      {showConfetti && <ConfettiCelebration onComplete={() => setShowConfetti(false)} />}
       <div className="flex flex-col gap-1">
         <PageHeading title="Trazabilidad" projectId={projectId} />
         <p className="text-sm text-muted-foreground">
@@ -926,6 +955,90 @@ function TraceabilityContent({ projectId }: { projectId: string }) {
                 </div>
               </TabsContent>
             </Tabs>
+
+            {/* Construction Transition Milestone Card */}
+            <div className="mt-4 rounded-2xl border-2 border-primary/30 bg-gradient-to-br from-card via-card to-primary/5 p-6 shadow-md transition-all">
+              {isPlanningComplete ? (
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                  <div className="flex items-start gap-4">
+                    <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary shadow-sm border border-primary/20">
+                      <Sparkles className="size-6 text-primary animate-pulse" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                          <ShieldCheck className="size-3.5" />
+                          Planificación Completada (13/13)
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowConfetti(true)}
+                          className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted/60 transition-colors cursor-pointer"
+                          title="Lanzar confeti de celebración"
+                        >
+                          🎉 Celebrar
+                        </button>
+                      </div>
+                      <h2 className="mt-1.5 text-lg font-bold text-foreground">
+                        ¡Fase de Planificación Completada con Éxito!
+                      </h2>
+                      <p className="mt-1 max-w-2xl text-sm text-muted-foreground leading-relaxed">
+                        Todos los artefactos de análisis, diseño y trazabilidad están aprobados y
+                        coherentes. La sección de <strong>Construcción</strong> en el menú lateral
+                        ha sido desbloqueada. Puede avanzar ahora al primer paso de construcción:{' '}
+                        <strong>Plan de generación</strong>.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
+                    <Link href="/construction/generation-plan">
+                      <Button size="lg" className="w-full sm:w-auto shadow-sm gap-2 font-semibold">
+                        <Hammer className="size-4" />
+                        Iniciar Fase de Construcción
+                        <ArrowRight className="size-4" />
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                  <div className="flex items-start gap-4">
+                    <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-muted/60 text-muted-foreground border border-border">
+                      <Lock className="size-6 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground border border-border">
+                          Fase 2: Construcción (Bloqueada)
+                        </span>
+                      </div>
+                      <h2 className="mt-1.5 text-lg font-semibold text-foreground">
+                        Siguiente fase: Construcción de Software
+                      </h2>
+                      <p className="mt-1 max-w-2xl text-sm text-muted-foreground leading-relaxed">
+                        La fase de construcción (generación guiada del software, modelo conceptual y
+                        sandbox) se habilitará en el menú lateral automáticamente cuando todos los
+                        pasos de planificación estén satisfechos y aprobados.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
+                    <Link href="/readiness">
+                      <Button variant="outline" size="sm" className="gap-2 text-xs">
+                        <ClipboardCheck className="size-3.5" />
+                        Revisar Preparación
+                      </Button>
+                    </Link>
+                    <Button disabled size="sm" className="gap-2 text-xs opacity-60">
+                      <Lock className="size-3.5" />
+                      Construcción Bloqueada
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
           </>
         ) : null}
       </QueryState>
