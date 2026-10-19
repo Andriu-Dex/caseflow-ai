@@ -2,7 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../identity/jwt-auth.guard';
 import { ProjectMembershipGuard } from '../identity/project-membership.guard';
 
-import { Body, Controller, Get, HttpCode, Param, Post, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Request, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
@@ -60,8 +60,9 @@ export class MockupsController {
   cancelJob(
     @Param('projectId', uuidParamPipe) projectId: string,
     @Param('jobId', uuidParamPipe) jobId: string,
+    @Request() request: { user: { id: string } },
   ) {
-    return this.service.cancelJob(projectId, jobId);
+    return this.service.cancelJob(projectId, jobId, request.user.id);
   }
 
   @Get('jobs/:jobId')

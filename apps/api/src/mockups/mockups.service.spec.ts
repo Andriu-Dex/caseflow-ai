@@ -72,6 +72,7 @@ function setup(provider: MockupProvider = new FakeMockupProvider()) {
   const prisma = {
     $transaction: vi.fn((callback) => callback(tx)),
     // A project created before DEC-118 without a theme: the standard design.
+    projectMembership: { findFirst: vi.fn().mockResolvedValue({ role: 'OWNER' }) },
     project: { findUnique: vi.fn().mockResolvedValue({ designThemeRequired: false }) },
     artifact: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn() },
     structuredAnalysisDetail: {
@@ -297,9 +298,9 @@ describe('MockupsService', () => {
       id: 'job-1',
       status: 'CANCELLED',
     });
-    await service.cancelJob('project', 'job-1').catch(() => undefined);
+    await service.cancelJob('project', 'job-1', 'u').catch(() => undefined);
     expect(prisma.mockupGenerationJob.updateMany).toHaveBeenCalledWith({
-      where: { id: 'job-1', status: { in: ['QUEUED', 'RUNNING'] } },
+      where: { id: 'job-1', projectId: 'project', status: { in: ['QUEUED', 'RUNNING'] } },
       data: { status: 'CANCELLED', errorMessage: 'Se canceló con 12 de 77 pantallas generadas.' },
     });
 
@@ -310,11 +311,20 @@ describe('MockupsService', () => {
       totalScreens: 1,
       _count: { parts: 1 },
     });
-    await service.cancelJob('project', 'job-2').catch(() => undefined);
+    await service.cancelJob('project', 'job-2', 'u').catch(() => undefined);
     expect(prisma.mockupGenerationJob.updateMany).not.toHaveBeenCalled();
 
     prisma.mockupGenerationJob.findFirst.mockResolvedValue(null);
-    await expect(service.cancelJob('other', 'job-1')).rejects.toThrow('no encontrado');
+    await expect(service.cancelJob('other', 'job-1', 'u')).rejects.toThrow('no encontrado');
+  });
+
+  it('refuses to cancel a job for a user without permission', async () => {
+    const { service, prisma } = setup();
+    prisma.projectMembership.findFirst.mockResolvedValue(null);
+    await expect(service.cancelJob('project', 'job-1', 'viewer')).rejects.toThrow(
+      'No tiene permisos',
+    );
+    expect(prisma.mockupGenerationJob.updateMany).not.toHaveBeenCalled();
   });
 
   it('stops asking Stitch for screens once the job is cancelled', async () => {
