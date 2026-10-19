@@ -130,4 +130,9 @@ describe('ProjectsPage', () => {
       }),
     );
   });
+
+  it('renders a direct Nuevo proyecto button in the header', async () => {
+    renderPage();
+    expect(await screen.findByRole('button', { name: 'Nuevo proyecto' })).toBeInTheDocument();
+  });
 });

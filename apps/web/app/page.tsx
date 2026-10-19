@@ -7,18 +7,18 @@ import {
   CheckCircle2,
   Circle,
   Clock,
-  FolderKanban,
   Info,
   Package,
   PenTool,
   Search,
 } from 'lucide-react';
 import Link from 'next/link';
-import { Badge, Card, CardContent, CardHeader, buttonVariants } from '@caseflow-ai/ui';
+import { Badge, Card, CardContent, CardHeader } from '@caseflow-ai/ui';
 import { api } from '../lib/api';
 import { QueryState, RequireActiveProject } from '../components/query-state';
 import { STAGE_LINKS } from '../lib/stage-links';
 import { DismissibleHint } from '../components/dismissible-hint';
+import { WORKFLOW_ROUTE_LABELS } from '../components/workflow-route';
 
 const DASHBOARD_PHASES = [
   {
@@ -89,20 +89,35 @@ function HomeContent({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <Card className="border-t-4 border-t-primary">
-        <CardContent>
+      <Card className="border-t-4 border-t-primary shadow-xs">
+        <CardContent className="pt-6">
           <QueryState isLoading={project.isLoading} error={project.error}>
-            <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight text-foreground">
-              {project.data?.name}
-              <DismissibleHint id="news-v2-routes-theme" label="Novedades">
-                Novedades: cada proyecto tiene ahora una ruta (Completa, Exprés o Solo
-                construcción), y hay un paso «Tema y colores» antes de los bocetos. Preparación /
-                Exportar y Líneas Base están en su propio grupo «Entregables» del menú.
-              </DismissibleHint>
-            </h1>
-            {project.data?.description ? (
-              <p className="mt-1 text-sm text-muted-foreground">{project.data.description}</p>
-            ) : null}
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
+                    {project.data?.name}
+                  </h1>
+                  {project.data?.workflowRoute ? (
+                    <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary border border-primary/20">
+                      Ruta:{' '}
+                      {WORKFLOW_ROUTE_LABELS[project.data.workflowRoute] ??
+                        project.data.workflowRoute}
+                    </span>
+                  ) : null}
+                </div>
+                <DismissibleHint id="news-v2-routes-theme" label="Novedades">
+                  Novedades: cada proyecto tiene ahora una ruta (Completa, Exprés o Solo
+                  construcción), y hay un paso «Tema y colores» antes de los bocetos. Preparación /
+                  Exportar y Líneas Base están en su propio grupo «Entregables» del menú.
+                </DismissibleHint>
+              </div>
+              {project.data?.description ? (
+                <p className="text-sm text-muted-foreground leading-relaxed mt-0.5">
+                  {project.data.description}
+                </p>
+              ) : null}
+            </div>
           </QueryState>
         </CardContent>
       </Card>
@@ -196,24 +211,32 @@ function HomeContent({ projectId }: { projectId: string }) {
               </div>
 
               {nextStage ? (
-                <div className="mt-4 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                  <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                  <span>
-                    <strong>Siguiente paso:</strong> {nextStage.nextAction ?? nextStage.summary}{' '}
-                    <Link
-                      href={STAGE_LINKS[nextStage.key] ?? '/readiness'}
-                      className="inline-flex items-center gap-0.5 underline"
-                    >
-                      Ir a {nextStage.label}
-                      <ArrowRight className="size-3.5" aria-hidden="true" />
-                    </Link>
-                  </span>
+                <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-amber-200/90 bg-amber-50/80 p-4 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-200">
+                  <div className="flex items-start gap-2.5">
+                    <Info
+                      className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400"
+                      aria-hidden="true"
+                    />
+                    <div>
+                      <strong className="font-semibold text-foreground">Siguiente paso:</strong>{' '}
+                      <span className="text-muted-foreground">
+                        {nextStage.nextAction ?? nextStage.summary}
+                      </span>
+                    </div>
+                  </div>
+                  <Link
+                    href={STAGE_LINKS[nextStage.key] ?? '/readiness'}
+                    className="inline-flex items-center gap-1.5 self-start sm:self-auto rounded-lg bg-primary px-3.5 py-1.5 text-xs font-semibold text-primary-foreground shadow-xs hover:bg-primary/90 transition-all shrink-0"
+                  >
+                    Ir a {nextStage.label}
+                    <ArrowRight className="size-3.5" aria-hidden="true" />
+                  </Link>
                 </div>
               ) : null}
 
               <Link
                 href="/readiness"
-                className="mt-3 inline-flex items-center gap-1 text-sm text-muted-foreground underline"
+                className="mt-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors underline"
               >
                 Ver detalle completo de preparación
                 <ArrowRight className="size-3.5" aria-hidden="true" />
@@ -256,13 +279,6 @@ function HomeContent({ projectId }: { projectId: string }) {
 export default function HomePage() {
   return (
     <div className="flex flex-col gap-4">
-      <Link
-        href="/projects"
-        className={buttonVariants({ variant: 'outline', size: 'sm', className: 'w-fit gap-1.5' })}
-      >
-        <FolderKanban className="size-4" aria-hidden="true" />
-        Ver Proyectos
-      </Link>
       <RequireActiveProject>
         {(projectId) => <HomeContent projectId={projectId} />}
       </RequireActiveProject>
