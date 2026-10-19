@@ -32,8 +32,11 @@ export interface AIFailureDiagnostics {
     | 'content_filter'
     | 'steered'
     | 'unknown_incomplete'
-    | 'stream_ended';
+    | 'stream_ended'
+    | 'invalid_schema';
   outputChars: number;
+  // Where the answer broke the schema (paths and messages, never the values).
+  issues?: string[];
   usage?: AIUsage | null;
 }
 export class AIError extends Error {
@@ -315,7 +318,17 @@ export class AIOrchestrator {
       if (!response || !candidate)
         throw new AIError('AI_INVALID_OUTPUT', 'La salida de IA no cumple el esquema requerido.');
       if (!candidate.success)
-        throw new AIError('AI_INVALID_OUTPUT', 'La salida de IA no cumple el esquema requerido.');
+        throw new AIError('AI_INVALID_OUTPUT', 'La salida de IA no cumple el esquema requerido.', {
+          diagnostics: {
+            model: response.model,
+            reason: 'invalid_schema',
+            outputChars: JSON.stringify(response.payload ?? null).length,
+            usage: response.usage,
+            issues: candidate.error.issues
+              .slice(0, 8)
+              .map((issue) => `${issue.path.join('.') || '(raíz)'}: ${issue.message}`),
+          },
+        });
       await this.recorder.succeed(runId, {
         provider: response.provider,
         model: response.model,

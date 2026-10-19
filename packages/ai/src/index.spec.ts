@@ -136,7 +136,16 @@ describe('AIOrchestrator', () => {
       audit,
     ).generateStructured(input());
     await expect(operation).rejects.toMatchObject({ code: 'AI_INVALID_OUTPUT' });
-    expect(audit.fail).toHaveBeenCalledWith('run-1', 'AI_INVALID_OUTPUT', expect.any(Number));
+    // The run keeps where the answer broke the schema (paths, never the values).
+    expect(audit.fail).toHaveBeenCalledWith(
+      'run-1',
+      'AI_INVALID_OUTPUT',
+      expect.any(Number),
+      expect.objectContaining({
+        reason: 'invalid_schema',
+        issues: [expect.stringContaining('value')],
+      }),
+    );
   });
 
   it.each([0, -1, Number.NaN, 1.5, 1_000_001])(
