@@ -9,9 +9,11 @@ import {
   CalendarDays,
   Check,
   FolderKanban,
+  FolderPlus,
   Loader2,
-  Search,
   Pencil,
+  Plus,
+  Search,
   Trash2,
   X,
 } from 'lucide-react';
@@ -40,6 +42,7 @@ import { QueryState } from '../../components/query-state';
 import { useActiveProject } from '../../lib/active-project';
 import { WORKFLOW_ROUTE_LABELS } from '../../components/workflow-route';
 import { PaginationNav } from '../../components/pagination-nav';
+import { NewProjectDialog } from '../../components/new-project-dialog';
 
 function EditProjectDialog({
   project,
@@ -604,8 +607,10 @@ const select =
 
 export default function ProjectsPage() {
   const queryClient = useQueryClient();
+  const { setProjectId } = useActiveProject();
   const workspaces = useQuery({ queryKey: ['workspaces'], queryFn: () => api.workspaces.list() });
   const workspaceId = workspaces.data?.items[0]?.id;
+  const [creating, setCreating] = useState(false);
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<(typeof PROJECT_LIST_STATUSES)[number]>('ACTIVE');
@@ -653,12 +658,36 @@ export default function ProjectsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center gap-3">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">Proyectos</h1>
-        {total > 0 ? (
-          <span className="rounded-full bg-muted/80 px-2.5 py-0.5 text-xs font-medium text-muted-foreground border border-border/40">
-            {total}
-          </span>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-xs">
+            <FolderKanban className="size-5" aria-hidden="true" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold tracking-tight text-foreground">Proyectos</h1>
+              {total > 0 ? (
+                <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary border border-primary/20">
+                  {total}
+                </span>
+              ) : null}
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Explore, cree y configure los proyectos de su espacio de trabajo.
+            </p>
+          </div>
+        </div>
+
+        {workspaceId ? (
+          <Button
+            type="button"
+            size="sm"
+            className="gap-2 font-medium shadow-xs self-start sm:self-auto"
+            onClick={() => setCreating(true)}
+          >
+            <Plus className="size-4" aria-hidden="true" />
+            Nuevo proyecto
+          </Button>
         ) : null}
       </div>
 
@@ -748,11 +777,53 @@ export default function ProjectsPage() {
         error={workspaces.error ?? projects.error}
       >
         {projects.data && projects.data.items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            {filtered
-              ? 'Ningún proyecto coincide con los filtros.'
-              : 'Todavía no hay proyectos activos.'}
-          </p>
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border/80 bg-muted/20 p-8 text-center sm:p-12">
+            <div className="flex size-14 items-center justify-center rounded-2xl bg-muted/80 text-muted-foreground border border-border/60 shadow-xs mb-3.5">
+              {filtered ? (
+                <Search className="size-6 text-muted-foreground" aria-hidden="true" />
+              ) : (
+                <FolderPlus className="size-6 text-primary" aria-hidden="true" />
+              )}
+            </div>
+            <h3 className="text-base font-semibold text-foreground">
+              {filtered ? 'No se encontraron proyectos' : 'Todavía no hay proyectos'}
+            </h3>
+            <p className="mt-1 max-w-sm text-xs sm:text-sm text-muted-foreground leading-relaxed">
+              {filtered
+                ? 'Ningún proyecto coincide con los filtros. Intente ajustar los términos o restablecer los filtros.'
+                : 'Todavía no hay proyectos activos. Cree su primer proyecto para comenzar con CASEFlow AI.'}
+            </p>
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+              {filtered ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => {
+                    setSearchInput('');
+                    setSearch('');
+                    setStatus('ACTIVE');
+                    setRoute('');
+                    setPage(0);
+                  }}
+                >
+                  <X className="size-3.5" aria-hidden="true" />
+                  Limpiar filtros
+                </Button>
+              ) : workspaceId ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="gap-1.5 shadow-xs"
+                  onClick={() => setCreating(true)}
+                >
+                  <Plus className="size-4" aria-hidden="true" />
+                  Crear primer proyecto
+                </Button>
+              ) : null}
+            </div>
+          </div>
         ) : (
           <>
             <div
@@ -776,6 +847,19 @@ export default function ProjectsPage() {
           </>
         )}
       </QueryState>
+
+      {creating && workspaceId ? (
+        <NewProjectDialog
+          open={creating}
+          onOpenChange={setCreating}
+          workspaceId={workspaceId}
+          onCreated={async (id) => {
+            await invalidate();
+            setProjectId(id);
+            toast.success('Proyecto creado y activado.');
+          }}
+        />
+      ) : null}
     </div>
   );
 }
