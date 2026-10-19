@@ -294,11 +294,15 @@ function actionsService(
     ];
     const body = implementations[endpointKey(endpoint)];
     const names = [...params, ...(hasBody ? ['body'] : [])];
+    // An AI body may leave a parameter unused (the lint forbids it): such a
+    // parameter is marked as used, as in the stub.
+    const unused = body ? names.filter((name) => !new RegExp(`\\b${name}\\b`).test(body)) : [];
     return `  /** ${endpoint.summary} */
   async ${actionMethodName(endpoint)}(${args.join(', ')}): Promise<unknown> {
 ${
   body
-    ? body
+    ? (unused.length ? `    void [${unused.join(', ')}];\n` : '') +
+      body
         .split('\n')
         .map((line) => (line ? `    ${line}` : line))
         .join('\n')

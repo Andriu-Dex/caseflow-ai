@@ -187,6 +187,9 @@ describe('generateProject', () => {
     expect(service.origin).toBe('AI_ASSISTED');
     expect(service.content).toContain("data: { status: 'CONFIRMED' }");
     expect(service.content).not.toContain('NotImplementedException');
+    // orderId is used; the request body is not, so it is marked as used for the lint.
+    expect(service.content).toContain('void [body];');
+    expect(service.content).not.toContain('void [orderId');
   });
 
   it('leaves out authentication entirely when the plan does not require it', () => {

@@ -16,7 +16,7 @@ import {
 
 const logger = new Logger('BusinessLogicService');
 
-const businessLogicOutputSchema = z.object({ body: z.string().trim().min(1).max(6000) }).strict();
+const businessLogicOutputSchema = z.object({ body: z.string().trim().min(1).max(20_000) }).strict();
 
 // What an AI-written body may never do: bring in code (DEC-100: no new
 // dependencies through the back door) or reach outside the request's data.
@@ -142,12 +142,13 @@ export class BusinessLogicService {
           projectId,
           language,
           promptKey: 'business-logic.generate',
-          promptVersion: 1,
+          promptVersion: 2,
           messages: [{ role: 'user', content: JSON.stringify(context) }],
           outputSchema: businessLogicOutputSchema,
           schemaName: 'business_logic_generation',
-          // A body may be up to 6 000 characters: room for all of it.
-          maxOutputTokens: 6144,
+          // The schema's length limit cuts an answer where it falls, so both
+          // leave room for a long action.
+          maxOutputTokens: 8192,
         });
         const review = reviewBusinessLogic(result.data.body);
         if (review.accepted) {
