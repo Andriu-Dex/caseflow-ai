@@ -88,6 +88,7 @@ export class PrismaAIRunRecorder implements AIRunRecorder, OnApplicationBootstra
               errorDetails: {
                 reason: diagnostics.reason,
                 outputChars: diagnostics.outputChars,
+                ...(diagnostics.issues ? { issues: diagnostics.issues } : {}),
                 usage: diagnostics.usage ? { ...diagnostics.usage } : null,
               },
             }
