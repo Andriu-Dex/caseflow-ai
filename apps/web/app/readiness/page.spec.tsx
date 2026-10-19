@@ -215,4 +215,44 @@ describe('ReadinessPage', () => {
       '/projects/p1/artifacts/art1-screens',
     );
   });
+
+  it('renders Construction Unlocked milestone banner and link when ready: true', async () => {
+    render(
+      <TestProviders>
+        <ReadinessPage />
+      </TestProviders>,
+    );
+
+    expect(await screen.findByText('¡Fase de Construcción Desbloqueada!')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Ir a Plan de Generación/i })).toHaveAttribute(
+      'href',
+      '/construction/generation-plan',
+    );
+  });
+
+  it('manages sessionStorage celebration key on ready state changes', async () => {
+    render(
+      <TestProviders>
+        <ReadinessPage />
+      </TestProviders>,
+    );
+
+    expect(await screen.findByText('¡Fase de Construcción Desbloqueada!')).toBeInTheDocument();
+    expect(sessionStorage.getItem('caseflow.celebrated-readiness.p1')).toBe('true');
+
+    getReadiness.mockResolvedValueOnce({
+      ...oneStageSatisfied,
+      ready: false,
+    });
+
+    render(
+      <TestProviders>
+        <ReadinessPage />
+      </TestProviders>,
+    );
+
+    await waitFor(() => {
+      expect(sessionStorage.getItem('caseflow.celebrated-readiness.p1')).toBeNull();
+    });
+  });
 });

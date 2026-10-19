@@ -48,7 +48,7 @@ import { StatusBadge } from '../../components/status-badge';
 import { ApprovalOriginBadge } from '../../components/workflow-route';
 import { DiagramViewer } from '../../components/diagram-viewer';
 import { EmptyState } from '../../components/artifact-actions';
-import { ConfettiCelebration } from '../../components/confetti-celebration';
+import { Confetti } from '../../components/confetti';
 import { Badge, Button, Input, Tabs, TabsContent, TabsList, TabsTrigger } from '@caseflow-ai/ui';
 
 const ARTIFACT_TYPE_LABELS: Record<TraceabilityNode['artifactType'], string> = {
@@ -244,15 +244,21 @@ function TraceabilityContent({ projectId }: { projectId: string }) {
   const [showConfetti, setShowConfetti] = useState(false);
 
   useEffect(() => {
+    const key = `caseflow.celebrated-construction.${projectId}`;
     if (isPlanningComplete) {
-      const key = `caseflow.celebrated-construction.${projectId}`;
       try {
-        if (!window.localStorage.getItem(key)) {
+        if (!sessionStorage.getItem(key)) {
           setShowConfetti(true);
-          window.localStorage.setItem(key, 'true');
+          sessionStorage.setItem(key, 'true');
         }
       } catch {
         setShowConfetti(true);
+      }
+    } else {
+      try {
+        sessionStorage.removeItem(key);
+      } catch {
+        // Storage access might fail in restricted environments
       }
     }
   }, [isPlanningComplete, projectId]);
@@ -344,7 +350,7 @@ function TraceabilityContent({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-6 relative">
-      {showConfetti && <ConfettiCelebration onComplete={() => setShowConfetti(false)} />}
+      {showConfetti && <Confetti onComplete={() => setShowConfetti(false)} />}
       <div className="flex flex-col gap-1">
         <PageHeading title="Trazabilidad" projectId={projectId} />
         <p className="text-sm text-muted-foreground">
@@ -970,14 +976,6 @@ function TraceabilityContent({ projectId }: { projectId: string }) {
                           <ShieldCheck className="size-3.5" />
                           Planificación Completada (13/13)
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => setShowConfetti(true)}
-                          className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted/60 transition-colors cursor-pointer"
-                          title="Lanzar confeti de celebración"
-                        >
-                          🎉 Celebrar
-                        </button>
                       </div>
                       <h2 className="mt-1.5 text-lg font-bold text-foreground">
                         ¡Fase de Planificación Completada con Éxito!
