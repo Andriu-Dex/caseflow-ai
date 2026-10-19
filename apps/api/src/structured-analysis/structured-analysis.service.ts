@@ -1662,7 +1662,7 @@ export class StructuredAnalysisService {
         routes = fillMissingRoutes(routes, remaining, context);
         progress?.update(2 + entityBatches.length + position, total, 0);
       }
-      routes = finishRoutes(routes, screens, entities);
+      routes = finishRoutes(routes, screens, entities, skeleton.authentication.roles);
 
       const codesOf = (...types: string[]) =>
         sources
