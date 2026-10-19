@@ -426,12 +426,38 @@ export function finishRoutes(
       });
     return extra.length ? { ...route, actions: [...route.actions, ...extra] } : route;
   });
-  const used = new Set(routes.flatMap((route) => route.actions.map((a) => a.endpoint)));
+  // An action still unserved (a report to consult, say) is served by the query
+  // of its own route: a GET endpoint at the route's path.
+  const endpoints = [...accumulated.customEndpoints];
+  const known = new Set(endpoints.map(endpointKey));
+  const served = routes.map((route) => {
+    const screen = route.screenLocalId ? screenById.get(route.screenLocalId) : undefined;
+    const apiPath = route.path.replace(/\[([a-z][A-Za-z0-9]*)\]/g, ':$1');
+    if (!screen || apiPath === '/') return route;
+    const done = new Set(route.actions.map((action) => action.label));
+    const pending = screen.primaryActions.filter((label) => !done.has(label));
+    if (!pending.length) return route;
+    const endpoint = `GET ${apiPath}`;
+    if (!known.has(endpoint)) {
+      known.add(endpoint);
+      endpoints.push({
+        moduleLocalId: route.moduleLocalId,
+        method: 'GET',
+        path: apiPath,
+        summary: `Consulta de los datos de la pantalla «${screen.name}».`.slice(0, 300),
+        ...(route.entityLocalId ? { entityLocalId: route.entityLocalId } : {}),
+        roles: [],
+      });
+    }
+    return {
+      ...route,
+      actions: [...route.actions, ...pending.map((label) => ({ label, endpoint }))],
+    };
+  });
+  const used = new Set(served.flatMap((route) => route.actions.map((a) => a.endpoint)));
   return {
-    routes,
-    customEndpoints: accumulated.customEndpoints.filter((endpoint) =>
-      used.has(endpointKey(endpoint)),
-    ),
+    routes: served,
+    customEndpoints: endpoints.filter((endpoint) => used.has(endpointKey(endpoint))),
   };
 }
 
@@ -462,6 +488,39 @@ export function derivedTests(
         ]
       : []),
   ]);
+}
+
+// Where each part of the plan comes from, when the model cited nothing: the
+// plan is built from the frozen design, so its modules come from the generation
+// plan and the software architecture, its entities from the conceptual model
+// and the class diagram, its routes from the UI blueprint and the navigation,
+// and its endpoints from the system architecture.
+export interface PlanProvenance {
+  modules: string[];
+  entities: string[];
+  routes: string[];
+  endpoints: string[];
+}
+const withProvenance = <T extends { relatedSourceCodes?: string[] }>(items: T[], codes: string[]) =>
+  items.map((item) =>
+    item.relatedSourceCodes?.length || !codes.length
+      ? item
+      : { ...item, relatedSourceCodes: codes },
+  );
+export function fillProvenance(
+  skeleton: ImplementationSkeleton,
+  entities: IpEntity[],
+  routes: RoutesAccumulated,
+  provenance: PlanProvenance,
+) {
+  return {
+    skeleton: { ...skeleton, modules: withProvenance(skeleton.modules, provenance.modules) },
+    entities: withProvenance(entities, provenance.entities),
+    routes: {
+      routes: withProvenance(routes.routes, provenance.routes),
+      customEndpoints: withProvenance(routes.customEndpoints, provenance.endpoints),
+    },
+  };
 }
 
 export function finishImplementationPlan(
