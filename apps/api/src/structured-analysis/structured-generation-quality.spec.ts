@@ -476,3 +476,24 @@ describe('uncovered sources of a system architecture', () => {
     expect(message).not.toContain('CU-001');
   });
 });
+
+describe('uncovered sources of a generation plan', () => {
+  it('expects functional requirements and use cases, not the quality requirements it cannot cite', () => {
+    const sources = [
+      { code: 'RF-001', type: 'REQUIREMENT', requirementType: 'FUNCTIONAL' },
+      { code: 'RNF-001', type: 'REQUIREMENT', requirementType: 'NON_FUNCTIONAL' },
+      { code: 'CU-001', type: 'USE_CASE' },
+    ];
+    const plan = {
+      summary: 'S',
+      modules: [{ localId: 'm', name: 'M', purpose: 'P', relatedSourceCodes: [] }],
+      authentication: { required: false },
+    };
+    const message = evaluateStructuredGeneration('GENERATION_PLAN', plan, sources).find(
+      (f) => f.code === 'UNCOVERED_SOURCE',
+    )!.message;
+    expect(message).toContain('RF-001');
+    expect(message).toContain('CU-001');
+    expect(message).not.toContain('RNF-001');
+  });
+});

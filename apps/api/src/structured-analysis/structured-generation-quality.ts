@@ -310,11 +310,18 @@ export function evaluateStructuredGeneration(
   // findings that matter.
   // A system architecture answers the non-functional requirements and the
   // design inputs; not every functional requirement or use case has a place in it.
+  // A generation plan is the other way round: its modules, workflows and screens
+  // cite requirements and use cases, but a quality requirement has no element to
+  // cite it (its technical constraints carry no sources), so one left uncited is
+  // not something the user could fix in the proposal.
   const notExpected = (source: GenerationSourceReference) =>
     (STRUCTURE_KINDS.includes(kind) && ANALYSIS_TYPES.includes(source.type)) ||
     (kind === 'SYSTEM_ARCHITECTURE' &&
       (source.type === 'USE_CASE' ||
-        (source.type === 'REQUIREMENT' && source.requirementType === 'FUNCTIONAL')));
+        (source.type === 'REQUIREMENT' && source.requirementType === 'FUNCTIONAL'))) ||
+    (kind === 'GENERATION_PLAN' &&
+      source.type === 'REQUIREMENT' &&
+      source.requirementType !== 'FUNCTIONAL');
   const uncovered = sources.filter(
     (source) => !referenced.has(source.code) && !notExpected(source),
   );
