@@ -413,7 +413,7 @@ import {
           // Batched implementation plan (DEC-144).
           {
             key: 'implementation-plan.skeleton',
-            version: 1,
+            version: 2,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'implementation_plan_generation',
             systemInstructions: IP_SKELETON_PROMPT,
@@ -427,7 +427,7 @@ import {
           },
           {
             key: 'implementation-plan.routes',
-            version: 1,
+            version: 2,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'implementation_plan_generation',
             systemInstructions: IP_ROUTES_PROMPT,
