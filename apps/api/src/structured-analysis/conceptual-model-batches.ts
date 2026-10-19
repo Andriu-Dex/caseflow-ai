@@ -131,14 +131,18 @@ export function mergeConceptualBatch(
   }
   const known = new Set(entities.map((entity) => entity.localId));
   const relationships = [...accumulated.relationships];
-  const seen = new Set(relationships.map((r) => `${r.fromLocalId}|${r.toLocalId}`));
+  // Two entities may be related in more than one way (a user works at a branch
+  // and is responsible for it): only the same name between them is a repeat.
+  const seen = new Set(relationships.map((r) => `${r.fromLocalId}|${r.toLocalId}|${key(r.name)}`));
   for (const relationship of output.relationships) {
     const from = finalId.get(relationship.fromLocalId) ?? relationship.fromLocalId;
     const to = finalId.get(relationship.toLocalId) ?? relationship.toLocalId;
     if (!known.has(from) || !known.has(to))
       invalid('Una relación cita una entidad que no existe en el modelo.');
-    if (from === to || seen.has(`${from}|${to}`) || seen.has(`${to}|${from}`)) continue;
-    seen.add(`${from}|${to}`);
+    const name = key(relationship.name);
+    if (from === to || seen.has(`${from}|${to}|${name}`) || seen.has(`${to}|${from}|${name}`))
+      continue;
+    seen.add(`${from}|${to}|${name}`);
     relationships.push({ ...relationship, fromLocalId: from, toLocalId: to });
   }
   return { entities, relationships };
@@ -171,18 +175,23 @@ export function completeRelationships(
 ): Accumulated {
   const entityOf = (classId: string) =>
     accumulated.entities.find((entity) => entity.classLocalId === classId);
-  const joined = new Set(
-    accumulated.relationships.flatMap((r) => [
-      `${r.fromLocalId}|${r.toLocalId}`,
-      `${r.toLocalId}|${r.fromLocalId}`,
-    ]),
-  );
+  // How many relationships join each pair of entities: the class diagram may
+  // have more than one between the same two (the model may merge them).
+  const pair = (a: string, b: string) => [a, b].sort().join('|');
+  const joined = new Map<string, number>();
+  for (const r of accumulated.relationships) {
+    const k = pair(r.fromLocalId, r.toLocalId);
+    joined.set(k, (joined.get(k) ?? 0) + 1);
+  }
+  const wanted = new Map<string, number>();
   const added: Relationship[] = [];
   for (const relationship of relationships) {
     const a = entityOf(relationship.fromLocalId);
     const b = entityOf(relationship.toLocalId);
-    if (!a || !b || a.localId === b.localId || joined.has(`${a.localId}|${b.localId}`)) continue;
-    joined.add(`${a.localId}|${b.localId}`);
+    if (!a || !b || a.localId === b.localId) continue;
+    const k = pair(a.localId, b.localId);
+    wanted.set(k, (wanted.get(k) ?? 0) + 1);
+    if (wanted.get(k)! <= (joined.get(k) ?? 0)) continue;
     const { swap, cardinality } = conceptualCardinality(relationship);
     added.push({
       fromLocalId: swap ? b.localId : a.localId,
