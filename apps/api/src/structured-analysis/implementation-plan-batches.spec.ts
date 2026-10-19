@@ -6,6 +6,7 @@ import {
   derivedTests,
   fillMissingEntities,
   fillMissingRoutes,
+  fillProvenance,
   finishRoutes,
   mergeEntityBatch,
   mergeRouteBatch,
@@ -296,8 +297,54 @@ describe('routes', () => {
       [home],
       orders,
     );
-    expect(done.routes[0]!.actions).toEqual([{ label: 'Nuevo pedido', operation: 'CREATE' }]);
-    expect(done.customEndpoints).toEqual([]);
+    // 'Confirmar' has no CRUD operation: the route's own query serves it.
+    expect(done.routes[0]!.actions).toEqual([
+      { label: 'Nuevo pedido', operation: 'CREATE' },
+      { label: 'Confirmar', endpoint: 'GET /orders' },
+    ]);
+    // The unused endpoint is dropped; only the route's query remains.
+    expect(done.customEndpoints.map((endpoint) => `${endpoint.method} ${endpoint.path}`)).toEqual([
+      'GET /orders',
+    ]);
+  });
+});
+
+describe('route actions and provenance fallbacks', () => {
+  const report = screen('rep', { primaryActions: ['Consultar reporte'], secondaryActions: [] });
+  const reportRoute = {
+    path: '/reportes/[periodoId]',
+    screenName: 'Reporte',
+    screenLocalId: 'rep',
+    moduleLocalId: 'orders',
+    kind: 'DASHBOARD' as const,
+    actions: [],
+  };
+  it('serves an action nothing else serves by the GET query of its route', () => {
+    const done = finishRoutes(
+      { routes: [reportRoute as never], customEndpoints: [] },
+      [report],
+      [],
+    );
+    expect(done.routes[0]!.actions).toEqual([
+      { label: 'Consultar reporte', endpoint: 'GET /reportes/:periodoId' },
+    ]);
+    expect(done.customEndpoints).toMatchObject([{ method: 'GET', path: '/reportes/:periodoId' }]);
+  });
+  it('cites the design sources it comes from when the model cited none, and keeps what it cited', () => {
+    const filled = fillProvenance(
+      {
+        authentication: { required: true, roles: [] },
+        modules: [{ localId: 'a' }, { localId: 'b', relatedSourceCodes: ['X-1'] }],
+        envVars: [],
+      } as never,
+      [{ localId: 'e' }] as never,
+      { routes: [{ path: '/a' }] as never, customEndpoints: [{ path: '/b' }] as never },
+      { modules: ['PG-1'], entities: ['MC-1', 'DC-1'], routes: ['UI-1'], endpoints: ['SARQ-1'] },
+    );
+    expect(filled.skeleton.modules.map((m) => m.relatedSourceCodes)).toEqual([['PG-1'], ['X-1']]);
+    expect(filled.entities[0]!.relatedSourceCodes).toEqual(['MC-1', 'DC-1']);
+    expect(filled.routes.routes[0]!.relatedSourceCodes).toEqual(['UI-1']);
+    expect(filled.routes.customEndpoints[0]!.relatedSourceCodes).toEqual(['SARQ-1']);
   });
 });
 

@@ -67,6 +67,7 @@ import {
   cleanSkeleton,
   fillMissingEntities as fillMissingPlanEntities,
   fillMissingRoutes,
+  fillProvenance,
   finishImplementationPlan,
   finishRoutes,
   mergeEntityBatch,
@@ -1663,7 +1664,22 @@ export class StructuredAnalysisService {
       }
       routes = finishRoutes(routes, screens, entities);
 
-      const content = finishImplementationPlan(skeleton, entities, routes, baselineId);
+      const codesOf = (...types: string[]) =>
+        sources
+          .filter((source) => types.includes(source.artifact.artifactTypeCode))
+          .map((source) => source.artifact.code);
+      const filled = fillProvenance(skeleton, entities, routes, {
+        modules: codesOf('GENERATION_PLAN', 'SOFTWARE_ARCHITECTURE'),
+        entities: codesOf('CONCEPTUAL_DOMAIN_MODEL', 'CLASS_DIAGRAM'),
+        routes: codesOf('UI_BLUEPRINT', 'NAVIGATION_TREE'),
+        endpoints: codesOf('SYSTEM_ARCHITECTURE'),
+      });
+      const content = finishImplementationPlan(
+        filled.skeleton,
+        filled.entities,
+        filled.routes,
+        baselineId,
+      );
       const id = await this.persistGeneration(
         projectId,
         kind,
