@@ -162,3 +162,19 @@ describe('AppShell sidebar folding', () => {
     expect(screen.getByRole('button', { name: 'Expandir menú' })).toBeInTheDocument();
   });
 });
+
+describe('AppShell top navigation', () => {
+  it('renders Inicio and Proyectos links in the top navigation group', async () => {
+    mocks.readinessGet.mockResolvedValue({ ready: false, stages: [] });
+    render(
+      <TestProviders>
+        <AppShell>content</AppShell>
+      </TestProviders>,
+    );
+    const inicioLink = await screen.findByRole('link', { name: 'Inicio' });
+    expect(inicioLink).toHaveAttribute('href', '/');
+
+    const proyectosLink = screen.getByRole('link', { name: 'Proyectos' });
+    expect(proyectosLink).toHaveAttribute('href', '/projects');
+  });
+});

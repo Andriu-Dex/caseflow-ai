@@ -7,6 +7,7 @@ import {
   ChevronRight,
   ClipboardCheck,
   Check,
+  FolderKanban,
   Hammer,
   Home,
   Lock,
@@ -49,7 +50,13 @@ const CONSTRUCTION_GROUP_LABEL = 'Construcción';
 // ROUTE_STEP_NUMBER) across the whole flow rather than per group, so the
 // sidebar reads as one stepper.
 const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
-  { label: '', items: [{ href: '/', label: 'Inicio' }] },
+  {
+    label: '',
+    items: [
+      { href: '/', label: 'Inicio' },
+      { href: '/projects', label: 'Proyectos' },
+    ],
+  },
   {
     label: 'Conocimiento',
     items: [
@@ -348,7 +355,10 @@ export function AppShell({ children }: { children: ReactNode }) {
                 ) : null}
                 <ul className="flex flex-col gap-0.5">
                   {group.items.map((item) => {
-                    const active = pathname === item.href;
+                    const active =
+                      item.href === '/'
+                        ? pathname === '/'
+                        : pathname === item.href || pathname.startsWith(item.href + '/');
                     const step = ROUTE_STEP_NUMBER[item.href];
                     const state = step ? computeStepState(item.href, stages) : 'unknown';
                     const locked = Boolean(firstBlockingStep(item.href));
@@ -401,6 +411,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                                 step
                               )}
                             </span>
+                          ) : item.href === '/projects' ? (
+                            <FolderKanban className="size-4 shrink-0" aria-hidden="true" />
                           ) : item.href === '/readiness' ? (
                             <ClipboardCheck className="size-4 shrink-0" aria-hidden="true" />
                           ) : item.href.startsWith('/construction/') ||
