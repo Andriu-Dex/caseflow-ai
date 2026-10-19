@@ -25,6 +25,8 @@ export function StageOutdatedBanner({ stage, projectId }: { stage: string; proje
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  // Why the server refused, shown inside the dialog so it is not lost behind it.
+  const [error, setError] = useState<string | null>(null);
   const item = readiness.data?.stages.find((item) => item.key === stage);
   if (item?.currency !== 'OUTDATED' || !item.outdatedSince) return null;
   const source =
@@ -32,14 +34,17 @@ export function StageOutdatedBanner({ stage, projectId }: { stage: string; proje
     item.outdatedSince.stage;
   async function confirm() {
     setBusy(true);
+    setError(null);
     try {
       await api.readiness.confirm(projectId, stage, note.trim() || undefined);
       await queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
       toast.success('Se registró que este paso sigue vigente.');
       setOpen(false);
       setNote('');
-    } catch (error) {
-      toast.error(error instanceof ApiError ? error.message : 'No se pudo confirmar el paso.');
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'No se pudo confirmar el paso.';
+      setError(message);
+      toast.error(message);
     } finally {
       setBusy(false);
     }
@@ -79,7 +84,10 @@ export function StageOutdatedBanner({ stage, projectId }: { stage: string; proje
       <Dialog
         open={open}
         onOpenChange={(value) => {
-          if (!busy) setOpen(value);
+          if (!busy) {
+            setOpen(value);
+            if (!value) setError(null);
+          }
         }}
       >
         <DialogContent className="relative sm:max-w-lg p-6 gap-5 overflow-hidden">
@@ -120,6 +128,15 @@ export function StageOutdatedBanner({ stage, projectId }: { stage: string; proje
               Esta nota quedará vinculada permanentemente a la aprobación de la etapa.
             </p>
           </div>
+
+          {error ? (
+            <p
+              role="alert"
+              className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+            >
+              {error}
+            </p>
+          ) : null}
 
           <DialogFooter className="-mx-6 -mb-6 mt-1 flex items-center justify-end gap-2 border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10 w-[calc(100%+3rem)]">
             <Button

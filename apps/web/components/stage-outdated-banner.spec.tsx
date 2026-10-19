@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { TestProviders } from '../lib/test-utils';
 import { StageOutdatedBanner } from './stage-outdated-banner';
 import { computeStepState } from '../lib/stage-links';
+import { ApiError } from '../lib/api';
 
 const confirm = vi.fn().mockResolvedValue({});
 vi.mock('../lib/api', () => ({
@@ -24,7 +25,7 @@ vi.mock('../lib/api', () => ({
       confirm: (...args: unknown[]) => confirm(...args),
     },
   },
-  ApiError: class extends Error {},
+  ApiError: class ApiError extends Error {},
 }));
 
 describe('stage review experience', () => {
@@ -48,5 +49,20 @@ describe('stage review experience', () => {
     await user.type(screen.getByLabelText('Nota de revisión (opcional)'), 'Revisado');
     await user.click(screen.getByRole('button', { name: 'Confirmar vigencia' }));
     await waitFor(() => expect(confirm).toHaveBeenCalledWith('p1', 'CONTEXT', 'Revisado'));
+  });
+  it('keeps the dialog open and shows why the server refused to confirm', async () => {
+    confirm.mockRejectedValueOnce(
+      new ApiError('Se necesitan al menos 4 casos de uso aprobados (hay 1).', 422),
+    );
+    render(
+      <TestProviders>
+        <StageOutdatedBanner projectId="p1" stage="CONTEXT" />
+      </TestProviders>,
+    );
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Confirmar que sigue vigente' }));
+    await user.click(screen.getByRole('button', { name: 'Confirmar vigencia' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('al menos 4 casos de uso');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 });
