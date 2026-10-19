@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DiagramEngine } from './diagram-engine';
+import { DiagramEngine, limitTraceabilityEdges } from './diagram-engine';
 
 describe('DiagramEngine', () => {
   const engine = new DiagramEngine();
@@ -30,7 +30,40 @@ describe('DiagramEngine', () => {
     const first = engine.generateER(model);
     expect(engine.generateER(model)).toBe(first);
     expect(first).toContain('user ||--o{ order');
+    // A primary key is not also marked unique.
+    expect(first).toContain('uuid id PK\n');
     expect(() => engine.validate('MERMAID_ER', first)).not.toThrow();
+  });
+  it('keeps accented attribute names readable instead of turning the accent into an underscore', () => {
+    const source = engine.generateER({
+      entities: [
+        {
+          localId: 'usuario',
+          name: 'Usuario',
+          attributes: [
+            {
+              name: 'Denominación',
+              type: 'STRING',
+              primaryKey: false,
+              unique: false,
+            },
+            {
+              name: 'Última actividad',
+              type: 'DATETIME',
+              primaryKey: false,
+              unique: false,
+            },
+            { name: 'Ámbito', type: 'STRING', primaryKey: false, unique: false },
+          ],
+        },
+      ],
+      relationships: [],
+    });
+    expect(source).toContain('string Denominacion');
+    expect(source).toContain('datetime Ultima_actividad');
+    expect(source).toContain('string Ambito');
+    expect(source).not.toMatch(/Denominaci_n|_ltima|_mbito/);
+    expect(() => engine.validate('MERMAID_ER', source)).not.toThrow();
   });
   it('deduplicates the diagram-wide actor list and never invents include/extend', () => {
     const source = engine.generateUseCase({
@@ -44,6 +77,34 @@ describe('DiagramEngine', () => {
     expect(source).not.toMatch(/include|extend/);
     expect(source.indexOf('Ingresar')).toBeLessThan(source.indexOf('Comprar'));
   });
+  it('draws the recorded include/extend relations, only between use cases in the diagram', () => {
+    const source = engine.generateUseCase({
+      systemName: 'Restaurante',
+      useCases: [
+        {
+          code: 'CU-001',
+          name: 'Registrar venta',
+          actors: ['Cajero'],
+          relations: [
+            { kind: 'INCLUDE', targetCode: 'CU-002' },
+            { kind: 'INCLUDE', targetCode: 'CU-009' },
+          ],
+        },
+        { code: 'CU-002', name: 'Descontar existencias', actors: [] },
+        {
+          code: 'CU-003',
+          name: 'Aplicar descuento',
+          actors: ['Cajero'],
+          relations: [{ kind: 'EXTEND', targetCode: 'CU-001' }],
+        },
+      ],
+    });
+    expect(source).toContain('rectangle "Restaurante" {');
+    expect(source).toContain('U1 ..> U2 : <<include>>');
+    expect(source).toContain('U3 ..> U1 : <<extend>>');
+    expect(source.match(/ \.\.> /g)).toHaveLength(2);
+    expect(() => engine.validate('PLANTUML', source)).not.toThrow();
+  });
   it('deduplicates duplicate actor entries within the same use case', () => {
     // Historical/malformed data: the primary actor repeated in secondaryActors.
     const source = engine.generateUseCase({
@@ -51,7 +112,7 @@ describe('DiagramEngine', () => {
       useCases: [{ code: 'CU-001', name: 'Ingresar', actors: ['Cliente', 'Cliente', ' Cliente '] }],
     });
     expect(source.match(/actor "Cliente"/g)).toHaveLength(1);
-    expect(source.match(/-- U1/g)).toHaveLength(1);
+    expect(source.match(/\]- U1/g)).toHaveLength(1);
   });
   it('orders actors and use cases ordinally, independent of locale', () => {
     // Under a default/locale-aware compare these could sort differently
@@ -66,6 +127,37 @@ describe('DiagramEngine', () => {
     });
     const order = ['A', 'Z', 'a', 'b'].map((actor) => source.indexOf(`actor "${actor}"`));
     expect(order).toEqual([...order].sort((x, y) => x - y));
+  });
+  it("groups each primary actor's use cases in a package and colours each actor's lines", () => {
+    const source = engine.generateUseCase({
+      systemName: 'Sistema',
+      useCases: [
+        { code: 'CU-003', name: 'Anular', actors: ['Cajero', 'Gerente'] },
+        { code: 'CU-001', name: 'Publicar', actors: ['Gerente'] },
+        { code: 'CU-002', name: 'Vender', actors: ['Cajero'] },
+        { code: 'CU-004', name: 'Sin dueño', actors: [] },
+      ],
+    });
+    const lines = source.split('\n');
+    // Packages follow the ordinal actor order; members follow the code order.
+    const at = (text: string) => lines.findIndex((line) => line.includes(text));
+    expect(at('package "Casos de uso de Cajero"')).toBeGreaterThan(-1);
+    expect(at('package "Casos de uso de Cajero"')).toBeLessThan(
+      at('package "Casos de uso de Gerente"'),
+    );
+    expect(at('as U2')).toBeLessThan(at('as U3')); // Vender, then Anular, both Cajero's
+    expect(at('as U3')).toBeLessThan(at('package "Casos de uso de Gerente"'));
+    expect(at('package "Sin actor primario"')).toBeGreaterThan(at('as U1'));
+    // Use case numbers follow the code, not the grouping.
+    expect(source).toContain('usecase "Publicar" as U1');
+    expect(source).toContain('usecase "Anular" as U3');
+    // An actor's lines share one colour, and two actors never share it.
+    const colour = (actor: string) =>
+      lines.filter((l) => l.startsWith(actor + ' -[')).map((l) => /#[0-9A-F]{6}/.exec(l)![0]);
+    expect(new Set(colour('A1')).size).toBe(1);
+    expect(new Set(colour('A2')).size).toBe(1);
+    expect(colour('A1')[0]).not.toBe(colour('A2')[0]);
+    expect(() => engine.validate('PLANTUML', source)).not.toThrow();
   });
   it('rejects unsafe or malformed source', () => {
     expect(() => engine.validate('PLANTUML', '@startuml\n!include evil\n@enduml')).toThrow(
@@ -101,6 +193,34 @@ describe('DiagramEngine', () => {
     expect(() => engine.validate('MERMAID_FLOWCHART', source)).not.toThrow();
   });
 
+  it('declares navigation nodes as the tree reads, each followed by its children, not by identifier', () => {
+    const source = engine.generateNavigationFlowchart({
+      nodes: [
+        { localId: 'z-home', label: 'Inicio' },
+        { localId: 'b-sales', label: 'Ventas', parentLocalId: 'z-home' },
+        { localId: 'a-detail', label: 'Detalle', parentLocalId: 'b-sales' },
+        { localId: 'a-inventory', label: 'Inventario', parentLocalId: 'z-home' },
+        { localId: 'orphan', label: 'Suelto', parentLocalId: 'missing' },
+      ],
+    });
+    const declared = [...source.matchAll(/^ {2}(\S+)\["/gm)].map((m) => m[1]);
+    expect(declared).toEqual(['z_home', 'b_sales', 'a_detail', 'a_inventory', 'orphan']);
+  });
+
+  it('draws a big navigation tree left to right so it is not many times wider than tall', () => {
+    const nodes = Array.from({ length: 25 }, (_, i) => ({
+      localId: `n${i}`,
+      label: `Nodo ${i}`,
+      ...(i ? { parentLocalId: 'n0' } : {}),
+    }));
+    const source = engine.generateNavigationFlowchart({ nodes });
+    expect(source.startsWith('flowchart LR\n')).toBe(true);
+    expect(() => engine.validate('MERMAID_FLOWCHART', source)).not.toThrow();
+    expect(
+      engine.generateNavigationFlowchart({ nodes: nodes.slice(0, 5) }).startsWith('flowchart TD\n'),
+    ).toBe(true);
+  });
+
   it('generates a deterministic Mermaid flowchart from the traceability graph, sorted by code, word-wrapping long titles instead of truncating them', () => {
     const source = engine.generateTraceabilityFlowchart({
       nodes: [
@@ -122,6 +242,78 @@ describe('DiagramEngine', () => {
     expect(() => engine.validate('MERMAID_FLOWCHART', source)).not.toThrow();
   });
 
+  it('writes a traceability graph too long for the renderer in the shortest form that fits, step by step', () => {
+    const many = (count: number, title: string) => ({
+      nodes: Array.from({ length: count }, (_, i) => ({
+        id: `0000000${String(i).padStart(4, '0')}-aaaa-bbbb-cccc-dddddddddddd`,
+        code: `RF-${String(i).padStart(3, '0')}`,
+        title,
+      })),
+      edges: Array.from({ length: count - 1 }, (_, i) => ({
+        fromId: `0000000${String(i).padStart(4, '0')}-aaaa-bbbb-cccc-dddddddddddd`,
+        toId: `0000000${String(i + 1).padStart(4, '0')}-aaaa-bbbb-cccc-dddddddddddd`,
+      })),
+    });
+    const limit = 45_000;
+    // Fits as it is: the real ids stay.
+    expect(engine.generateTraceabilityFlowchart(many(10, 'Corto'))).toContain('0000000');
+    // Too long with the real ids: short ids, titles whole.
+    const compact = engine.generateTraceabilityFlowchart(
+      many(450, 'Título completo del artefacto'),
+    );
+    expect(compact.length).toBeLessThanOrEqual(limit);
+    expect(compact).toContain('n0["RF-000: Título completo del artefacto"]');
+    expect(compact).not.toContain('0000000');
+    // Still too long: the titles are cut, then only the codes are kept.
+    const cut = engine.generateTraceabilityFlowchart(many(450, 'x'.repeat(100)));
+    expect(cut.length).toBeLessThanOrEqual(limit);
+    expect(cut).toContain('…');
+    const codes = engine.generateTraceabilityFlowchart(many(900, 'x'.repeat(100)));
+    expect(codes).toContain('n0["RF-000"]');
+    // Every edge still joins the same artifacts.
+    expect(compact).toContain('n0 --> n1');
+    expect(() => engine.validate('MERMAID_FLOWCHART', codes)).not.toThrow();
+  });
+
+  it('keeps at most the links the renderer draws, one for every artifact first, and says how many were left out', () => {
+    const nodes = Array.from({ length: 60 }, (_, i) => ({
+      id: `n${i}`,
+      code: `RF-${String(i).padStart(3, '0')}`,
+      title: 'T',
+    }));
+    // A hub every artifact points to, plus a chain: far more links than the limit.
+    const edges = [
+      ...nodes.slice(1).map((node) => ({ fromId: node.id, toId: 'n0' })),
+      ...nodes.slice(1).map((node, i) => ({ fromId: nodes[i]!.id, toId: node.id })),
+    ];
+    expect(limitTraceabilityEdges({ nodes, edges }, 200)).toEqual({
+      model: { nodes, edges },
+      omitted: 0,
+    });
+    const { model, omitted } = limitTraceabilityEdges({ nodes, edges }, 70);
+    expect(model.edges).toHaveLength(70);
+    expect(omitted).toBe(edges.length - 70);
+    // No artifact disappears from the drawing.
+    const touched = new Set(model.edges.flatMap((edge) => [edge.fromId, edge.toId]));
+    expect(nodes.every((node) => touched.has(node.id))).toBe(true);
+    // Same input, same choice.
+    expect(limitTraceabilityEdges({ nodes, edges }, 70).model).toEqual(model);
+  });
+
+  it('draws a traceability graph of many artifacts left to right', () => {
+    const nodes = Array.from({ length: 30 }, (_, i) => ({
+      id: `n${i}`,
+      code: `RF-${i}`,
+      title: 'T',
+    }));
+    const first = (count: number) =>
+      engine
+        .generateTraceabilityFlowchart({ nodes: nodes.slice(0, count), edges: [] })
+        .split('\n')[0];
+    expect(first(30)).toBe('flowchart LR');
+    expect(first(5)).toBe('flowchart TD');
+  });
+
   it('generates a deterministic PlantUML component diagram, with and without a dependency description', () => {
     const source = engine.generateSoftwareComponentDiagram({
       components: [
@@ -137,6 +329,99 @@ describe('DiagramEngine', () => {
     expect(source).toContain('web --> api : "calls"');
     expect(source).toContain('web --> api\n');
     expect(() => engine.validate('PLANTUML_COMPONENT', source)).not.toThrow();
+  });
+
+  it('breaks long dependency labels into short lines and draws no notes', () => {
+    const long = Array.from({ length: 30 }, (_, i) => `palabra${i}`).join(' ');
+    const source = engine.generateSoftwareComponentDiagram({
+      components: [
+        { localId: 'api', name: 'API', responsibilities: [long], relatedSourceCodes: ['RF-001'] },
+        { localId: 'web', name: 'Web' },
+      ],
+      dependencies: [{ fromLocalId: 'web', toLocalId: 'api', description: long }],
+    });
+    const label = source.split('\n').find((line) => line.startsWith('web --> api'))!;
+    for (const piece of label.split('\\n')) expect(piece.length).toBeLessThan(80);
+    expect(label.split('\\n').length).toBeGreaterThan(3);
+    // Responsibilities and plain sources stay in the stored content, not in the drawing.
+    expect(source).not.toContain('note ');
+    expect(source).not.toContain('RF-001');
+    const quality = engine.generateSoftwareComponentDiagram({
+      components: [
+        { localId: 'api', name: 'API', relatedSourceCodes: ['RF-001', 'RNF-002', 'RNF-003'] },
+      ],
+      dependencies: [],
+    });
+    expect(quality).toContain('note right of api : Calidad: RNF-002, RNF-003');
+    expect(quality).not.toContain('RF-001');
+    expect(() => engine.validate('PLANTUML_COMPONENT', source)).not.toThrow();
+  });
+
+  it('draws each layer as a package holding its components', () => {
+    const source = engine.generateSoftwareComponentDiagram({
+      components: [
+        { localId: 'backend', name: 'Capa de aplicación' },
+        { localId: 'sales', name: 'Ventas', layerLocalId: 'backend' },
+        { localId: 'stock', name: 'Inventario', layerLocalId: 'backend' },
+        { localId: 'web', name: 'Web' },
+      ],
+      dependencies: [{ fromLocalId: 'web', toLocalId: 'backend' }],
+    });
+    expect(source).toBe(
+      [
+        '@startuml',
+        'left to right direction',
+        'package "Capa de aplicación" as backend {',
+        '  component "Ventas" as sales',
+        '  component "Inventario" as stock',
+        '}',
+        'component "Web" as web',
+        'web --> backend',
+        '@enduml',
+      ].join('\n'),
+    );
+  });
+
+  it('labels each link with its protocol and description', () => {
+    const source = engine.generateSystemDeploymentDiagram({
+      nodes: [
+        { localId: 'api', name: 'API', kind: 'RUNTIME' },
+        { localId: 'db', name: 'DB', kind: 'DATABASE' },
+        { localId: 'ocr', name: 'OCR', kind: 'EXTERNAL_SERVICE' },
+      ],
+      links: [
+        { fromLocalId: 'api', toLocalId: 'db', protocol: 'TCP', description: 'Consultas' },
+        { fromLocalId: 'api', toLocalId: 'ocr', protocol: 'HTTPS' },
+      ],
+    });
+    expect(source).toContain('api --> db : "TCP — Consultas"');
+    expect(source).toContain('api --> ocr : "HTTPS"');
+  });
+
+  it('draws the deployment diagram left to right with short link labels and notes, keeping responsibilities and quality codes only', () => {
+    const long = Array.from({ length: 30 }, (_, i) => `palabra${i}`).join(' ');
+    const source = engine.generateSystemDeploymentDiagram({
+      nodes: [
+        {
+          localId: 'server',
+          name: 'Server',
+          kind: 'RUNTIME',
+          responsibilities: [long],
+          relatedSourceCodes: ['RF-001', 'RNF-002'],
+        },
+        { localId: 'db', name: 'Database', kind: 'DATABASE' },
+      ],
+      links: [{ fromLocalId: 'server', toLocalId: 'db', protocol: 'TCP', description: long }],
+    });
+    const lines = source.split('\n');
+    expect(lines[1]).toBe('left to right direction');
+    const label = lines.find((line) => line.startsWith('server --> db'))!;
+    const note = lines.find((line) => line.startsWith('note right of server'))!;
+    for (const text of [label, note])
+      for (const piece of text.split('\\n')) expect(piece.length).toBeLessThan(80);
+    expect(note).toContain('Calidad: RNF-002');
+    expect(note).not.toContain('RF-001');
+    expect(() => engine.validate('PLANTUML_DEPLOYMENT', source)).not.toThrow();
   });
 
   it('generates a deterministic PlantUML deployment diagram, with and without a link description', () => {
@@ -156,5 +441,64 @@ describe('DiagramEngine', () => {
     // An unrecognized kind falls back to the generic 'node' keyword.
     expect(source).toContain('node "Other" as other');
     expect(() => engine.validate('PLANTUML_DEPLOYMENT', source)).not.toThrow();
+  });
+});
+
+describe('DiagramEngine class diagram', () => {
+  const engine = new DiagramEngine();
+  const model = {
+    classes: [
+      {
+        localId: 'order',
+        name: 'Pedido de compra',
+        attributes: [{ name: 'items', type: 'List<Item>', visibility: 'PUBLIC' }],
+        methods: [
+          { name: 'pay', parameters: [{ name: 'amount', type: 'number' }], returnType: 'void' },
+        ],
+      },
+      { localId: 'person', name: 'Persona', stereotype: 'ABSTRACT', attributes: [], methods: [] },
+      {
+        localId: 'client',
+        name: 'Cliente',
+        attributes: [{ name: 'email', type: 'string' }],
+        methods: [],
+      },
+    ],
+    relationships: [
+      {
+        fromLocalId: 'client',
+        toLocalId: 'order',
+        kind: 'ASSOCIATION',
+        label: 'realiza',
+        fromMultiplicity: '1',
+        toMultiplicity: '*',
+      },
+      { fromLocalId: 'client', toLocalId: 'person', kind: 'INHERITANCE' },
+    ],
+  };
+
+  it('generates deterministic, validated Mermaid class source', () => {
+    const source = engine.generateClassDiagram(model);
+    expect(engine.generateClassDiagram({ ...model, classes: [...model.classes].reverse() })).toBe(
+      source,
+    );
+    expect(() => engine.validate('MERMAID_CLASS', source)).not.toThrow();
+    expect(source).toContain('class order["Pedido de compra"] {');
+    expect(source).toContain('+List~Item~ items');
+    expect(source).toContain('+pay(number amount) void');
+    expect(source).toContain('<<abstract>>');
+    expect(source).toContain('-string email');
+    expect(source).toContain('client "1" --> "*" order : realiza');
+    expect(source).toContain('person <|-- client');
+  });
+
+  it('keeps braces and semicolons out of the source', () => {
+    const source = engine.generateClassDiagram({
+      classes: [
+        { localId: 'x', name: 'A;B', attributes: [{ name: 'c}', type: 'd{' }], methods: [] },
+      ],
+      relationships: [],
+    });
+    expect(() => engine.validate('MERMAID_CLASS', source)).not.toThrow();
   });
 });

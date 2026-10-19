@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { dataModelGenerationOutputSchema, dataModelInputSchema } from './data-model.contract';
+import {
+  dataModelGenerationOutputSchema,
+  dataModelInputSchema,
+  generateDiagramRequestSchema,
+} from './data-model.contract';
 
 const valid = {
   title: 'Modelo',
@@ -61,5 +65,21 @@ describe('data model contracts', () => {
       ],
     };
     expect(dataModelGenerationOutputSchema.safeParse(candidate).success).toBe(false);
+  });
+});
+
+describe('generateDiagramRequestSchema', () => {
+  const ids = (n: number) =>
+    Array.from({ length: n }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`);
+  it('accepts every approved use case of a large project', () => {
+    expect(generateDiagramRequestSchema.safeParse({ sourceVersionIds: ids(150) }).success).toBe(
+      true,
+    );
+  });
+  it('still rejects an empty or absurdly long selection', () => {
+    expect(generateDiagramRequestSchema.safeParse({ sourceVersionIds: [] }).success).toBe(false);
+    expect(generateDiagramRequestSchema.safeParse({ sourceVersionIds: ids(501) }).success).toBe(
+      false,
+    );
   });
 });

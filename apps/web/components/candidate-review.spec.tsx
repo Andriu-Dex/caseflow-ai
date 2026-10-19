@@ -35,6 +35,27 @@ describe('CandidateReview quality findings', () => {
     expect(onAccept).toHaveBeenCalledWith(['candidate']);
   });
 
+  // Theme proposals are alternatives (DEC-118): one preselected, each previewed.
+  it('starts from the given selection and renders each candidate detail', async () => {
+    const onAccept = vi.fn().mockResolvedValue(undefined);
+    render(
+      <CandidateReview
+        generation={{
+          id: 'batch',
+          candidates: ['a', 'b', 'c'].map((id) => ({ id, candidateId: id, name: id })),
+        }}
+        describe={(candidate) => candidate.name ?? ''}
+        renderDetail={(candidate) => <span>Vista previa {candidate.id}</span>}
+        defaultSelected={['a']}
+        onAccept={onAccept}
+        onDismiss={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Vista previa c')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Incorporar 1 de 3/ }));
+    expect(onAccept).toHaveBeenCalledWith(['a']);
+  });
+
   it('prevents incorporating a candidate with an invalid source reference', () => {
     render(
       <CandidateReview

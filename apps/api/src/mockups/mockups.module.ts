@@ -1,14 +1,8 @@
 import { Inject, Logger, Module, type OnModuleDestroy } from '@nestjs/common';
-import { Queue } from 'bullmq';
+import { createJobQueue, createStorageProvider, type JobQueue } from '../common/infrastructure';
 import { MOCKUP_GENERATION_QUEUE, type MockupGenerationJobPayload } from '@caseflow-ai/domain';
 import { loadMockupConfig, loadStorageConfig } from '@caseflow-ai/config';
-import {
-  DisabledStorageProvider,
-  FallbackMockupProvider,
-  S3StorageProvider,
-  type MockupProvider,
-  type StorageProvider,
-} from '@caseflow-ai/integrations';
+import { FallbackMockupProvider, type MockupProvider } from '@caseflow-ai/integrations';
 import { InternalWireframeMockupProvider, MockupRenderer } from './mockup-renderer';
 import { MockupsController } from './mockups.controller';
 import { InternalMockupJobsController } from './internal-mockup-jobs.controller';
@@ -30,7 +24,11 @@ const logger = new Logger('MockupsModule');
       useFactory: (): MockupProvider => {
         const internal = new InternalWireframeMockupProvider(new MockupRenderer());
         const config = loadMockupConfig(process.env);
-        if (config.provider === 'disabled' || !loadStorageConfig(process.env).configured)
+        // Stitch screens need somewhere to be stored (S3 or the desktop folder).
+        if (
+          config.provider === 'disabled' ||
+          (!loadStorageConfig(process.env).configured && !process.env.STORAGE_DIR)
+        )
           return internal;
         return new FallbackMockupProvider(
           [new StitchMockupProvider(config), internal],
@@ -46,23 +44,21 @@ const logger = new Logger('MockupsModule');
     },
     {
       provide: STORAGE_PROVIDER,
-      useFactory: (): StorageProvider => {
-        const config = loadStorageConfig(process.env);
-        return config.configured ? new S3StorageProvider(config) : new DisabledStorageProvider();
-      },
+      useFactory: createStorageProvider,
     },
     {
       provide: MOCKUP_QUEUE,
-      useFactory: (): Queue<MockupGenerationJobPayload> =>
-        new Queue<MockupGenerationJobPayload>(MOCKUP_GENERATION_QUEUE, {
-          connection: { url: process.env.REDIS_URL ?? 'redis://localhost:6379' },
-        }),
+      useFactory: () =>
+        createJobQueue<MockupGenerationJobPayload>(
+          MOCKUP_GENERATION_QUEUE,
+          (job) => `/projects/${job.projectId}/mockups/jobs/${job.jobId}/run`,
+        ),
     },
   ],
   exports: [MockupsService],
 })
 export class MockupsModule implements OnModuleDestroy {
-  constructor(@Inject(MOCKUP_QUEUE) private readonly queue: Queue) {}
+  constructor(@Inject(MOCKUP_QUEUE) private readonly queue: JobQueue<unknown>) {}
   async onModuleDestroy(): Promise<void> {
     await this.queue.close();
   }

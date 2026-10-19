@@ -1,5 +1,13 @@
+import { toast } from 'sonner';
 import type {
+  CreateDesignBaselineRequest,
   DataModelInput,
+  DesignBaselineResponse,
+  GeneratedFileResponse,
+  GeneratedFileSummary,
+  GenerationRunResponse,
+  SandboxRunResponse,
+  ImplementationPlanArtifactsResponse,
   DataModelResponse,
   DiagramResponse,
   FirstDeliverableExport,
@@ -8,19 +16,39 @@ import type {
   MockupPreviewResponse,
   MockupResponse,
   ProjectContextCandidate,
+  ProjectContextGenerationJob,
+  RequirementGenerationJob,
   ProjectContextRequest,
   ProjectContextResponse,
+  ListProjectsQuery,
   ProjectListResponse,
   ProjectResponse,
   ReadinessResponse,
+  RequirementContextCoverageResponse,
+  RequirementCoverageItem,
   RequirementInput,
   RequirementResponse,
   SourceMetadataInput,
-  SourceReportCandidate,
+  SourceCapabilitiesResponse,
+  SourceReportJob,
   SourceReportResponse,
   SourceResponse,
+  SourceListResponse,
+  RequirementBulkAction,
+  UseCaseBulkAction,
+  UseCaseGenerationJob,
+  ArchivedArtifactsResponse,
+  RestoreArtifactResponse,
+  DataModelGenerationJob,
+  StructuredGenerationJob,
+  UseCaseBulkResponse,
+  RequirementBulkResponse,
+  ListSourcesQuery,
   StalenessAnalysisResponse,
   StructuredAnalysisKind,
+  WorkflowRoute,
+  WorkflowReviewItem,
+  WorkflowRunResponse,
   StructuredAnalysisResponse,
   TraceabilityDiagramResponse,
   TraceabilityGraphResponse,
@@ -45,9 +73,22 @@ export interface GenerationCandidate {
   qualityFindings?: { severity: 'ERROR' | 'WARNING'; code: string; message: string }[];
   [key: string]: unknown;
 }
+// DEC-127: whether AI is configured, and what each provider can take now.
+export interface AIStatus {
+  available: boolean;
+  providers: {
+    id: string;
+    maxInputTokens?: number;
+    unavailableUntil?: string;
+    quota?: 'MINUTE' | 'DAY';
+  }[];
+}
+
 export interface GenerationResult {
   id: string;
   candidates: GenerationCandidate[];
+  // Requirements only (DEC-126): how the proposals cover the context.
+  coverage?: RequirementCoverageItem[];
 }
 
 // Normalized error shape for the whole app: every non-2xx response, and
@@ -75,6 +116,19 @@ function tokenExpiryMs(token: string): number | null {
   try {
     const payload = JSON.parse(atob(token.split('.')[1]!.replace(/-/g, '+').replace(/_/g, '/')));
     return typeof payload.exp === 'number' ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+// The signed-in user's id, read from the access token (no verification: it
+// only keys per-user browser preferences such as dismissed hints).
+export function currentUserId(): string | null {
+  try {
+    const payload = JSON.parse(
+      atob(accessToken!.split('.')[1]!.replace(/-/g, '+').replace(/_/g, '/')),
+    ) as { sub?: unknown };
+    return typeof payload.sub === 'string' ? payload.sub : null;
   } catch {
     return null;
   }
@@ -115,6 +169,36 @@ export async function restoreSession(): Promise<boolean> {
   }
 }
 
+// Waits between attempts while the API is unreachable: about 15 s in total,
+// enough for a development restart (node --watch) or a brief network drop.
+export const RECONNECT_DELAYS_MS = [1_000, 2_000, 3_000, 4_000, 5_000];
+const RECONNECT_TOAST_ID = 'api-reconnecting';
+
+// Repeats a request the server never received, telling the user once that
+// the app is reconnecting; the notice closes as soon as the API answers.
+async function withReconnect(send: () => Promise<Response>): Promise<Response> {
+  let notified = false;
+  try {
+    for (const delay of [0, ...RECONNECT_DELAYS_MS]) {
+      if (delay) {
+        if (!notified && typeof window !== 'undefined') {
+          toast.loading('Reconectando con el servidor…', { id: RECONNECT_TOAST_ID });
+          notified = true;
+        }
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+      try {
+        return await send();
+      } catch {
+        // Unreachable: try again after the next delay.
+      }
+    }
+    throw new ApiError(NETWORK_ERROR_MESSAGE, 0);
+  } finally {
+    if (notified) toast.dismiss(RECONNECT_TOAST_ID);
+  }
+}
+
 const NETWORK_ERROR_MESSAGE =
   'No se pudo conectar con el servidor de CASEFlow AI. Verifique que la API esté en ejecución e intente nuevamente.';
 
@@ -130,6 +214,12 @@ async function authedFetch(
   const isFormData = typeof FormData !== 'undefined' && init?.body instanceof FormData;
   const isAuthPath = url.startsWith(`${BASE_URL}/auth/`);
   const method = (init?.method ?? 'GET').toUpperCase();
+  // After a reload the token is gone: restore it before sending instead of
+  // sending without one and retrying on the 401. Page queries start before
+  // the provider's restore effect, so this is the one place that sees them
+  // all; concurrent calls share the same refresh.
+  const restored =
+    accessToken !== null || isAuthPath || !allowRefresh ? true : await restoreSession();
   const send = () =>
     fetch(url, {
       ...init,
@@ -140,23 +230,22 @@ async function authedFetch(
         ...init?.headers,
       },
     });
+  // Reads, and the session refresh that precedes them, are safe to repeat
+  // while the API is unreachable (in development it restarts on every file
+  // change). Never repeat other writes: they could duplicate an AI
+  // generation or a created artifact.
+  const repeatable = method === 'GET' || url === `${BASE_URL}/auth/refresh`;
   let response: Response;
-  try {
-    response = await send();
-  } catch {
-    // A GET is safe to repeat once: in development the API restarts on every
-    // file change (node --watch), dropping in-flight requests. Never retry a
-    // POST — it could duplicate an AI generation or a created artifact.
-    if (method !== 'GET') throw new ApiError(NETWORK_ERROR_MESSAGE, 0);
-    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  if (repeatable) response = await withReconnect(send);
+  else
     try {
       response = await send();
     } catch {
       throw new ApiError(NETWORK_ERROR_MESSAGE, 0);
     }
-  }
   if (response.ok) return response;
-  if (response.status === 401 && allowRefresh && !isAuthPath) {
+  // No retry when the restore just failed: there is no session to refresh.
+  if (response.status === 401 && allowRefresh && restored && !isAuthPath) {
     try {
       await refreshSession();
       return authedFetch(url, init, false);
@@ -177,6 +266,13 @@ async function authedFetch(
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await authedFetch(`${BASE_URL}${path}`, init);
+  if (
+    typeof window !== 'undefined' &&
+    init?.method &&
+    init.method !== 'GET' &&
+    path.startsWith('/projects/')
+  )
+    window.dispatchEvent(new CustomEvent('caseflow:readiness-changed'));
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
@@ -198,11 +294,34 @@ export async function downloadFile(url: string, filename: string): Promise<void>
   URL.revokeObjectURL(blobUrl);
 }
 
+// Opens an authenticated API resource (e.g. a PDF) in a new tab, where the
+// browser's own viewer previews it. The tab is opened synchronously, before
+// the fetch, so pop-up blockers still treat it as a user action.
+export async function openFileInNewTab(url: string): Promise<void> {
+  const tab = window.open('', '_blank');
+  try {
+    const blobUrl = URL.createObjectURL(await fetchBlob(url));
+    if (tab) tab.location.href = blobUrl;
+    else window.location.assign(blobUrl);
+    // The viewer has loaded the blob by then; free it afterwards.
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+  } catch (err) {
+    tab?.close();
+    throw err;
+  }
+}
+
 async function extractErrorMessage(response: Response): Promise<string> {
   try {
-    const body = (await response.json()) as { message?: string | string[] };
+    const body = (await response.json()) as {
+      message?: string | string[];
+      errors?: { message?: string }[];
+    };
     if (Array.isArray(body.message)) return body.message.join(' ');
-    if (typeof body.message === 'string') return body.message;
+    // A rejected payload says what is wrong in it (the first reason is enough).
+    const reason = body.errors?.find((error) => error.message)?.message;
+    if (typeof body.message === 'string')
+      return reason ? `${body.message} ${reason}` : body.message;
   } catch {
     // Non-JSON error body: fall through to the generic message below.
   }
@@ -214,7 +333,13 @@ async function extractErrorMessage(response: Response): Promise<string> {
 const get = <T>(path: string) => request<T>(path);
 const post = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
-const del = <T>(path: string) => request<T>(path, { method: 'DELETE' });
+const patch = <T>(path: string, body: unknown) =>
+  request<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
+const del = <T>(path: string, body?: unknown) =>
+  request<T>(path, {
+    method: 'DELETE',
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export const api = {
@@ -240,21 +365,48 @@ export const api = {
     list: () => get<WorkspaceListResponse>('/workspaces'),
   },
   projects: {
-    list: (workspaceId: string) => get<ProjectListResponse>(`/projects?workspaceId=${workspaceId}`),
-    create: (input: { workspaceId: string; name: string; description?: string }) =>
-      post<ProjectResponse>('/projects', input),
+    list: (workspaceId: string, filters: Omit<ListProjectsQuery, 'workspaceId'> = {}) =>
+      get<ProjectListResponse>(
+        `/projects?${new URLSearchParams(
+          Object.entries({ workspaceId, ...filters }).flatMap(([key, value]) =>
+            value === undefined || value === '' ? [] : [[key, String(value)]],
+          ),
+        )}`,
+      ),
+    create: (input: {
+      workspaceId: string;
+      name: string;
+      description?: string;
+      workflowRoute?: WorkflowRoute;
+    }) => post<ProjectResponse>('/projects', input),
     get: (projectId: string) => get<ProjectResponse>(`/projects/${projectId}`),
-    delete: (projectId: string) => del<void>(`/projects/${projectId}`),
+    // DEC-134: the server checks the typed name too.
+    delete: (projectId: string, confirmName: string) =>
+      del<void>(`/projects/${projectId}`, { confirmName }),
     archive: (projectId: string) => post<ProjectResponse>(`/projects/${projectId}/archive`),
+    unarchive: (projectId: string) => post<ProjectResponse>(`/projects/${projectId}/unarchive`),
+    update: (projectId: string, input: { name: string; description: string | null }) =>
+      patch<ProjectResponse>(`/projects/${projectId}`, input),
     updateLanguage: (projectId: string, language: 'ES' | 'EN') =>
       post<ProjectResponse>(`/projects/${projectId}/language`, { language }),
+    upgradeWorkflowRoute: (projectId: string, workflowRoute: WorkflowRoute) =>
+      post<ProjectResponse>(`/projects/${projectId}/workflow-route`, { workflowRoute }),
   },
   artifacts: {
     archive: (projectId: string, artifactId: string) =>
       post<{ archivedAt: string }>(`/projects/${projectId}/artifacts/${artifactId}/archive`),
+    // What was archived can be listed (by type) and restored.
+    listArchived: (projectId: string, types: string[]) =>
+      get<ArchivedArtifactsResponse>(
+        `/projects/${projectId}/artifacts/archived?types=${encodeURIComponent(types.join(','))}`,
+      ),
+    restore: (projectId: string, artifactId: string) =>
+      post<RestoreArtifactResponse>(`/projects/${projectId}/artifacts/${artifactId}/restore`),
   },
   readiness: {
     get: (projectId: string) => get<ReadinessResponse>(`/projects/${projectId}/readiness`),
+    confirm: (projectId: string, stage: string, note?: string) =>
+      post<ReadinessResponse>(`/projects/${projectId}/stages/${stage}/confirm`, { note }),
   },
   staleness: {
     get: (projectId: string) => get<StalenessAnalysisResponse>(`/projects/${projectId}/staleness`),
@@ -268,13 +420,27 @@ export const api = {
       `${BASE_URL}/projects/${projectId}/traceability/diagram/png`,
   },
   sources: {
-    list: (projectId: string) => get<{ items: SourceResponse[] }>(`/projects/${projectId}/sources`),
+    // Without filters, every source of the project (DEC-137).
+    list: (projectId: string, filters: ListSourcesQuery = {}) => {
+      const query = new URLSearchParams(
+        Object.entries(filters).flatMap(([key, value]) =>
+          value === undefined || value === '' ? [] : [[key, String(value)]],
+        ),
+      ).toString();
+      return get<SourceListResponse>(`/projects/${projectId}/sources${query ? `?${query}` : ''}`);
+    },
     get: (projectId: string, sourceId: string) =>
       get<SourceResponse>(`/projects/${projectId}/sources/${sourceId}`),
     getText: (projectId: string, sourceId: string) =>
       get<{ sourceVersionId: string; text: string }>(
         `/projects/${projectId}/sources/${sourceId}/text`,
       ),
+    capabilities: (projectId: string) =>
+      get<SourceCapabilitiesResponse>(`/projects/${projectId}/sources/capabilities`),
+    downloadUrl: (projectId: string, sourceId: string) =>
+      `${BASE_URL}/projects/${projectId}/sources/${sourceId}/download`,
+    reExtract: (projectId: string, sourceId: string) =>
+      post<SourceResponse>(`/projects/${projectId}/sources/${sourceId}/re-extract`),
     retryProcessing: (projectId: string, sourceId: string) =>
       post<SourceResponse>(`/projects/${projectId}/sources/${sourceId}/processing/retry`),
     create: (projectId: string, metadata: SourceMetadataInput, file: File | null) => {
@@ -291,12 +457,23 @@ export const api = {
         body: form,
       });
     },
+    // DEC-137: a new file as the next version of the same source.
+    replaceFile: (projectId: string, sourceId: string, file: File) => {
+      const form = new FormData();
+      form.set('file', file);
+      return request<SourceResponse>(`/projects/${projectId}/sources/${sourceId}/file`, {
+        method: 'POST',
+        body: form,
+      });
+    },
     edit: (projectId: string, sourceId: string, metadata: SourceMetadataInput) =>
       post<SourceResponse>(`/projects/${projectId}/sources/${sourceId}/edit`, metadata),
     delete: (projectId: string, sourceId: string) =>
       del<void>(`/projects/${projectId}/sources/${sourceId}`),
     archive: (projectId: string, sourceId: string) =>
       post<SourceResponse>(`/projects/${projectId}/sources/${sourceId}/archive`),
+    restore: (projectId: string, sourceId: string) =>
+      post<SourceResponse>(`/projects/${projectId}/sources/${sourceId}/unarchive`),
     submitManualTranscript: (projectId: string, sourceId: string, transcript: string) =>
       post<SourceResponse>(`/projects/${projectId}/sources/${sourceId}/manual-transcript`, {
         transcript,
@@ -312,8 +489,13 @@ export const api = {
       }),
     getReport: (projectId: string, sourceId: string) =>
       get<SourceReportResponse>(`/projects/${projectId}/sources/${sourceId}/report`),
+    // DEC-127: starts (or resumes) the report in the background.
     generateReport: (projectId: string, sourceId: string) =>
-      post<SourceReportCandidate>(`/projects/${projectId}/sources/${sourceId}/report/generate`),
+      post<{ job: SourceReportJob | null }>(
+        `/projects/${projectId}/sources/${sourceId}/report/generate`,
+      ),
+    reportJob: (projectId: string, sourceId: string) =>
+      get<{ job: SourceReportJob | null }>(`/projects/${projectId}/sources/${sourceId}/report-job`),
     acceptReport: (projectId: string, sourceId: string, candidateId: string) =>
       post(`/projects/${projectId}/sources/${sourceId}/report/accept`, { candidateId }),
     submitManualReport: (projectId: string, sourceId: string, summary: string) =>
@@ -339,10 +521,23 @@ export const api = {
       post<ProjectContextResponse>(`/projects/${projectId}/context/versions`, input),
     generate: (projectId: string) =>
       post<ProjectContextCandidate>(`/projects/${projectId}/context/generate`),
+    // DEC-132: the proposal is generated in the background and followed here.
+    startGeneration: (projectId: string) =>
+      post<ProjectContextGenerationJob>(`/projects/${projectId}/context/generation-jobs`),
+    latestGeneration: (projectId: string) =>
+      get<{ job: ProjectContextGenerationJob | null }>(
+        `/projects/${projectId}/context/generation-jobs/latest`,
+      ),
     transition: (projectId: string, versionId: string, status: ArtifactVersionStatus) =>
       post(`/projects/${projectId}/context/versions/${versionId}/transition`, { status }),
   },
   requirements: {
+    // DEC-138: one action over several requirements, all of them or none.
+    bulk: (projectId: string, action: RequirementBulkAction, requirementIds: string[]) =>
+      post<RequirementBulkResponse>(`/projects/${projectId}/requirements/bulk`, {
+        action,
+        requirementIds,
+      }),
     list: (projectId: string) =>
       get<{ items: RequirementResponse[] }>(`/projects/${projectId}/requirements`),
     exportUrl: (projectId: string, format: 'pdf' | 'docx') =>
@@ -350,6 +545,10 @@ export const api = {
     qualityReport: (projectId: string) =>
       get<{ issues: { requirementId: string; code: string; rule: string; message: string }[] }>(
         `/projects/${projectId}/requirements/quality-report`,
+      ),
+    contextCoverage: (projectId: string) =>
+      get<RequirementContextCoverageResponse>(
+        `/projects/${projectId}/requirements/context-coverage`,
       ),
     create: (projectId: string, input: RequirementInput) =>
       post<RequirementResponse>(`/projects/${projectId}/requirements`, input),
@@ -362,6 +561,21 @@ export const api = {
       post<GenerationResult>(`/projects/${projectId}/requirements/generate`, {
         sourceContextVersionId,
       }),
+    startGeneration: (projectId: string, sourceContextVersionId: string) =>
+      post<RequirementGenerationJob>(`/projects/${projectId}/requirements/generation-jobs`, {
+        sourceContextVersionId,
+      }),
+    cancelGeneration: (projectId: string, jobId: string) =>
+      post<RequirementGenerationJob>(
+        `/projects/${projectId}/requirements/generation-jobs/${jobId}/cancel`,
+        {},
+      ),
+    latestGeneration: (projectId: string) =>
+      get<{ job: RequirementGenerationJob | null }>(
+        `/projects/${projectId}/requirements/generation-jobs/latest`,
+      ),
+    generation: (projectId: string, generationId: string) =>
+      get<GenerationResult>(`/projects/${projectId}/requirements/generations/${generationId}`),
     accept: (projectId: string, generationId: string, candidateIds: string[]) =>
       post(`/projects/${projectId}/requirements/generations/${generationId}/accept`, {
         candidateIds,
@@ -378,6 +592,9 @@ export const api = {
       ),
   },
   useCases: {
+    // DEC-138: one action over several use cases, all of them or none.
+    bulk: (projectId: string, action: UseCaseBulkAction, useCaseIds: string[]) =>
+      post<UseCaseBulkResponse>(`/projects/${projectId}/use-cases/bulk`, { action, useCaseIds }),
     list: (projectId: string) =>
       get<{ items: UseCaseResponse[] }>(`/projects/${projectId}/use-cases`),
     create: (projectId: string, input: UseCaseInput) =>
@@ -388,6 +605,22 @@ export const api = {
       post<GenerationResult>(`/projects/${projectId}/use-cases/generate`, {
         requirementVersionIds,
       }),
+    // DEC-139: the use cases are generated in the background, in batches.
+    startGeneration: (projectId: string, requirementVersionIds: string[]) =>
+      post<UseCaseGenerationJob>(`/projects/${projectId}/use-cases/generation-jobs`, {
+        requirementVersionIds,
+      }),
+    cancelGeneration: (projectId: string, jobId: string) =>
+      post<UseCaseGenerationJob>(
+        `/projects/${projectId}/use-cases/generation-jobs/${jobId}/cancel`,
+        {},
+      ),
+    latestGeneration: (projectId: string) =>
+      get<{ job: UseCaseGenerationJob | null }>(
+        `/projects/${projectId}/use-cases/generation-jobs/latest`,
+      ),
+    generation: (projectId: string, generationId: string) =>
+      get<GenerationResult>(`/projects/${projectId}/use-cases/generations/${generationId}`),
     accept: (projectId: string, generationId: string, candidateIds: string[]) =>
       post(`/projects/${projectId}/use-cases/generations/${generationId}/accept`, {
         candidateIds,
@@ -434,6 +667,27 @@ export const api = {
         requirementVersionIds,
         useCaseVersionIds,
       }),
+    // DEC-144: the model is generated in the background, in batches.
+    startGeneration: (
+      projectId: string,
+      requirementVersionIds: string[],
+      useCaseVersionIds: string[],
+    ) =>
+      post<DataModelGenerationJob>(`/projects/${projectId}/data-models/generation-jobs`, {
+        requirementVersionIds,
+        useCaseVersionIds,
+      }),
+    cancelGeneration: (projectId: string, jobId: string) =>
+      post<DataModelGenerationJob>(
+        `/projects/${projectId}/data-models/generation-jobs/${jobId}/cancel`,
+        {},
+      ),
+    latestGeneration: (projectId: string) =>
+      get<{ job: DataModelGenerationJob | null }>(
+        `/projects/${projectId}/data-models/generation-jobs/latest`,
+      ),
+    generation: (projectId: string, generationId: string) =>
+      get<GenerationResult>(`/projects/${projectId}/data-models/generations/${generationId}`),
     accept: (projectId: string, generationId: string, candidateIds: string[]) =>
       post(`/projects/${projectId}/data-models/generations/${generationId}/accept`, {
         candidateIds,
@@ -450,6 +704,11 @@ export const api = {
         SOFTWARE_ARCHITECTURE: 'software-architecture',
         SYSTEM_ARCHITECTURE: 'system-architecture',
         UI_BLUEPRINT: 'ui-blueprint',
+        GENERATION_PLAN: 'generation-plan',
+        CONCEPTUAL_DOMAIN_MODEL: 'conceptual-domain-model',
+        IMPLEMENTATION_PLAN: 'implementation-plan',
+        DESIGN_THEME: 'design-theme',
+        CLASS_DIAGRAM: 'class-diagram',
       })[kind],
     list: (projectId: string, kind: StructuredAnalysisKind) =>
       get<{ items: StructuredAnalysisResponse[] }>(
@@ -477,10 +736,52 @@ export const api = {
       ),
     diagramPngUrl: (projectId: string, kind: StructuredAnalysisKind, id: string) =>
       `${BASE_URL}/projects/${projectId}/${api.structuredAnalysis.basePath(kind)}/${id}/diagram/png`,
-    generate: (projectId: string, kind: StructuredAnalysisKind, sourceVersionIds: string[]) =>
+    generate: (
+      projectId: string,
+      kind: StructuredAnalysisKind,
+      sourceVersionIds: string[],
+      instruction?: string,
+    ) =>
       post<GenerationResult>(
         `/projects/${projectId}/${api.structuredAnalysis.basePath(kind)}/generate`,
+        { sourceVersionIds, ...(instruction ? { instruction } : {}) },
+      ),
+    // DEC-142: some kinds are generated in the background, in batches.
+    startGenerationJob: (
+      projectId: string,
+      kind: StructuredAnalysisKind,
+      sourceVersionIds: string[],
+    ) =>
+      post<StructuredGenerationJob>(
+        `/projects/${projectId}/${api.structuredAnalysis.basePath(kind)}/generation-jobs`,
         { sourceVersionIds },
+      ),
+    // An implementation plan is drawn in the background from a design baseline.
+    startImplementationPlanJob: (projectId: string, designBaselineId: string) =>
+      post<StructuredGenerationJob>(`/projects/${projectId}/implementation-plan/generation-jobs`, {
+        designBaselineId,
+      }),
+    cancelGenerationJob: (projectId: string, kind: StructuredAnalysisKind, jobId: string) =>
+      post<StructuredGenerationJob>(
+        `/projects/${projectId}/${api.structuredAnalysis.basePath(kind)}/generation-jobs/${jobId}/cancel`,
+        {},
+      ),
+    latestGenerationJob: (projectId: string, kind: StructuredAnalysisKind) =>
+      get<{ job: StructuredGenerationJob | null }>(
+        `/projects/${projectId}/${api.structuredAnalysis.basePath(kind)}/generation-jobs/latest`,
+      ),
+    generation: (projectId: string, kind: StructuredAnalysisKind, generationId: string) =>
+      get<GenerationResult>(
+        `/projects/${projectId}/${api.structuredAnalysis.basePath(kind)}/generations/${generationId}`,
+      ),
+    // An Implementation Plan is generated from an approved Design Baseline.
+    generateImplementationPlan: (projectId: string, designBaselineId: string) =>
+      post<GenerationResult>(`/projects/${projectId}/implementation-plan/generate`, {
+        designBaselineId,
+      }),
+    implementationPlanArtifacts: (projectId: string, id: string) =>
+      get<ImplementationPlanArtifactsResponse>(
+        `/projects/${projectId}/implementation-plan/${id}/artifacts`,
       ),
     accept: (
       projectId: string,
@@ -527,6 +828,10 @@ export const api = {
       }),
     getJob: (projectId: string, jobId: string) =>
       get<MockupJobResponse>(`/projects/${projectId}/mockups/jobs/${jobId}`),
+    cancelJob: (projectId: string, jobId: string) =>
+      post<MockupJobResponse>(`/projects/${projectId}/mockups/jobs/${jobId}/cancel`, {}),
+    latestJob: (projectId: string) =>
+      get<{ job: MockupJobResponse | null }>(`/projects/${projectId}/mockups/jobs/latest`),
     transition: (projectId: string, id: string, versionId: string, status: ArtifactVersionStatus) =>
       post(`/projects/${projectId}/mockups/${id}/versions/${versionId}/transition`, { status }),
   },
@@ -566,5 +871,56 @@ export const api = {
       `${BASE_URL}/projects/${projectId}/baselines/${id}/export?format=html`,
     exportJsonUrl: (projectId: string, id: string) =>
       `${BASE_URL}/projects/${projectId}/baselines/${id}/export?format=json`,
+  },
+  designBaselines: {
+    list: (projectId: string) =>
+      get<{ items: DesignBaselineResponse[] }>(`/projects/${projectId}/design-baselines`),
+    create: (projectId: string, data: CreateDesignBaselineRequest) =>
+      post<DesignBaselineResponse>(`/projects/${projectId}/design-baselines`, data),
+  },
+  ai: {
+    status: () => get<AIStatus>('/ai/status'),
+  },
+  construction: {
+    sandboxStatus: () => get<{ available: boolean }>('/construction/sandbox-status'),
+  },
+  // Route orchestration from one prompt (BUILD_ONLY, DEC-116).
+  workflowRuns: {
+    list: (projectId: string) =>
+      get<{ items: WorkflowRunResponse[] }>(`/projects/${projectId}/workflow-runs`),
+    start: (projectId: string, prompt: string) =>
+      post<WorkflowRunResponse>(`/projects/${projectId}/workflow-runs`, { prompt }),
+    retry: (projectId: string, runId: string) =>
+      post<WorkflowRunResponse>(`/projects/${projectId}/workflow-runs/${runId}/retry`),
+    review: (projectId: string, runId: string) =>
+      get<{ items: WorkflowReviewItem[] }>(`/projects/${projectId}/workflow-runs/${runId}/review`),
+    approve: (projectId: string, runId: string) =>
+      post<WorkflowRunResponse>(`/projects/${projectId}/workflow-runs/${runId}/approve`),
+  },
+  generationRuns: {
+    list: (projectId: string) =>
+      get<{ items: GenerationRunResponse[] }>(`/projects/${projectId}/generation-runs`),
+    start: (projectId: string, implementationPlanVersionId: string) =>
+      post<GenerationRunResponse>(`/projects/${projectId}/generation-runs`, {
+        implementationPlanVersionId,
+      }),
+    archive: (projectId: string, runId: string) =>
+      post<GenerationRunResponse>(`/projects/${projectId}/generation-runs/${runId}/archive`),
+    restore: (projectId: string, runId: string) =>
+      post<GenerationRunResponse>(`/projects/${projectId}/generation-runs/${runId}/restore`),
+    files: (projectId: string, runId: string) =>
+      get<{ items: GeneratedFileSummary[] }>(
+        `/projects/${projectId}/generation-runs/${runId}/files`,
+      ),
+    file: (projectId: string, runId: string, fileId: string) =>
+      get<GeneratedFileResponse>(`/projects/${projectId}/generation-runs/${runId}/files/${fileId}`),
+    sandboxRuns: (projectId: string, runId: string) =>
+      get<{ items: SandboxRunResponse[] }>(
+        `/projects/${projectId}/generation-runs/${runId}/sandbox-runs`,
+      ),
+    validate: (projectId: string, runId: string) =>
+      post<SandboxRunResponse>(`/projects/${projectId}/generation-runs/${runId}/sandbox-runs`),
+    snapshotArchiveUrl: (projectId: string, snapshotId: string) =>
+      `${BASE_URL}/projects/${projectId}/generated-project-snapshots/${snapshotId}/archive`,
   },
 };

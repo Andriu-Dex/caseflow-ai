@@ -10,20 +10,28 @@ import {
   HttpCode,
   Param,
   Post,
+  Query,
+  Req,
   Res,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
+
+interface AuthenticatedRequest extends Request {
+  user: { id: string };
+}
 import {
   acceptSourceReportCandidateRequestSchema,
+  listSourcesQuerySchema,
   manualSourceReportInputSchema,
   manualTranscriptInputSchema,
+  sourceCapabilitiesResponseSchema,
   sourceListResponseSchema,
   sourceMetadataInputSchema,
-  sourceReportCandidateSchema,
+  sourceReportJobResponseSchema,
   sourceReportResponseSchema,
   sourceResponseSchema,
   sourceTextResponseSchema,
@@ -33,7 +41,7 @@ import {
 import type { z } from 'zod';
 import { uuidParamPipe } from '../common/uuid-param.pipe';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
-import { ApiErrorResponse, ApiZodBody, ApiZodResponse } from '../openapi/zod-openapi';
+import { ApiErrorResponse, ApiZodBody, ApiZodQuery, ApiZodResponse } from '../openapi/zod-openapi';
 import { SourcesService } from './sources.service';
 
 @ApiTags('sources')
@@ -61,7 +69,14 @@ export class SourcesController {
     },
   })
   @ApiZodResponse(201, 'Project Source.', sourceResponseSchema)
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: SOURCE_MAX_FILE_SIZE_BYTES } }))
+  // Multer reads multipart file names as latin1 unless told otherwise, which
+  // turned "Estándares.pdf" into "EstÃ¡ndares.pdf".
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: SOURCE_MAX_FILE_SIZE_BYTES },
+      defParamCharset: 'utf8',
+    }),
+  )
   create(
     @Param('projectId', uuidParamPipe) projectId: string,
     @UploadedFile() file: Express.Multer.File | undefined,
@@ -72,9 +87,26 @@ export class SourcesController {
 
   @Get()
   @ApiOperation({ operationId: 'listSources', summary: 'Listar fuentes del proyecto' })
+  @ApiZodQuery(listSourcesQuerySchema)
   @ApiZodResponse(200, 'Project Sources.', sourceListResponseSchema)
-  list(@Param('projectId', uuidParamPipe) projectId: string) {
-    return this.service.list(projectId);
+  @ApiErrorResponse(400, 'Los filtros no son válidos.')
+  list(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Query(new ZodValidationPipe(listSourcesQuerySchema))
+    query: z.output<typeof listSourcesQuerySchema>,
+  ) {
+    return this.service.search(projectId, query);
+  }
+
+  // Declared before ':sourceId' so the literal path is not read as an id.
+  @Get('capabilities')
+  @ApiOperation({
+    operationId: 'getSourceCapabilities',
+    summary: 'Qué puede extraerse automáticamente y con qué límites',
+  })
+  @ApiZodResponse(200, 'Source extraction capabilities.', sourceCapabilitiesResponseSchema)
+  capabilities() {
+    return this.service.capabilities();
   }
 
   @Get(':sourceId')
@@ -107,6 +139,19 @@ export class SourcesController {
     return this.service.retryProcessing(projectId, sourceId);
   }
 
+  @Post(':sourceId/re-extract')
+  @ApiOperation({
+    operationId: 'reExtractSource',
+    summary: 'Volver a extraer el texto del archivo original en una nueva versión',
+  })
+  @ApiZodResponse(201, 'Project Source.', sourceResponseSchema)
+  reExtract(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('sourceId', uuidParamPipe) sourceId: string,
+  ) {
+    return this.service.reExtract(projectId, sourceId);
+  }
+
   @Get(':sourceId/download')
   @ApiOperation({ operationId: 'downloadSource', summary: 'Descargar el archivo original' })
   async download(
@@ -116,7 +161,15 @@ export class SourcesController {
   ) {
     const { body, mimeType, filename } = await this.service.download(projectId, sourceId);
     res.setHeader('Content-Type', mimeType);
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+    // RFC 6266: an ASCII fallback plus the exact UTF-8 name for every browser.
+    const ascii = filename
+      .normalize('NFD')
+      .replace(/[^\x20-\x7e]/g, '')
+      .replace(/["\\]/g, '');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${ascii || 'archivo'}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+    );
     res.send(body);
   }
 
@@ -169,7 +222,7 @@ export class SourcesController {
   @Post(':sourceId/archive')
   @ApiOperation({
     operationId: 'archiveSource',
-    summary: 'Archivar una fuente con historial aprobado (alternativa a eliminar)',
+    summary: 'Archivar una fuente: deja de mostrarse y de usarse, con su historial (DEC-137)',
   })
   @ApiZodResponse(200, 'Project Source.', sourceResponseSchema)
   @ApiErrorResponse(404, 'La fuente no existe.')
@@ -177,8 +230,52 @@ export class SourcesController {
   archive(
     @Param('projectId', uuidParamPipe) projectId: string,
     @Param('sourceId', uuidParamPipe) sourceId: string,
+    @Req() req: AuthenticatedRequest,
   ) {
-    return this.service.archive(projectId, sourceId);
+    return this.service.archive(projectId, sourceId, req.user.id);
+  }
+
+  @Post(':sourceId/file')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: SOURCE_MAX_FILE_SIZE_BYTES },
+      defParamCharset: 'utf8',
+    }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } },
+  })
+  @ApiOperation({
+    operationId: 'replaceSourceFile',
+    summary: 'Reemplazar el archivo de una fuente en una nueva versión (mismo código)',
+  })
+  @ApiZodResponse(201, 'Project Source.', sourceResponseSchema)
+  @ApiErrorResponse(404, 'La fuente no existe.')
+  @ApiErrorResponse(422, 'El archivo no es válido o la fuente está archivada o en proceso.')
+  replaceFile(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('sourceId', uuidParamPipe) sourceId: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.service.replaceFile(projectId, sourceId, file, req.user.id);
+  }
+
+  @Post(':sourceId/unarchive')
+  @ApiOperation({
+    operationId: 'restoreSource',
+    summary: 'Restaurar una fuente archivada',
+  })
+  @ApiZodResponse(200, 'Project Source.', sourceResponseSchema)
+  @ApiErrorResponse(404, 'La fuente no existe.')
+  @ApiErrorResponse(422, 'La fuente no está archivada.')
+  restore(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('sourceId', uuidParamPipe) sourceId: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.service.restore(projectId, sourceId, req.user.id);
   }
 
   @Post(':sourceId/versions/:versionId/transition')
@@ -192,14 +289,32 @@ export class SourcesController {
     return this.service.transition(projectId, sourceId, versionId, status);
   }
 
+  // DEC-127: the report is generated in the background, part by part when
+  // the source is long; this starts (or resumes) it and answers at once.
   @Post(':sourceId/report/generate')
-  @ApiOperation({ operationId: 'generateSourceReport', summary: 'Generar informe/interpretación' })
-  @ApiZodResponse(201, 'Source Report Candidate.', sourceReportCandidateSchema)
+  @ApiOperation({
+    operationId: 'generateSourceReport',
+    summary: 'Generar el informe en segundo plano',
+  })
+  @ApiZodResponse(201, 'Source report job.', sourceReportJobResponseSchema)
   generateReport(
     @Param('projectId', uuidParamPipe) projectId: string,
     @Param('sourceId', uuidParamPipe) sourceId: string,
   ) {
-    return this.service.generateReport(projectId, sourceId);
+    return this.service.requestReport(projectId, sourceId);
+  }
+
+  @Get(':sourceId/report-job')
+  @ApiOperation({
+    operationId: 'getSourceReportJob',
+    summary: 'Consultar el progreso del informe en segundo plano',
+  })
+  @ApiZodResponse(200, 'Source report job.', sourceReportJobResponseSchema)
+  getReportJob(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('sourceId', uuidParamPipe) sourceId: string,
+  ) {
+    return this.service.reportJob(projectId, sourceId);
   }
 
   @Get(':sourceId/report')

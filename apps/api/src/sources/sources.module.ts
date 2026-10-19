@@ -1,13 +1,13 @@
 import { Inject, Module, type OnModuleDestroy } from '@nestjs/common';
-import { Queue } from 'bullmq';
-import { SOURCE_PROCESSING_QUEUE, type SourceProcessingJobPayload } from '@caseflow-ai/domain';
-import { loadStorageConfig } from '@caseflow-ai/config';
+import { createJobQueue, createStorageProvider, type JobQueue } from '../common/infrastructure';
 import {
-  DisabledStorageProvider,
-  S3StorageProvider,
+  SOURCE_PROCESSING_QUEUE,
+  sourceJobRunPath,
+  type SourceProcessingJobPayload,
+} from '@caseflow-ai/domain';
+import {
   DisabledTranscriptionProvider,
   OpenAICompatibleTranscriptionProvider,
-  type StorageProvider,
   type TranscriptionProvider,
 } from '@caseflow-ai/integrations';
 import { AIModule } from '../ai/ai.module';
@@ -17,12 +17,19 @@ import { SourcesService } from './sources.service';
 import { STORAGE_PROVIDER } from './storage-provider.token';
 import { SOURCE_QUEUE } from './source-queue.token';
 import { TesseractSourceOcrProvider } from './source-ocr-provider';
-import { InternalSourceJobsController } from './internal-source-jobs.controller';
+import {
+  InternalSourceJobsController,
+  InternalSourceReportJobsController,
+} from './internal-source-jobs.controller';
 import { KnowledgeBaseModule } from '../knowledge-base/knowledge-base.module';
 
 @Module({
   imports: [AIModule, KnowledgeBaseModule],
-  controllers: [SourcesController, InternalSourceJobsController],
+  controllers: [
+    SourcesController,
+    InternalSourceJobsController,
+    InternalSourceReportJobsController,
+  ],
   providers: [
     SourcesService,
     {
@@ -45,27 +52,21 @@ import { KnowledgeBaseModule } from '../knowledge-base/knowledge-base.module';
     },
     {
       provide: STORAGE_PROVIDER,
-      useFactory: (): StorageProvider => {
-        const config = loadStorageConfig(process.env);
-        return config.configured ? new S3StorageProvider(config) : new DisabledStorageProvider();
-      },
+      useFactory: createStorageProvider,
     },
     {
       provide: SOURCE_QUEUE,
-      useFactory: (): Queue<SourceProcessingJobPayload> =>
-        new Queue<SourceProcessingJobPayload>(SOURCE_PROCESSING_QUEUE, {
-          connection: {
-            url: process.env.REDIS_URL ?? 'redis://localhost:6379',
-            enableOfflineQueue: false,
-            maxRetriesPerRequest: 1,
-          },
+      useFactory: () =>
+        createJobQueue<SourceProcessingJobPayload>(SOURCE_PROCESSING_QUEUE, sourceJobRunPath, {
+          enableOfflineQueue: false,
+          maxRetriesPerRequest: 1,
         }),
     },
   ],
   exports: [SourcesService],
 })
 export class SourcesModule implements OnModuleDestroy {
-  constructor(@Inject(SOURCE_QUEUE) private readonly queue: Queue) {}
+  constructor(@Inject(SOURCE_QUEUE) private readonly queue: JobQueue<unknown>) {}
 
   async onModuleDestroy(): Promise<void> {
     await this.queue.close();

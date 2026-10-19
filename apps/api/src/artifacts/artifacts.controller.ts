@@ -2,13 +2,16 @@ import { UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../identity/jwt-auth.guard';
 import { ProjectMembershipGuard } from '../identity/project-membership.guard';
 
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Request } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
+  archivedArtifactsResponseSchema,
   artifactResponseSchema,
   artifactVersionResponseSchema,
   createArtifactRequestSchema,
   createArtifactVersionRequestSchema,
+  listArchivedArtifactsQuerySchema,
+  restoreArtifactResponseSchema,
   type ArtifactResponse,
   type ArtifactVersionResponse,
 } from '@caseflow-ai/contracts';
@@ -43,6 +46,22 @@ export class ArtifactsController {
     body: z.output<typeof createArtifactRequestSchema>,
   ): Promise<ArtifactResponse> {
     return this.artifacts.createArtifact(projectId, body);
+  }
+
+  // Declared before ':artifactId' so "archived" is not read as an identifier.
+  @Get('archived')
+  @ApiOperation({
+    operationId: 'listArchivedArtifacts',
+    summary: 'List archived artifacts, optionally of some types (comma separated)',
+  })
+  @ApiUuidParam('projectId', 'Project identifier.')
+  @ApiZodResponse(200, 'Archived artifacts.', archivedArtifactsResponseSchema)
+  listArchived(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Query(new ZodValidationPipe(listArchivedArtifactsQuerySchema))
+    query: z.output<typeof listArchivedArtifactsQuerySchema>,
+  ) {
+    return this.artifacts.listArchived(projectId, query.types);
   }
 
   @Get(':artifactId')
@@ -97,7 +116,28 @@ export class ArtifactsController {
   archive(
     @Param('projectId', uuidParamPipe) projectId: string,
     @Param('artifactId', uuidParamPipe) artifactId: string,
+    @Request() request: { user: { id: string } },
   ): Promise<{ archivedAt: string }> {
-    return this.artifacts.archive(projectId, artifactId);
+    return this.artifacts.archive(projectId, artifactId, request.user.id);
+  }
+
+  @Post(':artifactId/restore')
+  @ApiOperation({
+    operationId: 'restoreArtifact',
+    summary: 'Restore an archived artifact to active work',
+    description:
+      'Never refused because of what changed meanwhile: the stage is marked as changed. The response warns when another approved artifact of a type used once exists.',
+  })
+  @ApiUuidParam('projectId', 'Project identifier.')
+  @ApiUuidParam('artifactId', 'Artifact identifier.')
+  @ApiZodResponse(201, 'The artifact is active again.', restoreArtifactResponseSchema)
+  @ApiErrorResponse(404, 'The artifact does not exist in the given project.')
+  @ApiErrorResponse(422, 'The artifact type cannot be restored here, or is not archived.')
+  restore(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('artifactId', uuidParamPipe) artifactId: string,
+    @Request() request: { user: { id: string } },
+  ) {
+    return this.artifacts.restore(projectId, artifactId, request.user.id);
   }
 }

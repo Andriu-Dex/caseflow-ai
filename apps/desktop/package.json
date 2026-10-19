@@ -1,0 +1,31 @@
+{
+  "name": "@caseflow-ai/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "productName": "CASEFlow AI",
+  "license": "Apache-2.0",
+  "description": "CASEFlow AI desktop edition (Electron, DEC-117, DEC-120)",
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "dev:chatgpt": "tsc -p tsconfig.build.json && node --env-file-if-exists=../../.env dist/dev-broker.js",
+    "build:all": "node scripts/build-web.mjs && pnpm run build && pnpm run build:api",
+    "start": "pnpm run build && node scripts/start.mjs",
+    "package": "pnpm run build:all && electron-builder --config electron-builder.yml",
+    "build:api": "node scripts/build-api.mjs"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@electric-sql/pglite-pgvector": "0.0.9",
+    "@electric-sql/pglite-socket": "0.2.11",
+    "jose": "6.2.12"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.4",
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3",
+    "typescript": "5.9.3"
+  }
+}

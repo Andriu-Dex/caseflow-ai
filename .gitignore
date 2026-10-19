@@ -56,3 +56,6 @@ apps/api/src/generated/
 
 # Generated OpenAPI document (pnpm openapi:generate)
 apps/api/openapi/
+
+# Desktop edition installers (electron-builder output)
+release/

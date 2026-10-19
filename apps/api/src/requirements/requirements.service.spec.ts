@@ -5,8 +5,8 @@ import type { AIOrchestrator } from '@caseflow-ai/ai';
 import type { PrismaService } from '../database/prisma.service';
 import { RequirementsService } from './requirements.service';
 
-const fakeKb = (): Pick<KnowledgeBaseService, 'retrieve'> => ({
-  retrieve: vi.fn().mockResolvedValue([]),
+const fakeKb = (): Pick<KnowledgeBaseService, 'searchSources'> => ({
+  searchSources: vi.fn().mockResolvedValue([]),
 });
 
 const version = {
@@ -68,6 +68,18 @@ describe('RequirementsService', () => {
     expect(prisma.artifactVersion.update).toHaveBeenCalled();
     await expect(s.transition('p', 'a', 'v', 'APPROVED')).rejects.toThrow('Transición');
   });
+  const contextDetail = {
+    problemStatement: 'p',
+    objective: 'x',
+    additionalContext: null,
+    actors: [],
+    scopeItems: [],
+    needs: [{ id: 'n1', artifactVersionId: 'v', position: 0, description: 'Registrar pedidos' }],
+    constraints: [
+      { id: 'c1', artifactVersionId: 'v', position: 0, description: 'Funciona en teléfonos' },
+    ],
+    businessRules: [],
+  };
   it('normalizes disabled generation and rejects missing/source-less context', async () => {
     const prisma = {
       project: { findUnique: vi.fn().mockResolvedValue({ language: 'EN' }) },
@@ -75,9 +87,9 @@ describe('RequirementsService', () => {
         findFirst: vi
           .fn()
           .mockResolvedValueOnce(null)
-          .mockResolvedValueOnce({ projectContextDetail: { objective: 'x', sources: [] } })
+          .mockResolvedValueOnce({ projectContextDetail: { ...contextDetail, sources: [] } })
           .mockResolvedValueOnce({
-            projectContextDetail: { objective: 'x', sources: [{ sourceVersionId: 's' }] },
+            projectContextDetail: { ...contextDetail, sources: [{ sourceVersionId: 's' }] },
           }),
       },
     };
@@ -97,15 +109,56 @@ describe('RequirementsService', () => {
       response: { code: 'AI_NOT_CONFIGURED' },
     });
     expect(ai.generateStructured).toHaveBeenCalledWith(
-      expect.objectContaining({ maxOutputTokens: 4096, language: 'EN' }),
+      expect.objectContaining({ maxOutputTokens: 8192, language: 'EN', promptVersion: 3 }),
+    );
+    // The model receives the coded context and what it must cover (DEC-126).
+    const sent = JSON.parse(ai.generateStructured.mock.calls[0]![0].messages[0].content);
+    expect(sent).toMatchObject({
+      needs: [{ code: 'N-1', description: 'Registrar pedidos' }],
+      constraints: [{ code: 'RES-1', description: 'Funciona en teléfonos' }],
+      mustCover: ['N-1'],
+    });
+  });
+  it('adds the source fragments relevant to the context, within the room left (DEC-127)', async () => {
+    const prisma = {
+      project: { findUnique: vi.fn().mockResolvedValue({ language: 'ES' }) },
+      artifactVersion: {
+        findFirst: vi.fn().mockResolvedValue({
+          projectContextDetail: { ...contextDetail, sources: [{ sourceVersionId: 's' }] },
+        }),
+      },
+    };
+    const ai = {
+      maxInputTokens: 8_000,
+      generateStructured: vi.fn().mockRejectedValue(new AIError('AI_NOT_CONFIGURED', 'off')),
+    };
+    const kb = {
+      searchSources: vi
+        .fn()
+        .mockResolvedValue([{ sourceCode: 'SRC-001', section: 'Pedidos', content: 'Texto' }]),
+    };
+    await expect(
+      new RequirementsService(
+        prisma as unknown as PrismaService,
+        ai as unknown as AIOrchestrator,
+        kb as unknown as KnowledgeBaseService,
+      ).generate('p', 'v'),
+    ).rejects.toBeDefined();
+    const [, query, budget] = kb.searchSources.mock.calls[0]!;
+    expect(query).toContain('Registrar pedidos');
+    expect(budget).toBeGreaterThan(0);
+    expect(budget).toBeLessThanOrEqual(2_500);
+    expect(ai.generateStructured.mock.calls[0]![0].messages[0].content).toContain(
+      '[SRC-001 › Pedidos] Texto',
     );
   });
+
   it('does not persist candidates when structured output is invalid', async () => {
     const prisma = {
       project: { findUnique: vi.fn().mockResolvedValue({ language: 'ES' }) },
       artifactVersion: {
         findFirst: vi.fn().mockResolvedValue({
-          projectContextDetail: { objective: 'x', sources: [{ sourceVersionId: 's' }] },
+          projectContextDetail: { ...contextDetail, sources: [{ sourceVersionId: 's' }] },
         }),
       },
       $transaction: vi.fn(),

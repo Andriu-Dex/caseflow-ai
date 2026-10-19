@@ -68,7 +68,54 @@ describe('StitchMockupProvider', () => {
     );
     expect(prompt).toContain('Precio total');
     expect(prompt).toContain('Error de validación');
-    expect(prompt).toContain('CU-001');
+    // The internal codes are not given to the generator: they came back as visible labels.
+    expect(prompt).not.toContain('CU-001');
+    expect(prompt).toContain('No muestres códigos internos');
+  });
+
+  it('asks Stitch to use the approved palette (DEC-118)', () => {
+    const provider = new StitchMockupProvider({ apiKey: 'test', timeoutMs: 100 });
+    const buildPrompt = (
+      provider as unknown as {
+        buildPrompt: (
+          screen: unknown,
+          device: 'DESKTOP',
+          refinement?: string,
+          theme?: unknown,
+        ) => string;
+      }
+    ).buildPrompt.bind(provider);
+    const screen = {
+      name: 'Pedidos',
+      purpose: 'Registrar un pedido',
+      targetActors: [],
+      sections: [],
+      primaryActions: [],
+      secondaryActions: [],
+      forms: [],
+      principalData: [],
+      states: [],
+      relatedUseCaseCodes: [],
+    };
+    const dark = {
+      background: '#101010',
+      foreground: '#fafafa',
+      primary: '#0e7490',
+      primaryForeground: '#f0f9ff',
+      secondary: '#262626',
+      secondaryForeground: '#e5e5e5',
+      accent: '#a16207',
+      accentForeground: '#fffbeb',
+      muted: '#171717',
+      mutedForeground: '#a3a3a3',
+      destructive: '#f87171',
+      destructiveForeground: '#101010',
+      border: '#404040',
+    };
+    const prompt = buildPrompt(screen, 'DESKTOP', undefined, { name: 'Noche', mode: 'DARK', dark });
+    expect(prompt).toContain('modo oscuro');
+    expect(prompt).toContain('color primario #0e7490 con texto #f0f9ff');
+    expect(buildPrompt(screen, 'DESKTOP')).not.toContain('paleta');
   });
 
   it('bounds the overall provider wait so fallback can proceed', async () => {
@@ -124,5 +171,94 @@ describe('StitchMockupProvider', () => {
       code: 'MOCKUP_PROVIDER_UNAVAILABLE',
       message: 'El proveedor de bocetos no está disponible.',
     });
+  });
+});
+
+describe('StitchMockupProvider screen by screen (DEC-146)', () => {
+  it('bounds each screen by its own time limit and reports it by name', async () => {
+    const provider = new StitchMockupProvider({ apiKey: 'test', timeoutMs: 20 });
+    // The SDK call never answers: only the per-screen limit ends it.
+    (provider as unknown as { sdk: () => Promise<unknown> }).sdk = async () => ({
+      project: () => ({ generate: () => new Promise(() => undefined) }),
+    });
+    await expect(
+      provider.screens.generateScreen(
+        'p1',
+        {
+          localId: 'a',
+          name: 'Pedidos',
+          purpose: 'Registrar',
+          targetActors: [],
+          sections: [],
+          primaryActions: [],
+          secondaryActions: [],
+          forms: [],
+          principalData: [],
+          states: [],
+          relatedUseCaseCodes: [],
+        },
+        'DESKTOP',
+      ),
+    ).rejects.toMatchObject({
+      code: 'MOCKUP_PROVIDER_TIMEOUT',
+      message: 'La pantalla «Pedidos» excedió el tiempo límite.',
+    });
+  });
+  it('creates the provider project the screens of one mockup go to', async () => {
+    const provider = new StitchMockupProvider({ apiKey: 'test', timeoutMs: 1000 });
+    (provider as unknown as { sdk: () => Promise<unknown> }).sdk = async () => ({
+      createProject: async (title: string) => ({ id: `id-${title}` }),
+    });
+    await expect(provider.screens.createProject('X')).resolves.toBe('id-X');
+  });
+});
+
+describe('StitchMockupProvider one application (DEC-147)', () => {
+  const buildPrompt = (...args: unknown[]) => {
+    const provider = new StitchMockupProvider({ apiKey: 'test', timeoutMs: 100 });
+    return (provider as unknown as { buildPrompt: (...a: unknown[]) => string }).buildPrompt(
+      ...args,
+    );
+  };
+  const screen = {
+    localId: 'ventas',
+    name: 'Ventas',
+    purpose: 'Registrar ventas',
+    targetActors: [],
+    sections: [],
+    primaryActions: [],
+    secondaryActions: [],
+    forms: [],
+    principalData: [],
+    states: [],
+    relatedUseCaseCodes: ['CU-001'],
+  };
+  const context = {
+    appName: 'Restaurante Mateos',
+    menu: ['Inicio', 'Ventas', 'Inventario'],
+    activeMenuByScreen: { ventas: 'Ventas', acceso: null },
+  };
+  it('gives every screen the same name and menu and marks the one it belongs to', () => {
+    const prompt = buildPrompt(screen, 'DESKTOP', undefined, undefined, context);
+    expect(prompt).toContain('«Restaurante Mateos»');
+    expect(prompt).toContain('Inicio · Ventas · Inventario');
+    expect(prompt).toContain('Resalta como activa la entrada «Ventas»');
+    expect(prompt).toContain('No inventes datos de seguridad');
+    expect(prompt).toContain('una sola vista');
+  });
+  it('draws a screen without a menu entry, such as the sign-in, without the menu', () => {
+    const prompt = buildPrompt(
+      { ...screen, localId: 'acceso' },
+      'DESKTOP',
+      undefined,
+      undefined,
+      context,
+    );
+    expect(prompt).toContain('«Restaurante Mateos»');
+    expect(prompt).toContain('no lleva el menú principal');
+    expect(prompt).not.toContain('Inicio · Ventas');
+  });
+  it('adds nothing about an application when there is no context', () => {
+    expect(buildPrompt(screen, 'DESKTOP')).not.toContain('misma aplicación');
   });
 });

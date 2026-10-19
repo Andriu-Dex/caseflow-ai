@@ -45,4 +45,48 @@ describe('Use Case contracts', () => {
       }).success,
     ).toBe(false);
   });
+  it('accepts include/extend between candidates only towards another candidate of the answer', () => {
+    const candidate = (candidateId: string, relations: unknown[] = []) => ({
+      candidateId,
+      name: candidateId,
+      objective: 'O',
+      primaryActor: 'U',
+      mainFlow: [step],
+      relatedRequirementSourceIds: ['r1'],
+      relations,
+    });
+    const parse = (relations: unknown[]) =>
+      useCaseGenerationOutputSchema.safeParse({
+        candidates: [candidate('venta', relations), candidate('descontar')],
+      }).success;
+    expect(parse([{ kind: 'INCLUDE', targetCandidateId: 'descontar' }])).toBe(true);
+    expect(parse([{ kind: 'EXTEND', targetCandidateId: 'nadie' }])).toBe(false);
+    expect(parse([{ kind: 'INCLUDE', targetCandidateId: 'venta' }])).toBe(false);
+    expect(
+      parse([
+        { kind: 'INCLUDE', targetCandidateId: 'descontar' },
+        { kind: 'EXTEND', targetCandidateId: 'descontar' },
+      ]),
+    ).toBe(false);
+  });
+  it('relates a use case at most once to each other use case', () => {
+    const target = '22222222-2222-4222-8222-222222222222';
+    const base = {
+      name: 'Registrar venta',
+      objective: 'O',
+      primaryActor: 'Cajero',
+      mainFlow: [step],
+      relatedRequirementVersionIds: ['11111111-1111-4111-8111-111111111111'],
+    };
+    expect(useCaseInputSchema.parse(base).relations).toEqual([]);
+    expect(
+      useCaseInputSchema.safeParse({
+        ...base,
+        relations: [
+          { kind: 'INCLUDE', targetUseCaseId: target },
+          { kind: 'EXTEND', targetUseCaseId: target },
+        ],
+      }).success,
+    ).toBe(false);
+  });
 });

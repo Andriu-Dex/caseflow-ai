@@ -17,3 +17,4 @@ next-env.d.ts
 # Preserved specification/contract documents (do not reformat)
 docs/CASEFLOW_AI_SPEC.md
 AGENTS.md
+release

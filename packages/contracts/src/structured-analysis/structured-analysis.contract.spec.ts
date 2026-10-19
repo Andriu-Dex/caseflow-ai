@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  implementationPlanContentSchema,
   navigationTreeContentSchema,
   softwareArchitectureContentSchema,
   systemArchitectureContentSchema,
@@ -143,5 +144,68 @@ describe('UI blueprint content', () => {
     expect(uiBlueprintContentSchema.safeParse({ screens: [screen, { ...screen }] }).success).toBe(
       false,
     );
+  });
+});
+
+describe('implementation plan route actions (DEC-121)', () => {
+  const plan = (actions: unknown[]) => ({
+    designBaselineId: '00000000-0000-4000-8000-000000000000',
+    authentication: { required: false },
+    modules: [{ localId: 'sales', name: 'Sales', description: 'Ventas' }],
+    entities: [
+      {
+        localId: 'e',
+        name: 'Order',
+        moduleLocalId: 'sales',
+        fields: [{ name: 'total', type: 'DECIMAL' }],
+        operations: ['LIST', 'CREATE'],
+      },
+    ],
+    customEndpoints: [
+      {
+        moduleLocalId: 'sales',
+        method: 'POST',
+        path: '/orders/:orderId/confirm',
+        summary: 'Confirmar',
+      },
+    ],
+    routes: [
+      {
+        path: '/orders',
+        screenName: 'Pedidos',
+        moduleLocalId: 'sales',
+        kind: 'LIST',
+        entityLocalId: 'e',
+        actions,
+      },
+    ],
+  });
+  const messages = (actions: unknown[]) => {
+    const result = implementationPlanContentSchema.safeParse(plan(actions));
+    return result.success ? [] : result.error.issues.map((issue) => issue.message);
+  };
+
+  it('accepts actions served by an entity operation or an existing endpoint', () => {
+    expect(
+      messages([
+        { label: 'Crear pedido', operation: 'CREATE' },
+        { label: 'Confirmar', endpoint: 'POST /orders/:orderId/confirm' },
+      ]),
+    ).toEqual([]);
+  });
+
+  it('rejects unserved operations, unknown endpoints and ambiguous actions', () => {
+    expect(
+      messages([{ label: 'Ambas', operation: 'LIST', endpoint: 'POST /orders/:orderId/confirm' }]),
+    ).toEqual(['Cada acción la atiende una operación CRUD o un endpoint, exactamente uno.']);
+    expect(
+      messages([
+        { label: 'Borrar', operation: 'DELETE' },
+        { label: 'Pagar', endpoint: 'POST /orders/:orderId/pay' },
+      ]),
+    ).toEqual([
+      'La acción «Borrar» usa la operación DELETE, que la entidad de la ruta no ofrece.',
+      'La acción «Pagar» usa el endpoint POST /orders/:orderId/pay, que no existe.',
+    ]);
   });
 });

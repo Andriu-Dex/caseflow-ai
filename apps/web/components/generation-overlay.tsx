@@ -1,6 +1,30 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { Sparkles } from 'lucide-react';
+
+// After this long a wait stops feeling like "a few seconds": say it is still
+// working, so a long generation never looks frozen (DEC-132).
+const LONG_WAIT_MS = 20_000;
+
+export function formatDuration(ms: number): string {
+  const seconds = Math.max(0, Math.round(ms / 1000));
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return minutes ? `${minutes} min ${String(rest).padStart(2, '0')} s` : `${rest} s`;
+}
+
+// Re-renders every second while mounted, for a live elapsed time.
+export function useElapsed(since: string | number | null): number {
+  const start = since === null ? null : new Date(since).getTime();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (start === null) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [start]);
+  return start === null ? 0 : Math.max(0, now - start);
+}
 
 // The orbiting-rings animation shared by every AI-generation indicator in the
 // product: the fixed full-screen GenerationOverlay below, and any inline spot
@@ -23,13 +47,20 @@ function AiOrbitRings({ size = 'size-28', icon = 'size-7' }: { size?: string; ic
 export function GenerationOverlay({
   open,
   title = 'Generando con IA',
-  description = 'Esto puede tardar unos segundos. El resultado quedará como propuesta para su revisión.',
+  description = 'Según el tamaño, puede tardar desde unos segundos hasta varios minutos. El resultado quedará como propuesta para su revisión.',
 }: {
   open: boolean;
   title?: string;
   description?: string;
 }) {
   if (!open) return null;
+  return <OpenGenerationOverlay title={title} description={description} />;
+}
+
+function OpenGenerationOverlay({ title, description }: { title: string; description: string }) {
+  // Counted from when the overlay opened.
+  const [openedAt] = useState(() => Date.now());
+  const elapsed = useElapsed(openedAt);
   return (
     <div
       role="status"
@@ -41,6 +72,14 @@ export function GenerationOverlay({
         <div>
           <p className="text-base font-semibold text-foreground">{title}</p>
           <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Tiempo transcurrido: {formatDuration(elapsed)}
+          </p>
+          {elapsed >= LONG_WAIT_MS ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Sigue trabajando. Las propuestas extensas pueden tardar varios minutos.
+            </p>
+          ) : null}
         </div>
       </div>
     </div>

@@ -12,6 +12,7 @@ const input = (requirementType: 'FUNCTIONAL' | 'NON_FUNCTIONAL', name: string) =
   preconditions: ['Existe sesión'],
   postconditions: ['Dato guardado'],
   dependencyArtifactIds: [],
+  origin: { kind: 'USER_DECISION' as const, justification: 'Decisión del equipo.' },
 });
 describe('Requirements integration', () => {
   let ctx: TestContext;
@@ -73,7 +74,7 @@ describe('Requirements integration', () => {
       projectId,
       {
         title: 'Notas de proceso',
-        sourceKind: 'NOTES',
+        sourceKind: 'TEXT',
         purpose: 'Notas del proceso manual actual',
         description: 'Contenido de prueba.',
       },
@@ -96,7 +97,7 @@ describe('Requirements integration', () => {
       objective: 'Automatizar',
       scopeItems: [],
       actors: [{ name: 'Usuario' }],
-      needs: [],
+      needs: [{ description: 'Registrar datos' }],
       constraints: [],
       businessRules: [],
       sourceVersionIds: [approvedSource.id],
@@ -115,6 +116,7 @@ describe('Requirements integration', () => {
           actors: ['Usuario'],
           preconditions: [],
           postconditions: ['Creado'],
+          contextItemCodes: ['N-1'],
           dependencyCandidateIds: [],
         },
         {
@@ -126,6 +128,7 @@ describe('Requirements integration', () => {
           actors: [],
           preconditions: [],
           postconditions: [],
+          contextItemCodes: ['N-1'],
           dependencyCandidateIds: ['a'],
         },
       ],
@@ -141,7 +144,7 @@ describe('Requirements integration', () => {
       new PromptRegistry([
         {
           key: 'requirements.generate',
-          version: 2,
+          version: 3,
           capability: 'STRUCTURED_OUTPUT',
           purpose: 'requirements_generation',
           systemInstructions: 'policy',
@@ -149,7 +152,9 @@ describe('Requirements integration', () => {
       ]),
       new PrismaAIRunRecorder(ctx.prisma),
     );
-    const service = new RequirementsService(ctx.prisma, ai, { retrieve: async () => [] } as never);
+    const service = new RequirementsService(ctx.prisma, ai, {
+      searchSources: async () => [],
+    } as never);
     const generation = await service.generate(projectId, contextVersionId);
     expect(generation).toMatchObject({
       sourceContextVersionId: contextVersionId,
@@ -184,7 +189,7 @@ describe('Requirements integration', () => {
       objective: 'Probar el gate',
       scopeItems: [],
       actors: [{ name: 'Usuario' }],
-      needs: [],
+      needs: [{ description: 'Registrar datos' }],
       constraints: [],
       businessRules: [],
     });

@@ -1,8 +1,17 @@
-import { Injectable } from '@nestjs/common';
-import type { ReadinessStage } from '@caseflow-ai/contracts';
+import {
+  ForbiddenException,
+  Injectable,
+  Optional,
+  UnprocessableEntityException,
+} from '@nestjs/common';
+import { PIPELINE_LABELS, PIPELINE_ORDER, type ReadinessStage } from '@caseflow-ai/contracts';
+import { StageCurrencyService } from './stage-currency';
+import { AuditService } from '../audit/audit.service';
+import { ConsistencyEngineService } from '../consistency-engine/consistency-engine.service';
 import { PrismaService } from '../database/prisma.service';
 import { FirstDeliverableSnapshotService } from '../first-deliverable/first-deliverable-snapshot.service';
 import { RequirementsService } from '../requirements/requirements.service';
+import { contextCoverage } from '../requirements/context-coverage';
 import { StalenessService } from '../staleness/staleness.service';
 import { TraceabilityService } from '../traceability/traceability.service';
 
@@ -31,6 +40,9 @@ export class ReadinessService {
     private readonly staleness: StalenessService,
     private readonly traceability: TraceabilityService,
     private readonly snapshot: FirstDeliverableSnapshotService,
+    @Optional() private readonly currency?: StageCurrencyService,
+    @Optional() private readonly audit?: AuditService,
+    @Optional() private readonly consistency?: ConsistencyEngineService,
   ) {}
 
   // Read-only deterministic evaluation of persisted authoritative state
@@ -38,7 +50,7 @@ export class ReadinessService {
   // version selection is delegated to FirstDeliverableSnapshotService — the
   // single shared "current authoritative version" policy also used by Export
   // (spec Phase H), never duplicated here.
-  async evaluate(projectId: string) {
+  async evaluate(projectId: string, applyCurrency = true) {
     const [
       sources,
       context,
@@ -49,6 +61,9 @@ export class ReadinessService {
       swResult,
       sysResult,
       blueprintResult,
+      themeResult,
+      classDiagramResult,
+      project,
     ] = await Promise.all([
       this.sourcesStage(projectId),
       this.contextStage(projectId),
@@ -59,6 +74,12 @@ export class ReadinessService {
       this.snapshot.approvedArtifactVersion(projectId, 'SOFTWARE_ARCHITECTURE'),
       this.snapshot.approvedArtifactVersion(projectId, 'SYSTEM_ARCHITECTURE'),
       this.snapshot.approvedArtifactVersion(projectId, 'UI_BLUEPRINT'),
+      this.snapshot.approvedArtifactVersion(projectId, 'DESIGN_THEME'),
+      this.snapshot.approvedArtifactVersion(projectId, 'CLASS_DIAGRAM'),
+      this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { designThemeRequired: true, coherenceRequired: true },
+      }),
     ]);
 
     const useCaseDiagramStage = await this.useCaseDiagramStage(
@@ -71,6 +92,10 @@ export class ReadinessService {
       dataModelResult,
     );
     const erDiagramStage = await this.erDiagramStage(dataModelResult);
+    const classDiagramStage = this.classDiagramStage(
+      project?.coherenceRequired ?? true,
+      classDiagramResult,
+    );
     const navigationStage = await this.diagramBackedStage('NAVIGATION', 'Navegación', navResult);
     const softwareArchitectureStage = await this.diagramBackedStage(
       'SOFTWARE_ARCHITECTURE',
@@ -87,7 +112,13 @@ export class ReadinessService {
       'Plano de interfaz',
       blueprintResult,
     );
-    const mockupsStage = await this.mockupsStage(projectId, blueprintResult);
+    const themeRequired = project?.designThemeRequired ?? true;
+    const designThemeStage = this.designThemeStage(themeRequired, themeResult);
+    const mockupsStage = await this.mockupsStage(
+      projectId,
+      blueprintResult,
+      themeRequired && !themeResult ? undefined : themeResult,
+    );
     const impactStage = await this.impactStage(projectId);
 
     const stages: ReadinessStage[] = [
@@ -98,19 +129,132 @@ export class ReadinessService {
       useCaseDiagramStage,
       dataModelStage,
       erDiagramStage,
+      classDiagramStage,
       navigationStage,
       softwareArchitectureStage,
       systemArchitectureStage,
       uiBlueprintStage,
+      designThemeStage,
       mockupsStage,
       impactStage,
     ];
 
+    const currencies =
+      this.currency && applyCurrency ? await this.currency.stageCurrency(projectId) : undefined;
+    if (
+      currencies?.CONTEXT.currency === 'CURRENT' &&
+      currencies.CONTEXT.reviewedAt &&
+      !impactStage.satisfied
+    ) {
+      impactStage.satisfied = true;
+      impactStage.warnings.push(...impactStage.blockers);
+      impactStage.blockers = [];
+      impactStage.nextAction = null;
+      impactStage.summary =
+        'El contexto fue revisado y confirmado vigente; se conserva la procedencia histórica.';
+    }
+    for (const item of stages) {
+      const current = item.key !== 'IMPACT' ? currencies?.[item.key] : undefined;
+      Object.assign(item, current ?? { currency: 'CURRENT' });
+      if (current && current.currency !== 'CURRENT') {
+        item.satisfied = false;
+        const upstream =
+          stages.find((s) => s.key === current.outdatedSince?.stage)?.label ??
+          current.outdatedSince?.stage;
+        item.blockers = [`Cambió ${upstream}. Rehaga este paso o confirme que sigue vigente.`];
+        item.nextAction =
+          current.currency === 'OUTDATED'
+            ? 'Rehacer este paso o confirmar que sigue vigente.'
+            : 'Revisar primero el paso anterior pendiente.';
+      }
+    }
     const blockers = stages.flatMap((s) => s.blockers);
     const warnings = stages.flatMap((s) => s.warnings);
     const ready = stages.every((s) => s.satisfied);
 
     return { ready, stages, blockers, warnings };
+  }
+
+  async confirmCurrent(
+    projectId: string,
+    stageKey: (typeof PIPELINE_ORDER)[number],
+    userId: string,
+    note?: string,
+  ) {
+    if (!this.currency)
+      throw new UnprocessableEntityException('La revisión de vigencia no está disponible.');
+    const base = (await this.evaluate(projectId, false)).stages.find(
+      (stage) => stage.key === stageKey,
+    );
+    const typeByStage: Record<string, string> = {
+      SOURCES: 'PROJECT_SOURCE',
+      CONTEXT: 'PROJECT_CONTEXT',
+      REQUIREMENTS: 'REQUIREMENT',
+      USE_CASES: 'USE_CASE',
+      DATA_MODEL: 'DATA_MODEL',
+      NAVIGATION: 'NAVIGATION_TREE',
+      MOCKUPS: 'MOCKUP',
+    };
+    const issues = this.consistency
+      ? (await this.consistency.generateReport(projectId)).issues
+      : [];
+    const errors = issues.filter(
+      (issue) =>
+        issue.severity === 'ERROR' && issue.artifactType === (typeByStage[stageKey] ?? stageKey),
+    );
+    if (errors.length)
+      throw new UnprocessableEntityException(
+        `Corrija la coherencia de este paso antes de confirmar: ${errors[0]!.message}`,
+      );
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM projects WHERE id = ${projectId}::uuid FOR UPDATE`;
+      const membership = await tx.projectMembership.findFirst({
+        where: {
+          projectId,
+          userId,
+          role: { in: ['OWNER', 'EDITOR', 'REVIEWER'] },
+          project: { workspace: { memberships: { some: { userId } } } },
+        },
+      });
+      if (!membership) throw new ForbiddenException('No tiene permiso para confirmar este paso.');
+      const currencies = await this.currency!.stageCurrency(projectId, tx);
+      const current = currencies[stageKey];
+      if (current.currency === 'BLOCKED') {
+        const first = PIPELINE_ORDER.find((key) => currencies[key].currency === 'OUTDATED');
+        throw new UnprocessableEntityException(
+          `Primero revise ${first ? PIPELINE_LABELS[first] : 'el paso anterior'}.`,
+        );
+      }
+      if (current.currency !== 'OUTDATED')
+        throw new UnprocessableEntityException('Este paso no está pendiente de revisión.');
+      if (!base?.satisfied)
+        throw new UnprocessableEntityException(
+          base?.blockers[0] ?? 'Complete este paso antes de confirmar su vigencia.',
+        );
+      const confirmation = await tx.stageConfirmation.create({
+        data: { projectId, stage: stageKey, confirmedByUserId: userId, note },
+      });
+      await (this.audit ?? new AuditService(this.prisma)).record(
+        {
+          projectId,
+          actorUserId: userId,
+          action: 'STAGE_CONFIRMED_CURRENT',
+          entityType: 'STAGE_CONFIRMATION',
+          entityId: confirmation.id,
+          metadata: {
+            stage: stageKey,
+            upstreamStage: current.outdatedSince?.stage ?? null,
+            note: note ?? null,
+          },
+        },
+        tx,
+      );
+    });
+    return {
+      projectId,
+      generatedAt: new Date().toISOString(),
+      ...(await this.evaluate(projectId)),
+    };
   }
 
   private async sourcesStage(projectId: string): Promise<ReadinessStage> {
@@ -176,26 +320,66 @@ export class ReadinessService {
         status: 'APPROVED',
         artifact: { artifactTypeCode: 'REQUIREMENT', archivedAt: null },
       },
+      distinct: ['artifactId'],
+      orderBy: [{ artifactId: 'asc' }, { versionNumber: 'desc' }],
       include: { requirementDetail: true },
     });
     const rf = approved.filter((v) => v.requirementDetail?.requirementType === 'FUNCTIONAL').length;
     const rnf = approved.filter(
       (v) => v.requirementDetail?.requirementType === 'NON_FUNCTIONAL',
     ).length;
-    const satisfied = approved.length >= 1;
-    const quality = satisfied ? await this.requirements.qualityReport(projectId) : null;
+    const quality = approved.length ? await this.requirements.qualityReport(projectId) : null;
+    // DEC-126: every need and business rule of the approved context must be
+    // answered by an approved requirement; it blocks only where coherence is
+    // mandatory.
+    const [covered, project] = await Promise.all([
+      contextCoverage(this.prisma, projectId, { approvedOnly: true }),
+      this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { coherenceRequired: true },
+      }),
+    ]);
+    const mandatory = covered.items.filter((item) => item.mandatory);
+    const uncovered = mandatory.filter((item) => !item.coveredBy.length);
+    const coverageMessages = uncovered.map(
+      (item) =>
+        `${item.code} «${item.description}» del contexto no está cubierto por ningún requisito aprobado.`,
+    );
+    const strict = project?.coherenceRequired ?? true;
+    const blockers = [
+      ...(approved.length ? [] : ['Apruebe al menos un requisito.']),
+      ...(strict ? coverageMessages : []),
+    ];
+    const satisfied = blockers.length === 0;
     return stage({
       key: 'REQUIREMENTS',
       label: 'Requisitos',
       satisfied,
-      summary: satisfied
-        ? `${approved.length} ${approved.length === 1 ? 'requisito aprobado' : 'requisitos aprobados'} (${rf} funcionales, ${rnf} no funcionales).`
+      summary: approved.length
+        ? `${approved.length} ${approved.length === 1 ? 'requisito aprobado' : 'requisitos aprobados'} (${rf} funcionales, ${rnf} no funcionales)${
+            mandatory.length
+              ? `; cubren ${mandatory.length - uncovered.length} de ${mandatory.length} necesidades y reglas del contexto`
+              : ''
+          }.`
         : 'Aún no hay requisitos aprobados.',
-      counts: { approved: approved.length, functional: rf, nonFunctional: rnf },
-      blockers: satisfied ? [] : ['Apruebe al menos un requisito.'],
+      counts: {
+        approved: approved.length,
+        functional: rf,
+        nonFunctional: rnf,
+        contextItemsCovered: mandatory.length - uncovered.length,
+        contextItemsTotal: mandatory.length,
+      },
+      blockers,
       // Quality findings are advisory (spec §4.3): they never block readiness.
-      warnings: quality?.issues.map((i) => `${i.code}: ${i.message}`) ?? [],
-      nextAction: satisfied ? null : 'Aprobar al menos un requisito.',
+      warnings: [
+        ...(strict ? [] : coverageMessages),
+        ...(quality?.issues.map((i) => `${i.code}: ${i.message}`) ?? []),
+      ],
+      nextAction: !approved.length
+        ? 'Aprobar al menos un requisito.'
+        : uncovered.length && strict
+          ? 'Cubrir con requisitos aprobados las necesidades y reglas pendientes del contexto.'
+          : null,
     });
   }
 
@@ -208,6 +392,8 @@ export class ReadinessService {
         status: 'APPROVED',
         artifact: { artifactTypeCode: 'USE_CASE', archivedAt: null },
       },
+      distinct: ['artifactId'],
+      orderBy: [{ artifactId: 'asc' }, { versionNumber: 'desc' }],
     });
     const satisfied = approved.length >= USE_CASE_MINIMUM;
     return {
@@ -257,11 +443,12 @@ export class ReadinessService {
       },
       orderBy: { code: 'asc' },
     });
-    const match = diagrams.find((d) =>
-      d.versions[0]?.diagramDetail?.sources.some((s) =>
-        approvedUseCaseVersionIds.includes(s.sourceArtifactVersionId),
-      ),
-    );
+    const match = diagrams.find((d) => {
+      const represented = new Set(
+        d.versions[0]?.diagramDetail?.sources.map((s) => s.sourceArtifactVersionId) ?? [],
+      );
+      return approvedUseCaseVersionIds.every((id) => represented.has(id));
+    });
     const satisfied = Boolean(match);
     return stage({
       key: 'USE_CASE_DIAGRAM',
@@ -279,7 +466,7 @@ export class ReadinessService {
   }
 
   private singleArtifactStage(
-    key: 'DATA_MODEL' | 'UI_BLUEPRINT',
+    key: 'DATA_MODEL' | 'UI_BLUEPRINT' | 'DESIGN_THEME' | 'CLASS_DIAGRAM',
     label: string,
     result: { code: string; versionId: string } | null,
   ): ReadinessStage {
@@ -295,6 +482,38 @@ export class ReadinessService {
       blockers: satisfied ? [] : [`Falta aprobar: ${label.toLowerCase()}.`],
       nextAction: satisfied ? null : `Aprobar ${label.toLowerCase()}.`,
     });
+  }
+
+  // DEC-118: required for projects created after the theme step existed;
+  // older projects keep the standard design unless they approve a theme.
+  private designThemeStage(
+    required: boolean,
+    theme: { code: string; versionId: string } | null,
+  ): ReadinessStage {
+    if (!theme && !required)
+      return stage({
+        key: 'DESIGN_THEME',
+        label: 'Tema y colores',
+        satisfied: true,
+        summary: 'Este proyecto usa el diseño estándar de CASEFlow.',
+      });
+    return this.singleArtifactStage('DESIGN_THEME', 'Tema y colores', theme);
+  }
+
+  // DEC-121: required for projects created with mandatory coherence; older
+  // projects may skip it.
+  private classDiagramStage(
+    required: boolean,
+    classDiagram: { code: string; versionId: string } | null,
+  ): ReadinessStage {
+    if (!classDiagram && !required)
+      return stage({
+        key: 'CLASS_DIAGRAM',
+        label: 'Diagrama de clases',
+        satisfied: true,
+        summary: 'El diagrama de clases es opcional en este proyecto.',
+      });
+    return this.singleArtifactStage('CLASS_DIAGRAM', 'Diagrama de clases', classDiagram);
   }
 
   private async erDiagramStage(
@@ -367,7 +586,18 @@ export class ReadinessService {
   private async mockupsStage(
     projectId: string,
     blueprint: { code: string; versionId: string } | null,
+    // undefined: a required theme is still missing; null: standard design.
+    theme: { code: string; versionId: string } | null | undefined,
   ): Promise<ReadinessStage> {
+    if (blueprint && theme === undefined)
+      return stage({
+        key: 'MOCKUPS',
+        label: 'Bocetos',
+        satisfied: false,
+        summary: 'Aún no hay un tema aprobado con el que pintar los bocetos.',
+        blockers: ['Apruebe el tema y los colores antes de generar los bocetos.'],
+        nextAction: 'Aprobar el tema y los colores.',
+      });
     if (!blueprint)
       return stage({
         key: 'MOCKUPS',
@@ -388,8 +618,11 @@ export class ReadinessService {
         },
       },
     });
+    const themeVersionId = theme?.versionId ?? null;
     const match = mockups.find(
-      (m) => m.versions[0]?.mockupDetail?.uiBlueprintVersionId === blueprint.versionId,
+      (m) =>
+        m.versions[0]?.mockupDetail?.uiBlueprintVersionId === blueprint.versionId &&
+        (m.versions[0].mockupDetail.designThemeVersionId ?? null) === themeVersionId,
     );
     const satisfied = Boolean(match);
     return stage({
@@ -398,7 +631,9 @@ export class ReadinessService {
       satisfied,
       summary: satisfied
         ? `${match!.code} aprobado, derivado exactamente de ${blueprint.code}.`
-        : `Falta aprobar un boceto generado a partir del plano de interfaz ${blueprint.code} vigente.`,
+        : theme
+          ? `Falta aprobar un boceto generado a partir del plano de interfaz ${blueprint.code} y el tema ${theme.code} vigentes.`
+          : `Falta aprobar un boceto generado a partir del plano de interfaz ${blueprint.code} vigente.`,
       evidence: match ? { artifactVersionId: match.versions[0]!.id, code: match.code } : undefined,
       blockers: satisfied
         ? []

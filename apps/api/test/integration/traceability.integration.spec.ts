@@ -6,6 +6,7 @@ import { DataModelsService } from '../../src/data-models/data-models.service';
 import { DiagramEngine } from '../../src/data-models/diagram-engine';
 import { StructuredAnalysisService } from '../../src/structured-analysis/structured-analysis.service';
 import { UseCasesService } from '../../src/use-cases/use-cases.service';
+import { approved } from './support/construction-fixtures';
 import { createTestContext, createWorkspace, type TestContext } from './support/test-app';
 
 const FAKE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><g></g></svg>';
@@ -38,7 +39,7 @@ async function approveSource(ctx: TestContext, projectId: string, title: string)
     projectId,
     {
       title,
-      sourceKind: 'NOTES',
+      sourceKind: 'TEXT',
       purpose: 'Conocimiento del proyecto',
       description: 'Contenido de prueba.',
     },
@@ -69,7 +70,7 @@ describe('Traceability graph integration', () => {
       objective: 'o',
       scopeItems: [],
       actors: [{ name: 'Usuario' }],
-      needs: [],
+      needs: [{ description: 'Registrar datos' }],
       constraints: [],
       businessRules: [],
       sourceVersionIds: [source.version.id],
@@ -77,7 +78,7 @@ describe('Traceability graph integration', () => {
     await ctx.projectContext.transition(projectId, context.version.id, 'IN_REVIEW');
     await ctx.projectContext.transition(projectId, context.version.id, 'APPROVED');
 
-    const requirementsAi = fakeAi(ctx, 'requirements.generate', 2, {
+    const requirementsAi = fakeAi(ctx, 'requirements.generate', 3, {
       candidates: [
         {
           candidateId: 'rc1',
@@ -88,13 +89,14 @@ describe('Traceability graph integration', () => {
           actors: ['Usuario'],
           preconditions: [],
           postconditions: [],
+          contextItemCodes: ['N-1'],
           dependencyCandidateIds: [],
         },
       ],
     });
     const { RequirementsService } = await import('../../src/requirements/requirements.service');
     const requirementsService = new RequirementsService(ctx.prisma, requirementsAi, {
-      retrieve: async () => [],
+      searchSources: async () => [],
     } as never);
     const rfGeneration = await requirementsService.generate(projectId, context.version.id);
     const rfAccepted = (
@@ -113,7 +115,7 @@ describe('Traceability graph integration', () => {
       'APPROVED',
     );
 
-    const useCasesAi = fakeAi(ctx, 'use-cases.generate', 1, {
+    const useCasesAi = fakeAi(ctx, 'use-cases.generate', 2, {
       candidates: [
         {
           candidateId: 'uc1',
@@ -139,7 +141,7 @@ describe('Traceability graph integration', () => {
 
     const dataModelsService = new DataModelsService(
       ctx.prisma,
-      fakeAi(ctx, 'data-model.generate', 1, {
+      fakeAi(ctx, 'data-model.generate', 2, {
         candidates: [
           {
             candidateId: 'dm1',
@@ -216,7 +218,7 @@ describe('Traceability graph integration', () => {
     // StructuredAnalysisGenerationSource — never inferred from adjacency.
     const softwareArchitectureService = new StructuredAnalysisService(
       ctx.prisma,
-      fakeAi(ctx, 'software-architecture.generate', 2, {
+      fakeAi(ctx, 'software-architecture.generate', 3, {
         style: 'Monolito modular',
         components: [{ localId: 'api', name: 'API' }],
         dependencies: [],
@@ -240,7 +242,7 @@ describe('Traceability graph integration', () => {
 
     const systemArchitectureService = new StructuredAnalysisService(
       ctx.prisma,
-      fakeAi(ctx, 'system-architecture.generate', 2, {
+      fakeAi(ctx, 'system-architecture.generate', 3, {
         boundary: 'Sistema',
         nodes: [{ localId: 'server', name: 'Servidor', kind: 'RUNTIME' as const }],
         links: [],
@@ -262,13 +264,23 @@ describe('Traceability graph integration', () => {
     const uiBlueprintService = new StructuredAnalysisService(
       ctx.prisma,
       fakeAi(ctx, 'ui-blueprint.generate', 2, {
-        screens: [{ localId: 'home', name: 'Inicio', purpose: 'Ver panel' }],
+        screens: [
+          {
+            localId: 'home',
+            name: 'Inicio',
+            purpose: 'Ver panel',
+            navigationNodeLocalId: 'home',
+            relatedUseCaseCodes: ['CU-001'],
+            relatedSourceCodes: ['CU-001'],
+          },
+        ],
       }),
       new DiagramEngine(),
       new FakeDiagramProvider({ svg: FAKE_SVG }),
     );
     const blueprintGeneration = await uiBlueprintService.generate(projectId, 'UI_BLUEPRINT', [
       navAccepted.version.id,
+      ucAccepted.version.id,
     ]);
     const blueprintAccepted = (
       await uiBlueprintService.accept(projectId, 'UI_BLUEPRINT', blueprintGeneration.id, [
@@ -289,6 +301,9 @@ describe('Traceability graph integration', () => {
       blueprintAccepted.version.id,
       'APPROVED',
     );
+
+    // New projects paint their mockups with an approved theme (DEC-118).
+    const theme = await approved(ctx, projectId, 'DESIGN_THEME');
 
     const mockupJob = await ctx.mockups.create(projectId, blueprintAccepted.version.id);
     await ctx.mockups.runJob(mockupJob.id);
@@ -377,6 +392,11 @@ describe('Traceability graph integration', () => {
       fromId: blueprintNode.id,
       toId: mockupNode.id,
     });
+    expect(edges).toContainEqual({
+      type: 'DESIGN_THEME_SOURCE_FOR_MOCKUP',
+      fromId: theme.version.id,
+      toId: mockupNode.id,
+    });
 
     // No self-loop edges from the ER/Navigation/etc self-referencing diagram
     // bookkeeping rows.
@@ -385,7 +405,7 @@ describe('Traceability graph integration', () => {
     // Requirement node carries real generation provenance.
     expect(requirementNode.generation).toMatchObject({
       promptKey: 'requirements.generate',
-      promptVersion: 2,
+      promptVersion: 3,
       provider: 'fake',
     });
     // Deterministic diagram node carries generator provenance, not AI.

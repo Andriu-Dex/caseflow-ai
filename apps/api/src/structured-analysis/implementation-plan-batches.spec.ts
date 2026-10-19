@@ -1,0 +1,474 @@
+import { describe, expect, it } from 'vitest';
+import {
+  addRelations,
+  camelParams,
+  classesWithoutPlanEntity,
+  cleanSkeleton,
+  derivedTests,
+  fillMissingEntities,
+  fillMissingRoutes,
+  fillProvenance,
+  finishRoutes,
+  mergeActionBatch,
+  mergeEntityBatch,
+  mergeRouteBatch,
+  pendingActions,
+  screensWithoutRoute,
+  type BlueprintScreen,
+  type ClassRelationship,
+  type DomainClass,
+  type IpEntity,
+  type PlanContext,
+} from './implementation-plan-batches';
+
+const context: PlanContext = {
+  moduleIds: new Set(['orders', 'stock']),
+  roles: new Set(['Admin']),
+  sourceCodes: new Set(['RF-001']),
+};
+const cls = (localId: string, name: string, extra: Partial<DomainClass> = {}): DomainClass => ({
+  localId,
+  name,
+  stereotype: 'ENTITY',
+  attributes: [],
+  methods: [],
+  ...extra,
+});
+const entity = (
+  localId: string,
+  classLocalId: string,
+  extra: Partial<IpEntity> = {},
+): IpEntity => ({
+  localId,
+  name: `E${localId}`,
+  moduleLocalId: 'orders',
+  classLocalId,
+  fields: [{ name: 'name', type: 'STRING', required: true, unique: false, enumValues: [] }],
+  relations: [],
+  operations: ['LIST', 'CREATE'],
+  readRoles: [],
+  writeRoles: [],
+  ...extra,
+});
+const draft = (localId: string, classLocalId: string, extra: Partial<IpEntity> = {}) => {
+  const { relations: _relations, ...rest } = entity(localId, classLocalId, extra);
+  void _relations;
+  return rest;
+};
+const screen = (localId: string, extra: Partial<BlueprintScreen> = {}): BlueprintScreen => ({
+  localId,
+  name: `Pantalla ${localId}`,
+  purpose: 'Pantalla.',
+  targetActors: [],
+  relatedUseCaseCodes: [],
+  sections: [],
+  primaryActions: [],
+  secondaryActions: [],
+  principalData: [],
+  forms: [],
+  states: [],
+  ...extra,
+});
+
+describe('cleanSkeleton', () => {
+  const module = (localId: string, name: string) => ({
+    localId,
+    name,
+    description: 'M.',
+    relatedSourceCodes: ['RF-001', 'XX-1'],
+  });
+  const skeleton = (modules: ReturnType<typeof module>[]) => ({
+    authentication: { required: true, roles: ['Admin', 'Admin'] },
+    modules,
+    envVars: [],
+  });
+  it('drops unknown sources and repeated roles, and refuses repeated modules', () => {
+    const cleaned = cleanSkeleton(skeleton([module('a', 'Orders')]), context.sourceCodes);
+    expect(cleaned.modules[0]!.relatedSourceCodes).toEqual(['RF-001']);
+    expect(cleaned.authentication.roles).toEqual(['Admin']);
+    expect(() =>
+      cleanSkeleton(skeleton([module('a', 'Orders'), module('b', 'Orders')]), context.sourceCodes),
+    ).toThrow('repite');
+  });
+});
+
+describe('mergeEntityBatch', () => {
+  const targets = [cls('a', 'A'), cls('b', 'B')];
+  const all = new Set(['a', 'b', 'c']);
+  it('corrects what the plan cross-checks instead of failing', () => {
+    const merged = mergeEntityBatch(
+      [],
+      {
+        entities: [
+          draft('x', 'a', {
+            moduleLocalId: 'nope',
+            readRoles: ['Admin', 'Ghost'],
+            fields: [
+              { name: 'id', type: 'STRING', required: true, unique: false, enumValues: [] },
+              { name: 'kind', type: 'ENUM', required: true, unique: false, enumValues: [] },
+              { name: 'note', type: 'TEXT', required: false, unique: false, enumValues: ['X'] },
+            ],
+          }),
+        ],
+      },
+      targets,
+      context,
+      all,
+    );
+    expect(merged[0]).toMatchObject({ moduleLocalId: 'orders', readRoles: ['Admin'] });
+    expect(merged[0]!.fields).toEqual([
+      expect.objectContaining({ name: 'kind', type: 'STRING' }),
+      expect.objectContaining({ name: 'note', type: 'TEXT', enumValues: [] }),
+    ]);
+  });
+  it('keeps names unique, drops a class already done and refuses an unknown one', () => {
+    const first = mergeEntityBatch(
+      [],
+      { entities: [draft('x', 'a', { name: 'Thing' })] },
+      targets,
+      context,
+      all,
+    );
+    const second = mergeEntityBatch(
+      first,
+      { entities: [draft('x', 'a'), draft('y', 'b', { name: 'Thing' })] },
+      [cls('b', 'B')],
+      context,
+      all,
+    );
+    expect(second.map((e) => e.name)).toEqual(['Thing', 'Thing2']);
+    const merge = (value: IpEntity) =>
+      mergeEntityBatch([], { entities: [draft('z', value.classLocalId!)] }, targets, context, all);
+    expect(() => merge(entity('z', 'nope'))).toThrow('no es de este lote');
+  });
+});
+
+describe('fillMissingEntities', () => {
+  it('makes the entity of a class from its attributes, reading types and enumerations', () => {
+    const classes = [
+      cls('a', 'Pedido de Compra', {
+        attributes: [
+          { name: 'Fecha de entrega', type: 'Date', visibility: 'PRIVATE', required: true },
+          { name: 'Total', type: 'Decimal', visibility: 'PRIVATE', required: true },
+          { name: 'Estado', type: 'EstadoPedido', visibility: 'PRIVATE', required: false },
+          { name: 'id', type: 'UUID', visibility: 'PRIVATE', required: true },
+        ],
+      }),
+      cls('e', 'EstadoPedido', {
+        stereotype: 'ENUMERATION',
+        attributes: [
+          { name: 'Abierto', type: 'String', visibility: 'PUBLIC', required: true },
+          { name: 'Cerrado', type: 'String', visibility: 'PUBLIC', required: true },
+        ],
+      }),
+    ];
+    const [filled] = fillMissingEntities([], [classes[0]!], classes, context, () => 'stock');
+    expect(filled).toMatchObject({
+      name: 'PedidoDeCompra',
+      moduleLocalId: 'stock',
+      classLocalId: 'a',
+    });
+    expect(filled!.fields).toEqual([
+      expect.objectContaining({ name: 'fechaDeEntrega', type: 'DATE' }),
+      expect.objectContaining({ name: 'total', type: 'DECIMAL' }),
+      expect.objectContaining({ name: 'estado', type: 'ENUM', enumValues: ['ABIERTO', 'CERRADO'] }),
+    ]);
+    expect(classesWithoutPlanEntity([filled!], classes)).toEqual([classes[1]]);
+  });
+});
+
+describe('addRelations', () => {
+  const entities = [entity('o', 'co', { name: 'Order' }), entity('c', 'cc', { name: 'Customer' })];
+  const rel = (relation: Partial<ClassRelationship>): ClassRelationship => ({
+    fromLocalId: 'co',
+    toLocalId: 'cc',
+    kind: 'ASSOCIATION',
+    ...relation,
+  });
+  it('puts the relation on the many side, pointing at the one side', () => {
+    const [order, customer] = addRelations(entities, [
+      rel({ fromMultiplicity: '*', toMultiplicity: '1' }),
+    ]);
+    expect(order!.relations).toEqual([
+      { name: 'customer', kind: 'MANY_TO_ONE', targetEntityLocalId: 'c', required: true },
+    ]);
+    expect(customer!.relations).toEqual([]);
+  });
+  it('joins a pair once, maps one-to-one and many-to-many, and ignores inheritance', () => {
+    const [a, b] = addRelations(entities, [
+      rel({ fromMultiplicity: '*', toMultiplicity: '*' }),
+      rel({ fromMultiplicity: '1', toMultiplicity: '1' }),
+      rel({ kind: 'INHERITANCE' }),
+    ]);
+    expect(a!.relations.map((r) => r.kind)).toEqual(['MANY_TO_MANY']);
+    expect(b!.relations).toEqual([]);
+  });
+  it('keeps two differently labelled relations between the same two entities', () => {
+    const [a] = addRelations(entities, [
+      rel({ label: 'opera en', fromMultiplicity: '*', toMultiplicity: '*' }),
+      rel({ label: 'es responsable de', fromMultiplicity: '*', toMultiplicity: '*' }),
+    ]);
+    expect(a!.relations).toHaveLength(2);
+  });
+});
+
+describe('routes', () => {
+  const home = screen('home', {
+    primaryActions: ['Nuevo pedido', 'Confirmar'],
+    secondaryActions: ['Ver'],
+  });
+  const orders = [entity('o', 'co', { operations: ['LIST', 'CREATE'] })];
+  const allScreens = new Set(['home', 'other']);
+  const route = (extra: Record<string, unknown> = {}) => ({
+    path: '/orders',
+    screenName: 'Inicio',
+    screenLocalId: 'home',
+    moduleLocalId: 'nope',
+    kind: 'LIST' as const,
+    entityLocalId: 'o',
+    actions: [],
+    ...extra,
+  });
+  const merge = (value: ReturnType<typeof route>[], endpoints: never[] = []) =>
+    mergeRouteBatch(
+      { routes: [], customEndpoints: [] },
+      { routes: value as never, customEndpoints: endpoints },
+      [home],
+      orders,
+      context,
+      allScreens,
+    );
+  it('keeps only the actions the screen has and something real serves', () => {
+    const merged = merge([
+      route({
+        actions: [
+          { label: 'Nuevo pedido', operation: 'CREATE' },
+          { label: 'Nuevo pedido', operation: 'LIST' },
+          { label: 'Ver', operation: 'GET' },
+          { label: 'Otra', operation: 'LIST' },
+          { label: 'Confirmar', endpoint: 'POST /nada' },
+        ],
+      }),
+    ]);
+    expect(merged.routes[0]!.actions).toEqual([{ label: 'Nuevo pedido', operation: 'CREATE' }]);
+    expect(merged.routes[0]).toMatchObject({ moduleLocalId: 'orders', entityLocalId: 'o' });
+  });
+  it('settles an action the model gave both an operation and an endpoint, or neither', () => {
+    const merged = merge(
+      [
+        route({
+          actions: [
+            // Both: the operation the entity offers wins.
+            { label: 'Nuevo pedido', operation: 'CREATE', endpoint: 'POST /orders/:id/new' },
+            // Both, but the entity does not offer the operation: the endpoint serves it.
+            { label: 'Confirmar', operation: 'DELETE', endpoint: 'POST /orders/:id/confirm' },
+            // Neither: dropped.
+            { label: 'Ver' },
+          ],
+        }),
+      ],
+      [
+        {
+          moduleLocalId: 'orders',
+          method: 'POST',
+          path: '/orders/:id/confirm',
+          summary: 'Confirmar',
+          roles: [],
+        },
+      ] as never,
+    );
+    expect(merged.routes[0]!.actions).toEqual([
+      { label: 'Nuevo pedido', operation: 'CREATE' },
+      { label: 'Confirmar', endpoint: 'POST /orders/:id/confirm' },
+    ]);
+  });
+  it('makes paths unique, refuses a screen of no batch and asks for the missing ones again', () => {
+    const merged = merge([route(), route()]);
+    expect(merged.routes.map((r) => r.path)).toEqual(['/orders', '/orders-2']);
+    expect(() => merge([route({ screenLocalId: 'nope' })])).toThrow('no es de este lote');
+    expect(screensWithoutRoute({ routes: [], customEndpoints: [] }, [home])).toEqual([home]);
+    const filled = fillMissingRoutes({ routes: [], customEndpoints: [] }, [home], context);
+    expect(filled.routes[0]).toMatchObject({ path: '/pantalla-home', kind: 'CUSTOM' });
+  });
+  it('serves a primary action by the CRUD operation its label names and drops unused endpoints', () => {
+    const done = finishRoutes(
+      {
+        routes: [route({ moduleLocalId: 'orders' }) as never],
+        customEndpoints: [
+          {
+            moduleLocalId: 'orders',
+            method: 'POST',
+            path: '/orders/:id/x',
+            summary: 'X',
+            roles: [],
+          },
+        ],
+      },
+      [home],
+      orders,
+    );
+    // 'Confirmar' has no CRUD operation and is not a read: its own POST serves it.
+    expect(done.routes[0]!.actions).toEqual([
+      { label: 'Nuevo pedido', operation: 'CREATE' },
+      { label: 'Confirmar', endpoint: 'POST /orders/actions/1' },
+    ]);
+    // The unused endpoint is dropped; only the one of the action remains.
+    expect(done.customEndpoints.map((endpoint) => `${endpoint.method} ${endpoint.path}`)).toEqual([
+      'POST /orders/actions/1',
+    ]);
+  });
+});
+
+describe('route actions and provenance fallbacks', () => {
+  const report = screen('rep', { primaryActions: ['Consultar reporte'], secondaryActions: [] });
+  const reportRoute = {
+    path: '/reportes/[periodoId]',
+    screenName: 'Reporte',
+    screenLocalId: 'rep',
+    moduleLocalId: 'orders',
+    kind: 'DASHBOARD' as const,
+    actions: [],
+  };
+  it('serves an action nothing else serves by the GET query of its route', () => {
+    const done = finishRoutes(
+      { routes: [reportRoute as never], customEndpoints: [] },
+      [report],
+      [],
+    );
+    expect(done.routes[0]!.actions).toEqual([
+      { label: 'Consultar reporte', endpoint: 'GET /reportes/:periodoId' },
+    ]);
+    expect(done.customEndpoints).toMatchObject([{ method: 'GET', path: '/reportes/:periodoId' }]);
+  });
+  it('serves a writing action by its own POST, not a GET, and does not read "borrador" as delete', () => {
+    const sale = screen('sale', {
+      primaryActions: ['Confirmar la venta', 'Guardar cambios del borrador'],
+      secondaryActions: [],
+    });
+    const done = finishRoutes(
+      {
+        routes: [
+          {
+            ...reportRoute,
+            screenLocalId: 'sale',
+            path: '/ventas/[ventaId]',
+            entityLocalId: 'o',
+          } as never,
+        ],
+        customEndpoints: [],
+      },
+      [sale],
+      [entity('o', 'co', { operations: ['GET', 'DELETE'], writeRoles: ['Cajero'] })],
+      ['Cajero', 'Administrador'],
+    );
+    expect(done.routes[0]!.actions).toEqual([
+      { label: 'Confirmar la venta', endpoint: 'POST /ventas/:ventaId/actions/1' },
+      {
+        label: 'Guardar cambios del borrador',
+        endpoint: 'POST /ventas/:ventaId/actions/2',
+      },
+    ]);
+    expect(done.customEndpoints.every((endpoint) => endpoint.roles.join() === 'Cajero')).toBe(true);
+  });
+  it('asks the model only for the writing actions nothing serves, and attaches what it answers', () => {
+    const sale = screen('sale', {
+      primaryActions: ['Confirmar la venta', 'Ver', 'Nuevo pedido'],
+      secondaryActions: [],
+    });
+    const orders = [entity('o', 'co', { operations: ['GET', 'CREATE'] })];
+    const base = {
+      routes: [
+        {
+          ...reportRoute,
+          screenLocalId: 'sale',
+          path: '/sales/[saleId]',
+          entityLocalId: 'o',
+          actions: [],
+        } as never,
+      ],
+      customEndpoints: [],
+    };
+    // 'Ver' and 'Nuevo pedido' are settled by CRUD operations, so only one is pending.
+    expect(pendingActions(base, [sale], orders)).toEqual([
+      {
+        screenLocalId: 'sale',
+        path: '/sales/[saleId]',
+        entityLocalId: 'o',
+        pendingActions: ['Confirmar la venta'],
+      },
+    ]);
+    const merged = mergeActionBatch(
+      base,
+      {
+        routes: [
+          {
+            screenLocalId: 'sale',
+            actions: [
+              { label: 'Confirmar la venta', endpoint: 'POST /sales/:saleId/confirm' },
+              { label: 'Otra', operation: 'GET' },
+            ],
+          },
+        ],
+        customEndpoints: [
+          {
+            moduleLocalId: 'orders',
+            method: 'POST',
+            path: '/sales/:saleId/confirm',
+            summary: 'Confirmar',
+            roles: [],
+          },
+        ] as never,
+      },
+      [sale],
+      orders,
+      context,
+    );
+    expect(merged.routes[0]!.actions).toEqual([
+      { label: 'Confirmar la venta', endpoint: 'POST /sales/:saleId/confirm' },
+    ]);
+    expect(merged.customEndpoints.map((endpoint) => endpoint.path)).toEqual([
+      '/sales/:saleId/confirm',
+    ]);
+  });
+  it('writes lower-case path parameters in camelCase', () => {
+    expect(camelParams('/checkout/[saleid]/lines/:lineid')).toBe(
+      '/checkout/[saleId]/lines/:lineId',
+    );
+    expect(camelParams('POST /sales/:saleid/confirm')).toBe('POST /sales/:saleId/confirm');
+    // Already right, or just "id", stays as it is.
+    expect(camelParams('/a/[saleId]/b/:id')).toBe('/a/[saleId]/b/:id');
+  });
+  it('cites the design sources it comes from when the model cited none, and keeps what it cited', () => {
+    const filled = fillProvenance(
+      {
+        authentication: { required: true, roles: [] },
+        modules: [{ localId: 'a' }, { localId: 'b', relatedSourceCodes: ['X-1'] }],
+        envVars: [],
+      } as never,
+      [{ localId: 'e' }] as never,
+      { routes: [{ path: '/a' }] as never, customEndpoints: [{ path: '/b' }] as never },
+      { modules: ['PG-1'], entities: ['MC-1', 'DC-1'], routes: ['UI-1'], endpoints: ['SARQ-1'] },
+    );
+    expect(filled.skeleton.modules.map((m) => m.relatedSourceCodes)).toEqual([['PG-1'], ['X-1']]);
+    expect(filled.entities[0]!.relatedSourceCodes).toEqual(['MC-1', 'DC-1']);
+    expect(filled.routes.routes[0]!.relatedSourceCodes).toEqual(['UI-1']);
+    expect(filled.routes.customEndpoints[0]!.relatedSourceCodes).toEqual(['SARQ-1']);
+  });
+});
+
+describe('derivedTests', () => {
+  it('plans unit and integration tests per module, and end-to-end ones where there are routes', () => {
+    const modules = [
+      { localId: 'orders', name: 'Orders', description: 'O.' },
+      { localId: 'stock', name: 'Stock', description: 'S.' },
+    ];
+    const tests = derivedTests(modules, [{ moduleLocalId: 'orders' } as never]);
+    expect(tests.map((t) => `${t.moduleLocalId}:${t.kind}`)).toEqual([
+      'orders:UNIT',
+      'orders:INTEGRATION',
+      'orders:E2E',
+      'stock:UNIT',
+      'stock:INTEGRATION',
+    ]);
+  });
+});

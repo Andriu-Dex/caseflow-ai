@@ -54,14 +54,25 @@ const navigationModel = {
 };
 const softwareArchitectureModel = {
   components: [
-    { localId: 'api', name: 'API' },
+    {
+      localId: 'api',
+      name: 'API',
+      responsibilities: ['Registrar operaciones auditables'],
+      relatedSourceCodes: ['RNF-001'],
+    },
     { localId: 'web', name: 'Web' },
   ],
   dependencies: [{ fromLocalId: 'web', toLocalId: 'api', description: 'calls' }],
 };
 const systemArchitectureModel = {
   nodes: [
-    { localId: 'server', name: 'Server', kind: 'RUNTIME' },
+    {
+      localId: 'server',
+      name: 'Server',
+      kind: 'RUNTIME',
+      responsibilities: ['Aplicar autenticación'],
+      relatedSourceCodes: ['RNF-002'],
+    },
     { localId: 'db', name: 'Database', kind: 'DATABASE' },
   ],
   links: [{ fromLocalId: 'server', toLocalId: 'db', description: 'reads/writes' }],

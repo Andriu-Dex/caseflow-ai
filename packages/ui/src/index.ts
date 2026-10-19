@@ -23,6 +23,13 @@ export {
   DialogTitle,
   DialogTrigger,
 } from './components/ui/dialog';
+export {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from './components/ui/dropdown-menu';
 export { Input } from './components/ui/input';
 export { Label } from './components/ui/label';
 export {

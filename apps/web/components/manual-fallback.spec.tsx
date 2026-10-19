@@ -19,7 +19,15 @@ const structuredCreate = vi.fn().mockResolvedValue({});
 
 vi.mock('../lib/api', () => ({
   api: {
-    requirements: { create: (...args: unknown[]) => requirementsCreate(...args) },
+    requirements: {
+      latestGeneration: vi.fn(async () => ({ job: null })),
+      startGeneration: vi.fn(),
+      generation: vi.fn(),
+      create: (...args: unknown[]) => requirementsCreate(...args),
+      // No approved context yet: nothing to cite.
+      contextCoverage: vi.fn(async () => ({ context: null, items: [], withoutOrigin: [] })),
+    },
+    context: { getCurrent: vi.fn(async () => Promise.reject(new Error('sin contexto'))) },
     useCases: { create: (...args: unknown[]) => useCasesCreate(...args) },
     dataModels: { create: (...args: unknown[]) => dataModelsCreate(...args) },
     structuredAnalysis: { create: (...args: unknown[]) => structuredCreate(...args) },
@@ -50,6 +58,8 @@ describe('manual non-AI creation fallbacks (behavior 22)', () => {
       screen.getByLabelText(/descripción/i),
       'El sistema debe permitir registrar pedidos',
     );
+    await user.click(screen.getByRole('radio', { name: 'Decisión propia' }));
+    await user.type(screen.getByLabelText('Justificación'), 'Lo pidió el cliente.');
     await user.click(screen.getByRole('button', { name: /crear requisito/i }));
 
     await waitFor(() => expect(requirementsCreate).toHaveBeenCalledTimes(1));
@@ -60,6 +70,7 @@ describe('manual non-AI creation fallbacks (behavior 22)', () => {
         name: 'Registrar pedido',
         description: 'El sistema debe permitir registrar pedidos',
         dependencyArtifactIds: [],
+        origin: { kind: 'USER_DECISION', justification: 'Lo pidió el cliente.' },
       }),
     );
   });
@@ -84,7 +95,10 @@ describe('manual non-AI creation fallbacks (behavior 22)', () => {
     );
     await user.type(screen.getByLabelText(/^nombre$/i), 'Registrar pedido');
     await user.type(screen.getByLabelText(/descripción/i), 'Requiere sesión iniciada');
-    await user.click(screen.getByLabelText(/RF-001 — Autenticar usuario/i));
+    await user.type(screen.getByLabelText('Buscar requisito del que depende'), 'RF-001');
+    await user.click(screen.getByRole('button', { name: /RF-001 Autenticar usuario/i }));
+    await user.click(screen.getByRole('radio', { name: 'Decisión propia' }));
+    await user.type(screen.getByLabelText('Justificación'), 'Necesario para registrar pedidos.');
     await user.click(screen.getByRole('button', { name: /crear requisito/i }));
 
     await waitFor(() => expect(requirementsCreate).toHaveBeenCalledTimes(1));
@@ -102,12 +116,18 @@ describe('manual non-AI creation fallbacks (behavior 22)', () => {
       requirement: { name: 'Registrar pedido' },
       version: { id: 'rv1', status: 'APPROVED' },
     } as unknown as Parameters<typeof UseCaseManualForm>[0]['approvedRequirements'][number];
+    const otherUseCase = {
+      id: 'uc-pago',
+      code: 'CU-002',
+      useCase: { name: 'Pagar pedido' },
+    } as unknown as NonNullable<Parameters<typeof UseCaseManualForm>[0]['useCases']>[number];
 
     render(
       <TestProviders>
         <UseCaseManualForm
           projectId="p1"
           approvedRequirements={[requirement]}
+          useCases={[otherUseCase]}
           onCreated={vi.fn()}
           onCancel={vi.fn()}
         />
@@ -122,10 +142,14 @@ describe('manual non-AI creation fallbacks (behavior 22)', () => {
     await user.click(screen.getByText(/agregar flujo alternativo/i));
     await user.type(screen.getByLabelText(/nombre del flujo alternativo 1/i), 'Pago rechazado');
     await user.type(screen.getByLabelText(/condición del flujo alternativo 1/i), 'El pago falla');
+    await user.type(screen.getByLabelText('Actor del paso 1 del flujo alternativo 1'), 'Sistema');
     await user.type(
-      screen.getByLabelText(/pasos del flujo alternativo 1/i),
-      'Sistema: Notifica el rechazo',
+      screen.getByLabelText('Acción del paso 1 del flujo alternativo 1'),
+      'Notifica el rechazo',
     );
+    await user.click(screen.getByRole('button', { name: 'Agregar relación' }));
+    await user.selectOptions(screen.getByLabelText('Tipo de la relación 1'), 'EXTEND');
+    expect(screen.getByLabelText('Caso de uso de la relación 1')).toHaveValue('uc-pago');
     await user.click(screen.getByLabelText(/RF-001/i));
     await user.click(screen.getByRole('button', { name: /crear caso de uso/i }));
 
@@ -135,11 +159,13 @@ describe('manual non-AI creation fallbacks (behavior 22)', () => {
       {
         name: string;
         relatedRequirementVersionIds: string[];
+        relations: unknown[];
         alternativeFlows: { name: string; condition: string; steps: unknown[] }[];
       },
     ];
     expect(payload.name).toBe('Registrar pedido');
     expect(payload.relatedRequirementVersionIds).toEqual(['rv1']);
+    expect(payload.relations).toEqual([{ kind: 'EXTEND', targetUseCaseId: 'uc-pago' }]);
     expect(payload.alternativeFlows).toEqual([
       {
         name: 'Pago rechazado',

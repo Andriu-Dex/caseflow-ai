@@ -1,14 +1,36 @@
 'use client';
 
-import { GenerationOverlay } from '../../components/generation-overlay';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Archive, Pencil, Trash2, Upload, X } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  AlertTriangle,
+  Archive,
+  ArchiveRestore,
+  Check,
+  ChevronRight,
+  Columns2,
+  Download,
+  FileText,
+  Loader2,
+  MoreHorizontal,
+  Pencil,
+  RefreshCw,
+  Sparkles,
+  Trash2,
+  Upload,
+  Search,
+  X,
+} from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { toast } from 'sonner';
-import type {
-  ProjectSourceKind,
-  SourceReportCandidate,
-  SourceResponse,
+import {
+  SELECTABLE_SOURCE_KINDS,
+  sourceKindAcceptsMimeType,
+  sourceKindForMimeType,
+  type ProjectSourceKind,
+  type SourceReportJob,
+  type SourceResponse,
+  type StalenessAnalysisResponse,
 } from '@caseflow-ai/contracts';
 import {
   Badge,
@@ -17,8 +39,12 @@ import {
   DialogContent,
   DialogDescription,
   DialogFooter,
-  DialogHeader,
   DialogTitle,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
   Input,
   Label,
   Select,
@@ -28,44 +54,52 @@ import {
   SelectValue,
   Textarea,
 } from '@caseflow-ai/ui';
-import { api, ApiError } from '../../lib/api';
+import { api, ApiError, downloadFile } from '../../lib/api';
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { PageHeading } from '../../components/page-heading';
+import { PaginationNav } from '../../components/pagination-nav';
+import { AddSection } from '../../components/add-section';
+import { ReadableText } from '../../components/readable-text';
 import { StatusBadge } from '../../components/status-badge';
+import {
+  ExtractedTextPanel,
+  SOURCE_KIND_LABELS,
+  SourceKindHint,
+  SourceCompareDialog,
+  SourceStatusBadge,
+  sourceKindAccept,
+  sourceStatus,
+  useSourceCapabilities,
+} from '../../components/source-panels';
 
-const SOURCE_KIND_LABELS: Record<ProjectSourceKind, string> = {
-  PDF: 'Documento PDF',
-  AUDIO: 'Audio',
-  IMAGE: 'Imagen',
-  FORM: 'Formulario',
-  INVOICE: 'Factura',
-  TEXT: 'Texto',
-  NOTES: 'Notas',
-  OTHER: 'Otro',
-};
+// A source doesn't become stale itself — it's the authoritative, newer
+// knowledge. What can happen is that something *downstream* (today, only
+// the Project Context) hasn't incorporated it yet. Home and Trazabilidad
+// already point the user at that; this surfaces the same concrete reason
+// right where the source itself lives, instead of leaving this page silent
+// about why there's more than one approved version to begin with.
+function outboundStalenessMessages(
+  staleness: StalenessAnalysisResponse | undefined,
+  sourceArtifactId: string,
+): string[] {
+  if (!staleness) return [];
+  const messages = new Set<string>();
+  for (const entry of staleness.entries)
+    for (const reason of entry.reasons)
+      if (reason.sourceArtifactId === sourceArtifactId) messages.add(reason.message);
+  return [...messages];
+}
 
-const SOURCE_KINDS = Object.keys(SOURCE_KIND_LABELS) as ProjectSourceKind[];
-
-// Narrows the file picker to plausible extensions for the selected kind.
-// Advisory only (the backend is the real authority on what it accepts) —
-// TEXT/NOTES/FORM/OTHER stay open-ended since their real-world formats vary.
-const SOURCE_KIND_ACCEPT: Partial<Record<ProjectSourceKind, string>> = {
-  PDF: 'application/pdf,.pdf',
-  AUDIO: 'audio/*',
-  IMAGE: 'image/*',
-  INVOICE: 'application/pdf,.pdf,image/*',
-  TEXT: '.txt,.md,.docx,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-};
-
-const EXTRACTION_LABEL: Record<string, string> = {
-  EXTRACTED: 'Extracción automática',
-  MANUAL: 'Transcripción manual',
-  PENDING: 'Pendiente de extracción',
-  UNSUPPORTED: 'No extraído (tipo no soportado automáticamente)',
-  FAILED: 'La extracción automática falló',
-};
-
-function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreated: () => void }) {
+function CreateSourceForm({
+  projectId,
+  onCreated,
+  onClose,
+}: {
+  projectId: string;
+  onCreated: () => void;
+  // Absent while the project has no sources: the form is the page's content.
+  onClose?: () => void;
+}) {
   const [title, setTitle] = useState('');
   const [sourceKind, setSourceKind] = useState<ProjectSourceKind>('NOTES');
   const [purpose, setPurpose] = useState('');
@@ -73,6 +107,41 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
   const [description, setDescription] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const capabilities = useSourceCapabilities(projectId);
+
+  function clearFile() {
+    setFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  // The kind follows the file: a file of another format switches the kind
+  // (with a notice) instead of failing on upload.
+  function chooseFile(next: File | null) {
+    if (next && next.type && !sourceKindAcceptsMimeType(sourceKind, next.type)) {
+      const detected = sourceKindForMimeType(next.type);
+      if (!detected) {
+        toast.error('Este formato de archivo no está permitido.');
+        clearFile();
+        return;
+      }
+      setSourceKind(detected);
+      toast.info(`Se cambió el tipo a «${SOURCE_KIND_LABELS[detected]}» según el archivo.`);
+    }
+    setFile(next);
+  }
+
+  function chooseKind(next: ProjectSourceKind) {
+    setSourceKind(next);
+    if (file && !sourceKindAcceptsMimeType(next, file.type)) {
+      clearFile();
+      toast.info(
+        next === 'NOTES'
+          ? 'Las notas no llevan archivo; se quitó el archivo seleccionado.'
+          : `Se quitó el archivo: no corresponde al tipo «${SOURCE_KIND_LABELS[next]}».`,
+      );
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -93,8 +162,9 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
       setPurpose('');
       setBusinessArea('');
       setDescription('');
-      setFile(null);
+      clearFile();
       onCreated();
+      onClose?.();
       toast.success(
         created.processing
           ? 'Fuente guardada. El procesamiento continuará en segundo plano.'
@@ -107,23 +177,27 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
     }
   }
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   return (
     <form
       onSubmit={handleSubmit}
       className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4"
     >
       <h2 className="text-sm font-semibold text-foreground">Agregar fuente de conocimiento</h2>
+      {onClose ? null : (
+        <p className="text-sm text-muted-foreground">
+          Las fuentes son el conocimiento del que parte el proyecto: entrevistas, documentos,
+          normativas o notas. Agregue la primera para comenzar.
+        </p>
+      )}
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5 text-sm">
           <Label htmlFor="source-kind">Tipo de fuente</Label>
-          <Select value={sourceKind} onValueChange={(v) => setSourceKind(v as ProjectSourceKind)}>
+          <Select value={sourceKind} onValueChange={(v) => chooseKind(v as ProjectSourceKind)}>
             <SelectTrigger id="source-kind" className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {SOURCE_KINDS.map((k) => (
+              {SELECTABLE_SOURCE_KINDS.map((k) => (
                 <SelectItem key={k} value={k}>
                   {SOURCE_KIND_LABELS[k]}
                 </SelectItem>
@@ -141,6 +215,7 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
           />
         </div>
       </div>
+      <SourceKindHint kind={sourceKind} capabilities={capabilities.data} />
       <div className="flex flex-col gap-1.5 text-sm">
         <Label htmlFor="source-purpose">¿Qué representa esta fuente?</Label>
         <Textarea
@@ -166,9 +241,9 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
             ref={fileInputRef}
             id="source-file"
             type="file"
-            accept={SOURCE_KIND_ACCEPT[sourceKind]}
+            accept={sourceKindAccept(sourceKind)}
             className="sr-only"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            onChange={(e) => chooseFile(e.target.files?.[0] ?? null)}
           />
           <div className="flex gap-1">
             <Button
@@ -186,10 +261,7 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
                 variant="ghost"
                 size="icon"
                 aria-label="Quitar archivo"
-                onClick={() => {
-                  setFile(null);
-                  if (fileInputRef.current) fileInputRef.current.value = '';
-                }}
+                onClick={clearFile}
               >
                 <X className="size-4" aria-hidden="true" />
               </Button>
@@ -214,30 +286,47 @@ function CreateSourceForm({ projectId, onCreated }: { projectId: string; onCreat
           onChange={(e) => setDescription(e.target.value)}
         />
       </div>
-      {sourceKind === 'AUDIO' && file ? (
-        <p className="text-xs text-muted-foreground">
-          Si hay un servicio de transcripción configurado, el audio se enviará a ese servicio. Puede
-          registrar la fuente y transcribirla manualmente si el servicio no está disponible.
-        </p>
-      ) : null}
-      <Button type="submit" disabled={submitting} className="self-start">
-        {submitting ? 'Guardando…' : 'Agregar fuente'}
-      </Button>
+      <div className="flex gap-2">
+        <Button type="submit" disabled={submitting}>
+          {submitting ? 'Guardando…' : 'Agregar fuente'}
+        </Button>
+        {onClose ? (
+          <Button type="button" variant="ghost" disabled={submitting} onClick={onClose}>
+            Cancelar
+          </Button>
+        ) : null}
+      </div>
     </form>
   );
 }
 
-function SourceCard({ source, projectId }: { source: SourceResponse; projectId: string }) {
+function SourceCard({
+  source,
+  projectId,
+  staleness,
+}: {
+  source: SourceResponse;
+  projectId: string;
+  staleness: StalenessAnalysisResponse | undefined;
+}) {
   const [open, setOpen] = useState(false);
+  const outboundMessages = useMemo(
+    () => outboundStalenessMessages(staleness, source.id),
+    [staleness, source.id],
+  );
   const queryClient = useQueryClient();
-  const [transcript, setTranscript] = useState('');
   const [manualSummary, setManualSummary] = useState('');
-  const [generatingReport, setGeneratingReport] = useState(false);
-  const [reportCandidate, setReportCandidate] = useState<SourceReportCandidate | null>(null);
+  const [requestingReport, setRequestingReport] = useState(false);
+  const [dismissedCandidateId, setDismissedCandidateId] = useState<string | null>(null);
   const [acceptingReport, setAcceptingReport] = useState(false);
   const [approving, setApproving] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [confirming, setConfirming] = useState<'archive' | 'delete' | null>(null);
+  // The detail opens as a reading view; the original side by side and the
+  // text editor are one click away.
+  const [view, setView] = useState<'read' | 'compare' | 'edit'>('read');
+  const hasFile = Boolean(source.source.originalFilename);
+  const replaceInputRef = useRef<HTMLInputElement>(null);
 
   const report = useQuery({
     queryKey: ['source-report', projectId, source.id],
@@ -245,6 +334,29 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
     enabled: open && source.source.hasReport,
     retry: false,
   });
+  // DEC-127: the report is generated in the background; its progress is
+  // polled while it runs.
+  const reportJobKey = ['source-report-job', projectId, source.id];
+  const reportJob = useQuery({
+    queryKey: reportJobKey,
+    queryFn: () => api.sources.reportJob(projectId, source.id),
+    enabled: open && !source.source.hasReport && source.source.hasExtractedText,
+    refetchInterval: (query) =>
+      ['QUEUED', 'RUNNING'].includes(query.state.data?.job?.status ?? '') ? 2_000 : false,
+  });
+  const job = reportJob.data?.job ?? null;
+  const reportRunning = job?.status === 'QUEUED' || job?.status === 'RUNNING';
+  const reportCandidate =
+    job?.candidate && job.candidate.id !== dismissedCandidateId ? job.candidate : null;
+  // The outcome is announced once, when it changes while the user waits.
+  const previousStatus = useRef(job?.status);
+  useEffect(() => {
+    const was = previousStatus.current;
+    previousStatus.current = job?.status;
+    if (was !== 'QUEUED' && was !== 'RUNNING') return;
+    if (job?.status === 'FAILED') toast.error(job.errorMessage ?? 'No se pudo generar el reporte.');
+    if (job?.status === 'COMPLETED') toast.success('El reporte está listo para revisar.');
+  }, [job?.status, job?.errorMessage]);
   const extractedText = useQuery({
     queryKey: ['source-text', projectId, source.id, source.version.id],
     queryFn: () => api.sources.getText(projectId, source.id),
@@ -254,6 +366,8 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['sources', projectId] });
     queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
+    // A source's approved version is exactly what staleness reasons about.
+    queryClient.invalidateQueries({ queryKey: ['staleness', projectId] });
   }
 
   async function transition(status: 'IN_REVIEW' | 'APPROVED' | 'CHANGES_REQUESTED') {
@@ -278,13 +392,52 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
     }
   }
 
-  async function submitTranscript() {
+  // A new version read with the current extractor; the earlier ones stay.
+  async function reExtract() {
     try {
-      await api.sources.submitManualTranscript(projectId, source.id, transcript);
-      setTranscript('');
+      const updated = await api.sources.reExtract(projectId, source.id);
       invalidate();
+      toast.info(
+        updated.processing && ['QUEUED', 'RUNNING'].includes(updated.processing.status)
+          ? 'Se está volviendo a extraer el texto en una nueva versión.'
+          : 'Texto extraído de nuevo en una nueva versión.',
+      );
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'No se pudo guardar la transcripción.');
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo volver a extraer el texto.');
+    }
+  }
+
+  // DEC-137: the chosen file becomes the next version, with the same code.
+  async function replaceFile(file: File | undefined) {
+    if (!file) return;
+    if (file.type && !sourceKindAcceptsMimeType(source.source.sourceKind, file.type)) {
+      toast.error(
+        `El archivo debe ser del mismo tipo que la fuente (${SOURCE_KIND_LABELS[source.source.sourceKind]}).`,
+      );
+      return;
+    }
+    try {
+      const updated = await api.sources.replaceFile(projectId, source.id, file);
+      invalidate();
+      toast.success(
+        `Archivo reemplazado en la versión ${updated.version.versionNumber} de ${source.code}. Revísela y apruébela.`,
+      );
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo reemplazar el archivo.');
+    }
+  }
+
+  // DEC-137: back to the active list. With approved history, the stages after
+  // Sources ask to be reviewed, as when it was archived.
+  async function restore() {
+    try {
+      await api.sources.restore(projectId, source.id);
+      invalidate();
+      toast.success(`${source.code} vuelve a estar activa.`);
+      if (source.hasApprovedHistory)
+        toast.info('Revise los pasos siguientes: la fuente vuelve a formar parte del proyecto.');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo restaurar la fuente.');
     }
   }
 
@@ -300,10 +453,12 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
   }
 
   async function generateReport() {
-    setGeneratingReport(true);
+    setRequestingReport(true);
     try {
-      const candidate = await api.sources.generateReport(projectId, source.id);
-      setReportCandidate(candidate);
+      queryClient.setQueryData(
+        reportJobKey,
+        await api.sources.generateReport(projectId, source.id),
+      );
     } catch (err) {
       toast.error(
         err instanceof ApiError
@@ -311,7 +466,7 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
           : 'No se pudo generar el reporte con IA en este momento. Puede redactar el resumen manualmente.',
       );
     } finally {
-      setGeneratingReport(false);
+      setRequestingReport(false);
     }
   }
 
@@ -320,7 +475,7 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
     setAcceptingReport(true);
     try {
       await api.sources.acceptReport(projectId, source.id, reportCandidate.id);
-      setReportCandidate(null);
+      queryClient.invalidateQueries({ queryKey: reportJobKey });
       queryClient.invalidateQueries({ queryKey: ['source-report', projectId, source.id] });
       invalidate();
     } catch (err) {
@@ -348,34 +503,35 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
   const staleProcessing =
     processing?.status === 'RUNNING' &&
     Date.now() - new Date(processing.updatedAt).getTime() > 15 * 60_000;
-  const processingLabel =
-    processing?.status === 'QUEUED'
-      ? longWait
-        ? 'En cola desde hace varios minutos; puede transcribir manualmente o volver después'
-        : 'En cola'
-      : processing?.status === 'RUNNING'
-        ? staleProcessing
-          ? 'El procesamiento tardó demasiado; puede reintentarlo o transcribirlo manualmente'
-          : processing.processor === 'OCR'
-            ? 'Aplicando OCR'
-            : processing.processor === 'TRANSCRIPTION'
-              ? 'Transcribiendo audio'
-              : 'Extrayendo texto'
-        : processing?.status === 'FAILED'
-          ? 'Procesamiento fallido'
-          : processing?.status === 'UNSUPPORTED'
-            ? 'Procesador no disponible'
-            : EXTRACTION_LABEL[source.source.extractionState];
+  const status = sourceStatus(source);
+  const readingText = hasFile ? extractedText.data?.text : source.source.description;
+  const waitNotice = longWait
+    ? 'Lleva varios minutos en cola; puede escribir la transcripción a mano o volver después.'
+    : staleProcessing
+      ? 'El procesamiento tardó demasiado; puede reintentarlo o escribir la transcripción a mano.'
+      : null;
 
   return (
     <li className="rounded-lg border border-border bg-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <span className="font-mono text-xs text-muted-foreground">{source.code}</span>{' '}
+        <div className="flex items-center gap-1.5">
+          <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <span className="font-mono text-xs text-muted-foreground">
+            {source.code} v{source.version.versionNumber}
+          </span>
           <span className="font-medium text-foreground">{source.source.title}</span>
         </div>
         <div className="flex items-center gap-2">
           {source.archivedAt ? <Badge variant="secondary">Archivada</Badge> : null}
+          {outboundMessages.length ? (
+            <span
+              title="Hay un artefacto que aún no incorpora esta versión aprobada."
+              className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300"
+            >
+              <AlertTriangle className="size-3.5" aria-hidden="true" />
+              Pendiente de incorporar
+            </span>
+          ) : null}
           <StatusBadge status={source.version.status} />
           <Button
             variant="ghost"
@@ -388,84 +544,185 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
           </Button>
         </div>
       </div>
-      <p className="mt-1 text-sm text-muted-foreground">
-        {source.source.sourceKind} · {processingLabel}
-      </p>
-      {processing && (['FAILED', 'UNSUPPORTED'].includes(processing.status) || staleProcessing) ? (
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-amber-700">
-          <span>{processing.errorMessage}</span>
-          <Button type="button" variant="outline" size="sm" onClick={retryProcessing}>
-            Reintentar
-          </Button>
+      <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+        <span>{SOURCE_KIND_LABELS[source.source.sourceKind]}</span>
+        <SourceStatusBadge tone={status.tone} label={status.label} />
+      </div>
+      {status.reason || waitNotice ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-amber-700 dark:text-amber-400">
+          <span>{waitNotice ?? status.reason}</span>
+          {status.retryable || staleProcessing ? (
+            <Button type="button" variant="outline" size="sm" onClick={retryProcessing}>
+              Reintentar
+            </Button>
+          ) : null}
         </div>
       ) : null}
 
       {open ? (
-        <div className="mt-3 flex flex-col gap-3 border-t border-border pt-3 text-sm">
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground">
-            <dt className="font-medium">Propósito</dt>
-            <dd>{source.source.purpose}</dd>
-            {source.source.businessArea ? (
-              <>
-                <dt className="font-medium">Área de negocio</dt>
-                <dd>{source.source.businessArea}</dd>
-              </>
-            ) : null}
-            <dt className="font-medium">Archivo original</dt>
-            <dd>
-              {source.source.originalFilename && source.source.sizeBytes != null
-                ? `${source.source.originalFilename} (${source.source.mimeType}, ${Math.ceil(source.source.sizeBytes / 1024)} KB)`
-                : 'Sin archivo — solo contenido escrito'}
-            </dd>
-            <dt className="font-medium">Contenido</dt>
-            <dd>{source.source.description}</dd>
-            <dt className="font-medium">Versión</dt>
-            <dd>v{source.version.versionNumber}</dd>
-          </dl>
-
-          {source.source.hasExtractedText ? (
-            <div className="rounded-md border border-border p-3">
-              <p className="mb-2 font-medium">Texto extraído para revisión</p>
-              {extractedText.isLoading ? <p>Cargando texto…</p> : null}
-              {extractedText.isError ? <p>No se pudo cargar el texto.</p> : null}
-              {extractedText.data ? (
-                <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-xs">
-                  {extractedText.data.text}
-                </pre>
-              ) : null}
+        <div className="mt-3 flex flex-col gap-4 border-t border-border pt-3 text-sm">
+          {outboundMessages.length ? (
+            <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <div>
+                <p className="font-medium">
+                  Esta versión aprobada aún no está incorporada en todo lo que depende de ella.
+                </p>
+                <ul className="mt-1 flex flex-col gap-0.5">
+                  {outboundMessages.map((message) => (
+                    <li key={message}>{message}</li>
+                  ))}
+                </ul>
+                <p className="mt-1.5">
+                  <Link href="/context" className="underline">
+                    Ir al Contexto del Proyecto
+                  </Link>
+                </p>
+              </div>
             </div>
           ) : null}
 
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => setEditing(true)}>
-              <Pencil className="size-3.5" aria-hidden="true" />
-              Editar
-            </Button>
-            {source.hasApprovedHistory ? (
-              source.archivedAt ? null : (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setConfirmingDelete(true)}
-                >
-                  <Archive className="size-3.5" aria-hidden="true" />
-                  Archivar
-                </Button>
-              )
-            ) : (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="border-destructive/40 text-destructive hover:bg-destructive/5"
-                onClick={() => setConfirmingDelete(true)}
-              >
-                <Trash2 className="size-3.5" aria-hidden="true" />
-                Eliminar
+          <dl className="flex flex-wrap gap-x-8 gap-y-2 rounded-md bg-muted/40 px-3 py-2">
+            <div>
+              <dt className="text-xs text-muted-foreground">Propósito</dt>
+              <dd className="text-foreground/90">{source.source.purpose}</dd>
+            </div>
+            {source.source.businessArea ? (
+              <div>
+                <dt className="text-xs text-muted-foreground">Área de negocio</dt>
+                <dd className="text-foreground/90">{source.source.businessArea}</dd>
+              </div>
+            ) : null}
+            <div>
+              <dt className="text-xs text-muted-foreground">Archivo</dt>
+              <dd className="text-foreground/90">
+                {hasFile && source.source.sizeBytes != null
+                  ? `${source.source.originalFilename} · ${Math.ceil(source.source.sizeBytes / 1024)} KB`
+                  : 'Sin archivo — contenido escrito'}
+              </dd>
+            </div>
+            {hasFile && source.source.description ? (
+              <div className="basis-full">
+                <dt className="text-xs text-muted-foreground">Contexto</dt>
+                <dd className="whitespace-pre-line text-foreground/90">
+                  {source.source.description}
+                </dd>
+              </div>
+            ) : null}
+          </dl>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {hasFile ? (
+              <Button type="button" variant="outline" size="sm" onClick={() => setView('compare')}>
+                <Columns2 className="size-3.5" aria-hidden="true" />
+                Ver original lado a lado
               </Button>
-            )}
+            ) : null}
+            {hasFile && !source.archivedAt && view === 'read' ? (
+              <Button type="button" variant="outline" size="sm" onClick={() => setView('edit')}>
+                <Pencil className="size-3.5" aria-hidden="true" />
+                {source.source.hasExtractedText ? 'Editar texto' : 'Escribir transcripción'}
+              </Button>
+            ) : null}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="ghost" size="sm" aria-label="Más acciones">
+                  <MoreHorizontal className="size-4" aria-hidden="true" />
+                  Más acciones
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onSelect={() => setEditing(true)}>
+                  <Pencil aria-hidden="true" />
+                  Editar datos de la fuente
+                </DropdownMenuItem>
+                {hasFile ? (
+                  <DropdownMenuItem
+                    onSelect={() =>
+                      downloadFile(
+                        api.sources.downloadUrl(projectId, source.id),
+                        source.source.originalFilename!,
+                      ).catch(() => toast.error('No se pudo descargar el archivo.'))
+                    }
+                  >
+                    <Download aria-hidden="true" />
+                    Descargar original
+                  </DropdownMenuItem>
+                ) : null}
+                {hasFile && !source.archivedAt ? (
+                  <DropdownMenuItem onSelect={() => replaceInputRef.current?.click()}>
+                    <Upload aria-hidden="true" />
+                    Reemplazar archivo
+                  </DropdownMenuItem>
+                ) : null}
+                {hasFile && !source.archivedAt ? (
+                  <DropdownMenuItem onSelect={reExtract}>
+                    <RefreshCw aria-hidden="true" />
+                    Volver a extraer el texto
+                  </DropdownMenuItem>
+                ) : null}
+                <DropdownMenuSeparator />
+                {source.archivedAt ? (
+                  <DropdownMenuItem onSelect={restore}>
+                    <ArchiveRestore aria-hidden="true" />
+                    Restaurar
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem onSelect={() => setConfirming('archive')}>
+                    <Archive aria-hidden="true" />
+                    Archivar
+                  </DropdownMenuItem>
+                )}
+                {/* Approved history is kept: such a source can only be archived. */}
+                {source.hasApprovedHistory ? null : (
+                  <DropdownMenuItem variant="destructive" onSelect={() => setConfirming('delete')}>
+                    <Trash2 aria-hidden="true" />
+                    Eliminar
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
+
+          <input
+            ref={replaceInputRef}
+            type="file"
+            hidden
+            aria-label={`Archivo nuevo para ${source.code}`}
+            accept={sourceKindAccept(source.source.sourceKind)}
+            onChange={(e) => {
+              void replaceFile(e.target.files?.[0]);
+              e.target.value = '';
+            }}
+          />
+          {view === 'compare' ? (
+            // The original next to its text, over the whole screen, so a
+            // reading or transcription error can be corrected while looking
+            // at the source.
+            <SourceCompareDialog
+              projectId={projectId}
+              source={source}
+              text={extractedText.data?.text}
+              loading={source.source.hasExtractedText && extractedText.isLoading}
+              onSaved={invalidate}
+              onOpenChange={(open) => (open ? undefined : setView('read'))}
+            />
+          ) : null}
+          {view === 'edit' || (hasFile && !source.source.hasExtractedText) ? (
+            <ExtractedTextPanel
+              projectId={projectId}
+              source={source}
+              text={extractedText.data?.text}
+              loading={source.source.hasExtractedText && extractedText.isLoading}
+              onSaved={invalidate}
+              startEditing={view === 'edit'}
+              onExit={() => setView('read')}
+            />
+          ) : readingText ? (
+            <ReadableText text={readingText} label="el texto de la fuente" />
+          ) : (
+            <p className="text-muted-foreground">Cargando texto…</p>
+          )}
 
           {editing ? (
             <EditSourceForm
@@ -479,160 +736,180 @@ function SourceCard({ source, projectId }: { source: SourceResponse; projectId: 
             />
           ) : null}
 
-          {confirmingDelete ? (
-            source.hasApprovedHistory ? (
+          {confirming ? (
+            confirming === 'archive' ? (
               <ArchiveSourceDialog
                 projectId={projectId}
                 source={source}
-                onOpenChange={setConfirmingDelete}
+                onOpenChange={(open) => setConfirming(open ? 'archive' : null)}
                 onArchived={() => {
                   queryClient.invalidateQueries({ queryKey: ['sources', projectId] });
                   queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
+                  queryClient.invalidateQueries({ queryKey: ['staleness', projectId] });
                 }}
               />
             ) : (
               <DeleteSourceDialog
                 projectId={projectId}
                 source={source}
-                onOpenChange={setConfirmingDelete}
+                onOpenChange={(open) => setConfirming(open ? 'delete' : null)}
                 onDeleted={() => {
                   queryClient.invalidateQueries({ queryKey: ['sources', projectId] });
                   queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
+                  queryClient.invalidateQueries({ queryKey: ['staleness', projectId] });
                 }}
               />
             )
           ) : null}
 
-          {canSubmitTranscript ? (
-            <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
-              <p className="mb-2 text-amber-800">
-                {source.source.hasExtractedText
-                  ? 'Revise el texto extraído. Si tiene errores, guarde una versión corregida.'
-                  : 'Puede escribir una transcripción o corrección manual mientras se procesa el archivo.'}
-              </p>
-              {extractedText.data ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setTranscript(extractedText.data!.text)}
-                  className="mb-2"
-                >
-                  Copiar texto extraído para corregir
-                </Button>
-              ) : null}
-              <textarea
-                className="w-full rounded-md border border-input px-2 py-1"
-                rows={3}
-                value={transcript}
-                onChange={(e) => setTranscript(e.target.value)}
-                placeholder="Transcripción manual…"
+          <details className="group rounded-md border border-border">
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 font-medium text-foreground select-none">
+              <ChevronRight
+                className="size-4 text-muted-foreground transition-transform group-open:rotate-90"
+                aria-hidden="true"
               />
-              <Button
-                variant="default"
-                size="sm"
-                type="button"
-                onClick={submitTranscript}
-                disabled={!transcript.trim()}
-                className="mt-2"
-              >
-                Guardar transcripción
-              </Button>
-            </div>
-          ) : null}
-
-          <div>
-            <h3 className="mb-1 font-medium text-foreground">Reporte de la fuente</h3>
-            {source.source.hasReport ? (
-              <QueryState isLoading={report.isLoading} error={null}>
-                {report.data ? (
-                  <div className="flex flex-col gap-2 text-foreground/80">
-                    <p>{report.data.content.summary}</p>
-                    {report.data.content.actors.length ? (
-                      <p>
-                        <strong>Actores:</strong> {report.data.content.actors.join(', ')}
-                      </p>
-                    ) : null}
-                    {report.data.content.needs.length ? (
-                      <p>
-                        <strong>Necesidades:</strong> {report.data.content.needs.join(', ')}
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
-              </QueryState>
-            ) : source.source.hasExtractedText || !canSubmitTranscript ? (
-              <div className="flex flex-col gap-2">
-                <p className="text-muted-foreground">Sin reporte todavía.</p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="self-start"
-                  disabled={generatingReport}
-                  onClick={generateReport}
-                >
-                  {generatingReport ? 'Generando…' : 'Generar reporte con IA'}
-                </Button>
-                <GenerationOverlay open={generatingReport} />
-                {reportCandidate ? (
-                  <div className="rounded-md border border-dashed border-purple-300 bg-purple-50 p-3 text-foreground/80">
-                    <p className="mb-2 text-xs font-medium text-purple-700">
-                      Propuesta de IA — revísela antes de incorporarla
-                    </p>
-                    <p>{reportCandidate.content.summary}</p>
-                    {reportCandidate.content.actors.length ? (
-                      <p className="mt-1">
-                        <strong>Actores:</strong> {reportCandidate.content.actors.join(', ')}
-                      </p>
-                    ) : null}
-                    {reportCandidate.content.needs.length ? (
-                      <p className="mt-1">
-                        <strong>Necesidades:</strong> {reportCandidate.content.needs.join(', ')}
-                      </p>
-                    ) : null}
-                    <div className="mt-2 flex gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={acceptingReport}
-                        onClick={acceptReportCandidate}
-                      >
-                        {acceptingReport ? 'Aceptando…' : 'Aceptar como reporte oficial'}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setReportCandidate(null)}
-                      >
-                        Descartar
-                      </Button>
+              Reporte de la fuente
+              <span className="text-xs font-normal text-muted-foreground">
+                {source.source.hasReport ? '· Registrado' : '· Opcional'}
+              </span>
+            </summary>
+            <div className="border-t border-border px-3 py-3">
+              <p className="mb-2 text-xs text-muted-foreground">
+                Opcional: no es necesario para aprobar la fuente. Si lo registra, la generación del
+                contexto del proyecto lo usa como guía; el texto de la fuente sigue siendo la
+                referencia.
+              </p>
+              {source.source.hasReport ? (
+                <QueryState isLoading={report.isLoading} error={null}>
+                  {report.data ? (
+                    <div className="flex flex-col gap-2 text-foreground/80">
+                      <p>{report.data.content.summary}</p>
+                      {report.data.content.actors.length ? (
+                        <p>
+                          <strong>Actores:</strong> {report.data.content.actors.join(', ')}
+                        </p>
+                      ) : null}
+                      {report.data.content.needs.length ? (
+                        <p>
+                          <strong>Necesidades:</strong> {report.data.content.needs.join(', ')}
+                        </p>
+                      ) : null}
                     </div>
-                  </div>
-                ) : null}
-                <textarea
-                  className="w-full rounded-md border border-input px-2 py-1"
-                  rows={2}
-                  placeholder="O escriba un resumen manual del contenido…"
-                  value={manualSummary}
-                  onChange={(e) => setManualSummary(e.target.value)}
-                />
-                <Button
-                  variant="default"
-                  size="sm"
-                  type="button"
-                  onClick={submitManualReport}
-                  disabled={!manualSummary.trim()}
-                  className="self-start"
-                >
-                  Guardar reporte manual
-                </Button>
-              </div>
-            ) : (
-              <p className="text-muted-foreground">Guarde primero la transcripción manual.</p>
-            )}
-          </div>
+                  ) : null}
+                </QueryState>
+              ) : source.source.hasExtractedText || !canSubmitTranscript ? (
+                <div className="flex flex-col gap-2">
+                  <p className="text-muted-foreground">Sin reporte todavía.</p>
+                  {reportRunning ? (
+                    <ReportProgress job={job!} />
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="self-start"
+                      disabled={requestingReport}
+                      onClick={generateReport}
+                    >
+                      {requestingReport
+                        ? 'Iniciando…'
+                        : job?.status === 'FAILED'
+                          ? 'Reintentar el reporte'
+                          : 'Generar reporte con IA'}
+                    </Button>
+                  )}
+                  {job?.status === 'FAILED' && job.errorMessage ? (
+                    <p className="text-xs text-destructive">
+                      No se pudo generar el reporte: {job.errorMessage}
+                      {job.totalParts && job.totalParts > 1
+                        ? ` Al reintentar continuará desde la parte ${job.completedParts + 1}.`
+                        : ''}
+                    </p>
+                  ) : null}
+                  {reportCandidate ? (
+                    <div className="rounded-xl border border-dashed border-purple-300/80 bg-purple-50/70 p-4 text-foreground/90 shadow-2xs transition-colors dark:border-purple-700/60 dark:bg-purple-950/30">
+                      <div className="mb-3 flex items-center gap-2">
+                        <Sparkles
+                          className="size-4 text-purple-600 dark:text-purple-400"
+                          aria-hidden="true"
+                        />
+                        <span className="text-xs font-semibold tracking-wide text-purple-800 uppercase dark:text-purple-300">
+                          Propuesta de IA — revísela antes de incorporarla
+                        </span>
+                      </div>
+
+                      <div className="space-y-2.5 text-sm leading-relaxed text-foreground/90">
+                        <p className="whitespace-pre-line">{reportCandidate.content.summary}</p>
+
+                        {reportCandidate.content.actors.length ? (
+                          <div className="rounded-lg border border-purple-200/60 bg-purple-100/40 p-2.5 text-xs dark:border-purple-900/40 dark:bg-purple-900/20">
+                            <span className="font-semibold text-foreground">
+                              Actores detectados:{' '}
+                            </span>
+                            <span className="text-muted-foreground">
+                              {reportCandidate.content.actors.join(', ')}
+                            </span>
+                          </div>
+                        ) : null}
+
+                        {reportCandidate.content.needs.length ? (
+                          <div className="rounded-lg border border-purple-200/60 bg-purple-100/40 p-2.5 text-xs dark:border-purple-900/40 dark:bg-purple-900/20">
+                            <span className="font-semibold text-foreground">
+                              Necesidades detectadas:{' '}
+                            </span>
+                            <span className="text-muted-foreground">
+                              {reportCandidate.content.needs.join(', ')}
+                            </span>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap items-center gap-2.5 border-t border-purple-200/60 pt-3 dark:border-purple-900/40">
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={acceptingReport}
+                          onClick={acceptReportCandidate}
+                          className="gap-1.5 shadow-2xs"
+                        >
+                          <Check className="size-3.5" aria-hidden="true" />
+                          {acceptingReport ? 'Aceptando…' : 'Aceptar como reporte oficial'}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setDismissedCandidateId(reportCandidate.id)}
+                          className="text-xs shadow-2xs hover:bg-destructive/10 hover:text-destructive dark:border-purple-800/60"
+                        >
+                          Descartar
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
+                  <textarea
+                    className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm text-foreground shadow-2xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+                    rows={2}
+                    placeholder="O escriba un resumen manual del contenido…"
+                    value={manualSummary}
+                    onChange={(e) => setManualSummary(e.target.value)}
+                  />
+                  <Button
+                    variant="default"
+                    size="sm"
+                    type="button"
+                    onClick={submitManualReport}
+                    disabled={!manualSummary.trim()}
+                    className="self-start shadow-2xs"
+                  >
+                    Guardar reporte manual
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-muted-foreground">Guarde primero la transcripción manual.</p>
+              )}
+            </div>
+          </details>
 
           <div className="flex flex-wrap gap-2 border-t border-border pt-2">
             {source.version.status === 'DRAFT' || source.version.status === 'GENERATED' ? (
@@ -703,6 +980,14 @@ function EditSourceForm({
 }) {
   const [title, setTitle] = useState(source.source.title);
   const [sourceKind, setSourceKind] = useState<ProjectSourceKind>(source.source.sourceKind);
+  // Kinds that fit the source's file; a retired kind stays available only to
+  // the source that already has it.
+  const editableKinds = [
+    ...SELECTABLE_SOURCE_KINDS,
+    ...(SELECTABLE_SOURCE_KINDS.includes(source.source.sourceKind as never)
+      ? []
+      : [source.source.sourceKind]),
+  ].filter((k) => !source.source.mimeType || sourceKindAcceptsMimeType(k, source.source.mimeType));
   const [purpose, setPurpose] = useState(source.source.purpose);
   const [businessArea, setBusinessArea] = useState(source.source.businessArea ?? '');
   const [description, setDescription] = useState(source.source.description);
@@ -744,7 +1029,7 @@ function EditSourceForm({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {SOURCE_KINDS.map((k) => (
+              {editableKinds.map((k) => (
                 <SelectItem key={k} value={k}>
                   {SOURCE_KIND_LABELS[k]}
                 </SelectItem>
@@ -832,31 +1117,116 @@ function DeleteSourceDialog({
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Eliminar fuente</DialogTitle>
-          <DialogDescription>
-            Esta acción es permanente y no se puede deshacer. Solo es posible mientras la fuente
-            nunca haya sido aprobada.
-          </DialogDescription>
-        </DialogHeader>
-        <p className="text-sm text-foreground">
-          Va a eliminar{' '}
-          <strong>
-            {source.code} — {source.source.title}
-          </strong>
-          .
-        </p>
-        <DialogFooter>
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+      <DialogContent className="relative sm:max-w-lg p-6 gap-5 overflow-hidden">
+        {/* Top destructive accent gradient strip */}
+        <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-destructive via-red-500 to-rose-600" />
+
+        <div className="flex items-start gap-4 w-full min-w-0">
+          <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-destructive/10 text-destructive border border-destructive/25 shadow-xs ring-4 ring-destructive/5 dark:bg-destructive/15 dark:ring-destructive/10">
+            <Trash2 className="size-5" aria-hidden="true" />
+          </div>
+          <div className="flex flex-col gap-1 min-w-0 flex-1">
+            <DialogTitle className="text-lg font-bold tracking-tight text-foreground">
+              Eliminar fuente
+            </DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+              Esta acción es{' '}
+              <strong className="text-foreground font-semibold">permanente e irreversible</strong>.
+              Solo es posible mientras la fuente nunca haya sido aprobada.
+            </DialogDescription>
+          </div>
+        </div>
+
+        {/* Affected item preview card */}
+        <div className="rounded-xl border border-destructive/20 bg-destructive/[0.04] p-3.5 dark:border-destructive/30 dark:bg-destructive/[0.08] flex flex-col gap-2 w-full min-w-0">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="size-4 text-destructive shrink-0" aria-hidden="true" />
+            <p className="text-xs font-semibold text-foreground">
+              Fuente seleccionada para eliminación definitiva:
+            </p>
+          </div>
+          <div className="flex items-center gap-2.5 rounded-lg border border-destructive/20 bg-background/80 p-2.5 min-w-0">
+            <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-muted text-foreground border border-border shadow-2xs shrink-0">
+              {source.code}
+            </span>
+            <span
+              className="text-sm font-semibold text-foreground truncate min-w-0 flex-1"
+              title={source.source.title}
+            >
+              {source.source.title}
+            </span>
+          </div>
+        </div>
+
+        <DialogFooter className="-mx-6 -mb-6 mt-1 flex items-center justify-end gap-2 border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10 w-[calc(100%+3rem)]">
+          <Button
+            type="button"
+            variant="outline"
+            className="border-border/80 hover:bg-muted font-medium"
+            onClick={() => onOpenChange(false)}
+          >
             Cancelar
           </Button>
-          <Button type="button" variant="destructive" disabled={deleting} onClick={handleDelete}>
-            {deleting ? 'Eliminando…' : 'Eliminar definitivamente'}
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={deleting}
+            onClick={handleDelete}
+            className="gap-2 font-medium shadow-xs"
+          >
+            {deleting ? (
+              <>
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                Eliminando…
+              </>
+            ) : (
+              <>
+                <Trash2 className="size-4" aria-hidden="true" />
+                Eliminar definitivamente
+              </>
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// DEC-127: a long source is read part by part in the background, so the
+// user can keep working meanwhile.
+function ReportProgress({ job }: { job: SourceReportJob }) {
+  const parts = job.totalParts ?? 0;
+  const current = Math.min(job.completedParts + 1, parts);
+  const percent = parts ? Math.round((job.completedParts / parts) * 100) : 0;
+  return (
+    <div className="flex flex-col gap-1.5" role="status" aria-live="polite">
+      <p className="flex items-center gap-2 text-sm text-foreground">
+        <Loader2 className="size-4 animate-spin text-primary" aria-hidden="true" />
+        {parts > 1
+          ? `Generando el reporte por partes: parte ${current} de ${parts}…`
+          : 'Generando el reporte…'}
+      </p>
+      {parts > 1 ? (
+        <div
+          role="progressbar"
+          aria-label="Avance del reporte"
+          aria-valuenow={percent}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          className="h-1.5 overflow-hidden rounded-full bg-muted"
+        >
+          <div
+            className="h-full rounded-full bg-primary transition-all"
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+      ) : null}
+      <p className="text-xs text-muted-foreground">
+        {parts > 1
+          ? 'La fuente es larga: se resume por partes y después se unen. Puede seguir trabajando mientras tanto.'
+          : 'Puede seguir trabajando mientras tanto.'}
+      </p>
+    </div>
   );
 }
 
@@ -888,27 +1258,81 @@ function ArchiveSourceDialog({
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Archivar fuente</DialogTitle>
-          <DialogDescription>
-            Esta fuente tiene versiones aprobadas, así que no puede eliminarse. Archivarla la marca
-            como inactiva sin borrar su historial.
-          </DialogDescription>
-        </DialogHeader>
-        <p className="text-sm text-foreground">
-          Va a archivar{' '}
-          <strong>
-            {source.code} — {source.source.title}
-          </strong>
-          .
-        </p>
-        <DialogFooter>
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+      <DialogContent className="relative sm:max-w-lg p-6 gap-5 overflow-hidden">
+        {/* Top amber accent gradient strip */}
+        <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-amber-500 via-amber-400 to-orange-500" />
+
+        <div className="flex items-start gap-4 w-full min-w-0">
+          <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/25 shadow-xs ring-4 ring-amber-500/5 dark:ring-amber-500/10">
+            <Archive className="size-5" aria-hidden="true" />
+          </div>
+          <div className="flex flex-col gap-1 min-w-0 flex-1">
+            <DialogTitle className="text-lg font-bold tracking-tight text-foreground">
+              Archivar fuente
+            </DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+              Archivarla la oculta de la lista activa sin borrar su historial. Podrá verla con el
+              filtro «Archivadas» y restaurarla cuando quiera.
+            </DialogDescription>
+          </div>
+        </div>
+
+        {/* Affected item card */}
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-3.5 dark:border-amber-500/30 dark:bg-amber-500/[0.08] flex flex-col gap-2 w-full min-w-0">
+          <div className="flex items-center gap-2">
+            <Archive
+              className="size-4 text-amber-600 dark:text-amber-400 shrink-0"
+              aria-hidden="true"
+            />
+            <p className="text-xs font-semibold text-foreground">Fuente que se archivará:</p>
+          </div>
+          <div className="flex items-center gap-2.5 rounded-lg border border-border/60 bg-background/80 p-2.5 min-w-0">
+            <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-muted text-foreground border border-border shadow-2xs shrink-0">
+              {source.code}
+            </span>
+            <span
+              className="text-sm font-semibold text-foreground truncate min-w-0 flex-1"
+              title={source.source.title}
+            >
+              {source.source.title}
+            </span>
+          </div>
+        </div>
+
+        {/* Reassurance banner */}
+        <div className="flex items-start gap-2.5 rounded-xl border border-border/60 bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground w-full min-w-0">
+          <AlertTriangle className="size-4 shrink-0 text-amber-500 mt-0.5" aria-hidden="true" />
+          <span>
+            Todo el contenido, archivos extraídos e historial de versiones se mantienen intactos.
+          </span>
+        </div>
+
+        <DialogFooter className="-mx-6 -mb-6 mt-1 flex items-center justify-end gap-2 border-t border-border/50 bg-muted/25 px-6 py-4 rounded-b-2xl dark:bg-muted/10 w-[calc(100%+3rem)]">
+          <Button
+            type="button"
+            variant="outline"
+            className="border-border/80 hover:bg-muted font-medium"
+            onClick={() => onOpenChange(false)}
+          >
             Cancelar
           </Button>
-          <Button type="button" disabled={archiving} onClick={handleArchive}>
-            {archiving ? 'Archivando…' : 'Archivar'}
+          <Button
+            type="button"
+            disabled={archiving}
+            onClick={handleArchive}
+            className="gap-2 font-medium shadow-xs bg-amber-600 hover:bg-amber-700 text-white dark:bg-amber-600 dark:hover:bg-amber-500"
+          >
+            {archiving ? (
+              <>
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                Archivando…
+              </>
+            ) : (
+              <>
+                <Archive className="size-4" aria-hidden="true" />
+                Archivar
+              </>
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -916,11 +1340,65 @@ function ArchiveSourceDialog({
   );
 }
 
+// DEC-137: the list is filtered and paged on the server. Archived sources
+// are hidden by default and shown with the "Archivadas" filter; paging only
+// appears past one page.
+const PAGE_SIZE = 20;
+type SourceStatusFilter = 'ACTIVE' | 'ARCHIVED' | 'ALL';
+type SourceVersionFilter = '' | 'APPROVED' | 'IN_REVIEW' | 'DRAFT' | 'CHANGES_REQUESTED';
+type SourceSort = 'CODE' | 'RECENT' | 'UPDATED' | 'TITLE';
+const SOURCE_STATUS_LABELS: Record<SourceStatusFilter, string> = {
+  ACTIVE: 'Activas',
+  ARCHIVED: 'Archivadas',
+  ALL: 'Todas',
+};
+const SOURCE_VERSION_LABELS: Record<Exclude<SourceVersionFilter, ''>, string> = {
+  APPROVED: 'Aprobadas',
+  IN_REVIEW: 'En revisión',
+  DRAFT: 'Borradores',
+  CHANGES_REQUESTED: 'Con cambios solicitados',
+};
+const SOURCE_SORT_LABELS: Record<SourceSort, string> = {
+  CODE: 'Código',
+  RECENT: 'Más recientes',
+  UPDATED: 'Modificadas recientemente',
+  TITLE: 'Título (A-Z)',
+};
+const filterSelect =
+  'h-9 cursor-pointer rounded-lg border border-border/80 bg-card px-2.5 text-xs text-foreground shadow-2xs transition-colors hover:border-border focus:border-primary focus:ring-1 focus:ring-primary/20 focus:outline-none sm:text-sm';
+
 function SourcesContent({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState<SourceStatusFilter>('ACTIVE');
+  const [versionStatus, setVersionStatus] = useState<SourceVersionFilter>('');
+  const [kind, setKind] = useState<ProjectSourceKind | ''>('');
+  const [sort, setSort] = useState<SourceSort>('CODE');
+  const [page, setPage] = useState(0);
+  // The search waits for a pause in typing, and only a new search resets the page.
+  useEffect(() => {
+    const next = searchInput.trim();
+    if (next === search) return;
+    const timer = setTimeout(() => {
+      setSearch(next);
+      setPage(0);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput, search]);
+  const filters = {
+    status,
+    versionStatus: versionStatus || undefined,
+    kind: kind || undefined,
+    search: search || undefined,
+    sort,
+    limit: PAGE_SIZE,
+    offset: page * PAGE_SIZE,
+  };
   const sources = useQuery({
-    queryKey: ['sources', projectId],
-    queryFn: () => api.sources.list(projectId),
+    queryKey: ['sources', projectId, filters],
+    queryFn: () => api.sources.list(projectId, filters),
+    placeholderData: keepPreviousData,
     refetchInterval: (query) =>
       query.state.data?.items.some(
         (source) => source.processing && ['QUEUED', 'RUNNING'].includes(source.processing.status),
@@ -934,28 +1412,174 @@ function SourcesContent({ projectId }: { projectId: string }) {
           : 2500
         : false,
   });
+  const staleness = useQuery({
+    queryKey: ['staleness', projectId],
+    queryFn: () => api.staleness.get(projectId),
+  });
+  const total = sources.data?.total ?? 0;
+  const counts = sources.data?.counts;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // Archiving or deleting the last source of a page leaves it empty: step back.
+  useEffect(() => {
+    if (sources.data && page > 0 && page >= pageCount) setPage(pageCount - 1);
+  }, [sources.data, page, pageCount]);
+  const filtered =
+    Boolean(search) || status !== 'ACTIVE' || Boolean(versionStatus) || Boolean(kind);
+  const change =
+    <T,>(setter: (value: T) => void) =>
+    (value: T) => {
+      setter(value);
+      setPage(0);
+    };
+  function clearFilters() {
+    setSearchInput('');
+    setSearch('');
+    setStatus('ACTIVE');
+    setVersionStatus('');
+    setKind('');
+    setPage(0);
+  }
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeading title="Fuentes del proyecto" projectId={projectId} />
-      <CreateSourceForm
-        projectId={projectId}
-        onCreated={() => {
-          queryClient.invalidateQueries({ queryKey: ['sources', projectId] });
-          queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
-        }}
-      />
+      <AddSection isEmpty={counts ? counts.ALL === 0 : undefined} addLabel="Agregar fuente">
+        {(close) => (
+          <CreateSourceForm
+            projectId={projectId}
+            onClose={close}
+            onCreated={() => {
+              queryClient.invalidateQueries({ queryKey: ['sources', projectId] });
+              queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
+              queryClient.invalidateQueries({ queryKey: ['staleness', projectId] });
+            }}
+          />
+        )}
+      </AddSection>
+
+      {counts && counts.ALL > 0 ? (
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="relative flex-1 sm:max-w-xs sm:min-w-[240px]">
+            <Search
+              className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Input
+              type="search"
+              aria-label="Buscar fuentes"
+              placeholder="Buscar por código o título"
+              className="h-9 pl-8 text-xs sm:text-sm"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+            />
+          </div>
+          <select
+            aria-label="Estado de la fuente"
+            className={filterSelect}
+            value={status}
+            onChange={(e) => change(setStatus)(e.target.value as SourceStatusFilter)}
+          >
+            {(['ACTIVE', 'ARCHIVED', 'ALL'] as const).map((value) => (
+              <option key={value} value={value}>
+                {SOURCE_STATUS_LABELS[value]} ({counts[value]})
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Estado de revisión"
+            className={filterSelect}
+            value={versionStatus}
+            onChange={(e) => change(setVersionStatus)(e.target.value as SourceVersionFilter)}
+          >
+            <option value="">Cualquier revisión</option>
+            {(Object.keys(SOURCE_VERSION_LABELS) as Exclude<SourceVersionFilter, ''>[]).map(
+              (value) => (
+                <option key={value} value={value}>
+                  {SOURCE_VERSION_LABELS[value]}
+                </option>
+              ),
+            )}
+          </select>
+          <select
+            aria-label="Tipo de fuente"
+            className={filterSelect}
+            value={kind}
+            onChange={(e) => change(setKind)(e.target.value as ProjectSourceKind | '')}
+          >
+            <option value="">Todos los tipos</option>
+            {SELECTABLE_SOURCE_KINDS.map((value) => (
+              <option key={value} value={value}>
+                {SOURCE_KIND_LABELS[value]}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Ordenar fuentes por"
+            className={filterSelect}
+            value={sort}
+            onChange={(e) => change(setSort)(e.target.value as SourceSort)}
+          >
+            {(Object.keys(SOURCE_SORT_LABELS) as SourceSort[]).map((value) => (
+              <option key={value} value={value}>
+                {SOURCE_SORT_LABELS[value]}
+              </option>
+            ))}
+          </select>
+          {filtered ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-9 px-2.5 text-xs text-muted-foreground hover:text-foreground"
+              onClick={clearFilters}
+            >
+              <X className="mr-1 size-3.5" aria-hidden="true" />
+              Limpiar filtros
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
       <QueryState isLoading={sources.isLoading} error={sources.error}>
-        {sources.data && sources.data.items.length === 0 ? (
+        {counts && counts.ALL === 0 ? (
           <p className="text-sm text-muted-foreground">
             No hay fuentes todavía. Agregue la primera arriba.
           </p>
+        ) : sources.data && sources.data.items.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            {filtered
+              ? status === 'ARCHIVED' && !search && !versionStatus && !kind
+                ? 'No hay fuentes archivadas.'
+                : 'Ninguna fuente coincide con los filtros.'
+              : 'No hay fuentes activas. Las archivadas se ven con el filtro «Archivadas».'}
+          </p>
         ) : (
-          <ul className="flex flex-col gap-3">
-            {sources.data?.items.map((s) => (
-              <SourceCard key={s.id} source={s} projectId={projectId} />
-            ))}
-          </ul>
+          <>
+            <ul
+              className={`flex flex-col gap-3 transition-opacity ${
+                sources.isPlaceholderData ? 'opacity-60' : ''
+              }`}
+            >
+              {sources.data?.items.map((s) => (
+                <SourceCard
+                  key={s.id}
+                  source={s}
+                  projectId={projectId}
+                  staleness={staleness.data}
+                />
+              ))}
+            </ul>
+            <PaginationNav
+              page={page}
+              pageCount={pageCount}
+              total={total}
+              pageSize={PAGE_SIZE}
+              setPage={setPage}
+              itemLabel="fuentes"
+              ariaLabel="Paginación de fuentes"
+              hideWhenSinglePage
+            />
+          </>
         )}
       </QueryState>
     </div>

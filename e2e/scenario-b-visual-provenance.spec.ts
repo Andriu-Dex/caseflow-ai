@@ -1,4 +1,5 @@
-import { expect, request, test, type APIRequestContext } from '@playwright/test';
+import type { APIRequestContext } from '@playwright/test';
+import { expect, signedInApi, test } from './auth';
 
 // E2E Scenario B — visual/provenance browser integration (spec: "verify
 // browser integration for functionality not covered by Scenario A"). Setup
@@ -8,8 +9,6 @@ import { expect, request, test, type APIRequestContext } from '@playwright/test'
 // playwright.config.ts), so the ER diagram is the real
 // DiagramEngine → local Kroki → sanitizeDiagramSvg → API → TrustedSvg
 // pipeline, never a hardcoded SVG fixture.
-const API_BASE_URL = 'http://localhost:3001';
-
 async function setupProjectWithDiagramAndProvenance(api: APIRequestContext) {
   const workspaces = await (await api.get('/workspaces')).json();
   const workspaceId = workspaces.items[0].id as string;
@@ -25,7 +24,7 @@ async function setupProjectWithDiagramAndProvenance(api: APIRequestContext) {
     await api.post(`/projects/${projectId}/sources`, {
       multipart: {
         title: 'Notas de la entrevista',
-        sourceKind: 'NOTES',
+        sourceKind: 'TEXT',
         purpose: 'Conocimiento del proyecto',
         description: 'El cliente necesita registrar pedidos.',
         file: {
@@ -103,14 +102,13 @@ async function setupProjectWithDiagramAndProvenance(api: APIRequestContext) {
 test('displays a real Kroki-rendered ER diagram, provenance, readiness and export in the browser', async ({
   page,
 }) => {
-  const api = await request.newContext({ baseURL: API_BASE_URL });
+  const api = await signedInApi();
   const { projectId, projectName, dataModelCode } = await setupProjectWithDiagramAndProvenance(api);
   await api.dispose();
 
   await page.goto('/');
-  await page
-    .getByRole('combobox', { name: 'Proyecto activo' })
-    .selectOption({ label: projectName });
+  await page.getByRole('combobox', { name: 'Proyecto activo' }).click();
+  await page.getByRole('option', { name: projectName }).click();
   await expect(page.getByRole('heading', { name: projectName })).toBeVisible();
 
   // --- A. Real visual output: an actual backend-rendered, sanitized SVG ---
@@ -136,9 +134,10 @@ test('displays a real Kroki-rendered ER diagram, provenance, readiness and expor
   // Same reasoning as above: direct navigation, not a sidebar click.
   await page.goto('/traceability');
   await page.getByRole('button', { name: /CTX-001/ }).click();
-  const upstreamSection = page.getByText('Aguas arriba').locator('..');
-  await expect(upstreamSection).toBeVisible();
-  await expect(upstreamSection.getByText(/SRC-001/)).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Aguas arriba' })).toBeVisible();
+  // The approved source this context was built from is listed upstream (the
+  // list on the left shows it too, but only the upstream entry offers its lineage).
+  await expect(page.getByRole('button', { name: /SRC-001 v1.*Ver linaje/ })).toBeVisible();
 
   // --- C. Readiness: real backend stage results are rendered ---
   await page
@@ -155,9 +154,11 @@ test('displays a real Kroki-rendered ER diagram, provenance, readiness and expor
   ]);
   expect(jsonDownload.suggestedFilename()).toBe(`proyecto-${projectId}.json`);
 
+  // The HTML document opens in a preview first; it can be downloaded from there.
+  await page.getByRole('button', { name: 'Documento del proyecto (HTML)' }).click();
   const [htmlDownload] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: 'Documento del proyecto (HTML)' }).click(),
+    page.getByRole('button', { name: /Descargar HTML/ }).click(),
   ]);
   expect(htmlDownload.suggestedFilename()).toBe(`proyecto-${projectId}.html`);
 });

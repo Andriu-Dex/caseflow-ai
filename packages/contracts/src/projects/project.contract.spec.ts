@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { projectResponseSchema, updateProjectLanguageRequestSchema } from './project.contract';
+import {
+  createProjectRequestSchema,
+  projectResponseSchema,
+  updateProjectLanguageRequestSchema,
+  upgradeWorkflowRouteRequestSchema,
+} from './project.contract';
 
 const project = {
   id: '7b1d3c4e-5f60-4a71-8b92-a3b4c5d6e7f8',
   workspaceId: '2f0c5f5e-3c7d-4a8e-9a55-1f6f0f3f6a11',
   name: 'Proyecto',
   description: null,
+  workflowRoute: 'FULL',
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
   archivedAt: null,
@@ -17,6 +23,19 @@ describe('project language contract', () => {
     expect(projectResponseSchema.safeParse({ ...project, language: 'ES' }).success).toBe(true);
     expect(projectResponseSchema.safeParse({ ...project, language: 'EN' }).success).toBe(true);
     expect(projectResponseSchema.safeParse(project).success).toBe(false);
+  });
+
+  // DEC-116: FULL unless the creator chooses otherwise.
+  it('defaults new projects to the FULL workflow route', () => {
+    const workspaceId = project.workspaceId;
+    expect(createProjectRequestSchema.parse({ workspaceId, name: 'P' }).workflowRoute).toBe('FULL');
+    expect(
+      createProjectRequestSchema.safeParse({ workspaceId, name: 'P', workflowRoute: 'FAST' })
+        .success,
+    ).toBe(false);
+    expect(upgradeWorkflowRouteRequestSchema.safeParse({ workflowRoute: 'EXPRESS' }).success).toBe(
+      true,
+    );
   });
 
   it('accepts only a single ES or EN update field', () => {

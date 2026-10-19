@@ -6,6 +6,7 @@ import {
   UiBlueprintController,
 } from './structured-analysis.controller';
 import type { StructuredAnalysisService } from './structured-analysis.service';
+import type { StructuredGenerationJobsService } from './structured-generation-jobs.service';
 
 const METHOD_NAMES = [
   'create',
@@ -97,7 +98,14 @@ describe('Structured Analysis controllers (delegation)', () => {
       navigationBody.content,
     );
     expect(service.getDiagram).toHaveBeenCalledWith('p', 'NAVIGATION_TREE', 'n');
-    expect(service.transition).toHaveBeenCalledWith('p', 'NAVIGATION_TREE', 'n', 'v', 'IN_REVIEW');
+    expect(service.transition).toHaveBeenCalledWith(
+      'p',
+      'NAVIGATION_TREE',
+      'n',
+      'v',
+      'IN_REVIEW',
+      null,
+    );
   });
 
   it('SoftwareArchitectureController delegates every route, including its diagram route', async () => {
@@ -144,7 +152,7 @@ describe('Structured Analysis controllers (delegation)', () => {
 
   it('UiBlueprintController delegates every route (no diagram route for this kind)', async () => {
     const service = fakeService();
-    const controller = new UiBlueprintController(service);
+    const controller = new UiBlueprintController(service, {} as StructuredGenerationJobsService);
     await controller.create('p', uiBlueprintBody);
     await controller.list('p');
     await controller.generate('p', { sourceVersionIds: ['s'] });
