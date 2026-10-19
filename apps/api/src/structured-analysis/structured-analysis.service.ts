@@ -18,6 +18,7 @@ import {
   conceptualDomainModelContentSchema,
   generationPlanContentSchema,
   implementationEntityBatchOutputSchema,
+  implementationActionsOutputSchema,
   implementationRoutesBatchOutputSchema,
   implementationSkeletonSchema,
   navigationTreeContentSchema,
@@ -71,7 +72,9 @@ import {
   finishImplementationPlan,
   finishRoutes,
   mergeEntityBatch,
+  mergeActionBatch,
   mergeRouteBatch,
+  pendingActions,
   planEntityBatches,
   planRouteBatches,
   screensWithoutRoute,
@@ -1660,6 +1663,41 @@ export class StructuredAnalysisService {
           remaining = screensWithoutRoute(routes, remaining);
         }
         routes = fillMissingRoutes(routes, remaining, context);
+        // What the batch left unserved is asked for once more, with the
+        // endpoints that serve it (finishRoutes settles whatever remains).
+        const pending = pendingActions(routes, batch, entities);
+        if (pending.length) {
+          await runner.run(
+            routeBase + routeBatches.length * IP_BATCH_ATTEMPTS + position,
+            {
+              promptKey: 'implementation-plan.actions',
+              promptVersion: 1,
+              payload: {
+                routes: pending,
+                entities: entities.map((entity) => ({
+                  localId: entity.localId,
+                  name: entity.name,
+                  moduleLocalId: entity.moduleLocalId,
+                  operations: entity.operations,
+                })),
+                modules: skeleton.modules.map((module) => ({
+                  localId: module.localId,
+                  name: module.name,
+                })),
+                roles: skeleton.authentication.roles,
+                existingEndpoints: routes.customEndpoints.map(
+                  (endpoint) => `${endpoint.method} ${endpoint.path}`,
+                ),
+              },
+              schema: implementationActionsOutputSchema,
+              schemaName: 'implementation_plan_actions',
+              maxOutputTokens: 8192,
+            },
+            (output) => {
+              routes = mergeActionBatch(routes, output, batch, entities, context);
+            },
+          );
+        }
         progress?.update(2 + entityBatches.length + position, total, 0);
       }
       routes = finishRoutes(routes, screens, entities, skeleton.authentication.roles);
