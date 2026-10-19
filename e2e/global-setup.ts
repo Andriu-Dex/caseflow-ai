@@ -1,24 +1,18 @@
 import { execSync } from 'node:child_process';
-import { Client } from 'pg';
-import { E2E_DATABASE_URL } from '../playwright.config';
+import { request } from '@playwright/test';
+import { API_BASE_URL, E2E_USER } from './auth';
 
 // Prepares the same isolated Postgres test database the backend integration
-// suite uses (never the developer's own `caseflow` database), then seeds the
-// one workspace the current no-auth MVP needs — mirrors
-// scripts/seed-development.mjs, but targets the test database explicitly
-// rather than relying on that script's DATABASE_URL-only convention.
+// suite uses (never the developer's own `caseflow` database), then creates the
+// one user both scenarios sign in as, through the real API.
 export default async function globalSetup(): Promise<void> {
   execSync('npx pnpm@11.27.0 run db:test:prepare', { stdio: 'inherit' });
   execSync('npx pnpm@11.27.0 run db:test:migrate', { stdio: 'inherit' });
 
-  const client = new Client({ connectionString: E2E_DATABASE_URL });
-  await client.connect();
-  try {
-    await client.query(
-      'INSERT INTO workspaces (slug, name) VALUES ($1, $2) ON CONFLICT (slug) DO NOTHING',
-      ['e2e-workspace', 'E2E Workspace'],
-    );
-  } finally {
-    await client.end();
-  }
+  const api = await request.newContext({ baseURL: API_BASE_URL });
+  const registered = await api.post('/auth/register', { data: E2E_USER });
+  // 409: the user already exists from an earlier local run on the same database.
+  if (!registered.ok() && registered.status() !== 409)
+    throw new Error(`E2E user registration failed (${registered.status()}).`);
+  await api.dispose();
 }
