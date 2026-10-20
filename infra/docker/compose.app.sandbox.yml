@@ -1,0 +1,14 @@
+# Optional layer: lets the API validate generated projects in a sandbox.
+#
+#   docker compose -f infra/docker/compose.app.yml -f infra/docker/compose.app.sandbox.yml \
+#     --env-file infra/docker/app.env up -d --build
+#
+# The sandbox starts throw-away containers through the host's Docker engine, so
+# the API container needs its socket. Whoever controls that socket controls the
+# host: enable this only on a machine you trust. Without it everything else
+# works, and the code-generation page reports that Docker is unavailable.
+services:
+  api:
+    user: root
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock

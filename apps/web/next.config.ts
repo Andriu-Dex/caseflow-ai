@@ -3,7 +3,8 @@ import type { NextConfig } from 'next';
 
 // The desktop edition (DEC-117) ships a self-contained server; the web
 // edition keeps the default output.
-const desktop = process.env.CASEFLOW_DESKTOP_BUILD === '1';
+const desktop =
+  process.env.CASEFLOW_DESKTOP_BUILD === '1' || process.env.CASEFLOW_STANDALONE === '1';
 
 const nextConfig: NextConfig = {
   // with the repository's authoritative root AGENTS.md.

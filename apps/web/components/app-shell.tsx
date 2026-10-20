@@ -208,35 +208,16 @@ export function AppShell({ children }: { children: ReactNode }) {
     return (
       <main
         id="main-content"
-        className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-b from-slate-50 via-indigo-50/25 to-slate-100/90 dark:bg-background p-4"
+        className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-b from-slate-50 via-slate-50/80 to-indigo-50/30 dark:from-slate-950 dark:via-background dark:to-slate-950 p-4"
       >
-        {/* Subtle dot-grid pattern background */}
+        {/* Soft atmospheric aurora glow centered directly behind the auth card */}
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(oklch(0.4_0.04_265/0.18)_1px,transparent_1px)] dark:bg-[radial-gradient(oklch(0.5_0.02_265/0.3)_1px,transparent_1px)] [background-size:24px_24px] opacity-90 dark:opacity-60"
-        />
-        {/* Central spotlight aura directly behind the auth card */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-[640px] rounded-full bg-gradient-to-tr from-indigo-400/25 via-primary/20 to-sky-300/20 blur-[100px] dark:from-indigo-600/40 dark:via-primary/35 dark:to-cyan-400/25"
+          className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-[680px] rounded-full bg-gradient-to-tr from-indigo-200/40 via-sky-200/30 to-purple-200/30 blur-[120px] dark:from-indigo-600/30 dark:via-primary/25 dark:to-sky-500/20"
         />
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-[360px] rounded-full bg-indigo-400/15 blur-[60px] dark:bg-indigo-400/30"
-        />
-        {/* Subtle geometric stage ring outlining the focal zone */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-[520px] rounded-full border border-indigo-400/20 dark:border-indigo-400/20"
-        />
-        {/* Secondary ambient corner glows */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute -top-40 -left-40 size-96 rounded-full bg-primary/20 blur-3xl dark:bg-primary/15"
-        />
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute -bottom-40 -right-40 size-96 rounded-full bg-indigo-500/20 blur-3xl dark:bg-indigo-500/15"
+          className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-[360px] rounded-full bg-indigo-300/20 blur-[80px] dark:bg-indigo-500/20"
         />
         <div className="relative z-10 flex w-full items-center justify-center">{children}</div>
       </main>
