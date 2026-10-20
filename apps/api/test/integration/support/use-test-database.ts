@@ -20,3 +20,8 @@ process.env.DATABASE_URL = testUrl;
 // ignored .env enables a live provider for manual compatibility validation.
 process.env.AI_PROVIDER = 'disabled';
 process.env.MOCKUP_PROVIDER = 'disabled';
+
+// Sign-in limits count in memory here: a developer's Redis keeps counters between
+// runs, and a test run must not depend on the previous one. The Redis store has
+// its own test (auth-rate-limit-redis.integration.spec.ts).
+process.env.AUTH_RATE_LIMIT_STORE = 'memory';
