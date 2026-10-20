@@ -16,6 +16,8 @@ next-env.d.ts
 # Build and generated output
 dist/
 build/
+# The BUILD_ONLY route (DEC-116) is source, not build output.
+!apps/web/app/build/
 *.tsbuildinfo
 
 # Test and coverage output
