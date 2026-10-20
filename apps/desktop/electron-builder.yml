@@ -5,6 +5,7 @@ productName: CASEFlow AI
 copyright: Copyright 2026 Andriu Dex
 directories:
   output: release
+  buildResources: build-resources
 files:
   - dist/**
   - package.json
@@ -38,6 +39,7 @@ extraResources:
     to: NOTICE
 win:
   target: nsis
+  icon: build-resources/icon.ico
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
