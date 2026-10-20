@@ -4,6 +4,18 @@
 
 CASEFlow AI is an integrated, AI-assisted I-CASE (Computer-Aided Software Engineering) platform for managing software projects end-to-end: knowledge intake, requirements and analysis, design, traceability, and — eventually — controlled forward engineering into a running generated project. It is built to remain generic (no hardcoded business domain), multi-workspace, multi-project, structured, versioned, and usable without any AI provider connected.
 
+## Get started
+
+Pick the way that fits you. The installation guides are written in Spanish, like the application.
+
+| I want to…                         | Use                             | You need                                                          | Guide                                              |
+| ---------------------------------- | ------------------------------- | ----------------------------------------------------------------- | -------------------------------------------------- |
+| Try it or use it on my own machine | **Desktop installer** (Windows) | Windows 10/11; Docker Desktop only to validate generated projects | [docs/install-desktop.md](docs/install-desktop.md) |
+| Run it for a team, or on a server  | **Docker Compose**              | Docker with Compose v2                                            | [docs/install-docker.md](docs/install-docker.md)   |
+| Develop or contribute              | **From source**                 | Node 24, pnpm, Docker                                             | [Local setup](#local-setup) below                  |
+
+Both installable editions work without any AI provider; AI is optional in each.
+
 ## Current status
 
 This repository implements the complete **First Deliverable MVP**: Project Sources (typed intake, local text/PDF extraction, manual image/audio transcription fallback, structured interpretation/report), Project Context, ISO/IEC/IEEE 29148:2018-aligned Requirements, Use Cases, a conceptual Data Model with a deterministic ER diagram, Navigation/Software Architecture/System Architecture with deterministic diagrams, a UI Blueprint with deterministic Mockups, staleness (potential-impact) analysis, an exact-version Traceability graph, a 13-stage Readiness evaluation, and JSON/HTML Export — all with candidate-first AI generation where a provider is configured **and** a fully manual, non-AI creation path for every artifact type (CASEflow remains usable end to end with `AI_PROVIDER=disabled`). See `docs/FIRST_DELIVERABLE_MVP.md` and `docs/CASEFLOW_AI_SPEC.md` §217–§219.
@@ -25,7 +37,7 @@ Both a Playwright browser E2E scenario proving the no-AI flow and a second scena
 - **Email (dev):** Mailpit (provisioned; no application usage yet).
 - **Workspace manager:** pnpm workspaces (no Turborepo).
 - **Testing:** Vitest, with NestJS testing utilities + Supertest for HTTP-level tests.
-- **Containers:** Docker Compose for local infrastructure only (the applications themselves run as normal local Node processes in Foundation — no Dockerfiles yet).
+- **Containers:** `infra/docker/compose.yml` starts the development infrastructure (the applications run as local Node processes). `infra/docker/compose.app.yml` runs the whole application from `infra/docker/Dockerfile` (see [docs/install-docker.md](docs/install-docker.md)).
 
 ## Prerequisites
 
@@ -195,8 +207,10 @@ Docker is only needed to validate generated code. Without it, planning works, an
 ```bash
 pnpm --filter @caseflow-ai/desktop run build:all   # API deploy, web standalone, Electron main
 pnpm --filter @caseflow-ai/desktop start           # run from the repository
-pnpm --filter @caseflow-ai/desktop run package     # installers in apps/desktop/release
+pnpm --filter @caseflow-ai/desktop run package     # Windows installer in apps/desktop/release
 ```
+
+Only the Windows installer is packaged for now. End-user installation: [docs/install-desktop.md](docs/install-desktop.md).
 
 Optional settings go in `caseflow.env` inside the app's data folder (`%APPDATA%\CASEFlow AI` on Windows), one `KEY=VALUE` per line. You can set:
 

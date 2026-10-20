@@ -1,0 +1,204 @@
+# Self-hosted edition: the whole application, built from this repository.
+#
+#   cp infra/docker/app.env.example infra/docker/app.env      # then edit it
+#   docker compose -f infra/docker/compose.app.yml --env-file infra/docker/app.env up -d --build
+#
+# Add -f infra/docker/compose.app.sandbox.yml to let it validate generated projects.
+# Only the web (WEB_PORT) and the API (API_PORT) are published; the rest stays
+# inside the compose network. This is separate from compose.yml, which only
+# starts the development infrastructure.
+name: caseflow-ai-app
+
+x-api-env: &api-env
+  NODE_ENV: production
+  API_PORT: 3001
+  DATABASE_URL: postgresql://caseflow:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/caseflow?schema=public
+  JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET (at least 32 characters)}
+  INTERNAL_JOBS_SECRET: ${INTERNAL_JOBS_SECRET:?Set INTERNAL_JOBS_SECRET}
+  WEB_ORIGIN: ${PUBLIC_WEB_URL:-http://localhost:3000}
+  REDIS_URL: redis://redis:6379
+  API_INTERNAL_URL: http://api:3001
+  S3_ENDPOINT: http://seaweedfs:8333
+  S3_BUCKET: caseflow
+  S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?Set S3_ACCESS_KEY_ID}
+  S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?Set S3_SECRET_ACCESS_KEY}
+  S3_REGION: us-east-1
+  DIAGRAM_RENDERER: kroki
+  KROKI_BASE_URL: http://kroki:8000
+  AI_PROVIDER: ${AI_PROVIDER:-disabled}
+  AI_BASE_URL: ${AI_BASE_URL:-}
+  AI_API_KEY: ${AI_API_KEY:-}
+  AI_MODEL: ${AI_MODEL:-}
+  AI_TIMEOUT_MS: ${AI_TIMEOUT_MS:-120000}
+  MOCKUP_PROVIDER: ${MOCKUP_PROVIDER:-disabled}
+  STITCH_API_KEY: ${STITCH_API_KEY:-}
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.6-pg18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: caseflow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: caseflow
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U caseflow -d caseflow']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:8.10.1-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'redis-cli ping | grep -q PONG']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.47
+    restart: unless-stopped
+    # The S3 identity is written at start from the same keys the API uses.
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - >
+        printf '{"identities":[{"name":"caseflow","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Admin","Read","Write","List","Tagging"]}]}'
+        "$$S3_ACCESS_KEY_ID" "$$S3_SECRET_ACCESS_KEY" > /tmp/s3-config.json &&
+        exec weed server -dir=/data -s3 -s3.port=8333 -s3.config=/tmp/s3-config.json
+    environment:
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?Set S3_ACCESS_KEY_ID}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?Set S3_SECRET_ACCESS_KEY}
+    volumes:
+      - seaweedfs_data:/data
+    healthcheck:
+      test: ['CMD', 'nc', '-z', '127.0.0.1', '8333']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  storage-init:
+    image: amazon/aws-cli:2.36.46
+    depends_on:
+      seaweedfs:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?Set S3_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?Set S3_SECRET_ACCESS_KEY}
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - >
+        aws --endpoint-url=http://seaweedfs:8333 s3api head-bucket --bucket caseflow ||
+        aws --endpoint-url=http://seaweedfs:8333 s3api create-bucket --bucket caseflow
+    restart: 'no'
+
+  kroki-mermaid:
+    image: yuzutech/kroki-mermaid:0.32.1
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "const s=require('net').connect(8002,'localhost');s.on('connect',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  kroki:
+    image: yuzutech/kroki:0.32.1
+    restart: unless-stopped
+    environment:
+      KROKI_MERMAID_HOST: kroki-mermaid
+      PLANTUML_LIMIT_SIZE: '16384'
+    depends_on:
+      kroki-mermaid:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://localhost:8000/health']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  migrate:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql://caseflow:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/caseflow?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+      target: api
+    restart: unless-stopped
+    environment: *api-env
+    ports:
+      - '${API_PORT:-3001}:3001'
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      storage-init:
+        condition: service_completed_successfully
+      kroki:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3001/health/live').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+      target: worker
+    restart: unless-stopped
+    environment: *api-env
+    depends_on:
+      api:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+      target: web
+      args:
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:3001}
+    restart: unless-stopped
+    ports:
+      - '${WEB_PORT:-3000}:3000'
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  seaweedfs_data:
