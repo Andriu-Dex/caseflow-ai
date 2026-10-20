@@ -8,7 +8,8 @@ import {
   loginRequestSchema,
   authResponseSchema,
 } from '@caseflow-ai/contracts';
-import { ApiZodResponse, ApiZodBody } from '../openapi/zod-openapi';
+import { ApiErrorResponse, ApiZodResponse, ApiZodBody } from '../openapi/zod-openapi';
+import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 
 @ApiTags('auth')
@@ -20,7 +21,11 @@ export class AuthController {
   @ApiOperation({ summary: 'Register a new user' })
   @ApiZodBody(registerRequestSchema)
   @ApiZodResponse(201, 'User registered', authResponseSchema)
-  async register(@Body() body: RegisterRequest, @Res({ passthrough: true }) res: Response) {
+  @ApiErrorResponse(400, 'The request body is invalid.')
+  async register(
+    @Body(new ZodValidationPipe(registerRequestSchema)) body: RegisterRequest,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const { refreshToken, ...response } = await this.authService.register(body);
     this.setRefreshTokenCookie(res, refreshToken);
     return response;
@@ -31,7 +36,11 @@ export class AuthController {
   @ApiOperation({ summary: 'Login a user' })
   @ApiZodBody(loginRequestSchema)
   @ApiZodResponse(200, 'User logged in', authResponseSchema)
-  async login(@Body() body: LoginRequest, @Res({ passthrough: true }) res: Response) {
+  @ApiErrorResponse(400, 'The request body is invalid.')
+  async login(
+    @Body(new ZodValidationPipe(loginRequestSchema)) body: LoginRequest,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const { refreshToken, ...response } = await this.authService.login(body);
     this.setRefreshTokenCookie(res, refreshToken);
     return response;
