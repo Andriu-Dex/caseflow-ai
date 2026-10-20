@@ -77,6 +77,10 @@ describe('AuthController', () => {
       response,
     );
     expect(service.logout).toHaveBeenCalledWith('refresh');
-    expect(response.clearCookie).toHaveBeenCalledWith('refresh_token');
+    // Cleared with the attributes it was created with (Path included), not the defaults.
+    expect(response.clearCookie).toHaveBeenCalledWith(
+      'refresh_token',
+      expect.objectContaining({ httpOnly: true, sameSite: 'lax', path: '/auth' }),
+    );
   });
 });

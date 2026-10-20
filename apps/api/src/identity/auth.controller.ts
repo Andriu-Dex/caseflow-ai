@@ -10,6 +10,7 @@ import {
 } from '@caseflow-ai/contracts';
 import { ApiErrorResponse, ApiZodResponse, ApiZodBody } from '../openapi/zod-openapi';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
+import { REFRESH_COOKIE_NAME, clearRefreshCookie, setRefreshCookie } from './refresh-cookie';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 
 @ApiTags('auth')
@@ -27,7 +28,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const { refreshToken, ...response } = await this.authService.register(body);
-    this.setRefreshTokenCookie(res, refreshToken);
+    setRefreshCookie(res, refreshToken);
     return response;
   }
 
@@ -42,7 +43,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const { refreshToken, ...response } = await this.authService.login(body);
-    this.setRefreshTokenCookie(res, refreshToken);
+    setRefreshCookie(res, refreshToken);
     return response;
   }
 
@@ -51,10 +52,10 @@ export class AuthController {
   @ApiOperation({ summary: 'Refresh access token' })
   @ApiZodResponse(200, 'Tokens refreshed', authResponseSchema)
   async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const token = req.cookies?.refresh_token;
+    const token = req.cookies?.[REFRESH_COOKIE_NAME];
     if (!token) throw new UnauthorizedException('No refresh token');
     const { refreshToken, ...response } = await this.authService.refresh(token);
-    this.setRefreshTokenCookie(res, refreshToken);
+    setRefreshCookie(res, refreshToken);
     return response;
   }
 
@@ -62,20 +63,11 @@ export class AuthController {
   @HttpCode(200)
   @ApiOperation({ summary: 'Logout a user' })
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const token = req.cookies?.refresh_token;
+    const token = req.cookies?.[REFRESH_COOKIE_NAME];
     if (token) {
       await this.authService.logout(token);
     }
-    res.clearCookie('refresh_token');
+    clearRefreshCookie(res);
     return { success: true };
-  }
-
-  private setRefreshTokenCookie(res: Response, token: string) {
-    res.cookie('refresh_token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/auth',
-    });
   }
 }
