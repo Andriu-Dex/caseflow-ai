@@ -5307,6 +5307,7 @@ generated-project/
 │   └── api-client/
 ├── prisma/
 ├── docker/
+├── scripts/            # setup.mjs: primera ejecución (ADR-012)
 ├── .env.example
 ├── package.json
 ├── pnpm-workspace.yaml
