@@ -361,7 +361,10 @@ export function backendFiles(
           test: 'pnpm run prisma:generate && vitest run',
           start: 'node dist/main.js',
           dev: 'pnpm run build && node dist/main.js',
+          // First run: creates the initial migration and applies it. `db:deploy` only applies
+          // the migrations that already exist (what scripts/setup.mjs uses once they do).
           'db:migrate': 'prisma migrate dev --name init',
+          'db:deploy': 'prisma migrate deploy',
           ...(auth ? { 'dev-token': 'node dist/auth/dev-token.js' } : {}),
         },
         dependencies: dependencies(
@@ -757,7 +760,7 @@ try {
 }
 const secret = process.env.JWT_SECRET;
 if (!secret) {
-  console.error('Defina JWT_SECRET en .env');
+  console.error('Falta JWT_SECRET en .env. Ejecute "pnpm run setup": crea el archivo con el secreto.');
   process.exit(1);
 }
 const roles = process.argv.slice(2);

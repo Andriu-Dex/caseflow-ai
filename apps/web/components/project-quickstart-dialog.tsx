@@ -150,13 +150,12 @@ export function ProjectQuickstartDialog({
     }
   }
 
-  const fullWorkflowScript = `# 1. Crear archivo de entorno
-cp .env.example .env
-
-# 2. Iniciar PostgreSQL en Docker y aplicar migraciones
-docker compose -f docker/docker-compose.yml up -d
+  const fullWorkflowScript = `# 1. Activar pnpm e instalar dependencias
+corepack enable
 pnpm install
-pnpm run db:migrate
+
+# 2. Crear .env con secretos, iniciar PostgreSQL en Docker y crear las tablas
+pnpm run setup
 
 # 3. Arrancar frontend (Next.js) y backend (NestJS)
 pnpm run dev`;
@@ -185,10 +184,10 @@ pnpm run dev`;
           <div className="flex items-center gap-1.5 flex-wrap text-xs text-muted-foreground pt-0.5">
             <span className="font-semibold text-foreground text-[11px]">Requisitos:</span>
             <span className="inline-flex items-center rounded-md bg-slate-100 text-slate-700 dark:bg-zinc-800 dark:text-zinc-300 border border-slate-200/80 dark:border-zinc-700 px-2 py-0.5 font-mono text-[10px] font-medium">
-              Node.js &ge; 20
+              Node.js
             </span>
             <span className="inline-flex items-center rounded-md bg-slate-100 text-slate-700 dark:bg-zinc-800 dark:text-zinc-300 border border-slate-200/80 dark:border-zinc-700 px-2 py-0.5 font-mono text-[10px] font-medium">
-              pnpm &ge; 9
+              pnpm
             </span>
             <span className="inline-flex items-center rounded-md bg-slate-100 text-slate-700 dark:bg-zinc-800 dark:text-zinc-300 border border-slate-200/80 dark:border-zinc-700 px-2 py-0.5 font-mono text-[10px] font-medium">
               Docker Desktop
@@ -293,22 +292,25 @@ pnpm run dev`;
                   <span className="text-xs font-bold text-foreground">1. Preparación</span>
                 </div>
                 <p className="text-[11px] text-muted-foreground">
-                  Descomprime el ZIP en una carpeta y crea tu archivo de entorno:
+                  Descomprime el ZIP, abre una terminal en la carpeta y descarga las dependencias:
                 </p>
-                <CodeSnippet
-                  code="cp .env.example .env"
-                  comment="* En Windows PowerShell puedes usar: copy .env.example .env"
-                  copied={copiedKey === 'cp-env'}
-                  onCopy={() =>
-                    copyToClipboard(
-                      typeof navigator !== 'undefined' && navigator.platform?.includes('Win')
-                        ? 'copy .env.example .env'
-                        : 'cp .env.example .env',
-                      'cp-env',
-                      'Comando .env',
-                    )
-                  }
-                />
+                <div className="flex flex-col gap-1.5">
+                  <CodeSnippet
+                    code="corepack enable"
+                    comment="* Solo la primera vez. Si da error de permisos: npm install -g pnpm"
+                    copied={copiedKey === 'corepack'}
+                    onCopy={() =>
+                      copyToClipboard('corepack enable', 'corepack', 'Comando corepack')
+                    }
+                  />
+                  <CodeSnippet
+                    code="pnpm install"
+                    copied={copiedKey === 'pnpm-install'}
+                    onCopy={() =>
+                      copyToClipboard('pnpm install', 'pnpm-install', 'Comando install')
+                    }
+                  />
+                </div>
               </div>
             </div>
 
@@ -322,32 +324,15 @@ pnpm run dev`;
                   <span className="text-xs font-bold text-foreground">2. Base de Datos</span>
                 </div>
                 <p className="text-[11px] text-muted-foreground">
-                  Inicia PostgreSQL en Docker, instala dependencias y aplica migraciones:
+                  Un solo comando crea el .env con sus secretos, inicia PostgreSQL en Docker (en un
+                  puerto libre) y crea las tablas:
                 </p>
-                <div className="flex flex-col gap-1.5">
-                  <CodeSnippet
-                    code="docker compose -f docker/docker-compose.yml up -d"
-                    copied={copiedKey === 'docker-up'}
-                    onCopy={() =>
-                      copyToClipboard(
-                        'docker compose -f docker/docker-compose.yml up -d',
-                        'docker-up',
-                        'Comando Docker',
-                      )
-                    }
-                  />
-                  <CodeSnippet
-                    code="pnpm install && pnpm run db:migrate"
-                    copied={copiedKey === 'install-migrate'}
-                    onCopy={() =>
-                      copyToClipboard(
-                        'pnpm install && pnpm run db:migrate',
-                        'install-migrate',
-                        'Comandos pnpm',
-                      )
-                    }
-                  />
-                </div>
+                <CodeSnippet
+                  code="pnpm run setup"
+                  comment="* Docker Desktop debe estar abierto. Si falla por una base anterior: pnpm run setup -- --reset"
+                  copied={copiedKey === 'setup'}
+                  onCopy={() => copyToClipboard('pnpm run setup', 'setup', 'Comando setup')}
+                />
               </div>
             </div>
 

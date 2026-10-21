@@ -1,3 +1,7 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { CASEFLOW_WEB_TS_V1, findCatalogDependency } from '@caseflow-ai/domain';
 import {
@@ -97,6 +101,7 @@ describe('generateProject', () => {
       '.env.example',
       'README.md',
       'docker/docker-compose.yml',
+      'scripts/setup.mjs',
       'prisma/schema.prisma',
       'packages/contracts/src/index.ts',
       'packages/api-client/src/index.ts',
@@ -268,10 +273,111 @@ describe('generateProject', () => {
     );
   });
 
-  it('never puts secrets in .env.example', () => {
+  it('ships only example secrets and never leaves a variable empty in .env.example', () => {
     const env = paths.get('.env.example')!.content;
-    expect(env).toContain('JWT_SECRET=change-me');
-    expect(env).not.toMatch(/sk-|password=(?!app)/i);
+    expect(env).toContain('JWT_SECRET=dev-only-jwt-secret');
+    expect(env).toContain('POSTGRES_PORT=5433');
+    expect(env).not.toMatch(/sk-/i);
+    expect(env).not.toMatch(/^[A-Z][A-Z0-9_]*=$/m);
+    for (const [, name, value] of env.matchAll(
+      /^([A-Z0-9_]*(?:SECRET|PASSWORD)[A-Z0-9_]*)=(.*)$/gm,
+    ))
+      expect(value, name).toMatch(/^dev-only-/);
+  });
+
+  // Regression: a colleague's first run failed with P1000 against a shared 5432/volume.
+  it('isolates the local database per project and exposes it on a configurable local port', () => {
+    const compose = paths.get('docker/docker-compose.yml')!.content;
+    expect(compose).toMatch(/^name: tienda-demo$/m);
+    expect(compose).toContain("'127.0.0.1:${POSTGRES_PORT:-5433}:5432'");
+    expect(compose).toContain('healthcheck:');
+    const root = JSON.parse(paths.get('package.json')!.content);
+    expect(root.scripts.setup).toBe('node scripts/setup.mjs');
+    expect(root.scripts['db:up']).toContain('--env-file .env');
+    expect(JSON.parse(paths.get('apps/api/package.json')!.content).scripts['db:deploy']).toBe(
+      'prisma migrate deploy',
+    );
+  });
+
+  it('documents the four-command first run in the README', () => {
+    const readme = paths.get('README.md')!.content;
+    for (const command of ['corepack enable', 'pnpm install', 'pnpm run setup', 'pnpm run dev'])
+      expect(readme).toContain(command);
+    expect(readme).not.toContain('cp .env.example');
+    expect(readme).toContain('setup -- --reset');
+  });
+});
+
+describe('generated scripts/setup.mjs', () => {
+  type Setup = {
+    isOwnSecret: (name: string) => boolean;
+    needsGeneration: (name: string, value: string) => boolean;
+    buildEnv: (
+      example: string,
+      options: { port: number; makeSecret?: () => string },
+    ) => { text: string; generated: string[]; pending: string[]; values: Record<string, string> };
+    findFreePort: (
+      start: number,
+      isFree?: (port: number) => Promise<boolean>,
+      tries?: number,
+    ) => Promise<number>;
+    explainFailure: (output: string) => string[];
+  };
+
+  const load = async (): Promise<Setup> => {
+    const dir = mkdtempSync(join(tmpdir(), 'setup-script-'));
+    const target = join(dir, 'setup.mjs');
+    writeFileSync(target, byPath(generateProject(ctx())).get('scripts/setup.mjs')!.content);
+    return (await import(pathToFileURL(target).href)) as Setup;
+  };
+
+  const example = [
+    'POSTGRES_USER=app',
+    'POSTGRES_PASSWORD=dev-only-postgres-password',
+    'POSTGRES_DB=app',
+    'POSTGRES_PORT=5433',
+    'DATABASE_URL=postgresql://app:dev-only-postgres-password@127.0.0.1:5433/app',
+    'JWT_SECRET=dev-only-jwt-secret',
+    'STRIPE_API_KEY=replace-with-your-value',
+    '# OPTIONAL_KEY=',
+  ].join('\n');
+
+  it('generates own secrets, keeps the connection string consistent and reports what is pending', async () => {
+    const { buildEnv } = await load();
+    let n = 0;
+    const built = buildEnv(example, { port: 5434, makeSecret: () => `s3cret${++n}` });
+    expect(built.generated).toEqual(['POSTGRES_PASSWORD', 'JWT_SECRET']);
+    expect(built.values.POSTGRES_PORT).toBe('5434');
+    expect(built.values.DATABASE_URL).toBe('postgresql://app:s3cret1@127.0.0.1:5434/app');
+    expect(built.text).toContain('JWT_SECRET=s3cret2');
+    expect(built.text).toContain('# OPTIONAL_KEY=');
+    expect(built.pending).toEqual(['STRIPE_API_KEY']);
+  });
+
+  it('only replaces secrets that are empty or still the example value', async () => {
+    const { needsGeneration, isOwnSecret } = await load();
+    expect(needsGeneration('JWT_SECRET', '')).toBe(true);
+    expect(needsGeneration('JWT_SECRET', 'dev-only-jwt-secret')).toBe(true);
+    expect(needsGeneration('JWT_SECRET', 'already-chosen')).toBe(false);
+    expect(needsGeneration('STRIPE_API_KEY', '')).toBe(false);
+    expect(isOwnSecret('SESSION_SECRET')).toBe(true);
+    expect(isOwnSecret('SECRETARY')).toBe(false);
+  });
+
+  it('skips busy ports and gives up after the allowed tries', async () => {
+    const { findFreePort } = await load();
+    expect(await findFreePort(5433, async (p) => p >= 5435)).toBe(5435);
+    await expect(findFreePort(5433, async () => false, 3)).rejects.toThrow(/5433 y el 5435/);
+  });
+
+  it('explains the failures seen on first runs', async () => {
+    const { explainFailure } = await load();
+    expect(explainFailure('Error: P1000: Authentication failed')[0]).toContain('--reset');
+    expect(explainFailure('Bind for 0.0.0.0:5433 failed: port is already allocated')[0]).toContain(
+      'POSTGRES_PORT',
+    );
+    expect(explainFailure('error during connect: docker daemon')[0]).toContain('Docker Desktop');
+    expect(explainFailure('everything fine')).toEqual([]);
   });
 });
 
