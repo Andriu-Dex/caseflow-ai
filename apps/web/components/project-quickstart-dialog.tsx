@@ -92,6 +92,9 @@ function CodeSnippet({ code, onCopy, copied, comment }: CodeSnippetProps) {
 // underscores and hyphens are accepted, and the role goes in double quotes (a
 // role such as "Encargado de sucursal" is one argument). Anything else shows a
 // placeholder instead of being put into the command.
+const DOCKER_UP_COMMAND =
+  'docker compose --project-directory . -f docker/docker-compose.app.yml up --build';
+
 export function devTokenCommand(role: string): string {
   const safe = /^[\p{L}\p{N} _-]{1,60}$/u.test(role) ? role : '<rol>';
   return `pnpm --filter ./apps/api run dev-token -- "${safe}"`;
@@ -279,6 +282,16 @@ pnpm run dev`;
               </div>
             </div>
           ) : null}
+
+          {/* Alternativa sin Node.js */}
+          <div className="flex flex-col gap-1 rounded-xl border border-border/70 bg-muted/20 p-2.5 px-3">
+            <span className="text-xs font-bold text-foreground">¿Sin Node.js? Solo Docker</span>
+            <CodeSnippet
+              code={DOCKER_UP_COMMAND}
+              copied={copiedKey === 'docker-up'}
+              onCopy={() => copyToClipboard(DOCKER_UP_COMMAND, 'docker-up', 'Comando Docker')}
+            />
+          </div>
 
           {/* Stepper continuo (Línea de tiempo vertical) */}
           <div className="flex flex-col pt-0.5">

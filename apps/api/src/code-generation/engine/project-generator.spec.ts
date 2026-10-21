@@ -299,6 +299,26 @@ describe('generateProject', () => {
     );
   });
 
+  it('runs the whole application in Docker without Node on the machine', () => {
+    const compose = paths.get('docker/docker-compose.app.yml')!.content;
+    expect(compose).toMatch(/^name: tienda-demo-app$/m);
+    for (const service of ['postgres', 'migrate', 'api', 'web'])
+      expect(compose).toMatch(new RegExp(`^  ${service}:$`, 'm'));
+    expect(compose).toContain('service_completed_successfully');
+    expect(compose).toContain('JWT_SECRET: ${JWT_SECRET:-dev-only-jwt-secret}');
+    expect(compose).toContain("'127.0.0.1:${WEB_PORT:-3000}:3000'");
+    const dockerfile = paths.get('docker/Dockerfile')!.content;
+    expect(dockerfile).toContain('FROM node:24-slim AS workspace');
+    for (const target of ['api', 'migrate', 'web']) expect(dockerfile).toContain(`AS ${target}`);
+    expect(dockerfile).toContain('migrate diff --from-empty');
+    expect(paths.get('.dockerignore')!.content).toContain('.env');
+    const readme = paths.get('README.md')!.content;
+    expect(readme).toContain(
+      'docker compose --project-directory . -f docker/docker-compose.app.yml up --build',
+    );
+    expect(readme).toContain('dev-token.js');
+  });
+
   it('documents the four-command first run in the README', () => {
     const readme = paths.get('README.md')!.content;
     for (const command of ['corepack enable', 'pnpm install', 'pnpm run setup', 'pnpm run dev'])
@@ -377,6 +397,9 @@ describe('generated scripts/setup.mjs', () => {
       'POSTGRES_PORT',
     );
     expect(explainFailure('error during connect: docker daemon')[0]).toContain('Docker Desktop');
+    expect(explainFailure('spawn x/schema-engine-windows.exe ENOENT')[0]).toContain(
+      'C:\\proyectos\\mi-app',
+    );
     expect(explainFailure('everything fine')).toEqual([]);
   });
 });

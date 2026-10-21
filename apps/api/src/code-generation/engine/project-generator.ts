@@ -2,6 +2,7 @@ import { PlanGenerationError } from '../naming';
 import { apiClientFiles } from './api-client.templates';
 import { backendFiles, type EndpointImplementations } from './backend.templates';
 import { contractsFiles } from './contracts.templates';
+import { dockerFiles } from './docker.templates';
 import { frontendFiles } from './frontend.templates';
 import { rootFiles } from './root.templates';
 import type { GeneratedProjectFile, GenerationContext } from './types';
@@ -17,6 +18,7 @@ export function generateProject(
 ): GeneratedProjectFile[] {
   const files = [
     ...rootFiles(ctx),
+    ...dockerFiles(ctx),
     ...contractsFiles(ctx),
     ...apiClientFiles(ctx),
     ...backendFiles(ctx, implementations),

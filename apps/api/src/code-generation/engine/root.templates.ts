@@ -53,6 +53,11 @@ export function rootFiles(ctx: GenerationContext): GeneratedProjectFile[] {
           setup: 'node scripts/setup.mjs',
           'db:up': 'docker compose --env-file .env -f docker/docker-compose.yml up -d --wait',
           'db:down': 'docker compose --env-file .env -f docker/docker-compose.yml down',
+          // Whole application in Docker, without Node on the machine (docker/Dockerfile).
+          'docker:up':
+            'docker compose --project-directory . -f docker/docker-compose.app.yml up --build',
+          'docker:down':
+            'docker compose --project-directory . -f docker/docker-compose.app.yml down',
           'db:migrate': 'pnpm --filter ./apps/api run db:migrate',
           dev: 'pnpm run build:packages && pnpm -r --filter "./apps/*" --parallel run dev',
         },
@@ -196,18 +201,26 @@ volumes:
 Proyecto generado por CASEFlow AI a partir de su plan de implementación aprobado
 (plantilla ${template.identifier} v${template.version}: Next.js + NestJS + Prisma + PostgreSQL).
 
-## Lo que necesita instalar (una sola vez)
+## Opción A — Solo con Docker (la más simple)
 
-1. **Node.js ${nodeVersion}** — https://nodejs.org (descargue la versión LTS indicada).
-2. **Docker Desktop** — https://www.docker.com/products/docker-desktop/ . Ábralo y espere a que
-   diga que está activo: aloja la base de datos del proyecto.
-3. **pnpm** — se activa con un comando (paso 1 de abajo). Si Windows le pide permisos de
-   administrador, abra la terminal como administrador o instálelo con
-   \`npm install -g ${toolchain.packageManager}\`.
+Necesita únicamente **Docker Desktop** — https://www.docker.com/products/docker-desktop/ . Ábralo y
+espere a que diga que está activo. Descomprima el ZIP, abra una terminal **dentro de la carpeta** y
+ejecute:
 
-## Puesta en marcha
+\`\`\`bash
+docker compose --project-directory . -f docker/docker-compose.app.yml up --build
+\`\`\`
 
-Descomprima el ZIP, abra una terminal **dentro de la carpeta** y ejecute:
+La primera vez tarda varios minutos (construye la aplicación). Cuando el texto deje de avanzar,
+abra **http://localhost:3000**. La documentación de la API queda en http://localhost:3001/docs.
+Para detenerla pulse \`Ctrl + C\`; \`docker compose --project-directory . -f docker/docker-compose.app.yml down\`
+la apaga por completo (añada \`-v\` para borrar también sus datos). No necesita crear ningún archivo:
+usa valores de ejemplo pensados solo para su equipo.
+
+## Opción B — Con Node.js (para modificar el código)
+
+Necesita **Node.js ${nodeVersion}** (https://nodejs.org, versión LTS) y **Docker Desktop**, que aloja
+la base de datos. Descomprima el ZIP, abra una terminal **dentro de la carpeta** y ejecute:
 
 \`\`\`bash
 corepack enable        # 1. activa pnpm (solo la primera vez)
@@ -216,8 +229,9 @@ pnpm run setup         # 3. crea .env con sus secretos, inicia la base de datos 
 pnpm run dev           # 4. arranca la aplicación
 \`\`\`
 
-Cuando termine, abra **http://localhost:3000**. La documentación interactiva de la API queda
-en http://localhost:3001/docs. Para detener la aplicación pulse \`Ctrl + C\`.
+Si Windows le pide permisos de administrador para \`corepack\`, abra la terminal como administrador o
+instale pnpm con \`npm install -g ${toolchain.packageManager}\`. Cuando termine, abra
+**http://localhost:3000** (API en http://localhost:3001/docs). Para detenerla pulse \`Ctrl + C\`.
 
 \`pnpm run setup\` no necesita que edite nada a mano: genera los secretos, elige un puerto libre
 para la base de datos y vuelve a funcionar si lo ejecuta de nuevo. Los comandos \`pnpm run db:up\`
@@ -230,6 +244,8 @@ y \`pnpm run db:down\` inician y detienen solo la base de datos.
 | \`Docker no está en ejecución\` | Docker Desktop está cerrado | Ábralo, espere a que diga que está activo y repita \`pnpm run setup\` |
 | \`P1000: Authentication failed\` | Quedó una base de datos anterior de este proyecto con otra contraseña, o otro programa usa el mismo puerto | \`pnpm run setup -- --reset\` borra los datos locales de este proyecto y los crea de nuevo |
 | \`port is already allocated\` | El puerto de la base de datos está ocupado | Borre el archivo \`.env\` y ejecute \`pnpm run setup\`: elige otro puerto libre |
+| \`schema-engine ... ENOENT\` | La carpeta está en una ruta muy larga (Windows) | Mueva el proyecto a una ruta corta como \`C:\\proyectos\\mi-app\`, borre \`node_modules\` y repita \`pnpm install\` y \`pnpm run setup\` |
+| \`port is already allocated\` en la opción A | El puerto 3000 o 3001 está ocupado | Cree un archivo \`.env\` con \`WEB_PORT=3002\` y \`API_PORT=3003\` (u otros libres) y repita el comando |
 | \`corepack\` da un error de permisos | Node está instalado en una carpeta protegida | Abra la terminal como administrador o use \`npm install -g ${toolchain.packageManager}\` |
 | La web no carga datos | La API no está en ejecución o el puerto 3001 está ocupado | Revise que \`pnpm run dev\` siga activo y cambie \`API_PORT\` y \`NEXT_PUBLIC_API_URL\` en \`.env\` |
 
@@ -251,6 +267,12 @@ La API exige un token Bearer firmado con \`JWT_SECRET\` (HS256) que incluya
 
 \`\`\`bash
 pnpm --filter ./apps/api run dev-token -- ${p.authentication.roles[0] ?? 'USER'}
+\`\`\`
+
+Con la opción A (Docker), el token se obtiene con:
+
+\`\`\`bash
+docker compose --project-directory . -f docker/docker-compose.app.yml exec api node apps/api/dist/auth/dev-token.js ${p.authentication.roles[0] ?? 'USER'}
 \`\`\`
 
 y pegue el token en la pantalla «Acceso» de la aplicación web.

@@ -180,3 +180,63 @@ export function diagnosedFiles(
     })
     .slice(0, limit);
 }
+
+const FIRST_RUN_OWN_SECRET = /(^|_)(SECRET|PASSWORD|SALT)($|_)/;
+
+// First-run contract of the exported project (ADR-012): what `pnpm run setup` and the
+// README promise must hold in the files themselves. Static on purpose: the sandbox does
+// not run Docker, so these checks catch configuration drift, not a live database.
+export function firstRunProblems(files: readonly ProjectFile[]): string[] {
+  const problems: string[] = [];
+  const byPath = new Map(files.map((f) => [f.path, f.content]));
+  const need = (path: string) => {
+    const content = byPath.get(path);
+    if (content === undefined) problems.push(`Primera ejecución: falta «${path}».`);
+    return content;
+  };
+
+  let scripts: Record<string, string>;
+  try {
+    scripts = (JSON.parse(need('package.json') ?? '{}').scripts ?? {}) as Record<string, string>;
+  } catch {
+    return problems; // reported by structuralProblems
+  }
+  if (!scripts.setup)
+    problems.push('Primera ejecución: «package.json» no define el script «setup».');
+  need('scripts/setup.mjs');
+  need('docker/Dockerfile');
+  need('docker/docker-compose.app.yml');
+
+  const env = new Map<string, string>();
+  for (const line of (need('.env.example') ?? '').split(/\r?\n/)) {
+    const [, name, value] = /^([A-Z][A-Z0-9_]*)=(.*)$/.exec(line) ?? [];
+    if (!name || value === undefined) continue;
+    env.set(name, value);
+    if (value === '')
+      problems.push(`Primera ejecución: «.env.example» deja vacía la variable ${name}.`);
+    else if (FIRST_RUN_OWN_SECRET.test(name) && !value.startsWith('dev-only-'))
+      problems.push(`Primera ejecución: ${name} debe ser un valor de ejemplo «dev-only-…».`);
+  }
+  const port = env.get('POSTGRES_PORT');
+  if (!port) problems.push('Primera ejecución: «.env.example» no define POSTGRES_PORT.');
+  const url = env.get('DATABASE_URL');
+  if (url && (!url.includes('@127.0.0.1:') || (port && !url.includes(`:${port}/`))))
+    problems.push(
+      'Primera ejecución: DATABASE_URL debe usar 127.0.0.1 y el puerto de POSTGRES_PORT.',
+    );
+
+  const compose = need('docker/docker-compose.yml');
+  if (compose !== undefined) {
+    if (!/^name: \S+/m.test(compose))
+      problems.push('Primera ejecución: el compose no tiene nombre de proyecto.');
+    if (!compose.includes('healthcheck:'))
+      problems.push('Primera ejecución: el compose no define healthcheck.');
+    if (!compose.includes('127.0.0.1:${POSTGRES_PORT'))
+      problems.push('Primera ejecución: el compose debe publicar POSTGRES_PORT solo en 127.0.0.1.');
+  }
+
+  for (const [, script = ''] of (need('README.md') ?? '').matchAll(/pnpm run ([\w:-]+)/g))
+    if (!scripts[script])
+      problems.push(`Primera ejecución: el README usa «pnpm run ${script}», que no existe.`);
+  return [...new Set(problems)];
+}

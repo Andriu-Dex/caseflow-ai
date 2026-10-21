@@ -30,8 +30,22 @@ Cambios de plantilla que lo sostienen:
 - El README es una guía para personas no técnicas: cuatro comandos (`corepack enable`, `pnpm install`, `pnpm run setup`, `pnpm run dev`), una tabla de síntomas y soluciones y la tabla de variables.
 - El diálogo «¿Cómo probar el proyecto en tu máquina?» de la web muestra el mismo flujo.
 
+## Ejecución completa en Docker
+
+Para quien no tiene Node.js, el proyecto incluye `docker/Dockerfile`, `docker/docker-compose.app.yml` y `.dockerignore`. Un solo comando (`docker compose --project-directory . -f docker/docker-compose.app.yml up --build`) levanta PostgreSQL, un servicio de migración de una sola ejecución, la API y la web.
+
+- El Dockerfile tiene etapas `workspace` (instala y compila los paquetes internos), `api`, `migrate` y `web`. La dirección de la API se fija al construir la web (`NEXT_PUBLIC_API_URL`).
+- El generador no produce migraciones: la etapa `migrate` deriva la migración inicial del esquema de Prisma con `prisma migrate diff --from-empty` bajo el nombre fijo `00000000000000_init` y la aplica con `migrate deploy`, de modo que repetir `up` es idempotente.
+- Funciona sin `.env`: usa valores de ejemplo (`${VAR:-dev-only-…}`) solo válidos en el equipo local, y lee el `.env` de la raíz si existe. El proyecto Compose se llama `<slug>-app`, distinto del de `pnpm run setup`, por lo que no comparten volumen.
+- Los puertos 3000 y 3001 se publican solo en `127.0.0.1` y se cambian con `WEB_PORT` y `API_PORT`.
+
+## Validación de primera ejecución
+
+La etapa `STRUCTURE` de la validación del sandbox incorpora `firstRunProblems`, una comprobación **estática** (el sandbox no ejecuta Docker): existencia de `scripts/setup.mjs`, del Dockerfile y del compose de aplicación; ninguna variable vacía en `.env.example` y secretos de ejemplo `dev-only-*`; `POSTGRES_PORT` coherente con `DATABASE_URL` en `127.0.0.1`; compose con nombre, healthcheck y puerto local; y que cada `pnpm run X` del README exista en `package.json`. Un fallo marca la validación como fallida como cualquier otro problema estructural. No detecta fallos de un Docker real; eso se verifica a mano con una instalación limpia.
+
 ## Alcance y límites
 
 - No cambia la plantilla `CASEFLOW_WEB_TS_V1` ni su catálogo de dependencias.
 - Los proyectos ya exportados no se actualizan: hay que regenerarlos.
-- Queda fuera de este ADR (siguientes incrementos): ejecución completa en Docker (`docker compose up --build` con web, API y base), acceso sin token de desarrollo y una etapa de validación de primera ejecución.
+- `setup.mjs` avisa si la ruta de la carpeta es larga en Windows (el motor de Prisma no arranca con rutas muy largas) y el README lo explica.
+- Queda fuera de este ADR: acceso sin token de desarrollo (versión 3) y una validación con PostgreSQL real dentro del sandbox, que exigiría un nuevo ADR sobre el aislamiento (§26).
