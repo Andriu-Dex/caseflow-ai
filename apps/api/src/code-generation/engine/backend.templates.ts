@@ -478,7 +478,9 @@ async function bootstrap() {
     .setVersion('1.0.0')${auth ? '\n    .addBearerAuth()' : ''}
     .build();
   SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, config));
-  await app.listen(Number(process.env.API_PORT ?? 3001));
+  // With DEV_LOGIN on, listen only on this machine unless API_HOST says otherwise.
+  const host = process.env.API_HOST ?? (process.env.DEV_LOGIN === 'true' ? '127.0.0.1' : '0.0.0.0');
+  await app.listen(Number(process.env.API_PORT ?? 3001), host);
 }
 
 void bootstrap();

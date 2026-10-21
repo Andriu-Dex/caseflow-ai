@@ -330,6 +330,11 @@ describe('generateProject', () => {
     expect(controller).toContain("process.env.DEV_LOGIN === 'true'");
     expect(controller).toContain('["ADMIN","SELLER"]');
     expect(paths.get('apps/api/src/app.module.ts')!.content).toContain('DevLoginController');
+    // Reachable only from this machine unless the container sets API_HOST.
+    expect(paths.get('apps/api/src/main.ts')!.content).toContain(
+      "process.env.DEV_LOGIN === 'true' ? '127.0.0.1' : '0.0.0.0'",
+    );
+    expect(paths.get('docker/docker-compose.app.yml')!.content).toContain('API_HOST: 0.0.0.0');
     expect(paths.has('apps/api/src/auth/dev-login.spec.ts')).toBe(true);
     const access = paths.get('apps/web/app/access/page.tsx')!.content;
     expect(access).toContain('Entrar como');

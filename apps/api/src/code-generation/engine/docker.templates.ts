@@ -97,6 +97,8 @@ export function dockerFiles({ plan, template, slug }: GenerationContext): Genera
     '    environment:',
     `      DATABASE_URL: ${dbUrl}`,
     '      API_PORT: 3001',
+    // The container must listen on all its interfaces; the host port is published on 127.0.0.1.
+    '      API_HOST: 0.0.0.0',
     '      WEB_ORIGIN: http://localhost:${WEB_PORT:-3000}',
     ...(auth
       ? [
