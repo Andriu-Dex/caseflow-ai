@@ -96,6 +96,11 @@ export function explainFailure(output) {
     );
   if (/Cannot connect to the Docker daemon|error during connect|docker daemon/i.test(output))
     hints.push('Docker no está en ejecución. Abra Docker Desktop, espere a que diga que está activo y repita.');
+  if (/schema-engine.*ENOENT|ENAMETOOLONG/.test(output))
+    hints.push(
+      'La ruta de la carpeta es demasiado larga para Windows. Mueva el proyecto a una ruta corta ' +
+        '(por ejemplo C:\\proyectos\\mi-app), borre node_modules y repita pnpm install y pnpm run setup.',
+    );
   if (/unknown flag: --wait|unknown shorthand flag/i.test(output))
     hints.push('Su versión de Docker Compose es antigua: actualice Docker Desktop.');
   return hints;
@@ -137,6 +142,8 @@ export async function main(argv = process.argv.slice(2)) {
       'Abra Docker Desktop, espere a que diga que está activo y ejecute de nuevo: pnpm run setup',
     ]);
 
+  if (process.platform === 'win32' && ROOT.length > 100)
+    say('     Aviso: la ruta de la carpeta es larga y Windows puede fallar al crear las tablas. Si ocurre, mueva el proyecto a una ruta corta.');
   say('2/4  Preparando el archivo .env...');
   const envPath = join(ROOT, '.env');
   let created = false;

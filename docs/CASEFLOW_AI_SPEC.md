@@ -5306,8 +5306,8 @@ generated-project/
 │   ├── contracts/
 │   └── api-client/
 ├── prisma/
-├── docker/
 ├── scripts/            # setup.mjs: primera ejecución (ADR-012)
+├── docker/             # solo la base de datos + aplicación completa en Docker
 ├── .env.example
 ├── package.json
 ├── pnpm-workspace.yaml

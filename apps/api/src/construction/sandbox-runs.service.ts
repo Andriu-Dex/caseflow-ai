@@ -44,6 +44,7 @@ import {
   sha256,
   planCoverageProblems,
   structuralProblems,
+  firstRunProblems,
   traceabilityProblems,
   type ProjectFile,
 } from './project-validation';
@@ -330,6 +331,7 @@ export class SandboxRunsService {
       stages.push(
         check('STRUCTURE', [
           ...structuralProblems(files, template, allowed),
+          ...firstRunProblems(files),
           ...planCoverageProblems(files, plan),
         ]),
       );

@@ -32,7 +32,7 @@ describe('ProjectQuickstartDialog', () => {
     expect(screen.getByText(/3\. ¡A rodar!/i)).toBeInTheDocument();
 
     // Check prerequisites chips
-    expect(screen.getByText(/Node\.js/i)).toBeInTheDocument();
+    expect(screen.getByText('Node.js')).toBeInTheDocument();
     expect(screen.getByText('pnpm')).toBeInTheDocument();
     expect(screen.getByText('Docker Desktop')).toBeInTheDocument();
 
@@ -42,6 +42,7 @@ describe('ProjectQuickstartDialog', () => {
       screen.getByText('pnpm --filter ./apps/api run dev-token -- "ADMIN"'),
     ).toBeInTheDocument();
     expect(screen.getByText('pnpm run dev')).toBeInTheDocument();
+    expect(screen.getByText(/docker-compose.app.yml up --build/)).toBeInTheDocument();
 
     // Check copying full workflow
     const copyFullBtn = screen.getByRole('button', { name: /Copiar flujo completo/i });
