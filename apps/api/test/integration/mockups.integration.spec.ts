@@ -1,4 +1,8 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { Queue } from 'bullmq';
+import { MOCKUP_GENERATION_QUEUE, type MockupGenerationJobPayload } from '@caseflow-ai/domain';
+import type { JobQueue } from '../../src/common/infrastructure';
+import { MOCKUP_QUEUE } from '../../src/mockups/mockup-queue.token';
 import { approved } from './support/construction-fixtures';
 import { createTestContext, createWorkspace, type TestContext } from './support/test-app';
 
@@ -64,6 +68,30 @@ describe('Mockups integration', () => {
     expect(finished.status).toBe('COMPLETED');
     return ctx.mockups.get(pid, finished.resultArtifactId!);
   }
+
+  it('isolates the queue and leaves execution to the test harness', async () => {
+    const queue = ctx.app.get<JobQueue<MockupGenerationJobPayload>>(MOCKUP_QUEUE);
+    expect(queue).not.toBeInstanceOf(Queue);
+    const enqueue = vi.spyOn(queue, 'add');
+    try {
+      const workspace = await createWorkspace(ctx.prisma, 'Mockup Queue Isolation');
+      const isolatedProjectId = (
+        await ctx.projects.create({ workspaceId: workspace.id, name: 'Queue test' })
+      ).id;
+      const blueprint = await approved(ctx, isolatedProjectId, 'UI_BLUEPRINT');
+      await approved(ctx, isolatedProjectId, 'DESIGN_THEME');
+      const job = await ctx.mockups.create(isolatedProjectId, blueprint.version.id);
+      expect(enqueue).toHaveBeenCalledExactlyOnceWith(MOCKUP_GENERATION_QUEUE, {
+        jobId: job.id,
+        projectId: isolatedProjectId,
+      });
+      expect((await ctx.mockups.getJob(isolatedProjectId, job.id)).status).toBe('QUEUED');
+      await ctx.mockups.runJob(job.id);
+      expect((await ctx.mockups.getJob(isolatedProjectId, job.id)).status).toBe('COMPLETED');
+    } finally {
+      enqueue.mockRestore();
+    }
+  });
 
   it('creates a SYSTEM_GENERATED mockup from an approved UI Blueprint with a safe deterministic preview', async () => {
     const mockup = await createAndGet(projectId, approvedBlueprintVersionId);
