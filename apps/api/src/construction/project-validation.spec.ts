@@ -104,6 +104,11 @@ describe('firstRunProblems', () => {
   });
 
   it('reports compose drift, a mismatched connection string and README commands that do not exist', () => {
+    expect(
+      firstRunProblems(
+        change('.env.example', (c) => c.replace('DEV_LOGIN=false', 'DEV_LOGIN=true')),
+      ),
+    ).toEqual([expect.stringContaining('DEV_LOGIN')]);
     let files = change('docker/docker-compose.yml', (c) =>
       c.replace(/^name: .*\n/m, '').replace('healthcheck:', ''),
     );

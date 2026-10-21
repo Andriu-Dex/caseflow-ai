@@ -41,6 +41,7 @@ export function buildEnv(example, { port, makeSecret = () => randomBytes(24).toS
     const [, name, raw] = match;
     let value = raw;
     if (name === 'POSTGRES_PORT') value = String(port);
+    else if (name === 'DEV_LOGIN') value = 'true';
     else if (needsGeneration(name, raw)) {
       value = makeSecret();
       generated.push(name);

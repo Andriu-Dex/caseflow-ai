@@ -748,6 +748,89 @@ describe('AuthGuard', () => {
         { kind: 'TEST' },
       ),
       file(
+        'apps/api/src/auth/dev-login.controller.ts',
+        `import { BadRequestException, Controller, Get, Logger, NotFoundException, Post, Body } from '@nestjs/common';
+import { ApiExcludeController } from '@nestjs/swagger';
+import { Public } from './roles.decorator';
+import { signToken } from './jwt';
+
+const ROLES: readonly string[] = ${JSON.stringify(plan.authentication.roles)};
+const EIGHT_HOURS = 8 * 3600;
+
+// Development sign-in: one click instead of pasting a token. Active only when
+// DEV_LOGIN=true, so it must be off (the default in .env.example) before publishing.
+export const devLoginEnabled = () => process.env.DEV_LOGIN === 'true';
+
+@ApiExcludeController()
+@Controller('auth/dev-login')
+export class DevLoginController {
+  constructor() {
+    if (devLoginEnabled())
+      new Logger('DevLogin').warn('DEV_LOGIN=true: cualquiera puede entrar sin credenciales. Desactívelo antes de publicar.');
+  }
+
+  // Lets the web app know whether to offer the one-click sign-in.
+  @Get()
+  @Public()
+  status() {
+    return devLoginEnabled() ? { enabled: true, roles: ROLES } : { enabled: false, roles: [] };
+  }
+
+  @Post()
+  @Public()
+  login(@Body() body: { role?: unknown }) {
+    const secret = process.env.JWT_SECRET;
+    if (!devLoginEnabled() || !secret) throw new NotFoundException();
+    const role = body?.role;
+    if (typeof role !== 'string' || !ROLES.includes(role))
+      throw new BadRequestException('Rol no válido.');
+    const exp = Math.floor(Date.now() / 1000) + EIGHT_HOURS;
+    return { token: signToken({ sub: 'dev-user', roles: [role], exp }, secret) };
+  }
+}
+`,
+      ),
+      file(
+        'apps/api/src/auth/dev-login.spec.ts',
+        `import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { DevLoginController } from './dev-login.controller';
+import { verifyToken } from './jwt';
+
+const ROLE = ${JSON.stringify(plan.authentication.roles[0] ?? 'USER')};
+
+describe('DevLoginController', () => {
+  const saved = { ...process.env };
+  beforeEach(() => {
+    process.env.JWT_SECRET = 'test-secret';
+  });
+  afterEach(() => {
+    process.env = { ...saved };
+  });
+
+  it('is invisible and refuses to sign tokens unless DEV_LOGIN is true', () => {
+    delete process.env.DEV_LOGIN;
+    const controller = new DevLoginController();
+    expect(controller.status()).toEqual({ enabled: false, roles: [] });
+    expect(() => controller.login({ role: ROLE })).toThrow(NotFoundException);
+    process.env.DEV_LOGIN = 'false';
+    expect(() => controller.login({ role: ROLE })).toThrow(NotFoundException);
+  });
+
+  it('signs a token for a planned role when enabled and rejects any other', () => {
+    process.env.DEV_LOGIN = 'true';
+    const controller = new DevLoginController();
+    expect(controller.status().enabled).toBe(true);
+    const { token } = controller.login({ role: ROLE });
+    expect(verifyToken(token, 'test-secret')?.roles).toEqual([ROLE]);
+    expect(() => controller.login({ role: 'NOT_A_ROLE' })).toThrow(BadRequestException);
+    expect(() => controller.login({})).toThrow(BadRequestException);
+  });
+});
+`,
+        { kind: 'TEST' },
+      ),
+      file(
         'apps/api/src/auth/dev-token.ts',
         `import { resolve } from 'node:path';
 import { signToken } from './jwt';
@@ -859,11 +942,11 @@ import { APP_FILTER${auth ? ', APP_GUARD' : ''} } from '@nestjs/core';
 import { PrismaModule } from './prisma/prisma.module';
 import { HealthController } from './health.controller';
 import { DatabaseErrorFilter } from './common/database-error.filter';
-${auth ? "import { AuthGuard } from './auth/auth.guard';\n" : ''}${moduleImports.join('\n')}
+${auth ? "import { AuthGuard } from './auth/auth.guard';\nimport { DevLoginController } from './auth/dev-login.controller';\n" : ''}${moduleImports.join('\n')}
 
 @Module({
   imports: [PrismaModule, ${plan.modules.map((m) => `${m.name}Module`).join(', ')}],
-  controllers: [HealthController],
+  controllers: [HealthController${auth ? ', DevLoginController' : ''}],
   providers: [
     { provide: APP_FILTER, useClass: DatabaseErrorFilter },${auth ? '\n    { provide: APP_GUARD, useClass: AuthGuard },' : ''}
   ],

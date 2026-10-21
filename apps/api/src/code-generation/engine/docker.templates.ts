@@ -98,7 +98,12 @@ export function dockerFiles({ plan, template, slug }: GenerationContext): Genera
     `      DATABASE_URL: ${dbUrl}`,
     '      API_PORT: 3001',
     '      WEB_ORIGIN: http://localhost:${WEB_PORT:-3000}',
-    ...(auth ? ['      JWT_SECRET: ${JWT_SECRET:-dev-only-jwt-secret}'] : []),
+    ...(auth
+      ? [
+          '      JWT_SECRET: ${JWT_SECRET:-dev-only-jwt-secret}',
+          '      DEV_LOGIN: ${DEV_LOGIN:-true}',
+        ]
+      : []),
     ...extraEnv,
     '    ports:',
     "      - '127.0.0.1:${API_PORT:-3001}:3001'",

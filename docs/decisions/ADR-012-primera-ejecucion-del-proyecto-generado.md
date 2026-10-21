@@ -43,9 +43,18 @@ Para quien no tiene Node.js, el proyecto incluye `docker/Dockerfile`, `docker/do
 
 La etapa `STRUCTURE` de la validación del sandbox incorpora `firstRunProblems`, una comprobación **estática** (el sandbox no ejecuta Docker): existencia de `scripts/setup.mjs`, del Dockerfile y del compose de aplicación; ninguna variable vacía en `.env.example` y secretos de ejemplo `dev-only-*`; `POSTGRES_PORT` coherente con `DATABASE_URL` en `127.0.0.1`; compose con nombre, healthcheck y puerto local; y que cada `pnpm run X` del README exista en `package.json`. Un fallo marca la validación como fallida como cualquier otro problema estructural. No detecta fallos de un Docker real; eso se verifica a mano con una instalación limpia.
 
+## Inicio de sesión de desarrollo
+
+Cuando el plan exige autenticación, la API generada expone `GET/POST /auth/dev-login` (excluido de `/docs`). `POST` emite, para un rol del plan, el mismo token HS256 de 8 horas que `dev-token`; `GET` solo informa si está activo para que la pantalla «Acceso» ofrezca «Entrar como …».
+
+- **Un único interruptor explícito: `DEV_LOGIN=true`.** No depende de `NODE_ENV`, porque la imagen Docker de prueba corre con `NODE_ENV=production`. Desactivado, `POST` responde 404 y `GET` `{enabled:false}`.
+- `.env.example` lo deja en `false` (`firstRunProblems` rechaza un ZIP que lo active por defecto). Lo activan `pnpm run setup` en el `.env` local y el compose de Docker (`${DEV_LOGIN:-true}`).
+- La API registra una advertencia al arrancar mientras esté activo y el README exige ponerlo en `false` antes de publicar.
+- La verificación de tokens no cambia; sin `DEV_LOGIN` solo entra quien tenga un token válido.
+
 ## Alcance y límites
 
 - No cambia la plantilla `CASEFLOW_WEB_TS_V1` ni su catálogo de dependencias.
 - Los proyectos ya exportados no se actualizan: hay que regenerarlos.
 - `setup.mjs` avisa si la ruta de la carpeta es larga en Windows (el motor de Prisma no arranca con rutas muy largas) y el README lo explica.
-- Queda fuera de este ADR: acceso sin token de desarrollo (versión 3) y una validación con PostgreSQL real dentro del sandbox, que exigiría un nuevo ADR sobre el aislamiento (§26).
+- Queda fuera de este ADR: una validación con PostgreSQL real dentro del sandbox, que exigiría un nuevo ADR sobre el aislamiento (§26).

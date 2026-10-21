@@ -217,6 +217,8 @@ export function firstRunProblems(files: readonly ProjectFile[]): string[] {
     else if (FIRST_RUN_OWN_SECRET.test(name) && !value.startsWith('dev-only-'))
       problems.push(`Primera ejecución: ${name} debe ser un valor de ejemplo «dev-only-…».`);
   }
+  if (env.get('DEV_LOGIN') === 'true')
+    problems.push('Primera ejecución: «.env.example» no puede activar DEV_LOGIN por defecto.');
   const port = env.get('POSTGRES_PORT');
   if (!port) problems.push('Primera ejecución: «.env.example» no define POSTGRES_PORT.');
   const url = env.get('DATABASE_URL');
