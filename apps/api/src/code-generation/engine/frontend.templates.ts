@@ -887,8 +887,10 @@ export const accessToken = {
 
 `
     : ''
-}export const api = createApiClient({
-  baseUrl: process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001',${auth ? '\n  getToken: accessToken.get,' : ''}
+}export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+
+export const api = createApiClient({
+  baseUrl: API_URL,${auth ? '\n  getToken: accessToken.get,' : ''}
 });
 `,
     ),
@@ -1120,17 +1122,59 @@ ${navRoutes.map((r) => `        <li>\n          <Link className="block rounded-l
         'apps/web/app/access/page.tsx',
         `'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { accessToken } from '../../lib/api';
+import { accessToken, API_URL } from '../../lib/api';
 import { Button } from '../../components/ui/button';
 import { input } from '../../components/ui/input';
 
+// One-click sign-in offered only while the API runs with DEV_LOGIN=true.
 export default function AccessPage() {
   const [token, setToken] = useState('');
+  const [devRoles, setDevRoles] = useState<string[]>([]);
+
+  useEffect(() => {
+    fetch(\`\${API_URL}/auth/dev-login\`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((status: { enabled?: boolean; roles?: string[] } | null) => {
+        if (status?.enabled) setDevRoles(status.roles ?? []);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  async function enterAs(role: string) {
+    try {
+      const response = await fetch(\`\${API_URL}/auth/dev-login\`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role }),
+      });
+      if (!response.ok) throw new Error();
+      const { token: issued } = (await response.json()) as { token: string };
+      accessToken.set(issued);
+      toast.success(\`Sesión iniciada como \${role}.\`);
+    } catch {
+      toast.error('No se pudo iniciar la sesión. Intente de nuevo.');
+    }
+  }
+
   return (
     <div className="flex max-w-xl flex-col gap-4">
       <h1 className="text-xl font-semibold">Acceso</h1>
+      {devRoles.length ? (
+        <div className="flex flex-col gap-2 rounded-md border p-3">
+          <p className="text-sm text-muted-foreground">
+            Modo de pruebas: entre sin credenciales con el rol que necesite.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {devRoles.map((role) => (
+              <Button key={role} type="button" onClick={() => enterAs(role)}>
+                Entrar como {role}
+              </Button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <p className="text-sm text-muted-foreground">
         Pegue su token de acceso. Se guarda solo durante esta sesión del navegador.
       </p>

@@ -143,6 +143,9 @@ export default tseslint.config(
           ? [
               '# Secreto para firmar los tokens de acceso (cadena aleatoria larga).',
               'JWT_SECRET=dev-only-jwt-secret',
+              '# Entrada de un clic sin credenciales, solo para probar en su equipo.',
+              '# pnpm run setup la activa en su .env; debe quedar en false al publicar.',
+              'DEV_LOGIN=false',
             ]
           : []),
         ...envVars.flatMap(envExampleLines),
@@ -194,7 +197,7 @@ volumes:
       )
       .join('\n');
     const authRow = p.authentication.required
-      ? '| `JWT_SECRET` | Secreto con el que se firman los tokens de acceso (lo genera `pnpm run setup`) |\n'
+      ? '| `JWT_SECRET` | Secreto con el que se firman los tokens de acceso (lo genera `pnpm run setup`) |\n| `DEV_LOGIN` | `true` activa la entrada de un clic sin credenciales (solo para probar; `false` al publicar) |\n'
       : '';
     return `# ${projectName}
 
@@ -262,20 +265,27 @@ ${
   p.authentication.required
     ? `## Autenticación
 
-La API exige un token Bearer firmado con \`JWT_SECRET\` (HS256) que incluya
-\`sub\` y \`roles\`. Para desarrollo:
+La API exige un token Bearer firmado con \`JWT_SECRET\` (HS256) que incluya \`sub\` y \`roles\`.
+
+**Para probar en su equipo** (opciones A y B): abra la pantalla «Acceso» de la aplicación web y pulse
+«Entrar como …» con el rol que quiera. Es un acceso de un clic **sin credenciales**, activo solo
+mientras \`DEV_LOGIN=true\` (lo activan \`pnpm run setup\` y el Docker local).
+
+**Antes de publicar la aplicación**, ponga \`DEV_LOGIN=false\` (o quite la variable) en el entorno de la
+API: sin él, ese acceso desaparece y solo entra quien tenga un token válido. La API avisa en su
+registro mientras esté activo.
+
+Con \`DEV_LOGIN\` desactivado puede seguir obteniendo un token por terminal y pegarlo en «Acceso»:
 
 \`\`\`bash
 pnpm --filter ./apps/api run dev-token -- ${p.authentication.roles[0] ?? 'USER'}
 \`\`\`
 
-Con la opción A (Docker), el token se obtiene con:
+Con la opción A (Docker):
 
 \`\`\`bash
 docker compose --project-directory . -f docker/docker-compose.app.yml exec api node apps/api/dist/auth/dev-token.js ${p.authentication.roles[0] ?? 'USER'}
 \`\`\`
-
-y pegue el token en la pantalla «Acceso» de la aplicación web.
 
 `
     : ''

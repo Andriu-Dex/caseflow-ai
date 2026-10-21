@@ -212,6 +212,8 @@ describe('generateProject', () => {
     expect([...open.keys()].some((p) => p.includes('/auth/'))).toBe(false);
     expect(open.get('apps/api/src/app.module.ts')!.content).not.toContain('APP_GUARD');
     expect(open.get('apps/web/app/access/page.tsx')).toBeUndefined();
+    expect(open.get('.env.example')!.content).not.toContain('DEV_LOGIN');
+    expect(open.get('docker/docker-compose.app.yml')!.content).not.toContain('DEV_LOGIN');
   });
 
   it('traces generated files back to the plan elements they implement (DEC-106)', () => {
@@ -319,6 +321,26 @@ describe('generateProject', () => {
     expect(readme).toContain('dev-token.js');
   });
 
+  it('offers a development sign-in that is off by default and gated by DEV_LOGIN', () => {
+    expect(paths.get('.env.example')!.content).toContain('DEV_LOGIN=false');
+    expect(paths.get('docker/docker-compose.app.yml')!.content).toContain(
+      'DEV_LOGIN: ${DEV_LOGIN:-true}',
+    );
+    const controller = paths.get('apps/api/src/auth/dev-login.controller.ts')!.content;
+    expect(controller).toContain("process.env.DEV_LOGIN === 'true'");
+    expect(controller).toContain('["ADMIN","SELLER"]');
+    expect(paths.get('apps/api/src/app.module.ts')!.content).toContain('DevLoginController');
+    // Reachable only from this machine unless the container sets API_HOST.
+    expect(paths.get('apps/api/src/main.ts')!.content).toContain(
+      "process.env.DEV_LOGIN === 'true' ? '127.0.0.1' : '0.0.0.0'",
+    );
+    expect(paths.get('docker/docker-compose.app.yml')!.content).toContain('API_HOST: 0.0.0.0');
+    expect(paths.has('apps/api/src/auth/dev-login.spec.ts')).toBe(true);
+    const access = paths.get('apps/web/app/access/page.tsx')!.content;
+    expect(access).toContain('Entrar como');
+    expect(access).toContain('/auth/dev-login');
+  });
+
   it('documents the four-command first run in the README', () => {
     const readme = paths.get('README.md')!.content;
     for (const command of ['corepack enable', 'pnpm install', 'pnpm run setup', 'pnpm run dev'])
@@ -358,6 +380,7 @@ describe('generated scripts/setup.mjs', () => {
     'POSTGRES_PORT=5433',
     'DATABASE_URL=postgresql://app:dev-only-postgres-password@127.0.0.1:5433/app',
     'JWT_SECRET=dev-only-jwt-secret',
+    'DEV_LOGIN=false',
     'STRIPE_API_KEY=replace-with-your-value',
     '# OPTIONAL_KEY=',
   ].join('\n');
@@ -368,6 +391,7 @@ describe('generated scripts/setup.mjs', () => {
     const built = buildEnv(example, { port: 5434, makeSecret: () => `s3cret${++n}` });
     expect(built.generated).toEqual(['POSTGRES_PASSWORD', 'JWT_SECRET']);
     expect(built.values.POSTGRES_PORT).toBe('5434');
+    expect(built.values.DEV_LOGIN).toBe('true');
     expect(built.values.DATABASE_URL).toBe('postgresql://app:s3cret1@127.0.0.1:5434/app');
     expect(built.text).toContain('JWT_SECRET=s3cret2');
     expect(built.text).toContain('# OPTIONAL_KEY=');
