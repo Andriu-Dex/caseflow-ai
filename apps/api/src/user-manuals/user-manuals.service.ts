@@ -124,7 +124,8 @@ export class UserManualsService {
       update: {},
     });
     if (job.projectId !== projectId) throw new NotFoundException('Manual no encontrado.');
-    if (job.status === 'COMPLETED' || job.status === 'RUNNING') return job;
+    if (job.status === 'COMPLETED' || ['RUNNING', 'CANCELLING', 'CANCELLED'].includes(job.status))
+      return job;
     await this.prisma.userManualJob.updateMany({
       where: { id: job.id, status: 'FAILED' },
       data: { status: 'QUEUED', errorMessage: null },
@@ -151,6 +152,10 @@ export class UserManualsService {
         status: 'FAILED',
         errorMessage: 'La generación del manual se interrumpió. Puede reintentar.',
       },
+    });
+    await this.prisma.userManualJob.updateMany({
+      where: { status: 'CANCELLING', updatedAt: { lt: bootedAt } },
+      data: { status: 'CANCELLED', errorMessage: null },
     });
     const queued = await this.prisma.userManualJob.findMany({ where: { status: 'QUEUED' } });
     for (const job of queued) await this.enqueue(job.projectId, job.snapshotId);
@@ -373,7 +378,14 @@ export class UserManualsService {
     const manual = await this.get(projectId, snapshotId);
     return {
       manual,
-      job: job ? { id: job.id, status: job.status, errorMessage: job.errorMessage } : null,
+      job: job
+        ? {
+            id: job.id,
+            status: job.status,
+            errorMessage: job.errorMessage,
+            captureRequested: job.captureRequested,
+          }
+        : null,
     };
   }
 
@@ -464,7 +476,7 @@ export class UserManualsService {
         where: {
           projectId,
           snapshotId,
-          status: { in: ['QUEUED', 'RUNNING'] },
+          status: { in: ['QUEUED', 'RUNNING', 'CANCELLING'] },
           captureRequested: true,
         },
       });
@@ -591,7 +603,7 @@ export class UserManualsService {
     const job = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM artifacts WHERE id=${manual.id}::uuid FOR UPDATE`;
       const current = await tx.userManualJob.findUniqueOrThrow({ where: { snapshotId } });
-      if (['QUEUED', 'RUNNING'].includes(current.status))
+      if (['QUEUED', 'RUNNING', 'CANCELLING'].includes(current.status))
         throw new ConflictException('Ya existe una tarea del manual en curso.');
       await this.audit.record(
         {
@@ -628,9 +640,54 @@ export class UserManualsService {
     return this.state(projectId, snapshotId);
   }
 
+  async cancelCapture(projectId: string, snapshotId: string, userId: string) {
+    await this.authorize(projectId, userId);
+    await this.snapshot(projectId, snapshotId);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM user_manual_jobs WHERE snapshot_id=${snapshotId}::uuid AND project_id=${projectId}::uuid FOR UPDATE`;
+      const job = await tx.userManualJob.findUniqueOrThrow({ where: { snapshotId } });
+      if (job.projectId !== projectId) throw new NotFoundException('Manual no encontrado.');
+      if (!job.captureRequested) throw new ConflictException('No hay capturas en curso.');
+      const changed = await tx.userManualJob.updateMany({
+        where: { id: job.id, projectId, status: { in: ['QUEUED', 'RUNNING'] } },
+        data: { status: job.status === 'QUEUED' ? 'CANCELLED' : 'CANCELLING', errorMessage: null },
+      });
+      if (!changed.count) return;
+      await this.audit.record(
+        {
+          projectId,
+          actorUserId: userId,
+          action: 'USER_MANUAL_CAPTURE_CANCEL_REQUESTED',
+          entityType: 'GENERATED_PROJECT_SNAPSHOT',
+          entityId: snapshotId,
+          metadata: { jobId: job.id },
+        },
+        tx,
+      );
+    });
+    return this.state(projectId, snapshotId);
+  }
+
   private async runCapture(projectId: string, snapshotId: string, jobId: string) {
     const stored: string[] = [];
+    const controller = new AbortController();
+    let checking = false;
+    const checkCancellation = async () => {
+      const job = await this.prisma.userManualJob.findUniqueOrThrow({ where: { id: jobId } });
+      if (job.status !== 'RUNNING') controller.abort();
+      controller.signal.throwIfAborted();
+    };
+    const timer = setInterval(() => {
+      if (checking) return;
+      checking = true;
+      void checkCancellation()
+        .catch(() => controller.abort())
+        .finally(() => {
+          checking = false;
+        });
+    }, 500);
     try {
+      await checkCancellation();
       const manual = await this.get(projectId, snapshotId);
       if (!manual || !this.captureProvider) throw new Error('Capture unavailable.');
       const targets = manual.tasks.flatMap((task) =>
@@ -673,7 +730,11 @@ export class UserManualsService {
           files.push({ path: entry.name.slice(entry.name.indexOf('/') + 1), content });
         }
         const scheduled = targets.slice(0, 40);
-        results = await this.captureProvider.capture({ files, targets: scheduled });
+        results = await this.captureProvider.capture({
+          files,
+          targets: scheduled,
+          signal: controller.signal,
+        });
         if (
           results.length !== scheduled.length ||
           results.some(
@@ -692,6 +753,7 @@ export class UserManualsService {
           })),
         );
       } catch {
+        controller.signal.throwIfAborted();
         results = targets.map((target) => ({
           ...target,
           status: 'FAILED',
@@ -699,9 +761,11 @@ export class UserManualsService {
             'No fue posible ejecutar o capturar esta pantalla en Docker. Se conserva el esquema del flujo.',
         }));
       }
+      await checkCancellation();
       const bundleId = randomUUID();
       const evidence: (CaptureEvidence & { routePath: string })[] = [];
       for (const [index, result] of results.entries()) {
+        await checkCancellation();
         let storageKey: string | null = null;
         if (result.status === 'CAPTURED' && result.png) {
           assertCapturePng(result.png);
@@ -728,6 +792,11 @@ export class UserManualsService {
       }
       await this.prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT id FROM artifacts WHERE id=${manual.id}::uuid AND project_id=${projectId}::uuid FOR UPDATE`;
+        const active = await tx.userManualJob.updateMany({
+          where: { id: jobId, projectId, status: 'RUNNING' },
+          data: { status: 'RUNNING' },
+        });
+        if (!active.count) throw new Error('Capture cancelled before publication.');
         const latest = await tx.artifactVersion.findFirstOrThrow({
           where: { artifactId: manual.id, projectId },
           orderBy: { versionNumber: 'desc' },
@@ -783,6 +852,10 @@ export class UserManualsService {
     } catch {
       for (const key of stored) await this.storage.deleteObject(key).catch(() => undefined);
       await this.prisma.userManualJob.updateMany({
+        where: { id: jobId, projectId, status: 'CANCELLING' },
+        data: { status: 'CANCELLED', errorMessage: null },
+      });
+      await this.prisma.userManualJob.updateMany({
         where: { id: jobId, projectId, status: 'RUNNING' },
         data: {
           status: 'FAILED',
@@ -790,6 +863,8 @@ export class UserManualsService {
             'No se pudieron incorporar las capturas. El manual anterior sigue disponible.',
         },
       });
+    } finally {
+      clearInterval(timer);
     }
   }
 

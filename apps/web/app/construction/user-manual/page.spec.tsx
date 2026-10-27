@@ -37,6 +37,27 @@ const manual: UserManualResponse = {
 };
 
 describe('manual review editor', () => {
+  it('requests cancellation and disables the button while cleanup is pending', async () => {
+    const job = { id, status: 'RUNNING' as const, errorMessage: null, captureRequested: true };
+    const state = vi.spyOn(api.userManuals, 'state').mockResolvedValue({ manual, job });
+    const cancel = vi.spyOn(api.userManuals, 'cancelCapture').mockImplementation(async () => {
+      const next = { manual, job: { ...job, status: 'CANCELLING' as const } };
+      state.mockResolvedValue(next);
+      return next;
+    });
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <UserManualPage />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancelar captura' }));
+    await waitFor(() => expect(cancel).toHaveBeenCalledWith(id, id));
+    expect(
+      await screen.findByRole('button', { name: 'Cancelando y liberando recursos…' }),
+    ).toBeDisabled();
+  });
   it('shows explicit capture failures and allows a new isolated capture request', async () => {
     vi.spyOn(api.userManuals, 'state').mockResolvedValue({
       job: null,

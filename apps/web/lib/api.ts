@@ -901,6 +901,11 @@ export const api = {
       post<WorkflowRunResponse>(`/projects/${projectId}/workflow-runs/${runId}/approve`),
   },
   userManuals: {
+    cancelCapture: (p: string, s: string) =>
+      post<UserManualState>(
+        `/projects/${p}/generated-project-snapshots/${s}/user-manual/capture/cancel`,
+        {},
+      ),
     capture: (p: string, s: string) =>
       post<UserManualState>(
         `/projects/${p}/generated-project-snapshots/${s}/user-manual/capture`,

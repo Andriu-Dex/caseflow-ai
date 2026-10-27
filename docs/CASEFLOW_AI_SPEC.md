@@ -8019,6 +8019,8 @@ El perfil `EMPTY_DATABASE_DESKTOP_V1` utiliza una base vacía, sesiones de prueb
 
 El trabajo de captura es independiente del estado READY. Se encola tras generar el manual y puede reintentarse por OWNER o EDITOR. Mientras está activo no se inicia otro ni se revisa o aprueba el manual. Las capturas producen una nueva versión candidata, preservan el texto más reciente y reinician la verificación humana. Las versiones aprobadas anteriores conservan su contenido y sus imágenes.
 
+OWNER y EDITOR pueden cancelar la captura en cola o en ejecución. Durante la limpieza se muestra CANCELLING y se bloquean nuevos intentos. CANCELLED conserva el manual anterior y descarta la evidencia parcial; la cancelación se audita y se serializa con la publicación final.
+
 Las imágenes privadas se modelan relacionalmente por tarea, conjunto, rol, perfil, estado, hash y dimensiones. Se autorizan por proyecto, snapshot y versión, y se verifican al descargarlas. HTML/PDF incorporan las imágenes; el ZIP conjunto añade los PNG y sus hashes sin cambiar el archivo original del software. El esquema sigue disponible si la captura falla. El historial gráfico solo se elimina dentro de la eliminación autorizada del proyecto completo.
 
 ## 221.4 Fuera de alcance de estas extensiones

@@ -18,6 +18,7 @@ export interface RuntimeCaptureResult extends RuntimeCaptureTarget {
   height?: number;
 }
 export interface RuntimeCaptureRequest {
+  signal?: AbortSignal;
   files: readonly { path: string; content: string }[];
   targets: readonly RuntimeCaptureTarget[];
 }
@@ -34,10 +35,14 @@ export function createCaptureSessionToken(role: string, secret: string, now = Da
   return `${content}.${createHmac('sha256', secret).update(content).digest('base64url')}`;
 }
 
-type Runner = (args: string[], timeoutMs: number) => Promise<string>;
-const runDocker: Runner = (args, timeoutMs) =>
+type Runner = (args: string[], timeoutMs: number, signal?: AbortSignal) => Promise<string>;
+const runDocker: Runner = (args, timeoutMs, signal) =>
   new Promise((resolve, reject) => {
-    const child = spawn('docker', args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn('docker', args, {
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      signal,
+    });
     let output = '';
     const append = (data: Buffer) => {
       output = (output + data.toString()).slice(-16_000);
@@ -64,6 +69,7 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider {
   constructor(private readonly docker: Runner = runDocker) {}
 
   async capture(request: RuntimeCaptureRequest): Promise<RuntimeCaptureResult[]> {
+    request.signal?.throwIfAborted();
     validateCaptureInput(request);
     const prefix = `caseflow-capture-${randomUUID()}`;
     const jwtSecret = randomUUID();
@@ -82,9 +88,10 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider {
     const output = join(scratch, 'output');
     const deadline = Date.now() + 12 * 60_000;
     const command = (args: string[], timeout = 60_000) => {
+      request.signal?.throwIfAborted();
       const remaining = deadline - Date.now();
       if (remaining <= 0) throw new Error('Capture deadline exceeded.');
-      return this.docker(args, Math.min(timeout, remaining));
+      return this.docker(args, Math.min(timeout, remaining), request.signal);
     };
     const hardened = [
       '--cap-drop=ALL',
@@ -101,6 +108,7 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider {
       const trustedWorkspace =
         "packages:\n  - 'apps/*'\n  - 'packages/*'\nverifyDepsBeforeRun: false\n";
       for (const file of request.files) {
+        request.signal?.throwIfAborted();
         if (excludedSource(file.path)) continue;
         const path = join(source, file.path);
         await mkdir(dirname(path), { recursive: true });
@@ -228,6 +236,7 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider {
           await command(['exec', database, 'pg_isready', '-U', 'capture', '-d', 'capture']);
           break;
         } catch {
+          request.signal?.throwIfAborted();
           if (attempt === 29) throw new Error('Capture database unavailable.');
           await new Promise((resolve) => setTimeout(resolve, 1000));
         }
@@ -320,6 +329,7 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider {
                 : captureFailureMessage(metadata.reasonCode),
           });
       }
+      request.signal?.throwIfAborted();
       return results;
     } finally {
       // Cleanup is restricted to names generated for this invocation, including timeout paths.

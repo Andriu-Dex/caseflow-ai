@@ -50,6 +50,7 @@ export const AUDIT_ACTIONS = [
   'USER_MANUAL_DOWNLOADED',
   'USER_MANUAL_CAPTURED',
   'USER_MANUAL_CAPTURE_STARTED',
+  'USER_MANUAL_CAPTURE_CANCEL_REQUESTED',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 

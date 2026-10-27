@@ -124,6 +124,11 @@ describe('UserManualsService', () => {
     const context = setup();
     const { service, prisma, storage, job } = context;
     Object.assign(job, { captureRequested: true });
+    prisma.userManualJob.updateMany.mockImplementation(async ({ data, where }) => {
+      if (typeof where.status === 'string' && where.status !== job.status) return { count: 0 };
+      if (data.status) job.status = data.status;
+      return { count: 1 };
+    });
     vi.spyOn(service, 'get').mockResolvedValue(manual);
     prisma.artifactVersion.findFirstOrThrow.mockResolvedValue({
       id,
@@ -161,6 +166,81 @@ describe('UserManualsService', () => {
     Reflect.set(service, 'captureProvider', { capture });
     return { ...context, capture };
   }
+  it('cancels queued capture with scoped authorization and records an audit event', async () => {
+    const { service, prisma, job, audit } = await captureSetup();
+    await service.cancelCapture(id, id, id);
+    expect(job.status).toBe('CANCELLED');
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'USER_MANUAL_CAPTURE_CANCEL_REQUESTED' }),
+      prisma,
+    );
+    expect(prisma.artifactVersion.create).not.toHaveBeenCalled();
+    prisma.projectMembership.findFirst.mockResolvedValue({ role: 'VIEWER' });
+    await expect(service.cancelCapture(id, id, id)).rejects.toThrow('rol');
+  });
+  it('aborts running capture and never publishes partial results', async () => {
+    const { service, prisma, capture, storage, job } = await captureSetup();
+    capture.mockImplementation(async () => {
+      await service.cancelCapture(id, id, id);
+      expect(job.status).toBe('CANCELLING');
+      return [
+        {
+          routePath: '/items',
+          role: 'Editor',
+          status: 'CAPTURED',
+          png: capturePng(),
+          width: 1440,
+          height: 900,
+          reason: null,
+        },
+      ];
+    });
+    await service.runJob(id, id);
+    expect(job.status).toBe('CANCELLED');
+    expect(prisma.artifactVersion.create).not.toHaveBeenCalled();
+    expect(storage.putObject).not.toHaveBeenCalled();
+  });
+  it('propagates persisted cancellation to an active provider through AbortSignal', async () => {
+    const { service, capture, prisma, job } = await captureSetup();
+    capture.mockImplementation(
+      (request) =>
+        new Promise((_resolve, reject) => {
+          const signal = (request as typeof request & { signal: AbortSignal }).signal;
+          signal.addEventListener('abort', () => reject(new Error('Aborted')), { once: true });
+          void service.cancelCapture(id, id, id).catch(reject);
+        }),
+    );
+    await service.runJob(id, id);
+    expect(job.status).toBe('CANCELLED');
+    expect(prisma.artifactVersion.create).not.toHaveBeenCalled();
+  });
+  it('removes uploaded evidence when cancellation arrives during storage', async () => {
+    const { service, storage, prisma, job } = await captureSetup();
+    storage.putObject.mockImplementation(async () => {
+      await service.cancelCapture(id, id, id);
+    });
+    await service.runJob(id, id);
+    expect(job.status).toBe('CANCELLED');
+    expect(storage.deleteObject).toHaveBeenCalledTimes(1);
+    expect(prisma.artifactVersion.create).not.toHaveBeenCalled();
+  });
+  it('blocks another capture while cancellation is cleaning resources', async () => {
+    const { service, job, capture } = await captureSetup();
+    job.status = 'CANCELLING';
+    await expect(service.capture(id, id, id)).rejects.toThrow('curso');
+    expect(capture).not.toHaveBeenCalled();
+  });
+  it('rejects publication when cancellation wins the final transaction', async () => {
+    const { service, prisma, storage } = await captureSetup();
+    const update = prisma.userManualJob.updateMany.getMockImplementation()!;
+    prisma.userManualJob.updateMany.mockImplementation(async (args) => {
+      if (args.data.status === 'RUNNING' && args.where.status === 'RUNNING') return { count: 0 };
+      return update(args);
+    });
+    await service.runJob(id, id);
+    expect(prisma.artifactVersion.create).not.toHaveBeenCalled();
+    expect(storage.deleteObject).toHaveBeenCalledTimes(1);
+  });
   it('adds screenshot evidence in a new unverified version and copies the current text', async () => {
     const { service, prisma, storage, capture } = await captureSetup();
     await service.runJob(id, id);

@@ -21,6 +21,8 @@ La generación inicial del manual encola la captura automáticamente. OWNER y ED
 
 HTML y PDF incorporan las imágenes disponibles. La entrega conjunta añade los PNG y sus hashes al paquete del manual; conserva intacto `software.zip`. Toda lectura de una captura requiere pertenencia al proyecto y coincidencia del snapshot y de la versión del manual.
 
+OWNER y EDITOR pueden cancelar con `POST …/user-manual/capture/cancel`. En cola pasa a `CANCELLED`; en ejecución pasa a `CANCELLING`, interrumpe el comando de Docker mediante una señal de aborto y limpia los recursos propios antes de finalizar como `CANCELLED`. No se publica una versión parcial y se eliminan las imágenes nuevas aún no incorporadas. La publicación y la cancelación se serializan sobre el trabajo: si la publicación ya terminó, se conserva esa versión completada. Mientras se cancela no se permite reintentar ni revisar el manual. La solicitud queda auditada.
+
 ## Límites
 
 - Hasta 40 combinaciones de ruta y rol por ejecución; las entradas que superan el límite no se ejecutan.

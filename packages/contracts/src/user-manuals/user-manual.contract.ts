@@ -75,8 +75,9 @@ export const userManualResponseSchema = z.object({
 });
 export type UserManualResponse = z.infer<typeof userManualResponseSchema>;
 export const userManualJobSchema = z.object({
+  captureRequested: z.boolean().optional(),
   id: z.uuid(),
-  status: z.enum(['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED']),
+  status: z.enum(['QUEUED', 'RUNNING', 'CANCELLING', 'CANCELLED', 'COMPLETED', 'FAILED']),
   errorMessage: z.string().nullable(),
 });
 export const userManualStateSchema = z.object({

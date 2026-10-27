@@ -152,6 +152,30 @@ describe('Docker runtime capture boundary', () => {
     expect(JSON.stringify(retry)).not.toContain(failureCode);
   });
 
+  it('interrupts an active Docker command and cleans only its invocation resources without the aborted signal', async () => {
+    const controller = new AbortController();
+    const docker = vi.fn(async (args: string[], _timeout: number, signal?: AbortSignal) => {
+      if (args[0] === 'build') {
+        controller.abort();
+        signal!.throwIfAborted();
+      }
+      return '';
+    });
+    await expect(
+      new DockerRuntimeCaptureProvider(docker).capture({ ...input, signal: controller.signal }),
+    ).rejects.toThrow();
+    const cleanup = docker.mock.calls.slice(-3);
+    expect(cleanup.map(([args]) => args[0])).toEqual(['rm', 'volume', 'network']);
+    expect(cleanup.every(([, , signal]) => signal === undefined)).toBe(true);
+    expect(cleanup[0]![0].slice(2).every((name) => name.startsWith('caseflow-capture-'))).toBe(
+      true,
+    );
+    const untouched = vi.fn();
+    await expect(
+      new DockerRuntimeCaptureProvider(untouched).capture({ ...input, signal: controller.signal }),
+    ).rejects.toThrow();
+    expect(untouched).not.toHaveBeenCalled();
+  });
   it('cleans its own resources after Docker is unavailable or a stage times out', async () => {
     const docker = vi.fn().mockRejectedValue(new Error('Unavailable'));
     await expect(new DockerRuntimeCaptureProvider(docker).capture(input)).rejects.toThrow(

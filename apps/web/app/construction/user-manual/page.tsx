@@ -899,7 +899,9 @@ function ManualContent({ projectId, snapshotId }: { projectId: string; snapshotI
     queryKey: ['user-manual', projectId, snapshotId],
     queryFn: () => api.userManuals.state(projectId, snapshotId),
     refetchInterval: (query) =>
-      ['QUEUED', 'RUNNING'].includes(query.state.data?.job?.status ?? '') ? 2000 : false,
+      ['QUEUED', 'RUNNING', 'CANCELLING'].includes(query.state.data?.job?.status ?? '')
+        ? 2000
+        : false,
   });
 
   const historical = useQuery({
@@ -962,7 +964,7 @@ function ManualContent({ projectId, snapshotId }: { projectId: string; snapshotI
     );
   }
 
-  const generating = ['QUEUED', 'RUNNING'].includes(state.data?.job?.status ?? '');
+  const generating = ['QUEUED', 'RUNNING', 'CANCELLING'].includes(state.data?.job?.status ?? '');
 
   if (selectedVersion && historical.isLoading) {
     return (
@@ -1092,6 +1094,23 @@ function ManualContent({ projectId, snapshotId }: { projectId: string; snapshotI
                 )}
               </Button>
 
+              {generating && state.data?.job?.captureRequested ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy || state.data?.job?.status === 'CANCELLING'}
+                  onClick={() =>
+                    void act(
+                      () => api.userManuals.cancelCapture(projectId, snapshotId),
+                      'Cancelación solicitada. Se conservará el manual anterior.',
+                    )
+                  }
+                >
+                  {state.data?.job?.status === 'CANCELLING'
+                    ? 'Cancelando y liberando recursos…'
+                    : 'Cancelar captura'}
+                </Button>
+              ) : null}
               <Button
                 size="sm"
                 variant="outline"
@@ -1133,7 +1152,16 @@ function ManualContent({ projectId, snapshotId }: { projectId: string; snapshotI
             de revisión manual.
           </p>
 
-          {generating ? (
+          {state.data?.job?.status === 'CANCELLED' ? (
+            <p role="status" className="text-sm text-muted-foreground">
+              Captura cancelada. El manual anterior se conserva.
+            </p>
+          ) : null}
+          {state.data?.job?.status === 'CANCELLING' ? (
+            <p role="status" className="text-sm text-muted-foreground">
+              Cancelando la captura y liberando los recursos temporales…
+            </p>
+          ) : generating ? (
             <ManualGenerationProgressCard
               mode="capture"
               queued={state.data?.job?.status === 'QUEUED'}

@@ -46,6 +46,21 @@ export class UserManualsController {
     return this.manuals.capture(p, s, req.user.id);
   }
 
+  @Post('capture/cancel')
+  @HttpCode(202)
+  @ApiOperation({
+    operationId: 'cancelUserManualCapture',
+    summary: 'Cancelar la captura y conservar el manual anterior',
+  })
+  @ApiZodResponse(202, 'Cancellation state.', userManualStateSchema)
+  cancelCapture(
+    @Param('projectId', uuidParamPipe) p: string,
+    @Param('snapshotId', uuidParamPipe) s: string,
+    @Request() req: { user: { id: string } },
+  ) {
+    return this.manuals.cancelCapture(p, s, req.user.id);
+  }
+
   @Get('versions/:versionId/captures/:captureId')
   @ApiOperation({
     operationId: 'getUserManualCapture',
