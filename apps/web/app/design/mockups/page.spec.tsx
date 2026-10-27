@@ -208,6 +208,15 @@ describe('MockupsPage refinement', () => {
     );
     expect(screen.getByText(/no verifica el texto de la imagen/)).toBeInTheDocument();
     expect(screen.queryByText(/No se detectaron contradicciones/)).not.toBeInTheDocument();
+    const summary = screen.getByText(/Revisiones del boceto/);
+    expect(summary).toHaveTextContent('1 bloqueos · 0 observaciones');
+    const details = summary.closest('details')!;
+    expect(details).not.toHaveAttribute('open');
+    await userEvent.setup().click(summary);
+    expect(details).toHaveAttribute('open');
+    expect(screen.getByText(/El máximo mostrado contradice/)).toBeVisible();
+    await userEvent.setup().click(summary);
+    expect(details).not.toHaveAttribute('open');
   });
   it('sends the instruction to refine a Stitch mockup and clears it once a new version exists', async () => {
     const user = userEvent.setup();
