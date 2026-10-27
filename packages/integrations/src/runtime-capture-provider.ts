@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -26,6 +26,13 @@ export interface RuntimeCaptureProvider {
 }
 export const RUNTIME_CAPTURE_PROVIDER = Symbol('RUNTIME_CAPTURE_PROVIDER');
 export const CAPTURE_PROFILE = 'EMPTY_DATABASE_DESKTOP_V1';
+
+// Test sessions use only the disposable application's signing key.
+export function createCaptureSessionToken(role: string, secret: string, now = Date.now()) {
+  const encode = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
+  const content = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ sub: randomUUID(), roles: [role], exp: Math.floor(now / 1000) + 600 })}`;
+  return `${content}.${createHmac('sha256', secret).update(content).digest('base64url')}`;
+}
 
 type Runner = (args: string[], timeoutMs: number) => Promise<string>;
 const runDocker: Runner = (args, timeoutMs) =>
@@ -59,6 +66,7 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider {
   async capture(request: RuntimeCaptureRequest): Promise<RuntimeCaptureResult[]> {
     validateCaptureInput(request);
     const prefix = `caseflow-capture-${randomUUID()}`;
+    const jwtSecret = randomUUID();
     const network = `${prefix}-net`;
     const volume = `${prefix}-app`;
     const app = `${prefix}-web`;
@@ -107,7 +115,6 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider {
       await writeFile(join(source, 'pnpm-workspace.yaml'), trustedWorkspace);
       await writeFile(join(controller, 'browser.cjs'), CAPTURE_BROWSER_SCRIPT);
       await writeFile(join(controller, 'seccomp.json'), JSON.stringify(captureSeccomp));
-      await writeFile(join(controller, 'plan.json'), JSON.stringify(request.targets));
       await writeFile(
         join(controller, 'Dockerfile.node'),
         'FROM node:24-bookworm\nRUN npm install --global pnpm@11.27.0\nWORKDIR /app\n',
@@ -240,9 +247,9 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider {
         '-e',
         'DATABASE_URL=postgresql://capture:capture-only@database:5432/capture',
         '-e',
-        'JWT_SECRET=disposable-capture-only-secret',
+        `JWT_SECRET=${jwtSecret}`,
         '-e',
-        'DEV_LOGIN=true',
+        'DEV_LOGIN=false',
         '-e',
         'API_HOST=0.0.0.0',
         '-e',
@@ -258,6 +265,15 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider {
         '-ec',
         'pnpm --filter ./apps/api exec prisma db push; node apps/api/dist/main.js & pnpm --filter ./apps/web start & wait',
       ]);
+      await writeFile(
+        join(controller, 'plan.json'),
+        JSON.stringify(
+          request.targets.map((target) => ({
+            ...target,
+            token: target.role ? createCaptureSessionToken(target.role, jwtSecret) : null,
+          })),
+        ),
+      );
       await command([
         'create',
         '--name',
@@ -280,7 +296,7 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider {
       for (let index = 0; index < request.targets.length; index++) {
         const metadata = JSON.parse(await readFile(join(output, `${index}.json`), 'utf8')) as {
           status: string;
-          reason: string | null;
+          reasonCode?: string;
         };
         const target = request.targets[index]!;
         if (metadata.status === 'CAPTURED') {
@@ -301,7 +317,7 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider {
             reason:
               metadata.status === 'SKIPPED'
                 ? 'Esta ruta necesita un registro de prueba. Revísela manualmente con datos adecuados.'
-                : 'No se pudo comprobar esta pantalla; conserve el esquema y revísela manualmente.',
+                : captureFailureMessage(metadata.reasonCode),
           });
       }
       return results;
@@ -315,6 +331,24 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider {
       await rm(scratch, { recursive: true, force: true });
     }
   }
+}
+
+function captureFailureMessage(code?: string) {
+  const messages: Record<string, string> = {
+    APPLICATION_UNAVAILABLE: 'La aplicación de prueba no estuvo disponible a tiempo.',
+    WRONG_SCREEN: 'La ruta devolvió un error o redirigió a otra pantalla.',
+    SCREEN_HEADING_MISSING: 'No se encontró el encabezado esperado de la pantalla.',
+    API_FAILURE:
+      'La API de prueba rechazó una petición o devolvió un error al abrir esta pantalla.',
+    API_FORBIDDEN: 'Este rol no tiene permiso para consultar datos requeridos por la pantalla.',
+    API_UNAUTHORIZED: 'La aplicación no aceptó la sesión de prueba de esta pantalla.',
+    BROWSER_ERROR: 'La pantalla produjo un error en el navegador de prueba.',
+    IMAGE_FAILURE: 'Una imagen de la pantalla no terminó de cargar correctamente.',
+  };
+  return (
+    messages[code ?? ''] ??
+    'No se pudo comprobar esta pantalla; conserve el esquema y revísela manualmente.'
+  );
 }
 
 function excludedSource(path: string) {

@@ -11,6 +11,7 @@ setTimeout(() => process.exit(1), 180000).unref();
     for (let index = 0; index < targets.length; index++) {
       const target = targets[index];
       let status = 'FAILED';
+      let reasonCode = null;
       if (target.routePath.includes('[')) {
         await writeFile('/tmp/capture-output/' + index + '.json', JSON.stringify({ status: 'SKIPPED' }));
         continue;
@@ -30,26 +31,26 @@ setTimeout(() => process.exit(1), 180000).unref();
           } catch {}
           await page.waitForTimeout(1000);
         }
-        if (!ready) throw new Error('Application unavailable');
-        if (target.role) {
-          const login = await context.request.post('http://application:3001/auth/dev-login', { data: { role: target.role } });
-          if (!login.ok()) throw new Error('Test role unavailable');
-          const { token } = await login.json();
-          await context.addInitScript(value => window.sessionStorage.setItem('access-token', value), token);
-        }
-        let broken = false;
-        page.on('pageerror', () => { broken = true; });
-        page.on('response', response => { if (response.status() >= 400 && response.url().startsWith('http://application:3001/')) broken = true; });
+        if (!ready) throw new Error('APPLICATION_UNAVAILABLE');
+        if (target.token) await context.addInitScript(value => window.sessionStorage.setItem('access-token', value), target.token);
+        let failure = null;
+        page.on('pageerror', () => { failure = 'BROWSER_ERROR'; });
+        page.on('response', response => {
+          if (response.status() >= 400 && response.url().startsWith('http://application:3001/'))
+            failure = response.status() === 403 ? 'API_FORBIDDEN' : response.status() === 401 ? 'API_UNAUTHORIZED' : 'API_FAILURE';
+        });
         const response = await page.goto('http://application:3000' + target.routePath, { waitUntil: 'networkidle', timeout: 20000 });
-        if (!response || !response.ok() || new URL(page.url()).pathname !== target.routePath) throw new Error('Wrong screen');
-        await page.locator('h1').first().waitFor({ state: 'visible', timeout: 5000 });
+        if (!response || !response.ok() || new URL(page.url()).pathname !== target.routePath) throw new Error('WRONG_SCREEN');
+        try { await page.locator('h1').first().waitFor({ state: 'visible', timeout: 5000 }); }
+        catch { throw new Error('SCREEN_HEADING_MISSING'); }
         await page.evaluate(() => document.fonts.ready);
-        if (await page.locator('img').evaluateAll(images => images.some(image => !image.complete || image.naturalWidth === 0))) broken = true;
-        if (broken || await page.getByText(/No autorizado|Acceso denegado|Internal server error/i).count()) throw new Error('Screen failed');
+        if (await page.locator('img').evaluateAll(images => images.some(image => !image.complete || image.naturalWidth === 0))) failure = 'IMAGE_FAILURE';
+        if (failure) throw new Error(failure);
+        if (await page.getByText(/No autorizado|Acceso denegado|Internal server error/i).count()) throw new Error('API_FAILURE');
         await page.screenshot({ path: '/tmp/capture-output/' + index + '.png', animations: 'disabled', fullPage: false });
         status = 'CAPTURED';
-      } catch {} finally { await context.close(); }
-      await writeFile('/tmp/capture-output/' + index + '.json', JSON.stringify({ status }));
+      } catch (error) { reasonCode = error.message; } finally { await context.close(); }
+      await writeFile('/tmp/capture-output/' + index + '.json', JSON.stringify({ status, reasonCode }));
     }
   } finally { await browser.close(); }
 })().catch(error => { console.error('Capture browser failed:', error.message); process.exitCode = 1; });

@@ -105,6 +105,21 @@ function setup() {
 }
 
 describe('UserManualsService', () => {
+  it('returns the new manual when capture completes during the final status poll', async () => {
+    const { service, prisma, job } = setup();
+    let completed = false;
+    prisma.userManualJob.findFirst.mockImplementation(async () => {
+      completed = true;
+      return { ...job, status: 'COMPLETED' };
+    });
+    vi.spyOn(service, 'get').mockImplementation(async () => ({
+      ...manual,
+      version: { ...manual.version, versionNumber: completed ? 2 : 1 },
+    }));
+    const state = await service.state(id, id);
+    expect(state.job?.status).toBe('COMPLETED');
+    expect(state.manual?.version.versionNumber).toBe(2);
+  });
   async function captureSetup() {
     const context = setup();
     const { service, prisma, storage, job } = context;

@@ -368,8 +368,9 @@ export class UserManualsService {
   }
 
   async state(projectId: string, snapshotId: string) {
-    const manual = await this.get(projectId, snapshotId);
     const job = await this.prisma.userManualJob.findFirst({ where: { projectId, snapshotId } });
+    // Read content after completion is observed so the final poll cannot retain the old version.
+    const manual = await this.get(projectId, snapshotId);
     return {
       manual,
       job: job ? { id: job.id, status: job.status, errorMessage: job.errorMessage } : null,
