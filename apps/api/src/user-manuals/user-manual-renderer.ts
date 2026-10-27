@@ -6,17 +6,23 @@ const escape = (text: string) =>
     /[&<>"']/g,
     (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!,
   );
-export function renderManualHtml(manual: UserManualResponse): Buffer {
+export function renderManualHtml(
+  manual: UserManualResponse,
+  images: Record<string, Buffer> = {},
+): Buffer {
   const draft = manual.version.status !== 'APPROVED';
   const title = escape(manual.title ?? 'Manual de usuario');
   return Buffer.from(
-    `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'none'; base-uri 'none'; form-action 'none'"><title>${title}</title><style>
-body{font:17px/1.55 system-ui,sans-serif;color:#172033;background:#f4f7fc;margin:0}main{max-width:960px;margin:auto;padding:32px}header,section{background:white;border:1px solid #cbd5e1;border-radius:16px;padding:26px;margin:20px 0}h1,h2{line-height:1.2}a{color:#2444b7}nav a{display:block;padding:8px}small,.muted{color:#46546b}.badge{display:inline-block;background:#e0e7ff;padding:5px 12px;border-radius:20px}.flow{list-style:none;padding:0;counter-reset:step}.flow li{position:relative;margin:0 0 12px 18px;border-left:3px solid #3758ce;padding:0 0 20px 28px;counter-increment:step}.flow li:before{content:counter(step);position:absolute;left:-19px;top:0;background:#2444b7;color:white;border-radius:50%;width:34px;height:34px;text-align:center;line-height:34px;font-weight:bold}.result{background:#edf8f5;border-radius:8px;padding:12px}.draft{background:#fff3cd;padding:14px;border-radius:8px}@media print{body{background:white}main{padding:0}section{break-inside:avoid}nav{display:none}}</style></head><body><main><header><span class="badge">Guía visual · versión ${manual.version.versionNumber}</span><h1>${title}</h1>${draft ? '<p class="draft">BORRADOR: pendiente de revisión y aprobación. No es documentación oficial.</p>' : ''}${!manual.isCurrent ? '<p class="draft">Corresponde a una versión anterior del software.</p>' : ''}<p>${escape(manual.introduction)}</p><small>Software: ${escape(manual.snapshotId)} · Manual: ${escape(manual.version.id)}</small></header><nav aria-label="Tareas"><h2>¿Qué necesita hacer?</h2>${manual.tasks.map((task, index) => `<a href="#task-${index}">${escape(task.title)}</a>`).join('')}</nav>${manual.tasks.map((task, index) => `<section id="task-${index}"><span class="badge">${escape(task.roles.join(' · ') || 'Usuario autorizado')}</span><h2>${escape(task.title)}</h2><p class="muted">Esquema del flujo · acceso: <code>${escape(task.routePath)}</code></p><ol class="flow">${task.steps.map((step) => `<li><strong>${escape(step.instruction)}</strong><p class="result">Qué comprobar: ${escape(step.expectedResult)}</p></li>`).join('')}</ol></section>`).join('')}<section><h2>Si necesita ayuda</h2><p>Revise los mensajes de la pantalla, confirme que está usando la cuenta correcta y conserve una descripción del problema para el responsable de la aplicación. Evite repetir una acción si no sabe si ya se completó.</p></section></main></body></html>`,
+    `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'"><title>${title}</title><style>
+figure{margin:16px 0}figure img{max-width:100%;height:auto;border:1px solid #cbd5e1}figcaption{font-size:14px;color:#46546b}body{font:17px/1.55 system-ui,sans-serif;color:#172033;background:#f4f7fc;margin:0}main{max-width:960px;margin:auto;padding:32px}header,section{background:white;border:1px solid #cbd5e1;border-radius:16px;padding:26px;margin:20px 0}h1,h2{line-height:1.2}a{color:#2444b7}nav a{display:block;padding:8px}small,.muted{color:#46546b}.badge{display:inline-block;background:#e0e7ff;padding:5px 12px;border-radius:20px}.flow{list-style:none;padding:0;counter-reset:step}.flow li{position:relative;margin:0 0 12px 18px;border-left:3px solid #3758ce;padding:0 0 20px 28px;counter-increment:step}.flow li:before{content:counter(step);position:absolute;left:-19px;top:0;background:#2444b7;color:white;border-radius:50%;width:34px;height:34px;text-align:center;line-height:34px;font-weight:bold}.result{background:#edf8f5;border-radius:8px;padding:12px}.draft{background:#fff3cd;padding:14px;border-radius:8px}@media print{body{background:white}main{padding:0}section{break-inside:avoid}nav{display:none}}</style></head><body><main><header><span class="badge">Guía visual · versión ${manual.version.versionNumber}</span><h1>${title}</h1>${draft ? '<p class="draft">BORRADOR: pendiente de revisión y aprobación. No es documentación oficial.</p>' : ''}${!manual.isCurrent ? '<p class="draft">Corresponde a una versión anterior del software.</p>' : ''}<p>${escape(manual.introduction)}</p><small>Software: ${escape(manual.snapshotId)} · Manual: ${escape(manual.version.id)}</small></header><nav aria-label="Tareas"><h2>¿Qué necesita hacer?</h2>${manual.tasks.map((task, index) => `<a href="#task-${index}">${escape(task.title)}</a>`).join('')}</nav>${manual.tasks.map((task, index) => `<section id="task-${index}"><span class="badge">${escape(task.roles.join(' · ') || 'Usuario autorizado')}</span><h2>${escape(task.title)}</h2><p class="muted">Esquema del flujo · acceso: <code>${escape(task.routePath)}</code></p>${(task.captures ?? []).map((capture) => (capture.status === 'CAPTURED' && images[capture.id] ? `<figure><img src="data:image/png;base64,${images[capture.id]!.toString('base64')}" alt="${escape(task.title)}"><figcaption>Captura real · ${escape(capture.role || 'Sin autenticación')} · datos de prueba · estado inicial. Los pasos numerados siguientes describen el flujo; la imagen no certifica su ejecución.</figcaption></figure>` : `<p class="draft">${escape(capture.reason ?? 'Captura no disponible.')}</p>`)).join('')}<ol class="flow">${task.steps.map((step) => `<li><strong>${escape(step.instruction)}</strong><p class="result">Qué comprobar: ${escape(step.expectedResult)}</p></li>`).join('')}</ol></section>`).join('')}<section><h2>Si necesita ayuda</h2><p>Revise los mensajes de la pantalla, confirme que está usando la cuenta correcta y conserve una descripción del problema para el responsable de la aplicación. Evite repetir una acción si no sabe si ya se completó.</p></section></main></body></html>`,
     'utf8',
   );
 }
 
-export function renderManualPdf(manual: UserManualResponse): Promise<Buffer> {
+export function renderManualPdf(
+  manual: UserManualResponse,
+  images: Record<string, Buffer> = {},
+): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({
       size: 'A4',
@@ -62,6 +68,22 @@ export function renderManualPdf(manual: UserManualResponse): Promise<Buffer> {
           `${task.roles.join(' · ') || 'Usuario autorizado'}\nEsquema del flujo · ${task.routePath}`,
         );
       doc.moveDown();
+      for (const capture of task.captures ?? []) {
+        const image = images[capture.id];
+        if (doc.y + (image ? 350 : 90) > doc.page.height - 65) doc.addPage();
+        doc
+          .fontSize(10)
+          .fillColor('#46546b')
+          .text(
+            `${capture.status === 'CAPTURED' && image ? 'Captura real' : 'Sin captura'} · ${capture.role || 'Sin autenticación'} · datos de prueba · estado inicial`,
+          );
+        if (capture.status === 'CAPTURED' && image) {
+          doc.image(image, 48, doc.y + 8, { fit: [495, 310] });
+          doc.y += 330;
+        } else
+          doc.text(capture.reason ?? 'Captura no disponible. Se conserva el esquema del flujo.');
+        doc.moveDown();
+      }
       task.steps.forEach((step, index) => {
         doc.fontSize(11);
         const height =

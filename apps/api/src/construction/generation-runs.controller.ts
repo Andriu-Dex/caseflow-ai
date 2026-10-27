@@ -240,7 +240,11 @@ export class InternalConstructionJobsController {
   }
 
   private async dispatch(type: ConstructionJobType, projectId: string, runId: string) {
-    if (type === 'user-manual') return this.userManuals.runJob(projectId, runId);
+    if (type === 'user-manual') {
+      // Image preparation can outlast the worker's HTTP connection.
+      void this.userManuals.runJob(projectId, runId).catch(() => undefined);
+      return;
+    }
     if (type === 'generation-run') return this.generationRuns.runJob(projectId, runId);
     // A validation can outlast the worker's HTTP timeout: acknowledge and run
     // it here. runJob always records a terminal status and never throws.

@@ -7276,6 +7276,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-148 | Generar un boceto con Stitch se confirma antes (pantallas, tiempo estimado y uso de créditos) y una generación en curso se puede cancelar: las pantallas ya dibujadas se conservan y se reanuda con las que faltan (§221.27) | Accepted |
 | DEC-149 | Las generaciones por lotes (requisitos, casos de uso, modelo de datos y artefactos de diseño estructurados) se pueden cancelar: el trabajo pasa a `CANCELLED`, se detiene antes del siguiente lote, conserva los lotes completados y se reanuda como uno fallido (§221.27) | Accepted |
 | DEC-152 | Cada snapshot validado propone un manual visual versionado, con revisión humana y descarga HTML/PDF; la entrega conjunta conserva el ZIP original y añade el manual aprobado y un manifiesto (§221.28, ADR-013) | Accepted |
+| DEC-153 | El manual incorpora capturas reales del snapshot mediante un RuntimeCaptureProvider aislado en Docker, con evidencia privada por rol, nuevas versiones y continuidad del esquema ante fallos (§221.29, ADR-014) | Accepted |
 
 ---
 
@@ -8006,9 +8007,19 @@ Cada snapshot de software validado encola una propuesta determinista de manual d
 
 El manual utiliza el ImplementationPlan exacto del snapshot, el plano de interfaz de su Design Baseline y los archivos de esa generación. Es un artefacto `USER_MANUAL` con versiones históricas inmutables y contenido relacional: introducción, tareas por pantalla, roles, pasos y resultados que comprobar. Cada tarea enlaza su archivo generado. Las explicaciones son candidatas; la validación técnica del código no acredita que los pasos hayan sido ejecutados por una persona.
 
-Se muestran esquemas numerados y tarjetas de pasos, sin hacer pasar un boceto por una captura real. No se incorpora en esta etapa captura automática de aplicaciones en ejecución. Antes de aprobar se deben revisar y marcar todas las tareas en la aplicación correspondiente. EDITOR, REVIEWER y OWNER pueden revisar el manual; VIEWER solo consulta y descarga. La generación/reintento requiere OWNER o EDITOR. La aprobación humana del manual es independiente de las aprobaciones automáticas de diseño en la ruta BUILD_ONLY.
+Se muestran esquemas numerados y tarjetas de pasos, sin hacer pasar un boceto por una captura real. Las capturas automáticas de aplicaciones en ejecución se incorporan mediante DEC-153 (§221.29). Antes de aprobar se deben revisar y marcar todas las tareas en la aplicación correspondiente. EDITOR, REVIEWER y OWNER pueden revisar el manual; VIEWER solo consulta y descarga. La generación/reintento requiere OWNER o EDITOR. La aprobación humana del manual es independiente de las aprobaciones automáticas de diseño en la ruta BUILD_ONLY.
 
 Se exporta HTML navegable sin conexión y PDF, con indicación de borrador cuando falta aprobación. El paquete completo requiere un manual aprobado y contiene `software.zip`, `manual/index.html`, `manual/manual.pdf` y un manifiesto de hashes y versiones. El ZIP original y `GeneratedProjectSnapshot` no se sobrescriben. Se avisa cuando existe una versión de software más reciente; su documentación se genera por separado. Las descargas y revisiones se auditan y respetan la pertenencia al proyecto.
+
+## 221.29 Capturas reales del manual (DEC-153, ADR-014)
+
+`RuntimeCaptureProvider` reconstruye el ZIP exacto y verificado del snapshot con su lockfile y captura las rutas del manual en Docker. El controlador fija los comandos y utiliza volúmenes desechables, límites de recursos y una red interna aislada sin puertos publicados. No ejecuta Dockerfiles o Compose generados, no monta el equipo ni proporciona secretos del producto. La instalación de dependencias precede a la copia del código; la compilación no tiene acceso a red. Playwright se ejecuta en un contenedor separado con usuario sin privilegios, seccomp y sandbox de Chromium.
+
+El perfil `EMPTY_DATABASE_DESKTOP_V1` utiliza una base vacía, sesiones de prueba por rol y resolución 1440 × 900. No ejecuta flujos de negocio completos. Las rutas con parámetros, los errores y las limitaciones se explicitan; una imagen no constituye aprobación ni prueba de todas las instrucciones.
+
+El trabajo de captura es independiente del estado READY. Se encola tras generar el manual y puede reintentarse por OWNER o EDITOR. Mientras está activo no se inicia otro ni se revisa o aprueba el manual. Las capturas producen una nueva versión candidata, preservan el texto más reciente y reinician la verificación humana. Las versiones aprobadas anteriores conservan su contenido y sus imágenes.
+
+Las imágenes privadas se modelan relacionalmente por tarea, conjunto, rol, perfil, estado, hash y dimensiones. Se autorizan por proyecto, snapshot y versión, y se verifican al descargarlas. HTML/PDF incorporan las imágenes; el ZIP conjunto añade los PNG y sus hashes sin cambiar el archivo original del software. El esquema sigue disponible si la captura falla. El historial gráfico solo se elimina dentro de la eliminación autorizada del proyecto completo.
 
 ## 221.4 Fuera de alcance de estas extensiones
 

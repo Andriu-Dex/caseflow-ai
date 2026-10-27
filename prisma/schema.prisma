@@ -1976,6 +1976,7 @@ model UserManualTask {
   generatedFile   GeneratedFile        @relation(fields: [generatedFileId], references: [id], onDelete: Restrict)
   roles           UserManualTaskRole[]
   steps           UserManualStep[]
+  captures        UserManualCapture[]
 
   @@unique([manualVersionId, position])
   @@unique([manualVersionId, routePath])
@@ -2009,6 +2010,7 @@ model UserManualJob {
   snapshotId   String                   @unique @map("snapshot_id") @db.Uuid
   status       String                   @default("QUEUED")
   errorMessage String?                  @map("error_message")
+  captureRequested Boolean              @default(false) @map("capture_requested")
   createdAt    DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   project      Project                  @relation(fields: [projectId], references: [id], onDelete: Restrict)
@@ -2016,6 +2018,24 @@ model UserManualJob {
 
   @@index([projectId, status])
   @@map("user_manual_jobs")
+}
+
+model UserManualCapture {
+  id         String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  taskId     String @map("task_id") @db.Uuid
+  bundleId   String @map("bundle_id") @db.Uuid
+  role       String
+  status     String
+  reason     String?
+  storageKey String? @map("storage_key")
+  sha256     String?
+  width      Int?
+  height     Int?
+  profile    String
+  task       UserManualTask @relation(fields: [taskId], references: [id], onDelete: Restrict)
+
+  @@unique([taskId, role])
+  @@map("user_manual_captures")
 }
 
 enum WorkflowRunStatus {

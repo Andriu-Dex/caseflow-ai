@@ -31,6 +31,39 @@ import { UserManualsService } from './user-manuals.service';
 @Controller('projects/:projectId/generated-project-snapshots/:snapshotId/user-manual')
 export class UserManualsController {
   constructor(private readonly manuals: UserManualsService) {}
+  @Post('capture')
+  @HttpCode(202)
+  @ApiOperation({
+    operationId: 'captureUserManual',
+    summary: 'Capturar pantallas reales en Docker sin cambiar el software',
+  })
+  @ApiZodResponse(202, 'Capture state.', userManualStateSchema)
+  capture(
+    @Param('projectId', uuidParamPipe) p: string,
+    @Param('snapshotId', uuidParamPipe) s: string,
+    @Request() req: { user: { id: string } },
+  ) {
+    return this.manuals.capture(p, s, req.user.id);
+  }
+
+  @Get('versions/:versionId/captures/:captureId')
+  @ApiOperation({
+    operationId: 'getUserManualCapture',
+    summary: 'Consultar una captura privada de esta versión',
+  })
+  async image(
+    @Param('projectId', uuidParamPipe) p: string,
+    @Param('snapshotId', uuidParamPipe) s: string,
+    @Param('versionId', uuidParamPipe) v: string,
+    @Param('captureId', uuidParamPipe) c: string,
+    @Res() res: Response,
+  ) {
+    const image = await this.manuals.image(p, s, v, c);
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.send(image);
+  }
   @Get()
   @ApiOperation({
     operationId: 'getUserManualState',

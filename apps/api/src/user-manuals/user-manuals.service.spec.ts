@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import JSZip from 'jszip';
 import { UserManualsService } from './user-manuals.service';
 import type { UserManualResponse } from '@caseflow-ai/contracts';
+import { capturePng } from '../../../../packages/integrations/src/testing/runtime-capture-fixture';
 
 const id = '00000000-0000-4000-8000-000000000001';
 const manual: UserManualResponse = {
@@ -81,6 +82,7 @@ function setup() {
       findMany: vi.fn().mockResolvedValue([{ id, path: 'apps/web/app/items/page.tsx' }]),
     },
     userManualDetail: { findFirst: vi.fn().mockResolvedValue(null) },
+    userManualCapture: { findMany: vi.fn().mockResolvedValue([]) },
     artifact: { create: vi.fn().mockResolvedValue({ id }) },
     $queryRaw: vi.fn().mockResolvedValue([{ last_number: 1 }]),
     $transaction: vi.fn(),
@@ -88,7 +90,11 @@ function setup() {
   prisma.$transaction.mockImplementation((callback) => callback(prisma));
   const queue = { add: vi.fn().mockResolvedValue(undefined) };
   const audit = { record: vi.fn() };
-  const storage = { getObject: vi.fn().mockResolvedValue(software) };
+  const storage = {
+    getObject: vi.fn().mockResolvedValue(software),
+    putObject: vi.fn(),
+    deleteObject: vi.fn().mockResolvedValue(undefined),
+  };
   const service = new UserManualsService(
     prisma as never,
     audit as never,
@@ -99,6 +105,122 @@ function setup() {
 }
 
 describe('UserManualsService', () => {
+  async function captureSetup() {
+    const context = setup();
+    const { service, prisma, storage, job } = context;
+    Object.assign(job, { captureRequested: true });
+    vi.spyOn(service, 'get').mockResolvedValue(manual);
+    prisma.artifactVersion.findFirstOrThrow.mockResolvedValue({
+      id,
+      artifactId: id,
+      versionNumber: 2,
+      title: 'Manual',
+      userManualDetail: {
+        introduction: 'Edición actual',
+        tasks: manual.tasks.map((task) => ({
+          ...task,
+          roles: task.roles.map((name) => ({ name })),
+        })),
+      },
+    } as never);
+    const zip = new JSZip();
+    zip.file('software/package.json', '{}', { createFolders: false });
+    zip.file('software/pnpm-lock.yaml', 'lockfileVersion: 9', { createFolders: false });
+    const archive = await zip.generateAsync({ type: 'nodebuffer' });
+    storage.getObject.mockResolvedValue(archive);
+    prisma.generatedProjectSnapshot.findFirst.mockResolvedValue({
+      ...snapshot,
+      targetTemplateIdentifier: 'CASEFLOW_WEB_TS_V1',
+      archiveSha256: createHash('sha256').update(archive).digest('hex'),
+    });
+    const capture = vi.fn(async ({ targets }: { targets: { routePath: string; role: string }[] }) =>
+      targets.map((target) => ({
+        ...target,
+        status: 'CAPTURED',
+        png: capturePng(),
+        width: 1440,
+        height: 900,
+        reason: null,
+      })),
+    );
+    Reflect.set(service, 'captureProvider', { capture });
+    return { ...context, capture };
+  }
+  it('adds screenshot evidence in a new unverified version and copies the current text', async () => {
+    const { service, prisma, storage, capture } = await captureSetup();
+    await service.runJob(id, id);
+    expect(capture).toHaveBeenCalledTimes(1);
+    expect(storage.putObject).toHaveBeenCalledWith(
+      expect.objectContaining({ contentType: 'image/png' }),
+    );
+    const created = prisma.artifactVersion.create.mock.calls[0]![0] as {
+      data: {
+        versionNumber: number;
+        userManualDetail: {
+          create: {
+            introduction: string;
+            tasks: {
+              create: {
+                verified: boolean;
+                captures: { createMany: { data: { status: string }[] } };
+              }[];
+            };
+          };
+        };
+      };
+    };
+    expect(created.data.versionNumber).toBe(3);
+    expect(created.data.userManualDetail.create.introduction).toBe('Edición actual');
+    expect(created.data.userManualDetail.create.tasks.create[0]).toMatchObject({
+      verified: false,
+      captures: { createMany: { data: [{ status: 'CAPTURED' }] } },
+    });
+    expect(prisma.userManualJob.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: 'COMPLETED', errorMessage: null } }),
+    );
+  });
+  it('keeps a safe schematic fallback when Docker fails and cleans stored files if persistence fails', async () => {
+    const failed = await captureSetup();
+    failed.capture.mockRejectedValue(new Error('private Docker credential'));
+    await failed.service.runJob(id, id);
+    expect(failed.storage.putObject).not.toHaveBeenCalled();
+    expect(JSON.stringify(failed.prisma.artifactVersion.create.mock.calls)).not.toContain(
+      'credential',
+    );
+    expect(JSON.stringify(failed.prisma.artifactVersion.create.mock.calls)).toContain('FAILED');
+    const rollback = await captureSetup();
+    rollback.prisma.artifactVersion.create.mockRejectedValue(new Error('Transaction aborted'));
+    await rollback.service.runJob(id, id);
+    expect(rollback.storage.deleteObject).toHaveBeenCalledTimes(1);
+    expect(rollback.prisma.userManualJob.updateMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'FAILED' }) }),
+    );
+  });
+  it('checks private image scope and integrity and refuses capture without a provider', async () => {
+    const { service, prisma, storage } = setup();
+    vi.spyOn(service, 'get').mockResolvedValue(manual);
+    await expect(service.capture(id, id, id)).rejects.toThrow('capturador');
+    const findFirst = vi.fn().mockResolvedValue(null);
+    Object.assign(prisma.userManualCapture, { findFirst });
+    await expect(service.image(id, id, id, id)).rejects.toThrow('no encontrada');
+    findFirst.mockResolvedValue({
+      storageKey: 'private',
+      sha256: createHash('sha256').update(software).digest('hex'),
+    } as never);
+    expect(await service.image(id, id, id, id)).toEqual(software);
+    storage.getObject.mockResolvedValue(Buffer.from('tampered'));
+    await expect(service.image(id, id, id, id)).rejects.toThrow('evidencia');
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          task: {
+            manualVersionId: id,
+            manual: { snapshotId: id, artifactVersion: { projectId: id } },
+          },
+        }),
+      }),
+    );
+  });
   it('enqueues idempotent work and records safe failures separately from software validation', async () => {
     const { service, prisma, queue, job } = setup();
     await service.enqueue(id, id, id);
@@ -179,6 +301,7 @@ describe('UserManualsService', () => {
         introduction: 'Guía',
         tasks: manual.tasks.map((task) => ({
           ...task,
+          captures: [],
           roles: task.roles.map((name) => ({ name })),
         })),
       },
@@ -218,6 +341,7 @@ describe('UserManualsService', () => {
   });
   it('requires human verification, a valid transition and the current version before approval', async () => {
     const { service, prisma } = setup();
+    prisma.userManualJob.findFirst.mockResolvedValue(null as never);
     const get = vi.spyOn(service, 'get').mockResolvedValue({
       ...manual,
       tasks: manual.tasks.map((task) => ({ ...task, verified: false })),

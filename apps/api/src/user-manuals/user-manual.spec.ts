@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { capturePng } from '../../../../packages/integrations/src/testing/runtime-capture-fixture';
 import {
   implementationPlanContentSchema,
   uiBlueprintContentSchema,
@@ -53,6 +54,42 @@ export const sampleManual: UserManualResponse = {
 };
 
 describe('visual user manual', () => {
+  it('embeds actual PNG evidence offline and paginates multiple role screenshots with explicit fallback', async () => {
+    const captures = ['Editor', 'Reader', 'Reviewer'].map((role, index) => ({
+      id: `00000000-0000-4000-8000-00000000000${index + 1}`,
+      bundleId: id,
+      role,
+      status: 'CAPTURED' as const,
+      reason: null,
+      sha256: 'a'.repeat(64),
+      width: 1440,
+      height: 900,
+      profile: 'EMPTY_DATABASE_DESKTOP_V1' as const,
+    }));
+    const manual = {
+      ...sampleManual,
+      tasks: [
+        {
+          ...sampleManual.tasks[0]!,
+          captures: [
+            ...captures,
+            { ...captures[0]!, id, status: 'FAILED' as const, reason: 'Ruta pendiente de datos.' },
+          ],
+        },
+      ],
+    };
+    const images = Object.fromEntries(captures.map((capture) => [capture.id, capturePng()]));
+    const html = renderManualHtml(manual, images).toString();
+    expect(html.match(/data:image\/png;base64,/g)).toHaveLength(3);
+    expect(html).toContain('Ruta pendiente de datos.');
+    expect(html).toContain('img-src data:');
+    const pdf = await renderManualPdf(manual, images);
+    expect(pdf.toString('latin1')).toContain('/Subtype /Image');
+    const extracted = await extractText(new Uint8Array(pdf), { mergePages: true });
+    expect(extracted.totalPages).toBeGreaterThan(2);
+    expect(extracted.text).toContain('Ruta pendiente de datos.');
+    expect(extracted.text).toContain('Reviewer');
+  });
   it('uses only implementation routes with a real source file and keeps review pending', () => {
     expect(content.tasks[0]).toMatchObject({
       generatedFileId: id,

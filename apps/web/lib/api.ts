@@ -901,6 +901,13 @@ export const api = {
       post<WorkflowRunResponse>(`/projects/${projectId}/workflow-runs/${runId}/approve`),
   },
   userManuals: {
+    capture: (p: string, s: string) =>
+      post<UserManualState>(
+        `/projects/${p}/generated-project-snapshots/${s}/user-manual/capture`,
+        {},
+      ),
+    captureUrl: (p: string, s: string, v: string, c: string) =>
+      `${BASE_URL}/projects/${p}/generated-project-snapshots/${s}/user-manual/versions/${v}/captures/${c}`,
     state: (p: string, s: string) =>
       get<UserManualState>(`/projects/${p}/generated-project-snapshots/${s}/user-manual`),
     generate: (p: string, s: string) =>

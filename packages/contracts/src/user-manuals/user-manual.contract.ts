@@ -47,6 +47,21 @@ export const userManualResponseSchema = z.object({
       generatedFileId: z.uuid(),
       roles: z.array(z.string()),
       verified: z.boolean(),
+      captures: z
+        .array(
+          z.object({
+            id: z.uuid(),
+            bundleId: z.uuid(),
+            role: z.string(),
+            status: z.enum(['CAPTURED', 'FAILED', 'SKIPPED']),
+            reason: z.string().nullable(),
+            sha256: z.string().nullable(),
+            width: z.number().int().nullable(),
+            height: z.number().int().nullable(),
+            profile: z.literal('EMPTY_DATABASE_DESKTOP_V1'),
+          }),
+        )
+        .optional(),
       steps: z.array(stepSchema),
     }),
   ),

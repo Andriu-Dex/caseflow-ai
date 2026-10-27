@@ -18,4 +18,6 @@
 
 ## Consecuencias
 
+La ADR-014 (DEC-153) amplía esta decisión con capturas automáticas aisladas. La ausencia de capturas descrita en el alcance inicial deja de ser una restricción del producto.
+
 Se entrega una guía revisable y visual sin coste de inferencias adicionales. Los datos estructurados siguen siendo canónicos y el PDF es un derivado. La calidad de la explicación y su correspondencia con la interacción real requieren revisión: los textos iniciales son ayudas conservadoras que el responsable debe completar, especialmente en operaciones de negocio complejas. El manual no certifica por sí mismo permisos, ejecución ni disponibilidad de funciones.

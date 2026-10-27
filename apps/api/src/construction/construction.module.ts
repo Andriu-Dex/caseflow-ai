@@ -3,6 +3,8 @@ import { createJobQueue, createStorageProvider, type JobQueue } from '../common/
 import { CONSTRUCTION_QUEUE, type ConstructionJobPayload } from '@caseflow-ai/domain';
 import {
   DockerSandboxExecutionProvider,
+  DockerRuntimeCaptureProvider,
+  RUNTIME_CAPTURE_PROVIDER,
   type SandboxExecutionProvider,
 } from '@caseflow-ai/integrations';
 import { AIModule } from '../ai/ai.module';
@@ -70,6 +72,7 @@ import { UserManualsController } from '../user-manuals/user-manuals.controller';
     UserManualsController,
   ],
   providers: [
+    { provide: RUNTIME_CAPTURE_PROVIDER, useFactory: () => new DockerRuntimeCaptureProvider() },
     InterruptedJobsRecovery,
     UserManualsService,
     DependencyCatalogService,

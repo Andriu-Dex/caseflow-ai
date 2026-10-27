@@ -48,6 +48,8 @@ export const AUDIT_ACTIONS = [
   'USER_MANUAL_EDITED',
   'USER_MANUAL_REVIEWED',
   'USER_MANUAL_DOWNLOADED',
+  'USER_MANUAL_CAPTURED',
+  'USER_MANUAL_CAPTURE_STARTED',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 

@@ -8,6 +8,7 @@ import { CONSTRUCTION_QUEUE_TOKEN } from '../../src/construction/construction-qu
 import type { JobQueue } from '../../src/common/infrastructure';
 import type { ConstructionJobPayload } from '@caseflow-ai/domain';
 import { userManualStateSchema } from '@caseflow-ai/contracts';
+import { capturePng } from '../../../../packages/integrations/src/testing/runtime-capture-fixture';
 import {
   createTestContext,
   createWorkspaceWithOwner,
@@ -249,6 +250,186 @@ describe('User manual delivery integration', () => {
       (await ctx.prisma.generatedProjectSnapshot.findUniqueOrThrow({ where: { id: snapshotId } }))
         .archiveSha256,
     ).toBe(original.archiveSha256);
+  });
+
+  it('captures privately into new versions, preserves concurrent edits and keeps fallback and software history intact', async () => {
+    const before = (await manuals.get(projectId, snapshotId))!;
+    const snapshot = await ctx.prisma.generatedProjectSnapshot.findUniqueOrThrow({
+      where: { id: snapshotId },
+    });
+    const png = capturePng();
+    const capture = vi.fn(async ({ targets }: { targets: { routePath: string; role: string }[] }) =>
+      targets.map((target) => ({
+        ...target,
+        status: 'CAPTURED',
+        reason: null,
+        png,
+        width: 1440,
+        height: 900,
+      })),
+    );
+    Reflect.set(manuals, 'captureProvider', { capture });
+    try {
+      await request(ctx.app.getHttpServer())
+        .post(`${url()}/capture`)
+        .set('Authorization', `Bearer ${ctx.token}`)
+        .send({})
+        .expect(202);
+      await expect(manuals.capture(projectId, snapshotId, ctx.userId)).rejects.toThrow('curso');
+      await expect(
+        manuals.transition(projectId, snapshotId, before.version.id, ctx.userId, 'IN_REVIEW'),
+      ).rejects.toThrow('capturas');
+      const edited = (await manuals.edit(projectId, snapshotId, ctx.userId, {
+        expectedVersionId: before.version.id,
+        introduction: 'Texto editado durante la captura.',
+        tasks: before.tasks.map(({ id, title, verified, steps }) => ({
+          id,
+          title,
+          verified,
+          steps,
+        })),
+      }))!;
+      const job = await ctx.prisma.userManualJob.findUniqueOrThrow({ where: { snapshotId } });
+      await manuals.runJob(projectId, job.id);
+      const current = (await manuals.get(projectId, snapshotId))!;
+      expect(current.version.versionNumber).toBe(edited.version.versionNumber + 1);
+      expect(current.introduction).toBe('Texto editado durante la captura.');
+      expect(current.tasks.every((task) => !task.verified)).toBe(true);
+      const image = current.tasks[0]!.captures![0]!;
+      expect(image.status).toBe('CAPTURED');
+      expect(capture).toHaveBeenCalledTimes(1);
+      const invalidEvidence = (storageKey: string, sha256: string | null) =>
+        ctx.prisma.artifactVersion.create({
+          data: {
+            projectId,
+            artifactId: current.id,
+            versionNumber: 999,
+            title: 'Invalid evidence',
+            status: 'DRAFT',
+            origin: 'MANUAL',
+            userManualDetail: {
+              create: {
+                snapshotId,
+                introduction: 'Invalid evidence',
+                tasks: {
+                  create: {
+                    generatedFileId: current.tasks[0]!.generatedFileId,
+                    position: 0,
+                    title: 'Invalid',
+                    routePath: '/orders',
+                    captures: {
+                      create: {
+                        bundleId: image.bundleId,
+                        role: '',
+                        status: 'CAPTURED',
+                        storageKey,
+                        sha256,
+                        width: 1440,
+                        height: 900,
+                        profile: 'EMPTY_DATABASE_DESKTOP_V1',
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        });
+      await expect(
+        invalidEvidence(
+          `projects/${otherProjectId}/manual-captures/${snapshotId}/${image.bundleId}/0.png`,
+          image.sha256,
+        ),
+      ).rejects.toThrow('capture storage');
+      await expect(
+        invalidEvidence(
+          `projects/${projectId}/manual-captures/${snapshotId}/${image.bundleId}/0.png`,
+          null,
+        ),
+      ).rejects.toThrow('manual_capture_image');
+      expect(
+        await ctx.prisma.artifactVersion.count({
+          where: { artifactId: current.id, versionNumber: 999 },
+        }),
+      ).toBe(0);
+      expect((await manuals.get(projectId, snapshotId, before.version.id))!.version.status).toBe(
+        before.version.status,
+      );
+      const imagePath = `${url()}/versions/${current.version.id}/captures/${image.id}`;
+      const response = await request(ctx.app.getHttpServer())
+        .get(imagePath)
+        .set('Authorization', `Bearer ${ctx.token}`)
+        .expect(200)
+        .expect('Content-Type', /image\/png/);
+      expect(response.body).toEqual(png);
+      await request(ctx.app.getHttpServer())
+        .get(imagePath.replace(projectId, otherProjectId))
+        .set('Authorization', `Bearer ${ctx.token}`)
+        .expect(404);
+      await request(ctx.app.getHttpServer())
+        .get(imagePath.replace(current.version.id, before.version.id))
+        .set('Authorization', `Bearer ${ctx.token}`)
+        .expect(404);
+      const outsider = await createUnauthorizedUser(ctx);
+      const outsiderToken = await ctx.jwtService.signAsync({ sub: outsider.id });
+      await request(ctx.app.getHttpServer())
+        .get(imagePath)
+        .set('Authorization', `Bearer ${outsiderToken}`)
+        .expect(403);
+      await expect(
+        ctx.prisma.userManualCapture.update({
+          where: { id: image.id },
+          data: { reason: 'Changed' },
+        }),
+      ).rejects.toThrow();
+      await expect(
+        ctx.prisma.userManualCapture.create({
+          data: {
+            taskId: current.tasks[0]!.id,
+            bundleId: image.bundleId,
+            role: 'Other',
+            status: 'FAILED',
+            reason: 'Late insertion',
+            profile: 'EMPTY_DATABASE_DESKTOP_V1',
+          },
+        }),
+      ).rejects.toThrow();
+      const verified = (await manuals.edit(projectId, snapshotId, ctx.userId, {
+        expectedVersionId: current.version.id,
+        introduction: current.introduction,
+        tasks: current.tasks.map(({ id, title, steps }) => ({ id, title, steps, verified: true })),
+      }))!;
+      expect(verified.tasks[0]!.captures![0]!.sha256).toBe(image.sha256);
+      await manuals.transition(projectId, snapshotId, verified.version.id, ctx.userId, 'IN_REVIEW');
+      await manuals.transition(projectId, snapshotId, verified.version.id, ctx.userId, 'APPROVED');
+      const delivery = await manuals.download(
+        projectId,
+        snapshotId,
+        verified.version.id,
+        ctx.userId,
+        'zip',
+      );
+      const zip = await JSZip.loadAsync(delivery.body);
+      expect(Object.keys(zip.files).some((name) => name.endsWith('.png'))).toBe(true);
+      expect(await zip.file('manual/index.html')!.async('string')).toContain(
+        'data:image/png;base64,',
+      );
+      capture.mockRejectedValueOnce(new Error('Private Docker failure'));
+      await manuals.capture(projectId, snapshotId, ctx.userId);
+      await manuals.runJob(projectId, job.id);
+      const fallback = (await manuals.get(projectId, snapshotId))!;
+      expect(fallback.tasks[0]!.captures![0]!.status).toBe('FAILED');
+      expect(JSON.stringify(fallback)).not.toContain('Private Docker');
+      expect((await manuals.get(projectId, snapshotId, verified.version.id))!.version.status).toBe(
+        'APPROVED',
+      );
+      expect(
+        (await ctx.prisma.generatedProjectSnapshot.findUniqueOrThrow({ where: { id: snapshotId } }))
+          .archiveSha256,
+      ).toBe(snapshot.archiveSha256);
+    } finally {
+      Reflect.set(manuals, 'captureProvider', undefined);
+    }
   });
 
   it('includes manual history in the authorized whole-project purge', async () => {
