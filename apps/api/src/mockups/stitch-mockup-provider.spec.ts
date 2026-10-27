@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { MockupGenerationResult } from '@caseflow-ai/integrations';
 import { StitchMockupProvider } from './stitch-mockup-provider';
 
@@ -18,14 +18,136 @@ describe('StitchMockupProvider', () => {
     ).fullResolutionImageUrl.bind(provider);
 
     expect(
-      fullResolutionImageUrl('https://cdn.example/screen=w96-h512?token=abc', '1440', 'DESKTOP'),
-    ).toBe('https://cdn.example/screen=w1600?token=abc');
-    expect(fullResolutionImageUrl('https://cdn.example/screen', '390', 'MOBILE')).toBe(
-      'https://cdn.example/screen=w780',
+      fullResolutionImageUrl(
+        'https://lh3.googleusercontent.com/screen=w96-h512?token=abc',
+        '1440',
+        'DESKTOP',
+      ),
+    ).toBe('https://lh3.googleusercontent.com/screen=w1600?token=abc');
+    expect(
+      fullResolutionImageUrl('https://lh3.googleusercontent.com/screen', '390', 'MOBILE'),
+    ).toBe('https://lh3.googleusercontent.com/screen=w780');
+    expect(
+      fullResolutionImageUrl('https://lh3.googleusercontent.com/screen', '99999', 'DESKTOP'),
+    ).toBe('https://lh3.googleusercontent.com/screen=w1920');
+    const apiUrl = 'https://stitch.googleapis.com/v1/projects/p/screens/s/image?alt=media';
+    expect(fullResolutionImageUrl(apiUrl, 1920, 'DESKTOP')).toBe(apiUrl);
+    expect(fullResolutionImageUrl('https://cdn.example/screen', 1920, 'DESKTOP')).toBe(
+      'https://cdn.example/screen',
     );
-    expect(fullResolutionImageUrl('https://cdn.example/screen', '99999', 'DESKTOP')).toBe(
-      'https://cdn.example/screen=w1920',
+  });
+
+  it('authenticates only the official API origin and drops credentials on redirects', async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(null, { status: 302, headers: { location: 'https://cdn.example/asset.png' } }),
+      )
+      .mockResolvedValueOnce(new Response('image', { headers: { 'content-type': 'image/png' } }));
+    const provider = new StitchMockupProvider({
+      apiKey: 'test-key',
+      timeoutMs: 1000,
+      fetch: fetcher,
+    });
+    const download = (
+      provider as unknown as { download(url: string, kind: 'image'): Promise<unknown> }
+    ).download.bind(provider);
+    await expect(
+      download('https://stitch.googleapis.com/v1/asset', 'image'),
+    ).resolves.toBeDefined();
+    expect(fetcher.mock.calls[0]![1]).toMatchObject({
+      redirect: 'manual',
+      headers: { 'x-goog-api-key': 'test-key' },
+    });
+    expect(fetcher.mock.calls[1]![1]).not.toHaveProperty('headers');
+    fetcher.mockResolvedValueOnce(
+      new Response('image', { headers: { 'content-type': 'image/png' } }),
     );
+    await download('https://stitch.googleapis.com.evil.example/asset', 'image');
+    expect(fetcher.mock.calls[2]![1]).not.toHaveProperty('headers');
+  });
+
+  it('refuses insecure redirects and redirect loops without forwarding credentials', async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response(null, { status: 302, headers: { location: 'http://cdn.example/asset' } }),
+      );
+    const provider = new StitchMockupProvider({
+      apiKey: 'test-key',
+      timeoutMs: 1000,
+      fetch: fetcher,
+    });
+    const download = (
+      provider as unknown as { download(url: string, kind: 'image'): Promise<unknown> }
+    ).download.bind(provider);
+    await expect(download('https://stitch.googleapis.com/v1/asset', 'image')).rejects.toMatchObject(
+      { code: 'MOCKUP_PROVIDER_ERROR' },
+    );
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    fetcher
+      .mockClear()
+      .mockResolvedValue(new Response(null, { status: 302, headers: { location: '/loop' } }));
+    await expect(download('https://stitch.googleapis.com/v1/asset', 'image')).rejects.toMatchObject(
+      { code: 'MOCKUP_PROVIDER_ERROR' },
+    );
+    expect(fetcher).toHaveBeenCalledTimes(4);
+  });
+
+  it('decodes authenticated REST image and HTML envelopes without accepting arbitrary JSON', async () => {
+    const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1]);
+    const html = '<!doctype html><html><body>Biblioteca</body></html>';
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json({ dataString: png.toString('base64'), imageMetadata: { mimeType: 'PNG' } }),
+      )
+      .mockResolvedValueOnce(Response.json({ dataString: html }))
+      .mockResolvedValueOnce(Response.json({ dataString: Buffer.from(html).toString('base64') }));
+    const provider = new StitchMockupProvider({
+      apiKey: 'test-key',
+      timeoutMs: 1000,
+      fetch: fetcher,
+    });
+    const download = (
+      provider as unknown as {
+        download(
+          url: string,
+          kind: 'image' | 'html',
+        ): Promise<{ body: Buffer; contentType: string }>;
+      }
+    ).download.bind(provider);
+    await expect(download('https://stitch.googleapis.com/v1/asset', 'image')).resolves.toEqual({
+      body: png,
+      contentType: 'image/png',
+    });
+    await expect(download('https://stitch.googleapis.com/v1/asset', 'html')).resolves.toEqual({
+      body: Buffer.from(html),
+      contentType: 'text/html',
+    });
+    await expect(download('https://stitch.googleapis.com/v1/asset', 'html')).resolves.toEqual({
+      body: Buffer.from(html),
+      contentType: 'text/html',
+    });
+    fetcher.mockResolvedValueOnce(
+      Response.json({ dataString: png.toString('base64'), imageMetadata: { mimeType: 'PNG' } }),
+    );
+    await expect(download('https://cdn.example/asset', 'image')).rejects.toMatchObject({
+      code: 'MOCKUP_PROVIDER_ERROR',
+    });
+    fetcher.mockResolvedValueOnce(
+      Response.json({
+        dataString: Buffer.from(html).toString('base64'),
+        imageMetadata: { mimeType: 'PNG' },
+      }),
+    );
+    await expect(download('https://stitch.googleapis.com/v1/asset', 'image')).rejects.toMatchObject(
+      { code: 'MOCKUP_PROVIDER_ERROR' },
+    );
+    fetcher.mockResolvedValueOnce(Response.json({ unexpected: 'data' }));
+    await expect(download('https://stitch.googleapis.com/v1/asset', 'html')).rejects.toMatchObject({
+      code: 'MOCKUP_PROVIDER_ERROR',
+    });
   });
 
   it('passes the blueprint data and states to the visual generator', () => {
@@ -50,7 +172,10 @@ describe('StitchMockupProvider', () => {
     expect(buildPrompt(screen, 'DESKTOP')).not.toContain('Ajustes solicitados');
     const refined = buildPrompt(screen, 'DESKTOP', 'Usa tonos verdes');
     expect(refined).toContain('Registrar un pedido');
-    expect(refined.endsWith('Usa tonos verdes')).toBe(true);
+    expect(refined).toContain(
+      'Ajustes solicitados por el usuario (aplícalos sin eliminar el contenido anterior): Usa tonos verdes',
+    );
+    expect(refined.endsWith('sin estados alternativos simultáneos.')).toBe(true);
     const prompt = buildPrompt(
       {
         name: 'Pedidos',
@@ -260,5 +385,18 @@ describe('StitchMockupProvider one application (DEC-147)', () => {
   });
   it('adds nothing about an application when there is no context', () => {
     expect(buildPrompt(screen, 'DESKTOP')).not.toContain('misma aplicación');
+  });
+  it('includes approved policies as reference data and forbids inventing business decisions', () => {
+    const prompt = buildPrompt(screen, 'DESKTOP', 'Cambia la paleta', undefined, {
+      ...context,
+      approvedRequirements: [
+        { code: 'RF-001', versionId: 'v1', description: 'Máximo tres préstamos activos.' },
+      ],
+    });
+    expect(prompt).toContain('Máximo tres préstamos activos.');
+    expect(prompt).toContain('No inventes reglas, límites, plazos');
+    expect(prompt).toContain('no lo completes con convenciones del sector');
+    expect(prompt).not.toContain('RF-001');
+    expect(prompt).toContain('sin estados alternativos simultáneos');
   });
 });

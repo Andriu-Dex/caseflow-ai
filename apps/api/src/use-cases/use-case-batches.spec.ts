@@ -151,7 +151,7 @@ describe('mergeUseCaseBatch', () => {
 });
 
 describe('shared context and primary actor', () => {
-  it('never keeps the shared non-functional requirements as sources', () => {
+  it('preserves explicitly cited shared guarantees when creating and merging cases', () => {
     const result = mergeUseCaseBatch(
       [],
       { candidates: [candidate('a', 'Registrar venta', ['RF-001', 'RNF-001'])] },
@@ -160,7 +160,7 @@ describe('shared context and primary actor', () => {
       0,
       { contextCodes: new Set(['RNF-001']) },
     );
-    expect(result[0]!.relatedRequirementSourceIds).toEqual(['RF-001']);
+    expect(result[0]!.relatedRequirementSourceIds).toEqual(['RF-001', 'RNF-001']);
     // Also when a later proposal is folded into an existing one.
     const folded = mergeUseCaseBatch(
       result,
@@ -170,7 +170,7 @@ describe('shared context and primary actor', () => {
       1,
       { contextCodes: new Set(['RNF-001']) },
     );
-    expect(folded[0]!.relatedRequirementSourceIds).toEqual(['RF-001', 'RF-002']);
+    expect(folded[0]!.relatedRequirementSourceIds).toEqual(['RF-001', 'RNF-001', 'RF-002']);
   });
 
   it('splits a compound primary actor into one primary and the rest secondary', () => {

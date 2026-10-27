@@ -27,6 +27,7 @@ import { HtmlPreviewDialog } from '../../components/html-preview-dialog';
 import { Confetti } from '../../components/confetti';
 
 const CONSISTENCY_RULE_LABELS: Record<string, string> = {
+  REQUIREMENT_COMMITMENT: 'Compromisos del requisito → comportamiento declarado',
   'Mockup Association': 'Asociación de boceto',
   'Unique Use Case Name': 'Nombre de caso de uso único',
   'Requirement Use Case Coverage': 'Cobertura requisito → caso de uso',

@@ -91,6 +91,29 @@ export const mockupJobResponseSchema = z.object({
 });
 export type MockupJobResponse = z.infer<typeof mockupJobResponseSchema>;
 
+export const mockupFidelityReviewSchema = z.object({
+  requirementVersionIds: z.array(z.string()),
+  contextVersionIds: z.array(z.string()),
+  findings: z.array(
+    z.object({
+      screenLocalId: z.string(),
+      severity: z.enum(['ERROR', 'WARNING']),
+      code: z.enum([
+        'CONTRADICTORY_LIMIT',
+        'CONTRADICTORY_RETENTION',
+        'UNSUPPORTED_QUANTITY',
+        'HTML_UNAVAILABLE',
+        'NO_APPROVED_REQUIREMENTS',
+      ]),
+      message: z.string(),
+      expected: z.string().nullable(),
+      observed: z.string().nullable(),
+    }),
+  ),
+  scope: z.literal('HTML_HEURISTIC'),
+});
+export type MockupFidelityReview = z.infer<typeof mockupFidelityReviewSchema>;
+
 export const mockupPreviewResponseSchema = z.object({
   id: z.uuid(),
   projectId: z.uuid(),
@@ -103,5 +126,6 @@ export const mockupPreviewResponseSchema = z.object({
   screens: z.array(mockupScreenSchema).nullable(),
   refinementPrompt: z.string().nullable(),
   createdAt: z.iso.datetime(),
+  fidelityReview: mockupFidelityReviewSchema.optional(),
 });
 export type MockupPreviewResponse = z.infer<typeof mockupPreviewResponseSchema>;

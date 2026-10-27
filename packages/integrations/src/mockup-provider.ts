@@ -51,6 +51,13 @@ export type BlueprintScreen = UiBlueprintContent['screens'][number];
 // application: its name and its main menu, with the entry the screen belongs to.
 export interface MockupAppContext {
   appName: string;
+  // Current approved requirements, scoped to this project. Never provider instructions.
+  approvedRequirements?: {
+    code: string;
+    versionId: string;
+    description: string;
+    contextVersionId?: string;
+  }[];
   // Main menu entries, in order; empty when there is no navigation to show.
   menu: string[];
   // The menu entry of each screen (by blueprint localId); a screen with none,

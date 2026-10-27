@@ -14,10 +14,19 @@ import {
   type CoherenceSource,
 } from './coherence-rules';
 import { contextCoverage } from '../requirements/context-coverage';
+import { dataModelReviewQuestions } from '@caseflow-ai/contracts';
+import {
+  actorCommitmentFindings,
+  accessScopeFindings,
+  numericCommitmentFindings,
+  type DeclaredRequirement,
+  type CommitmentFinding,
+} from './commitment-checks';
 
 const KIND_LABELS = { NEED: 'necesidad', BUSINESS_RULE: 'regla de negocio' } as const;
 
 const RULE_LABELS: Record<CoherenceGap['chain'], string> = {
+  REQUIREMENT_COMMITMENT: 'Compromisos del requisito → comportamiento declarado',
   QUALITY_REQUIREMENT_DESIGN: 'Requisito no funcional → diseño',
   CONTEXT_REQUIREMENT: 'Contexto → requisito',
   REQUIREMENT_USE_CASE_SCREEN: 'Requisito → caso de uso → pantalla',
@@ -41,8 +50,29 @@ const VERSION_INCLUDE = {
   artifact: true,
   structuredAnalysisDetail: true,
   dataModelDetail: { include: { entities: { include: { attributes: true } } } },
-  mockupsSourcedFromHere: { include: { screens: true } },
-  useCaseDetail: { include: { requirementLinks: { include: { requirementVersion: true } } } },
+  mockupsSourcedFromHere: {
+    where: { artifactVersion: { status: 'APPROVED', artifact: { archivedAt: null } } },
+    include: {
+      screens: true,
+      artifactVersion: {
+        include: {
+          artifact: {
+            include: {
+              versions: {
+                where: { status: 'APPROVED' },
+                orderBy: { versionNumber: 'desc' },
+                take: 1,
+                select: { id: true },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+  useCaseDetail: {
+    include: { requirementLinks: { include: { requirementVersion: true } }, mainFlowSteps: true },
+  },
 } as const;
 
 @Injectable()
@@ -72,6 +102,23 @@ export class ConsistencyEngineService {
     }
     for (const gap of this.requirementGaps(versions))
       issues.push(this.issue(gap.gap, severity, gap.artifact));
+    issues.push(
+      ...this.commitmentIssues(versions).map((issue) =>
+        !strict && issue.severity === 'ERROR' ? { ...issue, severity: 'WARNING' as const } : issue,
+      ),
+    );
+    for (const version of versions.filter(
+      (item) => item.artifact.artifactTypeCode === 'DATA_MODEL',
+    ))
+      for (const question of dataModelReviewQuestions(version.dataModelDetail))
+        issues.push({
+          rule: 'Decisiones pendientes del modelo',
+          severity: 'WARNING',
+          message: question,
+          affectedArtifactIds: [version.artifact.id],
+          artifactType: 'DATA_MODEL',
+          chain: 'ENTITY_CLASS_PLAN',
+        });
     const design = versions.filter((v) =>
       ['NAVIGATION_TREE', 'UI_BLUEPRINT', 'SOFTWARE_ARCHITECTURE', 'SYSTEM_ARCHITECTURE'].includes(
         v.artifact.artifactTypeCode,
@@ -101,6 +148,17 @@ export class ConsistencyEngineService {
                 message: `El requisito no funcional ${requirement.artifact.code} no tiene cobertura explícita en el diseño aprobado. Relaciónelo con el componente, nodo o pantalla pertinente y revise cómo se atiende.`,
               },
               'WARNING',
+              requirement.artifact,
+            ),
+          );
+        else
+          issues.push(
+            this.issue(
+              {
+                chain: 'QUALITY_REQUIREMENT_DESIGN',
+                message: `La referencia a ${requirement.artifact.code} declara cobertura; su cumplimiento requiere revisar los compromisos y las pruebas. La ausencia de contradicciones detectadas no certifica el requisito.`,
+              },
+              'OBSERVATION',
               requirement.artifact,
             ),
           );
@@ -139,7 +197,13 @@ export class ConsistencyEngineService {
     for (const version of versions.filter((v) => v.artifact.artifactTypeCode === 'UI_BLUEPRINT')) {
       const content = version.structuredAnalysisDetail?.content as UiBlueprintContent | undefined;
       const painted = new Set(
-        version.mockupsSourcedFromHere.flatMap((m) => m.screens.map((s) => s.screenLocalId)),
+        version.mockupsSourcedFromHere.flatMap((m) => {
+          if (m.artifactVersion.artifact.versions[0]?.id !== m.artifactVersionId) return [];
+          // Internal wireframes render the exact blueprint as one complete SVG.
+          if (m.generatorKind === 'INTERNAL_WIREFRAME' && m.svg?.trim())
+            return (content?.screens ?? []).map((screen) => screen.localId);
+          return m.screens.map((screen) => screen.screenLocalId);
+        }),
       );
       for (const screen of content?.screens ?? [])
         if (!painted.has(screen.localId))
@@ -148,6 +212,7 @@ export class ConsistencyEngineService {
             severity: 'ERROR',
             message: `La pantalla '${screen.name}' del plano de interfaz ${version.artifact.code} no tiene un boceto asociado.`,
             affectedArtifactIds: [version.artifact.id],
+            artifactType: 'MOCKUP',
           });
     }
 
@@ -164,6 +229,7 @@ export class ConsistencyEngineService {
           severity: 'ERROR',
           message: `El nombre del caso de uso está duplicado (${ids.length} ocurrencias).`,
           affectedArtifactIds: ids,
+          artifactType: 'USE_CASE',
         });
 
     return {
@@ -177,7 +243,11 @@ export class ConsistencyEngineService {
   // Approval gate (DEC-121): in projects with mandatory coherence, an artifact
   // with coverage gaps against what is approved above it cannot be approved.
   async assertCoherent(projectId: string, kind: StructuredAnalysisKind, content: unknown) {
-    if (!COHERENCE_KINDS.has(kind) || !(await this.coherenceRequired(projectId))) return;
+    if (!(await this.coherenceRequired(projectId))) return;
+    const approved = await this.approvedVersions(projectId);
+    const semantic = this.designCommitmentIssues(kind, content, approved);
+    if (semantic.length) throw new UnprocessableEntityException(semantic[0]!.message);
+    if (!COHERENCE_KINDS.has(kind)) return;
     const sources =
       kind === 'IMPLEMENTATION_PLAN'
         ? await this.sourcesOfVersions(
@@ -187,7 +257,7 @@ export class ConsistencyEngineService {
               (content as { designBaselineId: string }).designBaselineId,
             ),
           )
-        : (await this.approvedVersions(projectId)).map(toSource);
+        : approved.map(toSource);
     this.throwOnGaps(coherenceGaps(kind, content, upstreamFromSources(sources)));
   }
 
@@ -211,6 +281,12 @@ export class ConsistencyEngineService {
     );
     const covered = await contextCoverage(this.prisma, projectId, { approvedOnly: true });
     this.throwOnGaps([
+      ...frozen.flatMap((source) =>
+        this.designCommitmentIssues(source.type, source.content, approved).map((issue) => ({
+          chain: 'REQUIREMENT_COMMITMENT' as const,
+          message: issue.message,
+        })),
+      ),
       ...contextGaps(covered.items),
       ...this.requirementGaps(approved).map((g) => g.gap),
       ...gaps,
@@ -225,6 +301,98 @@ export class ConsistencyEngineService {
         gaps.length > shown.length ? ` Y ${gaps.length - shown.length} más.` : ''
       } Revise la matriz de coherencia.`,
     );
+  }
+
+  private declaredRequirements(versions: ApprovedVersion[]): DeclaredRequirement[] {
+    return versions
+      .filter((version) => version.artifact.artifactTypeCode === 'REQUIREMENT')
+      .map((version) => ({
+        code: version.artifact.code,
+        description: version.requirementDetail?.description ?? '',
+        actors: version.requirementDetail?.actors?.map((actor) => actor.name) ?? [],
+      }));
+  }
+
+  private checkIssue(
+    finding: CommitmentFinding,
+    artifact: ApprovedVersion['artifact'],
+  ): ConsistencyIssue {
+    return {
+      rule: 'Comprobación de compromisos declarados',
+      severity: 'ERROR',
+      message: finding.message,
+      affectedArtifactIds: [artifact.id],
+      artifactType: artifact.artifactTypeCode,
+      chain: 'REQUIREMENT_COMMITMENT',
+      check: {
+        kind: finding.kind,
+        requirementCode: finding.requirementCode,
+        expected: finding.expected,
+        observed: finding.observed,
+      },
+    };
+  }
+
+  private designCommitmentIssues(
+    kind: string,
+    content: unknown,
+    versions: ApprovedVersion[],
+    artifact = { id: '', code: '', artifactTypeCode: kind },
+  ): ConsistencyIssue[] {
+    if (
+      !['NAVIGATION_TREE', 'UI_BLUEPRINT', 'SOFTWARE_ARCHITECTURE', 'SYSTEM_ARCHITECTURE'].includes(
+        kind,
+      )
+    )
+      return [];
+    const data = content as {
+      nodes?: { relatedSourceCodes?: string[] }[];
+      components?: { relatedSourceCodes?: string[] }[];
+      screens?: { relatedSourceCodes?: string[] }[];
+    } | null;
+    const items = [...(data?.nodes ?? []), ...(data?.components ?? []), ...(data?.screens ?? [])];
+    return this.declaredRequirements(versions).flatMap((requirement) =>
+      items
+        .filter((item) => item.relatedSourceCodes?.includes(requirement.code))
+        .flatMap((item) =>
+          numericCommitmentFindings(requirement, JSON.stringify(item)).map((finding) =>
+            this.checkIssue(finding, artifact),
+          ),
+        ),
+    );
+  }
+
+  private commitmentIssues(versions: ApprovedVersion[]): ConsistencyIssue[] {
+    const requirements = this.declaredRequirements(versions);
+    return versions.flatMap((version) => {
+      if (!version.useCaseDetail)
+        return this.designCommitmentIssues(
+          version.artifact.artifactTypeCode,
+          version.structuredAnalysisDetail?.content,
+          versions,
+          version.artifact,
+        );
+      const linked = new Set(
+        version.useCaseDetail.requirementLinks.map((link) => link.requirementVersion.artifactId),
+      );
+      return versions
+        .filter((source) => linked.has(source.artifact.id))
+        .flatMap((source) => {
+          const requirement = requirements.find((item) => item.code === source.artifact.code);
+          return requirement && version.useCaseDetail?.primaryActor
+            ? [
+                ...actorCommitmentFindings(requirement, version.useCaseDetail.primaryActor),
+                ...accessScopeFindings(
+                  requirement,
+                  version.useCaseDetail.mainFlowSteps?.map((step) => step.action) ?? [],
+                ),
+              ].map((finding) => ({
+                ...this.checkIssue(finding, version.artifact),
+                severity: 'WARNING' as const,
+              }))
+            : [];
+        });
+    });
   }
 
   // Every approved functional requirement is realised by an approved use case.
@@ -279,7 +447,16 @@ export class ConsistencyEngineService {
           where: { status: 'APPROVED' },
           orderBy: { versionNumber: 'desc' },
           take: 1,
-          include: { ...VERSION_INCLUDE, requirementDetail: { select: { requirementType: true } } },
+          include: {
+            ...VERSION_INCLUDE,
+            requirementDetail: {
+              select: {
+                requirementType: true,
+                description: true,
+                actors: { select: { name: true } },
+              },
+            },
+          },
         },
       },
     });
@@ -350,12 +527,21 @@ type ApprovedVersion = {
   approvedAt: Date | null;
   createdAt: Date;
   requirementType: string | null;
+  requirementDetail?: { description?: string; actors?: { name: string }[] } | null;
   artifact: { id: string; code: string; artifactTypeCode: string };
   structuredAnalysisDetail: { content: unknown } | null;
   dataModelDetail: { entities: { name: string; attributes: { name: string }[] }[] } | null;
-  mockupsSourcedFromHere: { screens: { screenLocalId: string }[] }[];
+  mockupsSourcedFromHere: {
+    artifactVersionId: string;
+    generatorKind: string;
+    svg: string | null;
+    screens: { screenLocalId: string }[];
+    artifactVersion: { artifact: { versions: { id: string }[] } };
+  }[];
   useCaseDetail: {
     name: string;
+    primaryActor?: string;
+    mainFlowSteps?: { action: string }[];
     requirementLinks: { requirementVersion: { artifactId: string } }[];
   } | null;
 };

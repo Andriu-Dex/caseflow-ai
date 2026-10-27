@@ -5574,6 +5574,10 @@ Stitch será el proveedor preferente cuando esté disponible y resulte adecuado.
 
 CASEFlow AI MUST NOT depender de Stitch para conservar o interpretar el diseño.
 
+La generación visual y la edición individual reciben las reglas de los requisitos aprobados vigentes del mismo proyecto, con actores, precondiciones, postcondiciones y los elementos de contexto aprobado enlazados. El proveedor no debe completar decisiones ausentes con plazos, campos, funciones o formatos inventados. El plano continúa siendo canónico.
+
+La vista previa de bocetos externos incluye una revisión heurística del HTML almacenado, con las versiones de requisitos y contexto contrastadas y hallazgos por pantalla. Contradicciones explícitas de máximos comparables o conservación inferior a la exigida bloquean aprobar; plazos o máximos sin respaldo identificable generan avisos. HTML o plano no disponibles bloquean aprobar el boceto externo. El esquema interno sigue disponible sin proveedor externo. No se ejecuta el HTML para comprobarlo. Esta revisión no certifica significado general, texto rasterizado, campos, navegación, permisos ni funcionalidad; sigue siendo obligatoria la revisión humana en las rutas que la requieren. Los hallazgos se recalculan contra los requisitos aprobados vigentes y no modifican versiones históricas.
+
 Contexto recomendado para un proveedor externo:
 
 ```text
@@ -7890,6 +7894,12 @@ Al aprobar un cambio, las etapas posteriores con evidencia anterior quedan por r
 Se resuelve cada pendiente mediante una aprobación posterior o «Confirmar que sigue vigente» (OWNER, EDITOR o REVIEWER, nota opcional hasta 500 caracteres). Las confirmaciones se conservan en `stage_confirmations`, con auditoría; no cambian versiones aprobadas ni permiten ocultar errores de coherencia. El diagrama de casos de uso debe representar todos los casos aprobados y su vigencia usa la fecha de generación; ER comparte la versión y revisión del modelo.
 
 El servidor bloquea congelar diseño y construir mientras quedan pasos por rehacer. La excepción interna de la orquestación ordenada EXPRESS/BUILD_ONLY no puede activarse desde la API pública. La matriz de coherencia avisa de RNF sin cobertura explícita en componentes, nodos o pantallas, sin exigir que cada requisito aparezca en todos los diagramas ni considerar una referencia prueba semántica de cumplimiento.
+
+Las comprobaciones puntuales de compromisos se muestran por separado de la cobertura declarada. Comparan conservación en días/horas y máximos expresados en formatos reconocidos, y señalan actores o pasos de consulta propia incompatibles con los requisitos enlazados. Cada hallazgo identifica el requisito, el valor esperado y el observado; los formatos ambiguos requieren revisión humana y no se interpretan como cumplimiento certificado. Las contradicciones numéricas explícitas del diseño bloquean su aprobación y congelación en proyectos con coherencia obligatoria; los avisos de actores y alcance requieren revisión. No se reescriben versiones históricas ni se considera que estas comprobaciones sustituyan las pruebas ejecutables del proyecto generado.
+
+La preparación incorpora los errores de consistencia a la etapa que debe resolverlos: la falta de caso de uso pertenece a Casos de uso, no invalida la existencia de requisitos ya aprobados. La cobertura de bocetos usa únicamente versiones aprobadas vigentes de artefactos no archivados. Un boceto interno con SVG completo cubre las pantallas de su versión exacta del plano de interfaz; un resultado externo debe representar cada pantalla. Los modelos de datos que solo describen identidades muestran preguntas de revisión antes de aceptación/aprobación y en la matriz: la persona decide sus datos de captura e identificación o conserva deliberadamente un modelo conceptual mínimo, sin campos inventados automáticamente.
+
+La generación por lotes de casos de uso `use-cases.generate@5` conserva las referencias RNF explícitas cuando una garantía aparece en sus flujos o condiciones, además de al menos un requisito objetivo. No se exige crear un caso de uso independiente por RNF ni vincularlos todos indiscriminadamente; `@4` y anteriores se conservan para auditoría.
 
 ## 221.18 Gestión de fuentes (DEC-137)
 

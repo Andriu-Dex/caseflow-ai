@@ -5,6 +5,7 @@ export type ConsistencyIssueSeverity = z.infer<typeof consistencyIssueSeveritySc
 
 // The chains whose coverage DEC-121 (ADR-006) requires between stages.
 export const COHERENCE_CHAINS = [
+  'REQUIREMENT_COMMITMENT',
   'QUALITY_REQUIREMENT_DESIGN',
   // DEC-126: every need and business rule of the approved context reaches a
   // requirement.
@@ -24,6 +25,14 @@ export const consistencyIssueSchema = z.object({
   // Set on coverage gaps: the chain and the artifact type where it is fixed.
   chain: z.enum(COHERENCE_CHAINS).optional(),
   artifactType: z.string().optional(),
+  check: z
+    .object({
+      kind: z.enum(['RETENTION', 'LIMIT', 'ACTOR', 'ACCESS_SCOPE']),
+      requirementCode: z.string(),
+      expected: z.string(),
+      observed: z.string().nullable(),
+    })
+    .optional(),
 });
 export type ConsistencyIssue = z.infer<typeof consistencyIssueSchema>;
 

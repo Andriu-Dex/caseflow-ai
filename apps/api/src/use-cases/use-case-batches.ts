@@ -43,7 +43,7 @@ const normalize = (name: string) =>
     .trim();
 
 export interface MergeOptions {
-  // Requirements given only as shared context: never a source of a use case.
+  // Shared requirements need not produce their own use case, but may be cited.
   contextCodes?: Set<string>;
   // Actor names found in the chosen requirements.
   knownActors?: string[];
@@ -82,9 +82,8 @@ export function mergeUseCaseBatch(
   position: number,
   options: MergeOptions = {},
 ): BatchCandidate[] {
-  const contextCodes = options.contextCodes ?? new Set<string>();
   const knownActors = options.knownActors ?? [];
-  const sources = (codes: string[]) => codes.filter((code) => !contextCodes.has(code));
+  const sources = (codes: string[]) => [...new Set(codes)];
   const next = accumulated.map((candidate) => ({
     ...candidate,
     relatedRequirementSourceIds: [...candidate.relatedRequirementSourceIds],

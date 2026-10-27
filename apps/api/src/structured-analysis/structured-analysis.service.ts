@@ -1881,7 +1881,11 @@ export class StructuredAnalysisService {
     if (!canTransitionArtifactVersionStatus(version.status, status))
       throw new UnprocessableEntityException('Transición de estado no permitida.');
     if (kind === 'DESIGN_THEME' && status === 'APPROVED') await this.assertAccessibleTheme(id);
-    if (status === 'APPROVED' && COHERENCE_KINDS.has(kind))
+    if (
+      status === 'APPROVED' &&
+      (COHERENCE_KINDS.has(kind) ||
+        ['NAVIGATION_TREE', 'SOFTWARE_ARCHITECTURE', 'SYSTEM_ARCHITECTURE'].includes(kind))
+    )
       await this.consistency.assertCoherent(
         projectId,
         kind,

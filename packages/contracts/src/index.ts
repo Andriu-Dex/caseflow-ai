@@ -102,3 +102,4 @@ export type {
 } from './artifacts/artifact.contract';
 
 export * from './identity/identity.contract';
+export { dataModelReviewQuestions } from './data-models/data-model-review';

@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Queue } from 'bullmq';
+import request from 'supertest';
+import type { MockupProvider } from '@caseflow-ai/integrations';
+import { MOCKUP_PROVIDER } from '../../src/mockups/mockup-provider.token';
 import { MOCKUP_GENERATION_QUEUE, type MockupGenerationJobPayload } from '@caseflow-ai/domain';
 import type { JobQueue } from '../../src/common/infrastructure';
 import { MOCKUP_QUEUE } from '../../src/mockups/mockup-queue.token';
@@ -193,5 +196,68 @@ describe('Mockups integration', () => {
     await expect(ctx.mockups.getPreview(otherProjectId, mockup.id)).rejects.toThrow(
       'no encontrado',
     );
+  });
+
+  it('rejects approval of contradictory stored HTML through the API and keeps the candidate unchanged', async () => {
+    const requirement = await ctx.requirements.create(projectId, {
+      requirementType: 'FUNCTIONAL',
+      name: 'Límite de operaciones',
+      description: 'Se permite como máximo tres operaciones activas.',
+      priority: 'HIGH',
+      actors: ['Usuario'],
+      preconditions: [],
+      postconditions: [],
+      dependencyArtifactIds: [],
+      origin: { kind: 'USER_DECISION', justification: 'Regla aprobada para la prueba.' },
+    });
+    await ctx.requirements.transition(
+      projectId,
+      requirement.id,
+      requirement.version.id,
+      'IN_REVIEW',
+    );
+    await ctx.requirements.transition(
+      projectId,
+      requirement.id,
+      requirement.version.id,
+      'APPROVED',
+    );
+    const provider = ctx.app.get<MockupProvider>(MOCKUP_PROVIDER);
+    const draw = vi.spyOn(provider, 'generate').mockResolvedValue({
+      kind: 'STITCH',
+      screens: [
+        {
+          screenLocalId: 'home',
+          screenName: 'Inicio',
+          image: { body: Buffer.from('preview'), contentType: 'image/png' },
+          html: '<html><body>Máximo 2 operaciones activas.</body></html>',
+        },
+      ],
+    });
+    try {
+      const mockup = await createAndGet(projectId, approvedBlueprintVersionId);
+      const preview = await ctx.mockups.getPreview(projectId, mockup.id);
+      expect(preview.fidelityReview?.findings).toContainEqual(
+        expect.objectContaining({ code: 'CONTRADICTORY_LIMIT', severity: 'ERROR' }),
+      );
+      expect(preview.fidelityReview?.requirementVersionIds).toContain(requirement.version.id);
+      await ctx.mockups.transition(projectId, mockup.id, mockup.version.id, 'IN_REVIEW');
+      const response = await request(ctx.app.getHttpServer())
+        .post(
+          `/projects/${projectId}/mockups/${mockup.id}/versions/${mockup.version.id}/transition`,
+        )
+        .set('Authorization', `Bearer ${ctx.token}`)
+        .send({ status: 'APPROVED' });
+      expect(response.status).toBe(422);
+      expect(response.body.code).toBe('MOCKUP_FIDELITY_FAILED');
+      expect((await ctx.mockups.get(projectId, mockup.id)).version.status).toBe('IN_REVIEW');
+      expect(
+        (
+          await ctx.mockups.downloadScreenHtml(projectId, mockup.id, preview.screens![0]!.id)
+        ).body.toString(),
+      ).toContain('Máximo 2 operaciones');
+    } finally {
+      draw.mockRestore();
+    }
   });
 });

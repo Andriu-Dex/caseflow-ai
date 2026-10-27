@@ -1,4 +1,8 @@
-import { USE_CASE_BATCH_PROMPT, USE_CASE_BATCH_PROMPT_V3 } from '../use-cases/use-cases-prompt';
+import {
+  USE_CASE_BATCH_PROMPT,
+  USE_CASE_BATCH_PROMPT_V3,
+  USE_CASE_BATCH_PROMPT_V4,
+} from '../use-cases/use-cases-prompt';
 import {
   DATA_MODEL_DETAIL_PROMPT,
   DATA_MODEL_DISCOVERY_PROMPT,
@@ -214,6 +218,13 @@ import {
           {
             key: 'use-cases.generate',
             version: 4,
+            capability: 'STRUCTURED_OUTPUT',
+            purpose: 'use_case_generation',
+            systemInstructions: USE_CASE_BATCH_PROMPT_V4,
+          },
+          {
+            key: 'use-cases.generate',
+            version: 5,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'use_case_generation',
             systemInstructions: USE_CASE_BATCH_PROMPT,
