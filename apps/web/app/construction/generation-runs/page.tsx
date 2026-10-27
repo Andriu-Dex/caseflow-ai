@@ -449,6 +449,12 @@ function ValidationAttemptItem({
               <Download className="size-4" aria-hidden="true" />
               Descargar ZIP
             </AuthedDownloadButton>
+            <Link
+              className="rounded-lg border px-3 py-2 text-sm"
+              href={`/construction/user-manual?snapshotId=${attempt.snapshotId}`}
+            >
+              Manual de usuario y entrega
+            </Link>
           </div>
         ) : null}
       </div>

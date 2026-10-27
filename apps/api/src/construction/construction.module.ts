@@ -41,6 +41,8 @@ import { MockupsModule } from '../mockups/mockups.module';
 import { ConsistencyEngineModule } from '../consistency-engine/consistency-engine.module';
 import { InterruptedJobsRecovery } from './interrupted-jobs.recovery';
 import { StageCurrencyModule } from '../readiness/stage-currency';
+import { UserManualsService } from '../user-manuals/user-manuals.service';
+import { UserManualsController } from '../user-manuals/user-manuals.controller';
 
 @Module({
   imports: [
@@ -65,9 +67,11 @@ import { StageCurrencyModule } from '../readiness/stage-currency';
     InternalConstructionJobsController,
     WorkflowRunsController,
     SandboxStatusController,
+    UserManualsController,
   ],
   providers: [
     InterruptedJobsRecovery,
+    UserManualsService,
     DependencyCatalogService,
     DependencyProposalsService,
     DesignBaselinesService,

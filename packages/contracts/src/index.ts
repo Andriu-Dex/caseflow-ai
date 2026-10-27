@@ -55,6 +55,7 @@ export * from './structured-analysis/structured-analysis.contract';
 export * from './structured-analysis/design-theme.contract';
 export * from './structured-analysis/class-diagram.contract';
 export * from './mockups/mockup.contract';
+export * from './user-manuals/user-manual.contract';
 export * from './staleness/staleness.contract';
 export * from './traceability/traceability.contract';
 export * from './readiness/readiness.contract';

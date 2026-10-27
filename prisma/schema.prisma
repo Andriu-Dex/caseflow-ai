@@ -380,6 +380,7 @@ model Project {
   useCaseGenerationJobs         UseCaseGenerationJob[]
   structuredGenerationJobs      StructuredGenerationJob[]
   dataModelGenerationJobs       DataModelGenerationJob[]
+  userManualJobs                UserManualJob[]
 
   @@index([workspaceId, createdAt, id])
   @@map("projects")
@@ -485,6 +486,7 @@ model ArtifactVersion {
   repairFindings                      RepairFinding[]
   snapshotsAsGenerationPlan           GeneratedProjectSnapshot[]           @relation("SnapshotGenerationPlan")
   snapshotsAsImplementationPlan       GeneratedProjectSnapshot[]           @relation("SnapshotImplementationPlan")
+  userManualDetail                    UserManualDetail?
 
   @@unique([artifactId, versionNumber])
   @@unique([id, projectId])
@@ -1494,7 +1496,7 @@ model MockupGenerationJob {
   createdAt            DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  project Project                 @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  project Project                @relation(fields: [projectId], references: [id], onDelete: Restrict)
   parts   MockupGenerationPart[]
 
   @@index([projectId, createdAt])
@@ -1765,8 +1767,9 @@ model GeneratedFile {
   origin          GeneratedFileOrigin
   kind            GeneratedFileKind
 
-  generationRun GenerationRun   @relation(fields: [generationRunId], references: [id], onDelete: Restrict)
+  generationRun GenerationRun    @relation(fields: [generationRunId], references: [id], onDelete: Restrict)
   traceLinks    CodeTraceLink[]
+  manualTasks   UserManualTask[]
 
   @@unique([generationRunId, path])
   @@map("generated_files")
@@ -1935,16 +1938,84 @@ model GeneratedProjectSnapshot {
   createdByUserId             String   @map("created_by_user_id") @db.Uuid
   createdAt                   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  project                   Project          @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  generationRun             GenerationRun    @relation(fields: [generationRunId], references: [id], onDelete: Restrict)
-  sandboxRun                SandboxRun       @relation(fields: [sandboxRunId], references: [id], onDelete: Restrict)
-  generationPlanVersion     ArtifactVersion? @relation("SnapshotGenerationPlan", fields: [generationPlanVersionId], references: [id], onDelete: Restrict)
-  designBaseline            DesignBaseline   @relation(fields: [designBaselineId], references: [id], onDelete: Restrict)
-  implementationPlanVersion ArtifactVersion  @relation("SnapshotImplementationPlan", fields: [implementationPlanVersionId], references: [id], onDelete: Restrict)
-  createdBy                 User             @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  project                   Project            @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  generationRun             GenerationRun      @relation(fields: [generationRunId], references: [id], onDelete: Restrict)
+  sandboxRun                SandboxRun         @relation(fields: [sandboxRunId], references: [id], onDelete: Restrict)
+  generationPlanVersion     ArtifactVersion?   @relation("SnapshotGenerationPlan", fields: [generationPlanVersionId], references: [id], onDelete: Restrict)
+  designBaseline            DesignBaseline     @relation(fields: [designBaselineId], references: [id], onDelete: Restrict)
+  implementationPlanVersion ArtifactVersion    @relation("SnapshotImplementationPlan", fields: [implementationPlanVersionId], references: [id], onDelete: Restrict)
+  createdBy                 User               @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  userManuals               UserManualDetail[]
+  userManualJob             UserManualJob?
 
   @@index([projectId, createdAt])
   @@map("generated_project_snapshots")
+}
+
+model UserManualDetail {
+  artifactVersionId String                   @id @map("artifact_version_id") @db.Uuid
+  snapshotId        String                   @map("snapshot_id") @db.Uuid
+  introduction      String
+  artifactVersion   ArtifactVersion          @relation(fields: [artifactVersionId], references: [id], onDelete: Restrict)
+  snapshot          GeneratedProjectSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  tasks             UserManualTask[]
+
+  @@index([snapshotId])
+  @@map("user_manual_details")
+}
+
+model UserManualTask {
+  id              String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  manualVersionId String               @map("manual_version_id") @db.Uuid
+  generatedFileId String               @map("generated_file_id") @db.Uuid
+  position        Int
+  title           String
+  routePath       String               @map("route_path")
+  verified        Boolean              @default(false)
+  manual          UserManualDetail     @relation(fields: [manualVersionId], references: [artifactVersionId], onDelete: Restrict)
+  generatedFile   GeneratedFile        @relation(fields: [generatedFileId], references: [id], onDelete: Restrict)
+  roles           UserManualTaskRole[]
+  steps           UserManualStep[]
+
+  @@unique([manualVersionId, position])
+  @@unique([manualVersionId, routePath])
+  @@map("user_manual_tasks")
+}
+
+model UserManualTaskRole {
+  taskId String         @map("task_id") @db.Uuid
+  name   String
+  task   UserManualTask @relation(fields: [taskId], references: [id], onDelete: Restrict)
+
+  @@id([taskId, name])
+  @@map("user_manual_task_roles")
+}
+
+model UserManualStep {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  taskId         String         @map("task_id") @db.Uuid
+  position       Int
+  instruction    String
+  expectedResult String         @map("expected_result")
+  task           UserManualTask @relation(fields: [taskId], references: [id], onDelete: Restrict)
+
+  @@unique([taskId, position])
+  @@map("user_manual_steps")
+}
+
+model UserManualJob {
+  id           String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId    String                   @map("project_id") @db.Uuid
+  snapshotId   String                   @unique @map("snapshot_id") @db.Uuid
+  status       String                   @default("QUEUED")
+  errorMessage String?                  @map("error_message")
+  createdAt    DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project      Project                  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  snapshot     GeneratedProjectSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, status])
+  @@map("user_manual_jobs")
 }
 
 enum WorkflowRunStatus {

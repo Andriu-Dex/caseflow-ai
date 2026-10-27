@@ -4,7 +4,12 @@
 export const CONSTRUCTION_QUEUE = 'construction';
 
 // 'workflow-run': a route orchestration from one prompt (DEC-116).
-export const CONSTRUCTION_JOB_TYPES = ['generation-run', 'sandbox-run', 'workflow-run'] as const;
+export const CONSTRUCTION_JOB_TYPES = [
+  'generation-run',
+  'sandbox-run',
+  'workflow-run',
+  'user-manual',
+] as const;
 export type ConstructionJobType = (typeof CONSTRUCTION_JOB_TYPES)[number];
 
 export interface ConstructionJobPayload {

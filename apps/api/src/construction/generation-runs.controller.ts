@@ -37,6 +37,7 @@ import { GeneratedProjectSnapshotsService } from './generated-project-snapshots.
 import { GenerationRunsService } from './generation-runs.service';
 import { SandboxRunsService } from './sandbox-runs.service';
 import { WorkflowRunsService } from './workflow-runs.service';
+import { UserManualsService } from '../user-manuals/user-manuals.service';
 
 interface AuthenticatedRequest {
   user: { id: string };
@@ -213,6 +214,7 @@ export class InternalConstructionJobsController {
     private readonly generationRuns: GenerationRunsService,
     private readonly sandboxRuns: SandboxRunsService,
     private readonly workflowRuns: WorkflowRunsService,
+    private readonly userManuals: UserManualsService,
   ) {}
 
   @Post(':type/:runId/run')
@@ -238,6 +240,7 @@ export class InternalConstructionJobsController {
   }
 
   private async dispatch(type: ConstructionJobType, projectId: string, runId: string) {
+    if (type === 'user-manual') return this.userManuals.runJob(projectId, runId);
     if (type === 'generation-run') return this.generationRuns.runJob(projectId, runId);
     // A validation can outlast the worker's HTTP timeout: acknowledge and run
     // it here. runJob always records a terminal status and never throws.
