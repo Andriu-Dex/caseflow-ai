@@ -1,0 +1,615 @@
+{
+  "project": "RestGuestMateos",
+  "decisionDate": "2026-10-28",
+  "origin": "USER_AUTHORIZED_NEW_PROJECT_DECISION",
+  "modules": [
+    {
+      "module": "AccessAndSessions",
+      "read": [
+        "Administrador",
+        "Cajero",
+        "Encargado de sucursal",
+        "Responsable de inventario",
+        "Responsable de catering"
+      ],
+      "write": [
+        "Administrador",
+        "Cajero",
+        "Encargado de sucursal",
+        "Responsable de inventario",
+        "Responsable de catering"
+      ]
+    },
+    {
+      "module": "UsersAndAuthorizations",
+      "read": ["Administrador"],
+      "write": ["Administrador"]
+    },
+    {
+      "module": "BranchesAndOperationalSettings",
+      "read": [
+        "Administrador",
+        "Cajero",
+        "Encargado de sucursal",
+        "Responsable de inventario",
+        "Responsable de catering"
+      ],
+      "write": ["Administrador"]
+    },
+    {
+      "module": "ProductCatalog",
+      "read": [
+        "Administrador",
+        "Cajero",
+        "Encargado de sucursal",
+        "Responsable de inventario",
+        "Responsable de catering"
+      ],
+      "write": ["Administrador", "Encargado de sucursal"]
+    },
+    {
+      "module": "DailyMenus",
+      "read": [
+        "Administrador",
+        "Cajero",
+        "Encargado de sucursal",
+        "Responsable de inventario",
+        "Responsable de catering"
+      ],
+      "write": ["Administrador", "Encargado de sucursal"]
+    },
+    {
+      "module": "SalesAndCheckout",
+      "read": ["Administrador", "Encargado de sucursal", "Cajero"],
+      "write": ["Administrador", "Encargado de sucursal", "Cajero"]
+    },
+    {
+      "module": "Inventory",
+      "read": ["Administrador", "Encargado de sucursal", "Responsable de inventario"],
+      "write": ["Administrador", "Encargado de sucursal", "Responsable de inventario"]
+    },
+    {
+      "module": "OperatingExpensesAndReceipts",
+      "read": ["Administrador", "Encargado de sucursal"],
+      "write": ["Administrador", "Encargado de sucursal"]
+    },
+    {
+      "module": "ReceiptExtractionAndReview",
+      "read": ["Administrador", "Encargado de sucursal"],
+      "write": ["Administrador", "Encargado de sucursal"]
+    },
+    {
+      "module": "ReportingAndResultsComparison",
+      "read": ["Administrador", "Encargado de sucursal"],
+      "write": ["Administrador", "Encargado de sucursal"]
+    },
+    {
+      "module": "ManagementIndicatorsAndSupport",
+      "read": ["Administrador", "Encargado de sucursal"],
+      "write": ["Administrador", "Encargado de sucursal"]
+    },
+    {
+      "module": "CateringManagement",
+      "read": ["Administrador", "Encargado de sucursal", "Responsable de catering"],
+      "write": ["Administrador", "Encargado de sucursal", "Responsable de catering"]
+    },
+    {
+      "module": "AuditAndOperationalTraceability",
+      "read": ["Administrador"],
+      "write": []
+    }
+  ],
+  "scopePolicy": {
+    "administrator": "Puede elegir cualquier sucursal activa.",
+    "otherRoles": "Solo sucursales activas asignadas expresamente a la cuenta.",
+    "selection": "Una sucursal de operación a la vez; cambiarla limpia los datos visibles de la anterior.",
+    "crossBranchReports": "Comparación entre sucursales solo para Administrador; Encargado consulta su sucursal seleccionada.",
+    "individualExceptions": false
+  },
+  "entities": [
+    {
+      "entity": "User",
+      "readRoles": ["Administrador"],
+      "writeRoles": ["Administrador"],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE"]
+    },
+    {
+      "entity": "Role",
+      "readRoles": ["Administrador"],
+      "writeRoles": ["Administrador"],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE"]
+    },
+    {
+      "entity": "Permission",
+      "readRoles": ["Administrador"],
+      "writeRoles": ["Administrador"],
+      "operations": ["LIST", "GET"]
+    },
+    {
+      "entity": "Branch",
+      "readRoles": [
+        "Administrador",
+        "Cajero",
+        "Encargado de sucursal",
+        "Responsable de inventario",
+        "Responsable de catering"
+      ],
+      "writeRoles": ["Administrador"],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE"]
+    },
+    {
+      "entity": "Session",
+      "readRoles": [
+        "Administrador",
+        "Cajero",
+        "Encargado de sucursal",
+        "Responsable de inventario",
+        "Responsable de catering"
+      ],
+      "writeRoles": [
+        "Administrador",
+        "Cajero",
+        "Encargado de sucursal",
+        "Responsable de inventario",
+        "Responsable de catering"
+      ],
+      "operations": []
+    },
+    {
+      "entity": "AccessEvent",
+      "readRoles": [
+        "Administrador",
+        "Cajero",
+        "Encargado de sucursal",
+        "Responsable de inventario",
+        "Responsable de catering"
+      ],
+      "writeRoles": [
+        "Administrador",
+        "Cajero",
+        "Encargado de sucursal",
+        "Responsable de inventario",
+        "Responsable de catering"
+      ],
+      "operations": ["LIST", "GET"]
+    },
+    {
+      "entity": "OperationalParameter",
+      "readRoles": [
+        "Administrador",
+        "Cajero",
+        "Encargado de sucursal",
+        "Responsable de inventario",
+        "Responsable de catering"
+      ],
+      "writeRoles": ["Administrador"],
+      "operations": ["LIST", "GET", "UPDATE"]
+    },
+    {
+      "entity": "ParameterValue",
+      "readRoles": [
+        "Administrador",
+        "Cajero",
+        "Encargado de sucursal",
+        "Responsable de inventario",
+        "Responsable de catering"
+      ],
+      "writeRoles": ["Administrador"],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE"]
+    },
+    {
+      "entity": "ProductCategory",
+      "readRoles": [
+        "Administrador",
+        "Cajero",
+        "Encargado de sucursal",
+        "Responsable de inventario",
+        "Responsable de catering"
+      ],
+      "writeRoles": ["Administrador", "Encargado de sucursal"],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE"]
+    },
+    {
+      "entity": "Product",
+      "readRoles": [
+        "Administrador",
+        "Cajero",
+        "Encargado de sucursal",
+        "Responsable de inventario",
+        "Responsable de catering"
+      ],
+      "writeRoles": ["Administrador", "Encargado de sucursal"],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE"]
+    },
+    {
+      "entity": "BranchProductAvailability",
+      "readRoles": [
+        "Administrador",
+        "Cajero",
+        "Encargado de sucursal",
+        "Responsable de inventario",
+        "Responsable de catering"
+      ],
+      "writeRoles": ["Administrador", "Encargado de sucursal"],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE"]
+    },
+    {
+      "entity": "BranchProductPrice",
+      "readRoles": [
+        "Administrador",
+        "Cajero",
+        "Encargado de sucursal",
+        "Responsable de inventario",
+        "Responsable de catering"
+      ],
+      "writeRoles": ["Administrador", "Encargado de sucursal"],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE"]
+    },
+    {
+      "entity": "DailyMenu",
+      "readRoles": [
+        "Administrador",
+        "Cajero",
+        "Encargado de sucursal",
+        "Responsable de inventario",
+        "Responsable de catering"
+      ],
+      "writeRoles": ["Administrador", "Encargado de sucursal"],
+      "operations": ["LIST", "GET", "CREATE"]
+    },
+    {
+      "entity": "MenuVersion",
+      "readRoles": [
+        "Administrador",
+        "Cajero",
+        "Encargado de sucursal",
+        "Responsable de inventario",
+        "Responsable de catering"
+      ],
+      "writeRoles": ["Administrador", "Encargado de sucursal"],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE"]
+    },
+    {
+      "entity": "MenuVersionComponent",
+      "readRoles": [
+        "Administrador",
+        "Cajero",
+        "Encargado de sucursal",
+        "Responsable de inventario",
+        "Responsable de catering"
+      ],
+      "writeRoles": ["Administrador", "Encargado de sucursal"],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE", "DELETE"]
+    },
+    {
+      "entity": "Sale",
+      "readRoles": ["Administrador", "Encargado de sucursal", "Cajero"],
+      "writeRoles": ["Administrador", "Encargado de sucursal", "Cajero"],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE"]
+    },
+    {
+      "entity": "SaleLine",
+      "readRoles": ["Administrador", "Encargado de sucursal", "Cajero"],
+      "writeRoles": ["Administrador", "Encargado de sucursal", "Cajero"],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE", "DELETE"]
+    },
+    {
+      "entity": "ProteinExtraSelection",
+      "readRoles": ["Administrador", "Encargado de sucursal", "Cajero"],
+      "writeRoles": ["Administrador", "Encargado de sucursal", "Cajero"],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE", "DELETE"]
+    },
+    {
+      "entity": "AuthorizedDiscount",
+      "readRoles": ["Administrador", "Encargado de sucursal", "Cajero"],
+      "writeRoles": ["Administrador", "Encargado de sucursal", "Cajero"],
+      "operations": ["LIST", "GET", "CREATE"]
+    },
+    {
+      "entity": "SaleInternalNote",
+      "readRoles": ["Administrador", "Encargado de sucursal", "Cajero"],
+      "writeRoles": ["Administrador", "Encargado de sucursal", "Cajero"],
+      "operations": ["LIST", "GET", "CREATE"]
+    },
+    {
+      "entity": "SaleCompensatingOperation",
+      "readRoles": ["Administrador", "Encargado de sucursal", "Cajero"],
+      "writeRoles": ["Administrador", "Encargado de sucursal", "Cajero"],
+      "operations": ["LIST", "GET", "CREATE"]
+    },
+    {
+      "entity": "BranchProductStock",
+      "readRoles": ["Administrador", "Encargado de sucursal", "Responsable de inventario"],
+      "writeRoles": ["Administrador", "Encargado de sucursal", "Responsable de inventario"],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE"]
+    },
+    {
+      "entity": "InventoryMovement",
+      "readRoles": ["Administrador", "Encargado de sucursal", "Responsable de inventario"],
+      "writeRoles": ["Administrador", "Encargado de sucursal", "Responsable de inventario"],
+      "operations": ["LIST", "GET", "CREATE"]
+    },
+    {
+      "entity": "ExpenseCategory",
+      "readRoles": ["Administrador", "Encargado de sucursal"],
+      "writeRoles": ["Administrador", "Encargado de sucursal"],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE"]
+    },
+    {
+      "entity": "Expense",
+      "readRoles": ["Administrador", "Encargado de sucursal"],
+      "writeRoles": ["Administrador", "Encargado de sucursal"],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE"]
+    },
+    {
+      "entity": "ExpenseCorrection",
+      "readRoles": ["Administrador", "Encargado de sucursal"],
+      "writeRoles": ["Administrador", "Encargado de sucursal"],
+      "operations": ["LIST", "GET", "CREATE"]
+    },
+    {
+      "entity": "Receipt",
+      "readRoles": ["Administrador", "Encargado de sucursal"],
+      "writeRoles": ["Administrador", "Encargado de sucursal"],
+      "operations": ["LIST", "GET", "CREATE"]
+    },
+    {
+      "entity": "OcrExtractionRequest",
+      "readRoles": ["Administrador", "Encargado de sucursal"],
+      "writeRoles": ["Administrador", "Encargado de sucursal"],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE"]
+    },
+    {
+      "entity": "OcrProposal",
+      "readRoles": ["Administrador", "Encargado de sucursal"],
+      "writeRoles": ["Administrador", "Encargado de sucursal"],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE"]
+    },
+    {
+      "entity": "OcrReviewField",
+      "readRoles": ["Administrador", "Encargado de sucursal"],
+      "writeRoles": ["Administrador", "Encargado de sucursal"],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE"]
+    },
+    {
+      "entity": "CateringClient",
+      "readRoles": ["Administrador", "Encargado de sucursal", "Responsable de catering"],
+      "writeRoles": ["Administrador", "Encargado de sucursal", "Responsable de catering"],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE"]
+    },
+    {
+      "entity": "CateringRequest",
+      "readRoles": ["Administrador", "Encargado de sucursal", "Responsable de catering"],
+      "writeRoles": ["Administrador", "Encargado de sucursal", "Responsable de catering"],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE"]
+    },
+    {
+      "entity": "CateringTermsVersion",
+      "readRoles": ["Administrador", "Encargado de sucursal", "Responsable de catering"],
+      "writeRoles": ["Administrador", "Encargado de sucursal", "Responsable de catering"],
+      "operations": ["LIST", "GET", "CREATE"]
+    },
+    {
+      "entity": "CateringEvent",
+      "readRoles": ["Administrador", "Encargado de sucursal", "Responsable de catering"],
+      "writeRoles": ["Administrador", "Encargado de sucursal", "Responsable de catering"],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE"]
+    },
+    {
+      "entity": "CateringPlan",
+      "readRoles": ["Administrador", "Encargado de sucursal", "Responsable de catering"],
+      "writeRoles": ["Administrador", "Encargado de sucursal", "Responsable de catering"],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE"]
+    },
+    {
+      "entity": "PlannedMenuComponent",
+      "readRoles": ["Administrador", "Encargado de sucursal", "Responsable de catering"],
+      "writeRoles": ["Administrador", "Encargado de sucursal", "Responsable de catering"],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE", "DELETE"]
+    },
+    {
+      "entity": "PlannedResource",
+      "readRoles": ["Administrador", "Encargado de sucursal", "Responsable de catering"],
+      "writeRoles": ["Administrador", "Encargado de sucursal", "Responsable de catering"],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE", "DELETE"]
+    },
+    {
+      "entity": "PlannedCateringTask",
+      "readRoles": ["Administrador", "Encargado de sucursal", "Responsable de catering"],
+      "writeRoles": ["Administrador", "Encargado de sucursal", "Responsable de catering"],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE", "DELETE"]
+    },
+    {
+      "entity": "PlannedCateringCost",
+      "readRoles": ["Administrador", "Encargado de sucursal", "Responsable de catering"],
+      "writeRoles": ["Administrador", "Encargado de sucursal", "Responsable de catering"],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE", "DELETE"]
+    },
+    {
+      "entity": "AcceptedCateringTransition",
+      "readRoles": ["Administrador", "Encargado de sucursal", "Responsable de catering"],
+      "writeRoles": ["Administrador", "Encargado de sucursal", "Responsable de catering"],
+      "operations": ["LIST", "GET", "CREATE"]
+    },
+    {
+      "entity": "CateringExpenseLink",
+      "readRoles": ["Administrador", "Encargado de sucursal", "Responsable de catering"],
+      "writeRoles": ["Administrador", "Encargado de sucursal", "Responsable de catering"],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE", "DELETE"]
+    },
+    {
+      "entity": "AuditEvent",
+      "readRoles": ["Administrador"],
+      "writeRoles": [],
+      "operations": ["LIST", "GET"]
+    },
+    {
+      "entity": "FieldValueChange",
+      "readRoles": ["Administrador"],
+      "writeRoles": [],
+      "operations": ["LIST", "GET"]
+    },
+    {
+      "entity": "IdempotentOperation",
+      "readRoles": ["Administrador"],
+      "writeRoles": [],
+      "operations": ["GET"]
+    }
+  ],
+  "endpoints": [
+    {
+      "operation": "GET /auth/options",
+      "roles": [],
+      "builtin": "AUTHORIZED_OPTIONS"
+    },
+    {
+      "operation": "GET /management/indicators",
+      "roles": ["Administrador", "Encargado de sucursal"],
+      "builtin": null
+    },
+    {
+      "operation": "GET /management/stock-alerts",
+      "roles": ["Administrador", "Encargado de sucursal"],
+      "builtin": null
+    },
+    {
+      "operation": "GET /management/recommendations",
+      "roles": ["Administrador", "Encargado de sucursal"],
+      "builtin": null
+    },
+    {
+      "operation": "POST /sales/:saleid/cancellation/preview",
+      "roles": ["Administrador", "Encargado de sucursal", "Cajero"],
+      "builtin": null
+    },
+    {
+      "operation": "POST /sales/:saleid/cancellation/confirm",
+      "roles": ["Administrador", "Encargado de sucursal", "Cajero"],
+      "builtin": null
+    },
+    {
+      "operation": "POST /inventory/receipts/preview",
+      "roles": ["Administrador", "Encargado de sucursal", "Responsable de inventario"],
+      "builtin": null
+    },
+    {
+      "operation": "POST /inventory/receipts/confirm",
+      "roles": ["Administrador", "Encargado de sucursal", "Responsable de inventario"],
+      "builtin": null
+    },
+    {
+      "operation": "POST /inventory/issues/preview",
+      "roles": ["Administrador", "Encargado de sucursal", "Responsable de inventario"],
+      "builtin": null
+    },
+    {
+      "operation": "POST /inventory/issues/confirm",
+      "roles": ["Administrador", "Encargado de sucursal", "Responsable de inventario"],
+      "builtin": null
+    },
+    {
+      "operation": "POST /inventory/losses/preview",
+      "roles": ["Administrador", "Encargado de sucursal", "Responsable de inventario"],
+      "builtin": null
+    },
+    {
+      "operation": "POST /inventory/losses/confirm",
+      "roles": ["Administrador", "Encargado de sucursal", "Responsable de inventario"],
+      "builtin": null
+    },
+    {
+      "operation": "POST /inventory/adjustments/preview",
+      "roles": ["Administrador", "Encargado de sucursal", "Responsable de inventario"],
+      "builtin": null
+    },
+    {
+      "operation": "POST /inventory/adjustments/confirm",
+      "roles": ["Administrador", "Encargado de sucursal", "Responsable de inventario"],
+      "builtin": null
+    },
+    {
+      "operation": "POST /catering/records/:recordid/transition",
+      "roles": ["Administrador", "Encargado de sucursal", "Responsable de catering"],
+      "builtin": null
+    },
+    {
+      "operation": "GET /reports/sales",
+      "roles": ["Administrador", "Encargado de sucursal"],
+      "builtin": null
+    },
+    {
+      "operation": "GET /reports/expenses",
+      "roles": ["Administrador", "Encargado de sucursal"],
+      "builtin": null
+    },
+    {
+      "operation": "GET /reports/inventory",
+      "roles": ["Administrador", "Encargado de sucursal"],
+      "builtin": null
+    },
+    {
+      "operation": "GET /reports/branch-comparison",
+      "roles": ["Administrador"],
+      "builtin": null
+    },
+    {
+      "operation": "GET /reports/catering/costs",
+      "roles": ["Administrador", "Encargado de sucursal"],
+      "builtin": null
+    },
+    {
+      "operation": "GET /reports/:reportid/export/csv",
+      "roles": ["Administrador", "Encargado de sucursal"],
+      "builtin": null
+    },
+    {
+      "operation": "GET /checkout/:saleid/lines/new",
+      "roles": ["Administrador", "Encargado de sucursal", "Cajero"],
+      "builtin": null
+    },
+    {
+      "operation": "GET /checkout/:saleid/notes/new",
+      "roles": ["Administrador", "Encargado de sucursal", "Cajero"],
+      "builtin": null
+    },
+    {
+      "operation": "GET /catering/history",
+      "roles": ["Administrador", "Encargado de sucursal", "Responsable de catering"],
+      "builtin": null
+    },
+    {
+      "operation": "POST /sales/:saleId/draft",
+      "roles": ["Administrador", "Encargado de sucursal", "Cajero"],
+      "builtin": null
+    },
+    {
+      "operation": "POST /sales/:saleId/confirm",
+      "roles": ["Administrador", "Encargado de sucursal", "Cajero"],
+      "builtin": null
+    },
+    {
+      "operation": "POST /auth/logout",
+      "roles": [],
+      "builtin": "LOGOUT"
+    },
+    {
+      "operation": "POST /expenses/:expenseId/receipts",
+      "roles": ["Administrador", "Encargado de sucursal"],
+      "builtin": null
+    },
+    {
+      "operation": "POST /auth/login",
+      "roles": [],
+      "builtin": "LOGIN"
+    },
+    {
+      "operation": "POST /auth/accounts/:userId/deactivate",
+      "roles": ["Administrador"],
+      "builtin": "ACCOUNT_DEACTIVATE"
+    }
+  ],
+  "status": {
+    "roleBindings": "BOUND_IN_APPROVED_PLAN_RUNTIME_COVERAGE_PARTIAL",
+    "scopeSelectionAndRowFiltering": "PENDING_IMPLEMENTATION_AND_RUNTIME_TESTS"
+  }
+}

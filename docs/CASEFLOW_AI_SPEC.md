@@ -7277,6 +7277,8 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-149 | Las generaciones por lotes (requisitos, casos de uso, modelo de datos y artefactos de diseño estructurados) se pueden cancelar: el trabajo pasa a `CANCELLED`, se detiene antes del siguiente lote, conserva los lotes completados y se reanuda como uno fallido (§221.27) | Accepted |
 | DEC-152 | Cada snapshot validado propone un manual visual versionado, con revisión humana y descarga HTML/PDF; la entrega conjunta conserva el ZIP original y añade el manual aprobado y un manifiesto (§221.28, ADR-013) | Accepted |
 | DEC-153 | El manual incorpora capturas reales del snapshot mediante un RuntimeCaptureProvider aislado en Docker, con evidencia privada por rol, nuevas versiones y continuidad del esquema ante fallos (§221.29, ADR-014) | Accepted |
+| DEC-154 | La versión 2 de CASEFLOW_WEB_TS_V1 incorpora enlaces explícitos de autenticación local, composición validada desde el diseño congelado y comprobaciones de entrega que distinguen fidelidad estructural de revisión visual (§221.30, ADR-015) | Accepted |
+| DEC-155 | El contexto de operación del proyecto generado declara permisos, asignaciones y rutas de propiedad; el servidor verifica su alcance en cada solicitud y la interfaz conserva únicamente contextos autorizados (§221.31, ADR-016) | Accepted |
 
 ---
 
@@ -8023,6 +8025,26 @@ OWNER y EDITOR pueden cancelar la captura en cola o en ejecución. Durante la li
 
 Las imágenes privadas se modelan relacionalmente por tarea, conjunto, rol, perfil, estado, hash y dimensiones. Se autorizan por proyecto, snapshot y versión, y se verifican al descargarlas. HTML/PDF incorporan las imágenes; el ZIP conjunto añade los PNG y sus hashes sin cambiar el archivo original del software. El esquema sigue disponible si la captura falla. El historial gráfico solo se elimina dentro de la eliminación autorizada del proyecto completo.
 
+## 221.30 Fidelidad y autenticación del software generado (DEC-154, ADR-015)
+
+`CASEFLOW_WEB_TS_V1` conserva su versión 1 para historial e incorpora la versión 2 con el mismo stack. El catálogo añade `argon2@0.45.1` para credenciales locales. `ImplementationPlan.authentication.local` identifica cuentas, roles y sesiones mediante referencias verificadas; los campos internos nunca forman parte de los contratos públicos. El acceso valida contraseña y estado, cada petición valida la sesión persistida y los roles actuales, y el cierre o cambio de credenciales revoca sesiones. Las opciones de navegación proceden del servidor. No se genera acceso de desarrollo para este perfil.
+
+La composición externa utiliza únicamente el HTML del boceto y el plano de la línea base congelada del proyecto. El HTML es entrada no confiable y no se ejecuta. El adaptador propone un árbol declarativo sobre controles existentes; CASEFlow comprueba cobertura, jerarquía, formularios y estilos y aplica la composición mediante AST. No inventa datos ni sustituye funcionalidades faltantes por decoración. Las limitaciones funcionales bloquean la adaptación. El renderizador interno conserva una ruta determinista sin proveedor externo.
+
+`docs/design-fidelity.json` conserva versiones y hashes de páginas y componentes compartidos. Los checkpoints de presentación pertenecen al trabajo y solo se reutilizan con los mismos insumos. El manifiesto demuestra procedencia y conservación estructural; no certifica equivalencia visual ni funcionamiento completo. Las capturas del manual siguen representando el código ejecutado, no las imágenes del boceto.
+
+Las acciones personalizadas reciben la identidad autenticada y el contexto histórico del análisis enlazado al plan de generación congelado. La versión 2 rechaza planes de acceso incompletos, acciones de negocio no implementadas y modificaciones de presentación no revisadas. READY exige los controles de validación establecidos; una compilación correcta por sí sola no autoriza la entrega.
+
+Para capturar aplicaciones con sesiones persistidas, el controlador ejecuta un comando fijo de cuentas temporales dentro del entorno Docker desechable y verifica firma, sesión, expiración y rol. No utiliza cuentas ni secretos del producto. Los límites de intentos locales al proceso y las capacidades funcionales aún no representadas deben documentarse explícitamente, sin atribuir al perfil garantías de autorización de negocio que no haya verificado.
+
 ## 221.4 Fuera de alcance de estas extensiones
 
 Interfaz bilingüe completa (EN/ES) y vista previa en vivo del software generado (§177.2): planificadas para después de cerrar v2. El detalle de cada una y del resto de lo pendiente está en `docs/V3_PROPOSALS.md`.
+
+## 221.31 Contexto de operación del proyecto generado (DEC-155, ADR-016)
+
+El perfil `authentication.local.scope` del TargetTemplate versión 2 define identidad visible, roles, permisos por operación y ámbitos asignados desde enlaces del ImplementationPlan. La selección de ámbito se verifica contra la sesión y la persistencia actuales en cada solicitud. Las entidades declaran todas las rutas singulares de propiedad y las acciones personalizadas sus capacidades de lectura y escritura. La persistencia aplica esas restricciones también a consultas agregadas y operaciones masivas. Las consultas entre ámbitos requieren una operación de solo lectura y roles globales explícitos.
+
+El frontend conserva el contexto verificado, permite seleccionar un ámbito autorizado y elimina consultas y estado al cambiarlo. La vista administrativa guarda relaciones de roles, permisos compartidos por rol y ámbitos; no implementa excepciones individuales. La inicialización conserva las políticas ya configuradas salvo una restauración administrativa explícita. El mecanismo es genérico: las entidades y etiquetas de sucursal proceden de los datos del proyecto.
+
+Las proyecciones o escrituras anidadas no soportadas fallan explícitamente; la lógica utiliza consultas separadas y transacciones. Los controles de alcance no sustituyen las pruebas de reglas de negocio ni la revisión visual. `GET /auth/context` sirve a la interfaz compartida y no exige añadir una acción ficticia al plano. Las versiones históricas se conservan y la entrega solo puede formalizarse tras superar los controles obligatorios.
