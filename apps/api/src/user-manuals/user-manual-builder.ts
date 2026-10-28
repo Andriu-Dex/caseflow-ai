@@ -12,9 +12,16 @@ export function buildUserManual(
     if (!file) throw new Error('An implementation route has no generated source file.');
     const screen = blueprint?.screens.find((item) => item.localId === route.screenLocalId);
     const entity = plan.entities.find((item) => item.localId === route.entityLocalId);
-    const roles = entity?.readRoles.length
-      ? [...new Set([...entity.readRoles, ...entity.writeRoles])]
-      : plan.authentication.roles;
+    const publicAccess =
+      route.actions.some((action) => action.endpoint === 'POST /auth/login') &&
+      Boolean(plan.authentication.local);
+    const roles = publicAccess
+      ? []
+      : route.roles?.length
+        ? route.roles
+        : entity?.readRoles.length
+          ? [...new Set([...entity.readRoles, ...entity.writeRoles])]
+          : plan.authentication.roles;
     return {
       title: route.screenName,
       routePath: route.path,
@@ -23,7 +30,9 @@ export function buildUserManual(
       verified: false,
       steps: [
         {
-          instruction: `Abra «${route.screenName}» desde la navegación de la aplicación.`,
+          instruction: publicAccess
+            ? `Abra la página «${route.screenName}» para acceder al sistema.`
+            : `Abra «${route.screenName}» desde la navegación de la aplicación.`,
           expectedResult: 'Compruebe que la pantalla corresponde a la tarea y que tiene acceso.',
         },
         ...(screen?.forms.length

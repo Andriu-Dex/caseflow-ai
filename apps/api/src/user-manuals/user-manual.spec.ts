@@ -155,3 +155,15 @@ describe('visual user manual', () => {
     expect(result.text).toContain('Paso 12:');
   });
 });
+
+it('uses the route roles in the manual instead of granting every configured role', () => {
+  const restricted = {
+    ...plan,
+    routes: plan.routes.map((route) => ({ ...route, roles: ['Editor'] })),
+    authentication: { ...plan.authentication, roles: ['Editor', 'Reader'] },
+  };
+  expect(
+    buildUserManual(restricted, blueprint, [{ id, path: 'apps/web/app/items/page.tsx' }]).tasks[0]!
+      .roles,
+  ).toEqual(['Editor']);
+});

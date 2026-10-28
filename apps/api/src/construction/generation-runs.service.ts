@@ -1,3 +1,5 @@
+import { implementationReadinessProblems } from './implementation-readiness';
+import { FrontendDesignService } from './frontend-design.service';
 import { assertCanGenerate } from '../common/generation-cancelled';
 import { INTERRUPTED_BY_RESTART } from '../common/interrupted';
 import { createHash } from 'node:crypto';
@@ -66,6 +68,7 @@ export class GenerationRunsService {
     private readonly businessLogic: BusinessLogicService,
     @Inject(CONSTRUCTION_QUEUE_TOKEN) private readonly queue: Queue<ConstructionJobPayload>,
     @Optional() private readonly currency?: StageCurrencyService,
+    @Optional() private readonly frontendDesign?: FrontendDesignService,
   ) {}
 
   async start(
@@ -85,6 +88,10 @@ export class GenerationRunsService {
     const plan = await this.approvedPlan(projectId, implementationPlanVersionId);
     await this.designBaselines.assertApproved(projectId, plan.designBaselineId);
     const template = findTargetTemplate(TEMPLATE_IDENTIFIER)!;
+    if (template.version >= 2) {
+      const problems = implementationReadinessProblems(plan);
+      if (problems.length) throw new UnprocessableEntityException(problems.join(' '));
+    }
     const run = await this.prisma.$transaction(async (tx) => {
       const created = await tx.generationRun.create({
         data: {
@@ -121,8 +128,8 @@ export class GenerationRunsService {
   // A run still GENERATING when the API starts was cut off by a restart. It
   // is not repeated automatically: it is audited history and the person
   // decides whether to generate again (BUILD_ONLY retries it once through the
-  // workflow run). Its files are written in one transaction at the end, so an
-  // interrupted run left none behind.
+  // workflow run). Validated presentation checkpoints can survive a failure;
+  // they are not a completed project or an official snapshot.
   async markInterrupted(bootedAt: Date): Promise<number> {
     const runs = await this.prisma.generationRun.findMany({
       where: { status: 'GENERATING', startedAt: { lt: bootedAt } },
@@ -169,37 +176,72 @@ export class GenerationRunsService {
       const template = findTargetTemplate(run.targetTemplateIdentifier, run.targetTemplateVersion);
       if (!template)
         throw new PlanGenerationError('La plantilla de la corrida ya no está soportada.');
-      const { implementations, warnings } = await this.businessLogic.implement(
-        projectId,
-        runId,
-        plan,
-        template,
-      );
-      const files = generateProject(
+      if (template.version >= 2) {
+        const problems = implementationReadinessProblems(plan);
+        if (problems.length) throw new PlanGenerationError(problems.join(' '));
+      }
+      const {
+        implementations,
+        warnings,
+        checkpoints = [],
+      } = await this.businessLogic.implement(projectId, runId, plan, template);
+      if (template.version >= 2 && warnings.length) {
+        await this.prisma.generationRun.update({ where: { id: runId }, data: { warnings } });
+        throw new PlanGenerationError(
+          `Hay ${warnings.length} ${warnings.length === 1 ? 'acción de negocio sin implementar' : 'acciones de negocio sin implementar'}. Revise las advertencias de la corrida.`,
+        );
+      }
+      const theme = await this.frozenTheme(projectId, run.designBaselineId);
+      let files = generateProject(
         {
           plan,
           template,
           projectName: run.project.name,
           slug: projectSlug(run.project.name),
-          theme: await this.frozenTheme(projectId, run.designBaselineId),
+          theme,
         },
         implementations,
       );
+      files.push(...checkpoints);
+      if (template.version >= 2) {
+        if (!this.frontendDesign)
+          throw new PlanGenerationError('El adaptador del diseño aprobado no está disponible.');
+        const adapted = await this.frontendDesign.adapt(
+          projectId,
+          run.designBaselineId,
+          plan,
+          files,
+          run.project.name,
+          theme?.content.mode === 'BOTH',
+          runId,
+        );
+        files = adapted.files;
+        warnings.push(
+          'La composición conserva los controles y usa el boceto aprobado. Revise la fidelidad visual en la aplicación; la comprobación estructural no sustituye esa revisión.',
+        );
+      }
       const frozen = await this.frozenVersionsByCode(projectId, run.designBaselineId);
       const links = planTraceLinks(files, plan, run.implementationPlanVersionId, frozen);
       await this.prisma.$transaction(async (tx) => {
-        const created = await tx.generatedFile.createManyAndReturn({
-          data: files.map((f) => ({
-            generationRunId: runId,
-            path: f.path,
-            content: f.content,
-            sha256: createHash('sha256').update(f.content).digest('hex'),
-            origin: f.origin,
-            kind: f.kind,
-          })),
+        const checkpoints = await tx.generatedFile.findMany({
+          where: { generationRunId: runId },
           select: { id: true, path: true },
         });
-        const idByPath = new Map(created.map((f) => [f.path, f.id]));
+        const existing = new Set(checkpoints.map((item) => item.path));
+        const created = await tx.generatedFile.createManyAndReturn({
+          data: files
+            .filter((item) => !existing.has(item.path))
+            .map((f) => ({
+              generationRunId: runId,
+              path: f.path,
+              content: f.content,
+              sha256: createHash('sha256').update(f.content).digest('hex'),
+              origin: f.origin,
+              kind: f.kind,
+            })),
+          select: { id: true, path: true },
+        });
+        const idByPath = new Map([...checkpoints, ...created].map((f) => [f.path, f.id]));
         await tx.codeTraceLink.createMany({
           data: links.map((link) => ({
             generatedFileId: idByPath.get(link.path)!,

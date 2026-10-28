@@ -54,6 +54,12 @@ export function planTraceLinks(
         planElement,
         linkType,
       });
+      if (planElement.startsWith('design-source:')) {
+        const sourceArtifactVersionId = planElement.slice('design-source:'.length);
+        if (![...frozenVersionsByCode.values()].includes(sourceArtifactVersionId))
+          throw new Error('Presentation source is not frozen in the design baseline.');
+        add({ path: file.path, sourceArtifactVersionId, planElement, linkType });
+      }
       // "design-theme:TEM-001" cites the frozen theme itself.
       const cited =
         citations.get(planElement) ??

@@ -47,26 +47,31 @@ function entityController(plan: Plan, entity: Entity, moduleName: string): strin
   const e = entity.name;
   const ops = new Set(entity.operations);
   const auth = plan.authentication.required;
+  const scoped = Boolean(plan.authentication.local?.scope);
   const read = auth ? `\n  @Roles(${rolesLiteral(entity.readRoles)})` : '';
   const write = auth ? `\n  @Roles(${rolesLiteral(entity.writeRoles)})` : '';
+  const operation = (method: string, detail = false) =>
+    scoped
+      ? `\n  @Operation(${JSON.stringify(method + ' ' + collectionPath(e) + (detail ? '/:id' : ''))})`
+      : '';
   const methods = [
     ops.has('LIST') &&
-      `  @Get()${read}
+      `  @Get()${read}${operation('GET')}
   list() {
     return this.service.list();
   }`,
     ops.has('GET') &&
-      `  @Get(':id')${read}
+      `  @Get(':id')${read}${operation('GET', true)}
   get(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.get(id);
   }`,
     ops.has('CREATE') &&
-      `  @Post()${write}
+      `  @Post()${write}${operation('POST')}
   create(@Body(new ZodValidationPipe(${createSchemaName(e)})) body: Create${e}Input) {
     return this.service.create(body);
   }`,
     ops.has('UPDATE') &&
-      `  @Patch(':id')${write}
+      `  @Patch(':id')${write}${operation('PATCH', true)}
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(${updateSchemaName(e)})) body: Update${e}Input,
@@ -75,7 +80,7 @@ function entityController(plan: Plan, entity: Entity, moduleName: string): strin
   }`,
     ops.has('DELETE') &&
       `  @Delete(':id')
-  @HttpCode(204)${write}
+  @HttpCode(204)${write}${operation('DELETE', true)}
   async remove(@Param('id', ParseUUIDPipe) id: string) {
     await this.service.remove(id);
   }`,
@@ -100,7 +105,9 @@ function entityController(plan: Plan, entity: Entity, moduleName: string): strin
     "import { ApiTags } from '@nestjs/swagger';",
     contracts.length ? `import { ${contracts.join(', ')} } from '${SCOPE}/contracts';` : '',
     contracts.length ? "import { ZodValidationPipe } from '../common/zod-validation.pipe';" : '',
-    auth && methods.length ? "import { Roles } from '../auth/roles.decorator';" : '',
+    auth && methods.length
+      ? `import { Roles${scoped ? ', Operation' : ''} } from '../auth/roles.decorator';`
+      : '',
     `import { ${e}Service } from './${kebabCase(e)}.service';`,
     '',
     `@ApiTags('${moduleName}')`,
@@ -115,32 +122,68 @@ function entityController(plan: Plan, entity: Entity, moduleName: string): strin
     .join('\n');
 }
 
-function entityService(entity: Entity): string {
+const omitFields = (entity: Entity) =>
+  entity.fields.some((f) => f.internal)
+    ? ', omit: { ' +
+      entity.fields
+        .filter((f) => f.internal)
+        .map((f) => f.name + ': true')
+        .join(', ') +
+      ' }'
+    : '';
+function entityService(entity: Entity, plan: ImplementationPlanContent): string {
+  const local =
+    plan.authentication.local?.userEntityLocalId === entity.localId
+      ? plan.authentication.local
+      : undefined;
   const e = entity.name;
   const ops = new Set(entity.operations);
   const delegate = lowerFirst(e);
+  const many = entity.relations.filter(
+    (relation) =>
+      relation.kind === 'MANY_TO_MANY' &&
+      relation.name !== local?.roleRelation &&
+      Boolean(plan.authentication.local?.scope),
+  );
+  const includes = [
+    ...(local ? [local.roleRelation] : []),
+    ...many.map((relation) => relation.name),
+  ];
+  const accountInclude = includes.length
+    ? `, include: { ${includes.map((name) => `${name}: true`).join(', ')} }`
+    : '';
+  const projectResult = local ? 'publicAccount' : many.length ? 'publicRelations' : undefined;
   const dateFields = entity.fields.filter((f) => f.type === 'DATE' || f.type === 'DATETIME');
   const needsInput = ops.has('CREATE') || ops.has('UPDATE');
   const methods = [
     ops.has('LIST') &&
-      `  list() {
+      `  ${projectResult ? 'async ' : ''}list() {
     // Bounded: a list endpoint never returns an unlimited number of rows.
-    return this.prisma.${delegate}.findMany({ orderBy: { createdAt: 'desc' }, take: 500 });
+    return ${projectResult ? '(await ' : ''}this.prisma.${delegate}.findMany({ orderBy: { createdAt: 'desc' }, take: 500${omitFields(entity)}${accountInclude} })${projectResult ? `).map(${projectResult})` : ''};
   }`,
     (ops.has('GET') || ops.has('UPDATE') || ops.has('DELETE')) &&
       `  async get(id: string) {
-    const found = await this.prisma.${delegate}.findUnique({ where: { id } });
+    const found = await this.prisma.${delegate}.findUnique({ where: { id }${omitFields(entity)}${accountInclude} });
     if (!found) throw new NotFoundException('No se encontró el registro.');
-    return found;
+    return ${projectResult ? `${projectResult}(found)` : 'found'};
   }`,
     ops.has('CREATE') &&
-      `  create(input: Create${e}Input) {
-    return this.prisma.${delegate}.create({ data: toData(input) as never });
+      `  ${projectResult ? 'async ' : ''}create(input: Create${e}Input) {
+    return ${projectResult ? `${projectResult}(await ` : ''}this.prisma.${delegate}.create({ data: ${local ? 'await toAccountData(input)' : 'toData(input)'} as never${omitFields(entity)}${accountInclude} })${projectResult ? ')' : ''};
   }`,
     ops.has('UPDATE') &&
       `  async update(id: string, input: Update${e}Input) {
     await this.get(id);
-    return this.prisma.${delegate}.update({ where: { id }, data: toData(input) as never });
+    ${
+      local
+        ? `const data = await toAccountData(input, true);
+    return this.prisma.$transaction(async tx => {
+      const updated = await tx.${delegate}.update({ where: { id }, data: data as never${omitFields(entity)}${accountInclude} });
+      if (input.password) await tx.${lowerFirst(plan.entities.find((e) => e.localId === local.sessionEntityLocalId)!.name)}.updateMany({ where: { ${local.sessionUserRelation}Id: id }, data: { ${local.invalidatedAtField}: new Date(), ${local.sessionStatusField}: ${JSON.stringify(local.closedSessionStatus)} } });
+      return publicAccount(updated);
+    });`
+        : `return ${projectResult ? `${projectResult}(await ` : ''}this.prisma.${delegate}.update({ where: { id }, data: toData(input, true) as never${omitFields(entity)}${accountInclude} })${projectResult ? ')' : ''};`
+    }
   }`,
     ops.has('DELETE') &&
       `  async remove(id: string) {
@@ -153,7 +196,8 @@ function entityService(entity: Entity): string {
   );
   const usesGet = ops.has('GET') || ops.has('UPDATE') || ops.has('DELETE');
   return [
-    `import { Injectable${usesGet ? ', NotFoundException' : ''} } from '@nestjs/common';`,
+    `import { Injectable${usesGet ? ', NotFoundException' : ''}${local ? ', BadRequestException' : ''} } from '@nestjs/common';`,
+    local ? "import * as argon2 from 'argon2';" : '',
     needsInput
       ? `import type { ${[ops.has('CREATE') && `Create${e}Input`, ops.has('UPDATE') && `Update${e}Input`].filter(Boolean).join(', ')} } from '${SCOPE}/contracts';`
       : '',
@@ -161,11 +205,34 @@ function entityService(entity: Entity): string {
     '',
     needsInput
       ? `// Wire format -> database values (dates arrive as ISO strings).
-function toData(input: Record<string, unknown>): Record<string, unknown> {
+function toData(input: Record<string, unknown>, updating = false): Record<string, unknown> {
   const data = { ...input };
+  void updating;
+${many.map((relation) => `  if (Array.isArray(data.${relation.name}Ids)) { data.${relation.name} = { [updating ? 'set' : 'connect']: (data.${relation.name}Ids as string[]).map(id => ({ id })) }; delete data.${relation.name}Ids; }`).join('\n')}
 ${conversions.join('\n')}${conversions.length ? '\n' : ''}  return data;
 }
 `
+      : '',
+    many.length
+      ? `function publicRelations<T extends { ${many.map((relation) => `${relation.name}: { id: string }[]`).join('; ')} }>(record: T) {
+  const { ${many.map((relation) => relation.name).join(', ')}, ...fields } = record;
+  return { ...fields, ${many.map((relation) => `${relation.name}Ids: ${relation.name}.map(item => item.id)`).join(', ')} };
+}`
+      : '',
+    local
+      ? `function publicAccount<T extends { ${local.roleRelation}: { ${local.roleNameField}: string }[]; ${local.passwordHashField}?: unknown }>(record: T) {
+  const { ${local.roleRelation}: assignedRoles, ${local.passwordHashField}: hidden, ...publicFields } = record;
+  void hidden;
+  return { ...${many.length ? 'publicRelations(publicFields as typeof publicFields & { ' + many.map((relation) => relation.name + ': { id: string }[]').join('; ') + ' })' : 'publicFields'}, roleNames: assignedRoles.map(role => role.${local.roleNameField}) };
+}
+async function toAccountData(input: Record<string, unknown>, updating = false) {
+  const { password, roleNames, ...fields } = input;
+  if (!updating && typeof password !== 'string') throw new BadRequestException('Indique una contraseña.');
+  const data = toData(fields, updating);
+  if (typeof password === 'string') data.${local.passwordHashField} = await argon2.hash(password, { type: argon2.argon2id });
+  if (Array.isArray(roleNames)) data.${local.roleRelation} = ${local.scope ? `{ [updating ? 'set' : 'connect']: roleNames.map(name => ({ ${local.roleNameField}: name })) }` : `{ ...(updating ? { set: [] } : {}), connectOrCreate: roleNames.map(name => ({ where: { ${local.roleNameField}: name }, create: { ${local.roleNameField}: name } })) }`};
+  return data;
+}`
       : '',
     '@Injectable()',
     `export class ${e}Service {`,
@@ -178,17 +245,37 @@ ${conversions.join('\n')}${conversions.length ? '\n' : ''}  return data;
     .join('\n');
 }
 
-function entityServiceSpec(entity: Entity): string {
+function entityServiceSpec(entity: Entity, plan: ImplementationPlanContent): string {
+  const local =
+    plan.authentication.local?.userEntityLocalId === entity.localId
+      ? plan.authentication.local
+      : undefined;
   const e = entity.name;
   const ops = new Set(entity.operations);
   const delegate = lowerFirst(e);
-  const sample = sampleInput(entity);
+  const many = entity.relations.filter(
+    (relation) =>
+      relation.kind === 'MANY_TO_MANY' &&
+      relation.name !== local?.roleRelation &&
+      Boolean(plan.authentication.local?.scope),
+  );
+  const includes = [
+    ...(local ? [local.roleRelation] : []),
+    ...many.map((relation) => relation.name),
+  ];
+  const accountInclude = includes.length
+    ? `, include: { ${includes.map((name) => `${name}: true`).join(', ')} }`
+    : '';
+  const sample = {
+    ...sampleInput(entity),
+    ...(local ? { password: 'test-password-only', roleNames: [plan.authentication.roles[0]] } : {}),
+  };
   const dateField = entity.fields.find((f) => f.type === 'DATE' || f.type === 'DATETIME');
   const cases = [
     ops.has('LIST') &&
       `  it('lists the most recent records with a bounded page', async () => {
     await service.list();
-    expect(prisma.${delegate}.findMany).toHaveBeenCalledWith({ orderBy: { createdAt: 'desc' }, take: 500 });
+    expect(prisma.${delegate}.findMany).toHaveBeenCalledWith({ orderBy: { createdAt: 'desc' }, take: 500${omitFields(entity)}${accountInclude} });
   });`,
     (ops.has('GET') || ops.has('UPDATE') || ops.has('DELETE')) &&
       `  it('answers 404 for a record that does not exist', async () => {
@@ -198,7 +285,13 @@ function entityServiceSpec(entity: Entity): string {
       `  it('creates a record from a valid input', async () => {
     await service.create(input);
     const data = prisma.${delegate}.create.mock.calls[0]![0].data as Record<string, unknown>;
-    expect(Object.keys(data).sort()).toEqual(Object.keys(input).sort());${
+    ${
+      local
+        ? `expect(data.${local.passwordHashField}).toMatch(/^\\$argon2id\\$/);
+    expect(data).not.toHaveProperty('password');
+    expect(data).not.toHaveProperty('roleNames');`
+        : 'expect(Object.keys(data).sort()).toEqual(Object.keys(input).sort());'
+    }${
       dateField
         ? `
     expect(data.${dateField.name}).toBeInstanceOf(Date);`
@@ -225,7 +318,17 @@ describe('${e}Service', () => {
     ${delegate}: {
       findMany: vi.fn(async () => []),
       findUnique: vi.fn(async (): Promise<Record<string, unknown> | null> => null),
-      create: vi.fn(async (args: { data: Record<string, unknown> }) => ({ id: 'x', ...args.data })),
+      create: vi.fn(async (args: { data: Record<string, unknown> }) => ({ id: 'x', ...args.data${local ? `, ${local.roleRelation}: [{ ${local.roleNameField}: ${JSON.stringify(plan.authentication.roles[0])} }]` : ''}${
+        plan.authentication.local?.scope
+          ? entity.relations
+              .filter(
+                (relation) =>
+                  relation.kind === 'MANY_TO_MANY' && relation.name !== local?.roleRelation,
+              )
+              .map((relation) => `, ${relation.name}: []`)
+              .join('')
+          : ''
+      } })),
       update: vi.fn(async () => ({ id: 'x' })),
       delete: vi.fn(async () => ({ id: 'x' })),
     },
@@ -249,6 +352,7 @@ ${
 
 function actionsController(plan: Plan, moduleName: string, endpoints: Endpoint[]): string {
   const auth = plan.authentication.required;
+  const localActor = Boolean(plan.authentication.local);
   const verbs = [...new Set(endpoints.map((e) => upperFirst(e.method.toLowerCase())))];
   const methods = endpoints.map((endpoint) => {
     const params = [...endpoint.path.matchAll(/:([a-zA-Z0-9]+)/g)].map((m) => m[1]!);
@@ -256,18 +360,19 @@ function actionsController(plan: Plan, moduleName: string, endpoints: Endpoint[]
     const args = [
       ...params.map((p) => `@Param('${p}') ${p}: string`),
       ...(hasBody ? ['@Body() body: Record<string, unknown>'] : []),
+      ...(localActor ? ['@Req() request: { user: SessionActor }'] : []),
     ];
     return `  /** ${endpoint.summary} */
-  @${upperFirst(endpoint.method.toLowerCase())}('${endpoint.path.slice(1)}')${auth ? `\n  @Roles(${rolesLiteral(endpoint.roles)})` : ''}
+  @${upperFirst(endpoint.method.toLowerCase())}('${endpoint.path.slice(1)}')${auth ? `\n  @Roles(${rolesLiteral(endpoint.roles)})` : ''}${plan.authentication.local?.scope ? `\n  @Operation(${JSON.stringify(endpointKey(endpoint))})\n  @DataAccess(${JSON.stringify(Object.fromEntries((endpoint.dataAccess ?? []).map((access) => [plan.entities.find((entity) => entity.localId === access.entityLocalId)!.name, access.operations])))})${endpoint.scopeAccess === 'ASSIGNED_SET' ? "\n  @ScopeAccess('ASSIGNED_SET')" : ''}` : ''}
   ${actionMethodName(endpoint)}(${args.join(', ')}) {
-    return this.service.${actionMethodName(endpoint)}(${[...params, ...(hasBody ? ['body'] : [])].join(', ')});
+    return this.service.${actionMethodName(endpoint)}(${[...params, ...(hasBody ? ['body'] : []), ...(localActor ? ['request.user'] : [])].join(', ')});
   }`;
   });
   const usesParam = endpoints.some((e) => e.path.includes(':'));
   const usesBody = endpoints.some((e) => ['POST', 'PATCH', 'PUT'].includes(e.method));
-  return `import { Controller, ${[...verbs, usesParam ? 'Param' : '', usesBody ? 'Body' : ''].filter(Boolean).join(', ')} } from '@nestjs/common';
+  return `import { Controller, ${[...verbs, usesParam ? 'Param' : '', usesBody ? 'Body' : '', localActor ? 'Req' : ''].filter(Boolean).join(', ')} } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-${auth ? "import { Roles } from '../auth/roles.decorator';\n" : ''}import { ${moduleName}ActionsService } from './${kebabCase(moduleName)}-actions.service';
+${localActor ? "import type { SessionActor } from '../auth/local-auth.service';\n" : ''}${auth ? `import { Roles${plan.authentication.local?.scope ? ', Operation, DataAccess' : ''}${plan.authentication.local?.scope && endpoints.some((endpoint) => endpoint.scopeAccess === 'ASSIGNED_SET') ? ', ScopeAccess' : ''} } from '../auth/roles.decorator';\n` : ''}import { ${moduleName}ActionsService } from './${kebabCase(moduleName)}-actions.service';
 
 // Business actions beyond CRUD, as declared in the Implementation Plan.
 @ApiTags('${moduleName}')
@@ -284,6 +389,7 @@ function actionsService(
   moduleName: string,
   endpoints: Endpoint[],
   implementations: EndpointImplementations,
+  localActor = false,
 ): string {
   const methods = endpoints.map((endpoint) => {
     const params = [...endpoint.path.matchAll(/:([a-zA-Z0-9]+)/g)].map((m) => m[1]!);
@@ -291,9 +397,10 @@ function actionsService(
     const args = [
       ...params.map((p) => `${p}: string`),
       ...(hasBody ? ['body: Record<string, unknown>'] : []),
+      ...(localActor ? ['actor: SessionActor'] : []),
     ];
     const body = implementations[endpointKey(endpoint)];
-    const names = [...params, ...(hasBody ? ['body'] : [])];
+    const names = [...params, ...(hasBody ? ['body'] : []), ...(localActor ? ['actor'] : [])];
     // An AI body may leave a parameter unused (the lint forbids it): such a
     // parameter is marked as used, as in the stub.
     const unused = body ? names.filter((name) => !new RegExp(`\\b${name}\\b`).test(body)) : [];
@@ -322,6 +429,7 @@ ${
     ...(anyStub ? ['NotImplementedException'] : []),
   ];
   return `import { ${nestImports.join(', ')} } from '@nestjs/common';
+${localActor ? "import type { SessionActor } from '../auth/local-auth.service';" : ''}
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -365,7 +473,12 @@ export function backendFiles(
           // the migrations that already exist (what scripts/setup.mjs uses once they do).
           'db:migrate': 'prisma migrate dev --name init',
           'db:deploy': 'prisma migrate deploy',
-          ...(auth ? { 'dev-token': 'node dist/auth/dev-token.js' } : {}),
+          ...(auth && !plan.authentication.local
+            ? { 'dev-token': 'node dist/auth/dev-token.js' }
+            : {}),
+          ...(plan.authentication.local
+            ? { 'account:create': 'node dist/auth/create-account.js' }
+            : {}),
         },
         dependencies: dependencies(
           template,
@@ -379,6 +492,7 @@ export function backendFiles(
             'reflect-metadata',
             'rxjs',
             'zod',
+            ...(plan.authentication.local ? ['argon2'] : []),
           ],
           [`${SCOPE}/contracts`],
         ),
@@ -492,6 +606,7 @@ void bootstrap();
       `import { Injectable, type OnModuleDestroy } from '@nestjs/common';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../generated/prisma/client';
+${plan.authentication.local?.scope ? "import { enforceScope } from '../auth/operation-scope';" : ''}
 
 // Connects lazily on first query, so the app (and its tests) start without a
 // database; configure DATABASE_URL to reach one.
@@ -499,6 +614,7 @@ import { PrismaClient } from '../generated/prisma/client';
 export class PrismaService extends PrismaClient implements OnModuleDestroy {
   constructor() {
     super({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }) });
+    ${plan.authentication.local?.scope ? 'return this.$extends({ query: { $allOperations: ({ model, operation, args, query }) => enforceScope(this, model, operation, args, query) } }) as unknown as this;' : ''}
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -618,7 +734,7 @@ export interface TokenClaims {
   sub: string;
   roles: string[];
   exp: number;
-}
+${plan.authentication.local ? '  sessionId?: string;\n' : ''}${plan.authentication.local?.scope ? '  scopeId?: string;\n' : ''}}
 
 const encode = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
 const sign = (data: string, secret: string) =>
@@ -631,13 +747,13 @@ export function signToken(claims: TokenClaims, secret: string): string {
 }
 
 export function verifyToken(token: string, secret: string, now = Date.now()): TokenClaims | null {
-  const [header, payload, signature] = token.split('.');
+${plan.authentication.local ? "  if (token.split('.').length !== 3) return null;\n" : ''}  const [header, payload, signature] = token.split('.');
   if (!header || !payload || !signature) return null;
   const expected = Buffer.from(sign(\`\${header}.\${payload}\`, secret));
   const actual = Buffer.from(signature);
   if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) return null;
   try {
-    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString()) as TokenClaims;
+${plan.authentication.local ? "    const algorithm = JSON.parse(Buffer.from(header, 'base64url').toString()) as { alg?: string };\n    if (algorithm.alg !== 'HS256') return null;\n" : ''}    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString()) as TokenClaims;
     if (typeof claims.exp !== 'number' || claims.exp * 1000 < now) return null;
     if (typeof claims.sub !== 'string' || !Array.isArray(claims.roles)) return null;
     return claims;
@@ -656,6 +772,7 @@ export const PUBLIC_KEY = 'public';
 // Empty = any authenticated user.
 export const Roles = (...roles: string[]) => SetMetadata(ROLES_KEY, roles);
 export const Public = () => SetMetadata(PUBLIC_KEY, true);
+${plan.authentication.local?.scope ? "export const OPERATION_KEY = 'operation';\nexport const DATA_ACCESS_KEY = 'data-access';\nexport const DataAccess = (access: Record<string, string[]>) => SetMetadata(DATA_ACCESS_KEY, access);\nexport const SCOPE_ACCESS_KEY = 'scope-access';\nexport const SCOPE_OPTIONAL_KEY = 'scope-optional';\nexport const ScopeOptional = () => SetMetadata(SCOPE_OPTIONAL_KEY, true);\nexport const Operation = (operation: string) => SetMetadata(OPERATION_KEY, operation);\nexport const ScopeAccess = (access: 'ASSIGNED_SET') => SetMetadata(SCOPE_ACCESS_KEY, access);" : ''}
 `,
       ),
       file(
@@ -860,7 +977,9 @@ console.log(
   for (const module of plan.modules) {
     const dir = kebabCase(module.name);
     const entities = plan.entities.filter((e) => e.moduleLocalId === module.localId);
-    const endpoints = plan.customEndpoints.filter((e) => e.moduleLocalId === module.localId);
+    const endpoints = plan.customEndpoints.filter(
+      (e) => e.moduleLocalId === module.localId && !e.builtin,
+    );
     const moduleElement = `module:${module.localId}`;
     for (const entity of entities) {
       const elements = [moduleElement, `entity:${entity.localId}`];
@@ -870,13 +989,17 @@ console.log(
           entityController(plan, entity, module.name),
           { origin: 'DETERMINISTIC', planElements: elements },
         ),
-        file(`apps/api/src/${dir}/${kebabCase(entity.name)}.service.ts`, entityService(entity), {
-          origin: 'DETERMINISTIC',
-          planElements: elements,
-        }),
+        file(
+          `apps/api/src/${dir}/${kebabCase(entity.name)}.service.ts`,
+          entityService(entity, plan),
+          {
+            origin: 'DETERMINISTIC',
+            planElements: elements,
+          },
+        ),
         file(
           `apps/api/src/${dir}/${kebabCase(entity.name)}.service.spec.ts`,
-          entityServiceSpec(entity),
+          entityServiceSpec(entity, plan),
           { origin: 'DETERMINISTIC', kind: 'TEST', planElements: elements },
         ),
       );
@@ -892,7 +1015,12 @@ console.log(
         ),
         file(
           `apps/api/src/${dir}/${dir}-actions.service.ts`,
-          actionsService(module.name, endpoints, implementations),
+          actionsService(
+            module.name,
+            endpoints,
+            implementations,
+            Boolean(plan.authentication.local),
+          ),
           { origin: aiAssisted ? 'AI_ASSISTED' : 'DETERMINISTIC', planElements: elements },
         ),
       );
@@ -940,16 +1068,20 @@ export class ${module.name}Module {}
     file(
       'apps/api/src/app.module.ts',
       `import { Module } from '@nestjs/common';
-import { APP_FILTER${auth ? ', APP_GUARD' : ''} } from '@nestjs/core';
+import { APP_FILTER${auth ? ', APP_GUARD' : ''}${plan.authentication.local ? ', APP_INTERCEPTOR' : ''} } from '@nestjs/core';
 import { PrismaModule } from './prisma/prisma.module';
 import { HealthController } from './health.controller';
+${plan.authentication.local ? "import { LocalAuthService } from './auth/local-auth.service';\nimport { LocalAuthController } from './auth/local-auth.controller';\nimport { SafeResponseInterceptor } from './auth/safe-response.interceptor';" : ''}
+${plan.authentication.local?.scope ? "import { OperationScopeInterceptor } from './auth/operation-scope';" : ''}
 import { DatabaseErrorFilter } from './common/database-error.filter';
-${auth ? "import { AuthGuard } from './auth/auth.guard';\nimport { DevLoginController } from './auth/dev-login.controller';\n" : ''}${moduleImports.join('\n')}
+${auth ? "import { AuthGuard } from './auth/auth.guard';\n" : ''}${auth && !plan.authentication.local ? "import { DevLoginController } from './auth/dev-login.controller';\n" : ''}${moduleImports.join('\n')}
 
 @Module({
   imports: [PrismaModule, ${plan.modules.map((m) => `${m.name}Module`).join(', ')}],
-  controllers: [HealthController${auth ? ', DevLoginController' : ''}],
+  controllers: [HealthController${auth && !plan.authentication.local ? ', DevLoginController' : ''}${plan.authentication.local ? ', LocalAuthController' : ''}],
   providers: [
+    ${plan.authentication.local ? 'LocalAuthService, { provide: APP_INTERCEPTOR, useClass: SafeResponseInterceptor },' : ''}
+    ${plan.authentication.local?.scope ? '{ provide: APP_INTERCEPTOR, useClass: OperationScopeInterceptor },' : ''}
     { provide: APP_FILTER, useClass: DatabaseErrorFilter },${auth ? '\n    { provide: APP_GUARD, useClass: AuthGuard },' : ''}
   ],
 })

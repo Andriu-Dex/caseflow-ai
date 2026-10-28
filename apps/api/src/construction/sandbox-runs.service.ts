@@ -332,7 +332,7 @@ export class SandboxRunsService {
         ?.content as unknown as ImplementationPlanContent;
       stages.push(
         check('STRUCTURE', [
-          ...structuralProblems(files, template, allowed),
+          ...structuralProblems(files, template, allowed, plan),
           ...firstRunProblems(files),
           ...planCoverageProblems(files, plan),
         ]),

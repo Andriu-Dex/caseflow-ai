@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import JSZip from 'jszip';
-import { CASEFLOW_WEB_TS_V1 } from '@caseflow-ai/domain';
+import { CASEFLOW_WEB_TS_V1, CASEFLOW_WEB_TS_V2 } from '@caseflow-ai/domain';
 import { implementationPlanContentSchema } from '@caseflow-ai/contracts';
 import { generateProject } from '../code-generation/engine/project-generator';
 import {
@@ -34,6 +34,27 @@ const layout = (): ProjectFile[] =>
   }));
 
 describe('structuralProblems', () => {
+  it('blocks permanently rejecting business actions even when they use a normal validation exception', () => {
+    const files: ProjectFile[] = [
+      ...layout(),
+      {
+        path: 'apps/api/src/orders/orders-actions.service.ts',
+        kind: 'SOURCE',
+        content:
+          "export class OrdersActionsService { confirm() { if(!true) throw new Error('identity'); throw new BadRequestException('Missing contract'); } }",
+      },
+    ];
+    expect(
+      structuralProblems(files, CASEFLOW_WEB_TS_V2, CASEFLOW_WEB_TS_V2.dependencies),
+    ).toContainEqual(expect.stringContaining('rechaza todos los casos'));
+    files[files.length - 1]!.content =
+      "export class OrdersActionsService { confirm(input: boolean) { if(!input) throw new Error('invalid'); return {ok:true}; } }";
+    expect(
+      structuralProblems(files, CASEFLOW_WEB_TS_V2, CASEFLOW_WEB_TS_V2.dependencies).some(
+        (problem) => problem.includes('rechaza todos los casos'),
+      ),
+    ).toBe(false);
+  });
   it('accepts the template layout with catalog dependencies', () => {
     expect(structuralProblems(layout(), CASEFLOW_WEB_TS_V1, allowed)).toEqual([]);
   });

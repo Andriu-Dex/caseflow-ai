@@ -103,7 +103,9 @@ export function dockerFiles({ plan, template, slug }: GenerationContext): Genera
     ...(auth
       ? [
           '      JWT_SECRET: ${JWT_SECRET:-dev-only-jwt-secret}',
-          '      DEV_LOGIN: ${DEV_LOGIN:-true}',
+          plan.authentication.local
+            ? '      DEV_LOGIN: false'
+            : '      DEV_LOGIN: ${DEV_LOGIN:-true}',
         ]
       : []),
     ...extraEnv,

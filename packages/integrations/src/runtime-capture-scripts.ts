@@ -32,7 +32,7 @@ setTimeout(() => process.exit(1), 180000).unref();
           await page.waitForTimeout(1000);
         }
         if (!ready) throw new Error('APPLICATION_UNAVAILABLE');
-        if (target.token) await context.addInitScript(value => window.sessionStorage.setItem('access-token', value), target.token);
+        if (target.token) await context.addInitScript(value => { window.sessionStorage.setItem('access-token', value.token); if (value.scopeId) window.sessionStorage.setItem('operation-scope', value.scopeId); }, {token: target.token, scopeId: target.scopeId});
         let failure = null;
         page.on('pageerror', () => { failure = 'BROWSER_ERROR'; });
         page.on('response', response => {

@@ -33,12 +33,19 @@ function tsType(schema: Schema | undefined): string {
   if (!schema) return 'void';
   if (schema.$ref) return schema.$ref.split('/').pop()!;
   let base: string;
-  if (schema.enum) base = schema.enum.map((v) => `'${v}'`).join(' | ');
-  else if (schema.type === 'array') base = `${tsType(schema.items)}[]`;
+  if (schema.enum) base = schema.enum.map((v) => JSON.stringify(v)).join(' | ');
+  else if (schema.type === 'array') base = `Array<${tsType(schema.items)}>`;
   else if (schema.type === 'integer' || schema.type === 'number') base = 'number';
   else if (schema.type === 'boolean') base = 'boolean';
   else if (schema.type === 'string') base = 'string';
   else if (schema.type === 'object' && !schema.properties) base = 'Record<string, unknown>';
+  else if (schema.type === 'object')
+    base = `{ ${Object.entries(schema.properties ?? {})
+      .map(
+        ([key, value]) =>
+          `${JSON.stringify(key)}${schema.required?.includes(key) ? '' : '?'}: ${tsType(value)};`,
+      )
+      .join(' ')} }`;
   else base = 'unknown';
   return schema.nullable ? `${base} | null` : base;
 }

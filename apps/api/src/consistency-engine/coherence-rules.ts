@@ -208,6 +208,8 @@ export function coherenceGaps(
       ),
     );
     for (const endpoint of plan.customEndpoints) {
+      // Context loading supports the shared shell rather than a separate user action.
+      if (endpoint.builtin === 'AUTH_CONTEXT') continue;
       const key = `${endpoint.method} ${endpoint.path}`;
       if (!servedEndpoints.has(key))
         gap('ACTION_ENDPOINT', `El endpoint ${key} no atiende ninguna acción de pantalla.`);

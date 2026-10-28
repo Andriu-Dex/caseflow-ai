@@ -33,20 +33,30 @@ describe('Construction Foundation integration', () => {
   });
   afterAll(async () => ctx.close());
 
-  it('lists the read-only V1 template with its catalog and design system profile', async () => {
+  it('lists both immutable versions of the supported template with their catalogs and design profile', async () => {
     const res = await http()
       .get('/target-templates')
       .set('Authorization', `Bearer ${ctx.token}`)
       .expect(200);
-    expect(res.body.items).toHaveLength(1);
+    expect(res.body.items).toHaveLength(2);
     expect(res.body.items[0]).toMatchObject({
       identifier: 'CASEFLOW_WEB_TS_V1',
       version: 1,
       designSystemProfile: { identifier: 'CASEFLOW_STANDARD_WEB_V1' },
       validationStages: ['INSTALL', 'LINT', 'TYPECHECK', 'TEST', 'BUILD'],
     });
-    await http()
+    const current = await http()
       .get('/target-templates/CASEFLOW_WEB_TS_V1/versions/2')
+      .set('Authorization', `Bearer ${ctx.token}`)
+      .expect(200);
+    expect(current.body.dependencies).toContainEqual(
+      expect.objectContaining({ name: 'argon2', version: '0.45.1' }),
+    );
+    expect(
+      res.body.items[0].dependencies.some((item: { name: string }) => item.name === 'argon2'),
+    ).toBe(false);
+    await http()
+      .get('/target-templates/CASEFLOW_WEB_TS_V1/versions/3')
       .set('Authorization', `Bearer ${ctx.token}`)
       .expect(404);
   });

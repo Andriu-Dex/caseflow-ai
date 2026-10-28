@@ -51,6 +51,9 @@ export function rootFiles(ctx: GenerationContext): GeneratedProjectFile[] {
           build: 'pnpm -r run build',
           // First run in one command: .env, database and tables (scripts/setup.mjs).
           setup: 'node scripts/setup.mjs',
+          ...(plan.authentication.local
+            ? { 'account:create': 'pnpm --filter ./apps/api exec node dist/auth/create-account.js' }
+            : {}),
           'db:up': 'docker compose --env-file .env -f docker/docker-compose.yml up -d --wait',
           'db:down': 'docker compose --env-file .env -f docker/docker-compose.yml down',
           // Whole application in Docker, without Node on the machine (docker/Dockerfile).
@@ -181,7 +184,16 @@ volumes:
 `,
       { kind: 'CONFIG' },
     ),
-    file('scripts/setup.mjs', SETUP_SCRIPT, { kind: 'CONFIG' }),
+    file(
+      'scripts/setup.mjs',
+      plan.authentication.local
+        ? SETUP_SCRIPT.replace(
+            "else if (name === 'DEV_LOGIN') value = 'true';",
+            "else if (name === 'DEV_LOGIN') value = 'false';",
+          )
+        : SETUP_SCRIPT,
+      { kind: 'CONFIG' },
+    ),
     file('README.md', readme(ctx), { kind: 'DOCUMENTATION' }),
   ];
 
@@ -196,9 +208,11 @@ volumes:
           `| \`${v.name}\` | ${oneLine(v.description).replace(/\|/g, '/')}${v.required ? '' : ' (opcional)'} |`,
       )
       .join('\n');
-    const authRow = p.authentication.required
-      ? '| `JWT_SECRET` | Secreto con el que se firman los tokens de acceso (lo genera `pnpm run setup`) |\n| `DEV_LOGIN` | `true` activa la entrada de un clic sin credenciales (solo para probar; `false` al publicar) |\n'
-      : '';
+    const authRow = p.authentication.local
+      ? '| `JWT_SECRET` | Secreto propio para sesiones individuales; lo genera `pnpm run setup` |\n'
+      : p.authentication.required
+        ? '| `JWT_SECRET` | Secreto con el que se firman los tokens de acceso (lo genera `pnpm run setup`) |\n| `DEV_LOGIN` | `true` activa la entrada de un clic sin credenciales (solo para probar; `false` al publicar) |\n'
+        : '';
     return `# ${projectName}
 
 Proyecto generado por CASEFlow AI a partir de su plan de implementación aprobado
@@ -262,8 +276,20 @@ y \`pnpm run db:down\` inician y detienen solo la base de datos.
 ${authRow}${envTable}
 
 ${
-  p.authentication.required
+  p.authentication.local
     ? `## Autenticación
+
+El acceso valida credenciales individuales con Argon2id y mantiene sesiones revocables en el servidor. Los hashes y las contraseñas no se devuelven por la API. No hay acceso de desarrollo ni cuentas preinstaladas.
+
+Después de preparar la base y compilar, defina ACCOUNT_INPUT en el entorno de su terminal con un objeto JSON que contenga los datos públicos obligatorios de la cuenta, password (al menos 12 caracteres) y roleNames (uno o más roles del plan). Ejecute pnpm run account:create y elimine ACCOUNT_INPUT de esa terminal. Con Docker, suministre la variable a docker compose exec y ejecute node apps/api/dist/auth/create-account.js dentro del servicio api. No escriba la contraseña en un archivo del repositorio ni la publique en registros.
+
+Abra la ruta de acceso del proyecto e introduzca el identificador y la contraseña. Cerrar sesión invalida la sesión en el servidor. Cambiar una contraseña invalida sus sesiones anteriores. La desactivación de la cuenta bloquea su uso en cada petición.
+
+Parámetros técnicos configurables, en segundos salvo el número de intentos: AUTH_TOKEN_SECONDS (900), AUTH_IDLE_SECONDS (1800), AUTH_LOGIN_MAX_ATTEMPTS (5 por cuenta), AUTH_LOGIN_IP_MAX_ATTEMPTS (50 por dirección), AUTH_LOGIN_WINDOW_SECONDS (900). Son valores iniciales de la plantilla, no reglas de negocio inferidas. El control de intentos es local al proceso del monolito y se reinicia al reiniciar la API; un despliegue con varias instancias necesita un almacén compartido antes de producción.
+
+`
+    : p.authentication.required
+      ? `## Autenticación
 
 La API exige un token Bearer firmado con \`JWT_SECRET\` (HS256) que incluya \`sub\` y \`roles\`.
 
@@ -288,7 +314,7 @@ docker compose --project-directory . -f docker/docker-compose.app.yml exec api n
 \`\`\`
 
 `
-    : ''
+      : ''
 }## Verificación
 
 \`\`\`bash

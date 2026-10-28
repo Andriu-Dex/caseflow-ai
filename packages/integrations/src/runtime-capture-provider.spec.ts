@@ -7,6 +7,7 @@ import {
   assertCapturePng,
   validateCaptureInput,
   createCaptureSessionToken,
+  validateCaptureSessions,
 } from './runtime-capture-provider';
 import { capturePng } from './testing/runtime-capture-fixture';
 
@@ -54,6 +55,37 @@ describe('Docker runtime capture boundary', () => {
         .update(`${header}.${payload}`)
         .digest('base64url'),
     );
+  });
+  it('accepts only the requested role with a real, signed, unexpired disposable session', () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    const sign = (extra = {}, secret = 'capture-only') => {
+      const content = [
+        Buffer.from(JSON.stringify({ alg: 'HS256' })).toString('base64url'),
+        Buffer.from(
+          JSON.stringify({ sub: id, sessionId: id, roles: ['Editor'], exp: 100, ...extra }),
+        ).toString('base64url'),
+      ].join('.');
+      return content + '.' + createHmac('sha256', secret).update(content).digest('base64url');
+    };
+    const target = [{ routePath: '/', role: 'Editor' }];
+    const token = sign();
+    expect(
+      validateCaptureSessions({ Editor: token, unused: 'private' }, target, 'capture-only', 1),
+    ).toEqual({ Editor: token });
+    const scoped = sign({ scopeId: id });
+    expect(validateCaptureSessions({ Editor: scoped }, target, 'capture-only', 1)).toEqual({
+      Editor: scoped,
+    });
+    for (const bad of [
+      sign({}, 'other-key'),
+      sign({ sessionId: undefined }),
+      sign({ roles: ['Editor', 'Administrator'] }),
+      sign({ roles: ['Other'] }),
+      sign({ exp: 0 }),
+      sign({ scopeId: 'untrusted-scope' }),
+      sign({ scopeId: { id } }),
+    ])
+      expect(() => validateCaptureSessions({ Editor: bad }, target, 'capture-only', 1)).toThrow();
   });
   it('accepts bounded relative inputs and rejects traversal, duplicate paths and external targets before Docker', async () => {
     validateCaptureInput(input);
@@ -155,6 +187,7 @@ describe('Docker runtime capture boundary', () => {
   it('interrupts an active Docker command and cleans only its invocation resources without the aborted signal', async () => {
     const controller = new AbortController();
     const docker = vi.fn(async (args: string[], _timeout: number, signal?: AbortSignal) => {
+      if (args[0] === 'image') throw new Error('Image not prepared.');
       if (args[0] === 'build') {
         controller.abort();
         signal!.throwIfAborted();

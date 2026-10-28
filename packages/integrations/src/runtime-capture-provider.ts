@@ -71,6 +71,11 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider {
   async capture(request: RuntimeCaptureRequest): Promise<RuntimeCaptureResult[]> {
     request.signal?.throwIfAborted();
     validateCaptureInput(request);
+    const localSessions = request.files.some(
+      (file) =>
+        file.path === 'docs/auth-profile.json' &&
+        JSON.parse(file.content).profile === 'LOCAL_AUTH_SESSION_V1',
+    );
     const prefix = `caseflow-capture-${randomUUID()}`;
     const jwtSecret = randomUUID();
     const network = `${prefix}-net`;
@@ -131,15 +136,23 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider {
         join(controller, 'Dockerfile.browser'),
         'FROM mcr.microsoft.com/playwright:v1.55.0-noble\nWORKDIR /opt/capture\nRUN npm install --ignore-scripts --no-audit --no-fund playwright@1.55.0\n',
       );
-      // Image construction contains trusted files only; generated code is never in this context.
-      await command(
-        ['build', '-t', nodeImage, '-f', join(controller, 'Dockerfile.node'), controller],
-        180_000,
-      );
-      await command(
-        ['build', '-t', browserImage, '-f', join(controller, 'Dockerfile.browser'), controller],
-        240_000,
-      );
+      // Like sandbox validation, reuse the versioned controller toolchain.
+      // No generated code is ever included in the image build context.
+      for (const [tag, dockerfile, timeout] of [
+        [nodeImage, 'Dockerfile.node', 180_000],
+        [browserImage, 'Dockerfile.browser', 240_000],
+      ] as const) {
+        const prepared = await command(['image', 'inspect', tag]).then(
+          () => true,
+          () => false,
+        );
+        request.signal?.throwIfAborted();
+        if (!prepared)
+          await command(
+            ['build', '-t', tag, '-f', join(controller, dockerfile), controller],
+            timeout,
+          );
+      }
       await command(['volume', 'create', volume]);
       await command([
         'create',
@@ -272,14 +285,46 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider {
         '240',
         'sh',
         '-ec',
-        'pnpm --filter ./apps/api exec prisma db push; node apps/api/dist/main.js & pnpm --filter ./apps/web start & wait',
+        `pnpm --filter ./apps/api exec prisma db push; ${localSessions ? 'node apps/api/dist/auth/capture-fixtures.js > /app/.capture-sessions.json; ' : ''}node apps/api/dist/main.js & pnpm --filter ./apps/web start & wait`,
       ]);
+      let sessionTokens: Record<string, string> = {};
+      if (localSessions) {
+        for (let attempt = 0; attempt < 40; attempt++) {
+          try {
+            const tokens = JSON.parse(
+              await command([
+                'exec',
+                app,
+                'node',
+                '-e',
+                "process.stdout.write(require('node:fs').readFileSync('/app/.capture-sessions.json','utf8'))",
+              ]),
+            );
+            sessionTokens = validateCaptureSessions(tokens, request.targets, jwtSecret);
+            break;
+          } catch {
+            request.signal?.throwIfAborted();
+            if (attempt === 39) throw new Error('Capture sessions unavailable.');
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+        }
+      }
       await writeFile(
         join(controller, 'plan.json'),
         JSON.stringify(
           request.targets.map((target) => ({
             ...target,
-            token: target.role ? createCaptureSessionToken(target.role, jwtSecret) : null,
+            token: target.role
+              ? localSessions
+                ? sessionTokens[target.role]
+                : createCaptureSessionToken(target.role, jwtSecret)
+              : null,
+            scopeId:
+              localSessions && target.role
+                ? (JSON.parse(
+                    Buffer.from(sessionTokens[target.role]!.split('.')[1]!, 'base64url').toString(),
+                  ).scopeId ?? null)
+                : null,
           })),
         ),
       );
@@ -416,4 +461,44 @@ export function assertCapturePng(png: Buffer) {
     png.readUInt32BE(20) !== 900
   )
     throw new Error('Invalid runtime screenshot.');
+}
+
+export function validateCaptureSessions(
+  value: unknown,
+  targets: readonly RuntimeCaptureTarget[],
+  secret: string,
+  now = Date.now(),
+): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new Error('Invalid capture sessions.');
+  const tokens = value as Record<string, unknown>;
+  const selected: Record<string, string> = {};
+  const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+  for (const role of new Set(targets.map((target) => target.role).filter(Boolean))) {
+    const token = tokens[role];
+    if (typeof token !== 'string' || token.length > 4000)
+      throw new Error('Invalid capture session.');
+    const parts = token.split('.');
+    if (parts.length !== 3) throw new Error('Invalid capture session.');
+    const header = JSON.parse(Buffer.from(parts[0]!, 'base64url').toString());
+    const claims = JSON.parse(Buffer.from(parts[1]!, 'base64url').toString());
+    const signature = createHmac('sha256', secret)
+      .update(parts.slice(0, 2).join('.'))
+      .digest('base64url');
+    if (
+      header.alg !== 'HS256' ||
+      signature !== parts[2] ||
+      !Array.isArray(claims.roles) ||
+      claims.roles.length !== 1 ||
+      claims.roles[0] !== role ||
+      !uuid.test(claims.sessionId ?? '') ||
+      !uuid.test(claims.sub ?? '') ||
+      (claims.scopeId !== undefined && !uuid.test(claims.scopeId)) ||
+      !Number.isSafeInteger(claims.exp) ||
+      claims.exp * 1000 <= now
+    )
+      throw new Error('Invalid capture session.');
+    selected[role] = token;
+  }
+  return selected;
 }

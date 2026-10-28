@@ -245,7 +245,11 @@ export class InternalConstructionJobsController {
       void this.userManuals.runJob(projectId, runId).catch(() => undefined);
       return;
     }
-    if (type === 'generation-run') return this.generationRuns.runJob(projectId, runId);
+    if (type === 'generation-run') {
+      // Design adaptation runs one screen at a time and may outlast the worker request.
+      void this.generationRuns.runJob(projectId, runId).catch(() => undefined);
+      return;
+    }
     // A validation can outlast the worker's HTTP timeout: acknowledge and run
     // it here. runJob always records a terminal status and never throws.
     // ponytail: a crash of the API mid-run leaves it RUNNING; add a stale-run

@@ -462,6 +462,7 @@ const enumValue = () =>
 const implementationFieldSchema = z
   .object({
     name: camelName(),
+    internal: z.boolean().optional(),
     type: z.enum(IMPLEMENTATION_FIELD_TYPES),
     required: z.boolean().default(true),
     unique: z.boolean().default(false),
@@ -472,6 +473,7 @@ const implementationFieldSchema = z
 const implementationRelationSchema = z
   .object({
     name: camelName(),
+    label: text(200).optional(),
     kind: z.enum(IMPLEMENTATION_RELATION_KINDS),
     targetEntityLocalId: localId(),
     required: z.boolean().default(false),
@@ -485,6 +487,15 @@ const implementationEntitySchema = z
     // DEC-121: the domain class (class diagram localId) this entity persists.
     classLocalId: localId().optional(),
     description: text(500).optional(),
+    operationScope: z
+      .object({
+        paths: z.array(z.array(camelName()).max(8)).min(1).max(8),
+        includeUnscoped: z.boolean().default(false),
+        ownerRelation: camelName().optional(),
+        actorRelation: camelName().optional(),
+      })
+      .strict()
+      .optional(),
     fields: z.array(implementationFieldSchema).min(1).max(60),
     relations: z.array(implementationRelationSchema).max(30).default([]),
     operations: z.array(z.enum(IMPLEMENTATION_CRUD_OPERATIONS)).max(5).default([]),
@@ -511,6 +522,31 @@ const implementationEndpointSchema = z
       'Use una ruta en minúsculas, p. ej. /orders/:orderId/confirm.',
     ),
     summary: text(300),
+    builtin: z
+      .enum([
+        'LOGIN',
+        'LOGOUT',
+        'AUTHORIZED_OPTIONS',
+        'ACCOUNT_DEACTIVATE',
+        'AUTH_CONTEXT',
+        'SELECT_SCOPE',
+      ])
+      .optional(),
+    scopeAccess: z.enum(['SELECTED', 'ASSIGNED_SET']).optional(),
+    dataAccess: z
+      .array(
+        z
+          .object({
+            entityLocalId: localId(),
+            operations: z
+              .array(z.enum(['READ', 'CREATE', 'UPDATE', 'DELETE']))
+              .min(1)
+              .max(4),
+          })
+          .strict(),
+      )
+      .max(100)
+      .optional(),
     entityLocalId: localId().optional(),
     roles: z.array(text(60)).max(20).default([]),
     relatedSourceCodes: z.array(text(40)).max(100).optional(),
@@ -535,10 +571,12 @@ const implementationRouteSchema = z
       'Use una ruta Next.js en minúsculas, p. ej. /orders/[orderId].',
     ),
     screenName: text(200),
+    roles: z.array(text(60)).max(20).optional(),
     // DEC-121: the UI blueprint screen (localId) this route renders.
     screenLocalId: localId().optional(),
     moduleLocalId: localId(),
     kind: z.enum(IMPLEMENTATION_ROUTE_KINDS),
+    builtinView: z.enum(['ACCOUNT_ACCESS']).optional(),
     entityLocalId: localId().optional(),
     actions: z.array(implementationRouteActionSchema).max(20).default([]),
     relatedSourceCodes: z.array(text(40)).max(100).optional(),
@@ -563,7 +601,61 @@ const implementationTestSchema = z
 export const implementationPlanBodySchema = z
   .object({
     authentication: z
-      .object({ required: z.boolean(), roles: z.array(text(60)).max(20).default([]) })
+      .object({
+        required: z.boolean(),
+        roles: z.array(text(60)).max(20).default([]),
+        local: z
+          .object({
+            scope: z
+              .object({
+                entityLocalId: localId(),
+                accountRelation: camelName(),
+                labelField: camelName(),
+                statusField: camelName(),
+                activeStatus: text(60),
+                displayNameField: camelName(),
+                displayFields: z
+                  .array(z.object({ field: camelName(), label: text(100) }).strict())
+                  .max(10)
+                  .default([]),
+                unrestrictedRoles: z.array(text(60)).min(1).max(20),
+                label: text(100).default('Ámbito de operación'),
+                pluralLabel: text(100).default('Ámbitos de operación'),
+                permissionRelation: camelName(),
+                permissionOperationField: camelName(),
+              })
+              .strict()
+              .optional(),
+            audit: z
+              .object({
+                entityLocalId: localId(),
+                userRelation: camelName(),
+                occurredAtField: camelName(),
+                resultField: camelName(),
+                correlationField: camelName(),
+              })
+              .strict()
+              .optional(),
+            userEntityLocalId: localId(),
+            loginField: camelName(),
+            passwordHashField: camelName(),
+            statusField: camelName(),
+            activeStatus: text(60),
+            inactiveStatus: text(60).optional(),
+            roleRelation: camelName(),
+            roleNameField: camelName(),
+            sessionEntityLocalId: localId(),
+            sessionUserRelation: camelName(),
+            startedAtField: camelName(),
+            lastActivityAtField: camelName(),
+            invalidatedAtField: camelName(),
+            sessionStatusField: camelName(),
+            activeSessionStatus: text(60),
+            closedSessionStatus: text(60),
+          })
+          .strict()
+          .optional(),
+      })
       .strict(),
     modules: z.array(implementationModuleSchema).min(1).max(40),
     entities: z.array(implementationEntitySchema).min(1).max(100),
@@ -688,16 +780,400 @@ export const implementationPlanContentSchema = implementationPlanBodySchema
         issue('Las operaciones no deben repetirse.', ['entities', i, 'operations']);
       checkRoles([...entity.readRoles, ...entity.writeRoles], ['entities', i]);
     });
+    const local = value.authentication.local;
+    const scope = local?.scope;
+    if (value.entities.some((entity) => entity.operationScope) && !scope)
+      issue('El alcance de las entidades requiere un perfil de contexto de operación.', [
+        'authentication',
+        'local',
+      ]);
+    if (local) {
+      const account = value.entities.find((e) => e.localId === local.userEntityLocalId);
+      const session = value.entities.find((e) => e.localId === local.sessionEntityLocalId);
+      const roleLink = account?.relations.find((r) => r.name === local.roleRelation);
+      const roleEntity = value.entities.find((e) => e.localId === roleLink?.targetEntityLocalId);
+      if (scope) {
+        const scopeEntity = value.entities.find((entity) => entity.localId === scope.entityLocalId);
+        const assigned = account?.relations.find(
+          (relation) => relation.name === scope.accountRelation,
+        );
+        const permissionLink = roleEntity?.relations.find(
+          (relation) => relation.name === scope.permissionRelation,
+        );
+        const permissionEntity = value.entities.find(
+          (entity) => entity.localId === permissionLink?.targetEntityLocalId,
+        );
+        if (
+          !scopeEntity ||
+          assigned?.kind !== 'MANY_TO_MANY' ||
+          assigned.targetEntityLocalId !== scope.entityLocalId ||
+          !scopeEntity.fields.some(
+            (field) =>
+              field.name === scope.labelField && field.type === 'STRING' && !field.internal,
+          ) ||
+          !scopeEntity.fields.some(
+            (field) => field.name === scope.statusField && ['STRING', 'ENUM'].includes(field.type),
+          ) ||
+          !account?.fields.some(
+            (field) =>
+              field.name === scope.displayNameField && field.type === 'STRING' && !field.internal,
+          ) ||
+          permissionLink?.kind !== 'MANY_TO_MANY' ||
+          !permissionEntity?.fields.some(
+            (field) =>
+              field.name === scope.permissionOperationField &&
+              field.type === 'STRING' &&
+              field.unique,
+          )
+        )
+          issue(
+            'El contexto requiere alcance, asignaciones, identificación y permisos por operación válidos.',
+            ['authentication', 'local', 'scope'],
+          );
+        if (
+          scope.displayFields.some(
+            (binding) =>
+              !scopeEntity?.fields.some(
+                (field) =>
+                  field.name === binding.field &&
+                  !field.internal &&
+                  ['STRING', 'TEXT', 'ENUM'].includes(field.type),
+              ),
+          )
+        )
+          issue(
+            'Los datos visibles del contexto deben enlazar campos públicos de texto del ámbito.',
+            ['authentication', 'local', 'scope', 'displayFields'],
+          );
+        checkRoles(scope.unrestrictedRoles, [
+          'authentication',
+          'local',
+          'scope',
+          'unrestrictedRoles',
+        ]);
+        if (
+          !value.authentication.roles.length ||
+          account?.writeRoles.some((role) => !scope.unrestrictedRoles.includes(role))
+        )
+          issue('La administración de cuentas requiere roles globales del perfil.', [
+            'authentication',
+            'local',
+            'scope',
+          ]);
+        for (const entity of [roleEntity, permissionEntity])
+          if (
+            entity?.operations.some((operation) =>
+              ['CREATE', 'UPDATE', 'DELETE'].includes(operation),
+            ) &&
+            (!entity.writeRoles.length ||
+              entity.writeRoles.some((role) => !scope.unrestrictedRoles.includes(role)))
+          )
+            issue('La administración de autorizaciones requiere roles globales explícitos.', [
+              'authentication',
+              'local',
+              'scope',
+            ]);
+        for (const [entity, name] of [
+          [roleEntity, local.roleNameField],
+          [permissionEntity, scope.permissionOperationField],
+        ] as const)
+          if (
+            entity?.fields.some((field) => field.name !== name && field.required) ||
+            entity?.relations.some(
+              (relation) => relation.kind !== 'MANY_TO_MANY' && relation.required,
+            )
+          )
+            issue(
+              'Los catálogos de autorización no pueden requerir datos de negocio adicionales.',
+              ['authentication', 'local', 'scope'],
+            );
+        const pathsToScope = (entityId: string, visited = new Set<string>()): string[][] => {
+          if (entityId === scope.entityLocalId) return [[]];
+          if (visited.has(entityId) || visited.size >= 8) return [];
+          const next = new Set(visited).add(entityId);
+          return value.entities
+            .find((entity) => entity.localId === entityId)!
+            .relations.filter((relation) => relation.kind !== 'MANY_TO_MANY')
+            .flatMap((relation) =>
+              pathsToScope(relation.targetEntityLocalId, next).map((path) => [
+                relation.name,
+                ...path,
+              ]),
+            );
+        };
+        for (const [index, entity] of value.entities.entries()) {
+          const requiredPaths = pathsToScope(entity.localId);
+          if (
+            requiredPaths.some(
+              (path) =>
+                !entity.operationScope?.paths.some(
+                  (declared) => JSON.stringify(path) === JSON.stringify(declared),
+                ),
+            )
+          )
+            issue('Debe declarar todas las rutas de propiedad hacia el contexto de operación.', [
+              'entities',
+              index,
+              'operationScope',
+            ]);
+          for (const path of entity.operationScope?.paths ?? []) {
+            let target = entity;
+            for (const part of path) {
+              const link = target.relations.find(
+                (relation) => relation.name === part && relation.kind !== 'MANY_TO_MANY',
+              );
+              const next = value.entities.find(
+                (candidate) => candidate.localId === link?.targetEntityLocalId,
+              );
+              if (!next) {
+                issue('La ruta de alcance debe recorrer relaciones singulares existentes.', [
+                  'entities',
+                  index,
+                  'operationScope',
+                ]);
+                break;
+              }
+              target = next;
+            }
+            if (target.localId !== scope.entityLocalId)
+              issue('La ruta de alcance debe terminar en la entidad del contexto.', [
+                'entities',
+                index,
+                'operationScope',
+              ]);
+          }
+          if (
+            entity.operationScope?.ownerRelation &&
+            !entity.relations.some(
+              (relation) =>
+                relation.name === entity.operationScope!.ownerRelation &&
+                relation.kind !== 'MANY_TO_MANY' &&
+                relation.targetEntityLocalId === local.userEntityLocalId,
+            )
+          )
+            issue('El propietario del registro debe referenciar la cuenta autenticada.', [
+              'entities',
+              index,
+              'operationScope',
+              'ownerRelation',
+            ]);
+          if (
+            entity.operationScope?.actorRelation &&
+            !entity.relations.some(
+              (relation) =>
+                relation.name === entity.operationScope!.actorRelation &&
+                relation.kind !== 'MANY_TO_MANY' &&
+                relation.targetEntityLocalId === local.userEntityLocalId,
+            )
+          )
+            issue('El autor del registro debe referenciar la cuenta autenticada.', [
+              'entities',
+              index,
+              'operationScope',
+              'actorRelation',
+            ]);
+        }
+      }
+      const login = account?.fields.find((f) => f.name === local.loginField);
+      const hash = account?.fields.find((f) => f.name === local.passwordHashField);
+      if (
+        !value.authentication.required ||
+        !account ||
+        !session ||
+        !login?.unique ||
+        !login.required ||
+        login.type !== 'STRING' ||
+        !hash?.internal ||
+        !hash.required ||
+        hash.type !== 'STRING'
+      )
+        issue(
+          'La autenticación local requiere cuenta, sesión, identificador único y hash interno de contraseña.',
+          ['authentication', 'local'],
+        );
+      if (
+        !account?.fields.some(
+          (f) => f.name === local.statusField && ['STRING', 'ENUM'].includes(f.type),
+        ) ||
+        roleLink?.kind !== 'MANY_TO_MANY' ||
+        !roleEntity?.fields.some(
+          (f) => f.name === local.roleNameField && f.unique && f.required && f.type === 'STRING',
+        )
+      )
+        issue('La autenticación local requiere estado y relación de roles con nombre único.', [
+          'authentication',
+          'local',
+        ]);
+      for (const name of [
+        local.startedAtField,
+        local.lastActivityAtField,
+        local.invalidatedAtField,
+      ])
+        if (!session?.fields.some((f) => f.name === name && f.type === 'DATETIME'))
+          issue('El modelo de sesión no contiene sus fechas de vigencia.', [
+            'authentication',
+            'local',
+          ]);
+      if (
+        !session?.fields.some(
+          (f) => f.name === local.sessionStatusField && ['STRING', 'ENUM'].includes(f.type),
+        ) ||
+        !session?.relations.some(
+          (r) =>
+            r.name === local.sessionUserRelation &&
+            r.kind === 'MANY_TO_ONE' &&
+            r.targetEntityLocalId === account?.localId,
+        )
+      )
+        issue('La sesión debe pertenecer a una cuenta y tener estado.', [
+          'authentication',
+          'local',
+        ]);
+      if (session?.operations.length)
+        issue('La sesión se administra por autenticación, sin CRUD público.', [
+          'authentication',
+          'local',
+        ]);
+      if (
+        new Set([local.loginField, local.passwordHashField, local.statusField]).size !== 3 ||
+        new Set([
+          local.startedAtField,
+          local.lastActivityAtField,
+          local.invalidatedAtField,
+          local.sessionStatusField,
+        ]).size !== 4
+      )
+        issue('Los campos de identidad y vigencia deben tener funciones distintas.', [
+          'authentication',
+          'local',
+        ]);
+      if (session?.fields.find((field) => field.name === local.invalidatedAtField)?.required)
+        issue('La fecha de invalidación debe permitir una sesión todavía activa.', [
+          'authentication',
+          'local',
+        ]);
+      if (local.audit) {
+        const audit = local.audit;
+        const events = value.entities.find((entity) => entity.localId === audit.entityLocalId);
+        if (
+          !events ||
+          !events.fields.some(
+            (field) => field.name === audit.occurredAtField && field.type === 'DATETIME',
+          ) ||
+          !events.fields.some(
+            (field) => field.name === audit.resultField && field.type === 'STRING',
+          ) ||
+          !events.fields.some(
+            (field) => field.name === audit.correlationField && field.type === 'STRING',
+          ) ||
+          !events.relations.some(
+            (relation) =>
+              relation.name === audit.userRelation &&
+              relation.kind === 'MANY_TO_ONE' &&
+              relation.targetEntityLocalId === account?.localId &&
+              !relation.required,
+          ) ||
+          events.operations.some((operation) => !['LIST', 'GET'].includes(operation))
+        )
+          issue(
+            'La auditoría de acceso requiere fechas, resultado, correlación y cuenta opcional, sin escritura CRUD pública.',
+            ['authentication', 'local', 'audit'],
+          );
+      }
+    }
     value.customEndpoints.forEach((endpoint, i) => {
+      if (endpoint.builtin) {
+        const expected = {
+          LOGIN: 'POST /auth/login',
+          LOGOUT: 'POST /auth/logout',
+          AUTHORIZED_OPTIONS: 'GET /auth/options',
+          ACCOUNT_DEACTIVATE: 'POST /auth/accounts/:userId/deactivate',
+          AUTH_CONTEXT: 'GET /auth/context',
+          SELECT_SCOPE: 'POST /auth/context',
+        }[endpoint.builtin];
+        if (endpoint.builtin === 'ACCOUNT_DEACTIVATE' && !local?.inactiveStatus)
+          issue('Indique el estado de cuenta desactivada.', [
+            'authentication',
+            'local',
+            'inactiveStatus',
+          ]);
+        if (
+          endpoint.builtin === 'ACCOUNT_DEACTIVATE' &&
+          (!endpoint.roles.length ||
+            endpoint.roles.some(
+              (role) =>
+                !value.entities
+                  .find((entity) => entity.localId === local?.userEntityLocalId)
+                  ?.writeRoles.includes(role),
+            ))
+        )
+          issue('Desactivar cuentas exige los roles administrativos de la cuenta.', [
+            'customEndpoints',
+            i,
+            'roles',
+          ]);
+        if (!local || expected !== endpoint.method + ' ' + endpoint.path)
+          issue('La operación integrada requiere autenticación local y su ruta contractual.', [
+            'customEndpoints',
+            i,
+          ]);
+        if (['AUTH_CONTEXT', 'SELECT_SCOPE'].includes(endpoint.builtin) && !scope)
+          issue('Esta operación requiere contexto de operación.', [
+            'customEndpoints',
+            i,
+            'builtin',
+          ]);
+      }
+      if (
+        endpoint.scopeAccess === 'ASSIGNED_SET' &&
+        (!scope ||
+          endpoint.method !== 'GET' ||
+          !endpoint.roles.length ||
+          endpoint.roles.some((role) => !scope.unrestrictedRoles.includes(role)))
+      )
+        issue('La consulta entre alcances requiere GET y roles globales explícitos.', [
+          'customEndpoints',
+          i,
+          'scopeAccess',
+        ]);
+      if (scope && !endpoint.builtin && !endpoint.dataAccess)
+        issue('La acción de negocio requiere capacidades de datos explícitas.', [
+          'customEndpoints',
+          i,
+          'dataAccess',
+        ]);
       if (!modules.has(endpoint.moduleLocalId))
         issue('El endpoint referencia un módulo inexistente.', ['customEndpoints', i]);
       if (endpoint.entityLocalId && !entities.has(endpoint.entityLocalId))
         issue('El endpoint referencia una entidad inexistente.', ['customEndpoints', i]);
       checkRoles(endpoint.roles, ['customEndpoints', i, 'roles']);
+      for (const access of endpoint.dataAccess ?? []) {
+        if (
+          !entities.has(access.entityLocalId) ||
+          access.entityLocalId === local?.sessionEntityLocalId
+        )
+          issue('La capacidad de datos debe referenciar una entidad de negocio, no sesiones.', [
+            'customEndpoints',
+            i,
+            'dataAccess',
+          ]);
+      }
     });
     if (!uniqueBy(value.customEndpoints, (e) => `${e.method} ${e.path}`))
       issue('Cada endpoint (método y ruta) debe ser único.', ['customEndpoints']);
     value.routes.forEach((route, i) => {
+      if (
+        route.builtinView === 'ACCOUNT_ACCESS' &&
+        (!scope ||
+          route.entityLocalId !== local?.userEntityLocalId ||
+          !route.roles?.length ||
+          route.roles.some((role) => !scope.unrestrictedRoles.includes(role)))
+      )
+        issue(
+          'La edición de acceso requiere la cuenta del perfil y roles administrativos explícitos.',
+          ['routes', i, 'builtinView'],
+        );
+      checkRoles(route.roles ?? [], ['routes', i, 'roles']);
       if (!modules.has(route.moduleLocalId))
         issue('La ruta referencia un módulo inexistente.', ['routes', i]);
       if (route.entityLocalId && !entities.has(route.entityLocalId))
