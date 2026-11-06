@@ -3,3 +3,10 @@ Copyright 2026 Andriu Dex
 
 This product is licensed under the Apache License, Version 2.0.
 See the LICENSE file for the full license text.
+
+Third-party component: runtime-capture-seccomp.json
+Derived from Playwright v1.55.0, utils/docker/seccomp_profile.json.
+Playwright Copyright (c) Microsoft Corporation.
+Licensed under the Apache License, Version 2.0.
+Source: https://github.com/microsoft/playwright/blob/v1.55.0/utils/docker/seccomp_profile.json
+Local modifications: allow chroot inside Chromium's user namespace and normalize formatting.

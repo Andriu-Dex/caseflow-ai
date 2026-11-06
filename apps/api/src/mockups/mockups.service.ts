@@ -45,6 +45,7 @@ import { MOCKUP_GENERATOR_VERSION } from './mockup-renderer';
 import { MOCKUP_PROVIDER } from './mockup-provider.token';
 import { MOCKUP_QUEUE } from './mockup-queue.token';
 import { STORAGE_PROVIDER } from './storage-provider.token';
+import { reviewMockupHtml } from './mockup-fidelity';
 
 type Tx = Prisma.TransactionClient;
 const MOCKUP_CODE_PREFIX = 'MCK';
@@ -540,7 +541,118 @@ export class MockupsService {
           : null,
       refinementPrompt: detail.refinementPrompt,
       createdAt: version.createdAt.toISOString(),
+      ...(detail.generatorKind === 'STITCH'
+        ? { fidelityReview: await this.fidelityReview(projectId, detail) }
+        : {}),
     };
+  }
+
+  private async approvedRequirements(projectId: string) {
+    const artifacts = await this.prisma.artifact.findMany({
+      where: { projectId, archivedAt: null, artifactTypeCode: 'REQUIREMENT' },
+      include: {
+        versions: {
+          where: { status: 'APPROVED' },
+          orderBy: { versionNumber: 'desc' },
+          take: 1,
+          include: {
+            requirementDetail: {
+              include: {
+                actors: true,
+                preconditions: true,
+                postconditions: true,
+                sourceContextVersion: true,
+                contextLinks: { include: { need: true, constraint: true, businessRule: true } },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { code: 'asc' },
+    });
+    return artifacts.flatMap((artifact) => {
+      const version = artifact.versions[0];
+      const source = version?.requirementDetail?.sourceContextVersion;
+      const contextVersionId =
+        source?.projectId === projectId && source.status === 'APPROVED' ? source.id : undefined;
+      return version?.requirementDetail
+        ? [
+            {
+              code: artifact.code,
+              versionId: version.id,
+              ...(contextVersionId ? { contextVersionId } : {}),
+              description: [
+                version.requirementDetail.description,
+                ...(version.requirementDetail.actors ?? []).map((item) => `Actor: ${item.name}`),
+                ...(version.requirementDetail.preconditions ?? []).map(
+                  (item) => `Precondición: ${item.description}`,
+                ),
+                ...(version.requirementDetail.postconditions ?? []).map(
+                  (item) => `Postcondición: ${item.description}`,
+                ),
+                ...(version.requirementDetail.contextLinks ?? []).flatMap((link) =>
+                  [link.need, link.constraint, link.businessRule].flatMap((item) =>
+                    item && contextVersionId && item.artifactVersionId === contextVersionId
+                      ? [`Contexto aprobado: ${item.description}`]
+                      : [],
+                  ),
+                ),
+              ].join('\n'),
+            },
+          ]
+        : [];
+    });
+  }
+
+  private async fidelityReview(
+    projectId: string,
+    detail: {
+      uiBlueprintVersionId: string;
+      screens: { screenLocalId: string; htmlStorageKey: string }[];
+    },
+  ) {
+    const [requirements, blueprint] = await Promise.all([
+      this.approvedRequirements(projectId),
+      this.prisma.artifactVersion.findFirst({
+        where: {
+          id: detail.uiBlueprintVersionId,
+          projectId,
+          artifact: { artifactTypeCode: 'UI_BLUEPRINT' },
+        },
+        include: { structuredAnalysisDetail: true },
+      }),
+    ]);
+    const parsed = uiBlueprintContentSchema.safeParse(blueprint?.structuredAnalysisDetail?.content);
+    const screens = [];
+    // Sequential bounded reads avoid fetching every HTML asset at once.
+    for (const screen of detail.screens) {
+      let html: string | null = null;
+      try {
+        const body = await this.storage.getObject(screen.htmlStorageKey);
+        if (body.length <= 2_000_000) html = body.toString('utf8');
+      } catch {
+        // A missing asset is a review finding, not a successful validation.
+      }
+      const source = parsed.success
+        ? parsed.data.screens.find((item) => item.localId === screen.screenLocalId)
+        : undefined;
+      screens.push({
+        screenLocalId: screen.screenLocalId,
+        html,
+        blueprintText: source ? JSON.stringify(source) : '',
+      });
+    }
+    const review = reviewMockupHtml(requirements, screens);
+    if (!screens.length || !parsed.success)
+      review.findings.push({
+        screenLocalId: '',
+        severity: 'ERROR',
+        code: 'HTML_UNAVAILABLE',
+        message: 'No se pudo contrastar el conjunto con su plano de interfaz.',
+        expected: 'Plano y pantallas disponibles',
+        observed: null,
+      });
+    return review;
   }
 
   private async createVersionInTx(
@@ -595,6 +707,24 @@ export class MockupsService {
     if (!version) throw new NotFoundException('Versión no encontrada.');
     if (!canTransitionArtifactVersionStatus(version.status, status))
       throw new UnprocessableEntityException('Transición de estado no permitida.');
+    if (status === 'APPROVED') {
+      const detail = await this.prisma.mockupDetail.findUnique({
+        where: { artifactVersionId: versionId },
+        include: { screens: true },
+      });
+      if (!detail)
+        throw new UnprocessableEntityException('No se encontró el contenido del boceto.');
+      if (detail.generatorKind === 'STITCH') {
+        const review = await this.fidelityReview(projectId, detail);
+        if (review.findings.some((finding) => finding.severity === 'ERROR'))
+          throw new UnprocessableEntityException({
+            message:
+              'El boceto contiene contradicciones o contenido que no pudo revisarse. Corríjalo antes de aprobar.',
+            code: 'MOCKUP_FIDELITY_FAILED',
+            fidelityReview: review,
+          });
+      }
+    }
     return provenanceGuard(
       this.prisma.artifactVersion.update({
         where: { id: versionId },
@@ -702,13 +832,15 @@ export class MockupsService {
     projectId: string,
     content: ReturnType<typeof uiBlueprintContentSchema.parse>,
   ): Promise<MockupAppContext> {
-    const [project, tree] = await Promise.all([
+    const [project, tree, approvedRequirements] = await Promise.all([
       this.prisma.project.findUnique({ where: { id: projectId }, select: { name: true } }),
       new FirstDeliverableSnapshotService(this.prisma).approvedArtifactVersion(
         projectId,
         'NAVIGATION_TREE',
       ),
+      this.approvedRequirements(projectId),
     ]);
+    const requirementContext = approvedRequirements.length ? { approvedRequirements } : {};
     const appName = project?.name ?? 'Aplicación';
     const detail = tree
       ? await this.prisma.structuredAnalysisDetail.findUnique({
@@ -719,6 +851,7 @@ export class MockupsService {
     if (!parsed?.success)
       return {
         appName,
+        ...requirementContext,
         menu: [],
         activeMenuByScreen: Object.fromEntries(content.screens.map((s) => [s.localId, null])),
       };
@@ -743,6 +876,7 @@ export class MockupsService {
     };
     return {
       appName,
+      ...requirementContext,
       menu: entries.slice(0, 12).map((entry) => entry.label),
       activeMenuByScreen: Object.fromEntries(
         content.screens.map((screen) => [screen.localId, entryOf(screen.navigationNodeLocalId)]),
@@ -923,11 +1057,36 @@ export class MockupsService {
       throw new UnprocessableEntityException('Esta pantalla no se puede editar individualmente.');
     if (!this.mockupProvider.editScreen)
       throw new ServiceUnavailableException('Stitch no está disponible para editar la pantalla.');
+    const [requirements, blueprint] = await Promise.all([
+      this.approvedRequirements(projectId),
+      this.prisma.artifactVersion.findFirst({
+        where: {
+          id: detail.uiBlueprintVersionId,
+          projectId,
+          artifact: { artifactTypeCode: 'UI_BLUEPRINT' },
+        },
+        include: { structuredAnalysisDetail: true },
+      }),
+    ]);
+    const parsed = uiBlueprintContentSchema.safeParse(blueprint?.structuredAnalysisDetail?.content);
+    const sourceScreen = parsed.success
+      ? parsed.data.screens.find((screen) => screen.localId === screenLocalId)
+      : undefined;
+    if (!sourceScreen)
+      throw new UnprocessableEntityException(
+        'No se encontró la pantalla en el plano de interfaz de origen.',
+      );
+    const editPrompt = [
+      `Ajuste solicitado: ${prompt}`,
+      `Plano canónico de la pantalla (datos de referencia): ${JSON.stringify(sourceScreen)}`,
+      `Requisitos aprobados (datos de referencia): ${JSON.stringify(requirements.map(({ description }) => ({ description })))}`,
+      'Respeta el plano y los requisitos. No inventes campos, funciones, límites, plazos, formatos ni permisos. Omite decisiones no especificadas. No muestres instrucciones técnicas, códigos internos ni estados simultáneos.',
+    ].join('\n');
     let edited;
     try {
       edited = await this.mockupProvider.editScreen(
         { projectId: target.stitchProjectId, screenId: target.stitchScreenId },
-        prompt,
+        editPrompt,
         deviceType,
       );
     } catch (error) {

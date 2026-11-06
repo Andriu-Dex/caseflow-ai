@@ -5574,6 +5574,10 @@ Stitch será el proveedor preferente cuando esté disponible y resulte adecuado.
 
 CASEFlow AI MUST NOT depender de Stitch para conservar o interpretar el diseño.
 
+La generación visual y la edición individual reciben las reglas de los requisitos aprobados vigentes del mismo proyecto, con actores, precondiciones, postcondiciones y los elementos de contexto aprobado enlazados. El proveedor no debe completar decisiones ausentes con plazos, campos, funciones o formatos inventados. El plano continúa siendo canónico.
+
+La vista previa de bocetos externos incluye una revisión heurística del HTML almacenado, con las versiones de requisitos y contexto contrastadas y hallazgos por pantalla. Contradicciones explícitas de máximos comparables o conservación inferior a la exigida bloquean aprobar; plazos o máximos sin respaldo identificable generan avisos. HTML o plano no disponibles bloquean aprobar el boceto externo. El esquema interno sigue disponible sin proveedor externo. No se ejecuta el HTML para comprobarlo. Esta revisión no certifica significado general, texto rasterizado, campos, navegación, permisos ni funcionalidad; sigue siendo obligatoria la revisión humana en las rutas que la requieren. Los hallazgos se recalculan contra los requisitos aprobados vigentes y no modifican versiones históricas.
+
 Contexto recomendado para un proveedor externo:
 
 ```text
@@ -7271,6 +7275,11 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-147 | Las pantallas de un boceto comparten el nombre de la aplicación (el del proyecto) y el menú principal de la navegación aprobada, con la entrada de cada pantalla resaltada; no se pide al generador datos de seguridad, usuarios ni fechas inventados, códigos internos ni varias vistas de estados (§221.27) | Accepted |
 | DEC-148 | Generar un boceto con Stitch se confirma antes (pantallas, tiempo estimado y uso de créditos) y una generación en curso se puede cancelar: las pantallas ya dibujadas se conservan y se reanuda con las que faltan (§221.27) | Accepted |
 | DEC-149 | Las generaciones por lotes (requisitos, casos de uso, modelo de datos y artefactos de diseño estructurados) se pueden cancelar: el trabajo pasa a `CANCELLED`, se detiene antes del siguiente lote, conserva los lotes completados y se reanuda como uno fallido (§221.27) | Accepted |
+| DEC-152 | Cada snapshot validado propone un manual visual versionado, con revisión humana y descarga HTML/PDF; la entrega conjunta conserva el ZIP original y añade el manual aprobado y un manifiesto (§221.28, ADR-013) | Accepted |
+| DEC-153 | El manual incorpora capturas reales del snapshot mediante un RuntimeCaptureProvider aislado en Docker, con evidencia privada por rol, nuevas versiones y continuidad del esquema ante fallos (§221.29, ADR-014) | Accepted |
+| DEC-154 | La versión 2 de CASEFLOW_WEB_TS_V1 incorpora enlaces explícitos de autenticación local, composición validada desde el diseño congelado y comprobaciones de entrega que distinguen fidelidad estructural de revisión visual (§221.30, ADR-015) | Accepted |
+| DEC-155 | El contexto de operación del proyecto generado declara permisos, asignaciones y rutas de propiedad; el servidor verifica su alcance en cada solicitud y la interfaz conserva únicamente contextos autorizados (§221.31, ADR-016) | Accepted |
+| DEC-156 | Las acciones personalizadas admiten contratos estructurados compartidos entre validación, OpenAPI, cliente y formularios; las revisiones y claves de reintento se enlazan explícitamente y las comprobaciones de alcance utilizan la misma transacción (§221.32, ADR-017) | Accepted |
 
 ---
 
@@ -7891,6 +7900,12 @@ Se resuelve cada pendiente mediante una aprobación posterior o «Confirmar que 
 
 El servidor bloquea congelar diseño y construir mientras quedan pasos por rehacer. La excepción interna de la orquestación ordenada EXPRESS/BUILD_ONLY no puede activarse desde la API pública. La matriz de coherencia avisa de RNF sin cobertura explícita en componentes, nodos o pantallas, sin exigir que cada requisito aparezca en todos los diagramas ni considerar una referencia prueba semántica de cumplimiento.
 
+Las comprobaciones puntuales de compromisos se muestran por separado de la cobertura declarada. Comparan conservación en días/horas y máximos expresados en formatos reconocidos, y señalan actores o pasos de consulta propia incompatibles con los requisitos enlazados. Cada hallazgo identifica el requisito, el valor esperado y el observado; los formatos ambiguos requieren revisión humana y no se interpretan como cumplimiento certificado. Las contradicciones numéricas explícitas del diseño bloquean su aprobación y congelación en proyectos con coherencia obligatoria; los avisos de actores y alcance requieren revisión. No se reescriben versiones históricas ni se considera que estas comprobaciones sustituyan las pruebas ejecutables del proyecto generado.
+
+La preparación incorpora los errores de consistencia a la etapa que debe resolverlos: la falta de caso de uso pertenece a Casos de uso, no invalida la existencia de requisitos ya aprobados. La cobertura de bocetos usa únicamente versiones aprobadas vigentes de artefactos no archivados. Un boceto interno con SVG completo cubre las pantallas de su versión exacta del plano de interfaz; un resultado externo debe representar cada pantalla. Los modelos de datos que solo describen identidades muestran preguntas de revisión antes de aceptación/aprobación y en la matriz: la persona decide sus datos de captura e identificación o conserva deliberadamente un modelo conceptual mínimo, sin campos inventados automáticamente.
+
+La generación por lotes de casos de uso `use-cases.generate@5` conserva las referencias RNF explícitas cuando una garantía aparece en sus flujos o condiciones, además de al menos un requisito objetivo. No se exige crear un caso de uso independiente por RNF ni vincularlos todos indiscriminadamente; `@4` y anteriores se conservan para auditoría.
+
 ## 221.18 Gestión de fuentes (DEC-137)
 
 - **Reemplazar el archivo:** `POST …/sources/:id/file` crea la versión siguiente de la misma fuente (mismo código) en borrador, con las mismas validaciones que al subirla (tipo, extensión, contenido, tamaño). El archivo debe ser del mismo tipo de fuente; las versiones anteriores conservan el suyo. Se extrae e indexa como una subida nueva, necesita su propia aprobación y queda auditado (`SOURCE_FILE_REPLACED`). No se permite en una fuente archivada ni mientras se procesa el archivo actual.
@@ -7989,6 +8004,60 @@ El servidor bloquea congelar diseño y construir mientras quedan pasos por rehac
 - **Confirmar y cancelar (DEC-148):** un boceto de decenas de pantallas tarda decenas de minutos y gasta créditos, así que «Generar boceto» abre antes un aviso con el número de pantallas, el tiempo estimado y el uso de créditos. Una generación en cola o en curso se cancela con `POST /projects/{projectId}/mockups/jobs/{jobId}/cancel` (estado `CANCELLED`): el trabajo comprueba el estado antes de cada llamada a Stitch, las que ya estaban en vuelo terminan y no se inicia ninguna más; el cierre del trabajo no sobrescribe `CANCELLED`, las pantallas guardadas se conservan y volver a generar el mismo boceto reanuda con las que faltan.
 - **Cancelar un trabajo por lotes (DEC-149):** `POST …/generation-jobs/{jobId}/cancel` (mismos roles que iniciar la generación) deja el trabajo en cola o en curso en `CANCELLED` y lo anota en la auditoría. La ejecución en el proceso consulta la marca de cancelación al comenzar cada lote, así que la llamada a la IA ya iniciada termina pero no se inicia otro lote; lo guardado por los lotes completados se conserva y volver a generar la misma selección reanuda el trabajo. Mientras la ejecución anterior no se haya detenido, reanudar responde con un conflicto. No se cambia el contexto del proyecto (un único paso).
 
+## 221.28 Manual visual y entrega del software generado (DEC-152, ADR-013)
+
+Cada snapshot de software validado encola una propuesta determinista de manual de usuario, con estado independiente y reintento sin reconstrucción. La consulta se ofrece desde «Manual de usuario y entrega» en el resultado de construcción. No modifica el instalable ni exige desplegar una edición web alojada.
+
+El manual utiliza el ImplementationPlan exacto del snapshot, el plano de interfaz de su Design Baseline y los archivos de esa generación. Es un artefacto `USER_MANUAL` con versiones históricas inmutables y contenido relacional: introducción, tareas por pantalla, roles, pasos y resultados que comprobar. Cada tarea enlaza su archivo generado. Las explicaciones son candidatas; la validación técnica del código no acredita que los pasos hayan sido ejecutados por una persona.
+
+Se muestran esquemas numerados y tarjetas de pasos, sin hacer pasar un boceto por una captura real. Las capturas automáticas de aplicaciones en ejecución se incorporan mediante DEC-153 (§221.29). Antes de aprobar se deben revisar y marcar todas las tareas en la aplicación correspondiente. EDITOR, REVIEWER y OWNER pueden revisar el manual; VIEWER solo consulta y descarga. La generación/reintento requiere OWNER o EDITOR. La aprobación humana del manual es independiente de las aprobaciones automáticas de diseño en la ruta BUILD_ONLY.
+
+Se exporta HTML navegable sin conexión y PDF, con indicación de borrador cuando falta aprobación. El paquete completo requiere un manual aprobado y contiene `software.zip`, `manual/index.html`, `manual/manual.pdf` y un manifiesto de hashes y versiones. El ZIP original y `GeneratedProjectSnapshot` no se sobrescriben. Se avisa cuando existe una versión de software más reciente; su documentación se genera por separado. Las descargas y revisiones se auditan y respetan la pertenencia al proyecto.
+
+## 221.29 Capturas reales del manual (DEC-153, ADR-014)
+
+`RuntimeCaptureProvider` reconstruye el ZIP exacto y verificado del snapshot con su lockfile y captura las rutas del manual en Docker. El controlador fija los comandos y utiliza volúmenes desechables, límites de recursos y una red interna aislada sin puertos publicados. No ejecuta Dockerfiles o Compose generados, no monta el equipo ni proporciona secretos del producto. La instalación de dependencias precede a la copia del código; la compilación no tiene acceso a red. Playwright se ejecuta en un contenedor separado con usuario sin privilegios, seccomp y sandbox de Chromium.
+
+El perfil `EMPTY_DATABASE_DESKTOP_V1` utiliza una base vacía, sesiones de prueba por rol y resolución 1440 × 900. No ejecuta flujos de negocio completos. Las rutas con parámetros, los errores y las limitaciones se explicitan; una imagen no constituye aprobación ni prueba de todas las instrucciones.
+
+El trabajo de captura es independiente del estado READY. Se encola tras generar el manual y puede reintentarse por OWNER o EDITOR. Mientras está activo no se inicia otro ni se revisa o aprueba el manual. Las capturas producen una nueva versión candidata, preservan el texto más reciente y reinician la verificación humana. Las versiones aprobadas anteriores conservan su contenido y sus imágenes.
+
+OWNER y EDITOR pueden cancelar la captura en cola o en ejecución. Durante la limpieza se muestra CANCELLING y se bloquean nuevos intentos. CANCELLED conserva el manual anterior y descarta la evidencia parcial; la cancelación se audita y se serializa con la publicación final.
+
+Las imágenes privadas se modelan relacionalmente por tarea, conjunto, rol, perfil, estado, hash y dimensiones. Se autorizan por proyecto, snapshot y versión, y se verifican al descargarlas. HTML/PDF incorporan las imágenes; el ZIP conjunto añade los PNG y sus hashes sin cambiar el archivo original del software. El esquema sigue disponible si la captura falla. El historial gráfico solo se elimina dentro de la eliminación autorizada del proyecto completo.
+
+## 221.30 Fidelidad y autenticación del software generado (DEC-154, ADR-015)
+
+`CASEFLOW_WEB_TS_V1` conserva su versión 1 para historial e incorpora la versión 2 con el mismo stack. El catálogo añade `argon2@0.45.1` para credenciales locales. `ImplementationPlan.authentication.local` identifica cuentas, roles y sesiones mediante referencias verificadas; los campos internos nunca forman parte de los contratos públicos. El acceso valida contraseña y estado, cada petición valida la sesión persistida y los roles actuales, y el cierre o cambio de credenciales revoca sesiones. Las opciones de navegación proceden del servidor. No se genera acceso de desarrollo para este perfil.
+
+La composición externa utiliza únicamente el HTML del boceto y el plano de la línea base congelada del proyecto. El HTML es entrada no confiable y no se ejecuta. El adaptador propone un árbol declarativo sobre controles existentes; CASEFlow comprueba cobertura, jerarquía, formularios y estilos y aplica la composición mediante AST. No inventa datos ni sustituye funcionalidades faltantes por decoración. Las limitaciones funcionales bloquean la adaptación. El renderizador interno conserva una ruta determinista sin proveedor externo.
+
+`docs/design-fidelity.json` conserva versiones y hashes de páginas y componentes compartidos. Los checkpoints de presentación pertenecen al trabajo y solo se reutilizan con los mismos insumos. El manifiesto demuestra procedencia y conservación estructural; no certifica equivalencia visual ni funcionamiento completo. Las capturas del manual siguen representando el código ejecutado, no las imágenes del boceto.
+
+Las acciones personalizadas reciben la identidad autenticada y el contexto histórico del análisis enlazado al plan de generación congelado. La versión 2 rechaza planes de acceso incompletos, acciones de negocio no implementadas y modificaciones de presentación no revisadas. READY exige los controles de validación establecidos; una compilación correcta por sí sola no autoriza la entrega.
+
+Para capturar aplicaciones con sesiones persistidas, el controlador ejecuta un comando fijo de cuentas temporales dentro del entorno Docker desechable y verifica firma, sesión, expiración y rol. No utiliza cuentas ni secretos del producto. Los límites de intentos locales al proceso y las capacidades funcionales aún no representadas deben documentarse explícitamente, sin atribuir al perfil garantías de autorización de negocio que no haya verificado.
+
 ## 221.4 Fuera de alcance de estas extensiones
 
 Interfaz bilingüe completa (EN/ES) y vista previa en vivo del software generado (§177.2): planificadas para después de cerrar v2. El detalle de cada una y del resto de lo pendiente está en `docs/V3_PROPOSALS.md`.
+
+## 221.31 Contexto de operación del proyecto generado (DEC-155, ADR-016)
+
+El perfil `authentication.local.scope` del TargetTemplate versión 2 define identidad visible, roles, permisos por operación y ámbitos asignados desde enlaces del ImplementationPlan. La selección de ámbito se verifica contra la sesión y la persistencia actuales en cada solicitud. Las entidades declaran todas las rutas singulares de propiedad y las acciones personalizadas sus capacidades de lectura y escritura. La persistencia aplica esas restricciones también a consultas agregadas y operaciones masivas. Las consultas entre ámbitos requieren una operación de solo lectura y roles globales explícitos.
+
+El frontend conserva el contexto verificado, permite seleccionar un ámbito autorizado y elimina consultas y estado al cambiarlo. La vista administrativa guarda relaciones de roles, permisos compartidos por rol y ámbitos; no implementa excepciones individuales. La inicialización conserva las políticas ya configuradas salvo una restauración administrativa explícita. El mecanismo es genérico: las entidades y etiquetas de sucursal proceden de los datos del proyecto.
+
+Las proyecciones o escrituras anidadas no soportadas fallan explícitamente; la lógica utiliza consultas separadas y transacciones. Los controles de alcance no sustituyen las pruebas de reglas de negocio ni la revisión visual. `GET /auth/context` sirve a la interfaz compartida y no exige añadir una acción ficticia al plano. Las versiones históricas se conservan y la entrega solo puede formalizarse tras superar los controles obligatorios.
+
+## 221.32 Contratos de acciones del proyecto generado (DEC-156, ADR-017)
+
+El ImplementationPlan puede declarar entradas, filtros y respuestas estructurados para acciones personalizadas. Una única definición acotada origina Zod, OpenAPI, los tipos del cliente y los formularios. El servidor valida entradas y salidas, mantiene autorización y alcance y rechaza resultados incompatibles sin exponer detalles internos. Los importes se transportan como cadenas decimales exactas; la regla de cálculo debe proceder del plan aprobado.
+
+Los enlaces de entrada identifican una consulta de revisión de la misma pantalla o una clave UUID de reintento. Pueden exigir una condición booleana y navegación posterior explícita. Las escrituras invalidan revisiones y los cambios pendientes impiden confirmar con una revisión obsoleta. Estas ayudas de interfaz no sustituyen la comprobación transaccional de estado, versión e idempotencia. Las referencias usan consultas autorizadas y las respuestas tardías de otro contexto no se publican.
+
+Las revisiones POST con cuerpo estructurado pueden alimentar esos enlaces únicamente con el perfil de alcance activo y capacidades explícitas exclusivamente de lectura, garantizadas por la persistencia. Una revisión con permisos de escritura no es una fuente válida para ese enlace.
+
+Una decisión humana explícita puede desactivar una acción con una explicación y respuesta 403. Las salidas de planificación automática no pueden usar esa posibilidad para eludir requisitos. Las entidades pueden declarar restricciones únicas compuestas. Las comprobaciones de relaciones y las escrituras con alcance usan el mismo cliente transaccional, limitado a los delegados admitidos. Los planes históricos permanecen intactos y la verificación genérica del generador se distingue de las pruebas del proyecto real.
+
+Las capacidades repetidas de una misma entidad se unen sin descartar operaciones declaradas. La reparación acotada de errores TypeScript en métodos de acciones puede devolver únicamente el cuerpo diagnosticado, conservando el resto del archivo mediante límites AST. Mantiene el máximo de tres rondas y todos los controles posteriores; no autoriza cambiar firmas, imports, pruebas ni requisitos para ocultar errores.

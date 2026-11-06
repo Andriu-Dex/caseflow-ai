@@ -7,6 +7,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   Archive,
+  BookOpen,
   ChevronDown,
   ChevronRight,
   ArrowRight,
@@ -449,6 +450,16 @@ function ValidationAttemptItem({
               <Download className="size-4" aria-hidden="true" />
               Descargar ZIP
             </AuthedDownloadButton>
+            <Link
+              href={`/construction/user-manual?snapshotId=${attempt.snapshotId}`}
+              className="inline-flex items-center gap-1.5 h-8 rounded-lg border border-border/80 bg-background px-3 text-xs font-semibold text-foreground shadow-2xs hover:border-indigo-500/40 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all duration-150"
+            >
+              <BookOpen
+                className="size-3.5 text-indigo-500 dark:text-indigo-400 shrink-0"
+                aria-hidden="true"
+              />
+              Manual de usuario
+            </Link>
           </div>
         ) : null}
       </div>

@@ -168,9 +168,35 @@ export class ReadinessService {
             : 'Revisar primero el paso anterior pendiente.';
       }
     }
+    const consistencyIssues = this.consistency
+      ? (await this.consistency.generateReport(projectId)).issues
+      : [];
+    const stageByType: Record<string, string> = {
+      REQUIREMENT: 'REQUIREMENTS',
+      USE_CASE: 'USE_CASES',
+      NAVIGATION_TREE: 'NAVIGATION',
+      MOCKUP: 'MOCKUPS',
+    };
+    for (const issue of consistencyIssues) {
+      const affected = stages.find(
+        (item) =>
+          item.key ===
+          (issue.chain === 'REQUIREMENT_USE_CASE_SCREEN' && issue.artifactType === 'REQUIREMENT'
+            ? 'USE_CASES'
+            : (stageByType[issue.artifactType ?? ''] ?? issue.artifactType)),
+      );
+      if (!affected) continue;
+      if (issue.severity === 'ERROR') {
+        affected.satisfied = false;
+        affected.blockers.push(issue.message);
+        affected.nextAction = 'Corrija los elementos señalados en la matriz de coherencia.';
+      } else if (issue.severity === 'WARNING') affected.warnings.push(issue.message);
+    }
     const blockers = stages.flatMap((s) => s.blockers);
     const warnings = stages.flatMap((s) => s.warnings);
-    const ready = stages.every((s) => s.satisfied);
+    const ready =
+      stages.every((s) => s.satisfied) &&
+      !consistencyIssues.some((issue) => issue.severity === 'ERROR');
 
     return { ready, stages, blockers, warnings };
   }

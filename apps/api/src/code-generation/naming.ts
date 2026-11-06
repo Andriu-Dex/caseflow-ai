@@ -33,3 +33,13 @@ export class PlanGenerationError extends Error {
     this.name = 'PlanGenerationError';
   }
 }
+
+export function customEndpointOperationId(endpoint: { method: string; path: string }): string {
+  const words = endpoint.path
+    .split('/')
+    .filter((segment) => segment && !segment.startsWith(':'))
+    .flatMap((segment) => segment.split('-'))
+    .map(upperFirst)
+    .join('');
+  return `${endpoint.method.toLowerCase()}${words}`;
+}

@@ -1,0 +1,954 @@
+{
+  "project": "RestGuestMateos",
+  "branch": "feat/visual-user-manual",
+  "implementationPlan": {
+    "version": 10,
+    "id": "5d444597-efe0-4427-8b93-fae0d0b2c3bc",
+    "status": "APPROVED"
+  },
+  "designBaselineId": "ac298b2c-ba49-443a-a2c1-99b8d8a8ecc4",
+  "finalGeneration": {
+    "id": "1fdfc910-b929-42df-8048-8821a932b2d1",
+    "status": "FAILED",
+    "message": "Hay 23 acciones de negocio sin implementar. Revise las advertencias de la corrida.",
+    "warnings": [
+      "La acción «Calcular y consultar indicadores para una sucursal autorizada y un periodo explícito, aplicando una selección común. Distinguir valores cero, información ausente y cálculos no aplicables; incluir definiciones, fuentes y reglas verificables.» quedó sin implementar (responde 501): la propuesta se descartó porque rechaza todos los casos sin implementar un flujo correcto.",
+      "La acción «Evaluar reglas aprobadas y devolver recomendaciones orientativas para una sucursal autorizada y un periodo explícito, con los datos de respaldo y la justificación de cada conclusión, sin modificar operaciones.» quedó sin implementar (responde 501): la propuesta se descartó porque rechaza todos los casos sin implementar un flujo correcto.",
+      "La acción «Validar la posibilidad de anular la venta confirmada y presentar los efectos de la reversa según la política aprobada, sin modificar la venta ni sus efectos.» quedó sin implementar (responde 501): la propuesta se descartó porque rechaza todos los casos sin implementar un flujo correcto.",
+      "La acción «Anular la venta confirmada mediante una única reversa vinculada al original, registrando responsable y motivo y reconciliando sus efectos de forma atómica e idempotente conforme a la política aprobada.» quedó sin implementar (responde 501): la propuesta se descartó porque rechaza todos los casos sin implementar un flujo correcto.",
+      "La acción «Validar productos, sucursal, cantidades, unidades y conversiones de la entrada y mostrar el incremento previsto de existencias sin persistir movimientos.» quedó sin implementar (responde 501): la propuesta se descartó porque rechaza todos los casos sin implementar un flujo correcto.",
+      "La acción «Revalidar y registrar la entrada con las unidades y conversiones definidas, aumentando las existencias en una única transacción e impidiendo duplicaciones por reintentos.» quedó sin implementar (responde 501): la propuesta se descartó porque rechaza todos los casos sin implementar un flujo correcto.",
+      "La acción «Validar la salida ordinaria con cantidad positiva y disponibilidad suficiente y mostrar su efecto previsto, sin modificar existencias ni generar salidas automáticas por ventas.» quedó sin implementar (responde 501): la propuesta se descartó porque rechaza todos los casos sin implementar un flujo correcto.",
+      "La acción «Revalidar y confirmar atómicamente la salida ordinaria, persistiendo el movimiento y descontando existencias sin permitir saldos negativos ni duplicaciones por reintentos.» quedó sin implementar (responde 501): la propuesta se descartó porque rechaza todos los casos sin implementar un flujo correcto.",
+      "La acción «Validar la cantidad, el motivo, el responsable y las existencias disponibles para la merma y mostrar sus efectos sin persistir cambios.» quedó sin implementar (responde 501): la propuesta se descartó porque rechaza todos los casos sin implementar un flujo correcto.",
+      "La acción «Revalidar y registrar la merma con motivo y responsable y descontar existencias atómicamente, sin saldos negativos, descuentos parciales ante rechazo ni duplicaciones por reintentos.» quedó sin implementar (responde 501): la propuesta se descartó porque rechaza todos los casos sin implementar un flujo correcto.",
+      "La acción «Validar la autorización del ajuste conforme a la política aprobada y presentar la variación, el motivo, el responsable y los saldos anterior y previsto, sin modificar existencias.» quedó sin implementar (responde 501): la propuesta se descartó porque rechaza todos los casos sin implementar un flujo correcto.",
+      "La acción «Revalidar la autorización y aplicar atómicamente la variación de existencias conforme a la política aprobada, conservando motivo, responsable y saldos anterior y resultante e impidiendo duplicaciones por reintentos.» quedó sin implementar (responde 501): la propuesta se descartó porque rechaza todos los casos sin implementar un flujo correcto.",
+      "La acción «Solicitar una transición sobre una solicitud o un evento, indicando el tipo de registro y la transición requerida. Validar en el servidor el alcance, la autorización, el estado vigente y la matriz aprobada; aplicar únicamente una transición permitida y conservar su historial íntegro de forma atómica» quedó sin implementar (responde 501): la propuesta se descartó porque rechaza todos los casos sin implementar un flujo correcto.",
+      "La acción «Consultar importes y conteos de ventas por sucursal y periodo, con desglose por categorías y referencias a ventas y líneas confirmadas de origen. Aplicar el tratamiento aprobado de anulaciones y evitar duplicaciones.» quedó sin implementar (responde 501): la propuesta se descartó porque rechaza todos los casos sin implementar un flujo correcto.",
+      "La acción «Consultar totales de gastos operativos confirmados por sucursal, periodo y categoría, con detalle identificable para conciliar cada total. Excluir borradores y propuestas OCR.» quedó sin implementar (responde 501): la propuesta se descartó porque rechaza todos los casos sin implementar un flujo correcto.",
+      "La acción «Consultar existencias y alertas por producto y sucursal junto con movimientos persistidos y referencias de origen. Informar el corte de saldos, el periodo de movimientos y los mínimos utilizados en cada alerta.» quedó sin implementar (responde 501): la propuesta se descartó porque rechaza todos los casos sin implementar un flujo correcto.",
+      "La acción «Comparar ventas, productos, gastos y existencias de dos sucursales con periodos equivalentes. Devolver el desglose verificable por sucursal y magnitud, los criterios temporales y las referencias de origen sin duplicar registros.» quedó sin implementar (responde 501): la propuesta se descartó porque rechaza todos los casos sin implementar un flujo correcto.",
+      "La acción «Consultar costos por evento y totales consolidados conciliables con gastos confirmados e imputaciones. Incluir el detalle de gastos e imputaciones, las fuentes, la regla de cálculo y las exclusiones, evitando borradores, duplicaciones y confusión con ingresos.» quedó sin implementar (responde 501): la propuesta se descartó porque rechaza todos los casos sin implementar un flujo correcto.",
+      "La acción «Descargar en CSV el resultado previamente consultado, validando que el reporte y el formato estén ratificados y que el solicitante conserve autorización. Mantener datos, encabezados, filtros, contexto y alcance del resultado sin ampliar su contenido ni incorporar PDF o impresión.» quedó sin implementar (responde 501): la propuesta se descartó porque rechaza todos los casos sin implementar un flujo correcto.",
+      "La acción «Consulta de los datos de la pantalla «Historial de solicitudes y eventos de catering».» quedó sin implementar (responde 501): la propuesta se descartó porque rechaza todos los casos sin implementar un flujo correcto.",
+      "La acción «Guardar los cambios del borrador de la venta» quedó sin implementar (responde 501): la propuesta se descartó porque rechaza todos los casos sin implementar un flujo correcto.",
+      "La acción «Confirmar explícitamente la venta» quedó sin implementar (responde 501): la propuesta se descartó porque rechaza todos los casos sin implementar un flujo correcto.",
+      "La acción «Adjuntar comprobante al gasto» quedó sin implementar (responde 501): la propuesta se descartó porque rechaza todos los casos sin implementar un flujo correcto."
+    ],
+    "newSnapshotProduced": false,
+    "newSnapshotCount": 0
+  },
+  "actions": [
+    {
+      "operation": "GET /management/indicators",
+      "status": "REJECTED_ALWAYS_THROWS",
+      "summary": "Calcular y consultar indicadores para una sucursal autorizada y un periodo explícito, aplicando una selección común. Distinguir valores cero, información ausente y cálculos no aplicables; incluir definiciones, fuentes y reglas verificables.",
+      "roles": ["Administrador", "Encargado de sucursal"],
+      "scopeAccess": "SELECTED",
+      "executionVerified": false,
+      "requiredContract": "Filtros de consulta y respuesta tipados, estados no disponibles y políticas aprobadas aplicables."
+    },
+    {
+      "operation": "GET /management/stock-alerts",
+      "status": "STATIC_REVIEW_ONLY",
+      "summary": "Evaluar y consultar las alertas vigentes de existencias de una sucursal autorizada, indicando el instante de consulta y diferenciándolo del periodo de actividad del panel.",
+      "roles": ["Administrador", "Encargado de sucursal"],
+      "scopeAccess": "SELECTED",
+      "executionVerified": false,
+      "requiredContract": "Filtros de consulta y respuesta tipados, estados no disponibles y políticas aprobadas aplicables."
+    },
+    {
+      "operation": "GET /management/recommendations",
+      "status": "REJECTED_ALWAYS_THROWS",
+      "summary": "Evaluar reglas aprobadas y devolver recomendaciones orientativas para una sucursal autorizada y un periodo explícito, con los datos de respaldo y la justificación de cada conclusión, sin modificar operaciones.",
+      "roles": ["Administrador", "Encargado de sucursal"],
+      "scopeAccess": "SELECTED",
+      "executionVerified": false,
+      "requiredContract": "Filtros de consulta y respuesta tipados, estados no disponibles y políticas aprobadas aplicables."
+    },
+    {
+      "operation": "POST /sales/:saleid/cancellation/preview",
+      "status": "REJECTED_ALWAYS_THROWS",
+      "summary": "Validar la posibilidad de anular la venta confirmada y presentar los efectos de la reversa según la política aprobada, sin modificar la venta ni sus efectos.",
+      "roles": ["Administrador", "Encargado de sucursal", "Cajero"],
+      "scopeAccess": "SELECTED",
+      "executionVerified": false,
+      "requiredContract": "Solicitud y respuesta tipadas, validaciones, transiciones, idempotencia y políticas aprobadas aplicables."
+    },
+    {
+      "operation": "POST /sales/:saleid/cancellation/confirm",
+      "status": "REJECTED_ALWAYS_THROWS",
+      "summary": "Anular la venta confirmada mediante una única reversa vinculada al original, registrando responsable y motivo y reconciliando sus efectos de forma atómica e idempotente conforme a la política aprobada.",
+      "roles": ["Administrador", "Encargado de sucursal", "Cajero"],
+      "scopeAccess": "SELECTED",
+      "executionVerified": false,
+      "requiredContract": "Solicitud y respuesta tipadas, validaciones, transiciones, idempotencia y políticas aprobadas aplicables."
+    },
+    {
+      "operation": "POST /inventory/receipts/preview",
+      "status": "REJECTED_ALWAYS_THROWS",
+      "summary": "Validar productos, sucursal, cantidades, unidades y conversiones de la entrada y mostrar el incremento previsto de existencias sin persistir movimientos.",
+      "roles": ["Administrador", "Encargado de sucursal", "Responsable de inventario"],
+      "scopeAccess": "SELECTED",
+      "executionVerified": false,
+      "requiredContract": "Solicitud y respuesta tipadas, validaciones, transiciones, idempotencia y políticas aprobadas aplicables."
+    },
+    {
+      "operation": "POST /inventory/receipts/confirm",
+      "status": "REJECTED_ALWAYS_THROWS",
+      "summary": "Revalidar y registrar la entrada con las unidades y conversiones definidas, aumentando las existencias en una única transacción e impidiendo duplicaciones por reintentos.",
+      "roles": ["Administrador", "Encargado de sucursal", "Responsable de inventario"],
+      "scopeAccess": "SELECTED",
+      "executionVerified": false,
+      "requiredContract": "Solicitud y respuesta tipadas, validaciones, transiciones, idempotencia y políticas aprobadas aplicables."
+    },
+    {
+      "operation": "POST /inventory/issues/preview",
+      "status": "REJECTED_ALWAYS_THROWS",
+      "summary": "Validar la salida ordinaria con cantidad positiva y disponibilidad suficiente y mostrar su efecto previsto, sin modificar existencias ni generar salidas automáticas por ventas.",
+      "roles": ["Administrador", "Encargado de sucursal", "Responsable de inventario"],
+      "scopeAccess": "SELECTED",
+      "executionVerified": false,
+      "requiredContract": "Solicitud y respuesta tipadas, validaciones, transiciones, idempotencia y políticas aprobadas aplicables."
+    },
+    {
+      "operation": "POST /inventory/issues/confirm",
+      "status": "REJECTED_ALWAYS_THROWS",
+      "summary": "Revalidar y confirmar atómicamente la salida ordinaria, persistiendo el movimiento y descontando existencias sin permitir saldos negativos ni duplicaciones por reintentos.",
+      "roles": ["Administrador", "Encargado de sucursal", "Responsable de inventario"],
+      "scopeAccess": "SELECTED",
+      "executionVerified": false,
+      "requiredContract": "Solicitud y respuesta tipadas, validaciones, transiciones, idempotencia y políticas aprobadas aplicables."
+    },
+    {
+      "operation": "POST /inventory/losses/preview",
+      "status": "REJECTED_ALWAYS_THROWS",
+      "summary": "Validar la cantidad, el motivo, el responsable y las existencias disponibles para la merma y mostrar sus efectos sin persistir cambios.",
+      "roles": ["Administrador", "Encargado de sucursal", "Responsable de inventario"],
+      "scopeAccess": "SELECTED",
+      "executionVerified": false,
+      "requiredContract": "Solicitud y respuesta tipadas, validaciones, transiciones, idempotencia y políticas aprobadas aplicables."
+    },
+    {
+      "operation": "POST /inventory/losses/confirm",
+      "status": "REJECTED_ALWAYS_THROWS",
+      "summary": "Revalidar y registrar la merma con motivo y responsable y descontar existencias atómicamente, sin saldos negativos, descuentos parciales ante rechazo ni duplicaciones por reintentos.",
+      "roles": ["Administrador", "Encargado de sucursal", "Responsable de inventario"],
+      "scopeAccess": "SELECTED",
+      "executionVerified": false,
+      "requiredContract": "Solicitud y respuesta tipadas, validaciones, transiciones, idempotencia y políticas aprobadas aplicables."
+    },
+    {
+      "operation": "POST /inventory/adjustments/preview",
+      "status": "REJECTED_ALWAYS_THROWS",
+      "summary": "Validar la autorización del ajuste conforme a la política aprobada y presentar la variación, el motivo, el responsable y los saldos anterior y previsto, sin modificar existencias.",
+      "roles": ["Administrador", "Encargado de sucursal", "Responsable de inventario"],
+      "scopeAccess": "SELECTED",
+      "executionVerified": false,
+      "requiredContract": "Solicitud y respuesta tipadas, validaciones, transiciones, idempotencia y políticas aprobadas aplicables."
+    },
+    {
+      "operation": "POST /inventory/adjustments/confirm",
+      "status": "REJECTED_ALWAYS_THROWS",
+      "summary": "Revalidar la autorización y aplicar atómicamente la variación de existencias conforme a la política aprobada, conservando motivo, responsable y saldos anterior y resultante e impidiendo duplicaciones por reintentos.",
+      "roles": ["Administrador", "Encargado de sucursal", "Responsable de inventario"],
+      "scopeAccess": "SELECTED",
+      "executionVerified": false,
+      "requiredContract": "Solicitud y respuesta tipadas, validaciones, transiciones, idempotencia y políticas aprobadas aplicables."
+    },
+    {
+      "operation": "POST /catering/records/:recordid/transition",
+      "status": "REJECTED_ALWAYS_THROWS",
+      "summary": "Solicitar una transición sobre una solicitud o un evento, indicando el tipo de registro y la transición requerida. Validar en el servidor el alcance, la autorización, el estado vigente y la matriz aprobada; aplicar únicamente una transición permitida y conservar su historial íntegro de forma atómica",
+      "roles": ["Administrador", "Encargado de sucursal", "Responsable de catering"],
+      "scopeAccess": "SELECTED",
+      "executionVerified": false,
+      "requiredContract": "Solicitud y respuesta tipadas, validaciones, transiciones, idempotencia y políticas aprobadas aplicables."
+    },
+    {
+      "operation": "GET /reports/sales",
+      "status": "REJECTED_ALWAYS_THROWS",
+      "summary": "Consultar importes y conteos de ventas por sucursal y periodo, con desglose por categorías y referencias a ventas y líneas confirmadas de origen. Aplicar el tratamiento aprobado de anulaciones y evitar duplicaciones.",
+      "roles": ["Administrador", "Encargado de sucursal"],
+      "scopeAccess": "SELECTED",
+      "executionVerified": false,
+      "requiredContract": "Filtros de consulta y respuesta tipados, estados no disponibles y políticas aprobadas aplicables."
+    },
+    {
+      "operation": "GET /reports/expenses",
+      "status": "REJECTED_ALWAYS_THROWS",
+      "summary": "Consultar totales de gastos operativos confirmados por sucursal, periodo y categoría, con detalle identificable para conciliar cada total. Excluir borradores y propuestas OCR.",
+      "roles": ["Administrador", "Encargado de sucursal"],
+      "scopeAccess": "SELECTED",
+      "executionVerified": false,
+      "requiredContract": "Filtros de consulta y respuesta tipados, estados no disponibles y políticas aprobadas aplicables."
+    },
+    {
+      "operation": "GET /reports/inventory",
+      "status": "REJECTED_ALWAYS_THROWS",
+      "summary": "Consultar existencias y alertas por producto y sucursal junto con movimientos persistidos y referencias de origen. Informar el corte de saldos, el periodo de movimientos y los mínimos utilizados en cada alerta.",
+      "roles": ["Administrador", "Encargado de sucursal"],
+      "scopeAccess": "SELECTED",
+      "executionVerified": false,
+      "requiredContract": "Filtros de consulta y respuesta tipados, estados no disponibles y políticas aprobadas aplicables."
+    },
+    {
+      "operation": "GET /reports/branch-comparison",
+      "status": "REJECTED_ALWAYS_THROWS",
+      "summary": "Comparar ventas, productos, gastos y existencias de dos sucursales con periodos equivalentes. Devolver el desglose verificable por sucursal y magnitud, los criterios temporales y las referencias de origen sin duplicar registros.",
+      "roles": ["Administrador"],
+      "scopeAccess": "ASSIGNED_SET",
+      "executionVerified": false,
+      "requiredContract": "Filtros de consulta y respuesta tipados, estados no disponibles y políticas aprobadas aplicables."
+    },
+    {
+      "operation": "GET /reports/catering/costs",
+      "status": "REJECTED_ALWAYS_THROWS",
+      "summary": "Consultar costos por evento y totales consolidados conciliables con gastos confirmados e imputaciones. Incluir el detalle de gastos e imputaciones, las fuentes, la regla de cálculo y las exclusiones, evitando borradores, duplicaciones y confusión con ingresos.",
+      "roles": ["Administrador", "Encargado de sucursal"],
+      "scopeAccess": "SELECTED",
+      "executionVerified": false,
+      "requiredContract": "Filtros de consulta y respuesta tipados, estados no disponibles y políticas aprobadas aplicables."
+    },
+    {
+      "operation": "GET /reports/:reportid/export/csv",
+      "status": "REJECTED_ALWAYS_THROWS",
+      "summary": "Descargar en CSV el resultado previamente consultado, validando que el reporte y el formato estén ratificados y que el solicitante conserve autorización. Mantener datos, encabezados, filtros, contexto y alcance del resultado sin ampliar su contenido ni incorporar PDF o impresión.",
+      "roles": ["Administrador", "Encargado de sucursal"],
+      "scopeAccess": "SELECTED",
+      "executionVerified": false,
+      "requiredContract": "Filtros de consulta y respuesta tipados, estados no disponibles y políticas aprobadas aplicables."
+    },
+    {
+      "operation": "GET /checkout/:saleid/lines/new",
+      "status": "STATIC_REVIEW_ONLY",
+      "summary": "Consulta de los datos de la pantalla «Caja y preparación de venta».",
+      "roles": ["Administrador", "Encargado de sucursal", "Cajero"],
+      "scopeAccess": "SELECTED",
+      "executionVerified": false,
+      "requiredContract": "Filtros de consulta y respuesta tipados, estados no disponibles y políticas aprobadas aplicables."
+    },
+    {
+      "operation": "GET /checkout/:saleid/notes/new",
+      "status": "STATIC_REVIEW_ONLY",
+      "summary": "Consulta de los datos de la pantalla «Caja y preparación de venta».",
+      "roles": ["Administrador", "Encargado de sucursal", "Cajero"],
+      "scopeAccess": "SELECTED",
+      "executionVerified": false,
+      "requiredContract": "Filtros de consulta y respuesta tipados, estados no disponibles y políticas aprobadas aplicables."
+    },
+    {
+      "operation": "GET /catering/history",
+      "status": "REJECTED_ALWAYS_THROWS",
+      "summary": "Consulta de los datos de la pantalla «Historial de solicitudes y eventos de catering».",
+      "roles": ["Administrador", "Encargado de sucursal", "Responsable de catering"],
+      "scopeAccess": "SELECTED",
+      "executionVerified": false,
+      "requiredContract": "Filtros de consulta y respuesta tipados, estados no disponibles y políticas aprobadas aplicables."
+    },
+    {
+      "operation": "POST /sales/:saleId/draft",
+      "status": "REJECTED_ALWAYS_THROWS",
+      "summary": "Guardar los cambios del borrador de la venta",
+      "roles": ["Administrador", "Encargado de sucursal", "Cajero"],
+      "scopeAccess": "SELECTED",
+      "executionVerified": false,
+      "requiredContract": "Solicitud y respuesta tipadas, validaciones, transiciones, idempotencia y políticas aprobadas aplicables."
+    },
+    {
+      "operation": "POST /sales/:saleId/confirm",
+      "status": "REJECTED_ALWAYS_THROWS",
+      "summary": "Confirmar explícitamente la venta",
+      "roles": ["Administrador", "Encargado de sucursal", "Cajero"],
+      "scopeAccess": "SELECTED",
+      "executionVerified": false,
+      "requiredContract": "Solicitud y respuesta tipadas, validaciones, transiciones, idempotencia y políticas aprobadas aplicables."
+    },
+    {
+      "operation": "POST /expenses/:expenseId/receipts",
+      "status": "REJECTED_ALWAYS_THROWS",
+      "summary": "Adjuntar comprobante al gasto",
+      "roles": ["Administrador", "Encargado de sucursal"],
+      "scopeAccess": "SELECTED",
+      "executionVerified": false,
+      "requiredContract": "Solicitud y respuesta tipadas, validaciones, transiciones, idempotencia y políticas aprobadas aplicables."
+    }
+  ],
+  "counts": {
+    "actions": 26,
+    "rejectedAlwaysThrow": 23,
+    "staticReviewOnly": 3,
+    "realBusinessExecutionsVerified": 0,
+    "routes": 80,
+    "presentationCallsLastDesignRun": 4
+  },
+  "scopeValidation": {
+    "httpChecks": [
+      "Live identity and assigned scopes",
+      "Business request without selected scope denied",
+      "Forged scope denied",
+      "List isolates selected scope",
+      "Foreign record ID inaccessible",
+      "Cross-scope parent reassignment denied",
+      "Actor assigned by server",
+      "Actor spoofing rejected by contract",
+      "Custom list and aggregate isolated",
+      "Concurrent contexts isolated",
+      "Read-only action cannot mutate",
+      "Cross-scope report requires administrator",
+      "Explicit administrator comparison spans authorized scopes",
+      "Foreign child creation denied",
+      "Custom deleteMany preserves other scope",
+      "Scope editor persists safely",
+      "Scope revocation applies to existing token",
+      "Stale context recovers without logout",
+      "Permission editor persists",
+      "Permission revocation applies to existing token",
+      "Throttling records rejection audit without credentials"
+    ],
+    "browser": "Scope switching and access editor passed",
+    "captures": [
+      {
+        "routePath": "/home",
+        "role": "Administrador",
+        "status": "CAPTURED",
+        "reason": null,
+        "width": 1440,
+        "height": 900
+      },
+      {
+        "routePath": "/home",
+        "role": "Encargado de sucursal",
+        "status": "CAPTURED",
+        "reason": null,
+        "width": 1440,
+        "height": 900
+      }
+    ]
+  },
+  "routes": [
+    {
+      "path": "/login",
+      "screenLocalId": "pantalla-acceso",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "VALID_PRESENTATION_PROPOSAL_NOT_VISUALLY_CERTIFIED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/home",
+      "screenLocalId": "pantalla-inicio",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "VALID_PRESENTATION_PROPOSAL_NOT_VISUALLY_CERTIFIED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/logout",
+      "screenLocalId": "pantalla-cerrar-sesion",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "VALID_PRESENTATION_PROPOSAL_NOT_VISUALLY_CERTIFIED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/dashboard",
+      "screenLocalId": "pantalla-panel",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "MISSING_FILTERS_METRICS_AND_DEFINITIONS",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/dashboard/stock-alerts",
+      "screenLocalId": "pantalla-panel-alertas",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/dashboard/recommendations",
+      "screenLocalId": "pantalla-recomendaciones",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/products",
+      "screenLocalId": "pantalla-productos",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/products/new",
+      "screenLocalId": "pantalla-producto-nuevo",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/products/[productid]/edit",
+      "screenLocalId": "pantalla-producto-editar",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/branches/[branchid]/products/[productid]/availability",
+      "screenLocalId": "pantalla-disponibilidad",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/branches/[branchid]/products/[productid]/price",
+      "screenLocalId": "pantalla-precios-locales",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/product-categories",
+      "screenLocalId": "pantalla-categorias-productos",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/product-categories/new",
+      "screenLocalId": "pantalla-categoria-producto-nueva",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/product-categories/[categoryid]/edit",
+      "screenLocalId": "pantalla-categoria-producto-editar",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/branches/[branchid]/menus",
+      "screenLocalId": "pantalla-menus",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/branches/[branchid]/menus/new",
+      "screenLocalId": "pantalla-menu-nuevo",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/menus/versions/[versionid]",
+      "screenLocalId": "pantalla-menu-version",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/menus/versions/[versionid]/edit",
+      "screenLocalId": "pantalla-menu-editar",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/menus/versions/[versionid]/publish",
+      "screenLocalId": "pantalla-menu-publicar",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/checkout/[saleid]",
+      "screenLocalId": "pantalla-caja",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/checkout/[saleid]/lines/new",
+      "screenLocalId": "pantalla-caja",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/checkout/[saleid]/notes/new",
+      "screenLocalId": "pantalla-caja",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/checkout/[saleid]/discount",
+      "screenLocalId": "pantalla-descuento",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/sales",
+      "screenLocalId": "pantalla-historial-ventas",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/sales/[saleid]",
+      "screenLocalId": "pantalla-venta-detalle",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/sales/[saleid]/notes/new",
+      "screenLocalId": "pantalla-venta-detalle",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/sales/[saleid]/correction",
+      "screenLocalId": "pantalla-venta-corregir",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/sales/[saleid]/cancel",
+      "screenLocalId": "pantalla-venta-anular",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/inventory/balances",
+      "screenLocalId": "pantalla-saldos",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/inventory/movements",
+      "screenLocalId": "pantalla-movimientos",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/inventory/movements/[movementid]",
+      "screenLocalId": "pantalla-movimiento-detalle",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/inventory/receipts/new",
+      "screenLocalId": "pantalla-entrada",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/inventory/issues/new",
+      "screenLocalId": "pantalla-salida",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/inventory/losses/new",
+      "screenLocalId": "pantalla-merma",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/inventory/adjustments/new",
+      "screenLocalId": "pantalla-ajuste",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/inventory/minimums",
+      "screenLocalId": "pantalla-minimos",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/inventory/branches/[branchid]/products/[productid]/minimum",
+      "screenLocalId": "pantalla-minimo-configurar",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/inventory/stock-alerts",
+      "screenLocalId": "pantalla-alertas-inventario",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/expenses",
+      "screenLocalId": "pantalla-gastos",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/expenses/new",
+      "screenLocalId": "pantalla-gasto-manual",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/expenses/[expenseid]",
+      "screenLocalId": "pantalla-gasto-detalle",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/expenses/[expenseid]/corrections/new",
+      "screenLocalId": "pantalla-gasto-corregir",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/expenses/[expenseid]/receipts",
+      "screenLocalId": "pantalla-comprobantes",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/ocr/proposals/[proposalid]/review",
+      "screenLocalId": "pantalla-revision-ocr",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/expense-categories",
+      "screenLocalId": "pantalla-categorias-gastos",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/expense-categories/new",
+      "screenLocalId": "pantalla-categoria-gasto-nueva",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/expense-categories/[categoryid]/edit",
+      "screenLocalId": "pantalla-categoria-gasto-editar",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/catering/clients",
+      "screenLocalId": "pantalla-clientes",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/catering/clients/new",
+      "screenLocalId": "pantalla-cliente-nuevo",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/catering/history",
+      "screenLocalId": "pantalla-historial-catering",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/catering/requests/new",
+      "screenLocalId": "pantalla-solicitud-nueva",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/catering/requests/[requestid]",
+      "screenLocalId": "pantalla-solicitud-detalle",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/catering/requests/[requestid]/terms",
+      "screenLocalId": "pantalla-condiciones",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/catering/requests/[requestid]/terms/new",
+      "screenLocalId": "pantalla-condiciones-registrar",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/catering/requests/[requestid]/planning",
+      "screenLocalId": "pantalla-planificacion",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/catering/events/[eventid]",
+      "screenLocalId": "pantalla-evento-detalle",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/catering/records/[recordid]/transition",
+      "screenLocalId": "pantalla-transicion",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/catering/events/[eventid]/reopen",
+      "screenLocalId": "pantalla-reabrir",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/catering/events/[eventid]/expenses/new",
+      "screenLocalId": "pantalla-evento-gasto",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/catering/events/[eventid]/expenses/link",
+      "screenLocalId": "pantalla-evento-asociar-gasto",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/reports/sales",
+      "screenLocalId": "pantalla-reporte-ventas",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/reports/expenses",
+      "screenLocalId": "pantalla-reporte-gastos",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/reports/inventory",
+      "screenLocalId": "pantalla-reporte-inventario",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/reports/branch-comparison",
+      "screenLocalId": "pantalla-comparacion",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/reports/catering/requests",
+      "screenLocalId": "pantalla-reporte-solicitudes",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/reports/catering/events",
+      "screenLocalId": "pantalla-reporte-eventos",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/reports/catering/costs",
+      "screenLocalId": "pantalla-reporte-costos",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/catering/events/[eventid]/estimated-result",
+      "screenLocalId": "pantalla-resultado-catering",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/reports/[reportid]/export",
+      "screenLocalId": "pantalla-exportar",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/users",
+      "screenLocalId": "pantalla-usuarios",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/users/new",
+      "screenLocalId": "pantalla-usuario-nuevo",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/users/[userid]",
+      "screenLocalId": "pantalla-usuario-detalle",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/users/[userid]/edit",
+      "screenLocalId": "pantalla-usuario-editar",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/users/[userid]/access",
+      "screenLocalId": "pantalla-usuario-acceso",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/branches/new",
+      "screenLocalId": "pantalla-sucursal-nueva",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/branches/[branchid]/edit",
+      "screenLocalId": "pantalla-sucursal-editar",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/settings/scopes/[scopetype]/[scopeid]/parameters",
+      "screenLocalId": "pantalla-parametros",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/settings/scopes/[scopetype]/[scopeid]/parameters/[parameterid]/edit",
+      "screenLocalId": "pantalla-parametro-editar",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/audit/events",
+      "screenLocalId": "pantalla-auditoria",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    },
+    {
+      "path": "/audit/events/[eventid]",
+      "screenLocalId": "pantalla-auditoria-detalle",
+      "structuralCoverage": "PASS",
+      "semanticDesignReview": "NOT_ASSESSED",
+      "snapshotExecutionVerified": false
+    }
+  ],
+  "previousSnapshot": {
+    "id": "068daf1b-1b9b-47a9-8e54-dae7e36d59a0",
+    "manifestHash": "3644bbe5137609acde42aa96435893778bec61976718e6ad94e10152246b2372"
+  },
+  "templateValidation": [
+    {
+      "stage": "INSTALL",
+      "exitCode": 0,
+      "durationMs": 30254,
+      "timedOut": false
+    },
+    {
+      "stage": "LINT",
+      "exitCode": 0,
+      "durationMs": 7844,
+      "timedOut": false
+    },
+    {
+      "stage": "TYPECHECK",
+      "exitCode": 0,
+      "durationMs": 11635,
+      "timedOut": false
+    },
+    {
+      "stage": "TEST",
+      "exitCode": 0,
+      "durationMs": 16524,
+      "timedOut": false
+    },
+    {
+      "stage": "BUILD",
+      "exitCode": 0,
+      "durationMs": 23141,
+      "timedOut": false
+    }
+  ],
+  "repositoryValidation": {
+    "typecheck": "PASS",
+    "lint": "PASS",
+    "fullBuild": "PASS",
+    "apiBuildAfterFinalChanges": "PASS",
+    "unit": {
+      "passed": 1017,
+      "skipped": 3
+    },
+    "coverage": {
+      "lines": 77.18,
+      "branches": 73.6,
+      "functions": 76.17,
+      "statements": 76.56
+    },
+    "webTests": {
+      "passed": 325
+    },
+    "constructionIntegration": {
+      "passed": 19,
+      "skipped": 1
+    },
+    "generationIntegrationAfterWarningChanges": {
+      "passed": 5
+    }
+  }
+}

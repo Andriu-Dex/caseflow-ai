@@ -3,10 +3,13 @@ import {
   type DesignThemeContent,
   type DesignThemePalette,
   type ImplementationPlanContent,
+  type ActionValueDefinition,
 } from '@caseflow-ai/contracts';
 import { lowerFirst, pluralize, upperFirst } from '../naming';
 import { customEndpointOperationId } from '../openapi.generator';
-import { createSchemaName, inputRelations } from './contracts.templates';
+import { actionSchemaName } from './action-contract.templates';
+import { actionFormFile } from './action-form.templates';
+import { createSchemaName, inputRelations, manyInputRelations } from './contracts.templates';
 import {
   SCOPE,
   dependencies,
@@ -158,7 +161,7 @@ const labelOf = (name: string) =>
 export const pagePath = (routePath: string) =>
   routePath === '/' ? 'apps/web/app/page.tsx' : `apps/web/app${routePath}/page.tsx`;
 // Relative path from a route page back to the apps/web root.
-const toWebRoot = (routePath: string) =>
+export const toWebRoot = (routePath: string) =>
   '../'.repeat(routePath.split('/').filter(Boolean).length + 1);
 const dynamicParam = (routePath: string) => routePath.match(/\[([a-zA-Z0-9]+)\]/)?.[1];
 // Every URL parameter of a route, in order: /sales/[saleId]/lines -> ["saleId"].
@@ -301,6 +304,8 @@ function actionControl(
   }
   const endpoint = customEndpoint(plan, action);
   if (!endpoint) return null;
+  if (endpoint.disabledReason)
+    return `<div><Button type="button" disabled ${actionMarker(label)}>{${JSON.stringify(label)}}</Button><p role="status">{${JSON.stringify(endpoint.disabledReason)}}</p></div>`;
   const params = pathParams(endpoint.path);
   // Each path parameter comes from the page's URL parameter of the same name
   // (case aside), or, when it is the only one, from the record at hand.
@@ -311,6 +316,34 @@ function actionControl(
       (params.length === 1 ? (idExpr ?? routeParams.at(-1)) : undefined),
   );
   if (values.some((value) => !value)) return null;
+  if (endpoint.contract) {
+    const id = customEndpointOperationId(endpoint);
+    const references = new Set<string>();
+    const collect = (value: ActionValueDefinition) => {
+      if (value.referenceEntityLocalId) references.add(value.referenceEntityLocalId);
+      for (const field of value.properties ?? []) collect(field.value);
+      if (value.items) collect(value.items);
+    };
+    if (endpoint.contract.body) collect(endpoint.contract.body);
+    if (endpoint.contract.query) collect(endpoint.contract.query);
+    const loaders = [...references].map((localId) => {
+      const entity = plan.entities.find((entity) => entity.localId === localId)!;
+      const label = entity.fields.find(
+        (field) => ['STRING', 'TEXT'].includes(field.type) && !field.internal,
+      )?.name;
+      return `${JSON.stringify(localId)}:async()=>(await api.list${pluralize(entity.name)}()).map(item=>({id:item.id,label:String(item.${label ?? 'id'})}))`;
+    });
+    const args = [
+      ...(params.length === 1 && params[0] === 'id'
+        ? [values[0]!]
+        : params.length
+          ? [`{ ${params.map((param, i) => `${param}: ${values[i]}`).join(', ')} }`]
+          : []),
+      ...(endpoint.contract.body ? [`${actionSchemaName(id, 'Body')}.parse(body)`] : []),
+      ...(endpoint.contract.query ? [`${actionSchemaName(id, 'Query')}.parse(query)`] : []),
+    ];
+    return `<ActionForm label={${JSON.stringify(label)}} ${actionMarker(label)} actionKey={${JSON.stringify(endpoint.method + ' ' + endpoint.path)}} isMutation={${endpoint.method !== 'GET'}}${endpoint.contract.bindings ? ` bindings={${JSON.stringify(endpoint.contract.bindings)}}` : ''}${endpoint.contract.successNavigation ? ` successNavigation={${JSON.stringify(endpoint.contract.successNavigation)}}` : ''} ${endpoint.contract.body ? `bodyDefinition={${JSON.stringify(endpoint.contract.body)}}` : ''} ${endpoint.contract.query ? `queryDefinition={${JSON.stringify(endpoint.contract.query)}}` : ''} responseDefinition={${JSON.stringify(endpoint.contract.response)}}${loaders.length ? ` references={{${loaders.join(',')}}}` : ''} submit={async (body, query) => { void [body, query]; return api.${id}(${args.join(', ')}); }}${target.onDone ? ` onDone={${target.onDone}}` : ''} />`;
+  }
   const args = [
     ...(params.length === 1 && params[0] === 'id'
       ? [values[0]!]
@@ -323,6 +356,9 @@ function actionControl(
     label,
     `() => api.${customEndpointOperationId(endpoint)}(${args.join(', ')})`,
     target.onDone,
+    endpoint.builtin === 'ACCOUNT_DEACTIVATE'
+      ? '¿Desea desactivar esta cuenta y cerrar sus sesiones?'
+      : undefined,
   );
 }
 
@@ -344,6 +380,17 @@ const indent = (block: string, spaces: number) =>
 
 // Imports a page needs, read from the JSX it renders.
 function pageImports(body: string, up: string, extra: string[] = []): string {
+  if (body.includes('<ActionForm'))
+    extra.push(`import { ActionForm } from '${up}components/action-form';`);
+  const actionSchemas = [
+    ...new Set(
+      [...body.matchAll(/\b([a-z][a-zA-Z0-9]*(?:Body|Query)Schema)\.parse\(/g)].map(
+        (match) => match[1],
+      ),
+    ),
+  ];
+  if (actionSchemas.length)
+    extra.push(`import { ${actionSchemas.join(', ')} } from '@app/contracts';`);
   const lines = [
     body.includes('<Link') ? "import Link from 'next/link';" : '',
     ...extra,
@@ -376,6 +423,13 @@ function listPage(plan: Plan, entity: Entity, route: Route): string {
     onDone: refresh,
     onDelete: refresh,
   });
+  const accessEditor = plan.routes.find(
+    (item) => item.entityLocalId === entity.localId && item.builtinView === 'ACCOUNT_ACCESS',
+  );
+  if (accessEditor)
+    rowControls.push(
+      `<Link href=${withId(accessEditor.path, 'row.id')} className="text-primary underline">Roles y ámbitos de operación</Link>`,
+    );
   const detailHref = detail ? withId(detail.path, 'row.id') : undefined;
   const cells = columns.map((f, i) =>
     i === 0 && detailHref
@@ -388,7 +442,7 @@ function listPage(plan: Plan, entity: Entity, route: Route): string {
     );
   const body = `    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold">${labelOf(plural)}</h1>
+        <h1 className="text-xl font-semibold">${route.screenName.replace(/[<>{}]/g, '')}</h1>
 ${header.length ? `        <div className="flex flex-wrap gap-2">\n${indent(header.join('\n'), 10)}\n        </div>\n` : ''}      </div>
       <PageState query={query} empty="Aún no hay registros.">
         {(rows) => (
@@ -505,8 +559,27 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
       target: plan.entities.find((e) => e.localId === relation.targetEntityLocalId)!,
     }))
     .filter(({ target }) => target.operations.includes('LIST'));
-  const inputs = entity.fields.map((field) => {
-    const label = `<label htmlFor="${field.name}" className="text-sm font-medium">${labelOf(field.name)}${field.required ? '' : ' (opcional)'}</label>`;
+  const manyTargets = manyInputRelations(entity, plan)
+    .map((relation) => ({
+      relation,
+      target: plan.entities.find((item) => item.localId === relation.targetEntityLocalId)!,
+    }))
+    .filter(({ target }) => target.operations.includes('LIST'));
+  const isAccount = plan.authentication.local?.userEntityLocalId === entity.localId;
+  const formFields = isAccount
+    ? [
+        ...entity.fields,
+        {
+          name: 'password',
+          type: 'STRING' as const,
+          required: true,
+          unique: false,
+          enumValues: [],
+        },
+      ]
+    : entity.fields;
+  const inputs = formFields.map((field) => {
+    const label = `<label htmlFor="${field.name}" className="text-sm font-medium">${isAccount && field.name === 'password' ? 'Contraseña' : labelOf(field.name)}${field.required ? '' : ' (opcional)'}</label>`;
     const empty = field.required ? '' : ", setValueAs: (v: string) => (v === '' ? undefined : v)";
     let control: string;
     switch (field.type) {
@@ -533,6 +606,8 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
       default:
         control = `<Input id="${field.name}" ${field.type === 'DECIMAL' ? 'inputMode="decimal" ' : ''}{...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})} />`;
     }
+    if (isAccount && field.name === 'password')
+      control = `<Input id="password" type="password" autoComplete="new-password" required={${editable ? '!editId' : 'true'}} {...register('password', { setValueAs: (value: string) => value || undefined })} />`;
     return `        <div className="flex flex-col gap-1">
           ${label}
           ${control}
@@ -566,13 +641,31 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
     ({ relation, target }) =>
       `  const ${lowerFirst(relation.name)}Options = useQuery({ queryKey: ['${lowerFirst(pluralize(target.name))}'], queryFn: () => api.list${pluralize(target.name)}() });`,
   );
-  const usesQuery = relationTargets.length > 0 || editable;
+  optionQueries.push(
+    ...manyTargets.map(
+      ({ relation, target }) =>
+        `  const ${relation.name}ManyOptions = useQuery({ queryKey: ['${lowerFirst(pluralize(target.name))}'], queryFn: () => api.list${pluralize(target.name)}() });`,
+    ),
+  );
+  const manyInputs = manyTargets.map(
+    ({ relation, target }) =>
+      `<div className="flex flex-col gap-2"><label htmlFor="${relation.name}Ids">${relation.label ?? labelOf(relation.name)}</label><select id="${relation.name}Ids" multiple className={input} {...register('${relation.name}Ids')}>{${relation.name}ManyOptions.data?.map(option => <option key={option.id} value={option.id}>{String(option.${target.fields[0]!.name} ?? option.id)}</option>)}</select><FieldError message={errors.${relation.name}Ids?.message} /></div>`,
+  );
+  const usesQuery = relationTargets.length > 0 || manyTargets.length > 0 || editable;
   const save = editable
     ? `(editId
         ? api.update${entity.name}(editId, values as Parameters<typeof api.update${entity.name}>[1])
         : api.create${entity.name}(values as Parameters<typeof api.create${entity.name}>[0]))`
     : `api.create${entity.name}(values as Parameters<typeof api.create${entity.name}>[0])`;
-  const hook = paramsHook(names, header.join('\n'));
+  const editingParam =
+    editable && own?.operation === 'UPDATE' ? entityParam(entity, names) : undefined;
+  const hook = paramsHook(names, header.join('\n') + (editingParam ?? ''));
+  const prefillFields = [
+    ...entity.fields.map((field) => field.name),
+    ...inputRelations(entity).map((relation) => relation.name + 'Id'),
+    ...manyTargets.map(({ relation }) => relation.name + 'Ids'),
+    ...(isAccount ? ['roleNames'] : []),
+  ];
   const headerBlock = header.length
     ? `      <div className="flex flex-wrap gap-2">\n${indent(header.join('\n'), 8)}\n      </div>\n`
     : '';
@@ -590,7 +683,7 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
   const body = `    <div className="flex max-w-xl flex-col gap-4">
       <h1 className="text-xl font-semibold">${route.screenName.replace(/[<>{}]/g, '')}</h1>
 ${headerBlock}      <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4 rounded-lg border p-4">
-${[...inputs, ...relationInputs].join('\n')}
+${[...inputs, ...relationInputs, ...manyInputs, ...(isAccount ? [`<div><label htmlFor="roleNames">Roles</label><select id="roleNames" multiple {...register('roleNames')}>${plan.authentication.roles.map((role) => `<option value={${JSON.stringify(role)}}>{${JSON.stringify(role)}}</option>`).join('')}</select></div>`] : [])].join('\n')}
         <div className="flex flex-wrap gap-2">
           <Button type="submit" disabled={isSubmitting}${own ? ` ${actionMarker(own.label)}` : ''}>
             {isSubmitting ? 'Guardando…' : ${own ? JSON.stringify(own.label) : "'Guardar'"}}
@@ -607,8 +700,9 @@ ${inputImport(body, up)}
 import { FieldError } from '${up}components/field-error';`,
 )}
 
-type FormInput = z.input<typeof ${schema}>;
-type FormOutput = z.output<typeof ${schema}>;
+const formSchema = ${schema}${isAccount ? '.partial({ password: true })' : ''};
+type FormInput = z.input<typeof formSchema>;
+type FormOutput = z.output<typeof formSchema>;
 
 export default function ${entity.name}FormPage() {
   const router = useRouter();${hook}
@@ -617,21 +711,39 @@ ${optionQueries.join('\n')}${optionQueries.length ? '\n' : ''}  const {
     register,
     handleSubmit,${editable ? '\n    reset,' : ''}
     formState: { errors, isSubmitting },
-  } = useForm<FormInput, unknown, FormOutput>({ resolver: zodResolver(${schema}) });${
+  } = useForm<FormInput, unknown, FormOutput>({ resolver: zodResolver(formSchema) });${
     editable
       ? `
   // "?id=<record>" opens the form to edit that record.
   const [editId, setEditId] = useState<string | null>(null);
   useEffect(() => {
-    setEditId(new URLSearchParams(window.location.search).get('id'));
-  }, []);
+    setEditId(${editingParam ? editingParam : "new URLSearchParams(window.location.search).get('id')"});
+  }, [${editingParam ?? ''}]);
   const existing = useQuery({
     queryKey: ['${lowerFirst(entity.name)}', editId],
     queryFn: () => api.get${entity.name}(editId!),
     enabled: Boolean(editId),
   });
   useEffect(() => {
-    if (existing.data) reset(existing.data as unknown as FormInput);
+    if (existing.data) {
+      const allowed = new Set(${JSON.stringify(prefillFields)});
+      const values = Object.fromEntries(Object.entries(existing.data).filter(([key]) => allowed.has(key))) as Record<string, unknown>;
+${entity.fields
+  .filter((field) => field.type === 'DATE')
+  .map(
+    (field) =>
+      `      if (typeof values.${field.name} === 'string') values.${field.name} = values.${field.name}.slice(0, 10);`,
+  )
+  .join('\n')}
+${entity.fields
+  .filter((field) => field.type === 'DATETIME')
+  .map(
+    (field) =>
+      `      if (typeof values.${field.name} === 'string') { const date = new Date(values.${field.name}); values.${field.name} = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0,16); }`,
+  )
+  .join('\n')}
+      reset(values as unknown as FormInput);
+    }
   }, [existing.data, reset]);`
       : ''
   }
@@ -677,10 +789,12 @@ ${links.map((l) => `        <li>\n          <Link className="block rounded-lg bo
 `
       : ''
   }    </div>`;
-  const client = body.includes('<ActionButton') || Boolean(hook);
+  const client = body.includes('<ActionButton') || body.includes('<ActionForm') || Boolean(hook);
   const imports = pageImports(body, toWebRoot(route.path), [
     hook ? "import { useParams } from 'next/navigation';" : '',
-    body.includes('<ActionButton') ? `import { api } from '${toWebRoot(route.path)}lib/api';` : '',
+    body.includes('<ActionButton') || body.includes('<ActionForm')
+      ? `import { api } from '${toWebRoot(route.path)}lib/api';`
+      : '',
   ]);
   return `${client ? "'use client';\n\n" : ''}${imports ? `${imports}\n\n` : ''}export default function ${upperFirst(route.screenName.replace(/[^A-Za-z0-9]/g, '')) || 'Screen'}Page() {${hook}
   return (
@@ -733,13 +847,27 @@ export function ActionButton({
 `;
 
 export function frontendFiles(ctx: GenerationContext): GeneratedProjectFile[] {
-  const { plan, template, projectName, theme } = ctx;
+  const { plan: storedPlan, template, projectName, theme } = ctx;
+  const plan = {
+    ...storedPlan,
+    entities: storedPlan.entities.map((entity) => ({
+      ...entity,
+      fields: entity.fields.filter((field) => !field.internal),
+    })),
+  };
   const themeToggle = theme?.content.mode === 'BOTH';
   const auth = plan.authentication.required;
   const hasE2E = plan.tests.some((t) => t.kind === 'E2E');
   const entityById = new Map(plan.entities.map((e) => [e.localId, e]));
   const navRoutes = plan.routes.filter((r) => !r.path.includes('[') && r.path !== '/');
   const files: GeneratedProjectFile[] = [];
+  if (plan.customEndpoints.some((endpoint) => endpoint.contract)) {
+    const component = actionFormFile();
+    component.planElements = plan.customEndpoints
+      .filter((endpoint) => endpoint.contract)
+      .map((endpoint) => `endpoint:${endpoint.method} ${endpoint.path}`);
+    files.push(component);
+  }
 
   files.push(
     file(
@@ -888,9 +1016,35 @@ export const accessToken = {
 `
     : ''
 }export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+${
+  plan.authentication.local?.scope
+    ? `
+export const operationScope = {
+ get: () => typeof window === 'undefined' ? null : window.sessionStorage.getItem('operation-scope'),
+ set: (id: string) => { window.sessionStorage.setItem('operation-scope', id); window.dispatchEvent(new Event('operation-scope-changed')); },
+ clear: () => { window.sessionStorage.removeItem('operation-scope'); window.dispatchEvent(new Event('operation-scope-changed')); },
+};`
+    : ''
+}
 
 export const api = createApiClient({
-  baseUrl: API_URL,${auth ? '\n  getToken: accessToken.get,' : ''}
+  baseUrl: API_URL,${auth ? '\n  getToken: accessToken.get,' : ''}${
+    ctx.plan.authentication.local
+      ? `
+  fetch: async (input, init) => {
+    const requestToken = accessToken.get();
+    ${plan.authentication.local?.scope ? `const headers = new Headers(init?.headers); const scopeId = operationScope.get(); if (scopeId) headers.set('x-operation-scope', scopeId);` : ''}
+    const response = await fetch(input, ${plan.authentication.local?.scope ? '{ ...init, headers }' : 'init'});
+    if (response.status === 401 && typeof window !== 'undefined' && requestToken && accessToken.get() === requestToken && !String(input).endsWith('/auth/login')) {
+      accessToken.clear();
+      ${plan.authentication.local?.scope ? 'operationScope.clear();' : ''}
+      window.sessionStorage.setItem('session-expired', 'true');
+      window.location.assign(${JSON.stringify(ctx.plan.routes.find((route) => route.actions.some((action) => action.endpoint === 'POST /auth/login'))?.path ?? '/access')});
+    }
+    return response;
+  },`
+      : ''
+  }
 });
 `,
     ),
@@ -1116,7 +1270,7 @@ ${navRoutes.map((r) => `        <li>\n          <Link className="block rounded-l
       ),
     );
 
-  if (auth)
+  if (auth && !plan.routes.some((route) => route.path === '/access'))
     files.push(
       file(
         'apps/web/app/access/page.tsx',

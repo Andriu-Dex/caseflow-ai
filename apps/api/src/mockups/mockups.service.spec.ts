@@ -87,6 +87,7 @@ function setup(provider: MockupProvider = new FakeMockupProvider()) {
       update: vi.fn(),
     },
     mockupScreenDetail: { findFirst: vi.fn() },
+    mockupDetail: { findUnique: vi.fn() },
     mockupGenerationJob: {
       // runJob claims a QUEUED job; every job these tests run is queued.
       updateMany: vi.fn(async () => ({ count: 1 })),
@@ -840,6 +841,12 @@ describe('MockupsService', () => {
     const generate = vi.fn();
     const { service, tx, prisma, storage } = setup({ id: 'stitch', generate, editScreen });
     prisma.artifact.findFirst.mockResolvedValue(twoScreenLatest());
+    prisma.artifactVersion.findFirst.mockResolvedValue({
+      id: 'blueprint-version',
+      structuredAnalysisDetail: {
+        content: { screens: [{ ...blueprintContent.screens[0], localId: 'list' }] },
+      },
+    });
     tx.$queryRaw.mockResolvedValueOnce([{ id: 'artifact' }]);
     prisma.mockupGenerationJob.findUniqueOrThrow.mockResolvedValue({
       id: 'job-1',
@@ -855,8 +862,12 @@ describe('MockupsService', () => {
     expect(generate).not.toHaveBeenCalled();
     expect(editScreen).toHaveBeenCalledWith(
       { projectId: 'stitch-project', screenId: 'stitch-list' },
-      'Agrega un buscador',
+      expect.stringContaining('Ajuste solicitado: Agrega un buscador'),
       'DESKTOP',
+    );
+    expect(editScreen.mock.calls[0]![1]).toContain('Plano canónico de la pantalla');
+    expect(editScreen.mock.calls[0]![1]).toContain(
+      'No inventes campos, funciones, límites, plazos',
     );
     const data = tx.mockupDetail.create.mock.calls[0]![0].data;
     expect(data.refinementPrompt).toBeNull();
@@ -978,5 +989,56 @@ describe('MockupsService', () => {
     await expect(service.transition('project', 'artifact', 'missing', 'IN_REVIEW')).rejects.toThrow(
       'no encontrada',
     );
+  });
+
+  it('uses scoped approved requirements and blocks approval when stored HTML contradicts them', async () => {
+    const { service, prisma, storage } = setup();
+    prisma.artifact.findMany.mockResolvedValue([
+      {
+        code: 'RF-001',
+        versions: [
+          {
+            id: 'rf-version',
+            requirementDetail: { description: 'Máximo tres préstamos activos.' },
+          },
+        ],
+      },
+    ]);
+    prisma.artifactVersion.findFirst.mockResolvedValue({
+      id: 'version',
+      status: 'IN_REVIEW',
+      structuredAnalysisDetail: { content: blueprintContent },
+    });
+    prisma.mockupDetail.findUnique.mockResolvedValue({
+      generatorKind: 'STITCH',
+      uiBlueprintVersionId: 'blueprint-version',
+      screens: [{ screenLocalId: 'home', htmlStorageKey: 'screen.html' }],
+    });
+    await storage.putObject({
+      key: 'screen.html',
+      body: Buffer.from('<p>Máximo 2 préstamos activos.</p>'),
+      contentType: 'text/html',
+    });
+    await expect(service.transition('project', 'artifact', 'version', 'APPROVED')).rejects.toThrow(
+      'contradicciones',
+    );
+    expect(prisma.artifactVersion.update).not.toHaveBeenCalled();
+    expect(prisma.artifact.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { projectId: 'project', archivedAt: null, artifactTypeCode: 'REQUIREMENT' },
+        include: expect.objectContaining({
+          versions: expect.objectContaining({ where: { status: 'APPROVED' }, take: 1 }),
+        }),
+      }),
+    );
+    await storage.putObject({
+      key: 'screen.html',
+      body: Buffer.from('<p>Máximo 3 préstamos activos.</p>'),
+      contentType: 'text/html',
+    });
+    prisma.artifactVersion.update.mockResolvedValue({ status: 'APPROVED' });
+    await expect(
+      service.transition('project', 'artifact', 'version', 'APPROVED'),
+    ).resolves.toMatchObject({ status: 'APPROVED' });
   });
 });

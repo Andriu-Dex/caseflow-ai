@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto';
 import JSZip from 'jszip';
+import ts from 'typescript';
 import type { TargetTemplateVersion } from '@caseflow-ai/domain';
 import type { ImplementationPlanContent } from '@caseflow-ai/contracts';
 import { actionMarker, pagePath } from '../code-generation/engine/frontend.templates';
+import { hasOnlyThrowingPaths } from './business-flow';
 
 // Deterministic checks and packaging of a generated project (spec §175, §177).
 // Pure functions: no I/O, so every rule is unit-testable.
@@ -33,6 +35,7 @@ export function structuralProblems(
   files: readonly ProjectFile[],
   template: TargetTemplateVersion,
   allowed: readonly { name: string; version: string }[],
+  plan?: ImplementationPlanContent,
 ): string[] {
   const problems: string[] = [];
   const byPath = new Map(files.map((f) => [f.path, f]));
@@ -61,6 +64,97 @@ export function structuralProblems(
         if (versions.get(name) !== version)
           problems.push(`«${file.path}» usa «${name}@${version}», fuera del catálogo aprobado.`);
       }
+  }
+  if (template.version >= 2) {
+    const manifest = byPath.get('docs/design-fidelity.json');
+    if (!manifest) problems.push('Falta el manifiesto de fidelidad del diseño aprobado.');
+    else {
+      try {
+        const value = JSON.parse(manifest.content) as {
+          records?: { routePath: string; outputSha256: string }[];
+          schemaVersion?: number;
+          scope?: string;
+          baselineId?: string;
+          assets?: { path: string; sha256: string }[];
+        };
+        if (
+          value.schemaVersion !== 1 ||
+          value.scope !== 'STRUCTURAL_PRESENTATION' ||
+          !Array.isArray(value.records) ||
+          !Array.isArray(value.assets)
+        )
+          throw new Error('Invalid manifest.');
+        const expectedAssets = files.filter(
+          (item) =>
+            item.path === 'apps/web/app/layout.tsx' ||
+            item.path === 'apps/web/app/globals.css' ||
+            item.path.startsWith('apps/web/components/'),
+        );
+        if (
+          value.assets.length !== expectedAssets.length ||
+          expectedAssets.some(
+            (item) => value.assets!.filter((asset) => asset.path === item.path).length !== 1,
+          )
+        )
+          problems.push(
+            'El manifiesto no cubre exactamente los componentes compartidos de la presentación.',
+          );
+        if (
+          plan &&
+          (value.baselineId !== plan.designBaselineId ||
+            value.records.length !== plan.routes.length ||
+            plan.routes.some(
+              (route) =>
+                value.records!.filter((record) => record.routePath === route.path).length !== 1,
+            ))
+        )
+          problems.push(
+            'El manifiesto no cubre exactamente las rutas y el diseño aprobado del plan.',
+          );
+        for (const asset of value.assets) {
+          const source = byPath.get(asset.path);
+          if (!source || sha256(source.content) !== asset.sha256)
+            problems.push(
+              `La presentación compartida «${asset.path}» cambió después de registrar el diseño.`,
+            );
+        }
+        for (const record of value.records) {
+          const page = byPath.get(pagePath(record.routePath));
+          if (!page || sha256(page.content) !== record.outputSha256)
+            problems.push(
+              `La composición de ${record.routePath} no coincide con la registrada; revise los cambios antes de entregar.`,
+            );
+        }
+      } catch {
+        problems.push('El manifiesto de fidelidad del diseño no es válido.');
+      }
+    }
+    // A successful compile cannot turn an explicit unimplemented business
+    // action into a functional delivery, including after automatic repair.
+    for (const file of files.filter(
+      (item) => item.kind === 'SOURCE' && item.path.startsWith('apps/api/'),
+    )) {
+      const source = ts.createSourceFile(file.path, file.content, ts.ScriptTarget.Latest, true);
+      const visit = (node: ts.Node) => {
+        if (
+          file.path.endsWith('-actions.service.ts') &&
+          ts.isMethodDeclaration(node) &&
+          node.body &&
+          hasOnlyThrowingPaths(node.body.statements)
+        )
+          problems.push(
+            `«${file.path}» contiene una acción que rechaza todos los casos sin implementar su flujo.`,
+          );
+        if (
+          ts.isNewExpression(node) &&
+          ts.isIdentifier(node.expression) &&
+          node.expression.text === 'NotImplementedException'
+        )
+          problems.push(`«${file.path}» contiene una acción de negocio sin implementar.`);
+        ts.forEachChild(node, visit);
+      };
+      visit(source);
+    }
   }
   return problems;
 }

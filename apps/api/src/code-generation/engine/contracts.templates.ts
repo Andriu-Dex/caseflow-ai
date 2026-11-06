@@ -1,4 +1,6 @@
 import type { ImplementationPlanContent } from '@caseflow-ai/contracts';
+import { customEndpointOperationId } from '../naming';
+import { actionValueZod, actionTypeName, actionSchemaName } from './action-contract.templates';
 import { lowerFirst, upperFirst } from '../naming';
 import {
   SCOPE,
@@ -20,7 +22,22 @@ export const updateSchemaName = (entity: string) => `update${entity}Schema`;
 // Relations whose foreign key a client sends (many-to-many links are not
 // part of the CRUD inputs in this template version).
 export const inputRelations = (entity: Entity) =>
-  entity.relations.filter((relation) => relation.kind !== 'MANY_TO_MANY');
+  entity.relations.filter(
+    (relation) =>
+      relation.kind !== 'MANY_TO_MANY' && relation.name !== entity.operationScope?.actorRelation,
+  );
+
+export const manyInputRelations = (entity: Entity, plan: ImplementationPlanContent) =>
+  plan.authentication.local?.scope
+    ? entity.relations.filter(
+        (relation) =>
+          relation.kind === 'MANY_TO_MANY' &&
+          !(
+            entity.localId === plan.authentication.local?.userEntityLocalId &&
+            relation.name === plan.authentication.local.roleRelation
+          ),
+      )
+    : [];
 
 function zodFor(entity: Entity, field: Field): string {
   const required = field.required;
@@ -75,7 +92,9 @@ export const SAMPLE_ID = '11111111-1111-4111-8111-111111111111';
 
 export function sampleInput(entity: Entity): Record<string, unknown> {
   return Object.fromEntries([
-    ...entity.fields.map((field): [string, unknown] => [field.name, sampleValue(entity, field)]),
+    ...entity.fields
+      .filter((field) => !field.internal)
+      .map((field): [string, unknown] => [field.name, sampleValue(entity, field)]),
     ...inputRelations(entity).map((relation): [string, unknown] => [
       `${relation.name}Id`,
       SAMPLE_ID,
@@ -93,9 +112,21 @@ export function contractsFiles(ctx: GenerationContext): GeneratedProjectFile[] {
           `export const ${enumConstName(entity.name, f.name)} = [${f.enumValues.map((v) => `'${v}'`).join(', ')}] as const;`,
       );
     const props = [
-      ...entity.fields.map((f) => `  ${f.name}: ${zodFor(entity, f)},`),
+      ...entity.fields
+        .filter((field) => !field.internal)
+        .map((f) => `  ${f.name}: ${zodFor(entity, f)},`),
+      ...(plan.authentication.local?.userEntityLocalId === entity.localId
+        ? [
+            "  password: z.string().min(12, 'Use al menos 12 caracteres.').max(1024),",
+            `  roleNames: z.array(z.enum(${JSON.stringify(plan.authentication.roles)})).min(1).max(20),`,
+          ]
+        : []),
       ...inputRelations(entity).map(
         (r) => `  ${r.name}Id: ${r.required ? 'z.uuid()' : 'z.uuid().nullish()'},`,
+      ),
+      ...manyInputRelations(entity, plan).map(
+        (relation) =>
+          `  ${relation.name}Ids: z.array(z.uuid()).max(500).refine(ids => new Set(ids).size === ids.length, 'No repita registros.').optional(),`,
       ),
     ];
     return [
@@ -113,8 +144,13 @@ export function contractsFiles(ctx: GenerationContext): GeneratedProjectFile[] {
   });
 
   const tests = plan.entities.map((entity) => {
-    const sample = sampleInput(entity);
-    const required = entity.fields.find((f) => f.required);
+    const sample = {
+      ...sampleInput(entity),
+      ...(plan.authentication.local?.userEntityLocalId === entity.localId
+        ? { password: 'test-password-only', roleNames: [plan.authentication.roles[0]] }
+        : {}),
+    };
+    const required = entity.fields.find((f) => f.required && !f.internal);
     return `  describe('${entity.name}', () => {
     const valid = ${JSON.stringify(sample)};
     it('accepts a valid ${lowerFirst(entity.name)}', () => {
@@ -181,6 +217,22 @@ export function contractsFiles(ctx: GenerationContext): GeneratedProjectFile[] {
         "import { z } from 'zod';",
         '',
         blocks.join('\n\n'),
+        ...plan.customEndpoints.flatMap((endpoint) =>
+          endpoint.contract
+            ? (['Body', 'Query', 'Response'] as const).flatMap((part) => {
+                const value =
+                  endpoint.contract![
+                    part === 'Body' ? 'body' : part === 'Query' ? 'query' : 'response'
+                  ];
+                const id = customEndpointOperationId(endpoint);
+                return value
+                  ? [
+                      `export const ${actionSchemaName(id, part)} = ${actionValueZod(value, part === 'Query')};\nexport type ${actionTypeName(id, part)} = z.infer<typeof ${actionSchemaName(id, part)}>;`,
+                    ]
+                  : [];
+              })
+            : [],
+        ),
       ].join('\n'),
       { origin: 'DETERMINISTIC', planElements },
     ),

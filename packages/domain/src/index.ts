@@ -22,6 +22,7 @@ export type { ConstructionJobPayload, ConstructionJobType } from './jobs/constru
 export {
   CASEFLOW_STANDARD_WEB_V1,
   CASEFLOW_WEB_TS_V1,
+  CASEFLOW_WEB_TS_V2,
   DEPENDENCY_CATEGORIES,
   DEPENDENCY_LAYERS,
   MAX_AUTO_REPAIR_ROUNDS,

@@ -1,5 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, UnprocessableEntityException } from '@nestjs/common';
 import ts from 'typescript';
+import { hasOnlyThrowingPaths } from './business-flow';
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { AIError, AIOrchestrator } from '@caseflow-ai/ai';
 import { findCatalogDependency, type TargetTemplateVersion } from '@caseflow-ai/domain';
@@ -7,6 +9,8 @@ import type { ImplementationPlanContent } from '@caseflow-ai/contracts';
 import { PrismaService } from '../database/prisma.service';
 import { getProjectLanguage } from '../projects/project-language';
 import { lowerFirst } from '../code-generation/naming';
+import { loadFrozenBusinessContext } from './frozen-business-context';
+import { file, json, type GeneratedProjectFile } from '../code-generation/engine/types';
 import {
   HTTP_EXCEPTIONS,
   actionMethodName,
@@ -56,7 +60,40 @@ ${body}
 }
 
 // Pure check of one AI-proposed method body.
-export function reviewBusinessLogic(body: string): BusinessLogicReview {
+export function reviewBusinessLogic(
+  body: string,
+  internalFields: readonly string[] = [],
+): BusinessLogicReview {
+  const source = ts.createSourceFile('body.ts', body, ts.ScriptTarget.Latest, true);
+  let touchesInternal = false;
+  let bypassesBoundary = false;
+  const visit = (node: ts.Node) => {
+    if ((ts.isIdentifier(node) || ts.isStringLiteral(node)) && internalFields.includes(node.text))
+      touchesInternal = true;
+    if (
+      ts.isCallExpression(node) &&
+      (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+        (ts.isIdentifier(node.expression) && node.expression.text === 'require'))
+    )
+      bypassesBoundary = true;
+    if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+      const property = ts.isPropertyAccessExpression(node)
+        ? node.name.text
+        : node.argumentExpression && ts.isStringLiteral(node.argumentExpression)
+          ? node.argumentExpression.text
+          : '';
+      if (
+        ['constructor', 'prototype', '__proto__'].includes(property) ||
+        (property.startsWith('$') && property !== '$transaction') ||
+        (property.startsWith('_') && !['_sum', '_avg', '_min', '_max', '_count'].includes(property))
+      )
+        bypassesBoundary = true;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  if (touchesInternal)
+    return { accepted: false, reason: 'accede a un campo interno de credenciales', packages: [] };
   const invalid = syntaxError(body);
   if (invalid)
     return { accepted: false, reason: `no es código TypeScript válido (${invalid})`, packages: [] };
@@ -65,6 +102,18 @@ export function reviewBusinessLogic(body: string): BusinessLogicReview {
     return { accepted: false, reason: 'importa paquetes', packages: [...new Set(packages)] };
   const forbidden = FORBIDDEN.find(({ pattern }) => pattern.test(body));
   if (forbidden) return { accepted: false, reason: forbidden.reason, packages: [] };
+  if (hasOnlyThrowingPaths(source.statements))
+    return {
+      accepted: false,
+      reason: 'rechaza todos los casos sin implementar un flujo correcto',
+      packages: [],
+    };
+  if (bypassesBoundary)
+    return {
+      accepted: false,
+      reason: 'intenta eludir los límites de ejecución o persistencia',
+      packages: [],
+    };
   return { accepted: true };
 }
 
@@ -99,64 +148,179 @@ export class BusinessLogicService {
     generationRunId: string,
     plan: ImplementationPlanContent,
     template: TargetTemplateVersion,
-  ): Promise<{ implementations: EndpointImplementations; warnings: string[] }> {
+  ): Promise<{
+    implementations: EndpointImplementations;
+    warnings: string[];
+    checkpoints?: GeneratedProjectFile[];
+  }> {
     const warnings: string[] = [];
     if (!plan.customEndpoints.length) return { implementations: {}, warnings };
     const language = await getProjectLanguage(this.prisma, projectId);
+    if (
+      template.version >= 2 &&
+      !(await this.prisma.generationRun.findFirst({
+        where: {
+          id: generationRunId,
+          projectId,
+          designBaselineId: plan.designBaselineId,
+          status: 'GENERATING',
+        },
+        select: { id: true },
+      }))
+    )
+      throw new UnprocessableEntityException(
+        'La corrida no pertenece al proyecto y diseño indicados o ya no está en generación.',
+      );
+    const frozenContext =
+      template.version >= 2
+        ? await loadFrozenBusinessContext(this.prisma, projectId, plan.designBaselineId)
+        : undefined;
     const implementations: EndpointImplementations = {};
-    for (const endpoint of plan.customEndpoints) {
+    const checkpoints: GeneratedProjectFile[] = [];
+    for (const endpoint of plan.customEndpoints.filter(
+      (item) => !item.builtin && !item.disabledReason,
+    )) {
+      const promptVersion = endpoint.contract
+        ? 6
+        : plan.authentication.local?.scope
+          ? 5
+          : plan.authentication.local
+            ? 4
+            : 3;
       const module = plan.modules.find((m) => m.localId === endpoint.moduleLocalId)!;
       const params = [...endpoint.path.matchAll(/:([a-zA-Z0-9]+)/g)].map((m) => m[1]!);
       const hasBody = ['POST', 'PATCH', 'PUT'].includes(endpoint.method);
       const context = {
+        ...(frozenContext ? { approvedContext: frozenContext(endpoint, plan) } : {}),
         action: {
+          ...(endpoint.rules ? { rules: endpoint.rules } : {}),
+          ...(endpoint.contract ? { contract: endpoint.contract } : {}),
+          roles: endpoint.roles,
+          ...(plan.authentication.local?.scope
+            ? { scopeAccess: endpoint.scopeAccess ?? 'SELECTED', dataAccess: endpoint.dataAccess }
+            : {}),
           summary: endpoint.summary,
           method: endpoint.method,
           path: endpoint.path,
           methodName: actionMethodName(endpoint),
           parameters: [
             ...params.map((p) => ({ name: p, type: 'string (path parameter)' })),
-            ...(hasBody ? [{ name: 'body', type: 'Record<string, unknown> (request body)' }] : []),
+            ...(hasBody
+              ? [
+                  {
+                    name: 'body',
+                    type: endpoint.contract?.body
+                      ? 'Validated input matching action.contract.body'
+                      : 'Record<string, unknown> (request body)',
+                  },
+                ]
+              : []),
+            ...(endpoint.contract?.query
+              ? [{ name: 'query', type: 'Validated filters matching action.contract.query' }]
+              : []),
+            ...(plan.authentication.local
+              ? [
+                  {
+                    name: 'actor',
+                    type: plan.authentication.local.scope
+                      ? '{ userId: string; sessionId: string; roles: string[]; selectedScopeId?: string; scopeIds: string[]; permissions: string[] } (immutable verified server context)'
+                      : '{ userId: string; sessionId: string; roles: string[] } (verified server session)',
+                  },
+                ]
+              : []),
           ],
           mainEntity: plan.entities.find((e) => e.localId === endpoint.entityLocalId)?.name ?? null,
         },
         module: { name: module.name, description: module.description },
-        prismaDelegates: plan.entities.map((e) => ({
-          delegate: `this.prisma.${lowerFirst(e.name)}`,
-          model: e.name,
-          fields: [
-            'id',
-            ...e.fields.map(
-              // An optional field may be null: said so, the body checks it
-              // instead of failing the generated project's typecheck.
-              (f) =>
-                `${f.name}: ${f.type}${f.type === 'ENUM' ? ` (${f.enumValues.join('|')})` : ''}${f.required ? '' : ' | null'}`,
-            ),
-            ...e.relations.map((r) =>
-              r.kind === 'MANY_TO_MANY'
-                ? `${r.name}: relation[]`
-                : `${r.name}Id: string${r.required ? '' : ' | null'}`,
-            ),
-          ],
-        })),
+        prismaDelegates: plan.entities
+          .filter(
+            (entity) =>
+              !plan.authentication.local?.scope ||
+              endpoint.dataAccess?.some((access) => access.entityLocalId === entity.localId),
+          )
+          .map((e) => ({
+            delegate: `this.prisma.${lowerFirst(e.name)}`,
+            model: e.name,
+            ...(e.uniqueConstraints ? { uniqueConstraints: e.uniqueConstraints } : {}),
+            fields: [
+              'id',
+              ...e.fields
+                .filter((field) => !field.internal)
+                .map(
+                  // An optional field may be null: said so, the body checks it
+                  // instead of failing the generated project's typecheck.
+                  (f) =>
+                    `${f.name}: ${f.type}${f.type === 'ENUM' ? ` (${f.enumValues.join('|')})` : ''}${f.required ? '' : ' | null'}`,
+                ),
+              ...e.relations.map((r) =>
+                r.kind === 'MANY_TO_MANY'
+                  ? `${r.name}: relation[]`
+                  : `${r.name}Id: string${r.required ? '' : ' | null'}`,
+              ),
+            ],
+          })),
         availableExceptions: HTTP_EXCEPTIONS,
       };
+      const internalFields = plan.entities.flatMap((entity) =>
+        entity.fields.filter((field) => field.internal).map((field) => field.name),
+      );
+      const checkpointPath = `docs/business-logic/${createHash('sha256')
+        .update(
+          json({
+            templateVersion: template.version,
+            promptVersion,
+            context,
+          }),
+        )
+        .digest('hex')}.json`;
       try {
-        const result = await this.ai.generateStructured({
-          projectId,
-          language,
-          promptKey: 'business-logic.generate',
-          promptVersion: 3,
-          messages: [{ role: 'user', content: JSON.stringify(context) }],
-          outputSchema: businessLogicOutputSchema,
-          schemaName: 'business_logic_generation',
-          // The schema's length limit cuts an answer where it falls, so both
-          // leave room for a long action.
-          maxOutputTokens: 8192,
-        });
-        const review = reviewBusinessLogic(result.data.body);
+        const cached =
+          template.version >= 2
+            ? await this.prisma.generatedFile.findFirst({
+                where: {
+                  path: checkpointPath,
+                  generationRun: { projectId, designBaselineId: plan.designBaselineId },
+                },
+                select: { content: true },
+              })
+            : null;
+        const result = cached
+          ? { data: businessLogicOutputSchema.parse(JSON.parse(cached.content)) }
+          : await this.ai.generateStructured({
+              projectId,
+              language,
+              promptKey: 'business-logic.generate',
+              promptVersion,
+              messages: [{ role: 'user', content: JSON.stringify(context) }],
+              outputSchema: businessLogicOutputSchema,
+              schemaName: 'business_logic_generation',
+              // The schema's length limit cuts an answer where it falls, so both
+              // leave room for a long action.
+              maxOutputTokens: 8192,
+            });
+        const review = reviewBusinessLogic(result.data.body, internalFields);
         if (review.accepted) {
           implementations[endpointKey(endpoint)] = result.data.body;
+          if (template.version >= 2) {
+            const checkpoint = file(checkpointPath, json({ body: result.data.body }), {
+              kind: 'DOCUMENTATION',
+              origin: 'AI_ASSISTED',
+              planElements: [`endpoint:${endpointKey(endpoint)}`],
+            });
+            await this.prisma.generatedFile.upsert({
+              where: { generationRunId_path: { generationRunId, path: checkpointPath } },
+              update: {},
+              create: {
+                generationRunId,
+                path: checkpoint.path,
+                content: checkpoint.content,
+                origin: checkpoint.origin,
+                kind: checkpoint.kind,
+                sha256: createHash('sha256').update(checkpoint.content).digest('hex'),
+              },
+            });
+            checkpoints.push(checkpoint);
+          }
           continue;
         }
         logger.warn(
@@ -174,6 +338,8 @@ export class BusinessLogicService {
         );
       }
     }
-    return { implementations, warnings };
+    return template.version >= 2
+      ? { implementations, warnings, checkpoints }
+      : { implementations, warnings };
   }
 }

@@ -275,6 +275,12 @@ export class ProjectsService {
         await tx.$queryRaw`SELECT set_config('caseflow.project_purge', 'on', true)`;
 
         // Construction output (references design baselines and plan versions)
+        await tx.$executeRaw`DELETE FROM user_manual_captures WHERE task_id IN (SELECT t.id FROM user_manual_tasks t JOIN artifact_versions v ON v.id=t.manual_version_id WHERE v.project_id=${p})`;
+        await tx.$executeRaw`DELETE FROM user_manual_task_roles WHERE task_id IN (SELECT t.id FROM user_manual_tasks t JOIN artifact_versions v ON v.id=t.manual_version_id WHERE v.project_id=${p})`;
+        await tx.$executeRaw`DELETE FROM user_manual_steps WHERE task_id IN (SELECT t.id FROM user_manual_tasks t JOIN artifact_versions v ON v.id=t.manual_version_id WHERE v.project_id=${p})`;
+        await tx.$executeRaw`DELETE FROM user_manual_tasks WHERE manual_version_id IN (SELECT id FROM artifact_versions WHERE project_id=${p})`;
+        await tx.$executeRaw`DELETE FROM user_manual_details WHERE artifact_version_id IN (SELECT id FROM artifact_versions WHERE project_id=${p})`;
+        await tx.$executeRaw`DELETE FROM user_manual_jobs WHERE project_id=${p}`;
         await tx.$executeRaw`DELETE FROM code_trace_links WHERE generated_file_id IN (SELECT gf.id FROM generated_files gf JOIN generation_runs gr ON gr.id = gf.generation_run_id WHERE gr.project_id = ${p})`;
         await tx.$executeRaw`DELETE FROM repair_findings WHERE auto_repair_attempt_id IN (SELECT a.id FROM auto_repair_attempts a JOIN generation_runs gr ON gr.id = a.generation_run_id WHERE gr.project_id = ${p})`;
         await tx.$executeRaw`DELETE FROM repair_patches WHERE auto_repair_attempt_id IN (SELECT a.id FROM auto_repair_attempts a JOIN generation_runs gr ON gr.id = a.generation_run_id WHERE gr.project_id = ${p})`;
@@ -431,6 +437,7 @@ export class ProjectsService {
         WHERE mockup_version_id IN (SELECT id FROM artifact_versions WHERE project_id = ${projectId})
       UNION SELECT html_storage_key FROM mockup_screen_details
         WHERE mockup_version_id IN (SELECT id FROM artifact_versions WHERE project_id = ${projectId})
+      UNION SELECT storage_key FROM user_manual_captures WHERE storage_key IS NOT NULL AND task_id IN (SELECT t.id FROM user_manual_tasks t JOIN artifact_versions v ON v.id=t.manual_version_id WHERE v.project_id=${projectId})
       UNION SELECT archive_storage_key FROM generated_project_snapshots WHERE project_id = ${projectId}`;
     return rows.map((row) => row.key);
   }

@@ -140,6 +140,8 @@ The web app (`apps/web`) talks to the API only through `NEXT_PUBLIC_API_URL` (de
 | `pnpm --filter @caseflow-ai/web run test` | The frontend's own jsdom-based Vitest suite (`apps/web`), run separately from the root Node-only suite above.                                                                                                                   |
 | `pnpm run test:e2e`                       | Playwright browser E2E (both the no-AI Scenario A and the visual/provenance Scenario B), against local Postgres/SeaweedFS/Kroki only. Requires `pnpm infra:up`. Installs its own API/web servers via `playwright.config.ts`.    |
 
+API integration tests using `createTestContext` replace the mockup queue with a no-op double and execute jobs explicitly through `MockupsService.runJob`. They still use the isolated PostgreSQL test database, but do not need Redis or dispatch internal HTTP callbacks. The worker smoke test (`apps/worker/src/app.module.integration.spec.ts`) remains separate and requires real Redis and `INTERNAL_JOBS_SECRET`; it verifies worker initialization, not a complete queue-to-API round trip.
+
 ## OpenAPI
 
 The API's OpenAPI document is generated from the same zod contracts (`packages/contracts`) that validate requests. Interactive Swagger UI is served at `/docs` (JSON at `/docs/openapi.json`) only when `NODE_ENV` is not `production`. To write the document to `apps/api/openapi/openapi.json` (git-ignored, deterministic, no database required) run `pnpm build && pnpm openapi:generate`.

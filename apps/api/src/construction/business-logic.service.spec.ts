@@ -9,6 +9,25 @@ import {
 } from './business-logic.service';
 
 describe('reviewBusinessLogic', () => {
+  it('rejects dynamic imports and private persistence internals while keeping ordinary transactions and aggregates', () => {
+    for (const body of [
+      "return await import('../auth/operation-scope');",
+      'return this.prisma._originalClient;',
+      "return this.prisma['constructor'];",
+      'return this.prisma.$extends({});',
+    ])
+      expect(reviewBusinessLogic(body)).toMatchObject({ accepted: false });
+    expect(
+      reviewBusinessLogic(
+        'return this.prisma.$transaction(async tx => tx.order.aggregate({ _sum: { total: true } }));',
+      ),
+    ).toEqual({ accepted: true });
+  });
+  it('rejects private credential access through properties or string keys', () => {
+    for (const body of ['return row.secretDigest;', "return row['secretDigest'];"])
+      expect(reviewBusinessLogic(body, ['secretDigest'])).toMatchObject({ accepted: false });
+    expect(reviewBusinessLogic('return row.name;', ['secretDigest'])).toEqual({ accepted: true });
+  });
   it('accepts a body that only uses prisma delegates and exceptions', () => {
     expect(
       reviewBusinessLogic(

@@ -1,0 +1,257 @@
+{
+  "date": "2026-10-29",
+  "branch": "feat/visual-user-manual",
+  "committed": false,
+  "targetTemplate": {
+    "identifier": "CASEFLOW_WEB_TS_V1",
+    "version": 2
+  },
+  "repository": {
+    "lint": "PASS",
+    "format": "PASS",
+    "typecheck": "PASS",
+    "build": "PASS",
+    "finalApiBuild": "PASS",
+    "tests": {
+      "passed": 1023,
+      "skipped": 3,
+      "filesPassed": 138,
+      "filesSkipped": 1,
+      "command": "pnpm run test:coverage"
+    },
+    "coverage": {
+      "lines": 77.47,
+      "branches": 74.35
+    },
+    "web": {
+      "passed": 325,
+      "command": "pnpm --filter @caseflow-ai/web run test"
+    },
+    "integration": {
+      "passed": 34,
+      "files": 6,
+      "database": "coherence_fixes_test",
+      "containerRestoredTo": "STOPPED",
+      "suites": [
+        "construction-foundation",
+        "construction-design-gate",
+        "construction-implementation-plan",
+        "construction-generation-runs",
+        "structured-analysis-controller-di",
+        "structured-analysis"
+      ]
+    },
+    "focusedGeneratorTests": {
+      "passed": 15,
+      "files": 2
+    }
+  },
+  "genericActionFixture": {
+    "businessCertificationForRestGuestMateos": false,
+    "command": "node scripts/evaluate-action-contracts.mjs",
+    "sourceFiles": 76,
+    "sourceSha256": "ced421ec221f92b4e27227ad7d54eee6ffcccbc95dea3eaa7426360972ecc5b1",
+    "validation": [
+      {
+        "stage": "INSTALL",
+        "exitCode": 0,
+        "timedOut": false,
+        "durationMs": 26586
+      },
+      {
+        "stage": "LINT",
+        "exitCode": 0,
+        "timedOut": false,
+        "durationMs": 3823
+      },
+      {
+        "stage": "TYPECHECK",
+        "exitCode": 0,
+        "timedOut": false,
+        "durationMs": 7217
+      },
+      {
+        "stage": "TEST",
+        "exitCode": 0,
+        "timedOut": false,
+        "durationMs": 6452
+      },
+      {
+        "stage": "BUILD",
+        "exitCode": 0,
+        "timedOut": false,
+        "durationMs": 13152
+      }
+    ],
+    "httpChecks": [
+      "Unknown monetary input rejected",
+      "UUID contract enforced",
+      "Positive quantity enforced",
+      "Failed create rolls back all records",
+      "Exact server money and declared HTTP status",
+      "Draft update recalculates exact total",
+      "Stale draft revision rejected",
+      "Failed update rolls back revision and details",
+      "Typed query true parsed",
+      "Typed query false parsed",
+      "Nonboolean query rejected",
+      "Query numeric bounds enforced",
+      "Unknown query rejected",
+      "Concurrent confirmation produces one effect and recovers result",
+      "Same-key retry recovers original revision",
+      "Same key with different data rejected",
+      "Second distinct confirmation rejected",
+      "Confirmed lines immutable",
+      "Catalog updates preserve historical money",
+      "Invalid output contract fails safely"
+    ],
+    "browserFlow": "PASS",
+    "captures": [
+      {
+        "role": "",
+        "routePath": "/orders/new",
+        "status": "CAPTURED",
+        "reason": null,
+        "width": 1440,
+        "height": 900
+      }
+    ]
+  },
+  "operationScopeFixture": {
+    "basis": "RestGuestMateos implementation plan v10 with deterministic test bodies",
+    "businessCertificationForRestGuestMateos": false,
+    "validation": [
+      {
+        "stage": "INSTALL",
+        "exitCode": 0,
+        "timedOut": false,
+        "durationMs": 25060
+      },
+      {
+        "stage": "LINT",
+        "exitCode": 0,
+        "timedOut": false,
+        "durationMs": 5305
+      },
+      {
+        "stage": "TYPECHECK",
+        "exitCode": 0,
+        "timedOut": false,
+        "durationMs": 9703
+      },
+      {
+        "stage": "TEST",
+        "exitCode": 0,
+        "timedOut": false,
+        "durationMs": 16125
+      },
+      {
+        "stage": "BUILD",
+        "exitCode": 0,
+        "timedOut": false,
+        "durationMs": 22796
+      }
+    ],
+    "httpChecks": [
+      "Live identity and assigned scopes",
+      "Business request without selected scope denied",
+      "Forged scope denied",
+      "List isolates selected scope",
+      "Foreign record ID inaccessible",
+      "Cross-scope parent reassignment denied",
+      "Actor assigned by server",
+      "Actor spoofing rejected by contract",
+      "Custom list and aggregate isolated",
+      "Concurrent contexts isolated",
+      "Read-only action cannot mutate",
+      "Cross-scope report requires administrator",
+      "Explicit administrator comparison spans authorized scopes",
+      "Foreign child creation denied",
+      "Custom deleteMany preserves other scope",
+      "Scope editor persists safely",
+      "Scope revocation applies to existing token",
+      "Stale context recovers without logout",
+      "Scoped transaction sees new parent records and audit references",
+      "Scoped transaction rolls back parent, lines and audit after failure",
+      "Raw transaction access denied",
+      "Permission editor persists",
+      "Permission revocation applies to existing token",
+      "Throttling records rejection audit without credentials"
+    ],
+    "browserChecks": ["Scope switching and access editor passed"],
+    "captures": [
+      {
+        "routePath": "/home",
+        "role": "Administrador",
+        "status": "CAPTURED",
+        "reason": null,
+        "width": 1440,
+        "height": 900
+      },
+      {
+        "routePath": "/home",
+        "role": "Encargado de sucursal",
+        "status": "CAPTURED",
+        "reason": null,
+        "width": 1440,
+        "height": 900
+      }
+    ]
+  },
+  "approvedSalesPolicies": {
+    "pricing": "Effective price for selected branch, with catalog fallback",
+    "money": "Exact calculation with HALF_UP rounding to 2 decimals",
+    "discounts": "DISABLED",
+    "inventory": "MANUAL_MOVEMENTS_WITHOUT_AUTOMATIC_RECIPE_DEDUCTION"
+  },
+  "actualProject": {
+    "projectId": "4584e81d-42f3-4501-b0c8-58bac5f7253c",
+    "implementationPlanVersionId": "d5c1f96d-ebd4-407e-bc4c-738f63d43235",
+    "implementationPlanVersion": 11,
+    "designBaselineId": "ac298b2c-ba49-443a-a2c1-99b8d8a8ecc4",
+    "latestGenerationRunId": "b218a3b9-573f-4d91-ac2b-31250a54f11c",
+    "generationStatus": "FAILED",
+    "generationStartedAt": "2026-10-29T09:19:32.851Z",
+    "generationFinishedAt": "2026-10-29T09:19:33.690Z",
+    "unimplementedActions": 29,
+    "fileCount": 0,
+    "providerState": "CHATGPT_USAGE_LIMIT",
+    "providerSwitched": false,
+    "newSnapshotCreated": false,
+    "newDeliveryCreated": false,
+    "certifiedSalesOperations": 0
+  },
+  "verificationFailuresResolved": [
+    {
+      "check": "Scope fixture install during simultaneous sandbox runs",
+      "observed": "Exit 137",
+      "resolution": "Sequential retry passed five stages"
+    },
+    {
+      "check": "Scope fixture lint",
+      "observed": "no-this-alias in generated PrismaService",
+      "resolution": "Named facade factory; lint, typecheck, tests, build and runtime passed"
+    },
+    {
+      "check": "Browser fixture flow",
+      "observed": "UUID generation unavailable in HTTP origin",
+      "resolution": "UUID v4 from crypto.getRandomValues; complete browser flow passed"
+    },
+    {
+      "check": "Root lint and navigation template",
+      "observed": "Escapes were not preserved in generated route replacement",
+      "resolution": "Escaped template regex; navigation tested in browser"
+    },
+    {
+      "check": "Formatting",
+      "observed": "New evaluation script required repository formatting",
+      "resolution": "Formatted; full format check passed"
+    }
+  ],
+  "notVerified": [
+    "Actual five sales action implementations: provider usage quota blocks generation",
+    "Commercial HALF_UP, effective branch pricing and business audit in actual RestGuestMateos flow",
+    "Remaining business-action families and their pending policies",
+    "New official snapshot, ZIP, visual equivalence and manual for these sales operations"
+  ]
+}

@@ -75,14 +75,14 @@ function setup() {
   const prisma = {
     project: { findUnique: vi.fn().mockResolvedValue({ language: 'ES' }) },
     $transaction: vi.fn((callback) => callback(tx)),
-    artifact: { findMany: vi.fn(), findFirst: vi.fn() },
+    artifact: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn() },
     artifactVersion: {
       findMany: vi.fn().mockResolvedValue([]),
       findFirst: vi.fn(),
       update: vi.fn(),
     },
     structuredAnalysisGeneration: { findFirst: vi.fn() },
-    structuredAnalysisDetail: { findUniqueOrThrow: vi.fn() },
+    structuredAnalysisDetail: { findUniqueOrThrow: vi.fn().mockResolvedValue(detail) },
   };
   const ai = { generateStructured: vi.fn() };
   return {

@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { FakeAIProvider } from '@caseflow-ai/ai';
 import request from 'supertest';
 import JSZip from 'jszip';
 import { writeFileSync } from 'node:fs';
@@ -77,7 +78,15 @@ describe('Construction sandbox validation integration', () => {
     ).body.items;
 
   beforeAll(async () => {
-    ctx = await createTestContext();
+    ctx = await createTestContext({
+      aiProvider: new FakeAIProvider({
+        provider: 'fake',
+        model: 'fixture',
+        payload: { body: 'return { confirmed: true };' },
+        latencyMs: 1,
+        usage: null,
+      }),
+    });
     generationRuns = ctx.app.get(GenerationRunsService);
     sandboxRuns = ctx.app.get(SandboxRunsService);
     sandbox = ctx.app.get(SANDBOX_EXECUTION_PROVIDER);

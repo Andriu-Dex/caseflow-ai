@@ -1,5 +1,8 @@
 import { toast } from 'sonner';
 import type {
+  UserManualState,
+  UserManualResponse,
+  EditUserManualRequest,
   CreateDesignBaselineRequest,
   DataModelInput,
   DesignBaselineResponse,
@@ -896,6 +899,40 @@ export const api = {
       get<{ items: WorkflowReviewItem[] }>(`/projects/${projectId}/workflow-runs/${runId}/review`),
     approve: (projectId: string, runId: string) =>
       post<WorkflowRunResponse>(`/projects/${projectId}/workflow-runs/${runId}/approve`),
+  },
+  userManuals: {
+    cancelCapture: (p: string, s: string) =>
+      post<UserManualState>(
+        `/projects/${p}/generated-project-snapshots/${s}/user-manual/capture/cancel`,
+        {},
+      ),
+    capture: (p: string, s: string) =>
+      post<UserManualState>(
+        `/projects/${p}/generated-project-snapshots/${s}/user-manual/capture`,
+        {},
+      ),
+    captureUrl: (p: string, s: string, v: string, c: string) =>
+      `${BASE_URL}/projects/${p}/generated-project-snapshots/${s}/user-manual/versions/${v}/captures/${c}`,
+    state: (p: string, s: string) =>
+      get<UserManualState>(`/projects/${p}/generated-project-snapshots/${s}/user-manual`),
+    generate: (p: string, s: string) =>
+      post(`/projects/${p}/generated-project-snapshots/${s}/user-manual/generate`, {}),
+    version: (p: string, s: string, v: string) =>
+      get<UserManualResponse>(
+        `/projects/${p}/generated-project-snapshots/${s}/user-manual/versions/${v}`,
+      ),
+    edit: (p: string, s: string, input: EditUserManualRequest) =>
+      post<UserManualResponse>(
+        `/projects/${p}/generated-project-snapshots/${s}/user-manual/versions`,
+        input,
+      ),
+    transition: (p: string, s: string, v: string, status: ArtifactVersionStatus) =>
+      post<UserManualResponse>(
+        `/projects/${p}/generated-project-snapshots/${s}/user-manual/versions/${v}/transition`,
+        { status },
+      ),
+    downloadUrl: (p: string, s: string, v: string, format: 'html' | 'pdf' | 'zip') =>
+      `${BASE_URL}/projects/${p}/generated-project-snapshots/${s}/user-manual/versions/${v}/download?format=${format}`,
   },
   generationRuns: {
     list: (projectId: string) =>

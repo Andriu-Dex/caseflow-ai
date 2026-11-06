@@ -33,12 +33,19 @@ function tsType(schema: Schema | undefined): string {
   if (!schema) return 'void';
   if (schema.$ref) return schema.$ref.split('/').pop()!;
   let base: string;
-  if (schema.enum) base = schema.enum.map((v) => `'${v}'`).join(' | ');
-  else if (schema.type === 'array') base = `${tsType(schema.items)}[]`;
+  if (schema.enum) base = schema.enum.map((v) => JSON.stringify(v)).join(' | ');
+  else if (schema.type === 'array') base = `Array<${tsType(schema.items)}>`;
   else if (schema.type === 'integer' || schema.type === 'number') base = 'number';
   else if (schema.type === 'boolean') base = 'boolean';
   else if (schema.type === 'string') base = 'string';
   else if (schema.type === 'object' && !schema.properties) base = 'Record<string, unknown>';
+  else if (schema.type === 'object')
+    base = `{ ${Object.entries(schema.properties ?? {})
+      .map(
+        ([key, value]) =>
+          `${JSON.stringify(key)}${schema.required?.includes(key) ? '' : '?'}: ${tsType(value)};`,
+      )
+      .join(' ')} }`;
   else base = 'unknown';
   return schema.nullable ? `${base} | null` : base;
 }
@@ -68,6 +75,12 @@ export function apiClientFiles(ctx: GenerationContext): GeneratedProjectFile[] {
   const methods = operations.map(({ path, method, op }) => {
     const pathParams = (op.parameters ?? []).filter((p) => p.in === 'path').map((p) => p.name);
     const body = op.requestBody?.content['application/json'].schema;
+    const queryParams = (op.parameters ?? []).filter((p) => p.in === 'query') as {
+      name: string;
+      in: string;
+      required?: boolean;
+      schema?: Schema;
+    }[];
     const success = Object.entries(op.responses).find(([status]) => status.startsWith('2'));
     const response = success?.[1].content?.['application/json'].schema;
     const args = [
@@ -76,15 +89,20 @@ export function apiClientFiles(ctx: GenerationContext): GeneratedProjectFile[] {
         ? [`params: { ${pathParams.map((p) => `${p}: string`).join('; ')} }`]
         : []),
       ...(body ? [`body: ${tsType(body)}`] : []),
+      ...(queryParams.length
+        ? [
+            `query: {${queryParams.map((p) => `${JSON.stringify(p.name)}${p.required ? '' : '?'}: ${tsType(p.schema)}`).join(';')}}`,
+          ]
+        : []),
     ];
     const url = path.replace(/\{([a-zA-Z0-9]+)\}/g, (_, name: string) =>
       name === 'id' && pathParams.length === 1
         ? '${encodeURIComponent(id)}'
         : `\${encodeURIComponent(params.${name})}`,
     );
-    return `    /** ${op.summary ?? op.operationId} */
+    return `    /** ${(op.summary ?? op.operationId).replace(/\*\//g, '* /').replace(/\s+/g, ' ')} */
     ${op.operationId}: (${args.join(', ')}) =>
-      request<${tsType(response)}>('${method.toUpperCase()}', \`${url}\`${body ? ', body' : ''}),`;
+      request<${tsType(response)}>('${method.toUpperCase()}', \`${url}\`${queryParams.length ? ' + encodeQuery(query)' : ''}${body ? ', body' : ''}),`;
   });
 
   const sample = operations.find(({ method, op }) => method === 'get' && !op.parameters?.length);
@@ -158,6 +176,7 @@ export class ApiError extends Error {
 
 export function createApiClient(options: ApiClientOptions) {
   const fetchImpl = options.fetch ?? fetch;
+  ${operations.some(({ op }) => op.parameters?.some((p) => p.in === 'query')) ? `function encodeQuery(values: Record<string, unknown>) { const query=new URLSearchParams(); for(const [name,value] of Object.entries(values)) if(value!==undefined) query.set(name,String(value)); const encoded=query.toString(); return encoded?'?'+encoded:''; }` : ''}
 
   async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const headers: Record<string, string> = { Accept: 'application/json' };

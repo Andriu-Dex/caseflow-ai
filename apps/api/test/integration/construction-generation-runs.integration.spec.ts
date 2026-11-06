@@ -1,4 +1,5 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { AIError, AIOrchestrator, FakeAIProvider } from '@caseflow-ai/ai';
 import request from 'supertest';
 import { GenerationRunsService } from '../../src/construction/generation-runs.service';
 import {
@@ -54,11 +55,20 @@ describe('Construction generation runs integration', () => {
   let uiVersionId: string;
   let planVersionId: string;
   let draftPlanVersionId: string;
+  let approvedContent: ReturnType<typeof planBody>;
   const http = () => request(ctx.app.getHttpServer());
   const auth = () => ({ Authorization: `Bearer ${ctx.token}` });
 
   beforeAll(async () => {
-    ctx = await createTestContext();
+    ctx = await createTestContext({
+      aiProvider: new FakeAIProvider({
+        provider: 'fake',
+        model: 'fixture',
+        payload: { body: 'return { confirmed: true };' },
+        latencyMs: 1,
+        usage: null,
+      }),
+    });
     runs = ctx.app.get(GenerationRunsService);
     const workspace = await createWorkspaceWithOwner(ctx, 'Generation Runs');
     projectId = (await ctx.projects.create({ workspaceId: workspace.id, name: 'Tienda' })).id;
@@ -70,6 +80,7 @@ describe('Construction generation runs integration', () => {
       select: { artifact: { select: { code: true } } },
     });
     const content = planBody(baseline.id, ui.artifact.code);
+    approvedContent = content;
     const plan = await ctx.structuredAnalysis.create(
       projectId,
       'IMPLEMENTATION_PLAN',
@@ -110,6 +121,7 @@ describe('Construction generation runs integration', () => {
     expect(started.body).toMatchObject({
       status: 'QUEUED',
       targetTemplateIdentifier: 'CASEFLOW_WEB_TS_V1',
+      targetTemplateVersion: 2,
       fileCount: 0,
     });
     const runId = started.body.id as string;
@@ -123,8 +135,7 @@ describe('Construction generation runs integration', () => {
       .expect(200);
     expect(run.body.status).toBe('GENERATED');
     expect(run.body.fileCount).toBeGreaterThan(10);
-    // No AI configured in tests: the custom action keeps its honest 501 stub.
-    expect(run.body.warnings).toEqual([expect.stringContaining('Confirmar pedido')]);
+    expect(run.body.warnings).toEqual([expect.stringContaining('fidelidad visual')]);
 
     const files = await http()
       .get(`/projects/${projectId}/generation-runs/${runId}/files`)
@@ -162,6 +173,48 @@ describe('Construction generation runs integration', () => {
     await expect(
       ctx.prisma.generationRun.update({ where: { id: runId }, data: { status: 'QUEUED' } }),
     ).rejects.toThrow();
+  });
+
+  it('fails the new template explicitly when business logic is unavailable instead of delivering 501 actions', async () => {
+    const unavailable = vi
+      .spyOn(ctx.app.get(AIOrchestrator), 'generateStructured')
+      .mockRejectedValue(new AIError('AI_PROVIDER_UNAVAILABLE', 'unavailable'));
+    try {
+      const reused = await runs.start(projectId, ctx.userId, planVersionId);
+      await runs.runJob(projectId, reused.id);
+      expect(await runs.get(projectId, reused.id)).toMatchObject({ status: 'GENERATED' });
+      expect(unavailable).not.toHaveBeenCalled();
+      const changed = structuredClone(approvedContent);
+      changed.customEndpoints[0]!.summary =
+        'Confirmar pedido con una regla nueva sin implementación disponible';
+      const newPlan = await ctx.structuredAnalysis.create(
+        projectId,
+        'IMPLEMENTATION_PLAN',
+        'Plan con cambio de regla',
+        changed,
+      );
+      for (const status of ['IN_REVIEW', 'APPROVED'] as const)
+        await ctx.structuredAnalysis.transition(
+          projectId,
+          'IMPLEMENTATION_PLAN',
+          newPlan.id,
+          newPlan.version.id,
+          status,
+        );
+      const run = await runs.start(projectId, ctx.userId, newPlan.version.id);
+      await runs.runJob(projectId, run.id);
+      expect(await runs.get(projectId, run.id)).toMatchObject({
+        status: 'FAILED',
+        fileCount: 0,
+        errorMessage: expect.stringContaining('1 acción de negocio sin implementar'),
+        warnings: [expect.stringContaining('Confirmar pedido')],
+      });
+      expect(
+        await ctx.prisma.generatedProjectSnapshot.count({ where: { generationRunId: run.id } }),
+      ).toBe(0);
+    } finally {
+      unavailable.mockRestore();
+    }
   });
 
   it('refuses plans that are not approved or belong to another project', async () => {

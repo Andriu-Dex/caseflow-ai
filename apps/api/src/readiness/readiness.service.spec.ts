@@ -5,6 +5,7 @@ import type { RequirementsService } from '../requirements/requirements.service';
 import type { StalenessService } from '../staleness/staleness.service';
 import type { TraceabilityService } from '../traceability/traceability.service';
 import { ReadinessService } from './readiness.service';
+import type { ConsistencyEngineService } from '../consistency-engine/consistency-engine.service';
 
 function setup() {
   const prisma = {
@@ -22,22 +23,40 @@ function setup() {
   const requirements = { qualityReport: vi.fn().mockResolvedValue({ issues: [] }) };
   const staleness = { analyzeProject: vi.fn().mockResolvedValue({ entries: [] }) };
   const traceability = { buildGraph: vi.fn().mockResolvedValue({ nodes: [], edges: [] }) };
+  const consistency = { generateReport: vi.fn().mockResolvedValue({ issues: [] }) };
   return {
     prisma,
     requirements,
     staleness,
     traceability,
+    consistency,
     service: new ReadinessService(
       prisma as unknown as PrismaService,
       requirements as unknown as RequirementsService,
       staleness as unknown as StalenessService,
       traceability as unknown as TraceabilityService,
       new FirstDeliverableSnapshotService(prisma as unknown as PrismaService),
+      undefined,
+      undefined,
+      consistency as unknown as ConsistencyEngineService,
     ),
   };
 }
 
 describe('ReadinessService', () => {
+  it('propagates consistency blockers to their stage and overall readiness', async () => {
+    const { service, consistency } = setup();
+    consistency.generateReport.mockResolvedValue({
+      issues: [
+        { severity: 'ERROR', artifactType: 'MOCKUP', message: 'Falta una pantalla del boceto.' },
+      ],
+    });
+    const result = await service.evaluate('p');
+    expect(result.ready).toBe(false);
+    expect(result.stages.find((stage) => stage.key === 'MOCKUPS')?.blockers).toContain(
+      'Falta una pantalla del boceto.',
+    );
+  });
   it('reports every stage unsatisfied and overall not ready for an empty project', async () => {
     const { service } = setup();
     const result = await service.evaluate('p');

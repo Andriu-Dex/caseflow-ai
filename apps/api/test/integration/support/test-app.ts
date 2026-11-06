@@ -39,11 +39,13 @@ import { SourcesService } from '../../../src/sources/sources.service';
 import { SOURCE_QUEUE } from '../../../src/sources/source-queue.token';
 import { CONSTRUCTION_QUEUE_TOKEN } from '../../../src/construction/construction-queue.token';
 import { SANDBOX_EXECUTION_PROVIDER } from '../../../src/construction/sandbox-provider.token';
+import { RUNTIME_CAPTURE_PROVIDER } from '@caseflow-ai/integrations';
 import { STORAGE_PROVIDER } from '../../../src/sources/storage-provider.token';
 import { StructuredAnalysisModule } from '../../../src/structured-analysis/structured-analysis.module';
 import { StructuredAnalysisService } from '../../../src/structured-analysis/structured-analysis.service';
 import { MockupsModule } from '../../../src/mockups/mockups.module';
 import { MockupsService } from '../../../src/mockups/mockups.service';
+import { MOCKUP_QUEUE } from '../../../src/mockups/mockup-queue.token';
 import { StalenessModule } from '../../../src/staleness/staleness.module';
 import { StalenessService } from '../../../src/staleness/staleness.service';
 import { TraceabilityModule } from '../../../src/traceability/traceability.module';
@@ -147,9 +149,14 @@ export async function createTestContext(
     .useValue(new FakeStorageProvider())
     .overrideProvider(SANDBOX_EXECUTION_PROVIDER)
     .useValue(new FakeSandboxExecutionProvider())
+    .overrideProvider(RUNTIME_CAPTURE_PROVIDER)
+    .useValue(null)
     .overrideProvider(CONSTRUCTION_QUEUE_TOKEN)
     .useValue({ add: async () => undefined, close: async () => undefined })
     .overrideProvider(SOURCE_QUEUE)
+    .useValue({ add: async () => undefined, close: async () => undefined })
+    // Tests run mockup jobs explicitly; never enqueue them in Redis or dispatch HTTP callbacks.
+    .overrideProvider(MOCKUP_QUEUE)
     .useValue({ add: async () => undefined, close: async () => undefined })
     .overrideGuard(JwtAuthGuard)
     .useValue({

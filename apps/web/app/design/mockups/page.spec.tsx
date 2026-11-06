@@ -179,6 +179,45 @@ describe('pollMockupJob', () => {
 });
 
 describe('MockupsPage refinement', () => {
+  it('shows fidelity findings with expected and observed values without certifying the image', async () => {
+    const base = await mocks.getPreview();
+    mocks.getPreview.mockResolvedValue({
+      ...base,
+      fidelityReview: {
+        scope: 'HTML_HEURISTIC',
+        requirementVersionIds: ['rf-version'],
+        findings: [
+          {
+            screenLocalId: 'screen-1',
+            severity: 'ERROR',
+            code: 'CONTRADICTORY_LIMIT',
+            message: 'El máximo mostrado contradice el requisito aprobado.',
+            expected: '3 préstamos',
+            observed: '2 préstamos',
+          },
+        ],
+      },
+    });
+    render(
+      <TestProviders>
+        <MockupsPage />
+      </TestProviders>,
+    );
+    expect(await screen.findByText(/El máximo mostrado contradice/)).toHaveTextContent(
+      'Esperado: 3 préstamos. Observado: 2 préstamos.',
+    );
+    expect(screen.getByText(/no verifica el texto de la imagen/)).toBeInTheDocument();
+    expect(screen.queryByText(/No se detectaron contradicciones/)).not.toBeInTheDocument();
+    const summary = screen.getByText(/Revisiones del boceto/);
+    expect(summary).toHaveTextContent('1 bloqueos · 0 observaciones');
+    const details = summary.closest('details')!;
+    expect(details).not.toHaveAttribute('open');
+    await userEvent.setup().click(summary);
+    expect(details).toHaveAttribute('open');
+    expect(screen.getByText(/El máximo mostrado contradice/)).toBeVisible();
+    await userEvent.setup().click(summary);
+    expect(details).not.toHaveAttribute('open');
+  });
   it('sends the instruction to refine a Stitch mockup and clears it once a new version exists', async () => {
     const user = userEvent.setup();
     mocks.refine.mockResolvedValue(job('QUEUED'));

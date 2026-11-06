@@ -1,3 +1,4 @@
+import { localAuthFiles } from './local-auth.templates';
 import { PlanGenerationError } from '../naming';
 import { apiClientFiles } from './api-client.templates';
 import { backendFiles, type EndpointImplementations } from './backend.templates';
@@ -24,6 +25,15 @@ export function generateProject(
     ...backendFiles(ctx, implementations),
     ...frontendFiles(ctx),
   ];
+  for (const adapted of localAuthFiles(ctx)) {
+    const existing = files.findIndex((item) => item.path === adapted.path);
+    if (existing >= 0) files[existing] = adapted;
+    else files.push(adapted);
+  }
+  if (ctx.plan.authentication.local) {
+    for (let index = files.length - 1; index >= 0; index--)
+      if (files[index]!.path.startsWith('apps/api/src/auth/dev-')) files.splice(index, 1);
+  }
   const seen = new Set<string>();
   for (const f of files) {
     if (seen.has(f.path))

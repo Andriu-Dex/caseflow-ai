@@ -49,6 +49,7 @@ import {
   type ProjectFile,
 } from './project-validation';
 import { SANDBOX_EXECUTION_PROVIDER } from './sandbox-provider.token';
+import { UserManualsService } from '../user-manuals/user-manuals.service';
 
 const logger = new Logger('SandboxRunsService');
 
@@ -98,6 +99,7 @@ export class SandboxRunsService {
     @Inject(SANDBOX_EXECUTION_PROVIDER) private readonly sandbox: SandboxExecutionProvider,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
     @Inject(CONSTRUCTION_QUEUE_TOKEN) private readonly queue: Queue<ConstructionJobPayload>,
+    private readonly userManuals: UserManualsService,
   ) {}
 
   async start(projectId: string, userId: string, generationRunId: string) {
@@ -330,7 +332,7 @@ export class SandboxRunsService {
         ?.content as unknown as ImplementationPlanContent;
       stages.push(
         check('STRUCTURE', [
-          ...structuralProblems(files, template, allowed),
+          ...structuralProblems(files, template, allowed, plan),
           ...firstRunProblems(files),
           ...planCoverageProblems(files, plan),
         ]),
@@ -467,6 +469,12 @@ export class SandboxRunsService {
         tx,
       );
     });
+    // Documentation has its own retry state; a delivery failure cannot undo validation.
+    try {
+      await this.userManuals.enqueue(run.projectId, snapshotId);
+    } catch {
+      logger.warn('Could not enqueue the user manual for a validated snapshot.');
+    }
   }
 
   private async afterFailure(

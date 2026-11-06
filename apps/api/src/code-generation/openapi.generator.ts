@@ -1,5 +1,8 @@
+import { customEndpointOperationId } from './naming';
 import type { ImplementationPlanContent } from '@caseflow-ai/contracts';
-import { PlanGenerationError, collectionPath, pluralize, upperFirst } from './naming';
+import { PlanGenerationError, collectionPath, pluralize } from './naming';
+import { manyInputRelations } from './engine/contracts.templates';
+import { actionValueOpenApi } from './engine/action-contract.templates';
 
 type Entity = ImplementationPlanContent['entities'][number];
 type Field = Entity['fields'][number];
@@ -31,10 +34,10 @@ function fieldSchema(field: Field): Schema {
 // Foreign keys a client sends/receives for owning-side relations.
 const foreignKeys = (entity: Entity) => entity.relations.filter((r) => r.kind !== 'MANY_TO_MANY');
 
-function entitySchemas(entity: Entity): Record<string, Schema> {
+function entitySchemas(entity: Entity, plan: ImplementationPlanContent): Record<string, Schema> {
   const properties: Record<string, Schema> = {};
   const required: string[] = [];
-  for (const field of entity.fields) {
+  for (const field of entity.fields.filter((field) => !field.internal)) {
     properties[field.name] = fieldSchema(field);
     if (field.required) required.push(field.name);
   }
@@ -42,39 +45,78 @@ function entitySchemas(entity: Entity): Record<string, Schema> {
     properties[`${relation.name}Id`] = relation.required ? uuid : { ...uuid, nullable: true };
     if (relation.required) required.push(`${relation.name}Id`);
   }
+  const account = plan.authentication.local?.userEntityLocalId === entity.localId;
+  const many = Object.fromEntries(
+    manyInputRelations(entity, plan).map((relation) => [
+      relation.name + 'Ids',
+      { type: 'array', items: uuid, maxItems: 500, uniqueItems: true },
+    ]),
+  );
   const readOnly = {
     id: uuid,
     ...properties,
+    ...many,
+    ...(account ? { roleNames: { type: 'array', items: { type: 'string' } } } : {}),
     createdAt: { type: 'string', format: 'date-time' },
     updatedAt: { type: 'string', format: 'date-time' },
   };
+  const actorField = entity.operationScope?.actorRelation
+    ? entity.operationScope.actorRelation + 'Id'
+    : undefined;
+  const editable = Object.fromEntries(
+    Object.entries(properties).filter(([key]) => key !== actorField),
+  );
+  const inputs = account
+    ? {
+        ...editable,
+        ...many,
+        password: {
+          type: 'string',
+          format: 'password',
+          writeOnly: true,
+          minLength: 12,
+          maxLength: 1024,
+        },
+        roleNames: {
+          type: 'array',
+          minItems: 1,
+          items: { type: 'string', enum: plan.authentication.roles },
+        },
+      }
+    : { ...editable, ...many };
+  const inputRequired = required.filter((key) => key !== actorField);
   return {
     [entity.name]: {
       type: 'object',
       properties: readOnly,
-      required: ['id', ...required, 'createdAt', 'updatedAt'],
+      required: [
+        'id',
+        ...required,
+        ...Object.keys(many),
+        ...(account ? ['roleNames'] : []),
+        'createdAt',
+        'updatedAt',
+      ],
     },
     [`Create${entity.name}Input`]: {
       type: 'object',
-      properties,
-      ...(required.length ? { required } : {}),
+      properties: inputs,
+      ...(inputRequired.length || account
+        ? { required: [...inputRequired, ...(account ? ['password', 'roleNames'] : [])] }
+        : {}),
       additionalProperties: false,
     },
-    [`Update${entity.name}Input`]: { type: 'object', properties, additionalProperties: false },
+    [`Update${entity.name}Input`]: {
+      type: 'object',
+      properties: inputs,
+      additionalProperties: false,
+    },
   };
 }
 
 // "POST /orders/:orderId/confirm" -> "postOrdersConfirm"; the generated
 // frontend calls the API client by this same name.
-export function customEndpointOperationId(endpoint: { method: string; path: string }): string {
-  const words = endpoint.path
-    .split('/')
-    .filter((segment) => segment && !segment.startsWith(':'))
-    .flatMap((segment) => segment.split('-'))
-    .map(upperFirst)
-    .join('');
-  return `${endpoint.method.toLowerCase()}${words}`;
-}
+export { customEndpointOperationId } from './naming';
 
 export function generateOpenApi(plan: ImplementationPlanContent, title: string): Schema {
   const modules = new Map(plan.modules.map((m) => [m.localId, m.name]));
@@ -82,10 +124,12 @@ export function generateOpenApi(plan: ImplementationPlanContent, title: string):
   const security = plan.authentication.required ? [{ bearerAuth: [] }] : undefined;
   const paths: Record<string, Record<string, Schema>> = {};
   const operationIds = new Set<string>();
+  const routeSignatures = new Set<string>();
 
   const addOperation = (path: string, method: string, operation: Schema) => {
+    const signature = method + ' ' + path.replace(/\{[^}]+\}/g, '{}');
     paths[path] ??= {};
-    if (paths[path][method])
+    if (paths[path][method] || routeSignatures.has(signature))
       throw new PlanGenerationError(
         `Dos operaciones usan ${method.toUpperCase()} ${path}; el endpoint personalizado choca con uno CRUD.`,
       );
@@ -93,7 +137,11 @@ export function generateOpenApi(plan: ImplementationPlanContent, title: string):
     if (operationIds.has(id))
       throw new PlanGenerationError(`El identificador de operación «${id}» se repite.`);
     operationIds.add(id);
-    paths[path][method] = { ...operation, ...(security ? { security } : {}) };
+    routeSignatures.add(signature);
+    paths[path][method] = {
+      ...operation,
+      ...(security && operation.security === undefined ? { security } : {}),
+    };
   };
   const json = (schema: Schema) => ({ content: { 'application/json': { schema } } });
   const idParam = { name: 'id', in: 'path', required: true, schema: uuid };
@@ -159,26 +207,69 @@ export function generateOpenApi(plan: ImplementationPlanContent, title: string):
       schema: { type: 'string' },
     }));
     const entity = endpoint.entityLocalId ? entities.get(endpoint.entityLocalId) : undefined;
-    const hasBody = ['POST', 'PATCH', 'PUT'].includes(endpoint.method);
+    const hasBody = ['POST', 'PATCH', 'PUT'].includes(endpoint.method) && !endpoint.disabledReason;
     addOperation(path, endpoint.method.toLowerCase(), {
       operationId: customEndpointOperationId(endpoint),
       tags: [modules.get(endpoint.moduleLocalId)!],
       summary: endpoint.summary,
-      ...(params.length ? { parameters: params } : {}),
+      ...(endpoint.builtin === 'LOGIN' ? { security: [] } : {}),
+      ...(params.length || endpoint.contract?.query
+        ? {
+            parameters: [
+              ...params,
+              ...(endpoint.contract?.query?.properties ?? []).map((field) => ({
+                name: field.name,
+                in: 'query',
+                required: field.required !== false,
+                schema: actionValueOpenApi(field.value),
+              })),
+            ],
+          }
+        : {}),
       ...(hasBody
         ? {
             requestBody: {
               required: true,
-              ...json({ type: 'object', additionalProperties: true }),
+              ...json(
+                endpoint.builtin === 'LOGIN'
+                  ? ref('AuthLoginInput')
+                  : endpoint.builtin === 'SELECT_SCOPE'
+                    ? ref('SelectScopeInput')
+                    : endpoint.contract?.body
+                      ? actionValueOpenApi(endpoint.contract.body)
+                      : { type: 'object', additionalProperties: true },
+              ),
             },
           }
         : {}),
-      responses: {
-        '200': {
-          description: 'OK',
-          ...json(entity ? ref(entity.name) : { type: 'object', additionalProperties: true }),
-        },
-      },
+      responses: endpoint.disabledReason
+        ? { '403': { description: endpoint.disabledReason } }
+        : {
+            '200': {
+              description: 'OK',
+              ...json(
+                endpoint.builtin === 'LOGIN'
+                  ? ref('AuthSession')
+                  : endpoint.builtin === 'AUTH_CONTEXT'
+                    ? ref('OperationContext')
+                    : endpoint.builtin === 'SELECT_SCOPE'
+                      ? ref('SelectScopeInput')
+                      : endpoint.builtin === 'AUTHORIZED_OPTIONS'
+                        ? { type: 'array', items: ref('AuthorizedOption') }
+                        : endpoint.builtin === 'LOGOUT'
+                          ? {
+                              type: 'object',
+                              properties: { closed: { type: 'boolean' } },
+                              required: ['closed'],
+                            }
+                          : endpoint.contract
+                            ? actionValueOpenApi(endpoint.contract.response)
+                            : entity
+                              ? ref(entity.name)
+                              : { type: 'object', additionalProperties: true },
+              ),
+            },
+          },
     });
   }
 
@@ -187,7 +278,97 @@ export function generateOpenApi(plan: ImplementationPlanContent, title: string):
     info: { title, version: '1.0.0' },
     paths,
     components: {
-      schemas: Object.assign({}, ...plan.entities.map(entitySchemas)),
+      schemas: Object.assign(
+        {},
+        ...plan.entities.map((entity) => entitySchemas(entity, plan)),
+        plan.authentication.local
+          ? {
+              AuthLoginInput: {
+                type: 'object',
+                required: ['identifier', 'password'],
+                additionalProperties: false,
+                properties: {
+                  identifier: { type: 'string', minLength: 1, maxLength: 255 },
+                  password: {
+                    type: 'string',
+                    format: 'password',
+                    writeOnly: true,
+                    minLength: 1,
+                    maxLength: 1024,
+                  },
+                },
+              },
+              AuthSession: {
+                type: 'object',
+                required: ['token', 'userId', 'roles', 'expiresAt'],
+                properties: {
+                  token: { type: 'string' },
+                  userId: { type: 'string', format: 'uuid' },
+                  roles: { type: 'array', items: { type: 'string' } },
+                  expiresAt: { type: 'string', format: 'date-time' },
+                },
+              },
+              AuthorizedOption: {
+                type: 'object',
+                required: ['path', 'label'],
+                properties: { path: { type: 'string' }, label: { type: 'string' } },
+              },
+              ...(plan.authentication.local.scope
+                ? {
+                    SelectScopeInput: {
+                      type: 'object',
+                      additionalProperties: false,
+                      required: ['scopeId'],
+                      properties: { scopeId: uuid },
+                    },
+                    OperationContext: {
+                      type: 'object',
+                      required: [
+                        'userId',
+                        'displayName',
+                        'userStatus',
+                        'roles',
+                        'permissions',
+                        'scopes',
+                        'selectedScopeId',
+                      ],
+                      properties: {
+                        userId: uuid,
+                        displayName: { type: 'string' },
+                        userStatus: { type: 'string' },
+                        roles: { type: 'array', items: { type: 'string' } },
+                        permissions: { type: 'array', items: { type: 'string' } },
+                        scopes: {
+                          type: 'array',
+                          items: {
+                            type: 'object',
+                            required: ['id', 'label', 'status', 'details'],
+                            properties: {
+                              id: uuid,
+                              label: { type: 'string' },
+                              status: { type: 'string' },
+                              details: {
+                                type: 'array',
+                                items: {
+                                  type: 'object',
+                                  required: ['label', 'value'],
+                                  properties: {
+                                    label: { type: 'string' },
+                                    value: { type: 'string' },
+                                  },
+                                },
+                              },
+                            },
+                          },
+                        },
+                        selectedScopeId: { ...uuid, nullable: true },
+                      },
+                    },
+                  }
+                : {}),
+            }
+          : {},
+      ),
       ...(security
         ? {
             securitySchemes: {

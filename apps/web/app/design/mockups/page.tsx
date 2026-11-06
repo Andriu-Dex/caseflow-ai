@@ -375,6 +375,50 @@ function MockupPreview({
   }
   return (
     <div className="flex flex-col gap-4">
+      <div className="rounded-lg border border-border p-3 text-sm" role="status">
+        <p>
+          Revise la fidelidad antes de aprobar. La comprobación del HTML es parcial y no verifica el
+          texto de la imagen ni el funcionamiento.
+        </p>
+        {preview.data.fidelityReview?.findings.length ? (
+          <details className="mt-2 rounded-md border border-border">
+            <summary className="cursor-pointer px-3 py-2 font-medium focus-visible:outline-2 focus-visible:outline-primary">
+              Revisiones del boceto ({preview.data.fidelityReview.findings.length}) ·{' '}
+              {
+                preview.data.fidelityReview.findings.filter(
+                  (finding) => finding.severity === 'ERROR',
+                ).length
+              }{' '}
+              bloqueos ·{' '}
+              {
+                preview.data.fidelityReview.findings.filter(
+                  (finding) => finding.severity !== 'ERROR',
+                ).length
+              }{' '}
+              observaciones
+            </summary>
+            <ul className="max-h-72 overflow-y-auto border-t border-border py-2 pl-8 pr-3 list-disc">
+              {preview.data.fidelityReview.findings.map((finding, index) => (
+                <li key={index}>
+                  {finding.severity === 'ERROR' ? 'Bloqueo' : 'Revisar'} ·{' '}
+                  {screens.find((screen) => screen.screenLocalId === finding.screenLocalId)
+                    ?.screenName ?? 'Conjunto'}
+                  : {finding.message}
+                  {finding.expected ? ` Esperado: ${finding.expected}.` : ''}
+                  {finding.observed ? ` Observado: ${finding.observed}.` : ''}
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : !preview.data.fidelityReview ? (
+          <p>La comprobación del HTML no está disponible. Revise manualmente el conjunto.</p>
+        ) : (
+          <p>
+            No se detectaron contradicciones mediante estas comprobaciones; confirme visualmente las
+            reglas y los campos.
+          </p>
+        )}
+      </div>
       {preview.data.refinementPrompt ? (
         <div className="rounded-lg border border-border/70 bg-muted/30 px-3.5 py-2 text-xs text-muted-foreground">
           <span className="font-semibold text-foreground">Instrucciones aplicadas:</span>{' '}
