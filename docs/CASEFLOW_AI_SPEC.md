@@ -7279,6 +7279,7 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-153 | El manual incorpora capturas reales del snapshot mediante un RuntimeCaptureProvider aislado en Docker, con evidencia privada por rol, nuevas versiones y continuidad del esquema ante fallos (§221.29, ADR-014) | Accepted |
 | DEC-154 | La versión 2 de CASEFLOW_WEB_TS_V1 incorpora enlaces explícitos de autenticación local, composición validada desde el diseño congelado y comprobaciones de entrega que distinguen fidelidad estructural de revisión visual (§221.30, ADR-015) | Accepted |
 | DEC-155 | El contexto de operación del proyecto generado declara permisos, asignaciones y rutas de propiedad; el servidor verifica su alcance en cada solicitud y la interfaz conserva únicamente contextos autorizados (§221.31, ADR-016) | Accepted |
+| DEC-156 | Las acciones personalizadas admiten contratos estructurados compartidos entre validación, OpenAPI, cliente y formularios; las revisiones y claves de reintento se enlazan explícitamente y las comprobaciones de alcance utilizan la misma transacción (§221.32, ADR-017) | Accepted |
 
 ---
 
@@ -8048,3 +8049,15 @@ El perfil `authentication.local.scope` del TargetTemplate versión 2 define iden
 El frontend conserva el contexto verificado, permite seleccionar un ámbito autorizado y elimina consultas y estado al cambiarlo. La vista administrativa guarda relaciones de roles, permisos compartidos por rol y ámbitos; no implementa excepciones individuales. La inicialización conserva las políticas ya configuradas salvo una restauración administrativa explícita. El mecanismo es genérico: las entidades y etiquetas de sucursal proceden de los datos del proyecto.
 
 Las proyecciones o escrituras anidadas no soportadas fallan explícitamente; la lógica utiliza consultas separadas y transacciones. Los controles de alcance no sustituyen las pruebas de reglas de negocio ni la revisión visual. `GET /auth/context` sirve a la interfaz compartida y no exige añadir una acción ficticia al plano. Las versiones históricas se conservan y la entrega solo puede formalizarse tras superar los controles obligatorios.
+
+## 221.32 Contratos de acciones del proyecto generado (DEC-156, ADR-017)
+
+El ImplementationPlan puede declarar entradas, filtros y respuestas estructurados para acciones personalizadas. Una única definición acotada origina Zod, OpenAPI, los tipos del cliente y los formularios. El servidor valida entradas y salidas, mantiene autorización y alcance y rechaza resultados incompatibles sin exponer detalles internos. Los importes se transportan como cadenas decimales exactas; la regla de cálculo debe proceder del plan aprobado.
+
+Los enlaces de entrada identifican una consulta de revisión de la misma pantalla o una clave UUID de reintento. Pueden exigir una condición booleana y navegación posterior explícita. Las escrituras invalidan revisiones y los cambios pendientes impiden confirmar con una revisión obsoleta. Estas ayudas de interfaz no sustituyen la comprobación transaccional de estado, versión e idempotencia. Las referencias usan consultas autorizadas y las respuestas tardías de otro contexto no se publican.
+
+Las revisiones POST con cuerpo estructurado pueden alimentar esos enlaces únicamente con el perfil de alcance activo y capacidades explícitas exclusivamente de lectura, garantizadas por la persistencia. Una revisión con permisos de escritura no es una fuente válida para ese enlace.
+
+Una decisión humana explícita puede desactivar una acción con una explicación y respuesta 403. Las salidas de planificación automática no pueden usar esa posibilidad para eludir requisitos. Las entidades pueden declarar restricciones únicas compuestas. Las comprobaciones de relaciones y las escrituras con alcance usan el mismo cliente transaccional, limitado a los delegados admitidos. Los planes históricos permanecen intactos y la verificación genérica del generador se distingue de las pruebas del proyecto real.
+
+Las capacidades repetidas de una misma entidad se unen sin descartar operaciones declaradas. La reparación acotada de errores TypeScript en métodos de acciones puede devolver únicamente el cuerpo diagnosticado, conservando el resto del archivo mediante límites AST. Mantiene el máximo de tres rondas y todos los controles posteriores; no autoriza cambiar firmas, imports, pruebas ni requisitos para ocultar errores.
