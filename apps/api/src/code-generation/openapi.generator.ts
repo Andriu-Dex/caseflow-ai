@@ -1,6 +1,8 @@
+import { customEndpointOperationId } from './naming';
 import type { ImplementationPlanContent } from '@caseflow-ai/contracts';
-import { PlanGenerationError, collectionPath, pluralize, upperFirst } from './naming';
+import { PlanGenerationError, collectionPath, pluralize } from './naming';
 import { manyInputRelations } from './engine/contracts.templates';
+import { actionValueOpenApi } from './engine/action-contract.templates';
 
 type Entity = ImplementationPlanContent['entities'][number];
 type Field = Entity['fields'][number];
@@ -114,15 +116,7 @@ function entitySchemas(entity: Entity, plan: ImplementationPlanContent): Record<
 
 // "POST /orders/:orderId/confirm" -> "postOrdersConfirm"; the generated
 // frontend calls the API client by this same name.
-export function customEndpointOperationId(endpoint: { method: string; path: string }): string {
-  const words = endpoint.path
-    .split('/')
-    .filter((segment) => segment && !segment.startsWith(':'))
-    .flatMap((segment) => segment.split('-'))
-    .map(upperFirst)
-    .join('');
-  return `${endpoint.method.toLowerCase()}${words}`;
-}
+export { customEndpointOperationId } from './naming';
 
 export function generateOpenApi(plan: ImplementationPlanContent, title: string): Schema {
   const modules = new Map(plan.modules.map((m) => [m.localId, m.name]));
@@ -130,10 +124,12 @@ export function generateOpenApi(plan: ImplementationPlanContent, title: string):
   const security = plan.authentication.required ? [{ bearerAuth: [] }] : undefined;
   const paths: Record<string, Record<string, Schema>> = {};
   const operationIds = new Set<string>();
+  const routeSignatures = new Set<string>();
 
   const addOperation = (path: string, method: string, operation: Schema) => {
+    const signature = method + ' ' + path.replace(/\{[^}]+\}/g, '{}');
     paths[path] ??= {};
-    if (paths[path][method])
+    if (paths[path][method] || routeSignatures.has(signature))
       throw new PlanGenerationError(
         `Dos operaciones usan ${method.toUpperCase()} ${path}; el endpoint personalizado choca con uno CRUD.`,
       );
@@ -141,6 +137,7 @@ export function generateOpenApi(plan: ImplementationPlanContent, title: string):
     if (operationIds.has(id))
       throw new PlanGenerationError(`El identificador de operación «${id}» se repite.`);
     operationIds.add(id);
+    routeSignatures.add(signature);
     paths[path][method] = {
       ...operation,
       ...(security && operation.security === undefined ? { security } : {}),
@@ -210,13 +207,25 @@ export function generateOpenApi(plan: ImplementationPlanContent, title: string):
       schema: { type: 'string' },
     }));
     const entity = endpoint.entityLocalId ? entities.get(endpoint.entityLocalId) : undefined;
-    const hasBody = ['POST', 'PATCH', 'PUT'].includes(endpoint.method);
+    const hasBody = ['POST', 'PATCH', 'PUT'].includes(endpoint.method) && !endpoint.disabledReason;
     addOperation(path, endpoint.method.toLowerCase(), {
       operationId: customEndpointOperationId(endpoint),
       tags: [modules.get(endpoint.moduleLocalId)!],
       summary: endpoint.summary,
       ...(endpoint.builtin === 'LOGIN' ? { security: [] } : {}),
-      ...(params.length ? { parameters: params } : {}),
+      ...(params.length || endpoint.contract?.query
+        ? {
+            parameters: [
+              ...params,
+              ...(endpoint.contract?.query?.properties ?? []).map((field) => ({
+                name: field.name,
+                in: 'query',
+                required: field.required !== false,
+                schema: actionValueOpenApi(field.value),
+              })),
+            ],
+          }
+        : {}),
       ...(hasBody
         ? {
             requestBody: {
@@ -226,35 +235,41 @@ export function generateOpenApi(plan: ImplementationPlanContent, title: string):
                   ? ref('AuthLoginInput')
                   : endpoint.builtin === 'SELECT_SCOPE'
                     ? ref('SelectScopeInput')
-                    : { type: 'object', additionalProperties: true },
+                    : endpoint.contract?.body
+                      ? actionValueOpenApi(endpoint.contract.body)
+                      : { type: 'object', additionalProperties: true },
               ),
             },
           }
         : {}),
-      responses: {
-        '200': {
-          description: 'OK',
-          ...json(
-            endpoint.builtin === 'LOGIN'
-              ? ref('AuthSession')
-              : endpoint.builtin === 'AUTH_CONTEXT'
-                ? ref('OperationContext')
-                : endpoint.builtin === 'SELECT_SCOPE'
-                  ? ref('SelectScopeInput')
-                  : endpoint.builtin === 'AUTHORIZED_OPTIONS'
-                    ? { type: 'array', items: ref('AuthorizedOption') }
-                    : endpoint.builtin === 'LOGOUT'
-                      ? {
-                          type: 'object',
-                          properties: { closed: { type: 'boolean' } },
-                          required: ['closed'],
-                        }
-                      : entity
-                        ? ref(entity.name)
-                        : { type: 'object', additionalProperties: true },
-          ),
-        },
-      },
+      responses: endpoint.disabledReason
+        ? { '403': { description: endpoint.disabledReason } }
+        : {
+            '200': {
+              description: 'OK',
+              ...json(
+                endpoint.builtin === 'LOGIN'
+                  ? ref('AuthSession')
+                  : endpoint.builtin === 'AUTH_CONTEXT'
+                    ? ref('OperationContext')
+                    : endpoint.builtin === 'SELECT_SCOPE'
+                      ? ref('SelectScopeInput')
+                      : endpoint.builtin === 'AUTHORIZED_OPTIONS'
+                        ? { type: 'array', items: ref('AuthorizedOption') }
+                        : endpoint.builtin === 'LOGOUT'
+                          ? {
+                              type: 'object',
+                              properties: { closed: { type: 'boolean' } },
+                              required: ['closed'],
+                            }
+                          : endpoint.contract
+                            ? actionValueOpenApi(endpoint.contract.response)
+                            : entity
+                              ? ref(entity.name)
+                              : { type: 'object', additionalProperties: true },
+              ),
+            },
+          },
     });
   }
 

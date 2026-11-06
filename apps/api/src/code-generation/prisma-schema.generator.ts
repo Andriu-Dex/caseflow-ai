@@ -145,7 +145,7 @@ export function generatePrismaSchema(plan: ImplementationPlanContent): string {
       )
       .join('\n');
     const doc = entity.description ? `/// ${entity.description.replace(/\s+/g, ' ')}\n` : '';
-    return `${doc}model ${entity.name} {\n${body}\n\n  @@map("${tableName(entity.name)}")\n}`;
+    return `${doc}model ${entity.name} {\n${body}\n${(entity.uniqueConstraints ?? []).map((fields) => `  @@unique([${fields.join(', ')}])`).join('\n')}\n  @@map("${tableName(entity.name)}")\n}`;
   });
 
   return [

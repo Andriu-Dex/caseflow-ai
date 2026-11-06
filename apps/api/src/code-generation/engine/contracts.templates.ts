@@ -1,4 +1,6 @@
 import type { ImplementationPlanContent } from '@caseflow-ai/contracts';
+import { customEndpointOperationId } from '../naming';
+import { actionValueZod, actionTypeName, actionSchemaName } from './action-contract.templates';
 import { lowerFirst, upperFirst } from '../naming';
 import {
   SCOPE,
@@ -215,6 +217,22 @@ export function contractsFiles(ctx: GenerationContext): GeneratedProjectFile[] {
         "import { z } from 'zod';",
         '',
         blocks.join('\n\n'),
+        ...plan.customEndpoints.flatMap((endpoint) =>
+          endpoint.contract
+            ? (['Body', 'Query', 'Response'] as const).flatMap((part) => {
+                const value =
+                  endpoint.contract![
+                    part === 'Body' ? 'body' : part === 'Query' ? 'query' : 'response'
+                  ];
+                const id = customEndpointOperationId(endpoint);
+                return value
+                  ? [
+                      `export const ${actionSchemaName(id, part)} = ${actionValueZod(value, part === 'Query')};\nexport type ${actionTypeName(id, part)} = z.infer<typeof ${actionSchemaName(id, part)}>;`,
+                    ]
+                  : [];
+              })
+            : [],
+        ),
       ].join('\n'),
       { origin: 'DETERMINISTIC', planElements },
     ),

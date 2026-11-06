@@ -134,7 +134,9 @@ export class FrontendDesignService {
         functionalComponents: output
           .filter(
             (item) =>
-              item.path === 'apps/web/components/operation-context.tsx' || item.path === loginPage,
+              item.path === 'apps/web/components/operation-context.tsx' ||
+              item.path === 'apps/web/components/action-form.tsx' ||
+              item.path === loginPage,
           )
           .map((item) => ({ path: item.path, source: item.content })),
         authenticationServices: route.actions.some(

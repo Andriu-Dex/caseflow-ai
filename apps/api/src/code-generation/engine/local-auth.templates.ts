@@ -527,11 +527,26 @@ export default function Access() { redirect(${JSON.stringify(loginRoute?.path ??
       file(
         'apps/api/src/auth/operation-scope.spec.ts',
         `import { describe, expect, it, vi } from 'vitest';
-import { enforceScope, operationContext, type OperationActor } from './operation-scope';
+import { enforceScope, scopedTransaction, operationContext, type OperationActor } from './operation-scope';
 import { SCOPE_CONFIGURATION } from './scope-configuration';
 const model = Object.entries(SCOPE_CONFIGURATION.entities).find(([name, entry]) => name !== SCOPE_CONFIGURATION.scopeModel && entry.policy)?.[0];
 const actor = (id: string): OperationActor => ({ userId:'test-user', roles:[], permissions:[], scopeIds:[id], selectedScopeId:id, dataAccess: model ? { [model]:['READ'] } : {} });
 describe('operation scope persistence boundary', () => {
+ it('wraps transaction delegates with the same context and refuses raw transaction access', async () => {
+  if(!model)return;
+  const definition=(SCOPE_CONFIGURATION.entities as Record<string,{delegate:string}>)[model]!;
+  const findMany=vi.fn(async(args:unknown)=>args);
+  const raw={ [definition.delegate]: {findMany} };
+  await operationContext.run(actor('A'),async()=>{
+   const tx=scopedTransaction(raw) as Record<string,{findMany(args:unknown):Promise<unknown>}>;
+   expect(Object.getOwnPropertyDescriptors(tx)).toEqual({});
+   expect(Object.getOwnPropertyDescriptors(tx[definition.delegate]!)).toEqual({});
+   const args=await tx[definition.delegate]!.findMany({where:{id:'record'}});
+   expect(JSON.stringify(args)).toContain('"A"');
+   expect(()=>Reflect.get(tx,'$queryRawUnsafe')).toThrow();
+  });
+  expect(findMany).toHaveBeenCalledTimes(1);
+ });
  it('rejects raw operations and unauthorized capabilities before executing a query', async () => {
   const query = vi.fn();
   await expect(operationContext.run(actor('A'), () => enforceScope({},undefined,'$queryRaw',{},query))).rejects.toThrow();

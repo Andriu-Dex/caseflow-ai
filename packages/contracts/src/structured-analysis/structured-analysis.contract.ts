@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { implementationActionContractSchema } from './action-contract';
 import { designThemeContentSchema } from './design-theme.contract';
 import { classDiagramContentSchema } from './class-diagram.contract';
 
@@ -497,6 +498,7 @@ const implementationEntitySchema = z
       .strict()
       .optional(),
     fields: z.array(implementationFieldSchema).min(1).max(60),
+    uniqueConstraints: z.array(z.array(camelName()).min(2).max(8)).max(20).optional(),
     relations: z.array(implementationRelationSchema).max(30).default([]),
     operations: z.array(z.enum(IMPLEMENTATION_CRUD_OPERATIONS)).max(5).default([]),
     // Empty = any authenticated user (when authentication is required).
@@ -515,6 +517,20 @@ const implementationModuleSchema = z
   .strict();
 const implementationEndpointSchema = z
   .object({
+    contract: implementationActionContractSchema.optional(),
+    disabledReason: text(500).optional(),
+    rules: z
+      .array(
+        z
+          .object({
+            localId: localId(),
+            description: text(2000),
+            relatedSourceCodes: z.array(text(40)).max(30),
+          })
+          .strict(),
+      )
+      .max(30)
+      .optional(),
     moduleLocalId: localId(),
     method: z.enum(IMPLEMENTATION_HTTP_METHODS),
     path: text(200).regex(
@@ -667,6 +683,12 @@ export const implementationPlanBodySchema = z
   .strict();
 
 export type ImplementationPlanBody = z.output<typeof implementationPlanBodySchema>;
+export const implementationPlanAIOutputSchema = implementationPlanBodySchema.extend({
+  customEndpoints: z
+    .array(implementationEndpointSchema.omit({ disabledReason: true }))
+    .max(100)
+    .default([]),
+});
 
 // DEC-144: the plan is drawn in stages. The skeleton gives the roles, modules
 // and environment variables; each batch of entity classes then gives their
@@ -717,13 +739,19 @@ export const implementationActionsOutputSchema = z
       )
       .min(1)
       .max(40),
-    customEndpoints: z.array(implementationEndpointSchema).max(40).default([]),
+    customEndpoints: z
+      .array(implementationEndpointSchema.omit({ disabledReason: true }))
+      .max(40)
+      .default([]),
   })
   .strict();
 export const implementationRoutesBatchOutputSchema = z
   .object({
     routes: z.array(looseRouteSchema).min(1).max(40),
-    customEndpoints: z.array(implementationEndpointSchema).max(40).default([]),
+    customEndpoints: z
+      .array(implementationEndpointSchema.omit({ disabledReason: true }))
+      .max(40)
+      .default([]),
   })
   .strict();
 
@@ -748,6 +776,27 @@ export const implementationPlanContentSchema = implementationPlanBodySchema
         if (!roles.has(role)) issue(`El rol «${role}» no está declarado en autenticación.`, path);
     };
     value.entities.forEach((entity, i) => {
+      const constraintFields = new Set([
+        ...entity.fields.map((field) => field.name),
+        ...entity.relations
+          .filter((relation) => relation.kind !== 'MANY_TO_MANY')
+          .map((relation) => relation.name + 'Id'),
+      ]);
+      if (
+        new Set(entity.uniqueConstraints?.map((fields) => [...fields].sort().join(','))).size !==
+        (entity.uniqueConstraints?.length ?? 0)
+      )
+        issue('Las claves únicas no pueden repetirse.', ['entities', i, 'uniqueConstraints']);
+      for (const fields of entity.uniqueConstraints ?? [])
+        if (
+          new Set(fields).size !== fields.length ||
+          fields.some((field) => !constraintFields.has(field))
+        )
+          issue('La clave única requiere campos escalares existentes y distintos.', [
+            'entities',
+            i,
+            'uniqueConstraints',
+          ]);
       if (!modules.has(entity.moduleLocalId))
         issue('La entidad referencia un módulo inexistente.', ['entities', i, 'moduleLocalId']);
       const names = [...entity.fields.map((f) => f.name), ...entity.relations.map((r) => r.name)];
@@ -1082,6 +1131,125 @@ export const implementationPlanContentSchema = implementationPlanBodySchema
       }
     }
     value.customEndpoints.forEach((endpoint, i) => {
+      if (endpoint.disabledReason && (endpoint.builtin || endpoint.contract))
+        issue(
+          'Una acción desactivada no reemplaza autenticación ni declara un contrato ejecutable.',
+          ['customEndpoints', i, 'disabledReason'],
+        );
+      if (endpoint.contract) {
+        for (const binding of endpoint.contract.bindings ?? [])
+          if (binding.kind === 'ACTION') {
+            const source = value.customEndpoints.find(
+              (source) =>
+                `${source.method} ${source.path}` === binding.sourceEndpoint &&
+                (source.method === 'GET' ||
+                  (source.method === 'POST' &&
+                    Boolean(local?.scope) &&
+                    Boolean(source.dataAccess?.length) &&
+                    source.dataAccess!.every((access) =>
+                      access.operations.every((operation) => operation === 'READ'),
+                    ))),
+            );
+            const output = source?.contract?.response.properties?.find(
+              (field) => field.name === binding.sourceField,
+            );
+            const input = endpoint.contract.body?.properties?.find(
+              (field) => field.name === binding.field,
+            );
+            if (
+              binding.requireTrue &&
+              !source?.contract?.response.properties?.some(
+                (field) =>
+                  field.name === binding.requireTrue &&
+                  field.value.type === 'BOOLEAN' &&
+                  field.required !== false &&
+                  !field.value.nullable,
+              )
+            )
+              issue('La condición requiere un resultado booleano obligatorio de la consulta.', [
+                'customEndpoints',
+                i,
+                'contract',
+                'bindings',
+              ]);
+            if (
+              !output ||
+              output.required === false ||
+              output.value.nullable ||
+              output.value.type !== input?.value.type
+            )
+              issue(
+                'El enlace requiere una salida obligatoria y compatible de una consulta declarada.',
+                ['customEndpoints', i, 'contract', 'bindings'],
+              );
+          }
+        if (endpoint.contract.successNavigation) {
+          const next = endpoint.contract.successNavigation;
+          const field = endpoint.contract.response.properties?.find(
+            (field) => field.name === next.idField,
+          );
+          if (
+            !value.routes.some(
+              (route) =>
+                route.path === next.routePath && (route.path.match(/\[/g)?.length ?? 0) === 1,
+            ) ||
+            !field ||
+            field.required === false ||
+            field.value.nullable ||
+            !['STRING', 'UUID'].includes(field.value.type)
+          )
+            issue('La navegación requiere una ruta existente y un identificador en la respuesta.', [
+              'customEndpoints',
+              i,
+              'contract',
+              'successNavigation',
+            ]);
+        }
+        if (
+          endpoint.builtin ||
+          ['POST', 'PATCH', 'PUT'].includes(endpoint.method) !== Boolean(endpoint.contract.body)
+        )
+          issue(
+            'El contrato de una acción requiere entrada para escrituras y no reemplaza operaciones integradas.',
+            ['customEndpoints', i, 'contract'],
+          );
+        const internal = new Set(
+          value.entities.flatMap((entity) =>
+            entity.fields.filter((field) => field.internal).map((field) => field.name),
+          ),
+        );
+        const inspect = (node: import('./action-contract').ActionValueDefinition) => {
+          if (
+            node.referenceEntityLocalId &&
+            !value.entities.some(
+              (entity) =>
+                entity.localId === node.referenceEntityLocalId &&
+                entity.operations.includes('LIST'),
+            )
+          )
+            issue('La referencia de entrada requiere una entidad con consulta de opciones.', [
+              'customEndpoints',
+              i,
+              'contract',
+            ]);
+          for (const field of node.properties ?? []) {
+            if (internal.has(field.name))
+              issue('Los campos internos no pueden exponerse en contratos de acciones.', [
+                'customEndpoints',
+                i,
+                'contract',
+              ]);
+            inspect(field.value);
+          }
+          if (node.items) inspect(node.items);
+        };
+        for (const part of [
+          endpoint.contract.body,
+          endpoint.contract.query,
+          endpoint.contract.response,
+        ])
+          if (part) inspect(part);
+      }
       if (endpoint.builtin) {
         const expected = {
           LOGIN: 'POST /auth/login',
@@ -1192,6 +1360,20 @@ export const implementationPlanContentSchema = implementationPlanBodySchema
             'actions',
             j,
           ]);
+        const endpoint = value.customEndpoints.find(
+          (endpoint) => `${endpoint.method} ${endpoint.path}` === action.endpoint,
+        );
+        for (const binding of endpoint?.contract?.bindings ?? [])
+          if (
+            binding.kind === 'ACTION' &&
+            !route.actions.some((source) => source.endpoint === binding.sourceEndpoint)
+          )
+            issue('La pantalla debe ofrecer la consulta que alimenta la acción.', [
+              'routes',
+              i,
+              'actions',
+              j,
+            ]);
       });
     });
     if (!uniqueBy(value.routes, (r) => r.path))

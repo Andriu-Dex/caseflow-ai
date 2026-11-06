@@ -177,13 +177,24 @@ export class BusinessLogicService {
         : undefined;
     const implementations: EndpointImplementations = {};
     const checkpoints: GeneratedProjectFile[] = [];
-    for (const endpoint of plan.customEndpoints.filter((item) => !item.builtin)) {
+    for (const endpoint of plan.customEndpoints.filter(
+      (item) => !item.builtin && !item.disabledReason,
+    )) {
+      const promptVersion = endpoint.contract
+        ? 6
+        : plan.authentication.local?.scope
+          ? 5
+          : plan.authentication.local
+            ? 4
+            : 3;
       const module = plan.modules.find((m) => m.localId === endpoint.moduleLocalId)!;
       const params = [...endpoint.path.matchAll(/:([a-zA-Z0-9]+)/g)].map((m) => m[1]!);
       const hasBody = ['POST', 'PATCH', 'PUT'].includes(endpoint.method);
       const context = {
         ...(frozenContext ? { approvedContext: frozenContext(endpoint, plan) } : {}),
         action: {
+          ...(endpoint.rules ? { rules: endpoint.rules } : {}),
+          ...(endpoint.contract ? { contract: endpoint.contract } : {}),
           roles: endpoint.roles,
           ...(plan.authentication.local?.scope
             ? { scopeAccess: endpoint.scopeAccess ?? 'SELECTED', dataAccess: endpoint.dataAccess }
@@ -194,7 +205,19 @@ export class BusinessLogicService {
           methodName: actionMethodName(endpoint),
           parameters: [
             ...params.map((p) => ({ name: p, type: 'string (path parameter)' })),
-            ...(hasBody ? [{ name: 'body', type: 'Record<string, unknown> (request body)' }] : []),
+            ...(hasBody
+              ? [
+                  {
+                    name: 'body',
+                    type: endpoint.contract?.body
+                      ? 'Validated input matching action.contract.body'
+                      : 'Record<string, unknown> (request body)',
+                  },
+                ]
+              : []),
+            ...(endpoint.contract?.query
+              ? [{ name: 'query', type: 'Validated filters matching action.contract.query' }]
+              : []),
             ...(plan.authentication.local
               ? [
                   {
@@ -218,6 +241,7 @@ export class BusinessLogicService {
           .map((e) => ({
             delegate: `this.prisma.${lowerFirst(e.name)}`,
             model: e.name,
+            ...(e.uniqueConstraints ? { uniqueConstraints: e.uniqueConstraints } : {}),
             fields: [
               'id',
               ...e.fields
@@ -244,7 +268,7 @@ export class BusinessLogicService {
         .update(
           json({
             templateVersion: template.version,
-            promptVersion: plan.authentication.local?.scope ? 5 : plan.authentication.local ? 4 : 3,
+            promptVersion,
             context,
           }),
         )
@@ -266,11 +290,7 @@ export class BusinessLogicService {
               projectId,
               language,
               promptKey: 'business-logic.generate',
-              promptVersion: plan.authentication.local?.scope
-                ? 5
-                : plan.authentication.local
-                  ? 4
-                  : 3,
+              promptVersion,
               messages: [{ role: 'user', content: JSON.stringify(context) }],
               outputSchema: businessLogicOutputSchema,
               schemaName: 'business_logic_generation',

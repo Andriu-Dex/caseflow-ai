@@ -246,6 +246,18 @@ export async function enforceScope(database: unknown, model: string | undefined,
  if (args.update) await validateData(database as Database, model, args.update, actor, false);
  return query(args as never);
 }
+export function scopedTransaction(database: unknown): unknown {
+ if(!operationContext.getStore()) return database;
+ const delegates=Object.fromEntries(Object.entries(models).map(([model,definition])=>[definition.delegate,model]));
+ return new Proxy(Object.create(null) as object,{get(_target,key){
+  if(typeof key!=='string'||!delegates[key]) throw new ForbiddenException('La transacción solo permite los delegados declarados.');
+  const delegate=Reflect.get(database as object,key) as object;
+  return new Proxy(Object.create(null) as object,{get(_subject,operation){
+   if(typeof operation!=='string'||typeof Reflect.get(delegate,operation)!=='function') throw new ForbiddenException('La operación de datos no está permitida.');
+   return (args:unknown)=>enforceScope(database,delegates[key],operation,args,checked=>Reflect.apply(Reflect.get(delegate,operation) as (args:unknown)=>Promise<unknown>,delegate,[checked]));
+  }});
+ }});
+}
 @Injectable()
 export class OperationScopeInterceptor implements NestInterceptor {
  intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {

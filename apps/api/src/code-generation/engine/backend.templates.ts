@@ -2,6 +2,8 @@ import type { ImplementationPlanContent } from '@caseflow-ai/contracts';
 import { generatePrismaSchema } from '../prisma-schema.generator';
 import { collectionPath, kebabCase, lowerFirst, upperFirst } from '../naming';
 import { createSchemaName, sampleInput, updateSchemaName } from './contracts.templates';
+import { customEndpointOperationId } from '../naming';
+import { actionSchemaName, actionTypeName } from './action-contract.templates';
 import {
   SCOPE,
   dependencies,
@@ -350,28 +352,68 @@ ${
 `;
 }
 
+function actionDataAccess(plan: Plan, endpoint: Endpoint): Record<string, string[]> {
+  const access: Record<string, string[]> = {};
+  for (const entry of endpoint.dataAccess ?? []) {
+    const model = plan.entities.find((entity) => entity.localId === entry.entityLocalId)!.name;
+    access[model] = [...new Set([...(access[model] ?? []), ...entry.operations])];
+  }
+  return access;
+}
+
 function actionsController(plan: Plan, moduleName: string, endpoints: Endpoint[]): string {
+  endpoints = [...endpoints].sort(
+    (a, b) =>
+      (a.path.match(/:/g)?.length ?? 0) - (b.path.match(/:/g)?.length ?? 0) ||
+      b.path.length - a.path.length,
+  );
   const auth = plan.authentication.required;
   const localActor = Boolean(plan.authentication.local);
   const verbs = [...new Set(endpoints.map((e) => upperFirst(e.method.toLowerCase())))];
   const methods = endpoints.map((endpoint) => {
     const params = [...endpoint.path.matchAll(/:([a-zA-Z0-9]+)/g)].map((m) => m[1]!);
     const hasBody = ['POST', 'PATCH', 'PUT'].includes(endpoint.method);
+    const id = customEndpointOperationId(endpoint);
+    const typed = endpoint.contract;
     const args = [
       ...params.map((p) => `@Param('${p}') ${p}: string`),
-      ...(hasBody ? ['@Body() body: Record<string, unknown>'] : []),
+      ...(hasBody
+        ? [
+            typed?.body
+              ? `@Body(new ZodValidationPipe(${actionSchemaName(id, 'Body')}, 'Revise los datos de la operación.')) body: ${actionTypeName(id, 'Body')}`
+              : '@Body() body: Record<string, unknown>',
+          ]
+        : []),
+      ...(typed?.query
+        ? [
+            `@Query(new ZodValidationPipe(${actionSchemaName(id, 'Query')}, 'Revise los filtros de consulta.')) query: ${actionTypeName(id, 'Query')}`,
+          ]
+        : []),
       ...(localActor ? ['@Req() request: { user: SessionActor }'] : []),
     ];
-    return `  /** ${endpoint.summary} */
-  @${upperFirst(endpoint.method.toLowerCase())}('${endpoint.path.slice(1)}')${auth ? `\n  @Roles(${rolesLiteral(endpoint.roles)})` : ''}${plan.authentication.local?.scope ? `\n  @Operation(${JSON.stringify(endpointKey(endpoint))})\n  @DataAccess(${JSON.stringify(Object.fromEntries((endpoint.dataAccess ?? []).map((access) => [plan.entities.find((entity) => entity.localId === access.entityLocalId)!.name, access.operations])))})${endpoint.scopeAccess === 'ASSIGNED_SET' ? "\n  @ScopeAccess('ASSIGNED_SET')" : ''}` : ''}
-  ${actionMethodName(endpoint)}(${args.join(', ')}) {
-    return this.service.${actionMethodName(endpoint)}(${[...params, ...(hasBody ? ['body'] : []), ...(localActor ? ['request.user'] : [])].join(', ')});
+    return `  /** ${endpoint.summary.replace(/\*\//g, '* /').replace(/\s+/g, ' ')} */
+  @${upperFirst(endpoint.method.toLowerCase())}('${endpoint.path.slice(1)}')${auth ? `\n  @Roles(${rolesLiteral(endpoint.roles)})` : ''}${plan.authentication.local?.scope ? `\n  @Operation(${JSON.stringify(endpointKey(endpoint))})\n  @DataAccess(${JSON.stringify(actionDataAccess(plan, endpoint))})${endpoint.scopeAccess === 'ASSIGNED_SET' ? "\n  @ScopeAccess('ASSIGNED_SET')" : ''}` : ''}
+  ${typed ? '@HttpCode(200)\n  async ' : ''}${actionMethodName(endpoint)}(${args.join(', ')}) {
+    ${endpoint.disabledReason ? `void [this.service, ${[...params, ...(hasBody ? ['body'] : []), ...(localActor ? ['request'] : [])].join(', ')}]; throw new ForbiddenException(${JSON.stringify(endpoint.disabledReason)});` : `return ${typed ? 'validateActionResponse(await ' : ''}this.service.${actionMethodName(endpoint)}(${[...params, ...(hasBody ? ['body'] : []), ...(typed?.query ? ['query'] : []), ...(localActor ? ['request.user'] : [])].join(', ')})${typed ? `, ${actionSchemaName(id, 'Response')})` : ''};`}
   }`;
   });
   const usesParam = endpoints.some((e) => e.path.includes(':'));
   const usesBody = endpoints.some((e) => ['POST', 'PATCH', 'PUT'].includes(e.method));
-  return `import { Controller, ${[...verbs, usesParam ? 'Param' : '', usesBody ? 'Body' : '', localActor ? 'Req' : ''].filter(Boolean).join(', ')} } from '@nestjs/common';
+  const typedEndpoints = endpoints.filter((endpoint) => endpoint.contract);
+  const typedImports = typedEndpoints.flatMap((endpoint) => {
+    const id = customEndpointOperationId(endpoint);
+    return (['Body', 'Query', 'Response'] as const).flatMap((part) =>
+      endpoint.contract![part === 'Body' ? 'body' : part === 'Query' ? 'query' : 'response']
+        ? [
+            actionSchemaName(id, part),
+            ...(part !== 'Response' ? [`type ${actionTypeName(id, part)}`] : []),
+          ]
+        : [],
+    );
+  });
+  return `import { Controller, ${[...verbs, usesParam ? 'Param' : '', usesBody ? 'Body' : '', localActor ? 'Req' : '', typedEndpoints.length ? 'HttpCode, InternalServerErrorException' : '', endpoints.some((endpoint) => endpoint.disabledReason) ? 'ForbiddenException' : '', typedEndpoints.some((endpoint) => endpoint.contract?.query) ? 'Query' : ''].filter(Boolean).join(', ')} } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+${typedEndpoints.length ? `import { ${typedImports.join(', ')} } from '@app/contracts';\n${typedEndpoints.some((endpoint) => endpoint.contract?.body || endpoint.contract?.query) ? "import { ZodValidationPipe } from '../common/zod-validation.pipe';\n" : ''}function validateActionResponse<T>(value: unknown, schema: {parse(value:unknown):T}): T { try { return schema.parse(JSON.parse(JSON.stringify(value))); } catch { throw new InternalServerErrorException('La respuesta de la operación no cumple el contrato.'); } }` : ''}
 ${localActor ? "import type { SessionActor } from '../auth/local-auth.service';\n" : ''}${auth ? `import { Roles${plan.authentication.local?.scope ? ', Operation, DataAccess' : ''}${plan.authentication.local?.scope && endpoints.some((endpoint) => endpoint.scopeAccess === 'ASSIGNED_SET') ? ', ScopeAccess' : ''} } from '../auth/roles.decorator';\n` : ''}import { ${moduleName}ActionsService } from './${kebabCase(moduleName)}-actions.service';
 
 // Business actions beyond CRUD, as declared in the Implementation Plan.
@@ -391,21 +433,35 @@ function actionsService(
   implementations: EndpointImplementations,
   localActor = false,
 ): string {
+  endpoints = endpoints.filter((endpoint) => !endpoint.disabledReason);
   const methods = endpoints.map((endpoint) => {
     const params = [...endpoint.path.matchAll(/:([a-zA-Z0-9]+)/g)].map((m) => m[1]!);
     const hasBody = ['POST', 'PATCH', 'PUT'].includes(endpoint.method);
+    const id = customEndpointOperationId(endpoint);
     const args = [
       ...params.map((p) => `${p}: string`),
-      ...(hasBody ? ['body: Record<string, unknown>'] : []),
+      ...(hasBody
+        ? [
+            endpoint.contract?.body
+              ? `body: ${actionTypeName(id, 'Body')}`
+              : 'body: Record<string, unknown>',
+          ]
+        : []),
+      ...(endpoint.contract?.query ? [`query: ${actionTypeName(id, 'Query')}`] : []),
       ...(localActor ? ['actor: SessionActor'] : []),
     ];
     const body = implementations[endpointKey(endpoint)];
-    const names = [...params, ...(hasBody ? ['body'] : []), ...(localActor ? ['actor'] : [])];
+    const names = [
+      ...params,
+      ...(hasBody ? ['body'] : []),
+      ...(endpoint.contract?.query ? ['query'] : []),
+      ...(localActor ? ['actor'] : []),
+    ];
     // An AI body may leave a parameter unused (the lint forbids it): such a
     // parameter is marked as used, as in the stub.
     const unused = body ? names.filter((name) => !new RegExp(`\\b${name}\\b`).test(body)) : [];
-    return `  /** ${endpoint.summary} */
-  async ${actionMethodName(endpoint)}(${args.join(', ')}): Promise<unknown> {
+    return `  /** ${endpoint.summary.replace(/\*\//g, '* /').replace(/\s+/g, ' ')} */
+  async ${actionMethodName(endpoint)}(${args.join(', ')}): Promise<${endpoint.contract ? actionTypeName(id, 'Response') : 'unknown'}> {
 ${
   body
     ? (unused.length ? `    void [${unused.join(', ')}];\n` : '') +
@@ -415,7 +471,7 @@ ${
         .join('\n')
     : `    // No business logic was generated for this action: it answers 501
     // until it is implemented, instead of pretending to succeed.${names.length ? `\n    void [${names.join(', ')}];` : ''}
-    throw new NotImplementedException('La acción «${endpoint.summary.replace(/'/g, '’')}» aún no está implementada.');`
+    throw new NotImplementedException(${JSON.stringify(`La acción «${endpoint.summary}» aún no está implementada.`)});`
 }
   }`;
   });
@@ -429,12 +485,13 @@ ${
     ...(anyStub ? ['NotImplementedException'] : []),
   ];
   return `import { ${nestImports.join(', ')} } from '@nestjs/common';
+${endpoints.some((endpoint) => endpoint.contract) ? `import type { ${endpoints.flatMap((endpoint) => (endpoint.contract ? (['Body', 'Query', 'Response'] as const).filter((part) => endpoint.contract![part === 'Body' ? 'body' : part === 'Query' ? 'query' : 'response']).map((part) => actionTypeName(customEndpointOperationId(endpoint), part)) : [])).join(', ')} } from '@app/contracts';` : ''}
 ${localActor ? "import type { SessionActor } from '../auth/local-auth.service';" : ''}
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class ${moduleName}ActionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { ${endpoints.length ? '' : 'void this.prisma;'} }
 
 ${methods.join('\n\n')}
 }
@@ -606,15 +663,33 @@ void bootstrap();
       `import { Injectable, type OnModuleDestroy } from '@nestjs/common';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../generated/prisma/client';
-${plan.authentication.local?.scope ? "import { enforceScope } from '../auth/operation-scope';" : ''}
+${plan.authentication.local?.scope ? "import { scopedTransaction, operationContext } from '../auth/operation-scope';\nimport { ForbiddenException } from '@nestjs/common';" : ''}
 
+${
+  plan.authentication.local?.scope
+    ? `function withOperationScope(database: PrismaClient): PrismaClient {
+    return new Proxy(Object.create(null) as object,{get(_target,key){
+      if(key==='$transaction') return (work:unknown,options?:Parameters<PrismaClient['$transaction']>[1])=>{
+        if(typeof work!=='function'){
+          if(operationContext.getStore())throw new ForbiddenException('Utilice una transacción interactiva con alcance.');
+          return database.$transaction(work as never,options as never);
+        }
+        return database.$transaction(async tx=>(work as (client:unknown)=>Promise<unknown>)(scopedTransaction(tx)),options);
+      };
+      if(operationContext.getStore())return Reflect.get(scopedTransaction(database) as object,key);
+      const value=Reflect.get(database,key);return typeof value==='function'?value.bind(database):value;
+    }}) as PrismaClient;
+}
+`
+    : ''
+}
 // Connects lazily on first query, so the app (and its tests) start without a
 // database; configure DATABASE_URL to reach one.
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleDestroy {
   constructor() {
     super({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }) });
-    ${plan.authentication.local?.scope ? 'return this.$extends({ query: { $allOperations: ({ model, operation, args, query }) => enforceScope(this, model, operation, args, query) } }) as unknown as this;' : ''}
+    ${plan.authentication.local?.scope ? 'return withOperationScope(this) as this;' : ''}
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -640,12 +715,12 @@ import type { ZodType } from 'zod';
 
 // Validates request bodies against the shared contracts package.
 export class ZodValidationPipe implements PipeTransform {
-  constructor(private readonly schema: ZodType) {}
+  constructor(private readonly schema: ZodType, private readonly publicMessage?: string) {}
 
   transform(value: unknown) {
     const result = this.schema.safeParse(value);
     if (!result.success)
-      throw new BadRequestException(result.error.issues.map((issue) => issue.message).join(' '));
+      throw new BadRequestException(this.publicMessage ?? result.error.issues.map((issue) => issue.message).join(' '));
     return result.data;
   }
 }
@@ -1026,8 +1101,8 @@ console.log(
       );
     }
     const controllers = [
-      ...entities.map((e) => `${e.name}Controller`),
       ...(endpoints.length ? [`${module.name}ActionsController`] : []),
+      ...entities.map((e) => `${e.name}Controller`),
     ];
     const providers = [
       ...entities.map((e) => `${e.name}Service`),

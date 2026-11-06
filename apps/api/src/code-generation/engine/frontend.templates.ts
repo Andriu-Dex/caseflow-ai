@@ -3,9 +3,12 @@ import {
   type DesignThemeContent,
   type DesignThemePalette,
   type ImplementationPlanContent,
+  type ActionValueDefinition,
 } from '@caseflow-ai/contracts';
 import { lowerFirst, pluralize, upperFirst } from '../naming';
 import { customEndpointOperationId } from '../openapi.generator';
+import { actionSchemaName } from './action-contract.templates';
+import { actionFormFile } from './action-form.templates';
 import { createSchemaName, inputRelations, manyInputRelations } from './contracts.templates';
 import {
   SCOPE,
@@ -301,6 +304,8 @@ function actionControl(
   }
   const endpoint = customEndpoint(plan, action);
   if (!endpoint) return null;
+  if (endpoint.disabledReason)
+    return `<div><Button type="button" disabled ${actionMarker(label)}>{${JSON.stringify(label)}}</Button><p role="status">{${JSON.stringify(endpoint.disabledReason)}}</p></div>`;
   const params = pathParams(endpoint.path);
   // Each path parameter comes from the page's URL parameter of the same name
   // (case aside), or, when it is the only one, from the record at hand.
@@ -311,6 +316,34 @@ function actionControl(
       (params.length === 1 ? (idExpr ?? routeParams.at(-1)) : undefined),
   );
   if (values.some((value) => !value)) return null;
+  if (endpoint.contract) {
+    const id = customEndpointOperationId(endpoint);
+    const references = new Set<string>();
+    const collect = (value: ActionValueDefinition) => {
+      if (value.referenceEntityLocalId) references.add(value.referenceEntityLocalId);
+      for (const field of value.properties ?? []) collect(field.value);
+      if (value.items) collect(value.items);
+    };
+    if (endpoint.contract.body) collect(endpoint.contract.body);
+    if (endpoint.contract.query) collect(endpoint.contract.query);
+    const loaders = [...references].map((localId) => {
+      const entity = plan.entities.find((entity) => entity.localId === localId)!;
+      const label = entity.fields.find(
+        (field) => ['STRING', 'TEXT'].includes(field.type) && !field.internal,
+      )?.name;
+      return `${JSON.stringify(localId)}:async()=>(await api.list${pluralize(entity.name)}()).map(item=>({id:item.id,label:String(item.${label ?? 'id'})}))`;
+    });
+    const args = [
+      ...(params.length === 1 && params[0] === 'id'
+        ? [values[0]!]
+        : params.length
+          ? [`{ ${params.map((param, i) => `${param}: ${values[i]}`).join(', ')} }`]
+          : []),
+      ...(endpoint.contract.body ? [`${actionSchemaName(id, 'Body')}.parse(body)`] : []),
+      ...(endpoint.contract.query ? [`${actionSchemaName(id, 'Query')}.parse(query)`] : []),
+    ];
+    return `<ActionForm label={${JSON.stringify(label)}} ${actionMarker(label)} actionKey={${JSON.stringify(endpoint.method + ' ' + endpoint.path)}} isMutation={${endpoint.method !== 'GET'}}${endpoint.contract.bindings ? ` bindings={${JSON.stringify(endpoint.contract.bindings)}}` : ''}${endpoint.contract.successNavigation ? ` successNavigation={${JSON.stringify(endpoint.contract.successNavigation)}}` : ''} ${endpoint.contract.body ? `bodyDefinition={${JSON.stringify(endpoint.contract.body)}}` : ''} ${endpoint.contract.query ? `queryDefinition={${JSON.stringify(endpoint.contract.query)}}` : ''} responseDefinition={${JSON.stringify(endpoint.contract.response)}}${loaders.length ? ` references={{${loaders.join(',')}}}` : ''} submit={async (body, query) => { void [body, query]; return api.${id}(${args.join(', ')}); }}${target.onDone ? ` onDone={${target.onDone}}` : ''} />`;
+  }
   const args = [
     ...(params.length === 1 && params[0] === 'id'
       ? [values[0]!]
@@ -347,6 +380,17 @@ const indent = (block: string, spaces: number) =>
 
 // Imports a page needs, read from the JSX it renders.
 function pageImports(body: string, up: string, extra: string[] = []): string {
+  if (body.includes('<ActionForm'))
+    extra.push(`import { ActionForm } from '${up}components/action-form';`);
+  const actionSchemas = [
+    ...new Set(
+      [...body.matchAll(/\b([a-z][a-zA-Z0-9]*(?:Body|Query)Schema)\.parse\(/g)].map(
+        (match) => match[1],
+      ),
+    ),
+  ];
+  if (actionSchemas.length)
+    extra.push(`import { ${actionSchemas.join(', ')} } from '@app/contracts';`);
   const lines = [
     body.includes('<Link') ? "import Link from 'next/link';" : '',
     ...extra,
@@ -745,10 +789,12 @@ ${links.map((l) => `        <li>\n          <Link className="block rounded-lg bo
 `
       : ''
   }    </div>`;
-  const client = body.includes('<ActionButton') || Boolean(hook);
+  const client = body.includes('<ActionButton') || body.includes('<ActionForm') || Boolean(hook);
   const imports = pageImports(body, toWebRoot(route.path), [
     hook ? "import { useParams } from 'next/navigation';" : '',
-    body.includes('<ActionButton') ? `import { api } from '${toWebRoot(route.path)}lib/api';` : '',
+    body.includes('<ActionButton') || body.includes('<ActionForm')
+      ? `import { api } from '${toWebRoot(route.path)}lib/api';`
+      : '',
   ]);
   return `${client ? "'use client';\n\n" : ''}${imports ? `${imports}\n\n` : ''}export default function ${upperFirst(route.screenName.replace(/[^A-Za-z0-9]/g, '')) || 'Screen'}Page() {${hook}
   return (
@@ -815,6 +861,13 @@ export function frontendFiles(ctx: GenerationContext): GeneratedProjectFile[] {
   const entityById = new Map(plan.entities.map((e) => [e.localId, e]));
   const navRoutes = plan.routes.filter((r) => !r.path.includes('[') && r.path !== '/');
   const files: GeneratedProjectFile[] = [];
+  if (plan.customEndpoints.some((endpoint) => endpoint.contract)) {
+    const component = actionFormFile();
+    component.planElements = plan.customEndpoints
+      .filter((endpoint) => endpoint.contract)
+      .map((endpoint) => `endpoint:${endpoint.method} ${endpoint.path}`);
+    files.push(component);
+  }
 
   files.push(
     file(

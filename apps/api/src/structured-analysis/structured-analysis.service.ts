@@ -29,7 +29,7 @@ import {
   designThemeContentSchema,
   designThemeContrastIssues,
   designThemeGenerationOutputSchema,
-  implementationPlanBodySchema,
+  implementationPlanAIOutputSchema,
   type StructuredAnalysisKind,
 } from '@caseflow-ai/contracts';
 import type { z } from 'zod';
@@ -286,7 +286,7 @@ const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
     promptKey: 'implementation-plan.generate',
     promptVersion: 2,
     maxOutputTokens: 32_768,
-    aiOutputSchema: implementationPlanBodySchema,
+    aiOutputSchema: implementationPlanAIOutputSchema,
   },
   CLASS_DIAGRAM: {
     promptKey: 'class-diagram.generate',

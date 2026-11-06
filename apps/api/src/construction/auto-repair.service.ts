@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { AIError, AIOrchestrator } from '@caseflow-ai/ai';
 import { PrismaService } from '../database/prisma.service';
 import { getProjectLanguage } from '../projects/project-language';
+import { diagnosedMethods, applyMethodRepairs } from './method-repair';
 import {
   diagnosedFiles,
   importSpecifiers,
@@ -33,6 +34,21 @@ const repairOutputSchema = z
       .max(5),
   })
   .strict();
+
+const methodRepairOutputSchema = repairOutputSchema.omit({ files: true }).extend({
+  methods: z
+    .array(
+      z
+        .object({
+          path: z.string().min(1).max(300),
+          className: z.string().regex(/^[A-Za-z][A-Za-z0-9]*$/),
+          methodName: z.string().regex(/^[a-z][A-Za-z0-9]*$/),
+          body: z.string().trim().min(1).max(20000),
+        })
+        .strict(),
+    )
+    .max(5),
+});
 
 // Only code-level stages can be repaired; a failed structural or traceability
 // check comes from the generator or the plan and needs a person.
@@ -80,27 +96,64 @@ export class AutoRepairService {
 
     let proposal: z.infer<typeof repairOutputSchema>;
     try {
-      const result = await this.ai.generateStructured({
-        projectId: input.projectId,
-        language: await getProjectLanguage(this.prisma, input.projectId),
-        promptKey: 'code-repair.generate',
-        promptVersion: 1,
-        messages: [
-          {
-            role: 'user',
-            content: JSON.stringify({
-              failedStage: input.failedStage,
-              diagnostics: input.output.slice(-MAX_DIAGNOSTIC_CHARS),
-              files: candidates.map((f) => ({ path: f.path, content: f.content })),
-            }),
-          },
-        ],
-        outputSchema: repairOutputSchema,
-        schemaName: 'code_repair',
-        // A repair returns whole files (up to five): a long one did not fit in 8 192.
-        maxOutputTokens: 32_768,
-      });
-      proposal = result.data;
+      const methods =
+        input.failedStage === 'TYPECHECK' ? diagnosedMethods(candidates, input.output) : null;
+      if (methods) {
+        const result = await this.ai.generateStructured({
+          projectId: input.projectId,
+          language: await getProjectLanguage(this.prisma, input.projectId),
+          promptKey: 'code-repair.generate',
+          promptVersion: 2,
+          messages: [
+            {
+              role: 'user',
+              content: JSON.stringify({
+                failedStage: input.failedStage,
+                diagnostics: input.output.slice(-MAX_DIAGNOSTIC_CHARS),
+                methods: methods.map(({ start, end, ...method }) => {
+                  void [start, end];
+                  return method;
+                }),
+              }),
+            },
+          ],
+          outputSchema: methodRepairOutputSchema,
+          schemaName: 'code_method_repair',
+          maxOutputTokens: 8192,
+        });
+        const files = applyMethodRepairs(candidates, methods, result.data.methods);
+        if (!files)
+          return {
+            status: 'REJECTED',
+            explanation:
+              'La propuesta modifica un método ajeno al diagnóstico o contiene código no permitido.',
+            patches: [],
+            findings: [],
+          };
+        proposal = { explanation: result.data.explanation, findings: result.data.findings, files };
+      } else {
+        const result = await this.ai.generateStructured({
+          projectId: input.projectId,
+          language: await getProjectLanguage(this.prisma, input.projectId),
+          promptKey: 'code-repair.generate',
+          promptVersion: 1,
+          messages: [
+            {
+              role: 'user',
+              content: JSON.stringify({
+                failedStage: input.failedStage,
+                diagnostics: input.output.slice(-MAX_DIAGNOSTIC_CHARS),
+                files: candidates.map((f) => ({ path: f.path, content: f.content })),
+              }),
+            },
+          ],
+          outputSchema: repairOutputSchema,
+          schemaName: 'code_repair',
+          // A repair returns whole files (up to five): a long one did not fit in 8 192.
+          maxOutputTokens: 32_768,
+        });
+        proposal = result.data;
+      }
     } catch (error) {
       if (!(error instanceof AIError)) throw error;
       logger.warn(`Repair not generated: ${error.message}`);

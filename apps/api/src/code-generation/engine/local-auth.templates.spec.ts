@@ -532,6 +532,66 @@ describe('operation scope generation', () => {
       }).success,
     ).toBe(false);
   });
+  it('allows scoped read-only POST previews as bindings but rejects writable preview sources', () => {
+    const input = scopedPlanInput();
+    const object = (name: string) => ({
+      type: 'OBJECT',
+      properties: [{ name, value: { type: 'INT' } }],
+    });
+    const parse = (operations: string[]) =>
+      implementationPlanContentSchema.safeParse({
+        ...input,
+        customEndpoints: [
+          ...input.customEndpoints,
+          {
+            moduleLocalId: 'identity',
+            method: 'POST',
+            path: '/documents/preview',
+            summary: 'Revisar',
+            roles: ['READER'],
+            dataAccess: [{ entityLocalId: 'document', operations }],
+            contract: { body: object('value'), response: object('value') },
+          },
+          {
+            moduleLocalId: 'identity',
+            method: 'POST',
+            path: '/documents/confirm',
+            summary: 'Confirmar',
+            roles: ['READER'],
+            dataAccess: [{ entityLocalId: 'document', operations: ['CREATE'] }],
+            contract: {
+              body: object('value'),
+              response: object('value'),
+              bindings: [
+                {
+                  kind: 'ACTION',
+                  field: 'value',
+                  sourceEndpoint: 'POST /documents/preview',
+                  sourceField: 'value',
+                },
+              ],
+            },
+          },
+        ],
+        routes: [
+          ...input.routes,
+          {
+            path: '/documents/review',
+            screenName: 'Revisar documento',
+            kind: 'CUSTOM',
+            moduleLocalId: 'identity',
+            roles: ['READER'],
+            actions: [
+              { label: 'Revisar', endpoint: 'POST /documents/preview' },
+              { label: 'Confirmar', endpoint: 'POST /documents/confirm' },
+            ],
+          },
+        ],
+      }).success;
+    expect(parse(['READ'])).toBe(true);
+    expect(parse(['READ', 'UPDATE'])).toBe(false);
+    expect(parse([])).toBe(false);
+  });
   it('emits live context contracts, request isolation and functional scope controls', () => {
     const plan = implementationPlanContentSchema.parse(scopedPlanInput());
     const files = generateProject({
@@ -542,7 +602,7 @@ describe('operation scope generation', () => {
     });
     const get = (path: string) => files.find((file) => file.path === path)!.content;
     expect(get('packages/api-client/src/index.ts')).toContain('Array<{');
-    expect(get('apps/api/src/prisma/prisma.service.ts')).toContain('enforceScope');
+    expect(get('apps/api/src/prisma/prisma.service.ts')).toContain('scopedTransaction');
     expect(get('apps/api/src/auth/operation-scope.ts')).toContain('AsyncLocalStorage');
     expect(get('apps/web/components/operation-context.tsx')).toContain('api.postAuthContext');
     expect(get('apps/web/lib/api.ts')).toContain('x-operation-scope');
@@ -550,5 +610,38 @@ describe('operation scope generation', () => {
     const service = get('apps/api/src/auth/local-auth.service.ts');
     expect(service).toContain('session.member.groups.flatMap');
     expect(service).toContain('session.member.departments.filter');
+  });
+  it('unites repeated data capabilities without losing reads or adding undeclared writes', () => {
+    const input = scopedPlanInput();
+    const plan = implementationPlanContentSchema.parse({
+      ...input,
+      customEndpoints: [
+        ...input.customEndpoints,
+        {
+          moduleLocalId: 'identity',
+          method: 'POST',
+          path: '/documents/record',
+          summary: 'Registrar documento',
+          roles: ['READER'],
+          dataAccess: [
+            { entityLocalId: 'document', operations: ['READ'] },
+            { entityLocalId: 'document', operations: ['CREATE', 'READ'] },
+          ],
+        },
+      ],
+    });
+    const files = generateProject({
+      plan,
+      template: CASEFLOW_WEB_TS_V2,
+      projectName: 'Biblioteca',
+      slug: 'library',
+    });
+    const controller = files.find(
+      (file) =>
+        file.path.endsWith('-actions.controller.ts') &&
+        file.content.includes('postDocumentsRecord'),
+    )!.content;
+    expect(controller).toContain('@DataAccess({"Document":["READ","CREATE"]})');
+    expect(controller).not.toContain('"Document":["READ","CREATE","UPDATE"]');
   });
 });
