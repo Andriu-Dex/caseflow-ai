@@ -209,6 +209,76 @@ export async function verifyRemainingUI(targets, proof) {
     assert.deepEqual(await readFile(await mobileFile.path()), pdf);
     assert.deepEqual(errors, []);
     console.log('PASS: remaining browser mobile private attachment and exact download');
+
+    // --- List Generator Browser Verification (/products) ---
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('http://application:3000/products');
+    const table = page.locator('table');
+    await table.waitFor();
+
+    // 1. Visible Identificador column
+    const idHeader = table.locator('th').filter({ hasText: 'Identificador' });
+    assert.ok((await idHeader.count()) > 0, 'Table has visible Identificador header');
+
+    // 2. No unapproved implicit "Nuevo" button in read-only query view
+    assert.equal(
+      await page.getByRole('button', { name: 'Nuevo', exact: true }).count(),
+      0,
+      'Read-only list view does not inject unapproved Nuevo button',
+    );
+
+    // 3. Row displays identifier in first cell
+    const firstRow = table.locator('tbody tr').first();
+    const idCell = firstRow.locator('td').first();
+    assert.ok((await idCell.innerText()).length > 0, 'Row displays identifier in first cell');
+
+    // 4. Pagination controls
+    const prevAction = page.locator('[data-action="Ir a la página anterior"]');
+    const nextAction = page.locator('[data-action="Ir a la página siguiente"]');
+    assert.equal(await prevAction.count(), 1, 'Previous action button must exist');
+    assert.equal(await nextAction.count(), 1, 'Next action button must exist');
+    assert.ok(await prevAction.isDisabled(), 'Ir a la página anterior is disabled on page 1');
+
+    if (await nextAction.isEnabled()) {
+      const nextPromise = page.waitForResponse(
+        (response) => response.url().includes('/products?') && response.url().includes('page=2'),
+      );
+      await nextAction.click();
+      await nextPromise;
+      assert.ok(await prevAction.isEnabled(), 'Ir a la página anterior is enabled on page 2');
+    }
+
+    // 5. Query / Refetch action and error recovery
+    const queryAction = page.locator('[data-action="Consultar productos"]');
+    assert.equal(await queryAction.count(), 1, 'Consultar productos button must exist');
+
+    const refetchPromise = page.waitForResponse(
+      (response) => response.url().includes('/products?') && response.request().method() === 'GET',
+    );
+    await queryAction.click();
+    const refetchResponse = await refetchPromise;
+    assert.equal(refetchResponse.status(), 200, 'Consultar productos triggers real request');
+
+    // 6. Real error recovery: intercept with failure, assert alert role, unroute, refetch and assert recovery
+    await page.route('**/products*', (route) =>
+      route.fulfill({ status: 500, body: 'Simulated backend failure' }),
+    );
+    await queryAction.click();
+    const alert = page.locator('[role="alert"]');
+    await alert.waitFor({ timeout: 5000 });
+    assert.ok((await alert.count()) > 0, 'Page displays alert role upon real request error');
+
+    await page.unroute('**/products*');
+    const recoverPromise = page.waitForResponse(
+      (response) => response.url().includes('/products?') && response.request().method() === 'GET',
+    );
+    await queryAction.click();
+    const recoverResponse = await recoverPromise;
+    assert.equal(recoverResponse.status(), 200, 'Refetch recovers from error with HTTP 200');
+    await table.waitFor();
+
+    assert.deepEqual(errors, []);
+    console.log('PASS: remaining browser list table, identifier, pagination and query actions');
     await context.close();
   } finally {
     await browser.close();

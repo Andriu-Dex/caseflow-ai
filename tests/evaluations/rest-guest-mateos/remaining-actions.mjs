@@ -972,6 +972,126 @@ if (process.env.CASEFLOW_EVALUATION_DISPOSABLE !== '1')
       r,
     );
     const browserRequest = r.data;
+
+    // --- Acceptance tests for list pagination, sorting, error tolerance and scope isolation ---
+    for (let i = 1; i <= 25; i++) {
+      const pad = String(i).padStart(2, '0');
+      await p.product.create({
+        data: {
+          name: `Pagination Product ${pad}`,
+          salesUnit: 'unit',
+          referencePrice: `${i}.50`,
+          status: 'ACTIVO',
+          classification: 'PAGINATION',
+        },
+      });
+    }
+
+    r = await api('/products?page=1&limit=10', 'GET', undefined, cashier);
+    ok(
+      r.status === 200 && Array.isArray(r.data) && r.data.length === 10,
+      'Page 1 returns exactly 10 records',
+      r,
+    );
+    const page1 = r.data;
+    let ordered = true;
+    for (let i = 0; i < page1.length - 1; i++) {
+      const curTime = new Date(page1[i].createdAt).getTime();
+      const nextTime = new Date(page1[i + 1].createdAt).getTime();
+      if (curTime < nextTime || (curTime === nextTime && page1[i].id > page1[i + 1].id)) {
+        ordered = false;
+        break;
+      }
+    }
+    ok(ordered, 'List results are deterministically ordered by createdAt desc, id asc');
+
+    r = await api('/products?page=2&limit=10', 'GET', undefined, cashier);
+    ok(
+      r.status === 200 && Array.isArray(r.data) && r.data.length === 10,
+      'Page 2 returns exactly 10 records',
+      r,
+    );
+    const page2 = r.data;
+    const page1Ids = new Set(page1.map((item) => item.id));
+    ok(
+      page2.every((item) => !page1Ids.has(item.id)),
+      'Page 2 rows are completely disjoint from Page 1 rows',
+    );
+
+    r = await api('/products?page=3&limit=10', 'GET', undefined, cashier);
+    ok(
+      r.status === 200 && Array.isArray(r.data) && r.data.length >= 5,
+      'Page 3 returns remaining records',
+      r,
+    );
+    const page2Ids = new Set(page2.map((item) => item.id));
+    ok(
+      r.data.every((item) => !page1Ids.has(item.id) && !page2Ids.has(item.id)),
+      'Page 3 rows are disjoint from previous pages',
+    );
+
+    r = await api('/products?page=999&limit=10', 'GET', undefined, cashier);
+    ok(
+      r.status === 200 && Array.isArray(r.data) && r.data.length === 0,
+      'Page beyond record count returns empty array',
+    );
+
+    r = await api('/products?page=-1&limit=abc', 'GET', undefined, cashier);
+    ok(
+      r.status === 200 && Array.isArray(r.data),
+      'Negative page and invalid limit normalize safely',
+    );
+
+    r = await api('/products?page=0&limit=-5', 'GET', undefined, cashier);
+    ok(r.status === 200 && Array.isArray(r.data), 'Zero page and negative limit normalize safely');
+
+    r = await api('/products?page=1e308&limit=10', 'GET', undefined, cashier);
+    ok(
+      r.status === 200 && Array.isArray(r.data) && r.data.length === 0,
+      'Astronomical page number clamps safely without integer overflow',
+      r,
+    );
+
+    r = await api('/products?page=1&limit=0.5', 'GET', undefined, cashier);
+    ok(
+      r.status === 200 && Array.isArray(r.data) && r.data.length > 0,
+      'Fractional limit below 1 normalizes safely to default limit instead of zero',
+      r,
+    );
+
+    r = await api('/products', 'GET', undefined, cashier);
+    ok(
+      r.status === 200 && Array.isArray(r.data) && r.data.length >= 25,
+      'Unpaginated list endpoint preserves backward-compatible bounded array',
+    );
+
+    // Scoped list pagination and cross-scope isolation
+    for (let i = 1; i <= 15; i++) {
+      await expense({ scope: branchA.id, amount: `${i}.00` });
+      await expense({ scope: branchB.id, amount: `${i}.00` });
+    }
+
+    r = await api('/expenses?page=1&limit=10', 'GET', undefined, manager, branchA.id);
+    ok(
+      r.status === 200 && Array.isArray(r.data) && r.data.length === 10,
+      'Scoped list page 1 returns page limit',
+      r,
+    );
+    ok(
+      r.data.every((item) => item.branchId === branchA.id),
+      'Scoped list page 1 only returns records from branchA',
+    );
+
+    r = await api('/expenses?page=2&limit=10', 'GET', undefined, manager, branchA.id);
+    ok(
+      r.status === 200 &&
+        Array.isArray(r.data) &&
+        r.data.every((item) => item.branchId === branchA.id),
+      'Scoped list page 2 only returns records from branchA',
+    );
+
+    r = await api('/expenses?page=1&limit=10', 'GET', undefined, foreign, branchA.id);
+    ok(r.status === 403, 'User without scope permission is forbidden from querying another branch');
     console.log(
       'REMAINING_PROOF ' +
         JSON.stringify({
