@@ -8062,6 +8062,12 @@ Una decisión humana explícita puede desactivar una acción con una explicació
 
 Las capacidades repetidas de una misma entidad se unen sin descartar operaciones declaradas. La reparación acotada de errores TypeScript en métodos de acciones puede devolver únicamente el cuerpo diagnosticado, conservando el resto del archivo mediante límites AST. Mantiene el máximo de tres rondas y todos los controles posteriores; no autoriza cambiar firmas, imports, pruebas ni requisitos para ocultar errores.
 
+Los contratos de acción admiten archivos acotados mediante `FILE`: nombre seguro, MIME permitido y contenido base64, con un máximo explícito de hasta un MiB decodificado. El mismo contrato deriva selección de archivo, validación y descarga mediante Blob; no acepta URLs de almacenamiento del cliente ni incorpora dependencias. La acción de negocio sigue comprobando firma, permisos y persistencia privada. El límite JSON del servidor generado es dos MiB para transportar el archivo codificado. Esta representación no acredita análisis antivirus ni procesamiento OCR.
+
+Los campos persistentes pueden declarar `readOnly` y un `serverDefault` compatible. Se conservan en lecturas, se excluyen de contratos y formularios CRUD de escritura y reciben su valor inicial desde el servidor y Prisma. Un campo obligatorio de solo lectura requiere un valor inicial si existe creación CRUD. Las acciones personalizadas autorizadas pueden aplicar las transiciones del plan sin abrir una edición directa de estado o revisión.
+
+`business-logic.generate@7` conserva la versión 6 histórica y separa `userFacingLanguage` de los identificadores técnicos. Los nombres y comentarios del código permanecen en inglés; los mensajes al usuario siguen el idioma solicitado. El contexto y el hash de checkpoints incluyen esta versión y el idioma de presentación.
+
 ## 221.33 Versiones de trabajo integradas (ADR-018)
 
 Una corrida terminal `WORKING_COPY` conserva archivos y checkpoints de una implementación parcial, con trazabilidad y un manifiesto de acciones implementadas y pendientes. Parte de un plan y diseño aprobados, no llama a proveedores para completar acciones ausentes y no modifica versiones o snapshots anteriores. Las correcciones explícitas requieren permisos, origen del mismo proyecto/diseño/plantilla, hash y revisión estática; se conservan como nueva historia. La recuperación de checkpoints compatibles prioriza la corrida más reciente de forma estable.

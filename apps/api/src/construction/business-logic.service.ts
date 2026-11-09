@@ -182,7 +182,7 @@ export class BusinessLogicService {
       (item) => !item.builtin && !item.disabledReason,
     )) {
       const promptVersion = endpoint.contract
-        ? 6
+        ? 7
         : plan.authentication.local?.scope
           ? 5
           : plan.authentication.local
@@ -192,6 +192,17 @@ export class BusinessLogicService {
       const params = [...endpoint.path.matchAll(/:([a-zA-Z0-9]+)/g)].map((m) => m[1]!);
       const hasBody = ['POST', 'PATCH', 'PUT'].includes(endpoint.method);
       const context = {
+        ...(endpoint.contract ? { userFacingLanguage: language } : {}),
+        ...(plan.authentication.local?.scope
+          ? {
+              scopeProfile: {
+                ...plan.authentication.local.scope,
+                model: plan.entities.find(
+                  (entity) => entity.localId === plan.authentication.local!.scope!.entityLocalId,
+                )!.name,
+              },
+            }
+          : {}),
         ...(frozenContext ? { approvedContext: frozenContext(endpoint, plan) } : {}),
         action: {
           ...(endpoint.rules ? { rules: endpoint.rules } : {}),
@@ -242,6 +253,18 @@ export class BusinessLogicService {
           .map((e) => ({
             delegate: `this.prisma.${lowerFirst(e.name)}`,
             model: e.name,
+            ...(e.fields.some((field) => field.readOnly)
+              ? {
+                  serverOwnedFields: e.fields
+                    .filter((field) => field.readOnly)
+                    .map((field) => ({
+                      name: field.name,
+                      ...(field.serverDefault !== undefined
+                        ? { initialValue: field.serverDefault }
+                        : {}),
+                    })),
+                }
+              : {}),
             ...(e.uniqueConstraints ? { uniqueConstraints: e.uniqueConstraints } : {}),
             fields: [
               'id',
@@ -297,7 +320,7 @@ export class BusinessLogicService {
             ? { data: businessLogicOutputSchema.parse(JSON.parse(cached.content)) }
             : await this.ai.generateStructured({
                 projectId,
-                language,
+                ...(endpoint.contract ? {} : { language }),
                 promptKey: 'business-logic.generate',
                 promptVersion,
                 messages: [{ role: 'user', content: JSON.stringify(context) }],

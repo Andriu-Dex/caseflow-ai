@@ -15,6 +15,8 @@ Las acciones personalizadas del ImplementationPlan admiten un `contract` estruct
 
 El generador deriva de la misma definición los esquemas compartidos Zod, OpenAPI, tipos del cliente, entradas del controlador y tipos del servicio. La frontera HTTP comprueba también la respuesta antes de entregarla. Un resultado incompatible falla con un mensaje público seguro. Los filtros booleanos admiten `true` y `false`; no se convierte cualquier cadena no vacía en verdadero.
 
+Las acciones tipadas sin filtros de consulta declarados rechazan parámetros de consulta adicionales. No se interpretan ni se ignoran silenciosamente filtros ajenos al contrato, incluidos los enviados al descargar un resultado previamente consultado.
+
 La interfaz genera campos anidados, referencias a listas autorizadas, filtros y presentación estructurada del resultado. Los campos enlazados mediante `bindings` se obtienen de una consulta declarada en la misma pantalla o de una clave UUID creada por el cliente. El plan puede exigir un booleano de habilitación y declarar una navegación de éxito hacia una ruta existente. Estos enlaces son ayudas de interfaz: el servidor vuelve a validar versión, identidad, estado, permisos e idempotencia.
 
 Una consulta de revisión puede usar POST cuando necesita un cuerpo estructurado. Para alimentar un enlace desde POST se exige el perfil de alcance activo y capacidades de datos explícitas, no vacías y exclusivamente READ. La frontera de persistencia impide que esa revisión escriba datos. Una fuente POST con capacidades de escritura no puede habilitar una confirmación mediante enlaces de revisión. Se conserva el requisito de declarar ambas acciones en la misma pantalla.
@@ -35,7 +37,13 @@ La frontera de alcance utiliza el mismo cliente transaccional para comprobar pad
 
 - Se mantiene `CASEFLOW_WEB_TS_V1`, versión 2, y su catálogo de dependencias. No se añade otra pila ni una dependencia nueva.
 - Los contratos son opcionales para preservar los planes históricos. Las acciones sin contrato conservan su comportamiento previo y sus controles de entrega.
-- Las propuestas de cuerpos tipados usan `business-logic.generate@6`; el contexto y el hash de reutilización incluyen contrato y reglas. Esto no certifica su significado.
+- Las propuestas de cuerpos tipados conservan `business-logic.generate@6` como historial y utilizan `business-logic.generate@7` para separar el idioma del usuario de los identificadores técnicos en inglés. El contexto y el hash incluyen contrato, reglas, idioma de presentación, perfil exacto del ámbito y valores de servidor de campos protegidos. Esto no certifica su significado.
 - Los cuerpos siguen sujetos a revisión estática y ejecución exclusiva en Docker. Compilar o superar una prueba genérica no acredita las operaciones de un proyecto real.
 - Los planes aprobados y snapshots históricos no se sobrescriben. Cada entrega oficial conserva sus versiones y necesita todos los controles obligatorios.
 - Una caída o límite de uso del proveedor conserva la revisión manual y el estado fallido de la corrida; no publica una entrega incompleta.
+
+## Archivos y campos controlados por el servidor
+
+`FILE` representa un archivo con nombre sin separadores ni controles, MIME de una lista cerrada y contenido base64. Exige un tamaño máximo explícito de hasta un MiB decodificado. El generador deriva Zod, OpenAPI, selección de archivo y descarga mediante Blob del mismo contrato, sin dependencias nuevas. La acción específica valida firma, asociación, permisos y persistencia privada; no recibe una URL arbitraria de almacenamiento. El servidor generado limita el cuerpo JSON a dos MiB. El contrato no sustituye un antivirus ni configura OCR.
+
+Los campos `readOnly` se mantienen en respuestas, pero se excluyen de contratos y formularios CRUD de escritura. Un `serverDefault` compatible proporciona su valor inicial desde el servidor y Prisma. Si una entidad admite creación CRUD, un campo obligatorio de solo lectura requiere un valor inicial. Las acciones personalizadas conservan las capacidades explícitas necesarias para aplicar transiciones y aumentar revisiones; esta protección evita que el CRUD sustituya esos flujos.
