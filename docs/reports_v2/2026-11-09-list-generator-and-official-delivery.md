@@ -225,9 +225,42 @@ Tras la revisión técnica del candidato, se atendieron e implementaron las sigu
 - **Artefactos y versiones vigentes en base de datos:**
   - `ImplementationPlanVersion` v24 (`d40dd6e1-7de2-4e8d-b066-7bef396dbf8b`): `APPROVED`.
   - `DesignBaseline` (`ac298b2c-ba49-443a-a2c1-99b8d8a8ecc4`): Vigente.
-- **Próximos pasos una vez disponible la cuota de ChatGPT:**
-  1. Reanudar el intermediario (`dev-broker.js`) o esperar el restablecimiento de la ventana de Plus.
-  2. Ejecutar la corrida oficial hasta alcanzar estado `GENERATED` con las 81 pantallas.
-  3. Ejecutar los controles Docker sandbox (INSTALL, LINT, TYPECHECK, TEST, BUILD, trazabilidad).
-  4. Ejecutar las pruebas de aceptación y navegador en Docker.
-  5. Formalizar el `GeneratedProjectSnapshot` oficial y generar el manual de usuario (Paso 4).
+
+---
+
+## 8. Refinamiento de Pantallas de Listado y Consultas Financieras (Prompt v26)
+
+### 8.1 Mejoras Estructurales en `frontend.templates.ts`
+
+1. **Ampliación del Límite de Columnas a 8:**  
+   Se modificó el corte de columnas en `listPage` de 6 a 8 (`columns = [...entity.fields, ...relColumns].slice(0, 8)`). Esto permite incluir campos financieros de liquidación (como `total` en la entidad `Sale`, ubicada en la posición 7) sin truncamiento.
+2. **Filtrado Temporal por Periodo (`dateFrom` / `dateTo`):**  
+   Se reemplazó el filtro simple por un formulario de rango de fechas con etiquetas «Desde:» y «Hasta:», botón de «Limpiar», y filtrado en memoria sobre `displayRows` acotado al rango temporal seleccionado.
+3. **Banner de Ámbito Operativo y Zona Horaria:**  
+   Se integró un contenedor accesible (`role="status"`) que resume que la consulta se encuentra restringida a la sucursal asignada y a la zona horaria del usuario autorizado.
+4. **Catálogo Canónico de Etiquetas en Español:**  
+   Se extendió `SPANISH_LABELS` para normalizar términos como `saledate` («Fecha de venta»), `operationaldate` («Fecha operativa»), `channel` («Canal»), `totaldiscount` («Descuento total»), `subtotal` («Subtotal») y `total` («Total»).
+
+### 8.2 Versionado Inmutable: `FRONTEND_DESIGN_PROMPT_V26`
+
+Se definió y registró en `apps/api/src/ai/ai.module.ts` la versión 26 del prompt de diseño frontend, instruyendo a la IA sobre:
+
+- Paginación determinista en listados mediante contratos físicos (`LIST`).
+- Filtrado temporal de periodo realizado en cliente sobre los registros consultados.
+- Avisos de ámbito de sucursal y zona horaria que satisfacen los requisitos de información de dominio.
+- Correspondencia directa entre encabezados en español y campos canónicos de la entidad.
+
+### 8.3 Resultados de la Corrida `77ba1c9b-2fce-4d72-82f4-8b32c757d138`
+
+Al ejecutar la generación directa con el broker de ChatGPT restablecido:
+
+- **Pantalla 7 (`/products`, «Consulta de productos del catálogo»):** Adaptada en 24s con **0 limitaciones**.
+- **Pantalla 12 (`/product-categories`, «Consulta de categorías de productos»):** Adaptada en 21s con **0 limitaciones**.
+- **Puntos de control persistidos:** Las presentaciones validadas se almacenaron en `GeneratedFile`, elevando el total de presentaciones en caché de 418 a 432 registros.
+- **Límite de uso del plan en Pantalla 15 (`/branches/[branchid]/menus`):** OpenAI devolvió `subscription_sharing_usage_limit_exceeded`, activando la pausa de seguridad prevista en DEC-117.
+
+### 8.4 Próximos Pasos
+
+1. Esperar la reapertura de la ventana de uso de ChatGPT Plus (verificable en chatgpt.com).
+2. Reanudar la corrida directa; las pantallas 1 a 14 se resolverán mediante «Cache HIT» instantáneos y continuará a partir de la pantalla 15.
+3. Completar las 81 rutas y someter el proyecto generado al contenedor Docker sandbox.
