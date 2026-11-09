@@ -203,12 +203,14 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider {
           nodeImage,
           'timeout',
           '--kill-after=5',
-          '240',
+          process.env.CASEFLOW_BUILD_TIMEOUT
+            ? String(Math.floor(Number(process.env.CASEFLOW_BUILD_TIMEOUT) / 1000))
+            : '600',
           'sh',
           '-ec',
           'pnpm --filter ./apps/api exec prisma generate; pnpm run build:packages; pnpm --filter ./apps/api run build; pnpm --filter ./apps/web run build',
         ],
-        240_000,
+        process.env.CASEFLOW_BUILD_TIMEOUT ? Number(process.env.CASEFLOW_BUILD_TIMEOUT) : 600_000,
       );
       // An isolated internal bridge has no host gateway address and no route to the Internet.
       await command([
@@ -282,7 +284,7 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider {
         'NEXT_TELEMETRY_DISABLED=1',
         nodeImage,
         'timeout',
-        '240',
+        process.env.CASEFLOW_CAPTURE_TIMEOUT ?? '240',
         'sh',
         '-ec',
         `pnpm --filter ./apps/api exec prisma db push; ${localSessions ? 'node apps/api/dist/auth/capture-fixtures.js > /app/.capture-sessions.json; ' : ''}node apps/api/dist/main.js & pnpm --filter ./apps/web start & wait`,
@@ -344,7 +346,10 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider {
         '/tmp/controller/browser.cjs',
       ]);
       await command(['cp', `${controller}/.`, `${browser}:/tmp/controller`]);
-      await command(['start', '-a', browser], 180_000);
+      await command(
+        ['start', '-a', browser],
+        process.env.CASEFLOW_BROWSER_TIMEOUT ? Number(process.env.CASEFLOW_BROWSER_TIMEOUT) : 180_000,
+      );
       await command(['cp', `${browser}:/tmp/capture-output/.`, output]);
       const results: RuntimeCaptureResult[] = [];
       for (let index = 0; index < request.targets.length; index++) {
