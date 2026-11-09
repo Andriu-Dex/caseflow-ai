@@ -14,6 +14,7 @@ import {
 } from '../code-generation/engine/presentation';
 import { applyPresentationShell } from '../code-generation/engine/presentation-shell';
 import { file, json, type GeneratedProjectFile } from '../code-generation/engine/types';
+import { kebabCase } from '../code-generation/naming';
 
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 
@@ -120,6 +121,8 @@ export class FrontendDesignService {
         );
       const sourceHash = hash(target.content);
       const sources = presentationSources(target.content);
+      const routeEntity = plan.entities.find((item) => item.localId === route.entityLocalId);
+      const entityKebab = routeEntity ? kebabCase(routeEntity.name) : undefined;
       const loginRoute = plan.routes.find((item) =>
         item.actions.some((action) => action.endpoint === 'POST /auth/login'),
       );
@@ -153,6 +156,18 @@ export class FrontendDesignService {
               )
               .map((item) => ({ path: item.path, source: item.content }))
           : [],
+        ...(route.entityLocalId
+          ? {
+              entityServices: output
+                .filter((item) => {
+                  return (
+                    item.path.endsWith(`/${entityKebab}.service.ts`) ||
+                    item.path.endsWith(`/${entityKebab}.controller.ts`)
+                  );
+                })
+                .map((item) => ({ path: item.path, source: item.content })),
+            }
+          : {}),
         sharedCapabilities: {
           serverSessionValidation: Boolean(plan.authentication.local),
           sessionExpiryRedirect: Boolean(plan.authentication.local),
@@ -161,14 +176,19 @@ export class FrontendDesignService {
                 item.actions.some((action) => action.endpoint === 'POST /auth/logout'),
               )?.path ?? null)
             : null,
+          ...(route.kind === 'LIST'
+            ? {
+                deterministicListPagination: Boolean(routeEntity?.operations.includes('LIST')),
+              }
+            : {}),
         },
-        entity: plan.entities.find((item) => item.localId === route.entityLocalId) ?? null,
+        entity: routeEntity ?? null,
         endpoints: plan.customEndpoints.filter((endpoint) =>
           route.actions.some((action) => action.endpoint === `${endpoint.method} ${endpoint.path}`),
         ),
       };
       const cacheHash = hash(
-        json({ version: 7, sourceHash, htmlHash: hash(html), screen, bindings, baselineId }),
+        json({ version: 8, sourceHash, htmlHash: hash(html), screen, bindings, baselineId }),
       );
       const cachePath = `docs/presentations/${cacheHash}.json`;
       const cached = await this.prisma.generatedFile.findFirst({
@@ -185,7 +205,7 @@ export class FrontendDesignService {
           language,
           sourceArtifactVersionId: entry!.artifactVersionId,
           promptKey: 'frontend-design.generate',
-          promptVersion: 7,
+          promptVersion: 8,
           messages: [
             {
               role: 'user',

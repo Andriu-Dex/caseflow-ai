@@ -155,7 +155,7 @@ describe('frozen design adaptation', () => {
         projectId: id,
         sourceArtifactVersionId: mockupId,
         promptKey: 'frontend-design.generate',
-        promptVersion: 7,
+        promptVersion: 8,
       }),
     );
     const sent = JSON.parse(ai.generateStructured.mock.calls[0]![0].messages[0].content);
@@ -164,7 +164,7 @@ describe('frozen design adaptation', () => {
     );
     const page = result.files.find((item) => item.path === 'apps/web/app/items/page.tsx')!;
     expect(page.content).toContain('mx-auto max-w-6xl');
-    expect(page.content).toContain('api.listItems()');
+    expect(page.content).toContain('api.listItems({ page, limit })');
     expect(result.files.find((item) => item.path === 'apps/web/app/layout.tsx')!.content).toContain(
       'PresentationShell',
     );
