@@ -463,6 +463,7 @@ const enumValue = () =>
 const implementationFieldSchema = z
   .object({
     name: camelName(),
+    label: text(200).optional(),
     internal: z.boolean().optional(),
     readOnly: z.boolean().optional(),
     serverDefault: z
@@ -592,6 +593,15 @@ const implementationEndpointSchema = z
     relatedSourceCodes: z.array(text(40)).max(100).optional(),
   })
   .strict();
+export const IMPLEMENTATION_ROUTE_ACTION_INTERACTIONS = [
+  'QUERY',
+  'REFETCH',
+  'PAGINATE_PREVIOUS',
+  'PAGINATE_NEXT',
+] as const;
+export type ImplementationRouteActionInteraction =
+  (typeof IMPLEMENTATION_ROUTE_ACTION_INTERACTIONS)[number];
+
 // A screen action (as the UI blueprint names it) and what serves it: one of
 // the route entity's CRUD operations or a custom endpoint ("POST /orders/:id/x").
 const implementationRouteActionSchema = z
@@ -599,11 +609,35 @@ const implementationRouteActionSchema = z
     label: text(200),
     operation: z.enum(IMPLEMENTATION_CRUD_OPERATIONS).optional(),
     endpoint: text(220).optional(),
+    interaction: z.enum(IMPLEMENTATION_ROUTE_ACTION_INTERACTIONS).optional(),
   })
   .strict()
   .refine((action) => Boolean(action.operation) !== Boolean(action.endpoint), {
     message: 'Cada acción la atiende una operación CRUD o un endpoint, exactamente uno.',
-  });
+  })
+  .refine(
+    (action) => {
+      if (!action.interaction) return true;
+      if (action.interaction === 'PAGINATE_NEXT' || action.interaction === 'PAGINATE_PREVIOUS') {
+        return (
+          action.operation === 'LIST' ||
+          (action.endpoint ? action.endpoint.startsWith('GET ') : false)
+        );
+      }
+      if (action.interaction === 'QUERY' || action.interaction === 'REFETCH') {
+        return (
+          action.operation === 'LIST' ||
+          action.operation === 'GET' ||
+          (action.endpoint ? action.endpoint.startsWith('GET ') : false)
+        );
+      }
+      return true;
+    },
+    {
+      message:
+        'Las interacciones de paginación solo aplican a operaciones LIST o endpoints GET; las de consulta y recarga solo a operaciones de lectura.',
+    },
+  );
 const implementationRouteSchema = z
   .object({
     path: text(200).regex(
@@ -742,6 +776,7 @@ const looseRouteActionSchema = z
     label: text(200),
     operation: z.enum(IMPLEMENTATION_CRUD_OPERATIONS).optional(),
     endpoint: text(220).optional(),
+    interaction: z.enum(IMPLEMENTATION_ROUTE_ACTION_INTERACTIONS).optional(),
   })
   .strict();
 const looseRouteSchema = implementationRouteSchema.extend({
