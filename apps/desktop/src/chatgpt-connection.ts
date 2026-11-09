@@ -235,6 +235,10 @@ export async function startBroker(
         await connection.markUsageLimit();
         return reply(204);
       }
+      if (route === 'POST /resume') {
+        await connection.resume();
+        return reply(204);
+      }
       if (route === 'POST /revoked') {
         await connection.markRevoked();
         return reply(204);
