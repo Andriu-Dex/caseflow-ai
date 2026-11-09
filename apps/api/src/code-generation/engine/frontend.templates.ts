@@ -249,6 +249,7 @@ interface ActionTarget {
   routeParams?: string[];
   onDone?: string;
   onDelete?: string;
+  isListPage?: boolean;
 }
 
 // The control for one action, or null when this template cannot realise it
@@ -268,6 +269,15 @@ function actionControl(
       case 'CREATE':
         return form ? linkControl(label, `"${form.path}"`) : null;
       case 'LIST': {
+        if (target.isListPage) {
+          if (action.interaction === 'PAGINATE_NEXT')
+            return `<Button type="button" variant="outline" onClick={() => setPage((p) => p + 1)} disabled={!hasNextPage || query.isLoading} ${actionMarker(label)}>${text(label)}</Button>`;
+          if (action.interaction === 'PAGINATE_PREVIOUS')
+            return `<Button type="button" variant="outline" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1 || query.isLoading} ${actionMarker(label)}>${text(label)}</Button>`;
+          if (action.interaction === 'QUERY' || action.interaction === 'REFETCH')
+            return `<Button type="button" variant="outline" onClick={() => query.refetch()} disabled={query.isLoading} ${actionMarker(label)}>${text(label)}</Button>`;
+          return `<Button type="button" variant="outline" onClick={() => query.refetch()} disabled={query.isLoading} ${actionMarker(label)}>${text(label)}</Button>`;
+        }
         const list = entityRoute(plan, entity, 'LIST');
         // With no list screen, the query is run from here.
         return list
@@ -414,19 +424,15 @@ function pageImports(body: string, up: string, extra: string[] = []): string {
 function listPage(plan: Plan, entity: Entity, route: Route): string {
   const up = toWebRoot(route.path);
   const plural = pluralize(entity.name);
-  const queryKey = `['${lowerFirst(plural)}']`;
+  const baseKey = `['${lowerFirst(plural)}']`;
   const detail = entity.operations.includes('GET')
     ? entityRoute(plan, entity, 'DETAIL')
     : undefined;
-  const form = entity.operations.includes('CREATE') ? entityRoute(plan, entity, 'FORM') : undefined;
   const columns = entity.fields.slice(0, 5);
-  const refresh = `() => queryClient.invalidateQueries({ queryKey: ${queryKey} })`;
+  const refresh = `() => queryClient.invalidateQueries({ queryKey: ${baseKey} })`;
   const pageActions = route.actions.filter((a) => !isItemAction(plan, a));
   const itemActions = route.actions.filter((a) => isItemAction(plan, a));
-  const header = controls(plan, entity, pageActions, { onDone: refresh });
-  // Without a planned create action, the form keeps its generic entry point.
-  if (form && !pageActions.some((a) => a.operation === 'CREATE'))
-    header.unshift(`<Link href="${form.path}">\n  <Button>Nuevo</Button>\n</Link>`);
+  const header = controls(plan, entity, pageActions, { isListPage: true, onDone: refresh });
   const rowControls = controls(plan, entity, itemActions, {
     idExpr: 'row.id',
     onDone: refresh,
@@ -440,11 +446,15 @@ function listPage(plan: Plan, entity: Entity, route: Route): string {
       `<Link href=${withId(accessEditor.path, 'row.id')} className="text-primary underline">Roles y ámbitos de operación</Link>`,
     );
   const detailHref = detail ? withId(detail.path, 'row.id') : undefined;
-  const cells = columns.map((f, i) =>
+  const idCell = detailHref
+    ? `<td className="px-3 py-2 font-mono text-xs">\n  <Link className="text-primary underline" href=${detailHref}>\n    {row.id}\n  </Link>\n</td>`
+    : `<td className="px-3 py-2 font-mono text-xs">{row.id}</td>`;
+  const dataCells = columns.map((f, i) =>
     i === 0 && detailHref
       ? `<td className="px-3 py-2">\n  <Link className="text-primary underline" href=${detailHref}>\n    {${display(f, `row.${f.name}`)}}\n  </Link>\n</td>`
       : `<td className="px-3 py-2">{${display(f, `row.${f.name}`)}}</td>`,
   );
+  const cells = [idCell, ...dataCells];
   if (rowControls.length)
     cells.push(
       `<td className="px-3 py-2">\n  <div className="flex flex-wrap gap-2">\n${indent(rowControls.join('\n'), 4)}\n  </div>\n</td>`,
@@ -453,13 +463,14 @@ function listPage(plan: Plan, entity: Entity, route: Route): string {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-semibold">${route.screenName.replace(/[<>{}]/g, '')}</h1>
 ${header.length ? `        <div className="flex flex-wrap gap-2">\n${indent(header.join('\n'), 10)}\n        </div>\n` : ''}      </div>
-      <PageState query={query} empty="Aún no hay registros.">
+      <PageState query={query} empty={page > 1 ? 'Fin de los registros. No hay más elementos en esta página.' : 'Aún no hay registros.'}>
         {(rows) => (
           <div className="overflow-x-auto rounded-lg border">
             <table className="w-full text-sm">
               <thead className="bg-muted text-left">
                 <tr>
-${columns.map((f) => `                  <th className="px-3 py-2 font-medium">${labelOf(f.name)}</th>`).join('\n')}${rowControls.length ? '\n                  <th className="px-3 py-2 font-medium">Acciones</th>' : ''}
+                  <th className="px-3 py-2 font-medium">${text('Identificador')}</th>
+${columns.map((f) => `                  <th className="px-3 py-2 font-medium">${text(f.label ?? labelOf(f.name))}</th>`).join('\n')}${rowControls.length ? `\n                  <th className="px-3 py-2 font-medium">${text('Acciones')}</th>` : ''}
                 </tr>
               </thead>
               <tbody>
@@ -477,10 +488,14 @@ ${indent(cells.join('\n'), 20)}
   const usesClient = body.includes('queryClient');
   return `'use client';
 
-${pageImports(body, up, [`import { ${usesClient ? 'useQueryClient, ' : ''}useQuery } from '@tanstack/react-query';`, `import { api } from '${up}lib/api';`, `import { PageState } from '${up}components/page-state';`])}
+${pageImports(body, up, ["import { useState } from 'react';", `import { ${usesClient ? 'useQueryClient, ' : ''}useQuery } from '@tanstack/react-query';`, `import { api } from '${up}lib/api';`, `import { PageState } from '${up}components/page-state';`])}
 
 export default function ${entity.name}ListPage() {
-  const query = useQuery({ queryKey: ${queryKey}, queryFn: () => api.list${plural}() });${usesClient ? '\n  const queryClient = useQueryClient();' : ''}
+  const [page, setPage] = useState(1);
+  const limit = 20;
+  const query = useQuery({ queryKey: ['${lowerFirst(plural)}', page, limit], queryFn: () => api.list${plural}({ page, limit }) });
+  const items = query.data ?? [];
+  const hasNextPage = items.length === limit && items.length > 0;${usesClient ? '\n  const queryClient = useQueryClient();' : ''}
   return (
 ${body}
   );
@@ -660,7 +675,7 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
   );
   const manyInputs = manyTargets.map(
     ({ relation, target }) =>
-      `<div className="flex flex-col gap-2"><label htmlFor="${relation.name}Ids">${relation.label ?? labelOf(relation.name)}</label><select id="${relation.name}Ids" multiple className={input} {...register('${relation.name}Ids')}>{${relation.name}ManyOptions.data?.map(option => <option key={option.id} value={option.id}>{String(option.${target.fields[0]!.name} ?? option.id)}</option>)}</select><FieldError message={errors.${relation.name}Ids?.message} /></div>`,
+      `<div className="flex flex-col gap-2"><label htmlFor="${relation.name}Ids">${text(relation.label ?? labelOf(relation.name))}</label><select id="${relation.name}Ids" multiple className={input} {...register('${relation.name}Ids')}>{${relation.name}ManyOptions.data?.map(option => <option key={option.id} value={option.id}>{String(option.${target.fields[0]!.name} ?? option.id)}</option>)}</select><FieldError message={errors.${relation.name}Ids?.message} /></div>`,
   );
   const usesQuery = relationTargets.length > 0 || manyTargets.length > 0 || editable;
   const save = editable

@@ -653,3 +653,84 @@ describe('forms and pages for every field type', () => {
     expect(without.get('apps/web/package.json')!.content).not.toContain('playwright');
   });
 });
+
+describe('shared list generator and pagination (DEC-121)', () => {
+  const plan = basePlan({
+    customEndpoints: [],
+    entities: [
+      {
+        localId: 'product',
+        name: 'Product',
+        moduleLocalId: 'sales',
+        fields: [
+          { name: 'name', type: 'STRING', label: 'Nombre comercial' },
+          { name: 'price', type: 'DECIMAL', label: 'Precio unitario' },
+        ],
+        operations: ['LIST', 'GET', 'CREATE'],
+      },
+    ],
+    routes: [
+      {
+        path: '/products',
+        screenName: 'Consulta de productos',
+        moduleLocalId: 'sales',
+        kind: 'LIST',
+        entityLocalId: 'product',
+        actions: [
+          { label: 'Consultar productos', operation: 'LIST', interaction: 'QUERY' },
+          { label: 'Ir a la página siguiente', operation: 'LIST', interaction: 'PAGINATE_NEXT' },
+          { label: 'Ir a la página anterior', operation: 'LIST', interaction: 'PAGINATE_PREVIOUS' },
+          { label: 'Reintentar consulta', operation: 'LIST', interaction: 'REFETCH' },
+        ],
+      },
+      {
+        path: '/products/new',
+        screenName: 'Nuevo producto',
+        moduleLocalId: 'sales',
+        kind: 'FORM',
+        entityLocalId: 'product',
+        actions: [{ label: 'Guardar', operation: 'CREATE' }],
+      },
+    ],
+  });
+  const files = byPath(generateProject(ctx(plan)));
+  const list = files.get('apps/web/app/products/page.tsx')!.content;
+  const client = files.get('packages/api-client/src/index.ts')!.content;
+  const controller = files.get('apps/api/src/sales/product.controller.ts')!.content;
+  const service = files.get('apps/api/src/sales/product.service.ts')!.content;
+
+  it('binds pagination, query and retry interactions with real state and without dummy links', () => {
+    expect(list).toContain('const [page, setPage] = useState(1);');
+    expect(list).toContain('const limit = 20;');
+    expect(list).toContain('queryFn: () => api.listProducts({ page, limit })');
+    expect(list).toContain('onClick={() => setPage((p) => p + 1)}');
+    expect(list).toContain('disabled={!hasNextPage || query.isLoading}');
+    expect(list).toContain('onClick={() => setPage((p) => Math.max(1, p - 1))}');
+    expect(list).toContain('disabled={page <= 1 || query.isLoading}');
+    expect(list).toContain('onClick={() => query.refetch()}');
+    expect(list).not.toContain('<Link href="/products"');
+  });
+
+  it('renders a visible Identificador column and structured field labels safely escaped', () => {
+    expect(list).toContain('<th className="px-3 py-2 font-medium">{"Identificador"}</th>');
+    expect(list).toContain('<th className="px-3 py-2 font-medium">{"Nombre comercial"}</th>');
+    expect(list).toContain('<th className="px-3 py-2 font-medium">{"Precio unitario"}</th>');
+    expect(list).toContain('{row.id}');
+    expect(list).toContain('hasNextPage = items.length === limit && items.length > 0');
+    expect(list).toContain(
+      "empty={page > 1 ? 'Fin de los registros. No hay más elementos en esta página.' : 'Aún no hay registros.'}",
+    );
+  });
+
+  it('does not inject an unapproved Nuevo button into a read-only list view', () => {
+    expect(list).not.toContain('<Button>Nuevo</Button>');
+  });
+
+  it('generates optional pagination parameters on OpenAPI, api-client and backend', () => {
+    expect(client).toContain('listProducts: (query?: { "page"?: number; "limit"?: number }) =>');
+    expect(controller).toContain("@Query('page') page?: string");
+    expect(controller).toContain("@Query('limit') limit?: string");
+    expect(service).toContain("orderBy: [{ createdAt: 'desc' }, { id: 'asc' }]");
+    expect(service).toContain('take: limit');
+  });
+});

@@ -59,8 +59,13 @@ function entityController(plan: Plan, entity: Entity, moduleName: string): strin
   const methods = [
     ops.has('LIST') &&
       `  @Get()${read}${operation('GET')}
-  list() {
-    return this.service.list();
+  list(@Query('page') page?: string, @Query('limit') limit?: string) {
+    const pageNum = page !== undefined ? Number(page) : undefined;
+    const limitNum = limit !== undefined ? Number(limit) : undefined;
+    return this.service.list({
+      page: pageNum !== undefined && Number.isFinite(pageNum) && pageNum >= 1 ? Math.min(Math.floor(pageNum), 100_000) : undefined,
+      limit: limitNum !== undefined && Number.isFinite(limitNum) && limitNum >= 1 ? Math.min(Math.floor(limitNum), 500) : undefined,
+    });
   }`,
     ops.has('GET') &&
       `  @Get(':id')${read}${operation('GET', true)}
@@ -90,6 +95,7 @@ function entityController(plan: Plan, entity: Entity, moduleName: string): strin
   const nestImports = [
     'Controller',
     ops.has('LIST') || ops.has('GET') ? 'Get' : '',
+    ops.has('LIST') ? 'Query' : '',
     ops.has('GET') || ops.has('UPDATE') || ops.has('DELETE') ? 'Param' : '',
     ops.has('GET') || ops.has('UPDATE') || ops.has('DELETE') ? 'ParseUUIDPipe' : '',
     ops.has('CREATE') ? 'Post' : '',
@@ -159,9 +165,16 @@ function entityService(entity: Entity, plan: ImplementationPlanContent): string 
   const needsInput = ops.has('CREATE') || ops.has('UPDATE');
   const methods = [
     ops.has('LIST') &&
-      `  ${projectResult ? 'async ' : ''}list() {
+      `  ${projectResult ? 'async ' : ''}list(query?: { page?: number; limit?: number }) {
     // Bounded: a list endpoint never returns an unlimited number of rows.
-    return ${projectResult ? '(await ' : ''}this.prisma.${delegate}.findMany({ orderBy: { createdAt: 'desc' }, take: 500${omitFields(entity)}${accountInclude} })${projectResult ? `).map(${projectResult})` : ''};
+    const page = query?.page && Number.isFinite(query.page) && query.page >= 1 ? Math.min(Math.floor(query.page), 100_000) : 1;
+    const limit = query?.limit && Number.isFinite(query.limit) && query.limit >= 1 ? Math.min(Math.floor(query.limit), 500) : (query?.page !== undefined ? 20 : 500);
+    const skip = query?.page !== undefined ? (page - 1) * limit : 0;
+    return ${projectResult ? '(await ' : ''}this.prisma.${delegate}.findMany({
+      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+      take: limit,
+      ...(skip > 0 ? { skip } : {})${omitFields(entity)}${accountInclude}
+    })${projectResult ? `).map(${projectResult})` : ''};
   }`,
     (ops.has('GET') || ops.has('UPDATE') || ops.has('DELETE')) &&
       `  async get(id: string) {
@@ -281,7 +294,12 @@ function entityServiceSpec(entity: Entity, plan: ImplementationPlanContent): str
     ops.has('LIST') &&
       `  it('lists the most recent records with a bounded page', async () => {
     await service.list();
-    expect(prisma.${delegate}.findMany).toHaveBeenCalledWith({ orderBy: { createdAt: 'desc' }, take: 500${omitFields(entity)}${accountInclude} });
+    expect(prisma.${delegate}.findMany).toHaveBeenCalledWith({ orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], take: 500${omitFields(entity)}${accountInclude} });
+  });`,
+    ops.has('LIST') &&
+      `  it('paginates records deterministically when requested', async () => {
+    await service.list({ page: 2, limit: 10 });
+    expect(prisma.${delegate}.findMany).toHaveBeenCalledWith({ orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], take: 10, skip: 10${omitFields(entity)}${accountInclude} });
   });`,
     (ops.has('GET') || ops.has('UPDATE') || ops.has('DELETE')) &&
       `  it('answers 404 for a record that does not exist', async () => {

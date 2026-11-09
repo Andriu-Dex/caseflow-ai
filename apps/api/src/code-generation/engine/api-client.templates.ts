@@ -83,6 +83,7 @@ export function apiClientFiles(ctx: GenerationContext): GeneratedProjectFile[] {
     }[];
     const success = Object.entries(op.responses).find(([status]) => status.startsWith('2'));
     const response = success?.[1].content?.['application/json'].schema;
+    const allOptional = queryParams.length > 0 && queryParams.every((p) => !p.required);
     const args = [
       ...(pathParams.length === 1 && pathParams[0] === 'id' ? ['id: string'] : []),
       ...(pathParams.length && !(pathParams.length === 1 && pathParams[0] === 'id')
@@ -91,7 +92,7 @@ export function apiClientFiles(ctx: GenerationContext): GeneratedProjectFile[] {
       ...(body ? [`body: ${tsType(body)}`] : []),
       ...(queryParams.length
         ? [
-            `query: {${queryParams.map((p) => `${JSON.stringify(p.name)}${p.required ? '' : '?'}: ${tsType(p.schema)}`).join(';')}}`,
+            `query${allOptional ? '?' : ''}: { ${queryParams.map((p) => `${JSON.stringify(p.name)}${p.required ? '' : '?'}: ${tsType(p.schema)}`).join('; ')} }`,
           ]
         : []),
     ];
@@ -176,7 +177,7 @@ export class ApiError extends Error {
 
 export function createApiClient(options: ApiClientOptions) {
   const fetchImpl = options.fetch ?? fetch;
-  ${operations.some(({ op }) => op.parameters?.some((p) => p.in === 'query')) ? `function encodeQuery(values: Record<string, unknown>) { const query=new URLSearchParams(); for(const [name,value] of Object.entries(values)) if(value!==undefined) query.set(name,String(value)); const encoded=query.toString(); return encoded?'?'+encoded:''; }` : ''}
+  ${operations.some(({ op }) => op.parameters?.some((p) => p.in === 'query')) ? `function encodeQuery(values?: Record<string, unknown>) { const query=new URLSearchParams(); for(const [name,value] of Object.entries(values ?? {})) if(value!==undefined) query.set(name,String(value)); const encoded=query.toString(); return encoded?'?'+encoded:''; }` : ''}
 
   async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const headers: Record<string, string> = { Accept: 'application/json' };

@@ -164,6 +164,22 @@ export function generateOpenApi(plan: ImplementationPlanContent, title: string):
           operationId: `list${plural}`,
           tags,
           summary: `Listar ${plural}`,
+          parameters: [
+            {
+              name: 'page',
+              in: 'query',
+              required: false,
+              schema: { type: 'integer', minimum: 1 },
+              description: 'Número de página.',
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              required: false,
+              schema: { type: 'integer', minimum: 1, maximum: 500 },
+              description: 'Límite de registros por página.',
+            },
+          ],
           responses: {
             '200': { description: 'OK', ...json({ type: 'array', items: ref(entity.name) }) },
           },
