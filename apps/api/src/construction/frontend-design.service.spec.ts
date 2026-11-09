@@ -6,6 +6,7 @@ import { FrontendDesignService } from './frontend-design.service';
 import { generateProject } from '../code-generation/engine/project-generator';
 import { structuralProblems } from './project-validation';
 import { planTraceLinks } from '../code-generation/engine/trace-links';
+import { file } from '../code-generation/engine/types';
 
 const id = '11111111-1111-4111-8111-111111111111';
 const mockupId = '22222222-2222-4222-8222-222222222222';
@@ -115,6 +116,34 @@ async function setup() {
 }
 
 describe('frozen design adaptation', () => {
+  it('omits unused action components and retains compatible presentation checkpoints when they change', async () => {
+    const { service, ai } = await setup();
+    await service.adapt(
+      id,
+      id,
+      plan,
+      [...files(), file('apps/web/components/action-form.tsx', 'unused version one')],
+      'Catálogo',
+      false,
+      id,
+    );
+    const sent = JSON.parse(ai.generateStructured.mock.calls[0]![0].messages[0].content);
+    expect(
+      sent.bindings.functionalComponents.some((item: { path: string }) =>
+        item.path.endsWith('/action-form.tsx'),
+      ),
+    ).toBe(false);
+    await service.adapt(
+      id,
+      id,
+      plan,
+      [...files(), file('apps/web/components/action-form.tsx', 'unused version two')],
+      'Catálogo',
+      false,
+      id,
+    );
+    expect(ai.generateStructured).toHaveBeenCalledTimes(1);
+  });
   it('uses the exact frozen HTML, keeps bindings, caches only validated layouts and traces the real sources', async () => {
     const { service, ai, prisma } = await setup();
     const result = await service.adapt(id, id, plan, files(), 'Catálogo', false, id);

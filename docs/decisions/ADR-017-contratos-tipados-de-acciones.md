@@ -25,6 +25,8 @@ Las revisiones se invalidan tras modificar datos. Los cambios todavía sin guard
 
 Cuando varios controles de una pantalla invocan el mismo endpoint, comparten sus filtros por endpoint, ruta y ámbito. Consultar y actualizar utilizan así la misma selección; cambiar de sucursal o de pantalla no hereda filtros de otro contexto. El estado compartido de filtros no sustituye la validación del servidor.
 
+Las colecciones de objetos de un resultado pueden declarar `collectionLayout` (`CARDS` o `TABLE`) y agruparse con `groupBy` sobre un campo de texto o enumeración visible del mismo objeto. La presentación utiliza todos los registros devueltos, sin inventar o filtrar datos ni alterar permisos, cálculos o contratos de transporte. Las fechas con hora se muestran en la zona `timeZone` explícita del resultado y conservan el instante original en el elemento `time`; las fechas operativas sin hora no se convierten de zona.
+
 Una operación desactivada por una decisión explícita puede declarar `disabledReason`: la interfaz explica el motivo y el servidor devuelve 403. No se genera un cuerpo ficticio. Los esquemas de salida de planificación automática excluyen este campo para impedir que una propuesta desactive requisitos y eluda las comprobaciones de entrega. Esta representación exige una decisión revisada sobre el alcance; no convierte un requisito pendiente en implementado.
 
 Las entidades admiten restricciones únicas compuestas, validadas contra sus columnas escalares o claves foráneas. La persistencia generada las materializa con Prisma. La corrección de sus reglas de negocio requiere pruebas adicionales.

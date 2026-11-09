@@ -13,6 +13,33 @@ import { planCoverageProblems } from '../../construction/project-validation';
 import { actionValueOpenApi, actionValueZod } from './action-contract.templates';
 
 describe('bounded business action contracts', () => {
+  it('accepts declarative collection layouts only with valid visible grouping fields', () => {
+    const collection = {
+      type: 'ARRAY',
+      collectionLayout: 'TABLE',
+      groupBy: 'category',
+      items: { type: 'OBJECT', properties: [{ name: 'category', value: { type: 'STRING' } }] },
+    };
+    expect(actionValueDefinitionSchema.safeParse(collection).success).toBe(true);
+    for (const value of [
+      { ...collection, type: 'STRING' },
+      { ...collection, collectionLayout: 'HTML' },
+      { ...collection, groupBy: 'missing' },
+      { ...collection, collectionLayout: undefined },
+      {
+        ...collection,
+        items: {
+          type: 'OBJECT',
+          properties: [{ name: 'category', value: { type: 'STRING', technical: true } }],
+        },
+      },
+      {
+        ...collection,
+        items: { type: 'OBJECT', properties: [{ name: 'category', value: { type: 'INT' } }] },
+      },
+    ])
+      expect(actionValueDefinitionSchema.safeParse(value).success).toBe(false);
+  });
   it('keeps server-owned lifecycle fields out of CRUD inputs while retaining their public values', () => {
     const plan = actionContractPlan();
     const item = plan.entities[0]!;

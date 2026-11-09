@@ -135,7 +135,8 @@ export class FrontendDesignService {
           .filter(
             (item) =>
               item.path === 'apps/web/components/operation-context.tsx' ||
-              item.path === 'apps/web/components/action-form.tsx' ||
+              (item.path === 'apps/web/components/action-form.tsx' &&
+                target.content.includes('<ActionForm')) ||
               item.path === loginPage,
           )
           .map((item) => ({ path: item.path, source: item.content })),

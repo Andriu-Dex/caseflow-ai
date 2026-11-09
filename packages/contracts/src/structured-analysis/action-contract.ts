@@ -28,6 +28,8 @@ export interface ActionValueDefinition {
   maxItems?: number;
   maxBytes?: number;
   mimeTypes?: string[];
+  collectionLayout?: 'CARDS' | 'TABLE';
+  groupBy?: string;
 }
 
 const base = z
@@ -57,6 +59,12 @@ const base = z
     minItems: z.number().int().min(0).max(1000).optional(),
     maxItems: z.number().int().min(1).max(1000).optional(),
     maxBytes: z.number().int().min(1).max(1_048_576).optional(),
+    collectionLayout: z.enum(['CARDS', 'TABLE']).optional(),
+    groupBy: z
+      .string()
+      .regex(/^[a-z][a-zA-Z0-9]*$/)
+      .max(60)
+      .optional(),
     mimeTypes: z
       .array(z.enum(['application/pdf', 'image/png', 'image/jpeg', 'text/csv']))
       .min(1)
@@ -91,6 +99,21 @@ function boundedValue(depth: number): z.ZodType<ActionValueDefinition> {
   return schema.superRefine((value, ctx) => {
     const item = value as ActionValueDefinition;
     const fail = (message: string) => ctx.addIssue({ code: 'custom', message });
+    if (
+      (item.collectionLayout || item.groupBy) &&
+      (item.type !== 'ARRAY' || item.items?.type !== 'OBJECT')
+    )
+      fail('La presentación de colecciones requiere un arreglo de objetos.');
+    if (item.groupBy) {
+      const field = item.items?.properties?.find((property) => property.name === item.groupBy);
+      if (
+        !item.collectionLayout ||
+        !field ||
+        field.value.technical ||
+        !['STRING', 'ENUM'].includes(field.value.type)
+      )
+        fail('La agrupación requiere una presentación y un campo de texto visible declarado.');
+    }
     if (
       item.type === 'FILE' &&
       (!item.maxBytes || !item.mimeTypes || new Set(item.mimeTypes).size !== item.mimeTypes.length)

@@ -8050,6 +8050,8 @@ El perfil `authentication.local.scope` del TargetTemplate versión 2 define iden
 
 El frontend conserva el contexto verificado, permite seleccionar un ámbito autorizado y elimina consultas y estado al cambiarlo. La vista administrativa guarda relaciones de roles, permisos compartidos por rol y ámbitos; no implementa excepciones individuales. La inicialización conserva las políticas ya configuradas salvo una restauración administrativa explícita. El mecanismo es genérico: las entidades y etiquetas de sucursal proceden de los datos del proyecto.
 
+Una relación directa con el ámbito determina la pertenencia del registro cuando existe; sin ella se utilizan las rutas transitivas. Las referencias ajenas no se expanden y conservan sus controles independientes. Esto permite detectar inconsistencias de un registro propio en lugar de ocultarlo silenciosamente (ADR-016).
+
 Las proyecciones o escrituras anidadas no soportadas fallan explícitamente; la lógica utiliza consultas separadas y transacciones. Los controles de alcance no sustituyen las pruebas de reglas de negocio ni la revisión visual. `GET /auth/context` sirve a la interfaz compartida y no exige añadir una acción ficticia al plano. Las versiones históricas se conservan y la entrega solo puede formalizarse tras superar los controles obligatorios.
 
 ## 221.32 Contratos de acciones del proyecto generado (DEC-156, ADR-017)
@@ -8071,6 +8073,8 @@ Los campos persistentes pueden declarar `readOnly` y un `serverDefault` compatib
 `business-logic.generate@7` conserva la versión 6 histórica y separa `userFacingLanguage` de los identificadores técnicos. Los nombres y comentarios del código permanecen en inglés; los mensajes al usuario siguen el idioma solicitado. El contexto y el hash de checkpoints incluyen esta versión y el idioma de presentación.
 
 Los controles de consulta y actualización que invoquen el mismo endpoint en una pantalla comparten filtros con clave de endpoint, ruta y ámbito. La selección no se propaga a otra sucursal ni a otra pantalla (ADR-017).
+
+Las respuestas pueden declarar tarjetas o tablas para colecciones de objetos y agruparlas por un campo de texto o enumeración visible. Esta presentación conserva los registros recibidos. Las fechas con hora usan la zona horaria explícita de la respuesta y preservan su instante original; las fechas operativas sin hora no cambian de zona (ADR-017).
 
 ## 221.33 Versiones de trabajo integradas (ADR-018)
 

@@ -52,6 +52,37 @@ export async function verifyRemainingUI(targets, proof) {
     assert.equal(result.from, today);
     assert.equal(result.to, today);
     assert.equal(result.branchId, proof.scopeA);
+    assert.equal(
+      await refresh.locator('[data-collection-layout="CARDS"] article').count(),
+      result.metrics.length,
+    );
+    const tables = refresh.locator('[data-collection-layout="TABLE"]');
+    assert.equal(
+      await tables.locator('table').count(),
+      new Set(result.breakdowns.map((item) => item.category)).size,
+    );
+    assert.equal(await tables.locator('tbody tr').count(), result.breakdowns.length);
+    console.log(
+      'PASS: remaining browser renders real metrics as cards and complete breakdowns as grouped tables',
+    );
+    const timestamp = refresh.locator('time[datetime]').first();
+    await timestamp.waitFor();
+    assert.equal(await timestamp.getAttribute('datetime'), result.generatedAt);
+    assert.equal(await timestamp.getAttribute('title'), result.generatedAt);
+    assert.equal(
+      await timestamp.innerText(),
+      new Intl.DateTimeFormat('es', {
+        timeZone: result.timeZone,
+        dateStyle: 'medium',
+        timeStyle: 'short',
+        hourCycle: 'h23',
+      }).format(new Date(result.generatedAt)) +
+        ' · ' +
+        result.timeZone,
+    );
+    console.log(
+      'PASS: remaining browser shows branch-local timestamps while preserving canonical UTC',
+    );
     let releaseResponse;
     let requestStarted;
     const started = new Promise((resolve) => {
@@ -96,6 +127,18 @@ export async function verifyRemainingUI(targets, proof) {
     );
     console.log(
       'PASS: remaining browser shared dashboard filters, refresh selection and branch isolation',
+    );
+    await page.goto('http://application:3000/dashboard/recommendations');
+    const advisory = section(
+      'Consultar recomendaciones para la sucursal y el periodo seleccionados',
+    );
+    assert.match(
+      await advisory.getByRole('note').innerText(),
+      /No ejecutan cambios operativos ni demuestran relaciones causales/,
+    );
+    assert.equal(await advisory.getByRole('status').count(), 0);
+    console.log(
+      'PASS: remaining browser explains advisory limits before requesting any recommendations',
     );
     await page.goto('http://application:3000/reports/sales');
     const report = section('Consultar reporte en pantalla');
