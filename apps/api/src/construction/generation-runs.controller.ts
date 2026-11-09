@@ -26,6 +26,7 @@ import {
   sandboxRunListResponseSchema,
   sandboxRunResponseSchema,
   startGenerationRunRequestSchema,
+  createWorkingCopyRequestSchema,
 } from '@caseflow-ai/contracts';
 import { CONSTRUCTION_JOB_TYPES, type ConstructionJobType } from '@caseflow-ai/domain';
 import { JwtAuthGuard } from '../identity/jwt-auth.guard';
@@ -51,6 +52,23 @@ export class GenerationRunsController {
     private readonly service: GenerationRunsService,
     private readonly sandboxRuns: SandboxRunsService,
   ) {}
+
+  @Post('working-copies')
+  @HttpCode(201)
+  @ApiOperation({
+    operationId: 'createWorkingCopy',
+    summary: 'Integrar una versión de trabajo sin inferencias ni publicación oficial',
+  })
+  @ApiZodBody(createWorkingCopyRequestSchema)
+  @ApiZodResponse(201, 'Working copy.', generationRunResponseSchema)
+  workingCopy(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Body(new ZodValidationPipe(createWorkingCopyRequestSchema))
+    body: z.output<typeof createWorkingCopyRequestSchema>,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.service.createWorkingCopy(projectId, req.user.id, body);
+  }
 
   @Post()
   @HttpCode(202)

@@ -130,6 +130,7 @@ export interface ConstructionState {
   hasDesignBaseline: boolean;
   hasApprovedImplementationPlan: boolean;
   hasGeneratedCode: boolean;
+  hasValidatedCode: boolean;
 }
 
 // Computes the state for a construction step (satisfied, next, pending, unknown)
@@ -146,7 +147,7 @@ export function computeConstructionStepState(
     state.hasApprovedConceptualModel,
     state.hasDesignBaseline,
     state.hasApprovedImplementationPlan,
-    state.hasGeneratedCode,
+    state.hasValidatedCode,
   ];
 
   if (satisfies[step - 1]) return 'satisfied';

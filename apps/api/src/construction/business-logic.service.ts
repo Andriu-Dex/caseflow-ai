@@ -148,6 +148,7 @@ export class BusinessLogicService {
     generationRunId: string,
     plan: ImplementationPlanContent,
     template: TargetTemplateVersion,
+    options: { cacheOnly?: boolean; revisions?: ReadonlyMap<string, string> } = {},
   ): Promise<{
     implementations: EndpointImplementations;
     warnings: string[];
@@ -181,7 +182,7 @@ export class BusinessLogicService {
       (item) => !item.builtin && !item.disabledReason,
     )) {
       const promptVersion = endpoint.contract
-        ? 6
+        ? 7
         : plan.authentication.local?.scope
           ? 5
           : plan.authentication.local
@@ -191,6 +192,17 @@ export class BusinessLogicService {
       const params = [...endpoint.path.matchAll(/:([a-zA-Z0-9]+)/g)].map((m) => m[1]!);
       const hasBody = ['POST', 'PATCH', 'PUT'].includes(endpoint.method);
       const context = {
+        ...(endpoint.contract ? { userFacingLanguage: language } : {}),
+        ...(plan.authentication.local?.scope
+          ? {
+              scopeProfile: {
+                ...plan.authentication.local.scope,
+                model: plan.entities.find(
+                  (entity) => entity.localId === plan.authentication.local!.scope!.entityLocalId,
+                )!.name,
+              },
+            }
+          : {}),
         ...(frozenContext ? { approvedContext: frozenContext(endpoint, plan) } : {}),
         action: {
           ...(endpoint.rules ? { rules: endpoint.rules } : {}),
@@ -241,6 +253,18 @@ export class BusinessLogicService {
           .map((e) => ({
             delegate: `this.prisma.${lowerFirst(e.name)}`,
             model: e.name,
+            ...(e.fields.some((field) => field.readOnly)
+              ? {
+                  serverOwnedFields: e.fields
+                    .filter((field) => field.readOnly)
+                    .map((field) => ({
+                      name: field.name,
+                      ...(field.serverDefault !== undefined
+                        ? { initialValue: field.serverDefault }
+                        : {}),
+                    })),
+                }
+              : {}),
             ...(e.uniqueConstraints ? { uniqueConstraints: e.uniqueConstraints } : {}),
             fields: [
               'id',
@@ -281,23 +305,31 @@ export class BusinessLogicService {
                   path: checkpointPath,
                   generationRun: { projectId, designBaselineId: plan.designBaselineId },
                 },
+                orderBy: [{ generationRun: { createdAt: 'desc' } }, { id: 'desc' }],
                 select: { content: true },
               })
             : null;
-        const result = cached
-          ? { data: businessLogicOutputSchema.parse(JSON.parse(cached.content)) }
-          : await this.ai.generateStructured({
-              projectId,
-              language,
-              promptKey: 'business-logic.generate',
-              promptVersion,
-              messages: [{ role: 'user', content: JSON.stringify(context) }],
-              outputSchema: businessLogicOutputSchema,
-              schemaName: 'business_logic_generation',
-              // The schema's length limit cuts an answer where it falls, so both
-              // leave room for a long action.
-              maxOutputTokens: 8192,
-            });
+        const revision = options.revisions?.get(endpointKey(endpoint));
+        if (!cached && !revision && options.cacheOnly) {
+          warnings.push(`La acción «${endpointKey(endpoint)}» está pendiente de implementación.`);
+          continue;
+        }
+        const result = revision
+          ? { data: businessLogicOutputSchema.parse({ body: revision }) }
+          : cached
+            ? { data: businessLogicOutputSchema.parse(JSON.parse(cached.content)) }
+            : await this.ai.generateStructured({
+                projectId,
+                ...(endpoint.contract ? {} : { language }),
+                promptKey: 'business-logic.generate',
+                promptVersion,
+                messages: [{ role: 'user', content: JSON.stringify(context) }],
+                outputSchema: businessLogicOutputSchema,
+                schemaName: 'business_logic_generation',
+                // The schema's length limit cuts an answer where it falls, so both
+                // leave room for a long action.
+                maxOutputTokens: 8192,
+              });
         const review = reviewBusinessLogic(result.data.body, internalFields);
         if (review.accepted) {
           implementations[endpointKey(endpoint)] = result.data.body;

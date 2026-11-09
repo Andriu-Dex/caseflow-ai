@@ -3,6 +3,23 @@ import type { ActionValueDefinition } from '@caseflow-ai/contracts';
 export function actionValueOpenApi(value: ActionValueDefinition): Record<string, unknown> {
   let schema: Record<string, unknown>;
   switch (value.type) {
+    case 'FILE':
+      schema = {
+        type: 'object',
+        additionalProperties: false,
+        required: ['fileName', 'mimeType', 'base64'],
+        properties: {
+          fileName: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 180,
+            pattern: '^[^\\\\/\\x00-\\x1f\\x7f]+$',
+          },
+          mimeType: { type: 'string', enum: value.mimeTypes },
+          base64: { type: 'string', format: 'byte', maxLength: Math.ceil(value.maxBytes! / 3) * 4 },
+        },
+      };
+      break;
     case 'OBJECT':
       schema = {
         type: 'object',
@@ -58,6 +75,9 @@ export function actionValueOpenApi(value: ActionValueDefinition): Record<string,
 export function actionValueZod(value: ActionValueDefinition, query = false): string {
   let schema: string;
   switch (value.type) {
+    case 'FILE':
+      schema = `z.object({fileName:z.string().min(1).max(180).refine(name=>Array.from(name).every(char=>char.charCodeAt(0)>31&&char.charCodeAt(0)!==127&&char!=='/'&&char.charCodeAt(0)!==92),'El nombre del archivo no es válido.'),mimeType:z.enum(${JSON.stringify(value.mimeTypes)}),base64:z.string().min(4).max(${Math.ceil(value.maxBytes! / 3) * 4}).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/)}).strict().refine(file=>file.base64.length/4*3-(file.base64.endsWith('==')?2:file.base64.endsWith('=')?1:0)<=${value.maxBytes},'El archivo supera el tamaño permitido.')`;
+      break;
     case 'OBJECT':
       schema = `z.object({${(value.properties ?? []).map((field) => `${JSON.stringify(field.name)}: ${actionValueZod(field.value, query)}${field.required === false ? '.optional()' : ''}`).join(',')}}).strict()`;
       break;

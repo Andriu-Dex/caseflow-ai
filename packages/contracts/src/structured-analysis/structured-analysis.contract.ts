@@ -464,13 +464,37 @@ const implementationFieldSchema = z
   .object({
     name: camelName(),
     internal: z.boolean().optional(),
+    readOnly: z.boolean().optional(),
+    serverDefault: z
+      .union([z.string().max(1000), z.number().int().min(-2147483648).max(2147483647), z.boolean()])
+      .optional(),
     type: z.enum(IMPLEMENTATION_FIELD_TYPES),
     required: z.boolean().default(true),
     unique: z.boolean().default(false),
     enumValues: z.array(enumValue()).max(30).default([]),
     description: text(300).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((field, ctx) => {
+    if (field.serverDefault === undefined) return;
+    const valid =
+      field.readOnly &&
+      !field.internal &&
+      ((['STRING', 'TEXT'].includes(field.type) &&
+        typeof field.serverDefault === 'string' &&
+        field.serverDefault.length > 0) ||
+        (field.type === 'ENUM' &&
+          typeof field.serverDefault === 'string' &&
+          field.enumValues.includes(field.serverDefault)) ||
+        (field.type === 'INT' && typeof field.serverDefault === 'number') ||
+        (field.type === 'BOOLEAN' && typeof field.serverDefault === 'boolean'));
+    if (!valid)
+      ctx.addIssue({
+        code: 'custom',
+        message: 'El valor del servidor requiere un campo de solo lectura y un tipo compatible.',
+        path: ['serverDefault'],
+      });
+  });
 const implementationRelationSchema = z
   .object({
     name: camelName(),

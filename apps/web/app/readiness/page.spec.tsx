@@ -60,7 +60,9 @@ describe('ReadinessPage', () => {
         <ReadinessPage />
       </TestProviders>,
     );
-    await waitFor(() => expect(screen.getByText(/proyecto completo/i)).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText(/análisis y diseño completos/i)).toBeInTheDocument(),
+    );
     expect(screen.getByText(/fuentes del proyecto/i)).toBeInTheDocument();
   });
 

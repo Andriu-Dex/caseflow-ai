@@ -64,7 +64,10 @@ function entitySchemas(entity: Entity, plan: ImplementationPlanContent): Record<
     ? entity.operationScope.actorRelation + 'Id'
     : undefined;
   const editable = Object.fromEntries(
-    Object.entries(properties).filter(([key]) => key !== actorField),
+    Object.entries(properties).filter(
+      ([key]) =>
+        key !== actorField && !entity.fields.some((field) => field.name === key && field.readOnly),
+    ),
   );
   const inputs = account
     ? {
@@ -84,7 +87,10 @@ function entitySchemas(entity: Entity, plan: ImplementationPlanContent): Record<
         },
       }
     : { ...editable, ...many };
-  const inputRequired = required.filter((key) => key !== actorField);
+  const inputRequired = required.filter(
+    (key) =>
+      key !== actorField && !entity.fields.some((field) => field.name === key && field.readOnly),
+  );
   return {
     [entity.name]: {
       type: 'object',

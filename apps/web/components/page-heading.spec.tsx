@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   structuredAnalysisList: vi.fn(),
   designBaselinesList: vi.fn(),
   generationRunsList: vi.fn(),
+  sandboxRunsList: vi.fn(),
 }));
 
 vi.mock('../lib/api', () => ({
@@ -21,7 +22,10 @@ vi.mock('../lib/api', () => ({
     readiness: { get: (...args: unknown[]) => mocks.readinessGet(...args) },
     structuredAnalysis: { list: (...args: unknown[]) => mocks.structuredAnalysisList(...args) },
     designBaselines: { list: (...args: unknown[]) => mocks.designBaselinesList(...args) },
-    generationRuns: { list: (...args: unknown[]) => mocks.generationRunsList(...args) },
+    generationRuns: {
+      list: (...args: unknown[]) => mocks.generationRunsList(...args),
+      sandboxRuns: (...args: unknown[]) => mocks.sandboxRunsList(...args),
+    },
   },
   ApiError: class ApiError extends Error {},
   restoreSession: vi.fn(),
@@ -35,6 +39,7 @@ beforeEach(() => {
   mocks.structuredAnalysisList.mockReset().mockResolvedValue({ items: [] });
   mocks.designBaselinesList.mockReset().mockResolvedValue({ items: [] });
   mocks.generationRunsList.mockReset().mockResolvedValue({ items: [] });
+  mocks.sandboxRunsList.mockReset().mockResolvedValue({ items: [] });
 });
 
 describe('PageHeading for planning pipeline', () => {
@@ -165,10 +170,19 @@ describe('PageHeading for construction pipeline', () => {
     expect(banner).toHaveAttribute('href', '/construction/generation-runs');
   });
 
-  it('renders top completion banner on generation-runs linking to readiness when code generated', async () => {
+  it('renders completion only for a validated generation of the approved plan', async () => {
     currentPathname = '/construction/generation-runs';
+    mocks.structuredAnalysisList.mockImplementation((_projectId, kind) =>
+      Promise.resolve({
+        items:
+          kind === 'IMPLEMENTATION_PLAN' ? [{ version: { id: 'pv1', status: 'APPROVED' } }] : [],
+      }),
+    );
     mocks.generationRunsList.mockResolvedValue({
-      items: [{ id: 'run-1', status: 'GENERATED' }],
+      items: [{ id: 'run-1', status: 'GENERATED', implementationPlanVersionId: 'pv1' }],
+    });
+    mocks.sandboxRunsList.mockResolvedValue({
+      items: [{ attemptNumber: 1, status: 'READY', snapshotId: 'snapshot-1' }],
     });
 
     render(
@@ -179,7 +193,7 @@ describe('PageHeading for construction pipeline', () => {
 
     expect(screen.getByText(/Fase de Construcción · Paso 5 de 5/i)).toBeInTheDocument();
     const banner = await screen.findByRole('link', {
-      name: /Este paso está completo — continuar a Preparación \/ Exportar/i,
+      name: /Software validado — continuar a Preparación \/ Exportar/i,
     });
     expect(banner).toBeInTheDocument();
     expect(banner).toHaveAttribute('href', '/readiness');

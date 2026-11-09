@@ -25,13 +25,14 @@ import {
   type GeneratedFileResponse,
   type GeneratedFileSummary,
   type GenerationRunResponse,
+  type CreateWorkingCopyRequest,
 } from '@caseflow-ai/contracts';
 import { PrismaService } from '../database/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { PlanGenerationError } from '../code-generation/naming';
 import { generateProject, projectSlug } from '../code-generation/engine/project-generator';
 import { planTraceLinks } from '../code-generation/engine/trace-links';
-import { BusinessLogicService } from './business-logic.service';
+import { BusinessLogicService, reviewBusinessLogic } from './business-logic.service';
 import { DesignBaselinesService } from './design-baselines.service';
 import { CONSTRUCTION_QUEUE_TOKEN } from './construction-queue.token';
 
@@ -70,6 +71,214 @@ export class GenerationRunsService {
     @Optional() private readonly currency?: StageCurrencyService,
     @Optional() private readonly frontendDesign?: FrontendDesignService,
   ) {}
+
+  async createWorkingCopy(projectId: string, userId: string, input: CreateWorkingCopyRequest) {
+    await assertCanGenerate(this.prisma, projectId, userId);
+    await this.currency?.assertCurrent(projectId);
+    const plan = await this.approvedPlan(projectId, input.implementationPlanVersionId);
+    await this.designBaselines.assertApproved(projectId, plan.designBaselineId);
+    const template = findTargetTemplate(TEMPLATE_IDENTIFIER)!;
+    const problems = implementationReadinessProblems(plan);
+    if (problems.length) throw new UnprocessableEntityException(problems.join(' '));
+    const revisions = new Map<string, string>();
+    const internalFields = plan.entities.flatMap((entity) =>
+      entity.fields.filter((field) => field.internal).map((field) => field.name),
+    );
+    for (const revision of input.revisions) {
+      const endpoint = plan.customEndpoints.find(
+        (endpoint) => `${endpoint.method} ${endpoint.path}` === revision.endpoint,
+      );
+      if (
+        !endpoint ||
+        endpoint.builtin ||
+        endpoint.disabledReason ||
+        revisions.has(revision.endpoint)
+      )
+        throw new UnprocessableEntityException(
+          'La revisión debe identificar una acción activa y no repetida del plan.',
+        );
+      const source = await this.prisma.generatedFile.findFirst({
+        where: {
+          id: revision.sourceFileId,
+          kind: 'DOCUMENTATION',
+          generationRun: {
+            projectId,
+            designBaselineId: plan.designBaselineId,
+            targetTemplateIdentifier: template.identifier,
+            targetTemplateVersion: template.version,
+          },
+        },
+      });
+      if (!source || !/^docs\/business-logic\/[a-f0-9]{64}\.json$/.test(source.path))
+        throw new NotFoundException('Checkpoint de origen no encontrado en el proyecto y diseño.');
+      if (
+        source.sha256 !== revision.expectedSha256 ||
+        createHash('sha256').update(source.content).digest('hex') !== revision.expectedSha256
+      )
+        throw new ConflictException('El checkpoint de origen no coincide con la revisión.');
+      const review = reviewBusinessLogic(revision.body, internalFields);
+      if (!review.accepted)
+        throw new UnprocessableEntityException(`La revisión se rechazó: ${review.reason}.`);
+      revisions.set(revision.endpoint, revision.body);
+    }
+    const project = await this.prisma.project.findUniqueOrThrow({
+      where: { id: projectId },
+      select: { name: true },
+    });
+    const run = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.generationRun.create({
+        data: {
+          projectId,
+          createdByUserId: userId,
+          implementationPlanVersionId: input.implementationPlanVersionId,
+          designBaselineId: plan.designBaselineId,
+          targetTemplateIdentifier: template.identifier,
+          targetTemplateVersion: template.version,
+          status: 'GENERATING',
+          startedAt: new Date(),
+        },
+      });
+      await this.audit.record(
+        {
+          projectId,
+          actorUserId: userId,
+          action: 'GENERATION_RUN_STARTED',
+          entityType: 'GENERATION_RUN',
+          entityId: created.id,
+          metadata: {
+            workingCopy: true,
+            implementationPlanVersionId: input.implementationPlanVersionId,
+            reason: input.reason,
+            revisions: input.revisions.map(({ endpoint, sourceFileId, expectedSha256, body }) => ({
+              endpoint,
+              sourceFileId,
+              expectedSha256,
+              bodySha256: createHash('sha256').update(body).digest('hex'),
+            })),
+          },
+        },
+        tx,
+      );
+      return created;
+    });
+    try {
+      const result = await this.businessLogic.implement(projectId, run.id, plan, template, {
+        cacheOnly: true,
+        revisions,
+      });
+      // A rejected revision must not silently turn into a stub in a published working copy.
+      if (input.revisions.some((revision) => !result.implementations[revision.endpoint]))
+        throw new PlanGenerationError('No se pudieron integrar todas las revisiones solicitadas.');
+      const theme = await this.frozenTheme(projectId, plan.designBaselineId);
+      const files = generateProject(
+        { plan, template, projectName: project.name, slug: projectSlug(project.name), theme },
+        result.implementations,
+      );
+      const manifest = {
+        formatVersion: 1,
+        officialDelivery: false,
+        implementationPlanVersionId: input.implementationPlanVersionId,
+        designBaselineId: plan.designBaselineId,
+        reason: input.reason,
+        revisions: input.revisions.map(({ body, ...revision }) => ({
+          ...revision,
+          bodySha256: createHash('sha256').update(body).digest('hex'),
+        })),
+        implementedEndpoints: Object.keys(result.implementations),
+        pendingEndpoints: plan.customEndpoints
+          .filter(
+            (endpoint) =>
+              !endpoint.builtin &&
+              !endpoint.disabledReason &&
+              !result.implementations[`${endpoint.method} ${endpoint.path}`],
+          )
+          .map((endpoint) => `${endpoint.method} ${endpoint.path}`),
+      };
+      files.push({
+        path: 'docs/working-copy.json',
+        content: JSON.stringify(manifest, null, 2),
+        kind: 'DOCUMENTATION',
+        origin: 'DETERMINISTIC',
+        planElements: [],
+      });
+      const frozen = await this.frozenVersionsByCode(projectId, plan.designBaselineId);
+      const links = planTraceLinks(files, plan, input.implementationPlanVersionId, frozen);
+      await this.prisma.$transaction(async (tx) => {
+        const checkpoints = await tx.generatedFile.findMany({
+          where: { generationRunId: run.id },
+          select: { id: true, path: true },
+        });
+        const existing = new Set(checkpoints.map((file) => file.path));
+        const created = await tx.generatedFile.createManyAndReturn({
+          data: files
+            .filter((file) => !existing.has(file.path))
+            .map(({ path, content, kind, origin }) => ({
+              generationRunId: run.id,
+              path,
+              content,
+              kind,
+              origin,
+              sha256: createHash('sha256').update(content).digest('hex'),
+            })),
+          select: { id: true, path: true },
+        });
+        const ids = new Map([...checkpoints, ...created].map((file) => [file.path, file.id]));
+        await tx.codeTraceLink.createMany({
+          data: links.map(({ path, ...link }) => ({ ...link, generatedFileId: ids.get(path)! })),
+        });
+        await tx.generationRun.update({
+          where: { id: run.id },
+          data: {
+            status: 'WORKING_COPY',
+            finishedAt: new Date(),
+            warnings: [
+              'Versión de trabajo incompleta. No es una entrega oficial ni acredita validación o fidelidad visual. Conserva el renderizador interno y las acciones pendientes responden 501.',
+              ...result.warnings,
+            ],
+          },
+        });
+        await this.audit.record(
+          {
+            projectId,
+            actorUserId: userId,
+            action: 'GENERATION_RUN_FINISHED',
+            entityType: 'GENERATION_RUN',
+            entityId: run.id,
+            metadata: {
+              status: 'WORKING_COPY',
+              revisions: input.revisions.map(({ endpoint, sourceFileId, expectedSha256 }) => ({
+                endpoint,
+                sourceFileId,
+                expectedSha256,
+              })),
+              implemented: manifest.implementedEndpoints.length,
+              pending: manifest.pendingEndpoints.length,
+            },
+          },
+          tx,
+        );
+      });
+      return this.get(projectId, run.id);
+    } catch (error) {
+      await this.prisma.generationRun.update({
+        where: { id: run.id },
+        data: {
+          status: 'FAILED',
+          finishedAt: new Date(),
+          errorMessage: 'No se pudo preparar la versión de trabajo.',
+        },
+      });
+      await this.audit.record({
+        projectId,
+        actorUserId: userId,
+        action: 'GENERATION_RUN_FINISHED',
+        entityType: 'GENERATION_RUN',
+        entityId: run.id,
+        metadata: { status: 'FAILED', workingCopy: true },
+      });
+      throw error;
+    }
+  }
 
   async start(
     projectId: string,

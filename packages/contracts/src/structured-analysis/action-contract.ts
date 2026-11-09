@@ -11,7 +11,8 @@ export interface ActionValueDefinition {
     | 'DATETIME'
     | 'ENUM'
     | 'OBJECT'
-    | 'ARRAY';
+    | 'ARRAY'
+    | 'FILE';
   description?: string;
   referenceEntityLocalId?: string;
   technical?: boolean;
@@ -25,6 +26,8 @@ export interface ActionValueDefinition {
   items?: ActionValueDefinition;
   minItems?: number;
   maxItems?: number;
+  maxBytes?: number;
+  mimeTypes?: string[];
 }
 
 const base = z
@@ -40,6 +43,7 @@ const base = z
       'ENUM',
       'OBJECT',
       'ARRAY',
+      'FILE',
     ]),
     description: z.string().trim().min(1).max(1000).optional(),
     referenceEntityLocalId: z.string().min(1).max(100).optional(),
@@ -52,6 +56,12 @@ const base = z
     enumValues: z.array(z.string().min(1).max(100)).min(1).max(50).optional(),
     minItems: z.number().int().min(0).max(1000).optional(),
     maxItems: z.number().int().min(1).max(1000).optional(),
+    maxBytes: z.number().int().min(1).max(1_048_576).optional(),
+    mimeTypes: z
+      .array(z.enum(['application/pdf', 'image/png', 'image/jpeg', 'text/csv']))
+      .min(1)
+      .max(4)
+      .optional(),
   })
   .strict();
 
@@ -81,6 +91,13 @@ function boundedValue(depth: number): z.ZodType<ActionValueDefinition> {
   return schema.superRefine((value, ctx) => {
     const item = value as ActionValueDefinition;
     const fail = (message: string) => ctx.addIssue({ code: 'custom', message });
+    if (
+      item.type === 'FILE' &&
+      (!item.maxBytes || !item.mimeTypes || new Set(item.mimeTypes).size !== item.mimeTypes.length)
+    )
+      fail('Un archivo requiere tamaño máximo y tipos MIME únicos permitidos.');
+    if (item.type !== 'FILE' && (item.maxBytes !== undefined || item.mimeTypes !== undefined))
+      fail('Los límites de archivo requieren un archivo.');
     if (item.referenceEntityLocalId && item.type !== 'UUID')
       fail('Una referencia requiere un identificador UUID.');
     if (item.type === 'OBJECT' && !item.properties)
@@ -177,7 +194,7 @@ export const implementationActionContractSchema = z
         });
     if (
       contract.query?.properties?.some(
-        (field) => ['OBJECT', 'ARRAY'].includes(field.value.type) || field.value.nullable,
+        (field) => ['OBJECT', 'ARRAY', 'FILE'].includes(field.value.type) || field.value.nullable,
       )
     )
       ctx.addIssue({

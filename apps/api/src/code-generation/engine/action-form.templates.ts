@@ -16,7 +16,7 @@ function newRequestKey():string {
  const bytes=crypto.getRandomValues(new Uint8Array(16));bytes[6]=(bytes[6]!&15)|64;bytes[8]=(bytes[8]!&63)|128;
  const hex=Array.from(bytes,value=>value.toString(16).padStart(2,'0')).join('');return [hex.slice(0,8),hex.slice(8,12),hex.slice(12,16),hex.slice(16,20),hex.slice(20)].join('-');
 }
-interface Shape { type:string;referenceEntityLocalId?:string;technical?:boolean; minLength?:number;maxLength?:number;minimum?:number;maximum?:number;minItems?:number; description?:string; nullable?:boolean; properties?:{name:string;required?:boolean;value:Shape}[];items?:Shape;enumValues?:string[];maxItems?:number; }
+interface Shape { type:string;referenceEntityLocalId?:string;technical?:boolean; minLength?:number;maxLength?:number;minimum?:number;maximum?:number;minItems?:number; description?:string; nullable?:boolean; properties?:{name:string;required?:boolean;value:Shape}[];items?:Shape;enumValues?:string[];maxItems?:number;maxBytes?:number;mimeTypes?:string[]; }
 const record=(value:unknown):Record<string,unknown>=>value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{};
 const initial=(shape:Shape):unknown=>shape.type==='OBJECT'?Object.fromEntries((shape.properties??[]).map(field=>[field.name,initial(field.value)])):shape.type==='ARRAY'?[]:shape.type==='BOOLEAN'?false:'';
 const blank=(value:unknown):boolean=>value===undefined||value===''||Array.isArray(value)&&!value.length||Boolean(value&&typeof value==='object'&&!Array.isArray(value)&&Object.values(value).every(blank));
@@ -28,8 +28,17 @@ function normalized(shape:Shape,value:unknown):unknown {
  if(shape.type==='DATETIME'&&typeof value==='string'&&/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$/.test(value))return new Date(value).toISOString();
  return value;
 }
+function FileInput({shape,onChange,id,label,disabled}:{shape:Shape;onChange:(value:unknown)=>void;id:string;label:string;disabled:boolean}) {
+ const [error,setError]=useState('');const [reading,setReading]=useState(false);
+ async function select(file:File|undefined){setError('');onChange(null);if(!file)return;if(file.size===0||file.size>(shape.maxBytes??0)||!shape.mimeTypes?.includes(file.type)){setError('Revise el tipo y tamaño permitido del archivo.');return;}setReading(true);try{const bytes=new Uint8Array(await file.arrayBuffer());let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);onChange({fileName:file.name,mimeType:file.type,base64:btoa(binary)});}catch{setError('No se pudo leer el archivo.');}finally{setReading(false);}}
+ return <div><label htmlFor={id}>{label}</label><input id={id} type="file" accept={shape.mimeTypes?.join(',')} disabled={disabled||reading} onChange={event=>void select(event.target.files?.[0])}/><p>Tamaño máximo: {shape.maxBytes} bytes.</p>{reading?<p role="status">Leyendo archivo…</p>:null}{error?<p role="alert">{error}</p>:null}</div>;
+}
+function FileDownload({value}:{value:unknown}) {
+ const file=record(value);return <Button type="button" variant="outline" onClick={()=>{const bytes=Uint8Array.from(atob(String(file.base64)),char=>char.charCodeAt(0));const url=URL.createObjectURL(new Blob([bytes],{type:String(file.mimeType)}));const link=document.createElement('a');link.href=url;link.download=String(file.fileName);link.click();URL.revokeObjectURL(url);}}>Descargar {String(file.fileName)}</Button>;
+}
 function Field({shape,value,onChange,id,label,disabled}:{shape:Shape;value:unknown;onChange:(value:unknown)=>void;id:string;label:string;disabled:boolean}) {
  const references=useContext(ReferenceContext);
+ if(shape.type==='FILE')return <FileInput shape={shape} onChange={onChange} id={id} label={label} disabled={disabled}/>;
  if(shape.nullable)return <div><label><input type="checkbox" disabled={disabled} checked={value===null} onChange={event=>onChange(event.target.checked?null:initial({...shape,nullable:false}))}/> Sin valor: {label}</label><Field shape={{...shape,nullable:false}} value={value===null?initial(shape):value} onChange={onChange} id={id} label={label} disabled={disabled||value===null}/></div>;
  if(shape.referenceEntityLocalId)return <div><label htmlFor={id}>{label}</label><select id={id} disabled={disabled} className="w-full rounded border p-2" value={String(value??'')} onChange={event=>onChange(event.target.value)}><option value="">Seleccione…</option>{(references[shape.referenceEntityLocalId]??[]).map(option=><option key={option.id} value={option.id}>{option.label}</option>)}</select></div>;
  if(shape.type==='OBJECT')return <fieldset disabled={disabled} className="space-y-3 rounded border p-3"><legend>{label}</legend>{shape.properties?.map(field=><Field key={field.name} shape={field.value} value={record(value)[field.name]} onChange={next=>onChange({...record(value),[field.name]:next})} id={id+'-'+field.name} label={field.value.description??field.name} disabled={disabled}/>)}</fieldset>;
@@ -39,6 +48,7 @@ function Field({shape,value,onChange,id,label,disabled}:{shape:Shape;value:unkno
 }
 function Result({value,shape}:{value:unknown;shape:Shape}):ReactNode {
  if(value===null||value===undefined)return <span>Sin información</span>;
+ if(shape.type==='FILE')return <FileDownload value={value}/>;
  if(Array.isArray(value))return value.length?<ul className="space-y-2">{value.map((item,index)=><li key={index}><Result value={item} shape={shape.items??{type:'STRING'}}/></li>)}</ul>:<span>Sin registros</span>;
  if(typeof value==='object')return <dl className="space-y-2">{Object.entries(value).filter(([name])=>!shape.properties?.find(field=>field.name===name)?.value.technical).map(([name,item])=>{const field=shape.properties?.find(field=>field.name===name);return <div key={name}><dt className="font-medium">{field?.value.description??name}</dt><dd><Result value={item} shape={field?.value??{type:'STRING'}}/></dd></div>})}</dl>;
  return <span>{typeof value==='boolean'?(value?'Sí':'No'):String(value)}</span>;

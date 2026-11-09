@@ -210,6 +210,10 @@ function entityService(entity: Entity, plan: ImplementationPlanContent): string 
 function toData(input: Record<string, unknown>, updating = false): Record<string, unknown> {
   const data = { ...input };
   void updating;
+${entity.fields
+  .filter((f) => f.serverDefault !== undefined)
+  .map((f) => `  if (!updating) data.${f.name} = ${JSON.stringify(f.serverDefault)};`)
+  .join('\n')}
 ${many.map((relation) => `  if (Array.isArray(data.${relation.name}Ids)) { data.${relation.name} = { [updating ? 'set' : 'connect']: (data.${relation.name}Ids as string[]).map(id => ({ id })) }; delete data.${relation.name}Ids; }`).join('\n')}
 ${conversions.join('\n')}${conversions.length ? '\n' : ''}  return data;
 }
@@ -292,7 +296,10 @@ function entityServiceSpec(entity: Entity, plan: ImplementationPlanContent): str
         ? `expect(data.${local.passwordHashField}).toMatch(/^\\$argon2id\\$/);
     expect(data).not.toHaveProperty('password');
     expect(data).not.toHaveProperty('roleNames');`
-        : 'expect(Object.keys(data).sort()).toEqual(Object.keys(input).sort());'
+        : `expect(Object.keys(data).sort()).toEqual([...Object.keys(input), ...${JSON.stringify(entity.fields.filter((f) => f.serverDefault !== undefined).map((f) => f.name))}].sort());\n${entity.fields
+            .filter((f) => f.serverDefault !== undefined)
+            .map((f) => `    expect(data.${f.name}).toEqual(${JSON.stringify(f.serverDefault)});`)
+            .join('\n')}`
     }${
       dateField
         ? `
@@ -388,12 +395,15 @@ function actionsController(plan: Plan, moduleName: string, endpoints: Endpoint[]
         ? [
             `@Query(new ZodValidationPipe(${actionSchemaName(id, 'Query')}, 'Revise los filtros de consulta.')) query: ${actionTypeName(id, 'Query')}`,
           ]
-        : []),
+        : typed
+          ? ['@Query() undeclaredQuery: Record<string, unknown>']
+          : []),
       ...(localActor ? ['@Req() request: { user: SessionActor }'] : []),
     ];
     return `  /** ${endpoint.summary.replace(/\*\//g, '* /').replace(/\s+/g, ' ')} */
   @${upperFirst(endpoint.method.toLowerCase())}('${endpoint.path.slice(1)}')${auth ? `\n  @Roles(${rolesLiteral(endpoint.roles)})` : ''}${plan.authentication.local?.scope ? `\n  @Operation(${JSON.stringify(endpointKey(endpoint))})\n  @DataAccess(${JSON.stringify(actionDataAccess(plan, endpoint))})${endpoint.scopeAccess === 'ASSIGNED_SET' ? "\n  @ScopeAccess('ASSIGNED_SET')" : ''}` : ''}
   ${typed ? '@HttpCode(200)\n  async ' : ''}${actionMethodName(endpoint)}(${args.join(', ')}) {
+    ${typed && !typed.query ? "if (Object.keys(undeclaredQuery).length) throw new BadRequestException('Esta acción no admite filtros de consulta.');" : ''}
     ${endpoint.disabledReason ? `void [this.service, ${[...params, ...(hasBody ? ['body'] : []), ...(localActor ? ['request'] : [])].join(', ')}]; throw new ForbiddenException(${JSON.stringify(endpoint.disabledReason)});` : `return ${typed ? 'validateActionResponse(await ' : ''}this.service.${actionMethodName(endpoint)}(${[...params, ...(hasBody ? ['body'] : []), ...(typed?.query ? ['query'] : []), ...(localActor ? ['request.user'] : [])].join(', ')})${typed ? `, ${actionSchemaName(id, 'Response')})` : ''};`}
   }`;
   });
@@ -411,7 +421,7 @@ function actionsController(plan: Plan, moduleName: string, endpoints: Endpoint[]
         : [],
     );
   });
-  return `import { Controller, ${[...verbs, usesParam ? 'Param' : '', usesBody ? 'Body' : '', localActor ? 'Req' : '', typedEndpoints.length ? 'HttpCode, InternalServerErrorException' : '', endpoints.some((endpoint) => endpoint.disabledReason) ? 'ForbiddenException' : '', typedEndpoints.some((endpoint) => endpoint.contract?.query) ? 'Query' : ''].filter(Boolean).join(', ')} } from '@nestjs/common';
+  return `import { Controller, ${[...verbs, usesParam ? 'Param' : '', usesBody ? 'Body' : '', localActor ? 'Req' : '', typedEndpoints.length ? 'HttpCode, InternalServerErrorException, Query' : '', typedEndpoints.some((endpoint) => !endpoint.contract?.query) ? 'BadRequestException' : '', endpoints.some((endpoint) => endpoint.disabledReason) ? 'ForbiddenException' : ''].filter(Boolean).join(', ')} } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 ${typedEndpoints.length ? `import { ${typedImports.join(', ')} } from '@app/contracts';\n${typedEndpoints.some((endpoint) => endpoint.contract?.body || endpoint.contract?.query) ? "import { ZodValidationPipe } from '../common/zod-validation.pipe';\n" : ''}function validateActionResponse<T>(value: unknown, schema: {parse(value:unknown):T}): T { try { return schema.parse(JSON.parse(JSON.stringify(value))); } catch { throw new InternalServerErrorException('La respuesta de la operación no cumple el contrato.'); } }` : ''}
 ${localActor ? "import type { SessionActor } from '../auth/local-auth.service';\n" : ''}${auth ? `import { Roles${plan.authentication.local?.scope ? ', Operation, DataAccess' : ''}${plan.authentication.local?.scope && endpoints.some((endpoint) => endpoint.scopeAccess === 'ASSIGNED_SET') ? ', ScopeAccess' : ''} } from '../auth/roles.decorator';\n` : ''}import { ${moduleName}ActionsService } from './${kebabCase(moduleName)}-actions.service';
@@ -632,6 +642,7 @@ export default defineConfig({
       `import 'reflect-metadata';
 import { resolve } from 'node:path';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 
@@ -642,7 +653,8 @@ try {
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  app.useBodyParser('json', { limit: '2mb' });
   app.enableCors({ origin: process.env.WEB_ORIGIN ?? 'http://localhost:3000' });
   const config = new DocumentBuilder()
     .setTitle(${JSON.stringify(ctx.projectName)})

@@ -10,8 +10,93 @@ import { actionContractPlan, actionContractImplementations } from '../testing/ac
 import { generateProject } from './project-generator';
 import { generateOpenApi } from '../openapi.generator';
 import { planCoverageProblems } from '../../construction/project-validation';
+import { actionValueOpenApi, actionValueZod } from './action-contract.templates';
 
 describe('bounded business action contracts', () => {
+  it('keeps server-owned lifecycle fields out of CRUD inputs while retaining their public values', () => {
+    const plan = actionContractPlan();
+    const item = plan.entities[0]!;
+    item.operations = ['LIST', 'GET', 'CREATE', 'UPDATE'];
+    item.fields.push({
+      name: 'state',
+      type: 'ENUM',
+      required: true,
+      unique: false,
+      enumValues: ['NEW', 'DONE'],
+      readOnly: true,
+      serverDefault: 'NEW',
+    });
+    expect(implementationPlanContentSchema.safeParse(plan).success).toBe(true);
+    const files = generateProject(
+      { plan, template: CASEFLOW_WEB_TS_V2, projectName: 'Estados', slug: 'state-test' },
+      actionContractImplementations,
+    );
+    const schema = files.find((f) => f.path === 'prisma/schema.prisma')!.content;
+    expect(schema).toContain('@default(NEW)');
+    const service = files.find((f) =>
+      f.path.endsWith('/' + item.name.toLowerCase() + '.service.ts'),
+    )!.content;
+    expect(service).toContain('if (!updating) data.state = "NEW"');
+    const contracts = files.find((f) => f.path === 'packages/contracts/src/index.ts')!.content;
+    expect(contracts).not.toContain('state: z.enum');
+    const doc = generateOpenApi(plan, 'Estados') as {
+      components: { schemas: Record<string, { properties: Record<string, unknown> }> };
+    };
+    expect(doc.components.schemas[item.name]!.properties).toHaveProperty('state');
+    expect(doc.components.schemas['Create' + item.name + 'Input']!.properties).not.toHaveProperty(
+      'state',
+    );
+    expect(doc.components.schemas['Update' + item.name + 'Input']!.properties).not.toHaveProperty(
+      'state',
+    );
+    for (const serverDefault of ['UNKNOWN', 3, false]) {
+      item.fields.at(-1)!.serverDefault = serverDefault;
+      expect(implementationPlanContentSchema.safeParse(plan).success).toBe(false);
+    }
+  });
+  it('bounds file contracts and keeps upload and download payloads explicit', () => {
+    const file = actionValueDefinitionSchema.parse({
+      type: 'FILE',
+      maxBytes: 5,
+      mimeTypes: ['image/png'],
+    });
+    const schema = actionValueOpenApi(file) as {
+      properties: Record<string, Record<string, unknown>>;
+    };
+    expect(schema.properties.base64).toMatchObject({ format: 'byte', maxLength: 8 });
+    expect(schema.properties.mimeType).toMatchObject({ enum: ['image/png'] });
+    expect(actionValueZod(file)).toContain('<=5');
+    for (const value of [
+      { type: 'FILE' },
+      { type: 'FILE', maxBytes: 1_048_577, mimeTypes: ['image/png'] },
+      { type: 'FILE', maxBytes: 5, mimeTypes: ['text/html'] },
+      { type: 'FILE', maxBytes: 5, mimeTypes: ['image/png', 'image/png'] },
+      { type: 'STRING', maxBytes: 5 },
+    ])
+      expect(actionValueDefinitionSchema.safeParse(value).success).toBe(false);
+    expect(
+      implementationActionContractSchema.safeParse({
+        query: { type: 'OBJECT', properties: [{ name: 'attachment', value: file }] },
+        response: file,
+      }).success,
+    ).toBe(false);
+    const plan = actionContractPlan();
+    plan.customEndpoints[1]!.contract!.body = {
+      type: 'OBJECT',
+      properties: [{ name: 'attachment', value: file }],
+    };
+    const files = generateProject(
+      { plan, template: CASEFLOW_WEB_TS_V2, projectName: 'Archivos', slug: 'files-test' },
+      actionContractImplementations,
+    );
+    expect(files.find((f) => f.path === 'apps/web/components/action-form.tsx')!.content).toContain(
+      'type="file"',
+    );
+    expect(files.find((f) => f.path === 'apps/web/components/action-form.tsx')!.content).toContain(
+      'URL.revokeObjectURL(url)',
+    );
+    expect(files.find((f) => f.path === 'apps/api/src/main.ts')!.content).toContain("limit: '2mb'");
+  });
   it('rejects invalid shapes, duplicate fields, incompatible limits and excessive nesting', () => {
     for (const value of [
       { type: 'OBJECT' },
@@ -54,6 +139,9 @@ describe('bounded business action contracts', () => {
     );
     expect(get('apps/api/src/orders/orders-actions.controller.ts')).toContain(
       'validateActionResponse(await',
+    );
+    expect(get('apps/api/src/orders/orders-actions.controller.ts')).toContain(
+      'Object.keys(undeclaredQuery).length',
     );
     expect(get('apps/api/src/orders/orders-actions.service.ts')).toContain(
       'body: PostOrdersConfirmBody',

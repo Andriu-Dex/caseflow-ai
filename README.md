@@ -2,7 +2,7 @@
 
 ## What CASEFlow AI is
 
-CASEFlow AI is an integrated, AI-assisted I-CASE (Computer-Aided Software Engineering) platform for managing software projects end-to-end: knowledge intake, requirements and analysis, design, traceability, and — eventually — controlled forward engineering into a running generated project. It is built to remain generic (no hardcoded business domain), multi-workspace, multi-project, structured, versioned, and usable without any AI provider connected.
+CASEFlow AI is an integrated, AI-assisted I-CASE (Computer-Aided Software Engineering) platform for managing software projects end-to-end: knowledge intake, requirements and analysis, design, traceability, and controlled forward engineering into a validated generated web project. It is built to remain generic (no hardcoded business domain), multi-workspace, multi-project, structured, versioned, and usable without any AI provider connected.
 
 ## Get started
 
@@ -16,9 +16,20 @@ Pick the way that fits you. The installation guides are written in Spanish, like
 
 Both installable editions work without any AI provider; AI is optional in each.
 
+- [Manual de usuario de CASEFlow AI](docs/user-guide.md): fuentes, análisis, diseño, construcción y entrega.
+- [Guía de API](docs/api-guide.md): contrato, autenticación y límites de verificación.
+- [Contribuir](CONTRIBUTING.md) y [código de conducta](CODE_OF_CONDUCT.md).
+- [Licencia Apache-2.0](LICENSE) y [avisos](NOTICE).
+
 ## Current status
 
 This repository implements the complete **First Deliverable MVP**: Project Sources (typed intake, local text/PDF extraction, manual image/audio transcription fallback, structured interpretation/report), Project Context, ISO/IEC/IEEE 29148:2018-aligned Requirements, Use Cases, a conceptual Data Model with a deterministic ER diagram, Navigation/Software Architecture/System Architecture with deterministic diagrams, a UI Blueprint with deterministic Mockups, staleness (potential-impact) analysis, an exact-version Traceability graph, a 13-stage Readiness evaluation, and JSON/HTML Export — all with candidate-first AI generation where a provider is configured **and** a fully manual, non-AI creation path for every artifact type (CASEflow remains usable end to end with `AI_PROVIDER=disabled`). See `docs/FIRST_DELIVERABLE_MVP.md` and `docs/CASEFLOW_AI_SPEC.md` §217–§219.
+
+The repository also implements generation/implementation plans, a frozen design baseline,
+incremental code generation, Docker sandbox validation, immutable software snapshots,
+and versioned user manuals with HTML/PDF export and an approved combined delivery ZIP.
+Manual runtime captures are isolated Docker jobs; they do not replace human task verification.
+These capabilities describe the source revision, not the contents of an older installer.
 
 `apps/web` is the real CASEflow web application (not the Next.js scaffold): project/workspace discovery, all artifact pages, trusted diagram/mockup rendering, and export downloads, organized by user lifecycle rather than by database table.
 
@@ -32,8 +43,8 @@ Both a Playwright browser E2E scenario proving the no-AI flow and a second scena
 - **Frontend:** Next.js (App Router) + React + Tailwind CSS.
 - **Backend:** NestJS (API) and a standalone NestJS application context (worker).
 - **Database:** PostgreSQL 18 with the pgvector extension, managed with Prisma 7 (Prisma Migrate).
-- **Queue/cache:** Redis 8 (provisioned; no application usage yet).
-- **Object storage:** SeaweedFS, S3-compatible (provisioned; no application usage yet).
+- **Queue/cache:** Redis 8 (asynchronous application jobs in the server edition).
+- **Object storage:** SeaweedFS, S3-compatible (private source files, generated software and derived exports).
 - **Email (dev):** Mailpit (provisioned; no application usage yet).
 - **Workspace manager:** pnpm workspaces (no Turborepo).
 - **Testing:** Vitest, with NestJS testing utilities + Supertest for HTTP-level tests.
@@ -131,7 +142,7 @@ The web app (`apps/web`) talks to the API only through `NEXT_PUBLIC_API_URL` (de
 
 | Command                                   | Purpose                                                                                                                                                                                                                         |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm verify`                             | The full infrastructure-independent quality gate: format check, lint, typecheck, build, unit tests, coverage. Never starts Docker or touches a database.                                                                        |
+| `pnpm verify`                             | The infrastructure-independent gate: Prisma client generation, format check, lint, typecheck, build, unit tests, coverage. Never starts Docker or touches a database.                                                           |
 | `pnpm test`                               | The normal deterministic test suite for everyday use.                                                                                                                                                                           |
 | `pnpm test:unit`                          | Tests that require no external infrastructure.                                                                                                                                                                                  |
 | `pnpm test:integration`                   | Tests that require infrastructure to already be running (PostgreSQL, and local Kroki for the real-renderer suite) and a migrated `caseflow_test`. Use `pnpm verify:integration` to prepare and migrate the test database first. |
@@ -159,14 +170,14 @@ Project Context uses the semantic routes `POST /projects/{projectId}/context`, `
 
 ## Database commands
 
-| Command                | Purpose                                                                                                                                                   |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm db:validate`     | Validate `prisma/schema.prisma`.                                                                                                                          |
-| `pnpm db:migrate`      | Apply pending Prisma migrations (`prisma migrate deploy`).                                                                                                |
-| `pnpm db:generate`     | Generate the Prisma client into `apps/api/src/generated/prisma` (git-ignored; also runs on `pnpm install`).                                               |
-| `pnpm db:test:prepare` | Idempotently create the isolated `caseflow_test` database (if missing) and enable pgvector in it. Portable — works the same on Windows, Linux, and CI.    |
-| `pnpm db:test:migrate` | Apply the same official Prisma migrations to `caseflow_test` only. Refuses to run against the development database or any database not ending in `_test`. |
-| `pnpm db:seed:dev`     | Development-only, idempotent seed: creates the `dev-workspace` Workspace (there is no Identity/Workspace management yet). Prints its `workspaceId`.       |
+| Command                | Purpose                                                                                                                                                                    |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm db:validate`     | Validate `prisma/schema.prisma`.                                                                                                                                           |
+| `pnpm db:migrate`      | Apply pending Prisma migrations (`prisma migrate deploy`).                                                                                                                 |
+| `pnpm db:generate`     | Generate the Prisma client into `apps/api/src/generated/prisma` (git-ignored; also runs on `pnpm install`).                                                                |
+| `pnpm db:test:prepare` | Idempotently create the isolated `caseflow_test` database (if missing) and enable pgvector in it. Portable — works the same on Windows, Linux, and CI.                     |
+| `pnpm db:test:migrate` | Apply the same official Prisma migrations to `caseflow_test` only. Refuses to run against the development database or any database not ending in `_test`.                  |
+| `pnpm db:seed:dev`     | Development-only, idempotent seed: creates the development workspace. See the seed script for its current behavior; it is not a production account-provisioning procedure. |
 
 - **`caseflow`** is the normal local development database.
 - **`caseflow_test`** is a separate, isolated database used only by integration tests. It is never read or written by the running applications. Both databases are built from the same `prisma/migrations` history; `db:push` is never used.
@@ -183,16 +194,18 @@ Stop-Process -Id <PID>
 
 Do not start `pnpm dev` and separate `pnpm dev:web`/`pnpm dev:api` instances at the same time.
 
-**A native PostgreSQL service may already occupy port 5432.** This was discovered during Foundation development on Windows: if a PostgreSQL server is already installed and running natively (outside Docker), it will conflict with this project's Dockerized PostgreSQL, which also needs port 5432.
-
-Diagnose it in PowerShell:
+**Development PostgreSQL is published on host port 5433**, mapped to container port 5432
+in `infra/docker/compose.yml`. A native service on 5432 can coexist. Check that your
+local database URLs use the intended host port; containers use the internal service
+port. Do not stop a system PostgreSQL service just because it occupies 5432.
 
 ```powershell
-Get-NetTCPConnection -LocalPort 5432
-Get-Service *postgres*
+Get-NetTCPConnection -LocalPort 5433 -State Listen
 ```
 
-If a native PostgreSQL service is running, you will likely need to stop it while working on CASEFlow AI (for example `Stop-Service postgresql-x64-<version>` or via `services.msc`), then retry `pnpm infra:up`. **CASEFlow AI will not do this automatically** — stopping a system service is your decision to make.
+If 5433 is occupied, identify its process and choose the appropriate configuration
+before starting another database. The full-application Compose edition keeps its
+database private; CI uses its own configuration.
 
 **Docker Desktop must be running before `pnpm infra:up`.** On Windows, start Docker Desktop and wait for it to report "running" before bringing up infrastructure — `docker compose` commands will fail with a connection error to the Docker API otherwise.
 
