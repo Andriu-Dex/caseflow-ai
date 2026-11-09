@@ -26,9 +26,80 @@ export async function verifyRemainingUI(targets, proof) {
       page
         .locator('section')
         .filter({ has: page.getByRole('heading', { level: 2, name, exact: true }) });
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guayaquil' });
+    await page.goto('http://application:3000/dashboard');
+    const indicators = section('Consultar indicadores para la selección');
+    const refresh = section('Actualizar la consulta');
+    const fromLabel = 'Desde, fecha operativa inclusiva';
+    const toLabel = 'Hasta, fecha operativa inclusiva';
+    await indicators.getByLabel(fromLabel, { exact: true }).fill(today);
+    await indicators.getByLabel(toLabel, { exact: true }).fill(today);
+    await page.waitForFunction(
+      (date) =>
+        [...globalThis.document.querySelectorAll('input[type="date"]')].every(
+          (input) => input.value === date,
+        ),
+      today,
+    );
+    const responsePromise = page.waitForResponse(
+      (response) =>
+        response.url().includes('/management/indicators?') && response.request().method() === 'GET',
+    );
+    await refresh.getByRole('button', { name: 'Actualizar la consulta', exact: true }).click();
+    const response = await responsePromise;
+    assert.equal(response.status(), 200);
+    const result = await response.json();
+    assert.equal(result.from, today);
+    assert.equal(result.to, today);
+    assert.equal(result.branchId, proof.scopeA);
+    let releaseResponse;
+    let requestStarted;
+    const started = new Promise((resolve) => {
+      requestStarted = resolve;
+    });
+    const released = new Promise((resolve) => {
+      releaseResponse = resolve;
+    });
+    const indicatorPattern = /\/management\/indicators\?/;
+    await page.route(indicatorPattern, async (route) => {
+      const response = await route.fetch();
+      requestStarted();
+      await released;
+      await route.fulfill({ response });
+    });
+    await refresh.getByRole('button', { name: 'Actualizar la consulta', exact: true }).click();
+    await started;
+    await indicators.getByLabel(fromLabel, { exact: true }).fill('2000-01-01');
+    releaseResponse();
+    await refresh.getByRole('button', { name: 'Actualizar la consulta', exact: true }).waitFor();
+    assert.equal(await indicators.getByRole('status').count(), 0);
+    assert.equal(await refresh.getByRole('status').count(), 0);
+    await page.unroute(indicatorPattern);
+    console.log('PASS: remaining browser discards late results after shared filters change');
+    await page.goto('http://application:3000/home');
+    await page.locator('#operation-scope').selectOption(proof.scopeB);
+    await page.waitForFunction(
+      (id) => globalThis.sessionStorage.getItem('operation-scope') === id,
+      proof.scopeB,
+    );
+    await page.goto('http://application:3000/dashboard');
+    await page.waitForFunction(() =>
+      [...globalThis.document.querySelectorAll('input[type="date"]')].every(
+        (input) => input.value === '',
+      ),
+    );
+    await page.goto('http://application:3000/home');
+    await page.locator('#operation-scope').selectOption(proof.scopeA);
+    await page.waitForFunction(
+      (id) => globalThis.sessionStorage.getItem('operation-scope') === id,
+      proof.scopeA,
+    );
+    console.log(
+      'PASS: remaining browser shared dashboard filters, refresh selection and branch isolation',
+    );
     await page.goto('http://application:3000/reports/sales');
-    const report = section('Consultar reporte en pantalla'),
-      today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guayaquil' });
+    const report = section('Consultar reporte en pantalla');
+    assert.equal(await report.getByLabel(fromLabel, { exact: true }).inputValue(), '');
     await report.getByLabel('Desde, fecha operativa inclusiva', { exact: true }).fill(today);
     await report.getByLabel('Hasta, fecha operativa inclusiva', { exact: true }).fill(today);
     await report

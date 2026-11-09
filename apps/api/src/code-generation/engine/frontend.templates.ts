@@ -342,7 +342,14 @@ function actionControl(
       ...(endpoint.contract.body ? [`${actionSchemaName(id, 'Body')}.parse(body)`] : []),
       ...(endpoint.contract.query ? [`${actionSchemaName(id, 'Query')}.parse(query)`] : []),
     ];
-    return `<ActionForm label={${JSON.stringify(label)}} ${actionMarker(label)} actionKey={${JSON.stringify(endpoint.method + ' ' + endpoint.path)}} isMutation={${endpoint.method !== 'GET'}}${endpoint.contract.bindings ? ` bindings={${JSON.stringify(endpoint.contract.bindings)}}` : ''}${endpoint.contract.successNavigation ? ` successNavigation={${JSON.stringify(endpoint.contract.successNavigation)}}` : ''} ${endpoint.contract.body ? `bodyDefinition={${JSON.stringify(endpoint.contract.body)}}` : ''} ${endpoint.contract.query ? `queryDefinition={${JSON.stringify(endpoint.contract.query)}}` : ''} responseDefinition={${JSON.stringify(endpoint.contract.response)}}${loaders.length ? ` references={{${loaders.join(',')}}}` : ''} submit={async (body, query) => { void [body, query]; return api.${id}(${args.join(', ')}); }}${target.onDone ? ` onDone={${target.onDone}}` : ''} />`;
+    const resultSlots =
+      endpoint.contract.response.type === 'OBJECT'
+        ? endpoint.contract.response
+            .properties!.filter((field) => !field.value.technical)
+            .map((field) => '<ActionResult field={' + JSON.stringify(field.name) + '} />')
+            .join('')
+        : '<ActionResult />';
+    return `<ActionForm label={${JSON.stringify(label)}} ${actionMarker(label)} actionKey={${JSON.stringify(endpoint.method + ' ' + endpoint.path)}} isMutation={${endpoint.method !== 'GET'}}${endpoint.contract.bindings ? ` bindings={${JSON.stringify(endpoint.contract.bindings)}}` : ''}${endpoint.contract.successNavigation ? ` successNavigation={${JSON.stringify(endpoint.contract.successNavigation)}}` : ''} ${endpoint.contract.body ? `bodyDefinition={${JSON.stringify(endpoint.contract.body)}}` : ''} ${endpoint.contract.query ? `queryDefinition={${JSON.stringify(endpoint.contract.query)}}` : ''} responseDefinition={${JSON.stringify(endpoint.contract.response)}}${loaders.length ? ` references={{${loaders.join(',')}}}` : ''} submit={async (body, query) => { void [body, query]; return api.${id}(${args.join(', ')}); }}${target.onDone ? ` onDone={${target.onDone}}` : ''}><ActionControls /><ActionFeedback />${resultSlots}</ActionForm>`;
   }
   const args = [
     ...(params.length === 1 && params[0] === 'id'
@@ -381,7 +388,9 @@ const indent = (block: string, spaces: number) =>
 // Imports a page needs, read from the JSX it renders.
 function pageImports(body: string, up: string, extra: string[] = []): string {
   if (body.includes('<ActionForm'))
-    extra.push(`import { ActionForm } from '${up}components/action-form';`);
+    extra.push(
+      `import { ActionForm, ActionControls, ActionFeedback, ActionResult } from '${up}components/action-form';`,
+    );
   const actionSchemas = [
     ...new Set(
       [...body.matchAll(/\b([a-z][a-zA-Z0-9]*(?:Body|Query)Schema)\.parse\(/g)].map(

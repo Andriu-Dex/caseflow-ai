@@ -27,6 +27,8 @@ El adaptador carga el HTML del boceto y el plano de interfaz de las versiones ex
 
 La propuesta contiene únicamente un árbol de contenedores y referencias a controles existentes. Se validan identidad única, cobertura de todos los controles, ausencia de ciclos, profundidad, estilos y pertenencia a formularios. Una transformación mediante AST conserva consultas, validaciones, eventos y controles funcionales. La navegación compartida se compone aparte para evitar duplicarla.
 
+Las operaciones con contrato exponen controles, mensajes y resultados por campo como componentes de un mismo contexto `ActionForm`. El adaptador puede distribuir esos bloques dentro de su contexto original, pero no trasladarlos a otra operación, eliminarlos o cambiar sus enlaces. Los resultados y mensajes ausentes no generan tarjetas vacías al aplicar estilos. `frontend-design.generate@7` y la revisión 7 de la clave de presentación distinguen esta composición de los checkpoints anteriores.
+
 Los datos, formularios o acciones que faltan producen una limitación explícita. No se sustituyen por tarjetas decorativas o valores inventados. El renderizador interno sigue disponible sin proveedor externo; su composición determinista no se presenta como reproducción de un boceto externo.
 
 Cada presentación validada se conserva como checkpoint del trabajo. Su clave incluye versiones de diseño, pantalla, enlaces funcionales, código de partida, HTML y versión del adaptador. Los checkpoints están sujetos a las reglas existentes de proyecto e historial; no constituyen una entrega completada.

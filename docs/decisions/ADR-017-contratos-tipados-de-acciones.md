@@ -23,6 +23,8 @@ Una consulta de revisión puede usar POST cuando necesita un cuerpo estructurado
 
 Las revisiones se invalidan tras modificar datos. Los cambios todavía sin guardar impiden confirmar otra acción que dependa de una revisión. La caché incorpora ruta y ámbito; las respuestas tardías de otra identidad, ruta o ámbito no se publican. Una clave de reintento se conserva ante error y se renueva tras una escritura correcta.
 
+Cuando varios controles de una pantalla invocan el mismo endpoint, comparten sus filtros por endpoint, ruta y ámbito. Consultar y actualizar utilizan así la misma selección; cambiar de sucursal o de pantalla no hereda filtros de otro contexto. El estado compartido de filtros no sustituye la validación del servidor.
+
 Una operación desactivada por una decisión explícita puede declarar `disabledReason`: la interfaz explica el motivo y el servidor devuelve 403. No se genera un cuerpo ficticio. Los esquemas de salida de planificación automática excluyen este campo para impedir que una propuesta desactive requisitos y eluda las comprobaciones de entrega. Esta representación exige una decisión revisada sobre el alcance; no convierte un requisito pendiente en implementado.
 
 Las entidades admiten restricciones únicas compuestas, validadas contra sus columnas escalares o claves foráneas. La persistencia generada las materializa con Prisma. La corrección de sus reglas de negocio requiere pruebas adicionales.

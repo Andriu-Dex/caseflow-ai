@@ -47,6 +47,26 @@ function layout(content = page): ScreenPresentation {
 }
 
 describe('approved presentation compiler', () => {
+  it('rearranges action controls and result fields without moving them outside their operation', () => {
+    const content = `export default function Page(){return <div><ActionForm actionKey="GET /metrics" submit={load}><ActionControls/><ActionFeedback/><ActionResult field="metrics"/><ActionResult field="breakdowns"/></ActionForm><ActionForm actionKey="GET /other" submit={other}><ActionControls/></ActionForm></div>;}`;
+    const sources = presentationSources(content);
+    expect(
+      sources.filter((source) => source.kind === 'FRAME').map((source) => source.frameTag),
+    ).toEqual(['ActionForm', 'ActionForm']);
+    const value = layout(content);
+    const result = applyPresentation(content, value);
+    expect(result).toContain('submit={load}');
+    expect(result).toContain('<ActionResult field="metrics" className=');
+    expect(result).toContain('</ActionForm>');
+    expect(result).not.toContain('</form>');
+    const metrics = value.nodes.find((node) =>
+      sources.find((source) => source.id === node.sourceId)?.jsx.includes('field="metrics"'),
+    )!;
+    metrics.parentId = value.nodes.filter((node) => node.kind === 'FRAME')[1]!.id;
+    expect(() => applyPresentation(content, value)).toThrow('contexto');
+    metrics.parentId = 'root';
+    expect(() => applyPresentation(content, value)).toThrow('contexto');
+  });
   it('restores nullable references after the orchestrator removes null properties', () => {
     const value = layout();
     const normalized = JSON.parse(

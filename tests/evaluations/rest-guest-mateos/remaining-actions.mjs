@@ -374,7 +374,46 @@ if (process.env.CASEFLOW_EVALUATION_DISPOSABLE !== '1')
       'Sales quantities remain structured and selections are not multiplied by lunch quantity',
       r,
     );
+    r = await api('/management/indicators' + period);
+    ok(
+      r.status === 200 &&
+        r.data.branchName === branchA.name &&
+        r.data.breakdowns.some((item) => item.category === 'LUNCH' && item.quantity === '2.00') &&
+        r.data.breakdowns.some(
+          (item) =>
+            item.category === 'PROTEIN' &&
+            item.productId === product.id &&
+            item.quantity === '1.25' &&
+            item.numerator === '1.25' &&
+            item.denominator === '1.25' &&
+            item.percentage === '100.00',
+        ) &&
+        r.data.breakdowns.some(
+          (item) =>
+            item.category === 'EXTRA' && item.productId === product.id && item.quantity === '0.50',
+        ) &&
+        r.data.breakdowns.some(
+          (item) => item.category === 'EXPENSE_CATEGORY' && item.amount === '2.00',
+        ),
+      'Dashboard exposes approved lunch, protein, extra and expense breakdowns without multiplying selections',
+      r,
+    );
+    ok(
+      r.data.metrics.find((item) => item.name === 'AVERAGE_SALE').numerator === '8.02' &&
+        r.data.metrics.find((item) => item.name === 'AVERAGE_SALE').denominator === '2.00' &&
+        r.data.metrics.find((item) => item.name === 'PARTIAL_BALANCE').salesComponent === '8.02' &&
+        r.data.metrics.find((item) => item.name === 'PARTIAL_BALANCE').expenseComponent === '2.00',
+      'Dashboard formulas expose reconcilable components of the same selection',
+      r,
+    );
     await p.sale.update({ where: { id: meal.id }, data: { status: 'ANULADA' } });
+    r = await api('/management/indicators' + period);
+    ok(
+      r.status === 200 &&
+        !r.data.breakdowns.some((item) => ['LUNCH', 'PROTEIN', 'EXTRA'].includes(item.category)),
+      'Dashboard removes cancelled lunch and all its selections without affecting expense breakdowns',
+      r,
+    );
     r = await api('/reports/expenses' + period);
     ok(
       r.status === 200 &&
@@ -453,6 +492,17 @@ if (process.env.CASEFLOW_EVALUATION_DISPOSABLE !== '1')
       r.data.metrics.every((m) => m.definition && Array.isArray(m.sourceIds)),
       'Every indicator exposes definition and source identifiers',
     );
+    await p.expenseCategory.update({
+      where: { id: expenseCategory.id },
+      data: { branchId: branchB.id },
+    });
+    r = await api('/management/indicators' + period);
+    ok(r.status === 409, 'Dashboard rejects a global expense category carrying a branch owner', r);
+    await p.expenseCategory.update({ where: { id: expenseCategory.id }, data: { branchId: null } });
+    await p.branch.update({ where: { id: branchA.id }, data: { timeZone: 'Invalid/Zone' } });
+    r = await api('/management/indicators' + period);
+    ok(r.status === 409, 'Dashboard rejects an invalid operational time zone', r);
+    await p.branch.update({ where: { id: branchA.id }, data: { timeZone: 'America/Guayaquil' } });
     r = await api('/management/recommendations' + period);
     ok(
       r.status === 200 &&

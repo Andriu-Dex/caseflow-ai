@@ -167,7 +167,7 @@ export class FrontendDesignService {
         ),
       };
       const cacheHash = hash(
-        json({ version: 6, sourceHash, htmlHash: hash(html), screen, bindings, baselineId }),
+        json({ version: 7, sourceHash, htmlHash: hash(html), screen, bindings, baselineId }),
       );
       const cachePath = `docs/presentations/${cacheHash}.json`;
       const cached = await this.prisma.generatedFile.findFirst({
@@ -184,7 +184,7 @@ export class FrontendDesignService {
           language,
           sourceArtifactVersionId: entry!.artifactVersionId,
           promptKey: 'frontend-design.generate',
-          promptVersion: 6,
+          promptVersion: 7,
           messages: [
             {
               role: 'user',

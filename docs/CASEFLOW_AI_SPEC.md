@@ -8034,6 +8034,8 @@ La composición externa utiliza únicamente el HTML del boceto y el plano de la 
 
 `docs/design-fidelity.json` conserva versiones y hashes de páginas y componentes compartidos. Los checkpoints de presentación pertenecen al trabajo y solo se reutilizan con los mismos insumos. El manifiesto demuestra procedencia y conservación estructural; no certifica equivalencia visual ni funcionamiento completo. Las capturas del manual siguen representando el código ejecutado, no las imágenes del boceto.
 
+Los controles, mensajes y campos de resultado de una acción pueden componerse como bloques independientes dentro de su mismo contexto funcional. La validación impide moverlos a otra operación y conserva todos los bloques; los mensajes y resultados ausentes no se convierten en tarjetas decorativas vacías (ADR-015).
+
 Las acciones personalizadas reciben la identidad autenticada y el contexto histórico del análisis enlazado al plan de generación congelado. La versión 2 rechaza planes de acceso incompletos, acciones de negocio no implementadas y modificaciones de presentación no revisadas. READY exige los controles de validación establecidos; una compilación correcta por sí sola no autoriza la entrega.
 
 Para capturar aplicaciones con sesiones persistidas, el controlador ejecuta un comando fijo de cuentas temporales dentro del entorno Docker desechable y verifica firma, sesión, expiración y rol. No utiliza cuentas ni secretos del producto. Los límites de intentos locales al proceso y las capacidades funcionales aún no representadas deben documentarse explícitamente, sin atribuir al perfil garantías de autorización de negocio que no haya verificado.
@@ -8067,6 +8069,8 @@ Los contratos de acción admiten archivos acotados mediante `FILE`: nombre segur
 Los campos persistentes pueden declarar `readOnly` y un `serverDefault` compatible. Se conservan en lecturas, se excluyen de contratos y formularios CRUD de escritura y reciben su valor inicial desde el servidor y Prisma. Un campo obligatorio de solo lectura requiere un valor inicial si existe creación CRUD. Las acciones personalizadas autorizadas pueden aplicar las transiciones del plan sin abrir una edición directa de estado o revisión.
 
 `business-logic.generate@7` conserva la versión 6 histórica y separa `userFacingLanguage` de los identificadores técnicos. Los nombres y comentarios del código permanecen en inglés; los mensajes al usuario siguen el idioma solicitado. El contexto y el hash de checkpoints incluyen esta versión y el idioma de presentación.
+
+Los controles de consulta y actualización que invoquen el mismo endpoint en una pantalla comparten filtros con clave de endpoint, ruta y ámbito. La selección no se propaga a otra sucursal ni a otra pantalla (ADR-017).
 
 ## 221.33 Versiones de trabajo integradas (ADR-018)
 

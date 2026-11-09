@@ -45,6 +45,7 @@ export interface PresentationSource {
   kind: 'SLOT' | 'FRAME';
   jsx: string;
   frames: string[];
+  frameTag?: 'form' | 'ActionForm';
 }
 
 function pageReturn(source: ts.SourceFile) {
@@ -91,9 +92,15 @@ export function presentationSources(content: string): PresentationSource[] {
     }
     if (ts.isJsxElement(node)) {
       const tag = node.openingElement.tagName.getText(source);
-      if (tag === 'form') {
+      if (tag === 'form' || tag === 'ActionForm') {
         const id = `source-${result.length}`;
-        result.push({ id, kind: 'FRAME', jsx: node.openingElement.getText(source), frames });
+        result.push({
+          id,
+          kind: 'FRAME',
+          jsx: node.openingElement.getText(source),
+          frames,
+          frameTag: tag,
+        });
         node.children.forEach((child) => visit(child, [...frames, id]));
         return;
       }
@@ -196,7 +203,8 @@ export function validatePresentation(value: ScreenPresentation, sources: Present
     );
 }
 
-function styledJsx(jsx: string, className: string, frame: boolean) {
+function styledJsx(jsx: string, className: string, frameTag?: 'form' | 'ActionForm') {
+  const frame = Boolean(frameTag);
   if (!className) return jsx;
   // Conditional feedback must not leave an empty styled card when absent.
   if (!frame && jsx.startsWith('{')) {
@@ -261,7 +269,7 @@ function styledJsx(jsx: string, className: string, frame: boolean) {
   }
   const parsed = ts.createSourceFile(
     'slot.tsx',
-    `const slot = (${jsx}${frame ? '</form>' : ''});`,
+    `const slot = (${jsx}${frameTag ? `</${frameTag}>` : ''});`,
     ts.ScriptTarget.Latest,
     true,
     ts.ScriptKind.TSX,
@@ -281,7 +289,15 @@ function styledJsx(jsx: string, className: string, frame: boolean) {
       attribute.name.getText(parsed) === 'className' &&
       Boolean(attribute.initializer && !ts.isStringLiteral(attribute.initializer)),
   );
-  if (!opening || /^[A-Z]/.test(opening.tagName.getText(parsed)) || (!frame && dynamicClass))
+  if (
+    !opening ||
+    (!frame &&
+      /^[A-Z]/.test(opening.tagName.getText(parsed)) &&
+      !['ActionControls', 'ActionFeedback', 'ActionResult'].includes(
+        opening.tagName.getText(parsed),
+      )) ||
+    (!frame && dynamicClass)
+  )
     return `<div className={${JSON.stringify(className)}}>${jsx}</div>`;
   const attributes = ts.factory.createJsxAttributes([
     ...opening.attributes.properties.filter(
@@ -348,8 +364,8 @@ export function applyPresentation(content: string, presentation: ScreenPresentat
       return `<${node.tag} className={${JSON.stringify(node.className)}}>${children}</${node.tag}>`;
     const source = originals.get(node.sourceId!)!;
     if (node.kind === 'FRAME')
-      return `${styledJsx(source.jsx, node.className, true)}${children}</form>`;
-    return styledJsx(source.jsx, node.className, false);
+      return `${styledJsx(source.jsx, node.className, source.frameTag ?? 'form')}${children}</${source.frameTag ?? 'form'}>`;
+    return styledJsx(source.jsx, node.className);
   };
   const jsx = render(presentation.nodes.find((node) => node.parentId === null)!);
   const source = ts.createSourceFile(
