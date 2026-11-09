@@ -8,6 +8,7 @@ import {
   validateCaptureInput,
   createCaptureSessionToken,
   validateCaptureSessions,
+  captureTimeouts,
 } from './runtime-capture-provider';
 import { capturePng } from './testing/runtime-capture-fixture';
 
@@ -31,6 +32,94 @@ const input = {
 };
 
 describe('Docker runtime capture boundary', () => {
+  it('applies configured bounds to both the host and fixed container commands', async () => {
+    const calls: { args: string[]; timeout: number }[] = [];
+    const docker = vi.fn(async (args: string[], timeout: number) => {
+      calls.push({ args, timeout });
+      if (args[0] === 'cp' && args[1]?.includes(':/tmp/capture-output/'))
+        await writeFile(join(args[2]!, '0.json'), JSON.stringify({ status: 'SKIPPED' }));
+      return '';
+    });
+    vi.stubEnv('CASEFLOW_BUILD_TIMEOUT', '1501');
+    vi.stubEnv('CASEFLOW_CAPTURE_TIMEOUT', '600');
+    vi.stubEnv('CASEFLOW_BROWSER_TIMEOUT', '3000');
+    try {
+      await new DockerRuntimeCaptureProvider(docker).capture({
+        ...input,
+        targets: [input.targets[0]!],
+      });
+      const build = calls.find((call) =>
+        call.args.includes(
+          'pnpm --filter ./apps/api exec prisma generate; pnpm run build:packages; pnpm --filter ./apps/api run build; pnpm --filter ./apps/web run build',
+        ),
+      )!;
+      expect(build.timeout).toBe(1501);
+      expect(
+        build.args.slice(build.args.indexOf('timeout'), build.args.indexOf('timeout') + 3),
+      ).toEqual(['timeout', '--kill-after=5', '2']);
+      const runtime = calls.find((call) =>
+        call.args.some((arg) => arg.includes('prisma db push;')),
+      )!;
+      expect(
+        runtime.args.slice(runtime.args.indexOf('timeout'), runtime.args.indexOf('timeout') + 3),
+      ).toEqual(['timeout', '--kill-after=5', '600']);
+      expect(
+        calls.find((call) => call.args[0] === 'start' && call.args.at(-1)?.endsWith('-browser'))!
+          .timeout,
+      ).toBe(3000);
+      expect(
+        calls.find(
+          (call) => call.args[0] === 'create' && call.args.includes('/tmp/controller/browser.cjs'),
+        )!.args,
+      ).toContain('CASEFLOW_BROWSER_TIMEOUT_MS=3000');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+  it('validates timeout units and refuses values that disable or overflow the capture boundary', async () => {
+    expect(captureTimeouts({})).toEqual({
+      buildMs: 600_000,
+      runtimeSeconds: 240,
+      browserMs: 180_000,
+    });
+    expect(
+      captureTimeouts({
+        CASEFLOW_BUILD_TIMEOUT: '1501',
+        CASEFLOW_CAPTURE_TIMEOUT: '600',
+        CASEFLOW_BROWSER_TIMEOUT: '300000',
+      }),
+    ).toEqual({ buildMs: 1501, runtimeSeconds: 600, browserMs: 300000 });
+    for (const key of [
+      'CASEFLOW_BUILD_TIMEOUT',
+      'CASEFLOW_CAPTURE_TIMEOUT',
+      'CASEFLOW_BROWSER_TIMEOUT',
+    ]) {
+      for (const value of [
+        '',
+        '0',
+        '-1',
+        'NaN',
+        'Infinity',
+        '1.5',
+        '1e3',
+        '9999999999999999999999',
+      ])
+        expect(() => captureTimeouts({ [key]: value })).toThrow(key);
+    }
+    expect(() => captureTimeouts({ CASEFLOW_BUILD_TIMEOUT: '600001' })).toThrow();
+    expect(() => captureTimeouts({ CASEFLOW_CAPTURE_TIMEOUT: '721' })).toThrow();
+    expect(() => captureTimeouts({ CASEFLOW_BROWSER_TIMEOUT: '600001' })).toThrow();
+    const docker = vi.fn();
+    vi.stubEnv('CASEFLOW_CAPTURE_TIMEOUT', '0');
+    try {
+      await expect(new DockerRuntimeCaptureProvider(docker).capture(input)).rejects.toThrow(
+        'CASEFLOW_CAPTURE_TIMEOUT',
+      );
+      expect(docker).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
   it('issues isolated HS256 sessions with the requested role and a valid subject without requiring a development endpoint', () => {
     const token = createCaptureSessionToken(
       'Encargado de sucursal',

@@ -2,7 +2,7 @@
 export const CAPTURE_BROWSER_SCRIPT = String.raw`
 const { chromium } = require('/opt/capture/node_modules/playwright');
 const { readFile, mkdir, writeFile } = require('node:fs/promises');
-setTimeout(() => process.exit(1), 180000).unref();
+setTimeout(() => process.exit(1), Number(process.env.CASEFLOW_BROWSER_TIMEOUT_MS ?? 180000)).unref();
 (async () => {
   const targets = JSON.parse(await readFile('/tmp/controller/plan.json', 'utf8'));
   await mkdir('/tmp/capture-output', { recursive: true });

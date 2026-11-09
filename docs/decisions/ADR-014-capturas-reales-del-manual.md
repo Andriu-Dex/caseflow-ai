@@ -25,6 +25,8 @@ OWNER y EDITOR pueden cancelar con `POST …/user-manual/capture/cancel`. En col
 
 ## Límites
 
+- La captura completa conserva un plazo máximo de doce minutos. `CASEFLOW_BUILD_TIMEOUT` y `CASEFLOW_BROWSER_TIMEOUT` admiten enteros de 1000 a 600000 milisegundos; `CASEFLOW_CAPTURE_TIMEOUT` configura de 1 a 720 segundos de vida del contenedor de aplicación. Los valores predeterminados son 600000, 180000 y 240, respectivamente. Se rechazan valores inválidos antes de invocar Docker. El tiempo restante de la operación siempre limita cada comando, aunque su configuración sea mayor.
+
 - Hasta 40 combinaciones de ruta y rol por ejecución; las entradas que superan el límite no se ejecutan.
 - Sin relleno autónomo de formularios, creación genérica de registros ni ejecución de transacciones de negocio.
 - Sin capturas de producción, conexiones a bases existentes o navegación a direcciones aportadas libremente por el usuario.

@@ -28,6 +28,27 @@ export interface RuntimeCaptureProvider {
 export const RUNTIME_CAPTURE_PROVIDER = Symbol('RUNTIME_CAPTURE_PROVIDER');
 export const CAPTURE_PROFILE = 'EMPTY_DATABASE_DESKTOP_V1';
 
+export function captureTimeouts(environment: Record<string, string | undefined>) {
+  const bounded = (key: string, fallback: number, minimum: number, maximum: number) => {
+    const raw = environment[key];
+    if (raw === undefined) return fallback;
+    const value = Number(raw);
+    if (
+      !/^[1-9]\d*$/.test(raw) ||
+      !Number.isSafeInteger(value) ||
+      value < minimum ||
+      value > maximum
+    )
+      throw new Error(`Invalid ${key}: expected an integer between ${minimum} and ${maximum}.`);
+    return value;
+  };
+  return {
+    buildMs: bounded('CASEFLOW_BUILD_TIMEOUT', 600_000, 1_000, 600_000),
+    runtimeSeconds: bounded('CASEFLOW_CAPTURE_TIMEOUT', 240, 1, 720),
+    browserMs: bounded('CASEFLOW_BROWSER_TIMEOUT', 180_000, 1_000, 600_000),
+  };
+}
+
 // Test sessions use only the disposable application's signing key.
 export function createCaptureSessionToken(role: string, secret: string, now = Date.now()) {
   const encode = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
@@ -71,6 +92,7 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider {
   async capture(request: RuntimeCaptureRequest): Promise<RuntimeCaptureResult[]> {
     request.signal?.throwIfAborted();
     validateCaptureInput(request);
+    const timeouts = captureTimeouts(process.env);
     const localSessions = request.files.some(
       (file) =>
         file.path === 'docs/auth-profile.json' &&
@@ -203,14 +225,12 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider {
           nodeImage,
           'timeout',
           '--kill-after=5',
-          process.env.CASEFLOW_BUILD_TIMEOUT
-            ? String(Math.floor(Number(process.env.CASEFLOW_BUILD_TIMEOUT) / 1000))
-            : '600',
+          String(Math.ceil(timeouts.buildMs / 1000)),
           'sh',
           '-ec',
           'pnpm --filter ./apps/api exec prisma generate; pnpm run build:packages; pnpm --filter ./apps/api run build; pnpm --filter ./apps/web run build',
         ],
-        process.env.CASEFLOW_BUILD_TIMEOUT ? Number(process.env.CASEFLOW_BUILD_TIMEOUT) : 600_000,
+        timeouts.buildMs,
       );
       // An isolated internal bridge has no host gateway address and no route to the Internet.
       await command([
@@ -284,7 +304,8 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider {
         'NEXT_TELEMETRY_DISABLED=1',
         nodeImage,
         'timeout',
-        process.env.CASEFLOW_CAPTURE_TIMEOUT ?? '240',
+        '--kill-after=5',
+        String(timeouts.runtimeSeconds),
         'sh',
         '-ec',
         `pnpm --filter ./apps/api exec prisma db push; ${localSessions ? 'node apps/api/dist/auth/capture-fixtures.js > /app/.capture-sessions.json; ' : ''}node apps/api/dist/main.js & pnpm --filter ./apps/web start & wait`,
@@ -341,15 +362,14 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider {
         '--user=pwuser',
         '--security-opt',
         `seccomp=${join(controller, 'seccomp.json')}`,
+        '-e',
+        `CASEFLOW_BROWSER_TIMEOUT_MS=${timeouts.browserMs}`,
         browserImage,
         'node',
         '/tmp/controller/browser.cjs',
       ]);
       await command(['cp', `${controller}/.`, `${browser}:/tmp/controller`]);
-      await command(
-        ['start', '-a', browser],
-        process.env.CASEFLOW_BROWSER_TIMEOUT ? Number(process.env.CASEFLOW_BROWSER_TIMEOUT) : 180_000,
-      );
+      await command(['start', '-a', browser], timeouts.browserMs);
       await command(['cp', `${browser}:/tmp/capture-output/.`, output]);
       const results: RuntimeCaptureResult[] = [];
       for (let index = 0; index < request.targets.length; index++) {
