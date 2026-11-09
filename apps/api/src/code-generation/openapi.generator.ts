@@ -158,6 +158,7 @@ export function generateOpenApi(plan: ImplementationPlanContent, title: string):
     const base = collectionPath(entity.name);
     const item = `${base}/{id}`;
     const plural = pluralize(entity.name);
+    const hasDateField = entity.fields.some((f) => f.type === 'DATE' || f.type === 'DATETIME');
     for (const operation of entity.operations) {
       if (operation === 'LIST')
         addOperation(base, 'get', {
@@ -179,6 +180,24 @@ export function generateOpenApi(plan: ImplementationPlanContent, title: string):
               schema: { type: 'integer', minimum: 1, maximum: 500 },
               description: 'Límite de registros por página.',
             },
+            ...(hasDateField
+              ? [
+                  {
+                    name: 'from',
+                    in: 'query',
+                    required: false,
+                    schema: { type: 'string', format: 'date' },
+                    description: 'Filtro de fecha inicial (ISO YYYY-MM-DD).',
+                  },
+                  {
+                    name: 'to',
+                    in: 'query',
+                    required: false,
+                    schema: { type: 'string', format: 'date' },
+                    description: 'Filtro de fecha final (ISO YYYY-MM-DD).',
+                  },
+                ]
+              : []),
           ],
           responses: {
             '200': { description: 'OK', ...json({ type: 'array', items: ref(entity.name) }) },

@@ -93,3 +93,13 @@ In entity list and history screens (such as /sales or other consultation lists):
 - Date range filtering controls (Desde / Hasta) perform client-side period filtering over the consulted records; server-side custom date range filter endpoints are not required.
 - Operational scope summaries, branch context notices, and timezone explanations satisfy domain information requirements for authorized branches and operational dates.
 - Standard column headers translated into Spanish (such as «Fecha de venta», «Fecha operativa», «Canal», «Subtotal», «Descuento total», «Total») correspond directly to canonical entity fields.`;
+
+export const FRONTEND_DESIGN_PROMPT_V27 = `${FRONTEND_DESIGN_PROMPT_V10}
+General engineering principles for presentation mapping across all project domains:
+1. Contextual route parameters: In parameterized or relation-bound routes, path parameters provide contextual entity identifiers. Queries consulting parent records provide operational context and status for the active record.
+2. Relational boundaries: Child entities and collection relationships that possess their own dedicated CRUD endpoints are managed via their respective endpoints; do not report missing form inputs on a parent entity form when child items are separate entities in the plan.
+3. Authoritative contract boundaries: The physical contracts in bindings.customEndpoints, bindings.entityServices, and bindings.route.actions define the complete operational capability of the screen. ActionForm components faithfully map declared parameters, validations, feedback, and transitions.
+4. Policy-deactivated operations: When an endpoint in bindings.customEndpoints includes a disabledReason, the operation is intentionally deactivated by approved domain policy. Rendering the action in a disabled state with accessible role="status" feedback fully realizes the planned capability.
+5. Entity list queries and filters: Built-in LIST operations in bindings.entityServices provide bounded pagination (page and limit) and server-side date range filtering when date fields exist in the entity schema. Navigation buttons (Página anterior / Página siguiente) realize deterministic page transitions.
+6. Automatic audit and traceability: Server-side lifecycle fields (such as creation timestamps and responsible user references) are recorded automatically by the backend system upon submission. Do not require manual form inputs for server-managed audit metadata.
+7. Return and cancellation navigation: Links and buttons navigating to the parent collection route or entity detail route fully satisfy return, cancellation, and inspection actions.`;

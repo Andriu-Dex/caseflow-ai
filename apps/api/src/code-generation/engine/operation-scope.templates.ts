@@ -129,7 +129,7 @@ export function scopedWhere(model: string, actor: OperationActor, writing = fals
  const policy = models[model]?.policy;
  if (!policy) return {};
  if (model === SCOPE_CONFIGURATION.scopeModel) return unrestricted(actor) ? {} : { id: { in: actor.scopeIds } };
- if (writing && actor.scopeAccess === 'ASSIGNED_SET') throw new ForbiddenException('La comparación entre sucursales es de solo lectura.');
+ if (writing && actor.scopeAccess === 'ASSIGNED_SET') throw new ForbiddenException('La comparación entre ámbitos asignados es de solo lectura.');
  const ids = selectedIds(actor);
  const direct = policy.paths.filter(path => path.length === 1);
  const paths = direct.length ? direct : policy.paths;
@@ -149,7 +149,7 @@ function validateProjection(model: string, value: unknown, actor: OperationActor
   if (!relation) continue;
   if (relation.target === SCOPE_CONFIGURATION.accountModel && !unrestricted(actor)) throw new ForbiddenException('Consulte únicamente su cuenta mediante una operación directa.');
   authorize(relation.target, 'READ', actor);
-  if (models[relation.target]?.policy && !(relation.target === SCOPE_CONFIGURATION.scopeModel && unrestricted(actor))) throw new BadRequestException('Consulte las relaciones de sucursal mediante consultas separadas con alcance.');
+  if (models[relation.target]?.policy && !(relation.target === SCOPE_CONFIGURATION.scopeModel && unrestricted(actor))) throw new BadRequestException('Consulte las relaciones de ámbito de operación mediante consultas separadas con alcance.');
   const config = object(selected);
   validateProjection(relation.target, config.include, actor); validateProjection(relation.target, config.select, actor);
   const hidden = models[relation.target]!.internalFields;
@@ -235,7 +235,7 @@ export async function enforceScope(database: unknown, model: string | undefined,
  const writing = writes.includes(operation);
  authorize(model, !writing ? 'READ' : operation.startsWith('create') ? 'CREATE' : operation.startsWith('delete') ? 'DELETE' : 'UPDATE', actor);
  if (operation === 'upsert') authorize(model, 'CREATE', actor);
- if (writing && actor.scopeAccess === 'ASSIGNED_SET') throw new ForbiddenException('La comparación entre sucursales es de solo lectura.');
+ if (writing && actor.scopeAccess === 'ASSIGNED_SET') throw new ForbiddenException('La comparación entre ámbitos asignados es de solo lectura.');
  validateProjection(model, args.include, actor); validateProjection(model, args.select, actor); validateFilter(model, args.where);
  for (const key of ['orderBy','having','_min','_max','_sum','_avg','_count']) validateFilter(model,args[key]);
  for (const key of ['by','distinct']) if(values(args[key]).some(value=>typeof value==='string'&&models[model]!.internalFields.includes(value))) throw new ForbiddenException('No se pueden consultar campos internos.');

@@ -543,7 +543,7 @@ ${header.length ? `        <div className="flex flex-wrap gap-2">\n${indent(head
 ${names.map((n) => `      {${n} && <div className="text-xs text-muted-foreground"><span className="font-semibold">${text(labelOf(n.replace(/id$/i, '')))}:</span> {${n}}</div>}`).join('\n')}
       <div className="rounded border bg-card p-3 text-xs text-muted-foreground" role="status">
         <span className="font-semibold">${text('Ámbito y zona horaria: ')}</span>
-        ${text('Consulta delimitada al ámbito autorizado del usuario y la sucursal asignada. Fechas e importes conforme a las operaciones registradas.')}
+        ${text('Consulta delimitada al ámbito autorizado y contexto operativo asignado al usuario. Fechas e importes conforme a las operaciones registradas.')}
       </div>${
         hasDate
           ? `\n      <div className="flex flex-wrap items-center gap-3">
@@ -554,7 +554,7 @@ ${names.map((n) => `      {${n} && <div className="text-xs text-muted-foreground
             type="date"
             className="h-8 w-36 text-xs"
             value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
+            onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
           />
         </div>
         <div className="flex items-center gap-1.5">
@@ -564,11 +564,11 @@ ${names.map((n) => `      {${n} && <div className="text-xs text-muted-foreground
             type="date"
             className="h-8 w-36 text-xs"
             value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
+            onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
           />
         </div>
         {(dateFrom || dateTo) && (
-          <Button type="button" variant="ghost" size="sm" onClick={() => { setDateFrom(''); setDateTo(''); }}>
+          <Button type="button" variant="ghost" size="sm" onClick={() => { setDateFrom(''); setDateTo(''); setPage(1); }}>
             Limpiar
           </Button>
         )}
@@ -576,21 +576,7 @@ ${names.map((n) => `      {${n} && <div className="text-xs text-muted-foreground
           : ''
       }      <PageState query={query} empty={page > 1 ? 'Fin de los registros. No hay más elementos en esta página.' : 'Aún no hay registros.'}>
         {(rows) => {
-          ${
-            hasDate
-              ? `const displayRows = (dateFrom || dateTo)
-            ? (rows as Record<string, unknown>[]).filter((row) =>
-                Object.entries(row).some(([key, val]) => {
-                  if (!(key.toLowerCase().includes('date') || key.toLowerCase().includes('fecha')) || typeof val !== 'string') return false;
-                  const d = val.slice(0, 10);
-                  if (dateFrom && d < dateFrom) return false;
-                  if (dateTo && d > dateTo) return false;
-                  return true;
-                }),
-              )
-            : rows;`
-              : 'const displayRows = rows;'
-          }
+          const displayRows = rows;
           return (
             <div className="overflow-x-auto rounded-lg border">
               <table className="w-full text-sm">
@@ -653,9 +639,14 @@ ${pageImports(body, up, extraImports)}
 export default function ${entity.name}ListPage() {
   const [page, setPage] = useState(1);${hasDate ? "\n  const [dateFrom, setDateFrom] = useState('');\n  const [dateTo, setDateTo] = useState('');" : ''}
   const limit = 20;
-  const query = useQuery({ queryKey: ['${lowerFirst(plural)}', page, limit], queryFn: () => api.list${plural}({ page, limit }) });
+  const query = useQuery({ queryKey: ['${lowerFirst(plural)}', page, limit${hasDate ? ', dateFrom, dateTo' : ''}], queryFn: () => api.list${plural}({ page, limit${hasDate ? ', from: dateFrom || undefined, to: dateTo || undefined' : ''} }) });
   const items = query.data ?? [];
-  const hasNextPage = items.length === limit && items.length > 0;${usesClient ? '\n  const queryClient = useQueryClient();' : ''}${hook}
+  const nextPageQuery = useQuery({
+    queryKey: ['${lowerFirst(plural)}', page + 1, limit${hasDate ? ', dateFrom, dateTo' : ''}],
+    queryFn: () => api.list${plural}({ page: page + 1, limit${hasDate ? ', from: dateFrom || undefined, to: dateTo || undefined' : ''} }),
+    enabled: items.length === limit,
+  });
+  const hasNextPage = items.length === limit && Boolean(nextPageQuery.data && nextPageQuery.data.length > 0);${usesClient ? '\n  const queryClient = useQueryClient();' : ''}${hook}
   return (
 ${body}
   );
@@ -804,22 +795,15 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
     }))
     .filter(({ target }) => target.operations.includes('LIST'));
   const isDescriptiveOnly = route.screenName.toLowerCase().includes('descriptiv');
-  const isDraftCreation =
-    route.screenName.toLowerCase().includes('borrador') && !route.path.includes('/edit');
-  const isDraftEdit =
-    route.screenName.toLowerCase().includes('borrador') && route.path.includes('/edit');
-  const isPublishRoute =
-    route.path.includes('/publish') || route.screenName.toLowerCase().includes('publica');
   const detailRoute = entityRoute(plan, entity, 'DETAIL');
-  const manyTargets =
-    isDescriptiveOnly || isPublishRoute
-      ? []
-      : manyInputRelations(entity, plan)
-          .map((relation) => ({
-            relation,
-            target: plan.entities.find((item) => item.localId === relation.targetEntityLocalId)!,
-          }))
-          .filter(({ target }) => target.operations.includes('LIST'));
+  const manyTargets = isDescriptiveOnly
+    ? []
+    : manyInputRelations(entity, plan)
+        .map((relation) => ({
+          relation,
+          target: plan.entities.find((item) => item.localId === relation.targetEntityLocalId)!,
+        }))
+        .filter(({ target }) => target.operations.includes('LIST'));
   const isAccount = plan.authentication.local?.userEntityLocalId === entity.localId;
   const formFields = isAccount
     ? [
@@ -832,99 +816,68 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
           enumValues: [],
         },
       ]
-    : isDraftCreation || isDraftEdit
-      ? entity.fields.filter((field) => field.name !== 'publicationDate')
-      : entity.fields;
-  const inputs = isPublishRoute
-    ? []
-    : formFields
-        .filter((field) => !('readOnly' in field && field.readOnly))
-        .map((field) => {
-          const fieldLabelText =
-            isAccount && field.name === 'password'
-              ? 'Contraseña'
-              : (field.label ?? labelOf(field.name));
-          const label = `<label htmlFor="${field.name}" className="text-sm font-medium">${text(fieldLabelText)}${field.required ? ' *' : ' (opcional)'}</label>`;
-          const empty = field.required
-            ? ''
-            : ", setValueAs: (v: string) => (v === '' ? undefined : v)";
-          let control: string;
-          if ((isDraftCreation || isDraftEdit) && field.name === 'status') {
-            control = `<div><p className="text-sm font-semibold text-muted-foreground">BORRADOR (no publicada para ventas)</p><input type="hidden" value="BORRADOR" {...register('status')} /></div>`;
-            return `        <div className="flex flex-col gap-1">
-          ${label}
-          ${control}
-          <FieldError message={errors.${field.name}?.message} />
-        </div>`;
-          }
-          if (isDraftEdit && field.name === 'versionLabel') {
-            control = `<div><p className="text-sm font-semibold text-muted-foreground">{existing.data?.versionLabel ? String(existing.data.versionLabel) : 'Cargando…'}</p><input type="hidden" {...register('versionLabel')} /></div>`;
-            return `        <div className="flex flex-col gap-1">
-          ${label}
-          ${control}
-          <FieldError message={errors.${field.name}?.message} />
-        </div>`;
-          }
-          switch (field.type) {
-            case 'TEXT':
-              control = `<textarea id="${field.name}" className={input} rows={4} {...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})} />`;
-              break;
-            case 'INT':
-              control = `<Input id="${field.name}" type="number" step="1" {...register('${field.name}', { setValueAs: (v: string) => (v === '' ? undefined : Number(v)) })} />`;
-              break;
-            case 'BOOLEAN':
-              control = `<input id="${field.name}" type="checkbox" className="size-4" {...register('${field.name}')} />`;
-              break;
-            case 'DATE':
-              control = `<Input id="${field.name}" type="date" {...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})} />`;
-              break;
-            case 'DATETIME':
-              control = `<Input id="${field.name}" type="datetime-local" {...register('${field.name}', { setValueAs: (v: string) => (v ? new Date(v).toISOString() : undefined) })} />`;
-              break;
-            case 'ENUM':
-              control = `<select id="${field.name}" className={input} {...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})}>
+    : entity.fields;
+  const inputs = formFields
+    .filter((field) => !('readOnly' in field && field.readOnly))
+    .map((field) => {
+      const fieldLabelText =
+        isAccount && field.name === 'password'
+          ? 'Contraseña'
+          : (field.label ?? labelOf(field.name));
+      const label = `<label htmlFor="${field.name}" className="text-sm font-medium">${text(fieldLabelText)}${field.required ? ' *' : ' (opcional)'}</label>`;
+      const empty = field.required ? '' : ", setValueAs: (v: string) => (v === '' ? undefined : v)";
+      let control: string;
+      switch (field.type) {
+        case 'TEXT':
+          control = `<textarea id="${field.name}" className={input} rows={4} {...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})} />`;
+          break;
+        case 'INT':
+          control = `<Input id="${field.name}" type="number" step="1" {...register('${field.name}', { setValueAs: (v: string) => (v === '' ? undefined : Number(v)) })} />`;
+          break;
+        case 'BOOLEAN':
+          control = `<input id="${field.name}" type="checkbox" className="size-4" {...register('${field.name}')} />`;
+          break;
+        case 'DATE':
+          control = `<Input id="${field.name}" type="date" {...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})} />`;
+          break;
+        case 'DATETIME':
+          control = `<Input id="${field.name}" type="datetime-local" {...register('${field.name}', { setValueAs: (v: string) => (v ? new Date(v).toISOString() : undefined) })} />`;
+          break;
+        case 'ENUM':
+          control = `<select id="${field.name}" className={input} {...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})}>
             ${field.required ? '' : '<option value="">—</option>\n            '}${field.enumValues.map((v) => `<option value="${v}">${labelOf(v.toLowerCase())}</option>`).join('\n            ')}
           </select>`;
-              break;
-            default:
-              control = `<Input id="${field.name}" ${field.type === 'DECIMAL' ? 'inputMode="decimal" ' : ''}{...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})} />`;
-          }
-          if (isAccount && field.name === 'password')
-            control = `<Input id="password" type="password" autoComplete="new-password" required={${editable ? '!editId' : 'true'}} {...register('password', { setValueAs: (value: string) => value || undefined })} />`;
-          return `        <div className="flex flex-col gap-1">
+          break;
+        default:
+          control = `<Input id="${field.name}" ${field.type === 'DECIMAL' ? 'inputMode="decimal" ' : ''}{...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})} />`;
+      }
+      if (isAccount && field.name === 'password')
+        control = `<Input id="password" type="password" autoComplete="new-password" required={${editable ? '!editId' : 'true'}} {...register('password', { setValueAs: (value: string) => value || undefined })} />`;
+      return `        <div className="flex flex-col gap-1">
           ${label}
           ${control}
           <FieldError message={errors.${field.name}?.message} />
         </div>`;
-        });
-  const relationInputs = isPublishRoute
-    ? []
-    : inputRelations(entity).map((relation) => {
-        const target = relationTargets.find((t) => t.relation.name === relation.name)?.target;
-        const name = `${relation.name}Id`;
-        const empty = relation.required
-          ? ''
-          : ", { setValueAs: (v: string) => (v === '' ? undefined : v) }";
-        const relLabelText = relation.label ?? labelOf(relation.name);
-        if (isDraftEdit && relation.name === 'dailyMenu') {
-          return `        <div className="flex flex-col gap-1">
-          <label htmlFor="${name}" className="text-sm font-medium">${text(relLabelText)}</label>
-          <div><p className="text-sm font-semibold text-muted-foreground">{existing.data?.dailyMenuId ? String(existing.data.dailyMenuId) : 'Cargando…'}</p><input type="hidden" {...register('${name}'${empty})} /></div>
-          <FieldError message={errors.${name}?.message} />
-        </div>`;
-        }
-        const displayProp = target?.fields.find(
-          (f) =>
-            f.name === 'name' ||
-            f.name === 'denomination' ||
-            f.name === 'title' ||
-            f.name === 'operationalDate' ||
-            f.name.toLowerCase().includes('date'),
-        )?.name;
-        const codeProp = target?.fields.find(
-          (f) => f.name === 'identification' || f.name === 'code',
-        )?.name;
-        return `        <div className="flex flex-col gap-1">
+    });
+  const relationInputs = inputRelations(entity).map((relation) => {
+    const target = relationTargets.find((t) => t.relation.name === relation.name)?.target;
+    const name = `${relation.name}Id`;
+    const empty = relation.required
+      ? ''
+      : ", { setValueAs: (v: string) => (v === '' ? undefined : v) }";
+    const relLabelText = relation.label ?? labelOf(relation.name);
+    const displayProp = target?.fields.find(
+      (f) =>
+        f.name === 'name' ||
+        f.name === 'denomination' ||
+        f.name === 'title' ||
+        f.name === 'operationalDate' ||
+        f.name.toLowerCase().includes('date'),
+    )?.name;
+    const codeProp = target?.fields.find(
+      (f) => f.name === 'identification' || f.name === 'code',
+    )?.name;
+    return `        <div className="flex flex-col gap-1">
           <label htmlFor="${name}" className="text-sm font-medium">${text(relLabelText)}${relation.required ? ' *' : ' (opcional)'}</label>
           ${
             target
@@ -944,7 +897,7 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
           }
           <FieldError message={errors.${name}?.message} />
         </div>`;
-      });
+  });
   const optionQueries = relationTargets.map(
     ({ relation, target }) =>
       `  const ${lowerFirst(relation.name)}Options = useQuery({ queryKey: ['${lowerFirst(pluralize(target.name))}'], queryFn: () => api.list${pluralize(target.name)}() });`,
@@ -1003,7 +956,7 @@ ${editable || isRelationBound ? `      {editId && <p className="font-mono text-x
         <p role="status" className="text-sm text-muted-foreground">Sin configuración local previa registrada para esta combinación (modo inicial).</p>
       )}
       {!existing.isLoading && existing.data && (
-        <p role="status" className="text-sm text-muted-foreground">Configuración local consultada para la sucursal y producto seleccionados.</p>
+        <p role="status" className="text-sm text-muted-foreground">Configuración contextual consultada para los parámetros de ámbito seleccionados.</p>
       )}\n`
       : editable
         ? `      {existing.isLoading && <p role="status" className="text-sm text-muted-foreground">Cargando…</p>}
@@ -1015,124 +968,64 @@ ${editable || isRelationBound ? `      {editId && <p className="font-mono text-x
     route.screenName.toLowerCase().includes('aprobación')
       ? `      <div className="rounded border border-amber-500/50 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200" role="status">
         <span className="font-semibold">Habilitación aprobada: </span>
-        Configuración conforme a las reglas y condiciones de aplicación aprobadas para la sucursal y producto seleccionados.
+        Configuración conforme a las reglas y condiciones de aplicación aprobadas para el contexto operativo seleccionado.
       </div>\n`
       : ''
   }${
-    route.screenName.toLowerCase().includes('categoría') && route.path.endsWith('/new')
+    !editable && route.path.endsWith('/new')
       ? `      <p className="text-xs text-muted-foreground">Trazabilidad del registro: el sistema asocia de forma automática el identificador del usuario responsable y el instante UTC de creación.</p>\n`
       : ''
   }${
-    route.screenName.toLowerCase().includes('categoría') && route.path.includes('/edit')
-      ? `      <p className="text-xs text-muted-foreground">Trazabilidad del cambio: el sistema asocia de forma automática el identificador del usuario responsable y el instante UTC de modificación.</p>\n`
-      : ''
-  }${
-    isDescriptiveOnly
-      ? `      <div className="rounded border border-border bg-card p-3 text-xs text-muted-foreground" role="status">
-        <span className="font-semibold">Aviso de conservación: </span>
-        Las asociaciones con productos se conservan sin modificación en la edición descriptiva.
-      </div>\n`
-      : ''
-  }${
-    isDraftCreation
-      ? `      <div className="rounded border border-border bg-card p-3 text-xs text-muted-foreground" role="status">
-        <span className="font-semibold">Propuesta en preparación: </span>
-        Borrador conservado con sucursal y fecha operativa confirmadas, sin publicación para ventas. La composición (platos, proteínas, acompañamientos, extras y precios) se gestiona mediante componentes de versión tras conservar la propuesta.
-      </div>\n`
-      : ''
-  }${
-    isDraftEdit
-      ? `      {existing.data?.status === 'PUBLICADA' && (
-        <div className="rounded border border-destructive bg-destructive/10 p-3 text-xs text-destructive" role="alert">
-          <span className="font-semibold">Edición bloqueada: </span>
-          Esta versión ya ha sido publicada y no admite modificaciones. Las versiones publicadas permanecen intactas.
+    editable
+      ? `      {existing.data && (
+        <div className="rounded border bg-muted/40 p-3 text-xs flex flex-col gap-1" role="status">
+          <span className="font-semibold text-sm">Detalles del registro</span>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-muted-foreground">
+            ${entity.fields
+              .slice(0, 4)
+              .map(
+                (f) =>
+                  `<div><span className="font-medium text-foreground">${labelOf(f.name)}:</span> {String(existing.data.${f.name} ?? '—')}</div>`,
+              )
+              .join('\n            ')}
+          </div>
         </div>
-      )}
-      <div className="rounded border border-border bg-card p-3 text-xs text-muted-foreground" role="status">
-        <span className="font-semibold">Contexto del borrador (solo lectura): </span>
-        {existing.data ? (
-          <span>Identificación: {existing.data.versionLabel} | Menú diario: {existing.data.dailyMenuId} | Estado: {existing.data.status}</span>
-        ) : (
-          <span>Cargando contexto del borrador…</span>
-        )}
-        <p className="mt-1">Aviso de borrador: propuesta no publicada para ventas. Las modificaciones conservan intactas las versiones publicadas.</p>
-      </div>\n`
-      : ''
-  }${
-    isRelationBound && names.some((n) => n.toLowerCase().includes('product'))
-      ? `      {productOptions.data?.find((p) => p.id === selectedProductId) && (
-        <div className="rounded border p-2 text-xs">
-          <span className="font-semibold">Estado general: </span>
-          {productOptions.data.find((p) => p.id === selectedProductId)?.status ?? 'ACTIVO'} (solo lectura)
-        </div>
-      )}
-      {productOptions.data && !productOptions.data.some((p) => p.id === selectedProductId) && (
-        <p role="alert" className="text-sm text-destructive">Producto no encontrado en el catálogo.</p>
       )}\n`
       : ''
   }${
-    isRelationBound && names.some((n) => n.toLowerCase().includes('branch'))
-      ? `      {branchOptions.data && !branchOptions.data.some((b) => b.id === selectedBranchId) && (
-        <p role="alert" className="text-sm text-destructive">Sucursal no encontrada.</p>
-      )}\n`
+    isRelationBound
+      ? relationParams
+          .map(
+            (rp) =>
+              `      {${rp.relation.name}Options.data && !${rp.relation.name}Options.data.some((item) => item.id === selected${upperFirst(rp.relation.name)}Id) && (\n        <p role="alert" className="text-sm text-destructive">{${JSON.stringify(`${labelOf(rp.relation.name)} no encontrado/a.`)}}\n        </p>\n      )}\n`,
+          )
+          .join('')
       : ''
   }${headerBlock}      <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4 rounded-lg border p-4">
-${
-  isPublishRoute
-    ? `        <div className="flex flex-col gap-3">
-          <div className="rounded border bg-muted/40 p-3 text-xs flex flex-col gap-1">
-            <span className="font-semibold text-sm">Sucursal, fecha operativa y versión seleccionada</span>
-            {existing.data ? (
-              <>
-                <p><span className="font-medium text-muted-foreground">Versión de menú:</span> <span className="font-semibold">{existing.data.versionLabel}</span></p>
-                <p><span className="font-medium text-muted-foreground">Estado actual:</span> <span className="font-semibold">{existing.data.status}</span></p>
-                <p><span className="font-medium text-muted-foreground">Menú diario:</span> {String(existing.data.dailyMenuId)}</p>
-                <p><span className="font-medium text-muted-foreground">Fecha de creación:</span> {existing.data.creationDate ? new Date(existing.data.creationDate).toLocaleString('es-ES') : '—'}</p>
-                {existing.data.publicationDate && (
-                  <p><span className="font-medium text-muted-foreground">Fecha de publicación:</span> {new Date(existing.data.publicationDate).toLocaleString('es-ES')}</p>
-                )}
-              </>
-            ) : (
-              <p className="text-muted-foreground">Cargando versión…</p>
-            )}
-          </div>
-          <div className="rounded border border-border bg-card p-3 text-xs text-muted-foreground" role="status">
-            <span className="font-semibold">Composición, precios y disponibilidad: </span>
-            Comprobación de platos, proteínas, acompañamientos, extras, precios de venta y disponibilidad vigentes para la versión.
-          </div>
-          <div className="rounded border border-border bg-card p-3 text-xs text-muted-foreground" role="status">
-            <span className="font-semibold">Reglas de vigencia aprobadas: </span>
-            La publicación aplica las reglas aprobadas sin imponer una única versión vigente, conservando el historial.
-          </div>
-          {existing.data?.status === 'PUBLICADA' && (
-            <div className="rounded border border-green-500/50 bg-green-500/10 p-3 text-xs text-green-800 dark:text-green-200" role="status">
-              <span className="font-semibold">Publicación confirmada por el servidor: </span>
-              Versión disponible para ventas. Historial y versiones anteriores conservados sin cambios parciales.
-            </div>
-          )}
-        </div>`
-    : [
-        ...inputs,
-        ...relationInputs,
-        ...manyInputs,
-        ...(isAccount
-          ? [
-              `<div><label htmlFor="roleNames">Roles</label><select id="roleNames" multiple {...register('roleNames')}>${plan.authentication.roles.map((role) => `<option value={${JSON.stringify(role)}}>{${JSON.stringify(role)}}</option>`).join('')}</select></div>`,
-            ]
-          : []),
-      ].join('\n')
-}
+${indent(
+  [
+    ...inputs,
+    ...relationInputs,
+    ...manyInputs,
+    ...(isAccount
+      ? [
+          `<div><label htmlFor="roleNames">Roles</label><select id="roleNames" multiple {...register('roleNames')}>${plan.authentication.roles.map((role) => `<option value={${JSON.stringify(role)}}>{${JSON.stringify(role)}}</option>`).join('')}</select></div>`,
+        ]
+      : []),
+  ].join('\n'),
+  8,
+)}
         <div className="flex flex-wrap gap-2">
-          <Button type="submit" disabled={isSubmitting${isDraftEdit || isPublishRoute ? " || existing.data?.status === 'PUBLICADA'" : ''}}${own ? ` ${actionMarker(own.label)}` : ''}>
-            {isSubmitting ? ${isPublishRoute ? "'Validando y publicando…'" : "'Guardando…'"} : ${own ? JSON.stringify(own.label) : isPublishRoute ? "'Solicitar validación y publicación'" : "'Guardar'"}}
+          <Button type="submit" disabled={isSubmitting}${own ? ` ${actionMarker(own.label)}` : ''}>
+            {isSubmitting ? 'Guardando…' : ${own ? JSON.stringify(own.label) : "'Guardar'"}}
           </Button>
-${submits.map((a) => `          <Button type="submit" variant="outline" disabled={isSubmitting${isDraftEdit || isPublishRoute ? " || existing.data?.status === 'PUBLICADA'" : ''}} ${actionMarker(a.label)}>\n            ${text(a.label)}\n          </Button>\n`).join('')}${
+${submits.map((a) => `          <Button type="submit" variant="outline" disabled={isSubmitting} ${actionMarker(a.label)}>\n            ${text(a.label)}\n          </Button>\n`).join('')}${
     returnRoute
       ? `          <Link href="${returnRoute.path}" ${actionMarker('Volver')}><Button type="button" variant="outline">Volver</Button></Link>\n`
       : ''
   }${
     detailRoute && names.length > 0
-      ? `          <Link href=${withId(detailRoute.path, names[0]!)} ${actionMarker(isPublishRoute ? 'Volver al detalle de la versión' : 'Cancelar y volver al detalle de versión')}><Button type="button" variant="outline">${isPublishRoute ? 'Volver al detalle de la versión' : 'Volver al detalle'}</Button></Link>\n`
+      ? `          <Link href=${withId(detailRoute.path, names[0]!)} ${actionMarker('Volver al detalle')}><Button type="button" variant="outline">Volver al detalle</Button></Link>\n`
       : ''
   }        </div>
       </form>
@@ -1235,38 +1128,19 @@ ${entity.fields
 
   async function onSubmit(values: FormOutput) {
     try {
-${
-  isPublishRoute
-    ? `      if (existing.data?.status === 'PUBLICADA') {
-        toast.info('La versión ya se encuentra confirmada y publicada para ventas.');
-        return;
-      }
-      const targetValues = {
-        status: 'PUBLICADA',
-        publicationDate: new Date().toISOString(),
-      };`
-    : isDraftEdit
-      ? `      if (existing.data?.status === 'PUBLICADA') {
-        toast.error('No se puede modificar una versión ya publicada.');
-        return;
-      }\n`
+      const targetValues = { ...values } as Record<string, unknown>;
+${isDescriptiveOnly ? '      delete targetValues.productIds;\n      delete targetValues.products;\n' : ''}${
+    isRelationBound
+      ? relationParams
+          .map(
+            (rp) =>
+              `      if (!targetValues.${rp.relation.name}Id) targetValues.${rp.relation.name}Id = ${rp.param};`,
+          )
+          .join('\n') + '\n'
       : ''
-}${
-    isDescriptiveOnly
-      ? `      const targetValues = { ...values } as Record<string, unknown>;
-      delete targetValues.productIds;
-      delete targetValues.products;`
-      : isDraftCreation || isDraftEdit
-        ? `      const targetValues = { ...values } as Record<string, unknown>;
-      targetValues.status = 'BORRADOR';`
-        : isRelationBound
-          ? `      const targetValues = { ...values } as Record<string, unknown>;
-${relationParams.map((rp) => `      if (!targetValues.${rp.relation.name}Id) targetValues.${rp.relation.name}Id = ${rp.param};`).join('\n')}`
-          : ''
-  }
-      await ${isPublishRoute || isDescriptiveOnly || isRelationBound || isDraftCreation || isDraftEdit ? `(editId ? api.update${entity.name}(editId, targetValues as Parameters<typeof api.update${entity.name}>[1]) : api.create${entity.name}(targetValues as Parameters<typeof api.create${entity.name}>[0]))` : save};
+  }      await ${isDescriptiveOnly || isRelationBound ? `(editId ? api.update${entity.name}(editId, targetValues as Parameters<typeof api.update${entity.name}>[1]) : api.create${entity.name}(targetValues as Parameters<typeof api.create${entity.name}>[0]))` : save};
       await queryClient.invalidateQueries({ queryKey: ['${lowerFirst(pluralize(entity.name))}'] });
-      toast.success(${isPublishRoute ? "'Publicación confirmada por el servidor. Versión disponible para ventas.'" : "'Guardado correctamente.'"});
+      toast.success('Guardado correctamente.');
       ${list ? `router.push('${list.path}');` : 'router.refresh();'}
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'No se pudo guardar.');
@@ -1288,49 +1162,72 @@ function simplePage(plan: Plan, route: Route): string {
   );
   const names = routeParamNames(route.path);
   const idExpr = entityParam(entity, names);
-  const saleId = names.find((n) => n.toLowerCase() === 'saleid');
-  const parentSale = Boolean(saleId && entity?.localId !== 'ent-sale');
+  const parentParams = names.filter((n) => n !== idExpr);
+  const parentEntities = parentParams
+    .map((param) => {
+      const match = plan.entities.find((e) => {
+        if (entity && e.localId === entity.localId) return false;
+        const eLower = e.name.toLowerCase();
+        const pLower = param.toLowerCase();
+        return (
+          pLower === `${eLower}id` ||
+          pLower === `${lowerFirst(e.name)}id` ||
+          pLower.endsWith(eLower)
+        );
+      });
+      return match ? { param, entity: match } : null;
+    })
+    .filter((p): p is { param: string; entity: Entity } => p !== null);
+
   const header = controls(plan, entity, route.actions, {
     idExpr,
     routeParams: names,
   });
-  const hook = paramsHook(names, header.join('\n') + (idExpr ?? '') + (parentSale ? saleId : ''));
+  const hook = paramsHook(
+    names,
+    header.join('\n') + (idExpr ?? '') + parentEntities.map((p) => p.param).join(''),
+  );
   const hasConsultedRecord = Boolean(entity && idExpr && entity.operations.includes('GET'));
+
+  const parentDisplays = parentEntities.map(
+    (parent) =>
+      `      {${lowerFirst(parent.entity.name)}Query.isLoading && <p role="status" className="text-sm text-muted-foreground">{${JSON.stringify(`Cargando ${labelOf(parent.entity.name)}…`)}}</p>}
+      {${lowerFirst(parent.entity.name)}Query.isError && <p role="alert" className="text-sm text-destructive">{${JSON.stringify(`Error al consultar ${labelOf(parent.entity.name)}.`)}` +
+      `}</p>}
+      {${lowerFirst(parent.entity.name)}Query.data && (
+        <div className="rounded border bg-muted/40 p-4 text-xs flex flex-col gap-2" role="status">
+          <div className="flex justify-between items-center">
+            <span className="font-semibold text-sm">{${JSON.stringify(labelOf(parent.entity.name))}}: {${lowerFirst(parent.entity.name)}Query.data.id}</span>
+            {${lowerFirst(parent.entity.name)}Query.data.status && <span className="font-medium bg-background px-2 py-0.5 rounded border">Estado: {String(${lowerFirst(parent.entity.name)}Query.data.status)}</span>}
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-muted-foreground">
+            ${parent.entity.fields
+              .slice(0, 4)
+              .map(
+                (f) =>
+                  `<div><span className="font-medium text-foreground">${labelOf(f.name)}:</span> {String(${lowerFirst(parent.entity.name)}Query.data.${f.name} ?? '—')}</div>`,
+              )
+              .join('\n            ')}
+          </div>
+        </div>
+      )}`,
+  );
+
+  const parentLinks = parentEntities
+    .map((parent) => {
+      const parentRoute = plan.routes.find(
+        (r) =>
+          r.entityLocalId === parent.entity.localId && (r.kind === 'DETAIL' || r.kind === 'FORM'),
+      );
+      if (!parentRoute) return '';
+      return `      <div>\n        <Link href=${withId(parentRoute.path, parent.param)}>\n          <Button type="button" variant="outline">{${JSON.stringify(`Volver a ${labelOf(parent.entity.name)}`)}}\n          </Button>\n        </Link>\n      </div>`;
+    })
+    .filter(Boolean);
+
   const body = `    <div className="flex flex-col gap-4">
       <h1 className="text-xl font-semibold">${route.screenName.replace(/[<>{}]/g, '')}</h1>
       <p className="text-sm text-muted-foreground">${module.description.replace(/[<>{}]/g, '')}</p>
-${
-  parentSale
-    ? `      {saleQuery.isLoading && <p role="status" className="text-sm text-muted-foreground">Cargando venta…</p>}
-      {saleQuery.isError && <p role="alert" className="text-sm text-destructive">Error al consultar la venta.</p>}
-      {saleQuery.data && (
-        <div className="rounded border bg-muted/40 p-4 text-xs flex flex-col gap-2" role="status">
-          <div className="flex justify-between items-center">
-            <span className="font-semibold text-sm">Venta consultada: {saleQuery.data.id}</span>
-            <span className="font-medium bg-background px-2 py-0.5 rounded border">Estado: {String(saleQuery.data.status)}</span>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-muted-foreground">
-            <div><span className="font-medium text-foreground">Subtotal:</span> {String(saleQuery.data.subtotal ?? '0.00')}</div>
-            <div><span className="font-medium text-foreground">Descuento:</span> {String(saleQuery.data.totalDiscount ?? '0.00')}</div>
-            <div><span className="font-medium text-foreground">Total:</span> {String(saleQuery.data.total ?? '0.00')}</div>
-            <div><span className="font-medium text-foreground">Canal:</span> {String(saleQuery.data.channel ?? '—')}</div>
-          </div>
-        </div>
-      )}\n`
-    : ''
-}${
-    route.path.endsWith('/discount') && saleId
-      ? `      <div className="rounded border border-amber-500/50 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200" role="status">
-        <span className="font-semibold">Política operativa de descuentos: </span>
-        Los descuentos están desactivados en esta versión por la política aprobada.
-      </div>
-      <div>
-        <Link href={\`/checkout/\${${saleId}}\`} ${actionMarker('Volver a caja sin aplicar el descuento')}>
-          <Button type="button" variant="outline">Volver a caja sin aplicar el descuento</Button>
-        </Link>
-      </div>\n`
-      : ''
-  }${
+${parentDisplays.length ? parentDisplays.join('\n') + '\n' : ''}${parentLinks.length ? parentLinks.join('\n') + '\n' : ''}${
     hasConsultedRecord
       ? `      {existing.isLoading && <p role="status" className="text-sm text-muted-foreground">Cargando datos…</p>}
       {existing.isError && <p role="alert" className="text-sm text-destructive">Error al consultar el registro.</p>}
@@ -1352,62 +1249,6 @@ ${
         </div>
       )}\n`
       : ''
-  }${
-    route.path.includes('/checkout')
-      ? `      <div className="flex flex-col gap-2 rounded border bg-card p-3 text-xs text-muted-foreground" role="search">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <label htmlFor="catSelect" className="font-medium text-foreground">${text('Categoría:')}</label>
-            <select
-              id="catSelect"
-              className="h-8 rounded border px-2 text-xs bg-background"
-              value={categoryFilter}
-              onChange={(e) => { setCategoryFilter(e.target.value); setCatalogPage(1); }}
-              ${actionMarker('Seleccionar categoría')}
-            >
-              <option value="">Todas las categorías</option>
-              {categoryOptions.data?.map((cat) => (
-                <option key={cat.id} value={cat.id}>{cat.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="flex items-center gap-1">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={catalogPage <= 1}
-              onClick={() => setCatalogPage((p) => Math.max(1, p - 1))}
-              ${actionMarker('Página anterior de productos')}
-            >
-              Anterior
-            </Button>
-            <span className="text-muted-foreground">Pág. {catalogPage}</span>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setCatalogPage((p) => p + 1)}
-              ${actionMarker('Cambiar página de productos')}
-            >
-              Siguiente
-            </Button>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-2">
-          <span>Configuración de líneas: cantidades, proteínas y extras se gestionan mediante las líneas del borrador.</span>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => router.push('/sales')}
-            ${actionMarker('Descartar borrador')}
-          >
-            Descartar borrador
-          </Button>
-        </div>
-      </div>\n`
-      : ''
   }${header.length ? `      <div className="flex flex-wrap gap-2">\n${indent(header.join('\n'), 8)}\n      </div>\n` : ''}${
     links.length
       ? `      <ul className="grid gap-2 sm:grid-cols-2">
@@ -1416,47 +1257,28 @@ ${links.map((l) => `        <li>\n          <Link className="block rounded-lg bo
 `
       : ''
   }    </div>`;
-  const isCheckout = route.path.includes('/checkout');
+
+  const hasQueries = hasConsultedRecord || parentEntities.length > 0;
   const client =
-    body.includes('<ActionButton') ||
-    body.includes('<ActionForm') ||
-    Boolean(hook) ||
-    hasConsultedRecord ||
-    isCheckout ||
-    parentSale;
+    body.includes('<ActionButton') || body.includes('<ActionForm') || Boolean(hook) || hasQueries;
   const extraImports = [
     hook ? "import { useParams } from 'next/navigation';" : '',
-    isCheckout ? "import { useRouter } from 'next/navigation';" : '',
-    isCheckout ? "import { useState } from 'react';" : '',
-    hasConsultedRecord || isCheckout || parentSale
-      ? "import { useQuery } from '@tanstack/react-query';"
-      : '',
-    body.includes('<ActionButton') ||
-    body.includes('<ActionForm') ||
-    hasConsultedRecord ||
-    isCheckout ||
-    parentSale
+    hasQueries ? "import { useQuery } from '@tanstack/react-query';" : '',
+    body.includes('<ActionButton') || body.includes('<ActionForm') || hasQueries
       ? `import { api } from '${toWebRoot(route.path)}lib/api';`
       : '',
   ].filter(Boolean);
   const imports = pageImports(body, toWebRoot(route.path), extraImports);
   return `${client ? "'use client';\n\n" : ''}${imports ? `${imports}\n\n` : ''}export default function ${upperFirst(route.screenName.replace(/[^A-Za-z0-9]/g, '')) || 'Screen'}Page() {${hook}${
-    isCheckout
-      ? "\n  const router = useRouter();\n  const [categoryFilter, setCategoryFilter] = useState('');\n  const [catalogPage, setCatalogPage] = useState(1);"
-      : ''
-  }${
     hasConsultedRecord
       ? `\n  const existing = useQuery({\n    queryKey: ['${lowerFirst(entity!.name)}', ${idExpr}],\n    queryFn: () => api.get${entity!.name}(${idExpr}!),\n    enabled: Boolean(${idExpr}),\n  });`
       : ''
-  }${
-    parentSale
-      ? `\n  const saleQuery = useQuery({\n    queryKey: ['sale', ${saleId}],\n    queryFn: () => api.getSale(${saleId}!),\n    enabled: Boolean(${saleId}),\n  });`
-      : ''
-  }${
-    isCheckout
-      ? `\n  const categoryOptions = useQuery({\n    queryKey: ['productCategories'],\n    queryFn: () => api.listProductCategories(),\n  });`
-      : ''
-  }
+  }${parentEntities
+    .map(
+      (parent) =>
+        `\n  const ${lowerFirst(parent.entity.name)}Query = useQuery({\n    queryKey: ['${lowerFirst(parent.entity.name)}', ${parent.param}],\n    queryFn: () => api.get${parent.entity.name}(${parent.param}!),\n    enabled: Boolean(${parent.param}),\n  });`,
+    )
+    .join('')}
   return (
 ${body}
   );

@@ -716,7 +716,9 @@ describe('shared list generator and pagination (DEC-121)', () => {
     expect(list).toContain('<th className="px-3 py-2 font-medium">{"Nombre comercial"}</th>');
     expect(list).toContain('<th className="px-3 py-2 font-medium">{"Precio unitario"}</th>');
     expect(list).toContain('{row.id}');
-    expect(list).toContain('hasNextPage = items.length === limit && items.length > 0');
+    expect(list).toContain(
+      'hasNextPage = items.length === limit && Boolean(nextPageQuery.data && nextPageQuery.data.length > 0)',
+    );
     expect(list).toContain(
       "empty={page > 1 ? 'Fin de los registros. No hay más elementos en esta página.' : 'Aún no hay registros.'}",
     );

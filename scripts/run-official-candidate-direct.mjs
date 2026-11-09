@@ -125,17 +125,6 @@ async function main() {
   console.log('Invoking generationRuns.runJob in-process...');
   const start = Date.now();
 
-  const heartbeat = setInterval(async () => {
-    try {
-      await prisma.generationRun.updateMany({
-        where: { id: run.id, status: 'GENERATING' },
-        data: { startedAt: new Date() },
-      });
-    } catch {
-      // heartbeat best effort
-    }
-  }, 2000);
-
   try {
     await generationRuns.runJob(PROJECT_ID, run.id);
     const elapsed = Math.round((Date.now() - start) / 1000);
@@ -157,7 +146,6 @@ async function main() {
   } catch (err) {
     console.error('runJob threw unhandled exception:', err);
   } finally {
-    clearInterval(heartbeat);
     await app.close();
   }
 }

@@ -25,6 +25,7 @@ import {
   FRONTEND_DESIGN_PROMPT_V24,
   FRONTEND_DESIGN_PROMPT_V25,
   FRONTEND_DESIGN_PROMPT_V26,
+  FRONTEND_DESIGN_PROMPT_V27,
 } from '../construction/frontend-design-prompt';
 import {
   USE_CASE_BATCH_PROMPT,
@@ -794,6 +795,13 @@ import {
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'frontend_presentation',
             systemInstructions: FRONTEND_DESIGN_PROMPT_V26,
+          },
+          {
+            key: 'frontend-design.generate',
+            version: 27,
+            capability: 'STRUCTURED_OUTPUT',
+            purpose: 'frontend_presentation',
+            systemInstructions: FRONTEND_DESIGN_PROMPT_V27,
           },
           {
             key: 'code-repair.generate',

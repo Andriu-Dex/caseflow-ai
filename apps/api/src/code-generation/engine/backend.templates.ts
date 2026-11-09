@@ -52,6 +52,7 @@ function entityController(plan: Plan, entity: Entity, moduleName: string): strin
   const scoped = Boolean(plan.authentication.local?.scope);
   const read = auth ? `\n  @Roles(${rolesLiteral(entity.readRoles)})` : '';
   const write = auth ? `\n  @Roles(${rolesLiteral(entity.writeRoles)})` : '';
+  const dateFields = entity.fields.filter((f) => f.type === 'DATE' || f.type === 'DATETIME');
   const operation = (method: string, detail = false) =>
     scoped
       ? `\n  @Operation(${JSON.stringify(method + ' ' + collectionPath(e) + (detail ? '/:id' : ''))})`
@@ -59,12 +60,12 @@ function entityController(plan: Plan, entity: Entity, moduleName: string): strin
   const methods = [
     ops.has('LIST') &&
       `  @Get()${read}${operation('GET')}
-  list(@Query('page') page?: string, @Query('limit') limit?: string) {
+  list(@Query('page') page?: string, @Query('limit') limit?: string${dateFields.length ? ", @Query('from') from?: string, @Query('to') to?: string" : ''}) {
     const pageNum = page !== undefined ? Number(page) : undefined;
     const limitNum = limit !== undefined ? Number(limit) : undefined;
     return this.service.list({
       page: pageNum !== undefined && Number.isFinite(pageNum) && pageNum >= 1 ? Math.min(Math.floor(pageNum), 100_000) : undefined,
-      limit: limitNum !== undefined && Number.isFinite(limitNum) && limitNum >= 1 ? Math.min(Math.floor(limitNum), 500) : undefined,
+      limit: limitNum !== undefined && Number.isFinite(limitNum) && limitNum >= 1 ? Math.min(Math.floor(limitNum), 500) : undefined,${dateFields.length ? '\n      from,\n      to,' : ''}
     });
   }`,
     ops.has('GET') &&
@@ -165,13 +166,25 @@ function entityService(entity: Entity, plan: ImplementationPlanContent): string 
   const needsInput = ops.has('CREATE') || ops.has('UPDATE');
   const methods = [
     ops.has('LIST') &&
-      `  ${projectResult ? 'async ' : ''}list(query?: { page?: number; limit?: number }) {
+      `  ${projectResult ? 'async ' : ''}list(query?: { page?: number; limit?: number${dateFields.length ? '; from?: string; to?: string' : ''} }) {
     // Bounded: a list endpoint never returns an unlimited number of rows.
     const page = query?.page && Number.isFinite(query.page) && query.page >= 1 ? Math.min(Math.floor(query.page), 100_000) : 1;
     const limit = query?.limit && Number.isFinite(query.limit) && query.limit >= 1 ? Math.min(Math.floor(query.limit), 500) : (query?.page !== undefined ? 20 : 500);
     const skip = query?.page !== undefined ? (page - 1) * limit : 0;
-    return ${projectResult ? '(await ' : ''}this.prisma.${delegate}.findMany({
-      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+    ${
+      dateFields.length
+        ? `const hasDateFilter = Boolean(query?.from || query?.to);
+    const dateWhere = hasDateFilter ? {
+      where: {
+        ${dateFields[0]!.name}: {
+          ...(query?.from ? { gte: new Date(query.from) } : {}),
+          ...(query?.to ? { lte: new Date(query.to.includes('T') ? query.to : query.to + 'T23:59:59.999Z') } : {}),
+        },
+      },
+    } : {};\n    `
+        : ''
+    }return ${projectResult ? '(await ' : ''}this.prisma.${delegate}.findMany({
+      ${dateFields.length ? '...dateWhere,\n      ' : ''}orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
       take: limit,
       ...(skip > 0 ? { skip } : {})${omitFields(entity)}${accountInclude}
     })${projectResult ? `).map(${projectResult})` : ''};

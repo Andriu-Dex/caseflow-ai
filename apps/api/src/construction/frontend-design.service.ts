@@ -228,7 +228,7 @@ export class FrontendDesignService {
           language,
           sourceArtifactVersionId: entry!.artifactVersionId,
           promptKey: 'frontend-design.generate',
-          promptVersion: 26,
+          promptVersion: 27,
           messages: [
             {
               role: 'user',
