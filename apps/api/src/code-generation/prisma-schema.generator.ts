@@ -86,7 +86,9 @@ export function generatePrismaSchema(plan: ImplementationPlanContent): string {
       const sameTargetCount = entity.relations.filter(
         (r) => r.targetEntityLocalId === relation.targetEntityLocalId,
       ).length;
-      const inverseBase = lowerFirst(pluralize(entity.name));
+      const inverseBase = lowerFirst(
+        relation.kind === 'ONE_TO_ONE' ? entity.name : pluralize(entity.name),
+      );
       const inverse =
         sameTargetCount > 1 ? `${inverseBase}As${upperFirst(relation.name)}` : inverseBase;
       if (relation.kind === 'MANY_TO_MANY') {
@@ -116,7 +118,7 @@ export function generatePrismaSchema(plan: ImplementationPlanContent): string {
         attributes: `@relation("${relationName}", fields: [${fk}], references: [id], onDelete: Restrict)`,
       });
       add(target.name, {
-        name: relation.kind === 'ONE_TO_ONE' ? lowerFirst(entity.name) : inverse,
+        name: inverse,
         type: relation.kind === 'ONE_TO_ONE' ? `${entity.name}?` : `${entity.name}[]`,
         attributes: `@relation("${relationName}")`,
       });

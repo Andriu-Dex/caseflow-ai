@@ -206,3 +206,27 @@ describe('generateOpenApi', () => {
     expect(() => generateOpenApi(clash, 'Tienda')).toThrow('choca');
   });
 });
+
+it('names distinct inverse fields for multiple one-to-one links to the same model', () => {
+  const value = plan();
+  const product = value.entities.find((entity) => entity.localId === 'product')!;
+  product.relations = [
+    {
+      name: 'originalCategory',
+      kind: 'ONE_TO_ONE',
+      targetEntityLocalId: 'category',
+      required: true,
+    },
+    {
+      name: 'replacementCategory',
+      kind: 'ONE_TO_ONE',
+      targetEntityLocalId: 'category',
+      required: false,
+    },
+  ];
+  const schema = generatePrismaSchema(value);
+  expect(schema).toMatch(/productAsOriginalCategory\s+Product\?/);
+  expect(schema).toMatch(/productAsReplacementCategory\s+Product\?/);
+  expect(schema).toContain('@relation("Product_originalCategory")');
+  expect(schema).toContain('@relation("Product_replacementCategory")');
+});
