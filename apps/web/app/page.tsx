@@ -139,7 +139,9 @@ function HomeContent({ projectId }: { projectId: string }) {
                 ) : (
                   <Clock className="size-3.5" aria-hidden="true" />
                 )}
-                {readiness.data.ready ? 'Proyecto completo' : 'En progreso'}
+                {readiness.data.ready
+                  ? 'Análisis y diseño completos'
+                  : 'Análisis y diseño en progreso'}
               </Badge>
               <span className="text-sm text-muted-foreground">
                 {readiness.data.stages.filter((s) => s.satisfied).length} /{' '}
@@ -147,6 +149,13 @@ function HomeContent({ projectId }: { projectId: string }) {
               </span>
             </CardHeader>
             <CardContent>
+              <p className="mb-4 text-sm text-muted-foreground">
+                Estas etapas corresponden al análisis y diseño. La construcción y validación del
+                software se revisan por separado.{' '}
+                <Link className="underline" href="/construction/generation-runs">
+                  Ver construcción y validaciones
+                </Link>
+              </p>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                 {groupedStages.map((phase) => {
                   const Icon = phase.icon;

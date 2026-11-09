@@ -148,6 +148,7 @@ export class BusinessLogicService {
     generationRunId: string,
     plan: ImplementationPlanContent,
     template: TargetTemplateVersion,
+    options: { cacheOnly?: boolean; revisions?: ReadonlyMap<string, string> } = {},
   ): Promise<{
     implementations: EndpointImplementations;
     warnings: string[];
@@ -281,23 +282,31 @@ export class BusinessLogicService {
                   path: checkpointPath,
                   generationRun: { projectId, designBaselineId: plan.designBaselineId },
                 },
+                orderBy: [{ generationRun: { createdAt: 'desc' } }, { id: 'desc' }],
                 select: { content: true },
               })
             : null;
-        const result = cached
-          ? { data: businessLogicOutputSchema.parse(JSON.parse(cached.content)) }
-          : await this.ai.generateStructured({
-              projectId,
-              language,
-              promptKey: 'business-logic.generate',
-              promptVersion,
-              messages: [{ role: 'user', content: JSON.stringify(context) }],
-              outputSchema: businessLogicOutputSchema,
-              schemaName: 'business_logic_generation',
-              // The schema's length limit cuts an answer where it falls, so both
-              // leave room for a long action.
-              maxOutputTokens: 8192,
-            });
+        const revision = options.revisions?.get(endpointKey(endpoint));
+        if (!cached && !revision && options.cacheOnly) {
+          warnings.push(`La acción «${endpointKey(endpoint)}» está pendiente de implementación.`);
+          continue;
+        }
+        const result = revision
+          ? { data: businessLogicOutputSchema.parse({ body: revision }) }
+          : cached
+            ? { data: businessLogicOutputSchema.parse(JSON.parse(cached.content)) }
+            : await this.ai.generateStructured({
+                projectId,
+                language,
+                promptKey: 'business-logic.generate',
+                promptVersion,
+                messages: [{ role: 'user', content: JSON.stringify(context) }],
+                outputSchema: businessLogicOutputSchema,
+                schemaName: 'business_logic_generation',
+                // The schema's length limit cuts an answer where it falls, so both
+                // leave room for a long action.
+                maxOutputTokens: 8192,
+              });
         const review = reviewBusinessLogic(result.data.body, internalFields);
         if (review.accepted) {
           implementations[endpointKey(endpoint)] = result.data.body;

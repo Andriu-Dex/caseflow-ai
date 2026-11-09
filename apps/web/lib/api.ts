@@ -935,6 +935,12 @@ export const api = {
       `${BASE_URL}/projects/${p}/generated-project-snapshots/${s}/user-manual/versions/${v}/download?format=${format}`,
   },
   generationRuns: {
+    workingCopy: (projectId: string, implementationPlanVersionId: string) =>
+      post<GenerationRunResponse>(`/projects/${projectId}/generation-runs/working-copies`, {
+        implementationPlanVersionId,
+        reason: 'Consolidar los checkpoints disponibles para continuar la implementación.',
+        revisions: [],
+      }),
     list: (projectId: string) =>
       get<{ items: GenerationRunResponse[] }>(`/projects/${projectId}/generation-runs`),
     start: (projectId: string, implementationPlanVersionId: string) =>

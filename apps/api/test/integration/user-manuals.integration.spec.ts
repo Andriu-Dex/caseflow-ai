@@ -9,6 +9,7 @@ import type { JobQueue } from '../../src/common/infrastructure';
 import type { ConstructionJobPayload } from '@caseflow-ai/domain';
 import { userManualStateSchema } from '@caseflow-ai/contracts';
 import { capturePng } from '../../../../packages/integrations/src/testing/runtime-capture-fixture';
+import { FakeAIProvider } from '@caseflow-ai/ai';
 import {
   createTestContext,
   createWorkspaceWithOwner,
@@ -24,7 +25,15 @@ describe('User manual delivery integration', () => {
   let otherProjectId: string;
   let manuals: UserManualsService;
   beforeAll(async () => {
-    ctx = await createTestContext();
+    ctx = await createTestContext({
+      aiProvider: new FakeAIProvider({
+        provider: 'fake',
+        model: 'fixture',
+        payload: { body: 'return { confirmed: true };' },
+        latencyMs: 1,
+        usage: null,
+      }),
+    });
     manuals = ctx.app.get(UserManualsService);
     const workspace = await createWorkspaceWithOwner(ctx, 'Manual delivery');
     projectId = (await ctx.projects.create({ workspaceId: workspace.id, name: 'Tienda de prueba' }))
@@ -79,6 +88,7 @@ describe('User manual delivery integration', () => {
     const sandbox = ctx.app.get(SandboxRunsService);
     const run = await generation.start(projectId, ctx.userId, plan.version.id);
     await generation.runJob(projectId, run.id);
+    expect((await generation.get(projectId, run.id)).status).toBe('GENERATED');
     const validation = await sandbox.start(projectId, ctx.userId, run.id);
     await sandbox.runJob(projectId, validation.id);
     snapshotId = (

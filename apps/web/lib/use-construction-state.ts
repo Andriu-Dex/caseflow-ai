@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from './api';
 import type { ConstructionState } from './stage-links';
+import { newestApprovedPlan, newestRunForPlan } from './construction-progress';
 
 export function useConstructionState(projectId?: string): {
   data: ConstructionState | undefined;
@@ -76,12 +77,32 @@ export function useConstructionState(projectId?: string): {
     enabled: Boolean(projectId),
   });
 
+  const approvedPlan = newestApprovedPlan(implementationPlanQuery.data?.items ?? []);
+  const latestRun = newestRunForPlan(
+    generationRunsQuery.data?.items ?? [],
+    approvedPlan?.version.id,
+  );
+  const validation = useQuery({
+    queryKey: ['sandbox-runs', projectId, latestRun?.id],
+    queryFn: async () =>
+      (await api.generationRuns?.sandboxRuns?.(projectId!, latestRun!.id)) ?? { items: [] },
+    enabled: Boolean(projectId && latestRun?.status === 'GENERATED'),
+    refetchInterval: (query) =>
+      query.state.data?.items.some((item) => item.status === 'QUEUED' || item.status === 'RUNNING')
+        ? 2000
+        : false,
+  });
+  const latestValidation = [...(validation.data?.items ?? [])].sort(
+    (a, b) => b.attemptNumber - a.attemptNumber,
+  )[0];
+
   const isLoading =
     generationPlanQuery.isLoading ||
     conceptualModelQuery.isLoading ||
     designBaselinesQuery.isLoading ||
     implementationPlanQuery.isLoading ||
-    generationRunsQuery.isLoading;
+    generationRunsQuery.isLoading ||
+    validation.isLoading;
 
   const data: ConstructionState | undefined = projectId
     ? {
@@ -95,9 +116,11 @@ export function useConstructionState(projectId?: string): {
         hasApprovedImplementationPlan: Boolean(
           implementationPlanQuery.data?.items?.some((p) => p.version.status === 'APPROVED'),
         ),
-        hasGeneratedCode: Boolean(
-          generationRunsQuery.data?.items?.some((r) => r.status === 'GENERATED'),
-        ),
+        hasGeneratedCode: latestRun?.status === 'GENERATED',
+        hasValidatedCode:
+          latestRun?.status === 'GENERATED' &&
+          latestValidation?.status === 'READY' &&
+          Boolean(latestValidation.snapshotId),
       }
     : undefined;
 

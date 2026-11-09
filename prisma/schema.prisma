@@ -1696,6 +1696,7 @@ enum GenerationRunStatus {
   GENERATING
   GENERATED
   FAILED
+  WORKING_COPY
 
   @@map("generation_run_status")
 }

@@ -175,6 +175,67 @@ describe('Construction generation runs integration', () => {
     ).rejects.toThrow();
   });
 
+  it('consolidates corrections through HTTP, preserves history and reuses them in the next official generation', async () => {
+    const source = await ctx.prisma.generatedFile.findFirstOrThrow({
+      where: { generationRun: { projectId }, path: { startsWith: 'docs/business-logic/' } },
+    });
+    const inference = vi
+      .spyOn(ctx.app.get(AIOrchestrator), 'generateStructured')
+      .mockRejectedValue(new Error('No inference expected'));
+    try {
+      const created = await http()
+        .post(`/projects/${projectId}/generation-runs/working-copies`)
+        .set(auth())
+        .send({
+          implementationPlanVersionId: planVersionId,
+          reason: 'Integrar una corrección revisada de prueba',
+          revisions: [
+            {
+              endpoint: 'POST /orders/:orderId/confirm',
+              sourceFileId: source.id,
+              expectedSha256: source.sha256,
+              body: 'return { confirmed: true, corrected: true };',
+            },
+          ],
+        })
+        .expect(201);
+      expect(created.body.status).toBe('WORKING_COPY');
+      const copyId = created.body.id as string;
+      const files = (await runs.listFiles(projectId, copyId)).items;
+      expect(files.some((file) => file.path === 'docs/working-copy.json')).toBe(true);
+      expect(
+        (await ctx.prisma.generatedFile.findUniqueOrThrow({ where: { id: source.id } })).content,
+      ).toBe(source.content);
+      await http()
+        .post(`/projects/${projectId}/generation-runs/${copyId}/sandbox-runs`)
+        .set(auth())
+        .expect(422);
+      await expect(
+        ctx.prisma.generationRun.update({ where: { id: copyId }, data: { status: 'QUEUED' } }),
+      ).rejects.toThrow();
+      const generatedFile = files.find((file) => file.kind === 'SOURCE')!;
+      await expect(
+        ctx.prisma.generatedFile.update({
+          where: { id: generatedFile.id },
+          data: { content: 'changed' },
+        }),
+      ).rejects.toThrow();
+      expect(
+        await ctx.prisma.generatedProjectSnapshot.count({ where: { generationRunId: copyId } }),
+      ).toBe(0);
+      const next = await runs.start(projectId, ctx.userId, planVersionId);
+      await runs.runJob(projectId, next.id);
+      expect((await runs.get(projectId, next.id)).status).toBe('GENERATED');
+      const service = await ctx.prisma.generatedFile.findFirstOrThrow({
+        where: { generationRunId: next.id, path: { endsWith: '-actions.service.ts' } },
+      });
+      expect(service.content).toContain('corrected: true');
+      expect(inference).not.toHaveBeenCalled();
+    } finally {
+      inference.mockRestore();
+    }
+  });
+
   it('fails the new template explicitly when business logic is unavailable instead of delivering 501 actions', async () => {
     const unavailable = vi
       .spyOn(ctx.app.get(AIOrchestrator), 'generateStructured')

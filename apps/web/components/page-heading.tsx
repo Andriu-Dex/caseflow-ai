@@ -74,7 +74,12 @@ export function PageHeading({ title, projectId }: { title: string; projectId?: s
             className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
             aria-hidden="true"
           />
-          <span>Este paso está completo — continuar a {next.label}</span>
+          <span>
+            {constructionStep === TOTAL_CONSTRUCTION_STEPS
+              ? 'Software validado'
+              : 'Este paso está completo'}{' '}
+            — continuar a {next.label}
+          </span>
           <ArrowRight
             className="size-4 shrink-0 text-emerald-600 transition-transform duration-200 group-hover:translate-x-1 dark:text-emerald-400"
             aria-hidden="true"
