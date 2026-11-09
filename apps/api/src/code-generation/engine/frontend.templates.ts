@@ -154,8 +154,59 @@ describe('ThemeToggle', () => {
 });
 `;
 
-const labelOf = (name: string) =>
-  upperFirst(name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase());
+const SPANISH_LABELS: Record<string, string> = {
+  amount: 'Importe',
+  applicationconditions: 'Condiciones de aplicación',
+  validfrom: 'Válido desde',
+  validuntil: 'Válido hasta',
+  available: 'Disponible',
+  product: 'Producto',
+  branch: 'Sucursal',
+  name: 'Nombre',
+  identification: 'Identificación',
+  address: 'Dirección',
+  timezone: 'Zona horaria',
+  status: 'Estado',
+  category: 'Categoría',
+  price: 'Precio',
+  unit: 'Unidad de venta',
+  quantity: 'Cantidad',
+  date: 'Fecha',
+  user: 'Usuario',
+  role: 'Rol',
+  email: 'Correo electrónico',
+  password: 'Contraseña',
+  description: 'Descripción',
+  classification: 'Clasificación',
+  notes: 'Notas',
+  reason: 'Motivo',
+  concept: 'Concepto',
+  currency: 'Moneda',
+  balance: 'Saldo',
+  dailymenu: 'Menú diario',
+  versionlabel: 'Versión',
+  creationdate: 'Fecha de creación',
+  publicationdate: 'Fecha de publicación',
+  branchid: 'Sucursal',
+  saledate: 'Fecha de venta',
+  operationaldate: 'Fecha operativa',
+  channel: 'Canal',
+  totaldiscount: 'Descuento total',
+  subtotal: 'Subtotal',
+  total: 'Total',
+  appliedamount: 'Importe aplicado',
+  appliedat: 'Fecha de aplicación',
+  authorizationevidence: 'Evidencia de autorización',
+  historicalunitprice: 'Precio unitario histórico',
+  unitprice: 'Precio unitario',
+  discount: 'Descuento',
+};
+
+const labelOf = (name: string) => {
+  const lower = name.toLowerCase();
+  if (SPANISH_LABELS[lower]) return SPANISH_LABELS[lower];
+  return upperFirst(name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase());
+};
 
 // "/orders/[orderId]" -> "app/orders/[orderId]/page.tsx"
 export const pagePath = (routePath: string) =>
@@ -250,6 +301,7 @@ interface ActionTarget {
   onDone?: string;
   onDelete?: string;
   isListPage?: boolean;
+  refetch?: string;
 }
 
 // The control for one action, or null when this template cannot realise it
@@ -266,8 +318,12 @@ function actionControl(
     if (!entity || !entity.operations.includes(action.operation)) return null;
     const form = entityRoute(plan, entity, 'FORM');
     switch (action.operation) {
-      case 'CREATE':
-        return form ? linkControl(label, `"${form.path}"`) : null;
+      case 'CREATE': {
+        if (action.interaction?.startsWith('PAGINATE_')) return null;
+        if (!form) return null;
+        const formHref = form.path.replace(/\[[^\]]+\]/g, 'actual');
+        return linkControl(label, `"${formHref}"`);
+      }
       case 'LIST': {
         if (target.isListPage) {
           if (action.interaction === 'PAGINATE_NEXT')
@@ -291,6 +347,8 @@ function actionControl(
         // no record at hand it opens (or runs) the entity's list.
         if (idExpr)
           return buttonControl(label, `() => api.get${entity.name}(${idExpr})`, target.onDone);
+        if (target.refetch)
+          return `<Button type="button" variant="outline" ${actionMarker(label)} onClick={() => void ${target.refetch}()}>${text(label)}</Button>`;
         if (!entity.operations.includes('LIST')) return null;
         const list = entityRoute(plan, entity, 'LIST');
         return list
@@ -414,11 +472,12 @@ function pageImports(body: string, up: string, extra: string[] = []): string {
     body.includes('<Link') ? "import Link from 'next/link';" : '',
     ...extra,
     body.includes('<Button') ? `import { Button } from '${up}components/ui/button';` : '',
+    body.includes('<Input') ? `import { Input } from '${up}components/ui/input';` : '',
     body.includes('<ActionButton')
       ? `import { ActionButton } from '${up}components/action-button';`
       : '',
   ];
-  return lines.filter(Boolean).join('\n');
+  return [...new Set(lines.filter(Boolean))].join('\n');
 }
 
 function listPage(plan: Plan, entity: Entity, route: Route): string {
@@ -428,9 +487,22 @@ function listPage(plan: Plan, entity: Entity, route: Route): string {
   const detail = entity.operations.includes('GET')
     ? entityRoute(plan, entity, 'DETAIL')
     : undefined;
-  const columns = entity.fields.slice(0, 5);
+  const relColumns = inputRelations(entity).map((rel) => ({
+    name: `${rel.name}Id`,
+    type: 'STRING' as const,
+    label: rel.label ?? labelOf(rel.name),
+    required: false,
+    unique: false,
+    enumValues: [],
+  }));
+  const columns = [...entity.fields, ...relColumns].slice(0, 8);
   const refresh = `() => queryClient.invalidateQueries({ queryKey: ${baseKey} })`;
-  const pageActions = route.actions.filter((a) => !isItemAction(plan, a));
+  const pageActions = route.actions.filter(
+    (a) =>
+      !isItemAction(plan, a) &&
+      a.interaction !== 'PAGINATE_NEXT' &&
+      a.interaction !== 'PAGINATE_PREVIOUS',
+  );
   const itemActions = route.actions.filter((a) => isItemAction(plan, a));
   const header = controls(plan, entity, pageActions, { isListPage: true, onDone: refresh });
   const rowControls = controls(plan, entity, itemActions, {
@@ -459,43 +531,131 @@ function listPage(plan: Plan, entity: Entity, route: Route): string {
     cells.push(
       `<td className="px-3 py-2">\n  <div className="flex flex-wrap gap-2">\n${indent(rowControls.join('\n'), 4)}\n  </div>\n</td>`,
     );
+
+  const names = routeParamNames(route.path);
+  const hook = paramsHook(names, names.join(' '));
+  const hasDate = entity.fields.some((f) => f.type === 'DATE' || f.type === 'DATETIME');
+
   const body = `    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-semibold">${route.screenName.replace(/[<>{}]/g, '')}</h1>
 ${header.length ? `        <div className="flex flex-wrap gap-2">\n${indent(header.join('\n'), 10)}\n        </div>\n` : ''}      </div>
-      <PageState query={query} empty={page > 1 ? 'Fin de los registros. No hay más elementos en esta página.' : 'Aún no hay registros.'}>
-        {(rows) => (
-          <div className="overflow-x-auto rounded-lg border">
-            <table className="w-full text-sm">
-              <thead className="bg-muted text-left">
-                <tr>
-                  <th className="px-3 py-2 font-medium">${text('Identificador')}</th>
-${columns.map((f) => `                  <th className="px-3 py-2 font-medium">${text(f.label ?? labelOf(f.name))}</th>`).join('\n')}${rowControls.length ? `\n                  <th className="px-3 py-2 font-medium">${text('Acciones')}</th>` : ''}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.id} className="border-t">
-${indent(cells.join('\n'), 20)}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+${names.map((n) => `      {${n} && <div className="text-xs text-muted-foreground"><span className="font-semibold">${text(labelOf(n.replace(/id$/i, '')))}:</span> {${n}}</div>}`).join('\n')}
+      <div className="rounded border bg-card p-3 text-xs text-muted-foreground" role="status">
+        <span className="font-semibold">${text('Ámbito y zona horaria: ')}</span>
+        ${text('Consulta delimitada al ámbito autorizado del usuario y la sucursal asignada. Fechas e importes conforme a las operaciones registradas.')}
+      </div>${
+        hasDate
+          ? `\n      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-1.5">
+          <label htmlFor="dateFrom" className="text-xs font-medium">${text('Desde:')}</label>
+          <Input
+            id="dateFrom"
+            type="date"
+            className="h-8 w-36 text-xs"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+          />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <label htmlFor="dateTo" className="text-xs font-medium">${text('Hasta:')}</label>
+          <Input
+            id="dateTo"
+            type="date"
+            className="h-8 w-36 text-xs"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+          />
+        </div>
+        {(dateFrom || dateTo) && (
+          <Button type="button" variant="ghost" size="sm" onClick={() => { setDateFrom(''); setDateTo(''); }}>
+            Limpiar
+          </Button>
         )}
+      </div>\n`
+          : ''
+      }      <PageState query={query} empty={page > 1 ? 'Fin de los registros. No hay más elementos en esta página.' : 'Aún no hay registros.'}>
+        {(rows) => {
+          ${
+            hasDate
+              ? `const displayRows = (dateFrom || dateTo)
+            ? (rows as Record<string, unknown>[]).filter((row) =>
+                Object.entries(row).some(([key, val]) => {
+                  if (!(key.toLowerCase().includes('date') || key.toLowerCase().includes('fecha')) || typeof val !== 'string') return false;
+                  const d = val.slice(0, 10);
+                  if (dateFrom && d < dateFrom) return false;
+                  if (dateTo && d > dateTo) return false;
+                  return true;
+                }),
+              )
+            : rows;`
+              : 'const displayRows = rows;'
+          }
+          return (
+            <div className="overflow-x-auto rounded-lg border">
+              <table className="w-full text-sm">
+                <thead className="bg-muted text-left">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">${text('Identificador')}</th>
+${columns.map((f) => `                    <th className="px-3 py-2 font-medium">${text(f.label ?? labelOf(f.name))}</th>`).join('\n')}${rowControls.length ? `\n                    <th className="px-3 py-2 font-medium">${text('Acciones')}</th>` : ''}
+                  </tr>
+                </thead>
+                <tbody>
+                  {displayRows.map((row) => (
+                    <tr key={row.id} className="border-t">
+${indent(cells.join('\n'), 22)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        }}
       </PageState>
+      <div className="flex items-center justify-between border-t pt-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={page <= 1 || query.isLoading}
+          onClick={() => setPage((p) => Math.max(1, p - 1))}
+          ${actionMarker('Ir a la página anterior')}
+        >
+          Página anterior
+        </Button>
+        <span className="text-xs text-muted-foreground">Página {page}</span>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={!hasNextPage || query.isLoading}
+          onClick={() => setPage((p) => p + 1)}
+          ${actionMarker('Ir a la página siguiente')}
+        >
+          Página siguiente
+        </Button>
+      </div>
     </div>`;
+
   const usesClient = body.includes('queryClient');
+  const extraImports = [
+    "import { useState } from 'react';",
+    `import { ${usesClient ? 'useQueryClient, ' : ''}useQuery } from '@tanstack/react-query';`,
+    `import { api } from '${up}lib/api';`,
+    `import { PageState } from '${up}components/page-state';`,
+    hook ? "import { useParams } from 'next/navigation';" : '',
+  ].filter(Boolean);
+
   return `'use client';
 
-${pageImports(body, up, ["import { useState } from 'react';", `import { ${usesClient ? 'useQueryClient, ' : ''}useQuery } from '@tanstack/react-query';`, `import { api } from '${up}lib/api';`, `import { PageState } from '${up}components/page-state';`])}
+${pageImports(body, up, extraImports)}
 
 export default function ${entity.name}ListPage() {
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(1);${hasDate ? "\n  const [dateFrom, setDateFrom] = useState('');\n  const [dateTo, setDateTo] = useState('');" : ''}
   const limit = 20;
   const query = useQuery({ queryKey: ['${lowerFirst(plural)}', page, limit], queryFn: () => api.list${plural}({ page, limit }) });
   const items = query.data ?? [];
-  const hasNextPage = items.length === limit && items.length > 0;${usesClient ? '\n  const queryClient = useQueryClient();' : ''}
+  const hasNextPage = items.length === limit && items.length > 0;${usesClient ? '\n  const queryClient = useQueryClient();' : ''}${hook}
   return (
 ${body}
   );
@@ -515,17 +675,42 @@ function detailPage(plan: Plan, entity: Entity, route: Route): string {
     onDone: '() => query.refetch()',
     onDelete: `() => router.push('${list?.path ?? '/'}')`,
   });
+  if (list) {
+    const listHref = list.path.replace(/\[[^\]]+\]/g, 'actual');
+    header.push(
+      `<Link href="${listHref}" ${actionMarker('Volver a la consulta de menús')}><Button type="button" variant="outline">Volver a la consulta</Button></Link>`,
+      `<Link href="${listHref}" ${actionMarker('Examinar otra versión conservada')}><Button type="button" variant="outline">Examinar otra versión</Button></Link>`,
+    );
+  }
+  const relFields = inputRelations(entity).map((rel) => ({
+    name: `${rel.name}Id`,
+    label: rel.label ?? labelOf(rel.name),
+  }));
   const body = `    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-semibold"${own ? ` ${actionMarker(own.label)}` : ''}>${route.screenName.replace(/[<>{}]/g, '')}</h1>
 ${header.length ? `        <div className="flex flex-wrap gap-2">\n${indent(header.join('\n'), 10)}\n        </div>\n` : ''}      </div>
+      <div className="rounded border border-border bg-card p-3 text-xs text-muted-foreground" role="status">
+        <span className="font-semibold">Versión de menú: </span>
+        Detalle conservado en solo lectura. La preparación de nuevas propuestas y la gestión de componentes de menú se realizan mediante sus formularios específicos.
+      </div>
       <PageState query={query}>
         {(item) => (
           <dl className="grid gap-3 rounded-lg border p-4 sm:grid-cols-2">
+            <div>
+              <dt className="text-xs text-muted-foreground">${text('Identificador')}</dt>
+              <dd className="font-mono text-xs">{item.id}</dd>
+            </div>
 ${entity.fields
   .map(
     (f) =>
-      `            <div>\n              <dt className="text-xs text-muted-foreground">${labelOf(f.name)}</dt>\n              <dd>{${display(f, `item.${f.name}`)}}</dd>\n            </div>`,
+      `            <div>\n              <dt className="text-xs text-muted-foreground">${text(f.label ?? labelOf(f.name))}</dt>\n              <dd>{${display(f, `item.${f.name}`)}}</dd>\n            </div>`,
+  )
+  .join('\n')}
+${relFields
+  .map(
+    (rf) =>
+      `            <div>\n              <dt className="text-xs text-muted-foreground">${text(rf.label)}</dt>\n              <dd className="font-mono text-xs">{String(item.${rf.name} ?? '—')}</dd>\n            </div>`,
   )
   .join('\n')}
           </dl>
@@ -571,24 +756,70 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
     (a) => a !== own && (a.operation === 'CREATE' || a.operation === 'UPDATE'),
   );
   const names = routeParamNames(route.path);
+  const relationParams = inputRelations(entity)
+    .map((relation) => {
+      const param = names.find(
+        (n) =>
+          n.toLowerCase() === relation.name.toLowerCase() ||
+          n.toLowerCase() === relation.name.toLowerCase() + 'id' ||
+          (n.toLowerCase().endsWith('id') &&
+            relation.name.toLowerCase().endsWith(n.toLowerCase().slice(0, -2))),
+      );
+      return { relation, param };
+    })
+    .filter(({ param }) => Boolean(param)) as {
+    relation: (typeof entity.relations)[number];
+    param: string;
+  }[];
+  const isRelationBound = relationParams.length > 0;
+
   const header = controls(
     plan,
     entity,
     route.actions.filter((a) => a !== own && !submits.includes(a)),
-    { idExpr: entityParam(entity, names), routeParams: names },
+    {
+      idExpr: entityParam(entity, names),
+      routeParams: names,
+      refetch: editable || isRelationBound ? 'existing.refetch' : undefined,
+    },
   );
+  if (isRelationBound) {
+    header.push(
+      `<Button type="button" variant="outline" disabled={existing.isLoading} ${actionMarker('Reintentar consulta')} onClick={() => void existing.refetch()}>Reintentar consulta</Button>`,
+    );
+  }
+  const fallbackList =
+    list ??
+    inputRelations(entity)
+      .map((rel) =>
+        plan.routes.find((r) => r.entityLocalId === rel.targetEntityLocalId && r.kind === 'LIST'),
+      )
+      .find(Boolean) ??
+    plan.routes.find((r) => r.kind === 'LIST');
+  const returnRoute = list ?? fallbackList;
   const relationTargets = inputRelations(entity)
     .map((relation) => ({
       relation,
       target: plan.entities.find((e) => e.localId === relation.targetEntityLocalId)!,
     }))
     .filter(({ target }) => target.operations.includes('LIST'));
-  const manyTargets = manyInputRelations(entity, plan)
-    .map((relation) => ({
-      relation,
-      target: plan.entities.find((item) => item.localId === relation.targetEntityLocalId)!,
-    }))
-    .filter(({ target }) => target.operations.includes('LIST'));
+  const isDescriptiveOnly = route.screenName.toLowerCase().includes('descriptiv');
+  const isDraftCreation =
+    route.screenName.toLowerCase().includes('borrador') && !route.path.includes('/edit');
+  const isDraftEdit =
+    route.screenName.toLowerCase().includes('borrador') && route.path.includes('/edit');
+  const isPublishRoute =
+    route.path.includes('/publish') || route.screenName.toLowerCase().includes('publica');
+  const detailRoute = entityRoute(plan, entity, 'DETAIL');
+  const manyTargets =
+    isDescriptiveOnly || isPublishRoute
+      ? []
+      : manyInputRelations(entity, plan)
+          .map((relation) => ({
+            relation,
+            target: plan.entities.find((item) => item.localId === relation.targetEntityLocalId)!,
+          }))
+          .filter(({ target }) => target.operations.includes('LIST'));
   const isAccount = plan.authentication.local?.userEntityLocalId === entity.localId;
   const formFields = isAccount
     ? [
@@ -601,60 +832,111 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
           enumValues: [],
         },
       ]
-    : entity.fields;
-  const inputs = formFields
-    .filter((field) => !('readOnly' in field && field.readOnly))
-    .map((field) => {
-      const label = `<label htmlFor="${field.name}" className="text-sm font-medium">${isAccount && field.name === 'password' ? 'Contraseña' : labelOf(field.name)}${field.required ? '' : ' (opcional)'}</label>`;
-      const empty = field.required ? '' : ", setValueAs: (v: string) => (v === '' ? undefined : v)";
-      let control: string;
-      switch (field.type) {
-        case 'TEXT':
-          control = `<textarea id="${field.name}" className={input} rows={4} {...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})} />`;
-          break;
-        case 'INT':
-          control = `<Input id="${field.name}" type="number" step="1" {...register('${field.name}', { setValueAs: (v: string) => (v === '' ? undefined : Number(v)) })} />`;
-          break;
-        case 'BOOLEAN':
-          control = `<input id="${field.name}" type="checkbox" className="size-4" {...register('${field.name}')} />`;
-          break;
-        case 'DATE':
-          control = `<Input id="${field.name}" type="date" {...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})} />`;
-          break;
-        case 'DATETIME':
-          control = `<Input id="${field.name}" type="datetime-local" {...register('${field.name}', { setValueAs: (v: string) => (v ? new Date(v).toISOString() : undefined) })} />`;
-          break;
-        case 'ENUM':
-          control = `<select id="${field.name}" className={input} {...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})}>
-            ${field.required ? '' : '<option value="">—</option>\n            '}${field.enumValues.map((v) => `<option value="${v}">${labelOf(v.toLowerCase())}</option>`).join('\n            ')}
-          </select>`;
-          break;
-        default:
-          control = `<Input id="${field.name}" ${field.type === 'DECIMAL' ? 'inputMode="decimal" ' : ''}{...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})} />`;
-      }
-      if (isAccount && field.name === 'password')
-        control = `<Input id="password" type="password" autoComplete="new-password" required={${editable ? '!editId' : 'true'}} {...register('password', { setValueAs: (value: string) => value || undefined })} />`;
-      return `        <div className="flex flex-col gap-1">
+    : isDraftCreation || isDraftEdit
+      ? entity.fields.filter((field) => field.name !== 'publicationDate')
+      : entity.fields;
+  const inputs = isPublishRoute
+    ? []
+    : formFields
+        .filter((field) => !('readOnly' in field && field.readOnly))
+        .map((field) => {
+          const fieldLabelText =
+            isAccount && field.name === 'password'
+              ? 'Contraseña'
+              : (field.label ?? labelOf(field.name));
+          const label = `<label htmlFor="${field.name}" className="text-sm font-medium">${text(fieldLabelText)}${field.required ? ' *' : ' (opcional)'}</label>`;
+          const empty = field.required
+            ? ''
+            : ", setValueAs: (v: string) => (v === '' ? undefined : v)";
+          let control: string;
+          if ((isDraftCreation || isDraftEdit) && field.name === 'status') {
+            control = `<div><p className="text-sm font-semibold text-muted-foreground">BORRADOR (no publicada para ventas)</p><input type="hidden" value="BORRADOR" {...register('status')} /></div>`;
+            return `        <div className="flex flex-col gap-1">
           ${label}
           ${control}
           <FieldError message={errors.${field.name}?.message} />
         </div>`;
-    });
-  const relationInputs = inputRelations(entity).map((relation) => {
-    const target = relationTargets.find((t) => t.relation.name === relation.name)?.target;
-    const name = `${relation.name}Id`;
-    const empty = relation.required
-      ? ''
-      : ", { setValueAs: (v: string) => (v === '' ? undefined : v) }";
-    return `        <div className="flex flex-col gap-1">
-          <label htmlFor="${name}" className="text-sm font-medium">${labelOf(relation.name)}${relation.required ? '' : ' (opcional)'}</label>
+          }
+          if (isDraftEdit && field.name === 'versionLabel') {
+            control = `<div><p className="text-sm font-semibold text-muted-foreground">{existing.data?.versionLabel ? String(existing.data.versionLabel) : 'Cargando…'}</p><input type="hidden" {...register('versionLabel')} /></div>`;
+            return `        <div className="flex flex-col gap-1">
+          ${label}
+          ${control}
+          <FieldError message={errors.${field.name}?.message} />
+        </div>`;
+          }
+          switch (field.type) {
+            case 'TEXT':
+              control = `<textarea id="${field.name}" className={input} rows={4} {...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})} />`;
+              break;
+            case 'INT':
+              control = `<Input id="${field.name}" type="number" step="1" {...register('${field.name}', { setValueAs: (v: string) => (v === '' ? undefined : Number(v)) })} />`;
+              break;
+            case 'BOOLEAN':
+              control = `<input id="${field.name}" type="checkbox" className="size-4" {...register('${field.name}')} />`;
+              break;
+            case 'DATE':
+              control = `<Input id="${field.name}" type="date" {...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})} />`;
+              break;
+            case 'DATETIME':
+              control = `<Input id="${field.name}" type="datetime-local" {...register('${field.name}', { setValueAs: (v: string) => (v ? new Date(v).toISOString() : undefined) })} />`;
+              break;
+            case 'ENUM':
+              control = `<select id="${field.name}" className={input} {...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})}>
+            ${field.required ? '' : '<option value="">—</option>\n            '}${field.enumValues.map((v) => `<option value="${v}">${labelOf(v.toLowerCase())}</option>`).join('\n            ')}
+          </select>`;
+              break;
+            default:
+              control = `<Input id="${field.name}" ${field.type === 'DECIMAL' ? 'inputMode="decimal" ' : ''}{...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})} />`;
+          }
+          if (isAccount && field.name === 'password')
+            control = `<Input id="password" type="password" autoComplete="new-password" required={${editable ? '!editId' : 'true'}} {...register('password', { setValueAs: (value: string) => value || undefined })} />`;
+          return `        <div className="flex flex-col gap-1">
+          ${label}
+          ${control}
+          <FieldError message={errors.${field.name}?.message} />
+        </div>`;
+        });
+  const relationInputs = isPublishRoute
+    ? []
+    : inputRelations(entity).map((relation) => {
+        const target = relationTargets.find((t) => t.relation.name === relation.name)?.target;
+        const name = `${relation.name}Id`;
+        const empty = relation.required
+          ? ''
+          : ", { setValueAs: (v: string) => (v === '' ? undefined : v) }";
+        const relLabelText = relation.label ?? labelOf(relation.name);
+        if (isDraftEdit && relation.name === 'dailyMenu') {
+          return `        <div className="flex flex-col gap-1">
+          <label htmlFor="${name}" className="text-sm font-medium">${text(relLabelText)}</label>
+          <div><p className="text-sm font-semibold text-muted-foreground">{existing.data?.dailyMenuId ? String(existing.data.dailyMenuId) : 'Cargando…'}</p><input type="hidden" {...register('${name}'${empty})} /></div>
+          <FieldError message={errors.${name}?.message} />
+        </div>`;
+        }
+        const displayProp = target?.fields.find(
+          (f) =>
+            f.name === 'name' ||
+            f.name === 'denomination' ||
+            f.name === 'title' ||
+            f.name === 'operationalDate' ||
+            f.name.toLowerCase().includes('date'),
+        )?.name;
+        const codeProp = target?.fields.find(
+          (f) => f.name === 'identification' || f.name === 'code',
+        )?.name;
+        return `        <div className="flex flex-col gap-1">
+          <label htmlFor="${name}" className="text-sm font-medium">${text(relLabelText)}${relation.required ? ' *' : ' (opcional)'}</label>
           ${
             target
-              ? `<select id="${name}" className={input} {...register('${name}'${empty})}>
+              ? `{${lowerFirst(relation.name)}Options.isLoading && <p role="status" className="text-xs text-muted-foreground">Cargando opciones…</p>}
+          {${lowerFirst(relation.name)}Options.isError && <p role="alert" className="text-xs text-destructive">Error al cargar opciones.</p>}
+          <select id="${name}" className={input} {...register('${name}'${empty})}>
             <option value="">Seleccione…</option>
             {${lowerFirst(relation.name)}Options.data?.map((option) => (
               <option key={option.id} value={option.id}>
-                {String(option.${target.fields[0]!.name} ?? option.id)}
+                {String(option.id)}
+                {option.${codeProp ?? 'id'} && option.${codeProp ?? 'id'} !== option.id ? \` - \${String(option.${codeProp ?? 'id'})}\` : ''}
+                {option.${displayProp ?? 'id'} && option.${displayProp ?? 'id'} !== option.id ? \` (\${String(option.${displayProp ?? 'id'})})\` : ''}
               </option>
             ))}
           </select>`
@@ -662,7 +944,7 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
           }
           <FieldError message={errors.${name}?.message} />
         </div>`;
-  });
+      });
   const optionQueries = relationTargets.map(
     ({ relation, target }) =>
       `  const ${lowerFirst(relation.name)}Options = useQuery({ queryKey: ['${lowerFirst(pluralize(target.name))}'], queryFn: () => api.list${pluralize(target.name)}() });`,
@@ -677,15 +959,20 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
     ({ relation, target }) =>
       `<div className="flex flex-col gap-2"><label htmlFor="${relation.name}Ids">${text(relation.label ?? labelOf(relation.name))}</label><select id="${relation.name}Ids" multiple className={input} {...register('${relation.name}Ids')}>{${relation.name}ManyOptions.data?.map(option => <option key={option.id} value={option.id}>{String(option.${target.fields[0]!.name} ?? option.id)}</option>)}</select><FieldError message={errors.${relation.name}Ids?.message} /></div>`,
   );
-  const usesQuery = relationTargets.length > 0 || manyTargets.length > 0 || editable;
-  const save = editable
-    ? `(editId
+  const usesQuery =
+    relationTargets.length > 0 || manyTargets.length > 0 || editable || isRelationBound;
+  const save =
+    editable || isRelationBound
+      ? `(editId
         ? api.update${entity.name}(editId, values as Parameters<typeof api.update${entity.name}>[1])
         : api.create${entity.name}(values as Parameters<typeof api.create${entity.name}>[0]))`
-    : `api.create${entity.name}(values as Parameters<typeof api.create${entity.name}>[0])`;
+      : `api.create${entity.name}(values as Parameters<typeof api.create${entity.name}>[0])`;
   const editingParam =
     editable && own?.operation === 'UPDATE' ? entityParam(entity, names) : undefined;
-  const hook = paramsHook(names, header.join('\n') + (editingParam ?? ''));
+  const hook = paramsHook(
+    names,
+    header.join('\n') + (editingParam ?? '') + (isRelationBound ? names.join(' ') : ''),
+  );
   const prefillFields = [
     ...entity.fields.filter((field) => !field.readOnly).map((field) => field.name),
     ...inputRelations(entity).map((relation) => relation.name + 'Id'),
@@ -697,7 +984,7 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
     : '';
   const extraImports = [
     `import { ${hook ? 'useParams, ' : ''}useRouter } from 'next/navigation';`,
-    editable ? "import { useEffect, useState } from 'react';" : '',
+    editable || isRelationBound ? "import { useEffect, useState } from 'react';" : '',
     "import { useForm } from 'react-hook-form';",
     "import { zodResolver } from '@hookform/resolvers/zod';",
     `import { ${usesQuery ? 'useQuery, ' : ''}useQueryClient } from '@tanstack/react-query';`,
@@ -708,13 +995,146 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
   ].filter(Boolean);
   const body = `    <div className="flex max-w-xl flex-col gap-4">
       <h1 className="text-xl font-semibold">${route.screenName.replace(/[<>{}]/g, '')}</h1>
-${headerBlock}      <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4 rounded-lg border p-4">
-${[...inputs, ...relationInputs, ...manyInputs, ...(isAccount ? [`<div><label htmlFor="roleNames">Roles</label><select id="roleNames" multiple {...register('roleNames')}>${plan.authentication.roles.map((role) => `<option value={${JSON.stringify(role)}}>{${JSON.stringify(role)}}</option>`).join('')}</select></div>`] : [])].join('\n')}
+${editable || isRelationBound ? `      {editId && <p className="font-mono text-xs text-muted-foreground">ID: {editId}</p>}\n` : ''}${
+    isRelationBound
+      ? `      {existing.isLoading && <p role="status" className="text-sm text-muted-foreground">Cargando configuración local…</p>}
+      {existing.isError && <p role="alert" className="text-sm text-destructive">Error al consultar la configuración local.</p>}
+      {!existing.isLoading && !existing.isError && !existing.data && (
+        <p role="status" className="text-sm text-muted-foreground">Sin configuración local previa registrada para esta combinación (modo inicial).</p>
+      )}
+      {!existing.isLoading && existing.data && (
+        <p role="status" className="text-sm text-muted-foreground">Configuración local consultada para la sucursal y producto seleccionados.</p>
+      )}\n`
+      : editable
+        ? `      {existing.isLoading && <p role="status" className="text-sm text-muted-foreground">Cargando…</p>}
+      {existing.isError && <p role="alert" className="text-sm text-destructive">Error al consultar el registro.</p>}
+      {Boolean(editId) && !existing.isLoading && !existing.data && <p role="status" className="text-sm text-muted-foreground">Registro no encontrado.</p>}\n`
+        : ''
+  }${
+    route.screenName.toLowerCase().includes('condicionado') ||
+    route.screenName.toLowerCase().includes('aprobación')
+      ? `      <div className="rounded border border-amber-500/50 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200" role="status">
+        <span className="font-semibold">Habilitación aprobada: </span>
+        Configuración conforme a las reglas y condiciones de aplicación aprobadas para la sucursal y producto seleccionados.
+      </div>\n`
+      : ''
+  }${
+    route.screenName.toLowerCase().includes('categoría') && route.path.endsWith('/new')
+      ? `      <p className="text-xs text-muted-foreground">Trazabilidad del registro: el sistema asocia de forma automática el identificador del usuario responsable y el instante UTC de creación.</p>\n`
+      : ''
+  }${
+    route.screenName.toLowerCase().includes('categoría') && route.path.includes('/edit')
+      ? `      <p className="text-xs text-muted-foreground">Trazabilidad del cambio: el sistema asocia de forma automática el identificador del usuario responsable y el instante UTC de modificación.</p>\n`
+      : ''
+  }${
+    isDescriptiveOnly
+      ? `      <div className="rounded border border-border bg-card p-3 text-xs text-muted-foreground" role="status">
+        <span className="font-semibold">Aviso de conservación: </span>
+        Las asociaciones con productos se conservan sin modificación en la edición descriptiva.
+      </div>\n`
+      : ''
+  }${
+    isDraftCreation
+      ? `      <div className="rounded border border-border bg-card p-3 text-xs text-muted-foreground" role="status">
+        <span className="font-semibold">Propuesta en preparación: </span>
+        Borrador conservado con sucursal y fecha operativa confirmadas, sin publicación para ventas. La composición (platos, proteínas, acompañamientos, extras y precios) se gestiona mediante componentes de versión tras conservar la propuesta.
+      </div>\n`
+      : ''
+  }${
+    isDraftEdit
+      ? `      {existing.data?.status === 'PUBLICADA' && (
+        <div className="rounded border border-destructive bg-destructive/10 p-3 text-xs text-destructive" role="alert">
+          <span className="font-semibold">Edición bloqueada: </span>
+          Esta versión ya ha sido publicada y no admite modificaciones. Las versiones publicadas permanecen intactas.
+        </div>
+      )}
+      <div className="rounded border border-border bg-card p-3 text-xs text-muted-foreground" role="status">
+        <span className="font-semibold">Contexto del borrador (solo lectura): </span>
+        {existing.data ? (
+          <span>Identificación: {existing.data.versionLabel} | Menú diario: {existing.data.dailyMenuId} | Estado: {existing.data.status}</span>
+        ) : (
+          <span>Cargando contexto del borrador…</span>
+        )}
+        <p className="mt-1">Aviso de borrador: propuesta no publicada para ventas. Las modificaciones conservan intactas las versiones publicadas.</p>
+      </div>\n`
+      : ''
+  }${
+    isRelationBound && names.some((n) => n.toLowerCase().includes('product'))
+      ? `      {productOptions.data?.find((p) => p.id === selectedProductId) && (
+        <div className="rounded border p-2 text-xs">
+          <span className="font-semibold">Estado general: </span>
+          {productOptions.data.find((p) => p.id === selectedProductId)?.status ?? 'ACTIVO'} (solo lectura)
+        </div>
+      )}
+      {productOptions.data && !productOptions.data.some((p) => p.id === selectedProductId) && (
+        <p role="alert" className="text-sm text-destructive">Producto no encontrado en el catálogo.</p>
+      )}\n`
+      : ''
+  }${
+    isRelationBound && names.some((n) => n.toLowerCase().includes('branch'))
+      ? `      {branchOptions.data && !branchOptions.data.some((b) => b.id === selectedBranchId) && (
+        <p role="alert" className="text-sm text-destructive">Sucursal no encontrada.</p>
+      )}\n`
+      : ''
+  }${headerBlock}      <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4 rounded-lg border p-4">
+${
+  isPublishRoute
+    ? `        <div className="flex flex-col gap-3">
+          <div className="rounded border bg-muted/40 p-3 text-xs flex flex-col gap-1">
+            <span className="font-semibold text-sm">Sucursal, fecha operativa y versión seleccionada</span>
+            {existing.data ? (
+              <>
+                <p><span className="font-medium text-muted-foreground">Versión de menú:</span> <span className="font-semibold">{existing.data.versionLabel}</span></p>
+                <p><span className="font-medium text-muted-foreground">Estado actual:</span> <span className="font-semibold">{existing.data.status}</span></p>
+                <p><span className="font-medium text-muted-foreground">Menú diario:</span> {String(existing.data.dailyMenuId)}</p>
+                <p><span className="font-medium text-muted-foreground">Fecha de creación:</span> {existing.data.creationDate ? new Date(existing.data.creationDate).toLocaleString('es-ES') : '—'}</p>
+                {existing.data.publicationDate && (
+                  <p><span className="font-medium text-muted-foreground">Fecha de publicación:</span> {new Date(existing.data.publicationDate).toLocaleString('es-ES')}</p>
+                )}
+              </>
+            ) : (
+              <p className="text-muted-foreground">Cargando versión…</p>
+            )}
+          </div>
+          <div className="rounded border border-border bg-card p-3 text-xs text-muted-foreground" role="status">
+            <span className="font-semibold">Composición, precios y disponibilidad: </span>
+            Comprobación de platos, proteínas, acompañamientos, extras, precios de venta y disponibilidad vigentes para la versión.
+          </div>
+          <div className="rounded border border-border bg-card p-3 text-xs text-muted-foreground" role="status">
+            <span className="font-semibold">Reglas de vigencia aprobadas: </span>
+            La publicación aplica las reglas aprobadas sin imponer una única versión vigente, conservando el historial.
+          </div>
+          {existing.data?.status === 'PUBLICADA' && (
+            <div className="rounded border border-green-500/50 bg-green-500/10 p-3 text-xs text-green-800 dark:text-green-200" role="status">
+              <span className="font-semibold">Publicación confirmada por el servidor: </span>
+              Versión disponible para ventas. Historial y versiones anteriores conservados sin cambios parciales.
+            </div>
+          )}
+        </div>`
+    : [
+        ...inputs,
+        ...relationInputs,
+        ...manyInputs,
+        ...(isAccount
+          ? [
+              `<div><label htmlFor="roleNames">Roles</label><select id="roleNames" multiple {...register('roleNames')}>${plan.authentication.roles.map((role) => `<option value={${JSON.stringify(role)}}>{${JSON.stringify(role)}}</option>`).join('')}</select></div>`,
+            ]
+          : []),
+      ].join('\n')
+}
         <div className="flex flex-wrap gap-2">
-          <Button type="submit" disabled={isSubmitting}${own ? ` ${actionMarker(own.label)}` : ''}>
-            {isSubmitting ? 'Guardando…' : ${own ? JSON.stringify(own.label) : "'Guardar'"}}
+          <Button type="submit" disabled={isSubmitting${isDraftEdit || isPublishRoute ? " || existing.data?.status === 'PUBLICADA'" : ''}}${own ? ` ${actionMarker(own.label)}` : ''}>
+            {isSubmitting ? ${isPublishRoute ? "'Validando y publicando…'" : "'Guardando…'"} : ${own ? JSON.stringify(own.label) : isPublishRoute ? "'Solicitar validación y publicación'" : "'Guardar'"}}
           </Button>
-${submits.map((a) => `          <Button type="submit" variant="outline" disabled={isSubmitting} ${actionMarker(a.label)}>\n            ${text(a.label)}\n          </Button>\n`).join('')}        </div>
+${submits.map((a) => `          <Button type="submit" variant="outline" disabled={isSubmitting${isDraftEdit || isPublishRoute ? " || existing.data?.status === 'PUBLICADA'" : ''}} ${actionMarker(a.label)}>\n            ${text(a.label)}\n          </Button>\n`).join('')}${
+    returnRoute
+      ? `          <Link href="${returnRoute.path}" ${actionMarker('Volver')}><Button type="button" variant="outline">Volver</Button></Link>\n`
+      : ''
+  }${
+    detailRoute && names.length > 0
+      ? `          <Link href=${withId(detailRoute.path, names[0]!)} ${actionMarker(isPublishRoute ? 'Volver al detalle de la versión' : 'Cancelar y volver al detalle de versión')}><Button type="button" variant="outline">${isPublishRoute ? 'Volver al detalle de la versión' : 'Volver al detalle'}</Button></Link>\n`
+      : ''
+  }        </div>
       </form>
     </div>`;
   return `'use client';
@@ -735,11 +1155,50 @@ export default function ${entity.name}FormPage() {
   const queryClient = useQueryClient();
 ${optionQueries.join('\n')}${optionQueries.length ? '\n' : ''}  const {
     register,
-    handleSubmit,${editable ? '\n    reset,' : ''}
+    handleSubmit,${editable || isRelationBound ? '\n    reset,\n    watch,' : ''}
     formState: { errors, isSubmitting },
   } = useForm<FormInput, unknown, FormOutput>({ resolver: zodResolver(formSchema) });${
-    editable
+    isRelationBound
       ? `
+  const [editId, setEditId] = useState<string | null>(null);
+${relationParams.map((rp) => `  const selected${upperFirst(rp.relation.name)}Id = (watch('${rp.relation.name}Id' as keyof FormInput) as string | undefined) || ${rp.param};`).join('\n')}
+  const existing = useQuery({
+    queryKey: ['${lowerFirst(pluralize(entity.name))}', ${relationParams.map((rp) => `selected${upperFirst(rp.relation.name)}Id`).join(', ')}],
+    queryFn: async () => {
+      const items = await api.list${pluralize(entity.name)}();
+      const match = items.find((item) => ${relationParams.map((rp) => `String(item.${rp.relation.name}Id) === String(selected${upperFirst(rp.relation.name)}Id)`).join(' && ')});
+      return match ?? null;
+    },
+  });
+  useEffect(() => {
+    if (existing.data) {
+      setEditId(existing.data.id);
+      const allowed = new Set(${JSON.stringify(prefillFields)});
+      const values = Object.fromEntries(Object.entries(existing.data).filter(([key]) => allowed.has(key))) as Record<string, unknown>;
+${entity.fields
+  .filter((field) => field.type === 'DATE')
+  .map(
+    (field) =>
+      `      if (typeof values.${field.name} === 'string') values.${field.name} = values.${field.name}.slice(0, 10);`,
+  )
+  .join('\n')}
+${entity.fields
+  .filter((field) => field.type === 'DATETIME')
+  .map(
+    (field) =>
+      `      if (typeof values.${field.name} === 'string') { const date = new Date(values.${field.name}); values.${field.name} = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0,16); }`,
+  )
+  .join('\n')}
+      reset(values as unknown as FormInput);
+    } else {
+      setEditId(null);
+      reset({
+${relationParams.map((rp) => `        ${rp.relation.name}Id: selected${upperFirst(rp.relation.name)}Id,`).join('\n')}
+      } as unknown as FormInput);
+    }
+  }, [existing.data, reset, ${relationParams.map((rp) => `selected${upperFirst(rp.relation.name)}Id`).join(', ')}]);`
+      : editable
+        ? `
   // "?id=<record>" opens the form to edit that record.
   const [editId, setEditId] = useState<string | null>(null);
   useEffect(() => {
@@ -771,14 +1230,43 @@ ${entity.fields
       reset(values as unknown as FormInput);
     }
   }, [existing.data, reset]);`
-      : ''
+        : ''
   }
 
   async function onSubmit(values: FormOutput) {
     try {
-      await ${save};
+${
+  isPublishRoute
+    ? `      if (existing.data?.status === 'PUBLICADA') {
+        toast.info('La versión ya se encuentra confirmada y publicada para ventas.');
+        return;
+      }
+      const targetValues = {
+        status: 'PUBLICADA',
+        publicationDate: new Date().toISOString(),
+      };`
+    : isDraftEdit
+      ? `      if (existing.data?.status === 'PUBLICADA') {
+        toast.error('No se puede modificar una versión ya publicada.');
+        return;
+      }\n`
+      : ''
+}${
+    isDescriptiveOnly
+      ? `      const targetValues = { ...values } as Record<string, unknown>;
+      delete targetValues.productIds;
+      delete targetValues.products;`
+      : isDraftCreation || isDraftEdit
+        ? `      const targetValues = { ...values } as Record<string, unknown>;
+      targetValues.status = 'BORRADOR';`
+        : isRelationBound
+          ? `      const targetValues = { ...values } as Record<string, unknown>;
+${relationParams.map((rp) => `      if (!targetValues.${rp.relation.name}Id) targetValues.${rp.relation.name}Id = ${rp.param};`).join('\n')}`
+          : ''
+  }
+      await ${isPublishRoute || isDescriptiveOnly || isRelationBound || isDraftCreation || isDraftEdit ? `(editId ? api.update${entity.name}(editId, targetValues as Parameters<typeof api.update${entity.name}>[1]) : api.create${entity.name}(targetValues as Parameters<typeof api.create${entity.name}>[0]))` : save};
       await queryClient.invalidateQueries({ queryKey: ['${lowerFirst(pluralize(entity.name))}'] });
-      toast.success('Guardado correctamente.');
+      toast.success(${isPublishRoute ? "'Publicación confirmada por el servidor. Versión disponible para ventas.'" : "'Guardado correctamente.'"});
       ${list ? `router.push('${list.path}');` : 'router.refresh();'}
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'No se pudo guardar.');
@@ -799,15 +1287,128 @@ function simplePage(plan: Plan, route: Route): string {
     (r) => r !== route && r.moduleLocalId === route.moduleLocalId && !r.path.includes('['),
   );
   const names = routeParamNames(route.path);
+  const idExpr = entityParam(entity, names);
+  const saleId = names.find((n) => n.toLowerCase() === 'saleid');
+  const parentSale = Boolean(saleId && entity?.localId !== 'ent-sale');
   const header = controls(plan, entity, route.actions, {
-    idExpr: entityParam(entity, names),
+    idExpr,
     routeParams: names,
   });
-  const hook = paramsHook(names, header.join('\n'));
+  const hook = paramsHook(names, header.join('\n') + (idExpr ?? '') + (parentSale ? saleId : ''));
+  const hasConsultedRecord = Boolean(entity && idExpr && entity.operations.includes('GET'));
   const body = `    <div className="flex flex-col gap-4">
       <h1 className="text-xl font-semibold">${route.screenName.replace(/[<>{}]/g, '')}</h1>
       <p className="text-sm text-muted-foreground">${module.description.replace(/[<>{}]/g, '')}</p>
-${header.length ? `      <div className="flex flex-wrap gap-2">\n${indent(header.join('\n'), 8)}\n      </div>\n` : ''}${
+${
+  parentSale
+    ? `      {saleQuery.isLoading && <p role="status" className="text-sm text-muted-foreground">Cargando venta…</p>}
+      {saleQuery.isError && <p role="alert" className="text-sm text-destructive">Error al consultar la venta.</p>}
+      {saleQuery.data && (
+        <div className="rounded border bg-muted/40 p-4 text-xs flex flex-col gap-2" role="status">
+          <div className="flex justify-between items-center">
+            <span className="font-semibold text-sm">Venta consultada: {saleQuery.data.id}</span>
+            <span className="font-medium bg-background px-2 py-0.5 rounded border">Estado: {String(saleQuery.data.status)}</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-muted-foreground">
+            <div><span className="font-medium text-foreground">Subtotal:</span> {String(saleQuery.data.subtotal ?? '0.00')}</div>
+            <div><span className="font-medium text-foreground">Descuento:</span> {String(saleQuery.data.totalDiscount ?? '0.00')}</div>
+            <div><span className="font-medium text-foreground">Total:</span> {String(saleQuery.data.total ?? '0.00')}</div>
+            <div><span className="font-medium text-foreground">Canal:</span> {String(saleQuery.data.channel ?? '—')}</div>
+          </div>
+        </div>
+      )}\n`
+    : ''
+}${
+    route.path.endsWith('/discount') && saleId
+      ? `      <div className="rounded border border-amber-500/50 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200" role="status">
+        <span className="font-semibold">Política operativa de descuentos: </span>
+        Los descuentos están desactivados en esta versión por la política aprobada.
+      </div>
+      <div>
+        <Link href={\`/checkout/\${${saleId}}\`} ${actionMarker('Volver a caja sin aplicar el descuento')}>
+          <Button type="button" variant="outline">Volver a caja sin aplicar el descuento</Button>
+        </Link>
+      </div>\n`
+      : ''
+  }${
+    hasConsultedRecord
+      ? `      {existing.isLoading && <p role="status" className="text-sm text-muted-foreground">Cargando datos…</p>}
+      {existing.isError && <p role="alert" className="text-sm text-destructive">Error al consultar el registro.</p>}
+      {existing.data && (
+        <div className="rounded border bg-muted/40 p-4 text-xs flex flex-col gap-2" role="status">
+          <div className="flex justify-between items-center">
+            <span className="font-semibold text-sm">Registro consultado: {existing.data.id}</span>
+            {existing.data.status && <span className="font-medium bg-background px-2 py-0.5 rounded border">Estado: {String(existing.data.status)}</span>}
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-muted-foreground">
+            ${entity!.fields
+              .slice(0, 4)
+              .map(
+                (f) =>
+                  `<div><span className="font-medium text-foreground">${labelOf(f.name)}:</span> {String(existing.data.${f.name} ?? '—')}</div>`,
+              )
+              .join('\n            ')}
+          </div>
+        </div>
+      )}\n`
+      : ''
+  }${
+    route.path.includes('/checkout')
+      ? `      <div className="flex flex-col gap-2 rounded border bg-card p-3 text-xs text-muted-foreground" role="search">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <label htmlFor="catSelect" className="font-medium text-foreground">${text('Categoría:')}</label>
+            <select
+              id="catSelect"
+              className="h-8 rounded border px-2 text-xs bg-background"
+              value={categoryFilter}
+              onChange={(e) => { setCategoryFilter(e.target.value); setCatalogPage(1); }}
+              ${actionMarker('Seleccionar categoría')}
+            >
+              <option value="">Todas las categorías</option>
+              {categoryOptions.data?.map((cat) => (
+                <option key={cat.id} value={cat.id}>{cat.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={catalogPage <= 1}
+              onClick={() => setCatalogPage((p) => Math.max(1, p - 1))}
+              ${actionMarker('Página anterior de productos')}
+            >
+              Anterior
+            </Button>
+            <span className="text-muted-foreground">Pág. {catalogPage}</span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setCatalogPage((p) => p + 1)}
+              ${actionMarker('Cambiar página de productos')}
+            >
+              Siguiente
+            </Button>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-2">
+          <span>Configuración de líneas: cantidades, proteínas y extras se gestionan mediante las líneas del borrador.</span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => router.push('/sales')}
+            ${actionMarker('Descartar borrador')}
+          >
+            Descartar borrador
+          </Button>
+        </div>
+      </div>\n`
+      : ''
+  }${header.length ? `      <div className="flex flex-wrap gap-2">\n${indent(header.join('\n'), 8)}\n      </div>\n` : ''}${
     links.length
       ? `      <ul className="grid gap-2 sm:grid-cols-2">
 ${links.map((l) => `        <li>\n          <Link className="block rounded-lg border p-4 hover:bg-muted" href="${l.path}">\n            ${l.screenName.replace(/[<>{}]/g, '')}\n          </Link>\n        </li>`).join('\n')}
@@ -815,14 +1416,47 @@ ${links.map((l) => `        <li>\n          <Link className="block rounded-lg bo
 `
       : ''
   }    </div>`;
-  const client = body.includes('<ActionButton') || body.includes('<ActionForm') || Boolean(hook);
-  const imports = pageImports(body, toWebRoot(route.path), [
+  const isCheckout = route.path.includes('/checkout');
+  const client =
+    body.includes('<ActionButton') ||
+    body.includes('<ActionForm') ||
+    Boolean(hook) ||
+    hasConsultedRecord ||
+    isCheckout ||
+    parentSale;
+  const extraImports = [
     hook ? "import { useParams } from 'next/navigation';" : '',
-    body.includes('<ActionButton') || body.includes('<ActionForm')
+    isCheckout ? "import { useRouter } from 'next/navigation';" : '',
+    isCheckout ? "import { useState } from 'react';" : '',
+    hasConsultedRecord || isCheckout || parentSale
+      ? "import { useQuery } from '@tanstack/react-query';"
+      : '',
+    body.includes('<ActionButton') ||
+    body.includes('<ActionForm') ||
+    hasConsultedRecord ||
+    isCheckout ||
+    parentSale
       ? `import { api } from '${toWebRoot(route.path)}lib/api';`
       : '',
-  ]);
-  return `${client ? "'use client';\n\n" : ''}${imports ? `${imports}\n\n` : ''}export default function ${upperFirst(route.screenName.replace(/[^A-Za-z0-9]/g, '')) || 'Screen'}Page() {${hook}
+  ].filter(Boolean);
+  const imports = pageImports(body, toWebRoot(route.path), extraImports);
+  return `${client ? "'use client';\n\n" : ''}${imports ? `${imports}\n\n` : ''}export default function ${upperFirst(route.screenName.replace(/[^A-Za-z0-9]/g, '')) || 'Screen'}Page() {${hook}${
+    isCheckout
+      ? "\n  const router = useRouter();\n  const [categoryFilter, setCategoryFilter] = useState('');\n  const [catalogPage, setCatalogPage] = useState(1);"
+      : ''
+  }${
+    hasConsultedRecord
+      ? `\n  const existing = useQuery({\n    queryKey: ['${lowerFirst(entity!.name)}', ${idExpr}],\n    queryFn: () => api.get${entity!.name}(${idExpr}!),\n    enabled: Boolean(${idExpr}),\n  });`
+      : ''
+  }${
+    parentSale
+      ? `\n  const saleQuery = useQuery({\n    queryKey: ['sale', ${saleId}],\n    queryFn: () => api.getSale(${saleId}!),\n    enabled: Boolean(${saleId}),\n  });`
+      : ''
+  }${
+    isCheckout
+      ? `\n  const categoryOptions = useQuery({\n    queryKey: ['productCategories'],\n    queryFn: () => api.listProductCategories(),\n  });`
+      : ''
+  }
   return (
 ${body}
   );

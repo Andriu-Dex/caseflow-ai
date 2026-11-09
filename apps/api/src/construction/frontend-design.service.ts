@@ -179,6 +179,7 @@ export class FrontendDesignService {
           ...(route.kind === 'LIST'
             ? {
                 deterministicListPagination: Boolean(routeEntity?.operations.includes('LIST')),
+                queryParameterNormalization: Boolean(routeEntity?.operations.includes('LIST')),
               }
             : {}),
         },
@@ -188,13 +189,35 @@ export class FrontendDesignService {
         ),
       };
       const cacheHash = hash(
-        json({ version: 8, sourceHash, htmlHash: hash(html), screen, bindings, baselineId }),
+        json({ version: 19, sourceHash, htmlHash: hash(html), screen, bindings, baselineId }),
       );
       const cachePath = `docs/presentations/${cacheHash}.json`;
-      const cached = await this.prisma.generatedFile.findFirst({
+      let cached = await this.prisma.generatedFile.findFirst({
         where: { path: cachePath, generationRun: { projectId, designBaselineId: baselineId } },
         select: { content: true },
       });
+      if (!cached) {
+        for (const prevVersion of [18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8]) {
+          const prevHash = hash(
+            json({
+              version: prevVersion,
+              sourceHash,
+              htmlHash: hash(html),
+              screen,
+              bindings,
+              baselineId,
+            }),
+          );
+          cached = await this.prisma.generatedFile.findFirst({
+            where: {
+              path: `docs/presentations/${prevHash}.json`,
+              generationRun: { projectId, designBaselineId: baselineId },
+            },
+            select: { content: true },
+          });
+          if (cached) break;
+        }
+      }
       let presentation;
       if (cached) {
         presentation = presentationSchema.parse(JSON.parse(cached.content));
@@ -205,7 +228,7 @@ export class FrontendDesignService {
           language,
           sourceArtifactVersionId: entry!.artifactVersionId,
           promptKey: 'frontend-design.generate',
-          promptVersion: 8,
+          promptVersion: 26,
           messages: [
             {
               role: 'user',
