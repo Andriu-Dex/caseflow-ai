@@ -29,6 +29,15 @@ const plan = () =>
   });
 
 describe('implementation readiness', () => {
+  it('requires a server value when CRUD creation omits a required lifecycle field', () => {
+    const value = plan();
+    value.entities[0]!.fields[0]!.readOnly = true;
+    expect(implementationReadinessProblems(value)).toContainEqual(
+      expect.stringContaining('valor inicial del servidor'),
+    );
+    value.entities[0]!.fields[0]!.serverDefault = 'Initial';
+    expect(implementationReadinessProblems(value)).toEqual([]);
+  });
   it('keeps manual unauthenticated projects available and refuses unbound authentication or public credentials', () => {
     const value = plan();
     expect(implementationReadinessProblems(value)).toEqual([]);

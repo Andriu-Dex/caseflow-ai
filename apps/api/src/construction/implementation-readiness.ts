@@ -12,6 +12,15 @@ export function implementationReadinessProblems(plan: ImplementationPlanContent)
   for (const entity of plan.entities) {
     for (const field of entity.fields) {
       if (
+        field.readOnly &&
+        field.required &&
+        entity.operations.includes('CREATE') &&
+        field.serverDefault === undefined
+      )
+        problems.push(
+          `El campo de solo lectura ${entity.name}.${field.name} requiere un valor inicial del servidor para crear registros.`,
+        );
+      if (
         /^(?:password|passwordHash|secretDigest|accessToken|refreshToken|apiKey)$/i.test(
           field.name,
         ) &&

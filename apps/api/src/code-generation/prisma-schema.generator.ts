@@ -54,6 +54,10 @@ export function generatePrismaSchema(plan: ImplementationPlanContent): string {
     for (const field of entity.fields) {
       const optional = field.required ? '' : '?';
       const unique = field.unique ? ' @unique' : '';
+      const initial =
+        field.serverDefault === undefined
+          ? ''
+          : ` @default(${field.type === 'ENUM' ? field.serverDefault : JSON.stringify(field.serverDefault)})`;
       if (field.type === 'ENUM') {
         const name = enumTypeName(entity.name, field.name);
         enums.push(
@@ -62,14 +66,14 @@ export function generatePrismaSchema(plan: ImplementationPlanContent): string {
         add(entity.name, {
           name: field.name,
           type: `${name}${optional}`,
-          attributes: `${unique}${mapped(field.name)}`.trim(),
+          attributes: `${unique}${initial}${mapped(field.name)}`.trim(),
         });
       } else {
         const scalar = SCALAR[field.type];
         add(entity.name, {
           name: field.name,
           type: `${scalar.type}${optional}`,
-          attributes: [unique.trim(), mapped(field.name).trim(), scalar.native]
+          attributes: [unique.trim(), initial.trim(), mapped(field.name).trim(), scalar.native]
             .filter(Boolean)
             .join(' '),
         });

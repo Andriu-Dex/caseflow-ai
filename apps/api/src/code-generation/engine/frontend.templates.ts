@@ -578,42 +578,44 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
         },
       ]
     : entity.fields;
-  const inputs = formFields.map((field) => {
-    const label = `<label htmlFor="${field.name}" className="text-sm font-medium">${isAccount && field.name === 'password' ? 'Contraseña' : labelOf(field.name)}${field.required ? '' : ' (opcional)'}</label>`;
-    const empty = field.required ? '' : ", setValueAs: (v: string) => (v === '' ? undefined : v)";
-    let control: string;
-    switch (field.type) {
-      case 'TEXT':
-        control = `<textarea id="${field.name}" className={input} rows={4} {...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})} />`;
-        break;
-      case 'INT':
-        control = `<Input id="${field.name}" type="number" step="1" {...register('${field.name}', { setValueAs: (v: string) => (v === '' ? undefined : Number(v)) })} />`;
-        break;
-      case 'BOOLEAN':
-        control = `<input id="${field.name}" type="checkbox" className="size-4" {...register('${field.name}')} />`;
-        break;
-      case 'DATE':
-        control = `<Input id="${field.name}" type="date" {...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})} />`;
-        break;
-      case 'DATETIME':
-        control = `<Input id="${field.name}" type="datetime-local" {...register('${field.name}', { setValueAs: (v: string) => (v ? new Date(v).toISOString() : undefined) })} />`;
-        break;
-      case 'ENUM':
-        control = `<select id="${field.name}" className={input} {...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})}>
+  const inputs = formFields
+    .filter((field) => !('readOnly' in field && field.readOnly))
+    .map((field) => {
+      const label = `<label htmlFor="${field.name}" className="text-sm font-medium">${isAccount && field.name === 'password' ? 'Contraseña' : labelOf(field.name)}${field.required ? '' : ' (opcional)'}</label>`;
+      const empty = field.required ? '' : ", setValueAs: (v: string) => (v === '' ? undefined : v)";
+      let control: string;
+      switch (field.type) {
+        case 'TEXT':
+          control = `<textarea id="${field.name}" className={input} rows={4} {...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})} />`;
+          break;
+        case 'INT':
+          control = `<Input id="${field.name}" type="number" step="1" {...register('${field.name}', { setValueAs: (v: string) => (v === '' ? undefined : Number(v)) })} />`;
+          break;
+        case 'BOOLEAN':
+          control = `<input id="${field.name}" type="checkbox" className="size-4" {...register('${field.name}')} />`;
+          break;
+        case 'DATE':
+          control = `<Input id="${field.name}" type="date" {...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})} />`;
+          break;
+        case 'DATETIME':
+          control = `<Input id="${field.name}" type="datetime-local" {...register('${field.name}', { setValueAs: (v: string) => (v ? new Date(v).toISOString() : undefined) })} />`;
+          break;
+        case 'ENUM':
+          control = `<select id="${field.name}" className={input} {...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})}>
             ${field.required ? '' : '<option value="">—</option>\n            '}${field.enumValues.map((v) => `<option value="${v}">${labelOf(v.toLowerCase())}</option>`).join('\n            ')}
           </select>`;
-        break;
-      default:
-        control = `<Input id="${field.name}" ${field.type === 'DECIMAL' ? 'inputMode="decimal" ' : ''}{...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})} />`;
-    }
-    if (isAccount && field.name === 'password')
-      control = `<Input id="password" type="password" autoComplete="new-password" required={${editable ? '!editId' : 'true'}} {...register('password', { setValueAs: (value: string) => value || undefined })} />`;
-    return `        <div className="flex flex-col gap-1">
+          break;
+        default:
+          control = `<Input id="${field.name}" ${field.type === 'DECIMAL' ? 'inputMode="decimal" ' : ''}{...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})} />`;
+      }
+      if (isAccount && field.name === 'password')
+        control = `<Input id="password" type="password" autoComplete="new-password" required={${editable ? '!editId' : 'true'}} {...register('password', { setValueAs: (value: string) => value || undefined })} />`;
+      return `        <div className="flex flex-col gap-1">
           ${label}
           ${control}
           <FieldError message={errors.${field.name}?.message} />
         </div>`;
-  });
+    });
   const relationInputs = inputRelations(entity).map((relation) => {
     const target = relationTargets.find((t) => t.relation.name === relation.name)?.target;
     const name = `${relation.name}Id`;
@@ -661,7 +663,7 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
     editable && own?.operation === 'UPDATE' ? entityParam(entity, names) : undefined;
   const hook = paramsHook(names, header.join('\n') + (editingParam ?? ''));
   const prefillFields = [
-    ...entity.fields.map((field) => field.name),
+    ...entity.fields.filter((field) => !field.readOnly).map((field) => field.name),
     ...inputRelations(entity).map((relation) => relation.name + 'Id'),
     ...manyTargets.map(({ relation }) => relation.name + 'Ids'),
     ...(isAccount ? ['roleNames'] : []),

@@ -93,7 +93,7 @@ export const SAMPLE_ID = '11111111-1111-4111-8111-111111111111';
 export function sampleInput(entity: Entity): Record<string, unknown> {
   return Object.fromEntries([
     ...entity.fields
-      .filter((field) => !field.internal)
+      .filter((field) => !field.internal && !field.readOnly)
       .map((field): [string, unknown] => [field.name, sampleValue(entity, field)]),
     ...inputRelations(entity).map((relation): [string, unknown] => [
       `${relation.name}Id`,
@@ -113,7 +113,7 @@ export function contractsFiles(ctx: GenerationContext): GeneratedProjectFile[] {
       );
     const props = [
       ...entity.fields
-        .filter((field) => !field.internal)
+        .filter((field) => !field.internal && !field.readOnly)
         .map((f) => `  ${f.name}: ${zodFor(entity, f)},`),
       ...(plan.authentication.local?.userEntityLocalId === entity.localId
         ? [
@@ -150,7 +150,7 @@ export function contractsFiles(ctx: GenerationContext): GeneratedProjectFile[] {
         ? { password: 'test-password-only', roleNames: [plan.authentication.roles[0]] }
         : {}),
     };
-    const required = entity.fields.find((f) => f.required && !f.internal);
+    const required = entity.fields.find((f) => f.required && !f.internal && !f.readOnly);
     return `  describe('${entity.name}', () => {
     const valid = ${JSON.stringify(sample)};
     it('accepts a valid ${lowerFirst(entity.name)}', () => {
