@@ -340,8 +340,9 @@ export class GenerationRunsService {
   // workflow run). Validated presentation checkpoints can survive a failure;
   // they are not a completed project or an official snapshot.
   async markInterrupted(bootedAt: Date): Promise<number> {
+    const cutoff = new Date(bootedAt.getTime() - 15_000);
     const runs = await this.prisma.generationRun.findMany({
-      where: { status: 'GENERATING', startedAt: { lt: bootedAt } },
+      where: { status: 'GENERATING', startedAt: { lt: cutoff } },
       select: { id: true, projectId: true },
     });
     let marked = 0;

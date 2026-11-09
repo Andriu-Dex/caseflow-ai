@@ -399,7 +399,13 @@ export function applyPresentation(content: string, presentation: ScreenPresentat
       reportDiagnostics: true,
       compilerOptions: { jsx: ts.JsxEmit.Preserve },
     }).diagnostics ?? [];
-  if (!expression || diagnostics.some((item) => item.category === ts.DiagnosticCategory.Error))
-    throw new PlanGenerationError('La composición no produce una pantalla TypeScript válida.');
+  if (!expression || diagnostics.some((item) => item.category === ts.DiagnosticCategory.Error)) {
+    const msgs = diagnostics
+      .map((d) => (typeof d.messageText === 'string' ? d.messageText : d.messageText.messageText))
+      .join('; ');
+    throw new PlanGenerationError(
+      `La composición no produce una pantalla TypeScript válida: ${msgs}`,
+    );
+  }
   return updated;
 }
