@@ -131,8 +131,10 @@ export function scopedWhere(model: string, actor: OperationActor, writing = fals
  if (model === SCOPE_CONFIGURATION.scopeModel) return unrestricted(actor) ? {} : { id: { in: actor.scopeIds } };
  if (writing && actor.scopeAccess === 'ASSIGNED_SET') throw new ForbiddenException('La comparación entre sucursales es de solo lectura.');
  const ids = selectedIds(actor);
- const matches = policy.paths.map(path => nested(path, { id: { in: ids } }));
- const checks: Data[] = policy.paths.map((path, index) => ({ OR: [{ NOT: nested(path, {}) }, matches[index]!] }));
+ const direct = policy.paths.filter(path => path.length === 1);
+ const paths = direct.length ? direct : policy.paths;
+ const matches = paths.map(path => nested(path, { id: { in: ids } }));
+ const checks: Data[] = paths.map((path, index) => ({ OR: [{ NOT: nested(path, {}) }, matches[index]!] }));
  if (!policy.includeUnscoped) checks.push({ OR: matches });
  if (policy.ownerRelation) checks.push({ [policy.ownerRelation + 'Id']: actor.userId });
  return { AND: checks };
