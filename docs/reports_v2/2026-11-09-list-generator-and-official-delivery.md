@@ -259,8 +259,31 @@ Al ejecutar la generación directa con el broker de ChatGPT restablecido:
 - **Puntos de control persistidos:** Las presentaciones validadas se almacenaron en `GeneratedFile`, elevando el total de presentaciones en caché de 418 a 432 registros.
 - **Límite de uso del plan en Pantalla 15 (`/branches/[branchid]/menus`):** OpenAI devolvió `subscription_sharing_usage_limit_exceeded`, activando la pausa de seguridad prevista en DEC-117.
 
-### 8.4 Próximos Pasos
+### 8.4 Estado Posterior y Transición al Desacoplamiento
 
-1. Esperar la reapertura de la ventana de uso de ChatGPT Plus (verificable en chatgpt.com).
-2. Reanudar la corrida directa; las pantallas 1 a 14 se resolverán mediante «Cache HIT» instantáneos y continuará a partir de la pantalla 15.
-3. Completar las 81 rutas y someter el proyecto generado al contenedor Docker sandbox.
+La corrida preliminar incrementó las presentaciones cacheadas a 432 puntos de control. Con la reposición de los tokens de OpenAI y la revisión crítica realizada por Codex, se procedió al desacoplamiento estructural de las plantillas y generadores.
+
+---
+
+## 9. Desacoplamiento Estructural de Generadores y Prompts (Fase de Generalidad Canónica)
+
+### 9.1 Diagnóstico de Codex y Cumplimiento de Invariantes (`AGENTS.md §4.1`)
+
+Tras una exhaustiva revisión de ingeniería, se confirmaron y atendieron los siguientes puntos críticos antes de la entrega oficial:
+
+1. **Generador acoplado a dominio específico:** Existían referencias fijas a `Sale`, `dailyMenu`, `PUBLICADA`/`BORRADOR` y descuentos desactivados en `frontend.templates.ts`. Se removieron totalmente para cumplir el principio no negociable de que CASEFlow AI es genérico.
+2. **Controles locales sin efecto real:** Se eliminaron estados ficticios de filtrado local (`categoryFilter`, `catalogPage`) en favor de vinculaciones y consultas canónicas derivadas del plan (`parentEntities`, `useQuery`).
+3. **Filtrado temporal en base de datos:** El filtrado en memoria sobre `displayRows` mediante expresiones regulares se sustituyó por filtrado directo en base de datos. Se añadieron parámetros formales `from` y `to` (formato ISO date) en el contrato OpenAPI (`openapi.generator.ts`), en el controlador NestJS (`@Query('from')`, `@Query('to')`), y en el servicio Prisma con operadores `gte` y `lte` sobre el campo de fecha canónico de la entidad.
+4. **Paginación en última página con múltiplo exacto de 20:** El patrón heurístico `items.length === limit` habilitaba «Siguiente» hacia páginas vacías si el conteo total era múltiplo exacto de 20. Se implementó el patrón de pre-consulta (*query prefetch check*) con TanStack Query (`nextPageQuery` habilitado solo si `items.length === limit`), deshabilitando «Siguiente» de forma inmediata si no existen registros posteriores.
+5. **Eliminación de heurísticas de publicación:** Se eliminaron las deducciones basadas en rutas (`/publish`) o nombres de pantalla (`isDraftCreation`, `isDraftEdit`). Las pantallas de formulario y acciones operan estrictamente según las operaciones declaradas en el plan de implementación.
+6. **Prompt Genérico v27 (`FRONTEND_DESIGN_PROMPT_V27`):** Se creó una nueva versión del prompt de diseño de frontend totalmente desacoplada de nombres de entidades o casos de prueba particulares (RestGest Mateos, etc.), fundamentada en principios generales de ingeniería de software (parámetros de ruta contextuales, límites relacionales, contratos autoritativos de endpoints y acciones, trazabilidad automática de persistencia y operaciones desactivadas por política).
+7. **Inmutabilidad de Auditoría en Ejecuciones (`startedAt`):** Se eliminó el intervalo de actualización periódica de `startedAt` en el script ejecutor, garantizando que el instante de inicio de cada corrida de generación permanezca inmutable para trazabilidad y auditoría.
+
+### 9.2 Verificación de Calidad
+
+- **Pruebas de Generación de Código:** 87 pruebas pasando (`apps/api/src/code-generation`).
+- **Pruebas de Construcción:** 90 pruebas pasando (`apps/api/src/construction`).
+- **Comprobación de Tipos (TypeScript):** 11 proyectos del monorepo (`typecheck`) pasando sin errores.
+- **Linters y Formato:** `eslint .` y `prettier --check .` pasando con 0 advertencias o errores.
+- **Commit Atómico en Inglés:** `52ad434` (`refactor(code-generation): decouple templates and prompts from domain specifics`), con autoría estricta `Andriu Dex <andriudex@gmail.com>` y 0 atribuciones de IA.
+
