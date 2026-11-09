@@ -15,6 +15,8 @@ La sesión se comprueba contra persistencia en cada solicitud. La identidad, los
 
 El servidor propaga el actor mediante contexto asíncrono por solicitud. La frontera de persistencia aplica el alcance a lecturas, agregaciones, modificaciones y eliminaciones, comprueba los padres relacionados e inyecta la autoría. El perfil impide SQL crudo bajo un actor y rechaza operaciones o proyecciones anidadas cuyo alcance no pueda garantizar. Las operaciones complejas usan consultas separadas y transacciones, conservando la frontera de persistencia.
 
+Si un registro declara una relación directa con el ámbito, esa propiedad determina su pertenencia al consultar; las relaciones transitivas no ocultan un registro propio que contenga referencias inconsistentes. La lógica de negocio puede así detectar y rechazar la inconsistencia. Sin relación directa se conservan las rutas transitivas. Esto no permite expandir relaciones ajenas: sus consultas y los enlaces de escritura siguen validándose por separado con su propio alcance.
+
 Cada acción personalizada declara capacidades de datos (`dataAccess`) por entidad y operación. Una vista previa no obtiene capacidad de escritura por compartir módulo con una confirmación. La comparación de ámbitos requiere `GET`, roles globales explícitos y `ASSIGNED_SET`; sigue siendo de solo lectura. La administración de cuentas y autorizaciones requiere un rol global.
 
 Los formularios administran relaciones persistentes de roles, permisos compartidos por rol y ámbitos. No se añaden excepciones individuales. Los permisos iniciales se derivan del plan; la inicialización no sobrescribe una configuración existente. La restauración explícita mediante `RESET_ROLE_PERMISSIONS=true` se reserva para recuperación administrativa.
