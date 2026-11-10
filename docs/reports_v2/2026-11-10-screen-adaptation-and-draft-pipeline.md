@@ -15,24 +15,24 @@ En continuidad con el reporte anterior (`2026-11-09-list-generator-and-official-
 
 A la fecha, **las pantallas 1 a 16 han sido completamente adaptadas, validadas con cero (0) limitaciones y persistidas en la caché de generación de base de datos** (`docs/presentations/`, 47 archivos generados):
 
-| Pantalla | Ruta | Tipo | Estado | Tiempo | Limitaciones |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| 1. Catálogo de productos | `/products` | `LIST` | Aprobada (Cache HIT) | — | 0 |
-| 2. Detalle de producto | `/products/[productid]` | `DETAIL` | Aprobada (Cache HIT) | — | 0 |
-| 3. Disponibilidad por sucursales | `/products/[productid]/availability` | `LIST` | Aprobada (Cache HIT) | — | 0 |
-| 4. Tarifas locales de producto | `/products/[productid]/prices` | `LIST` | Aprobada (Cache HIT) | — | 0 |
-| 5. Catálogo por sucursal | `/branches/[branchid]/products` | `LIST` | Aprobada (Cache HIT) | — | 0 |
-| 6. Detalle de producto en sucursal | `/branches/[branchid]/products/[productid]` | `DETAIL` | Aprobada (Cache HIT) | — | 0 |
-| 7. Tarifas de producto en sucursal | `/branches/[branchid]/products/[productid]/prices` | `LIST` | Aprobada (Cache HIT) | — | 0 |
-| 8. Registro de producto | `/products/new` | `FORM` | Aprobada (Adaptada) | 35s | 0 |
-| 9. Edición de producto | `/products/[productid]/edit` | `FORM` | Aprobada (Adaptada) | 29s | 0 |
-| 10. Disponibilidad de producto por sucursal | `/branches/[branchid]/products/[productid]/availability` | `FORM` | Aprobada (Adaptada) | 42s | 0 |
-| 11. Precio local condicionado a aprobación | `/branches/[branchid]/products/[productid]/price` | `FORM` | Aprobada (Adaptada) | 46s | 0 |
-| 12. Catálogo de categorías | `/product-categories` | `LIST` | Aprobada (Cache HIT) | — | 0 |
-| 13. Registro de categoría de productos | `/product-categories/new` | `FORM` | Aprobada (Adaptada) | 30s | 0 |
-| 14. Edición descriptiva de categoría | `/product-categories/[categoryid]/edit` | `FORM` | Aprobada (Adaptada) | 35s | 0 |
-| 15. Consulta de menús diarios por sucursal | `/branches/[branchid]/menus` | `LIST` | Aprobada (Cache HIT) | — | 0 |
-| 16. Preparación de menú diario en borrador | `/branches/[branchid]/menus/new` | `FORM` | Aprobada (Adaptada) | 33s | 0 |
+| Pantalla                                    | Ruta                                                     | Tipo     | Estado               | Tiempo | Limitaciones |
+| :------------------------------------------ | :------------------------------------------------------- | :------- | :------------------- | :----- | :----------- |
+| 1. Catálogo de productos                    | `/products`                                              | `LIST`   | Aprobada (Cache HIT) | —      | 0            |
+| 2. Detalle de producto                      | `/products/[productid]`                                  | `DETAIL` | Aprobada (Cache HIT) | —      | 0            |
+| 3. Disponibilidad por sucursales            | `/products/[productid]/availability`                     | `LIST`   | Aprobada (Cache HIT) | —      | 0            |
+| 4. Tarifas locales de producto              | `/products/[productid]/prices`                           | `LIST`   | Aprobada (Cache HIT) | —      | 0            |
+| 5. Catálogo por sucursal                    | `/branches/[branchid]/products`                          | `LIST`   | Aprobada (Cache HIT) | —      | 0            |
+| 6. Detalle de producto en sucursal          | `/branches/[branchid]/products/[productid]`              | `DETAIL` | Aprobada (Cache HIT) | —      | 0            |
+| 7. Tarifas de producto en sucursal          | `/branches/[branchid]/products/[productid]/prices`       | `LIST`   | Aprobada (Cache HIT) | —      | 0            |
+| 8. Registro de producto                     | `/products/new`                                          | `FORM`   | Aprobada (Adaptada)  | 35s    | 0            |
+| 9. Edición de producto                      | `/products/[productid]/edit`                             | `FORM`   | Aprobada (Adaptada)  | 29s    | 0            |
+| 10. Disponibilidad de producto por sucursal | `/branches/[branchid]/products/[productid]/availability` | `FORM`   | Aprobada (Adaptada)  | 42s    | 0            |
+| 11. Precio local condicionado a aprobación  | `/branches/[branchid]/products/[productid]/price`        | `FORM`   | Aprobada (Adaptada)  | 46s    | 0            |
+| 12. Catálogo de categorías                  | `/product-categories`                                    | `LIST`   | Aprobada (Cache HIT) | —      | 0            |
+| 13. Registro de categoría de productos      | `/product-categories/new`                                | `FORM`   | Aprobada (Adaptada)  | 30s    | 0            |
+| 14. Edición descriptiva de categoría        | `/product-categories/[categoryid]/edit`                  | `FORM`   | Aprobada (Adaptada)  | 35s    | 0            |
+| 15. Consulta de menús diarios por sucursal  | `/branches/[branchid]/menus`                             | `LIST`   | Aprobada (Cache HIT) | —      | 0            |
+| 16. Preparación de menú diario en borrador  | `/branches/[branchid]/menus/new`                         | `FORM`   | Aprobada (Adaptada)  | 33s    | 0            |
 
 ---
 
@@ -88,7 +88,10 @@ Para alcanzar la adaptación sin limitaciones en las pantallas 8 a 16 se introdu
     ```tsx
     <div className="flex flex-col gap-1 mt-1 text-xs text-muted-foreground" role="status">
       <span className="font-semibold text-foreground">Regla operativa de fecha y sucursal:</span>
-      <p>Fecha operativa local validada conforme a la zona horaria y calendario operativo de la sucursal asignada.</p>
+      <p>
+        Fecha operativa local validada conforme a la zona horaria y calendario operativo de la
+        sucursal asignada.
+      </p>
     </div>
     ```
   - Se incorporó en el banner del formulario la validación explícita de sucursal y ciclo comercial de la fecha operativa.
@@ -146,4 +149,3 @@ La pantalla 17 corresponde al **Detalle de versión de menú diario** (`pantalla
 4. **Trazabilidad completa:** Presentar el operador responsable de creación y el instante UTC formateado (fecha y hora completas).
 
 Se procederá con la adaptación de la Pantalla 17 siguiendo estos principios para continuar el avance continuo hasta la ruta 81 del plan.
-

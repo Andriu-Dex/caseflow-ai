@@ -21,6 +21,7 @@ Se corrigieron cinco hallazgos de alta y media criticidad relacionados con aprob
 ## 2. Hallazgos Abordados y Soluciones Técnicas
 
 ### 2.1 Alta — Aprobación Ficticia Eliminada
+
 - **Problema previo:** En `frontend.templates.ts` se evaluaba si el nombre de pantalla contenía «condicionado» o «aprobación», inyectando de forma estática un bloque visual que afirmaba: `«Aprobación verificada / Dictamen: APROBADO»` junto con texto hardcodeado específico del dominio de restaurante, sin consultar ningún registro ni evidencia de aprobación en la base de datos.
 - **Corrección técnica:**
   - Se eliminó completamente la generación del banner ficticio y cualquier texto no genérico.
@@ -28,6 +29,7 @@ Se corrigieron cinco hallazgos de alta y media criticidad relacionados con aprob
   - Si el registro posee un campo real de estado o dictamen, su valor se consulta y visualiza fielmente a partir de `existing.data`.
 
 ### 2.2 Alta — Estado de Borrador Estructurado y Aislado
+
 - **Problema previo:** La presencia de la palabra «borrador» o «draft» en la etiqueta o nombre de pantalla forzaba ciegamente `status: 'BORRADOR'` y eliminaba `publicationDate` en el formulario, incluso en rutas de edición (`UPDATE`) de registros ya publicados, sobreescribiendo el estado existente durante el reseteo del formulario y en la persistencia.
 - **Corrección técnica:**
   - La inicialización en borrador se restringió exclusivamente al ciclo de creación (`isCreation = route.path.endsWith('/new') || own?.operation === 'CREATE'`).
@@ -36,12 +38,14 @@ Se corrigieron cinco hallazgos de alta y media criticidad relacionados con aprob
   - Se eliminaron los bloques de texto estático no genéricos en favor de metadatos de trazabilidad universales para creación y actualización.
 
 ### 2.3 Alta — Eliminación de Validación Aparente de Fecha Operativa
+
 - **Problema previo:** Al cargar las opciones de relaciones vinculadas (como `dailyMenu`), se renderizaba un aviso estático afirmando `«Fecha operativa local validada conforme a la zona horaria y calendario operativo de la sucursal asignada»`, sin que el código efectuara comprobación alguna de fecha, sucursal ni zona horaria.
 - **Corrección técnica:**
   - Se retiró dicho bloque informativo engañoso.
   - El selector relacional presenta directamente las propiedades reales del registro consultado (`id`, `código`, `identificación`, `fecha`), y las validaciones de negocio rigen en el backend conforme al contrato de la entidad.
 
 ### 2.4 Media — Robustecimiento del Filtro Temporal
+
 - **Problema previo:** El filtro de fechas utilizaba indiscriminadamente el primer campo de fecha de la entidad (`dateFields[0]`), pudiendo seleccionar campos de auditoría técnica (`createdAt`) en lugar de fechas de negocio (`operationalDate`, `saleDate`). Asimismo, no se validaban cadenas inválidas antes de enviarlas a Prisma, provocando excepciones al construir objetos `Date`.
 - **Corrección técnica:**
   - Se implementó la función `findPrimaryDateField(entity: Entity): Field | undefined` compartida entre frontend y backend:
@@ -54,6 +58,7 @@ Se corrigieron cinco hallazgos de alta y media criticidad relacionados con aprob
   - En `frontend.templates.ts` (`listPage`), se rotuló explícitamente el campo temporal filtrado (`Filtrar por <nombre_campo>:`), asegurando transparencia operativa.
 
 ### 2.5 Media — Disciplina de Versionado y Prompts No Permisivos (`V28`)
+
 - **Problema previo:** El prompt `FRONTEND_DESIGN_PROMPT_V27` instruía al evaluador de diseño a aceptar banners visuales como prueba suficiente de aprobación y validación, y había sido modificado de forma directa sin incrementar versión.
 - **Corrección técnica:**
   - Se conservó `FRONTEND_DESIGN_PROMPT_V27` intacto como registro histórico de auditoría.
@@ -65,7 +70,7 @@ Se corrigieron cinco hallazgos de alta y media criticidad relacionados con aprob
 
 ## 3. Generalización de la Vista de Detalle (`detailPage`)
 
-Para la Pantalla 17 (`/menus/versions/[versionid]` - *Detalle de versión de menú diario*) y cualquier entidad compuesta del sistema, se enriqueció `detailPage` con capacidades genéricas de primer nivel:
+Para la Pantalla 17 (`/menus/versions/[versionid]` - _Detalle de versión de menú diario_) y cualquier entidad compuesta del sistema, se enriqueció `detailPage` con capacidades genéricas de primer nivel:
 
 1. **Formato Datetime UTC Completo:**
    - Todo campo `DATETIME` se formatea con hora, minuto y segundo en UTC (`toLocaleString('es', { timeZone: 'UTC' }) + ' UTC'`), satisfaciendo la trazabilidad completa del instante de creación o modificación.
@@ -95,4 +100,3 @@ Para la Pantalla 17 (`/menus/versions/[versionid]` - *Detalle de versión de men
 - **Invariantes Arquitectónicas:**
   - Rigurosa neutralidad de dominio: sin lógica ni textos fijos de proyectos piloto en el núcleo del generador (`AGENTS.md §4.1`).
   - Ausencia absoluta de atribuciones a IA externa o metadatos generativos en commits, código o reportes (`AGENTS.md`).
-

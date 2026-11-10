@@ -1,0 +1,61 @@
+{
+  "templateVersion": 2,
+  "sourceHash": "16b71c6792c396e1b5a120ef27af10a81e1c59e42eb50c2de98523c9d96d66a2",
+  "stages": [
+    {
+      "stage": "INSTALL",
+      "exitCode": 0,
+      "durationMs": 29953,
+      "timedOut": false
+    },
+    {
+      "stage": "LINT",
+      "exitCode": 0,
+      "durationMs": 3365,
+      "timedOut": false
+    },
+    {
+      "stage": "TYPECHECK",
+      "exitCode": 0,
+      "durationMs": 6213,
+      "timedOut": false
+    },
+    {
+      "stage": "TEST",
+      "exitCode": 0,
+      "durationMs": 6016,
+      "timedOut": false
+    },
+    {
+      "stage": "BUILD",
+      "exitCode": 0,
+      "durationMs": 12573,
+      "timedOut": false
+    }
+  ],
+  "postgres": {
+    "status": "PASSED",
+    "checks": 22,
+    "database": "disposable-postgresql"
+  },
+  "captures": [
+    {
+      "routePath": "/revisions",
+      "role": "EDITOR",
+      "status": "CAPTURED",
+      "reason": null,
+      "width": 1440,
+      "height": 900,
+      "imageBytes": 56707
+    },
+    {
+      "routePath": "/revisions/new",
+      "role": "EDITOR",
+      "status": "CAPTURED",
+      "reason": null,
+      "width": 1440,
+      "height": 900,
+      "imageBytes": 26030
+    }
+  ]
+}
