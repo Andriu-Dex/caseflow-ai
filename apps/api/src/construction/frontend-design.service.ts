@@ -2,7 +2,7 @@ import { Inject, Injectable, UnprocessableEntityException } from '@nestjs/common
 import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
 import ts from 'typescript';
-import { AIOrchestrator } from '@caseflow-ai/ai';
+import { AIError, AIOrchestrator } from '@caseflow-ai/ai';
 import { uiBlueprintContentSchema, type ImplementationPlanContent } from '@caseflow-ai/contracts';
 import type { StorageProvider } from '@caseflow-ai/integrations';
 import { PrismaService } from '../database/prisma.service';
@@ -249,22 +249,31 @@ export class FrontendDesignService {
         presentation = presentationSchema.parse(JSON.parse(cached.content));
         validatePresentation(presentation, sources);
       } else {
-        const result = await this.ai.generateStructured({
-          projectId,
-          language,
-          sourceArtifactVersionId: entry!.artifactVersionId,
-          promptKey: 'frontend-design.generate',
-          promptVersion: FRONTEND_DESIGN_VERSION,
-          messages: [
-            {
-              role: 'user',
-              content: json({ screen, bindings, sources, referenceHtml: html.toString('utf8') }),
-            },
-          ],
-          outputSchema: presentationSchema,
-          schemaName: 'frontend_presentation',
-          maxOutputTokens: 8192,
-        });
+        // A provider failure leaves only this screen unevaluated (and unkept):
+        // the run still fails at the end, and the next one asks again.
+        let result;
+        try {
+          result = await this.ai.generateStructured({
+            projectId,
+            language,
+            sourceArtifactVersionId: entry!.artifactVersionId,
+            promptKey: 'frontend-design.generate',
+            promptVersion: FRONTEND_DESIGN_VERSION,
+            messages: [
+              {
+                role: 'user',
+                content: json({ screen, bindings, sources, referenceHtml: html.toString('utf8') }),
+              },
+            ],
+            outputSchema: presentationSchema,
+            schemaName: 'frontend_presentation',
+            maxOutputTokens: 8192,
+          });
+        } catch (error) {
+          if (!(error instanceof AIError)) throw error;
+          report(`NOT_EVALUATED: ${error.message}`);
+          continue;
+        }
         presentation = presentationSchema.parse(result.data);
         if (presentation.limitations.length) {
           const findings = presentation.limitations

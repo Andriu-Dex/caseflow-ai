@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { AIError } from '@caseflow-ai/ai';
 import { CASEFLOW_WEB_TS_V2 } from '@caseflow-ai/domain';
 import { implementationPlanContentSchema } from '@caseflow-ai/contracts';
 import { FakeStorageProvider } from '@caseflow-ai/integrations';
@@ -275,6 +276,21 @@ describe('frozen design adaptation', () => {
     );
     expect(ai.generateStructured).toHaveBeenCalledTimes(1);
   });
+  it('leaves a screen unevaluated when the provider fails and asks again next run', async () => {
+    const { service, ai, prisma } = await setup();
+    const original = ai.generateStructured.getMockImplementation()!;
+    ai.generateStructured.mockRejectedValueOnce(
+      new AIError('AI_PROVIDER_UNAVAILABLE', 'El proveedor de IA no está disponible.'),
+    );
+    await expect(service.adapt(id, id, plan, files(), 'Catálogo', false, id)).rejects.toThrow(
+      'NOT_EVALUATED',
+    );
+    expect(prisma.generatedFile.upsert).not.toHaveBeenCalled();
+    ai.generateStructured.mockImplementation(original);
+    await service.adapt(id, id, plan, files(), 'Catálogo', false, id);
+    expect(ai.generateStructured).toHaveBeenCalledTimes(2);
+  });
+
   it('does not fall back to presentation evaluations from older prompt versions', async () => {
     const { service, prisma } = await setup();
     prisma.generatedFile.findFirst.mockResolvedValue(null);
