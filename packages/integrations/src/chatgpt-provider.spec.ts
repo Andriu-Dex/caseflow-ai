@@ -148,6 +148,19 @@ describe('ChatGPTProvider', () => {
     expect(broker.reportRevoked).not.toHaveBeenCalled();
   });
 
+  it('reports an overload sent inside the stream as an unavailable provider', async () => {
+    const { provider, broker } = setup(
+      sse({
+        type: 'error',
+        error: { type: 'service_unavailable_error', code: 'server_is_overloaded' },
+      }),
+    );
+    await expect(provider.generateStructured(request)).rejects.toMatchObject({
+      code: 'AI_PROVIDER_UNAVAILABLE',
+    });
+    expect(broker.reportUsageLimit).not.toHaveBeenCalled();
+  });
+
   it('explains ineligibility without pausing or retrying', async () => {
     const { provider, broker } = setup(
       new Response(JSON.stringify({ error: { code: 'subscription_sharing_user_not_eligible' } }), {
