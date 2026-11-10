@@ -203,9 +203,10 @@ export function coherenceGaps(
         }
     }
     const servedEndpoints = new Set(
-      plan.routes.flatMap((route) =>
-        route.actions.flatMap((a) => (a.endpoint ? [a.endpoint] : [])),
-      ),
+      plan.routes.flatMap((route) => [
+        ...route.actions.flatMap((a) => (a.endpoint ? [a.endpoint] : [])),
+        ...(route.contextQueries ?? []),
+      ]),
     );
     for (const endpoint of plan.customEndpoints) {
       // Context loading supports the shared shell rather than a separate user action.

@@ -512,10 +512,20 @@ const implementationEntitySchema = z
     moduleLocalId: localId(),
     // DEC-121: the domain class (class diagram localId) this entity persists.
     classLocalId: localId().optional(),
+    lifecycle: z
+      .object({
+        stateField: camelName(),
+        initialState: text(100),
+        immutableStates: z.array(text(100)).min(1).max(30),
+        managedFields: z.array(camelName()).max(20).default([]),
+      })
+      .strict()
+      .optional(),
+    compositionOwnerRelation: camelName().optional(),
     description: text(500).optional(),
     operationScope: z
       .object({
-        paths: z.array(z.array(camelName()).max(8)).min(1).max(8),
+        paths: z.array(z.array(camelName()).max(8)).min(1).max(16),
         includeUnscoped: z.boolean().default(false),
         ownerRelation: camelName().optional(),
         actorRelation: camelName().optional(),
@@ -604,17 +614,37 @@ export type ImplementationRouteActionInteraction =
 
 // A screen action (as the UI blueprint names it) and what serves it: one of
 // the route entity's CRUD operations or a custom endpoint ("POST /orders/:id/x").
+const routeNavigationSchema = z
+  .object({
+    routePath: text(200),
+    sourceEndpoint: text(220).optional(),
+    collectionField: camelName().optional(),
+    idField: camelName().optional(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      Boolean(value.sourceEndpoint) === Boolean(value.idField) &&
+      (!value.collectionField || Boolean(value.sourceEndpoint)),
+    {
+      message: 'La navegación de resultados requiere consulta y campo identificador explícitos.',
+    },
+  );
 const implementationRouteActionSchema = z
   .object({
     label: text(200),
     operation: z.enum(IMPLEMENTATION_CRUD_OPERATIONS).optional(),
     endpoint: text(220).optional(),
+    navigation: routeNavigationSchema.optional(),
     interaction: z.enum(IMPLEMENTATION_ROUTE_ACTION_INTERACTIONS).optional(),
   })
   .strict()
-  .refine((action) => Boolean(action.operation) !== Boolean(action.endpoint), {
-    message: 'Cada acción la atiende una operación CRUD o un endpoint, exactamente uno.',
-  })
+  .refine(
+    (action) => [action.operation, action.endpoint, action.navigation].filter(Boolean).length === 1,
+    {
+      message: 'Cada acción la atiende una operación CRUD o un endpoint, exactamente uno.',
+    },
+  )
   .refine(
     (action) => {
       if (!action.interaction) return true;
@@ -653,6 +683,7 @@ const implementationRouteSchema = z
     builtinView: z.enum(['ACCOUNT_ACCESS']).optional(),
     entityLocalId: localId().optional(),
     actions: z.array(implementationRouteActionSchema).max(20).default([]),
+    contextQueries: z.array(text(220)).max(10).optional(),
     relatedSourceCodes: z.array(text(40)).max(100).optional(),
   })
   .strict();
@@ -776,6 +807,7 @@ const looseRouteActionSchema = z
     label: text(200),
     operation: z.enum(IMPLEMENTATION_CRUD_OPERATIONS).optional(),
     endpoint: text(220).optional(),
+    navigation: routeNavigationSchema.optional(),
     interaction: z.enum(IMPLEMENTATION_ROUTE_ACTION_INTERACTIONS).optional(),
   })
   .strict();
@@ -835,6 +867,55 @@ export const implementationPlanContentSchema = implementationPlanBodySchema
         if (!roles.has(role)) issue(`El rol «${role}» no está declarado en autenticación.`, path);
     };
     value.entities.forEach((entity, i) => {
+      if (entity.lifecycle) {
+        const policy = entity.lifecycle;
+        const state = entity.fields.find((field) => field.name === policy.stateField);
+        if (
+          !state ||
+          state.type !== 'ENUM' ||
+          state.readOnly ||
+          state.internal ||
+          (state.serverDefault !== undefined && state.serverDefault !== policy.initialState) ||
+          !state.enumValues.includes(policy.initialState) ||
+          policy.immutableStates.some((value) => !state.enumValues.includes(value)) ||
+          policy.immutableStates.includes(policy.initialState) ||
+          new Set(policy.immutableStates).size !== policy.immutableStates.length ||
+          policy.managedFields.includes(policy.stateField) ||
+          policy.managedFields.some(
+            (name) =>
+              !entity.fields.some(
+                (field) =>
+                  field.name === name &&
+                  field.readOnly &&
+                  (!field.required || field.serverDefault !== undefined),
+              ),
+          )
+        ) {
+          issue(
+            'El ciclo de vida requiere estados y campos existentes; el estado inicial debe ser editable.',
+            ['entities', i, 'lifecycle'],
+          );
+        }
+      }
+      if (entity.compositionOwnerRelation) {
+        const relation = entity.relations.find(
+          (item) => item.name === entity.compositionOwnerRelation,
+        );
+        const owner = value.entities.find((item) => item.localId === relation?.targetEntityLocalId);
+        if (
+          !relation ||
+          relation.kind !== 'MANY_TO_ONE' ||
+          !relation.required ||
+          !owner?.lifecycle ||
+          owner === entity ||
+          owner.compositionOwnerRelation
+        ) {
+          issue(
+            'La composición requiere una relación MANY_TO_ONE a un propietario con ciclo de vida explícito.',
+            ['entities', i, 'compositionOwnerRelation'],
+          );
+        }
+      }
       const constraintFields = new Set([
         ...entity.fields.map((field) => field.name),
         ...entity.relations
@@ -1197,7 +1278,7 @@ export const implementationPlanContentSchema = implementationPlanBodySchema
         );
       if (endpoint.contract) {
         for (const binding of endpoint.contract.bindings ?? [])
-          if (binding.kind === 'ACTION') {
+          if (binding.kind === 'ACTION' || binding.kind === 'PREFILL') {
             const source = value.customEndpoints.find(
               (source) =>
                 `${source.method} ${source.path}` === binding.sourceEndpoint &&
@@ -1406,7 +1487,58 @@ export const implementationPlanContentSchema = implementationPlanBodySchema
       if (route.entityLocalId && !entities.has(route.entityLocalId))
         issue('La ruta referencia una entidad inexistente.', ['routes', i]);
       const entity = value.entities.find((e) => e.localId === route.entityLocalId);
+      for (const query of route.contextQueries ?? []) {
+        if (
+          !value.customEndpoints.some(
+            (endpoint) =>
+              endpoint.method === 'GET' &&
+              `${endpoint.method} ${endpoint.path}` === query &&
+              endpoint.contract,
+          )
+        )
+          issue('El contexto requiere una consulta GET declarada con contrato.', [
+            'routes',
+            i,
+            'contextQueries',
+          ]);
+      }
       route.actions.forEach((action, j) => {
+        if (action.navigation) {
+          const navigation = action.navigation;
+          const target = value.routes.find((item) => item.path === navigation.routePath);
+          if (!target)
+            issue('La navegación requiere una ruta declarada.', ['routes', i, 'actions', j]);
+          if (navigation.sourceEndpoint) {
+            const source = value.customEndpoints.find(
+              (endpoint) =>
+                endpoint.method === 'GET' &&
+                `${endpoint.method} ${endpoint.path}` === navigation.sourceEndpoint,
+            );
+            const shape = navigation.collectionField
+              ? source?.contract?.response.properties?.find(
+                  (field) => field.name === navigation.collectionField,
+                )?.value.items
+              : source?.contract?.response;
+            const identifier = shape?.properties?.find(
+              (field) => field.name === navigation.idField,
+            );
+            if (
+              !identifier ||
+              identifier.value.type !== 'UUID' ||
+              identifier.required === false ||
+              identifier.value.nullable ||
+              (target?.path.match(/\[/g)?.length ?? 0) !== 1 ||
+              !(
+                route.contextQueries?.includes(navigation.sourceEndpoint) ||
+                route.actions.some((item) => item.endpoint === navigation.sourceEndpoint)
+              )
+            )
+              issue(
+                'La navegación requiere un identificador UUID obligatorio de una consulta de la pantalla y una ruta con un parámetro.',
+                ['routes', i, 'actions', j],
+              );
+          }
+        }
         if (action.operation && !entity?.operations.includes(action.operation))
           issue(
             `La acción «${action.label}» usa la operación ${action.operation}, que la entidad de la ruta no ofrece.`,
@@ -1424,8 +1556,9 @@ export const implementationPlanContentSchema = implementationPlanBodySchema
         );
         for (const binding of endpoint?.contract?.bindings ?? [])
           if (
-            binding.kind === 'ACTION' &&
-            !route.actions.some((source) => source.endpoint === binding.sourceEndpoint)
+            (binding.kind === 'ACTION' || binding.kind === 'PREFILL') &&
+            !route.actions.some((source) => source.endpoint === binding.sourceEndpoint) &&
+            !route.contextQueries?.includes(binding.sourceEndpoint)
           )
             issue('La pantalla debe ofrecer la consulta que alimenta la acción.', [
               'routes',

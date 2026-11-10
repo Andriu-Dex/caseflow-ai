@@ -21,7 +21,7 @@ type Schema = {
 type Operation = {
   operationId: string;
   summary?: string;
-  parameters?: { name: string; in: string }[];
+  parameters?: { name: string; in: string; required?: boolean }[];
   requestBody?: { content: { 'application/json': { schema: Schema } } };
   responses: Record<string, { content?: { 'application/json': { schema: Schema } } }>;
 };
@@ -106,7 +106,11 @@ export function apiClientFiles(ctx: GenerationContext): GeneratedProjectFile[] {
       request<${tsType(response)}>('${method.toUpperCase()}', \`${url}\`${queryParams.length ? ' + encodeQuery(query)' : ''}${body ? ', body' : ''}),`;
   });
 
-  const sample = operations.find(({ method, op }) => method === 'get' && !op.parameters?.length);
+  const sample = operations.find(
+    ({ method, op }) =>
+      method === 'get' &&
+      (op.parameters ?? []).every((parameter) => parameter.in === 'query' && !parameter.required),
+  );
   const planElements = ctx.plan.entities.map((e) => `entity:${e.localId}`);
 
   return [
@@ -215,14 +219,18 @@ export type ApiClient = ReturnType<typeof createApiClient>;
     ),
     file(
       'packages/api-client/src/index.spec.ts',
-      `import { describe, expect, it, vi } from 'vitest';
-import { ApiError, createApiClient } from './index';
+      `import { describe, expect, it${sample ? ', vi' : ''} } from 'vitest';
+import { ${sample ? 'ApiError, ' : ''}createApiClient } from './index';
 
-const reply = (status: number, body?: unknown) =>
+${
+  sample
+    ? `const reply = (status: number, body?: unknown) =>
   new Response(body === undefined ? null : JSON.stringify(body), {
     status,
     headers: { 'Content-Type': 'application/json' },
-  });
+  });`
+    : ''
+}
 
 describe('api client', () => {
 ${

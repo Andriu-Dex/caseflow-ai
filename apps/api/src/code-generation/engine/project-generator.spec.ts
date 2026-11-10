@@ -485,7 +485,7 @@ describe('screen actions (DEC-121)', () => {
     const detail = page('apps/web/app/orders/[orderId]/page.tsx');
     expect(detail).toContain('<h1 className="text-xl font-semibold" data-action={"Ver pedido"}>');
     expect(detail).toContain(
-      'data-action={"Eliminar"} run={() => api.deleteOrder(orderId)} onDone={() => router.push(\'/orders\')}',
+      'data-action={"Eliminar"} run={() => api.deleteOrder(orderId)} onDone={() => router.push("/orders")}',
     );
     expect(page('apps/web/app/orders/new/page.tsx')).toContain(
       '<Button type="submit" disabled={isSubmitting} data-action={"Registrar pedido"}>',

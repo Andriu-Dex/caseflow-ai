@@ -17,6 +17,37 @@ export function generateProject(
   ctx: GenerationContext,
   implementations: EndpointImplementations = {},
 ): GeneratedProjectFile[] {
+  for (const entity of ctx.plan.entities) {
+    if (
+      entity.fields.some((field) => field.name === 'versionLabel') &&
+      entity.operations.some((operation) => ['CREATE', 'UPDATE', 'DELETE'].includes(operation)) &&
+      !entity.lifecycle
+    ) {
+      throw new PlanGenerationError(
+        `La entidad versionada «${entity.name}» necesita un ciclo de vida explícito en una nueva versión del plan.`,
+      );
+    }
+    if (
+      (entity.lifecycle || entity.compositionOwnerRelation) &&
+      ctx.plan.authentication.local?.userEntityLocalId === entity.localId
+    ) {
+      throw new PlanGenerationError(
+        'El ciclo de vida de identidad debe implementarse mediante sus operaciones de dominio.',
+      );
+    }
+  }
+  for (const route of ctx.plan.routes) {
+    if (
+      route.path.endsWith('/publish') &&
+      route.actions.some(
+        (action) => action.operation && ['CREATE', 'UPDATE', 'DELETE'].includes(action.operation),
+      )
+    ) {
+      throw new PlanGenerationError(
+        `La publicación «${route.path}» requiere un endpoint de dominio explícito; no puede implementarse mediante CRUD.`,
+      );
+    }
+  }
   const files = [
     ...rootFiles(ctx),
     ...dockerFiles(ctx),

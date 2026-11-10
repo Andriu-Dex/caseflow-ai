@@ -165,7 +165,7 @@ export const implementationActionContractSchema = z
         z.discriminatedUnion('kind', [
           z
             .object({
-              kind: z.literal('ACTION'),
+              kind: z.enum(['ACTION', 'PREFILL']),
               field: z.string().regex(/^[a-z][a-zA-Z0-9]*$/),
               sourceEndpoint: z.string().max(220),
               sourceField: z.string().regex(/^[a-z][a-zA-Z0-9]*$/),

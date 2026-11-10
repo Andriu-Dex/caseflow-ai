@@ -1,5 +1,5 @@
 import type { GenerationContext } from './types';
-import { collectionPath, lowerFirst, pluralize, upperFirst } from '../naming';
+import { collectionPath, lowerFirst, pluralize, upperFirst, tableName } from '../naming';
 
 export function roleOperations({ plan }: Pick<GenerationContext, 'plan'>) {
   const grants = Object.fromEntries(
@@ -35,6 +35,7 @@ export function scopeMetadata({ plan }: GenerationContext) {
       entity.name,
       {
         delegate: lowerFirst(entity.name),
+        table: tableName(entity.name),
         collection: collectionPath(entity.name),
         internalFields: entity.fields.filter((field) => field.internal).map((field) => field.name),
         policy: entity.operationScope ?? null,
@@ -91,11 +92,12 @@ export const OPERATION_SCOPE_RUNTIME = `import { AsyncLocalStorage } from 'node:
 import { BadRequestException, ForbiddenException, Injectable, type NestInterceptor, type ExecutionContext, type CallHandler } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { SCOPE_CONFIGURATION } from './scope-configuration';
+import { Prisma } from '../generated/prisma/client';
 export interface OperationActor { userId: string; roles: string[]; permissions: string[]; scopeIds: string[]; selectedScopeId?: string; scopeAccess?: 'SELECTED' | 'ASSIGNED_SET'; currentOperation?: string; dataAccess?: Record<string, string[]>; }
 export const operationContext = new AsyncLocalStorage<OperationActor | undefined>();
 type Data = Record<string, unknown>;
 type Policy = { paths: string[][]; includeUnscoped: boolean; ownerRelation?: string; actorRelation?: string };
-type Model = { delegate: string; collection: string; internalFields: string[]; policy: Policy | null; relations: Record<string, { target: string; many: boolean }> };
+type Model = { delegate: string; table: string; collection: string; internalFields: string[]; policy: Policy | null; relations: Record<string, { target: string; many: boolean }> };
 const models = SCOPE_CONFIGURATION.entities as Record<string, Model>;
 const object = (value: unknown): Data => value && typeof value === 'object' && !Array.isArray(value) ? value as Data : {};
 const values = (value: unknown) => Array.isArray(value) ? value : [value];
@@ -248,10 +250,21 @@ export async function enforceScope(database: unknown, model: string | undefined,
  if (args.update) await validateData(database as Database, model, args.update, actor, false);
  return query(args as never);
 }
+const transactionSources = new WeakMap<object, unknown>();
+export async function lockLifecycleRecord(database: unknown, delegate: string, id: string): Promise<void> {
+ const raw = (transactionSources.get(database as object) ?? database) as Prisma.TransactionClient;
+ const entry = Object.entries(models).find(([, definition]) => definition.delegate === delegate);
+ if (!entry) throw new ForbiddenException('El modelo no está permitido.');
+ const [model, definition] = entry;
+ const record = await enforceScope(raw, model, 'findUnique', { where: { id }, select: { id: true } },
+   args => (raw as unknown as Record<string, { findUnique(input: unknown): Promise<unknown> }>)[delegate]!.findUnique(args));
+ if (!record) throw new ForbiddenException('El registro no pertenece al ámbito autorizado.');
+ await raw.$queryRaw(Prisma.sql\`SELECT "id" FROM \${Prisma.raw('"' + definition.table + '"')} WHERE "id" = \${id}::uuid FOR UPDATE\`);
+}
 export function scopedTransaction(database: unknown): unknown {
  if(!operationContext.getStore()) return database;
  const delegates=Object.fromEntries(Object.entries(models).map(([model,definition])=>[definition.delegate,model]));
- return new Proxy(Object.create(null) as object,{get(_target,key){
+ const scoped = new Proxy(Object.create(null) as object,{get(_target,key){
   if(typeof key!=='string'||!delegates[key]) throw new ForbiddenException('La transacción solo permite los delegados declarados.');
   const delegate=Reflect.get(database as object,key) as object;
   return new Proxy(Object.create(null) as object,{get(_subject,operation){
@@ -259,6 +272,8 @@ export function scopedTransaction(database: unknown): unknown {
    return (args:unknown)=>enforceScope(database,delegates[key],operation,args,checked=>Reflect.apply(Reflect.get(delegate,operation) as (args:unknown)=>Promise<unknown>,delegate,[checked]));
   }});
  }});
+ transactionSources.set(scoped, database);
+ return scoped;
 }
 @Injectable()
 export class OperationScopeInterceptor implements NestInterceptor {

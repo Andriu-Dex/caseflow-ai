@@ -1,0 +1,96 @@
+{
+  "designBaselineId": "11111111-1111-4111-8111-111111111111",
+  "authentication": {
+    "required": true,
+    "roles": ["EDITOR"]
+  },
+  "modules": [
+    {
+      "localId": "records",
+      "name": "Records",
+      "description": "Registros versionados"
+    }
+  ],
+  "entities": [
+    {
+      "localId": "revision",
+      "name": "Revision",
+      "moduleLocalId": "records",
+      "lifecycle": {
+        "stateField": "state",
+        "initialState": "DRAFT",
+        "immutableStates": ["FINAL"],
+        "managedFields": ["finalizedAt"]
+      },
+      "fields": [
+        {
+          "name": "title",
+          "type": "STRING",
+          "required": true
+        },
+        {
+          "name": "state",
+          "type": "ENUM",
+          "enumValues": ["DRAFT", "FINAL"],
+          "required": true
+        },
+        {
+          "name": "finalizedAt",
+          "type": "DATETIME",
+          "readOnly": true,
+          "required": false
+        },
+        {
+          "name": "effectiveDate",
+          "type": "DATE",
+          "required": false
+        }
+      ],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE", "DELETE"]
+    },
+    {
+      "localId": "entry",
+      "name": "RevisionEntry",
+      "moduleLocalId": "records",
+      "compositionOwnerRelation": "revision",
+      "fields": [
+        {
+          "name": "description",
+          "type": "STRING",
+          "required": true
+        }
+      ],
+      "relations": [
+        {
+          "name": "revision",
+          "kind": "MANY_TO_ONE",
+          "targetEntityLocalId": "revision",
+          "required": true
+        }
+      ],
+      "operations": ["LIST", "GET", "CREATE", "UPDATE", "DELETE"]
+    }
+  ],
+  "routes": [
+    {
+      "path": "/revisions",
+      "screenName": "Revisiones",
+      "moduleLocalId": "records",
+      "entityLocalId": "revision",
+      "kind": "LIST"
+    },
+    {
+      "path": "/revisions/new",
+      "screenName": "Nueva revisión",
+      "moduleLocalId": "records",
+      "entityLocalId": "revision",
+      "kind": "FORM",
+      "actions": [
+        {
+          "label": "Guardar",
+          "operation": "CREATE"
+        }
+      ]
+    }
+  ]
+}
