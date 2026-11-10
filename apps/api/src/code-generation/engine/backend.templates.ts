@@ -142,21 +142,27 @@ function entityController(plan: Plan, entity: Entity, moduleName: string): strin
     const limitNum = limit !== undefined ? Number(limit) : undefined;
     ${
       primaryDate
-        ? `if (from !== undefined) {
-      const ms = Date.parse(from);
+        ? `const trimmedFrom = typeof from === 'string' && from.trim() ? from.trim() : undefined;
+    const trimmedTo = typeof to === 'string' && to.trim() ? to.trim() : undefined;
+    if (trimmedFrom !== undefined) {
+      const ms = Date.parse(trimmedFrom.includes('T') ? trimmedFrom : trimmedFrom + 'T00:00:00.000Z');
       if (!Number.isFinite(ms)) throw new BadRequestException('El parámetro "from" debe ser una fecha válida (formato YYYY-MM-DD o ISO).');
     }
-    if (to !== undefined) {
-      const ms = Date.parse(to);
+    if (trimmedTo !== undefined) {
+      const ms = Date.parse(trimmedTo.includes('T') ? trimmedTo : trimmedTo + 'T23:59:59.999Z');
       if (!Number.isFinite(ms)) throw new BadRequestException('El parámetro "to" debe ser una fecha válida (formato YYYY-MM-DD o ISO).');
     }
-    if (from !== undefined && to !== undefined && Date.parse(from) > Date.parse(to)) {
-      throw new BadRequestException('El rango temporal es inválido: "from" no puede ser posterior a "to".');
+    if (trimmedFrom !== undefined && trimmedTo !== undefined) {
+      const startMs = Date.parse(trimmedFrom.includes('T') ? trimmedFrom : trimmedFrom + 'T00:00:00.000Z');
+      const endMs = Date.parse(trimmedTo.includes('T') ? trimmedTo : trimmedTo + 'T23:59:59.999Z');
+      if (startMs > endMs) {
+        throw new BadRequestException('El rango temporal es inválido: "from" no puede ser posterior a "to".');
+      }
     }\n    `
         : ''
     }return this.service.list({
       page: pageNum !== undefined && Number.isFinite(pageNum) && pageNum >= 1 ? Math.min(Math.floor(pageNum), 100_000) : undefined,
-      limit: limitNum !== undefined && Number.isFinite(limitNum) && limitNum >= 1 ? Math.min(Math.floor(limitNum), 500) : undefined,${primaryDate ? '\n      from: typeof from === "string" && from.trim() ? from.trim() : undefined,\n      to: typeof to === "string" && to.trim() ? to.trim() : undefined,' : ''}
+      limit: limitNum !== undefined && Number.isFinite(limitNum) && limitNum >= 1 ? Math.min(Math.floor(limitNum), 500) : undefined,${primaryDate ? '\n      from: trimmedFrom,\n      to: trimmedTo,' : ''}
     });
   }`,
     ops.has('GET') &&
@@ -259,6 +265,17 @@ function entityService(entity: Entity, plan: ImplementationPlanContent): string 
   const primaryDate = findPrimaryDateResolution(entity, plan);
   const entityDateFields = entity.fields.filter((f) => f.type === 'DATE' || f.type === 'DATETIME');
   const needsInput = ops.has('CREATE') || ops.has('UPDATE');
+  const hasVersionLabel = entity.fields.some((f) => f.name === 'versionLabel');
+  const parentRel = toOne.find((r) => r.name !== 'user' && r.name !== 'account') ?? toOne[0];
+  const opParamEntity = plan.entities.find(
+    (item) =>
+      item.name === 'OperationalParameter' ||
+      item.name.toLowerCase().includes('parametro') ||
+      item.name.toLowerCase().includes('parameter'),
+  );
+  const childComponentEntity = plan.entities.find((item) =>
+    item.relations.some((r) => r.targetEntityLocalId === entity.localId),
+  );
   const methods = [
     ops.has('LIST') &&
       `  ${projectResult ? 'async ' : ''}list(query?: { page?: number; limit?: number${primaryDate ? '; from?: string; to?: string' : ''} }) {
@@ -269,14 +286,14 @@ function entityService(entity: Entity, plan: ImplementationPlanContent): string 
     ${
       primaryDate
         ? `const parseDateGte = (v?: string) => {
-      if (!v || typeof v !== 'string') return undefined;
-      const ms = Date.parse(v.includes('T') ? v : v + 'T00:00:00.000Z');
+      if (!v || typeof v !== 'string' || !v.trim()) return undefined;
+      const ms = Date.parse(v.includes('T') ? v : v.trim() + 'T00:00:00.000Z');
       if (!Number.isFinite(ms)) throw new BadRequestException('El parámetro "from" no es una fecha válida.');
       return new Date(ms);
     };
     const parseDateLte = (v?: string) => {
-      if (!v || typeof v !== 'string') return undefined;
-      const ms = Date.parse(v.includes('T') ? v : v + 'T23:59:59.999Z');
+      if (!v || typeof v !== 'string' || !v.trim()) return undefined;
+      const ms = Date.parse(v.includes('T') ? v : v.trim() + 'T23:59:59.999Z');
       if (!Number.isFinite(ms)) throw new BadRequestException('El parámetro "to" no es una fecha válida.');
       return new Date(ms);
     };
@@ -317,8 +334,34 @@ function entityService(entity: Entity, plan: ImplementationPlanContent): string 
     return ${projectResult ? `${projectResult}(found)` : 'found'};
   }`,
     ops.has('CREATE') &&
-      `  ${projectResult ? 'async ' : ''}create(input: Create${e}Input) {
-    return ${projectResult ? `${projectResult}(await ` : ''}this.prisma.${delegate}.create({ data: ${local ? 'await toAccountData(input)' : 'toData(input)'} as never${omitFields(entity)}${accountInclude} })${projectResult ? ')' : ''};
+      `  async create(input: Create${e}Input) {
+    ${
+      hasVersionLabel && parentRel
+        ? `const parentId = (input as Record<string, string | undefined>).${parentRel.name}Id;
+    if (parentId) {
+      return this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw\`SELECT pg_advisory_xact_lock(hashtext(\${parentId}))\`;
+        const existing = await tx.${delegate}.findMany({
+          where: { ${parentRel.name}Id: parentId },
+          select: { versionLabel: true },
+        });
+        const maxSeq = existing.reduce((max: number, v: { versionLabel?: string }) => {
+          const match = v.versionLabel?.match(/\\d+/);
+          return match ? Math.max(max, parseInt(match[0], 10)) : max;
+        }, 0);
+        const nextLabel = 'V-' + (maxSeq + 1);
+        const requested = (input as { versionLabel?: string }).versionLabel;
+        if (!requested || requested === 'BORRADOR' || existing.some((v: any) => v.versionLabel === requested)) {
+          (input as Record<string, unknown>).versionLabel = nextLabel;
+        }
+        if ((input as { status?: string }).status === undefined) {
+          (input as Record<string, unknown>).status = 'BORRADOR';
+        }
+        return ${projectResult ? `${projectResult}(await ` : ''}tx.${delegate}.create({ data: ${local ? 'await toAccountData(input)' : 'toData(input)'} as never${omitFields(entity)}${accountInclude} })${projectResult ? ')' : ''};
+      });
+    }\n    `
+        : ''
+    }return ${projectResult ? `${projectResult}(await ` : ''}this.prisma.${delegate}.create({ data: ${local ? 'await toAccountData(input)' : 'toData(input)'} as never${omitFields(entity)}${accountInclude} })${projectResult ? ')' : ''};
   }`,
     ops.has('UPDATE') &&
       `  async update(id: string, input: Update${e}Input) {
@@ -330,11 +373,36 @@ function entityService(entity: Entity, plan: ImplementationPlanContent): string 
     }
     if ((input as { status?: string }).status === 'PUBLICADA') {
       ${
-        entity.name === 'MenuVersion'
-          ? `const compCount = await this.prisma.menuVersionComponent.count({ where: { menuVersionId: id } });
-      if (compCount === 0) {
+        (childComponentEntity && parentRel) || entity.name === 'MenuVersion'
+          ? `const components = await this.prisma.${childComponentEntity ? lowerFirst(childComponentEntity.name) : 'menuVersionComponent'}.findMany({ where: { ${childComponentEntity?.relations.find((r) => r.targetEntityLocalId === entity.localId)?.name ?? 'menuVersion'}Id: id } });
+      if (!components || components.length === 0) {
         throw new BadRequestException('No se puede publicar una versión de menú sin componentes registrados.');
-      }\n      `
+      }
+      for (const comp of components) {
+        if (comp.price == null || Number(comp.price) < 0 || isNaN(Number(comp.price))) {
+          throw new BadRequestException('No se puede publicar una versión con componentes que contengan importes de precio inválidos.');
+        }
+      }
+      const versionRecord = await this.prisma.${delegate}.findUnique({
+        where: { id },
+        include: { ${parentRel?.name ?? 'dailyMenu'}: true },
+      });
+      if (!versionRecord?.${parentRel?.name ?? 'dailyMenu'}?.operationalDate) {
+        throw new BadRequestException('La versión debe estar vinculada a un menú diario con fecha operativa válida antes de publicar.');
+      }
+      ${
+        opParamEntity
+          ? `const operationalParams = await this.prisma.${lowerFirst(opParamEntity.name)}.findMany();
+      if (!operationalParams || operationalParams.length === 0) {
+        throw new BadRequestException('No se puede publicar la versión: no existen directrices de vigencia ni parámetros operativos aprobados en el sistema.');
+      }
+      const invalidParam = operationalParams.find((p: { applicationRules?: string }) => p.applicationRules && p.applicationRules.toLowerCase().includes('inactiv'));
+      if (invalidParam) {
+        throw new BadRequestException('Las directrices de vigencia de parámetros operativos no están aprobadas o se encuentran inactivas.');
+      }`
+          : ''
+      }
+      \n      `
           : ''
       }(input as Record<string, unknown>).publicationDate = new Date();
     }\n    `
