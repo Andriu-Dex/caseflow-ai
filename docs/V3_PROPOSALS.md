@@ -16,7 +16,7 @@ Prioridad sugerida: **A** (conviene hacerlo primero), **B** (valioso, no urgente
   5. Preferencia de idioma por usuario o proyecto, con español por defecto.
 - **Riesgo:** toca casi todos los archivos de la web; conviene hacerlo como trabajo propio y por fases, no como cambio de última hora.
 
-## 2. Vista previa en vivo del proyecto generado — C (pendiente de confirmar con el cliente)
+## 2. Vista previa en vivo del proyecto generado — sustituida por el despliegue de la versión 2 (DEC-157)
 
 - **Estado:** prevista como P1 y no bloqueante (DEC-108, §177.2); fuera del alcance de la v2 (§221.4). La guía «Cómo probar el proyecto» cubre mientras tanto la necesidad de ejecutarlo en la máquina de la persona.
 - **Requiere una decisión (ADR)** que la incluya en el alcance y defina antes su diseño de seguridad. Proporcionado a una herramienta local, bastaría:
@@ -49,3 +49,10 @@ Prioridad sugerida: **A** (conviene hacerlo primero), **B** (valioso, no urgente
 - **Análisis avanzado:** comparación avanzada de líneas base, análisis de impacto y de consistencia semánticos, comentarios y menciones avanzados, edición colaborativa avanzada.
 - **Más plantillas de destino:** `CASEFLOW_DJANGO_REACT`, `CASEFLOW_SPRING_REACT`, móviles, microservicios.
 - **Construcción avanzada:** CI/CD específico del proyecto generado, ingeniería inversa de repositorios externos, sincronización bidireccional con Git, plugins de generación, API pública.
+
+## 6. Requerimientos del cliente incorporados a la versión 2 (2026-11-10)
+
+Pasaron al alcance de la versión 2, que es la versión final:
+
+- **Software generado ya desplegado:** DEC-157, ADR-019, `CASEFLOW_AI_SPEC.md` §221.34. Sustituye la vista previa de §2.
+- **Revisión guiada del código generado:** DEC-158, ADR-020, `CASEFLOW_AI_SPEC.md` §221.35.

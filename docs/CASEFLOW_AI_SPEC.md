@@ -6242,6 +6242,8 @@ No debe contener:
 
 CASEFlow puede iniciar temporalmente el proyecto generado dentro de un entorno controlado y ofrecer una preview.
 
+> **Versión 2 (DEC-157, ADR-019):** el despliegue del software generado es obligatorio y sustituye esta preview P1; ver §221.34.
+
 La preview es altamente deseable para demostración, pero no bloquea V1 si el ZIP generado:
 
 - pasa validaciones;
@@ -7280,6 +7282,8 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-154 | La versión 2 de CASEFLOW_WEB_TS_V1 incorpora enlaces explícitos de autenticación local, composición validada desde el diseño congelado y comprobaciones de entrega que distinguen fidelidad estructural de revisión visual (§221.30, ADR-015) | Accepted |
 | DEC-155 | El contexto de operación del proyecto generado declara permisos, asignaciones y rutas de propiedad; el servidor verifica su alcance en cada solicitud y la interfaz conserva únicamente contextos autorizados (§221.31, ADR-016) | Accepted |
 | DEC-156 | Las acciones personalizadas admiten contratos estructurados compartidos entre validación, OpenAPI, cliente y formularios; las revisiones y claves de reintento se enlazan explícitamente y las comprobaciones de alcance utilizan la misma transacción (§221.32, ADR-017) | Accepted |
+| DEC-157 | La versión 2 despliega el software generado desde un snapshot `READY` mediante `DeploymentProvider` (Docker local aislado, sin secretos de CASEFlow); sustituye a DEC-108 (§221.34, ADR-019) | Accepted |
+| DEC-158 | El código generado se revisa por unidades de construcción con resumen determinista, origen, trazabilidad y diferencias; la lógica asistida por IA se edita mediante revisiones validadas (§221.35, ADR-020) | Accepted |
 
 ---
 
@@ -7716,7 +7720,9 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-149)
+# 221. Extensiones de V2 (DEC-116 a DEC-158)
+
+> La versión 2 es la versión final del producto. Donde este documento dice «V1», sus requisitos siguen vigentes salvo que una sección de §221 o un ADR posterior los sustituya.
 
 Plan de implementación: `docs/V2_EXTENSIONS_IMPLEMENTATION_PLAN.md`. Decisiones completas en `docs/decisions/`.
 
@@ -8042,7 +8048,7 @@ Para capturar aplicaciones con sesiones persistidas, el controlador ejecuta un c
 
 ## 221.4 Fuera de alcance de estas extensiones
 
-Interfaz bilingüe completa (EN/ES) y vista previa en vivo del software generado (§177.2): planificadas para después de cerrar v2. El detalle de cada una y del resto de lo pendiente está en `docs/V3_PROPOSALS.md`.
+Interfaz bilingüe completa (EN/ES): planificada para después de cerrar v2. La vista previa de §177.2 queda sustituida por el despliegue de §221.34 (DEC-157). El detalle de cada una y del resto de lo pendiente está en `docs/V3_PROPOSALS.md`.
 
 ## 221.31 Contexto de operación del proyecto generado (DEC-155, ADR-016)
 
@@ -8083,3 +8089,15 @@ Una corrida terminal `WORKING_COPY` conserva archivos y checkpoints de una imple
 El estado no acredita validación, completitud o fidelidad visual; las acciones pendientes responden 501 y se conserva el renderizador interno. No habilita validación oficial, snapshot, manual o ZIP de entrega. La generación oficial posterior reutiliza los cuerpos compatibles y sigue exigiendo todos los controles de completitud, adaptación de diseño y validación Docker. El progreso de análisis y diseño se presenta separado del estado de construcción del software. Véase ADR-018 para contrato, procedencia y límites.
 
 La señal visual de construcción completada corresponde a la generación más reciente del último plan aprobado y exige que su último intento de validación sea `READY` con snapshot. Un resultado histórico, de otro plan o anterior a una versión de trabajo no completa la versión vigente. La interfaz distingue la generación del plan seleccionado de su historial y obtiene sus contadores del manifiesto, sin confundir advertencias con acciones pendientes.
+
+## 221.34 Despliegue del software generado (DEC-157, ADR-019)
+
+Un snapshot con validación P0 `READY` se despliega desde la vista de construcción mediante `DeploymentProvider`; la versión 2 usa `DockerDeploymentProvider` en el equipo de CASEFlow. Cada `GeneratedProjectDeployment` registra snapshot, estado (`STARTING`, `RUNNING`, `STOPPED`, `FAILED`), URL y responsable. Web, API y una base PostgreSQL exclusiva corren en una red aislada, con puertos solo en `127.0.0.1`, límites de recursos, variables generadas para el despliegue y comandos fijos de la TargetTemplate. Nunca recibe secretos de CASEFlow ni ejecuta comandos de la IA.
+
+La interfaz muestra el estado, «Abrir aplicación», las cuentas iniciales y las acciones Iniciar, Detener y Volver a desplegar; todas se auditan. Un fallo de despliegue no altera el snapshot ni su validación. Sin Docker, el ZIP reproducible sigue siendo la entrega. La exposición a internet queda fuera de alcance.
+
+## 221.35 Revisión guiada del código generado (DEC-158, ADR-020)
+
+La vista de una generación agrupa el código en unidades de construcción (módulo, entidad, acción, pantalla, pruebas y configuración) a partir del plan y de `CodeTraceLink`. Cada unidad presenta un resumen determinista de lo generado, su origen (plantilla o asistido por IA, destacado para revisión), su trazabilidad, sus archivos abiertos bajo demanda, las diferencias con la generación anterior y un estado de revisión por la persona.
+
+La lógica asistida por IA se edita desde su unidad mediante las revisiones de ADR-018, con revisión estática, nueva versión de trabajo y validación Docker. Los archivos de plantilla se cambian a través del plan o del diseño. Marcar unidades como revisadas no sustituye la validación P0, y ninguna edición sobrescribe corridas, snapshots ni checkpoints.
