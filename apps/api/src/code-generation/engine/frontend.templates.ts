@@ -994,7 +994,21 @@ ${editable || isRelationBound ? `      {editId && <p className="font-mono text-x
       : ''
   }${
     isRelationBound
-      ? relationParams
+      ? `      <div className="rounded border bg-muted/30 p-3 text-xs flex flex-col gap-1.5" role="status">
+        <span className="font-semibold text-sm">Contexto del registro seleccionado</span>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-muted-foreground">
+${indent(
+  relationParams
+    .map(
+      (rp) =>
+        `<div><span className="font-medium text-foreground">${text(labelOf(rp.relation.name))}:</span> {selected${upperFirst(rp.relation.name)}Id ? (${rp.relation.name}Options.data?.find((o) => o.id === selected${upperFirst(rp.relation.name)}Id)?.name ?? selected${upperFirst(rp.relation.name)}Id) : '—'}</div>`,
+    )
+    .join('\n'),
+  10,
+)}
+        </div>
+      </div>\n` +
+        relationParams
           .map(
             (rp) =>
               `      {${rp.relation.name}Options.data && !${rp.relation.name}Options.data.some((item) => item.id === selected${upperFirst(rp.relation.name)}Id) && (\n        <p role="alert" className="text-sm text-destructive">{${JSON.stringify(`${labelOf(rp.relation.name)} no encontrado/a.`)}}\n        </p>\n      )}\n`,
