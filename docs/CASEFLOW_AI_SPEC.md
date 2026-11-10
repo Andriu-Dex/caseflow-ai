@@ -7282,8 +7282,9 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-154 | La versión 2 de CASEFLOW_WEB_TS_V1 incorpora enlaces explícitos de autenticación local, composición validada desde el diseño congelado y comprobaciones de entrega que distinguen fidelidad estructural de revisión visual (§221.30, ADR-015) | Accepted |
 | DEC-155 | El contexto de operación del proyecto generado declara permisos, asignaciones y rutas de propiedad; el servidor verifica su alcance en cada solicitud y la interfaz conserva únicamente contextos autorizados (§221.31, ADR-016) | Accepted |
 | DEC-156 | Las acciones personalizadas admiten contratos estructurados compartidos entre validación, OpenAPI, cliente y formularios; las revisiones y claves de reintento se enlazan explícitamente y las comprobaciones de alcance utilizan la misma transacción (§221.32, ADR-017) | Accepted |
-| DEC-157 | La versión 2 despliega el software generado desde un snapshot `READY` mediante `DeploymentProvider` (Docker local aislado, sin secretos de CASEFlow); sustituye a DEC-108 (§221.34, ADR-019) | Accepted |
+| DEC-157 | La versión 2 despliega el software generado desde un snapshot `READY` en Docker local publicado con Cloudflare Tunnel mediante `DeploymentProvider`, sin secretos de CASEFlow; sustituye a DEC-108 (§221.34, ADR-019) | Accepted |
 | DEC-158 | El código generado se revisa por unidades de construcción con resumen determinista, origen, trazabilidad y diferencias; la lógica asistida por IA se edita mediante revisiones validadas (§221.35, ADR-020) | Accepted |
+| DEC-159 | Requisitos de cierre de la versión 2: pruebas E2E del software generado, estimación de cuota, datos de ejemplo, motivos de pendientes, panel de salud, regeneración por impacto, pruebas negativas desde reglas, recorrido guiado, comparación de planes, respaldo y limpieza (§221.36) | Accepted |
 
 ---
 
@@ -7720,7 +7721,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-158)
+# 221. Extensiones de V2 (DEC-116 a DEC-159)
 
 > La versión 2 es la versión final del producto. Donde este documento dice «V1», sus requisitos siguen vigentes salvo que una sección de §221 o un ADR posterior los sustituya.
 
@@ -8092,12 +8093,28 @@ La señal visual de construcción completada corresponde a la generación más r
 
 ## 221.34 Despliegue del software generado (DEC-157, ADR-019)
 
-Un snapshot con validación P0 `READY` se despliega desde la vista de construcción mediante `DeploymentProvider`; la versión 2 usa `DockerDeploymentProvider` en el equipo de CASEFlow. Cada `GeneratedProjectDeployment` registra snapshot, estado (`STARTING`, `RUNNING`, `STOPPED`, `FAILED`), URL y responsable. Web, API y una base PostgreSQL exclusiva corren en una red aislada, con puertos solo en `127.0.0.1`, límites de recursos, variables generadas para el despliegue y comandos fijos de la TargetTemplate. Nunca recibe secretos de CASEFlow ni ejecuta comandos de la IA.
+CASEFlow AI es un programa de escritorio; el software que genera se entrega desplegado y accesible por URL pública. Un snapshot con validación P0 `READY` se despliega en Docker en el equipo de CASEFlow y se publica con Cloudflare Tunnel mediante `DeploymentProvider` (`DockerTunnelDeploymentProvider`). Web, API, PostgreSQL exclusiva y `cloudflared` comparten una red propia sin puertos publicados en el equipo, con límites de recursos, variables generadas y cifradas para el despliegue y comandos fijos de la TargetTemplate. Nunca recibe secretos de CASEFlow ni ejecuta comandos de la IA.
 
-La interfaz muestra el estado, «Abrir aplicación», las cuentas iniciales y las acciones Iniciar, Detener y Volver a desplegar; todas se auditan. Un fallo de despliegue no altera el snapshot ni su validación. Sin Docker, el ZIP reproducible sigue siendo la entrega. La exposición a internet queda fuera de alcance.
+El túnel rápido (sin cuenta, URL `*.trycloudflare.com` que cambia en cada inicio, para demostración) es el modo por defecto; el túnel con nombre usa el token y dominio Cloudflare de la persona para una URL fija. Cada `GeneratedProjectDeployment` registra snapshot, estado (`STARTING`, `RUNNING`, `STOPPED`, `FAILED`), modo, URL y responsable. La interfaz muestra estado, URL, cuentas iniciales y las acciones Iniciar, Detener y Volver a desplegar; todas se auditan. El despliegue está en línea mientras el equipo lo esté; nube y VPS quedan como implementaciones futuras de la interfaz. Sin Docker o sin conexión, el ZIP reproducible sigue siendo la entrega.
 
 ## 221.35 Revisión guiada del código generado (DEC-158, ADR-020)
 
 La vista de una generación agrupa el código en unidades de construcción (módulo, entidad, acción, pantalla, pruebas y configuración) a partir del plan y de `CodeTraceLink`. Cada unidad presenta un resumen determinista de lo generado, su origen (plantilla o asistido por IA, destacado para revisión), su trazabilidad, sus archivos abiertos bajo demanda, las diferencias con la generación anterior y un estado de revisión por la persona.
 
 La lógica asistida por IA se edita desde su unidad mediante las revisiones de ADR-018, con revisión estática, nueva versión de trabajo y validación Docker. Los archivos de plantilla se cambian a través del plan o del diseño. Marcar unidades como revisadas no sustituye la validación P0, y ninguna edición sobrescribe corridas, snapshots ni checkpoints.
+
+## 221.36 Requisitos de cierre de la versión 2 (DEC-159)
+
+1. **Pruebas E2E del software generado:** la TargetTemplate genera pruebas Playwright derivadas del plan (cada ruta carga, el CRUD de cada entidad funciona y cada acción responde según su contrato) y la validación agrega una etapa `E2E` que levanta web, API y PostgreSQL desechable en Docker, reutilizando el navegador aislado del `RuntimeCaptureProvider`. Un proyecto no es `READY` si esa etapa falla.
+2. **Estimación de cuota de IA:** antes de generar, la interfaz muestra cuántas acciones requieren IA, cuántas se reutilizan desde checkpoints y el número estimado de llamadas.
+3. **Datos de ejemplo:** el proyecto generado incluye datos iniciales deterministas y coherentes con el plan (catálogos, enumeraciones y relaciones), para que el software desplegado no arranque vacío.
+4. **Motivo de cada acción pendiente:** checkpoint invalidado por cambio de contexto, IA no disponible, revisión estática rechazada o desactivación humana; visible en su unidad de revisión (ADR-020).
+5. **Panel de salud de la generación:** acciones implementadas y pendientes, etapas de validación, cobertura, unidades revisadas y estado del despliegue.
+6. **Regeneración por impacto:** cuando cambia un artefacto aguas arriba, el análisis de impacto propone regenerar solo las unidades afectadas; la persona decide y se crea una nueva corrida.
+7. **Pruebas negativas desde reglas del plan:** permisos, estados de ciclo de vida, unicidad y validaciones de contrato generan pruebas de rechazo de forma determinista.
+8. **Recorrido guiado** para el primer proyecto, con un proyecto de ejemplo precargado.
+9. **Comparación de versiones del plan:** entidades, campos, reglas, acciones y pantallas añadidas, eliminadas o cambiadas entre dos versiones.
+10. **Respaldo y restauración** de un proyecto completo (artefactos, historial, archivos y snapshots) en la edición de escritorio.
+11. **Limpieza programada** de copias de trabajo y despliegues detenidos antiguos; nunca de snapshots oficiales ni historial aprobado.
+
+Orden de cierre: completar la entrega de RestGuestMateos y, después, una prueba de punta a punta con un segundo proyecto real. La interfaz bilingüe (§221.4) se aborda solo si queda tiempo antes de la entrega.
