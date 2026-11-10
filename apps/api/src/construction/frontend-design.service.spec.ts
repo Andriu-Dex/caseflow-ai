@@ -155,7 +155,7 @@ describe('frozen design adaptation', () => {
         projectId: id,
         sourceArtifactVersionId: mockupId,
         promptKey: 'frontend-design.generate',
-        promptVersion: 35,
+        promptVersion: 36,
       }),
     );
     const sent = JSON.parse(ai.generateStructured.mock.calls[0]![0].messages[0].content);
@@ -259,5 +259,11 @@ describe('frozen design adaptation', () => {
       'Falta el enlace de existencias',
     );
     expect(prisma.generatedFile.upsert).not.toHaveBeenCalled();
+  });
+  it('does not fall back to presentation evaluations from older prompt versions', async () => {
+    const { service, prisma } = await setup();
+    prisma.generatedFile.findFirst.mockResolvedValue(null);
+    await service.adapt(id, id, plan, files(), 'Catálogo', false, id);
+    expect(prisma.generatedFile.findFirst).toHaveBeenCalledTimes(1);
   });
 });

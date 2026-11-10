@@ -16,6 +16,7 @@ import { applyPresentationShell } from '../code-generation/engine/presentation-s
 import { file, json, type GeneratedProjectFile } from '../code-generation/engine/types';
 import { kebabCase } from '../code-generation/naming';
 
+const FRONTEND_DESIGN_VERSION = 36;
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 
 @Injectable()
@@ -184,40 +185,28 @@ export class FrontendDesignService {
             : {}),
         },
         entity: routeEntity ?? null,
-        endpoints: plan.customEndpoints.filter((endpoint) =>
-          route.actions.some((action) => action.endpoint === `${endpoint.method} ${endpoint.path}`),
+        endpoints: plan.customEndpoints.filter(
+          (endpoint) =>
+            route.actions.some(
+              (action) => action.endpoint === `${endpoint.method} ${endpoint.path}`,
+            ) || route.contextQueries?.includes(`${endpoint.method} ${endpoint.path}`),
         ),
       };
       const cacheHash = hash(
-        json({ version: 19, sourceHash, htmlHash: hash(html), screen, bindings, baselineId }),
+        json({
+          version: FRONTEND_DESIGN_VERSION,
+          sourceHash,
+          htmlHash: hash(html),
+          screen,
+          bindings,
+          baselineId,
+        }),
       );
       const cachePath = `docs/presentations/${cacheHash}.json`;
-      let cached = await this.prisma.generatedFile.findFirst({
+      const cached = await this.prisma.generatedFile.findFirst({
         where: { path: cachePath, generationRun: { projectId, designBaselineId: baselineId } },
         select: { content: true },
       });
-      if (!cached) {
-        for (const prevVersion of [18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8]) {
-          const prevHash = hash(
-            json({
-              version: prevVersion,
-              sourceHash,
-              htmlHash: hash(html),
-              screen,
-              bindings,
-              baselineId,
-            }),
-          );
-          cached = await this.prisma.generatedFile.findFirst({
-            where: {
-              path: `docs/presentations/${prevHash}.json`,
-              generationRun: { projectId, designBaselineId: baselineId },
-            },
-            select: { content: true },
-          });
-          if (cached) break;
-        }
-      }
       let presentation;
       if (cached) {
         presentation = presentationSchema.parse(JSON.parse(cached.content));
@@ -228,7 +217,7 @@ export class FrontendDesignService {
           language,
           sourceArtifactVersionId: entry!.artifactVersionId,
           promptKey: 'frontend-design.generate',
-          promptVersion: 35,
+          promptVersion: FRONTEND_DESIGN_VERSION,
           messages: [
             {
               role: 'user',

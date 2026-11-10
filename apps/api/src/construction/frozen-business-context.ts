@@ -76,8 +76,10 @@ export async function loadFrozenBusinessContext(
     endpoint: ImplementationPlanContent['customEndpoints'][number],
     plan: ImplementationPlanContent,
   ) => {
-    const routes = plan.routes.filter((route) =>
-      route.actions.some((action) => action.endpoint === `${endpoint.method} ${endpoint.path}`),
+    const routes = plan.routes.filter(
+      (route) =>
+        route.actions.some((action) => action.endpoint === `${endpoint.method} ${endpoint.path}`) ||
+        route.contextQueries?.includes(`${endpoint.method} ${endpoint.path}`),
     );
     const screens = blueprint.screens.filter((screen) =>
       routes.some((route) => route.screenLocalId === screen.localId),

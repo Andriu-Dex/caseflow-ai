@@ -219,7 +219,5 @@ export const FRONTEND_DESIGN_PROMPT_V35 = `${FRONTEND_DESIGN_PROMPT_V34}
 - Policy-deactivated operations: Endpoints with a disabledReason (such as discount endpoints) are disabled by approved system policy; disabled controls with status explanations fully satisfy their contract.
 When the screen binds each planned action to its respective ActionForm and custom endpoint contract, report limitations as an empty array [].`;
 
-
-
-
-
+export const FRONTEND_DESIGN_PROMPT_V36 = `${FRONTEND_DESIGN_PROMPT_V7}
+Evaluate the actual supplied page, component, controller and service sources against every canonical blueprint requirement. Physical contracts do not silently supersede approved requirements or blueprints: report contradictions as limitations requiring a new plan review. Never infer approval, validity, scope enforcement, audit recording, successful publication, atomicity or immutability from labels, banners, role names or endpoint existence. Inspect actual server behavior. A navigation link does not cancel, delete or discard a persisted record. Generic CRUD is not a domain transition. Lifecycle transitions and atomic aggregate updates require explicit domain endpoints with server-side rules and transactions. Do not accept sequential independent client mutations as transactional. Do not invent domain-specific APIs, state values, approval policies, fields or child views. Verify that navigation destinations actually provide the claimed capability. Preserve limitations for missing evidence; never force an empty limitations array. Render-only presentation checkpoints are not runtime validation or human design approval.`;
