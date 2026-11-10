@@ -33,6 +33,7 @@ export default tseslint.config(
         setInterval: 'readonly',
         clearInterval: 'readonly',
         fetch: 'readonly',
+        structuredClone: 'readonly',
       },
     },
   },
