@@ -173,6 +173,14 @@ describe('local authentication generation', () => {
     const get = (path: string) => files.find((file) => file.path === path)!.content;
     expect(get('prisma/schema.prisma')).toContain('secretDigest');
     expect(get('packages/contracts/src/index.ts')).not.toContain('secretDigest:');
+    // A malformed login body is recorded as a failed access before it is rejected.
+    const controller = get('apps/api/src/auth/local-auth.controller.ts');
+    expect(controller).toMatch(
+      /catch \(failure\) \{ await this\.auth\.recordRejectedLogin\(\); throw failure; \}/,
+    );
+    expect(get('apps/api/src/auth/local-auth.service.ts')).toContain(
+      "recordRejectedLogin() { return this.recordAccess(null, 'FAILURE'); }",
+    );
     expect(get('apps/web/app/signin/page.tsx')).toContain('type="password"');
     expect(get('apps/web/app/signin/page.tsx')).toContain('api.postAuthLogin');
     expect(get('apps/web/app/signin/page.tsx')).not.toContain('listMembers');

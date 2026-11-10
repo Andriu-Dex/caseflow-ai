@@ -238,6 +238,7 @@ export class LocalAuthService {
   private async recordAccess(userId: string | null, result: string, database: ${local.audit ? `Pick<PrismaService, '${lowerFirst(plan.entities.find((e) => e.localId === local.audit!.entityLocalId)!.name)}'>` : 'unknown'} = this.prisma) {
     ${local.audit ? `await database.${lowerFirst(plan.entities.find((e) => e.localId === local.audit!.entityLocalId)!.name)}.create({ data: { ${local.audit.userRelation}Id: userId, ${local.audit.occurredAtField}: new Date(), ${local.audit.resultField}: result, ${local.audit.correlationField}: randomUUID() } });` : 'void userId; void result; void randomUUID; void database;'}
   }
+  recordRejectedLogin() { return this.recordAccess(null, 'FAILURE'); }
   async login(identifier: string, password: string, address: string) {
     const secret = process.env.JWT_SECRET;
     if (!secret) throw new Error('Missing authentication configuration.');
@@ -326,7 +327,13 @@ export class LocalAuthController {
   @Post('login') @HttpCode(200) @Public()
   @ApiOperation({ operationId: 'postAuthLogin' })
   @ApiBody({ schema: { type: 'object', required: ['identifier', 'password'], properties: { identifier: { type: 'string' }, password: { type: 'string', format: 'password', writeOnly: true } } } })
-  login(@Body(new ZodValidationPipe(z.object({ identifier: z.string().trim().min(1).max(255), password: z.string().min(1).max(1024) }).strict())) body: { identifier: string; password: string }, @Req() req: { ip?: string }) { return this.auth.login(body.identifier, body.password, req.ip ?? 'unknown'); }
+  // Malformed attempts are recorded too, before the validation error is returned.
+  async login(@Body() raw: unknown, @Req() req: { ip?: string }) {
+    let body: { identifier: string; password: string };
+    try { body = new ZodValidationPipe(z.object({ identifier: z.string().trim().min(1).max(255), password: z.string().min(1).max(1024) }).strict()).transform(raw); }
+    catch (failure) { await this.auth.recordRejectedLogin(); throw failure; }
+    return this.auth.login(body.identifier, body.password, req.ip ?? 'unknown');
+  }
   @Post('logout') @HttpCode(200) @ApiOperation({ operationId: 'postAuthLogout' })
   ${scope ? "@ScopeOptional() @Operation('POST /auth/logout')" : ''}
   logout(@Req() req: { user: SessionActor }) { return this.auth.logout(req.user); }
