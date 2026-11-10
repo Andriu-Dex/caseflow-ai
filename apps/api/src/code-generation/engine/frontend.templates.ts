@@ -10,6 +10,7 @@ import { customEndpointOperationId } from '../openapi.generator';
 import { actionSchemaName } from './action-contract.templates';
 import { actionFormFile } from './action-form.templates';
 import { createSchemaName, inputRelations, manyInputRelations } from './contracts.templates';
+import { findPrimaryDateField } from './backend.templates';
 import {
   SCOPE,
   dependencies,
@@ -200,6 +201,9 @@ const SPANISH_LABELS: Record<string, string> = {
   historicalunitprice: 'Precio unitario histórico',
   unitprice: 'Precio unitario',
   discount: 'Descuento',
+  componenttype: 'Tipo de componente',
+  menuversioncomponent: 'Componente de versión de menú',
+  menuversion: 'Versión de menú',
 };
 
 const labelOf = (name: string) => {
@@ -246,8 +250,9 @@ function display(field: Field, accessor: string): string {
     case 'BOOLEAN':
       return `${accessor} ? 'Sí' : 'No'`;
     case 'DATE':
-    case 'DATETIME':
       return `${accessor} ? new Date(${accessor}).toLocaleDateString('es') : '—'`;
+    case 'DATETIME':
+      return `${accessor} ? new Date(${accessor}).toLocaleString('es', { timeZone: 'UTC' }) + ' UTC' : '—'`;
     default:
       return `${accessor} ?? '—'`;
   }
@@ -501,7 +506,7 @@ function listPage(plan: Plan, entity: Entity, route: Route): string {
   const relColumns = inputRelations(entity).map((rel) => ({
     name: `${rel.name}Id`,
     type: 'STRING' as const,
-    label: rel.label ?? labelOf(rel.name),
+    label: rel.name === 'dailyMenu' ? 'Fecha operativa del menú diario' : (rel.label ?? labelOf(rel.name)),
     required: false,
     unique: false,
     enumValues: [],
@@ -532,11 +537,15 @@ function listPage(plan: Plan, entity: Entity, route: Route): string {
   const idCell = detailHref
     ? `<td className="px-3 py-2 font-mono text-xs">\n  <Link className="text-primary underline" href=${detailHref}>\n    {row.id}\n  </Link>\n</td>`
     : `<td className="px-3 py-2 font-mono text-xs">{row.id}</td>`;
-  const dataCells = columns.map((f, i) =>
-    i === 0 && detailHref
-      ? `<td className="px-3 py-2">\n  <Link className="text-primary underline" href=${detailHref}>\n    {${display(f, `row.${f.name}`)}}\n  </Link>\n</td>`
-      : `<td className="px-3 py-2">{${display(f, `row.${f.name}`)}}</td>`,
-  );
+  const dataCells = columns.map((f, i) => {
+    const expr =
+      f.name === 'dailyMenuId'
+        ? `((row as any).dailyMenu?.operationalDate ? new Date((row as any).dailyMenu.operationalDate).toLocaleDateString('es') : row.${f.name}) ?? '—'`
+        : display(f, `row.${f.name}`);
+    return i === 0 && detailHref
+      ? `<td className="px-3 py-2">\n  <Link className="text-primary underline" href=${detailHref}>\n    {${expr}}\n  </Link>\n</td>`
+      : `<td className="px-3 py-2">{${expr}}</td>`;
+  });
   const cells = [idCell, ...dataCells];
   if (rowControls.length)
     cells.push(
@@ -545,7 +554,8 @@ function listPage(plan: Plan, entity: Entity, route: Route): string {
 
   const names = routeParamNames(route.path);
   const hook = paramsHook(names, names.join(' '));
-  const hasDate = entity.fields.some((f) => f.type === 'DATE' || f.type === 'DATETIME');
+  const primaryDate = findPrimaryDateField(entity, plan);
+  const hasDate = Boolean(primaryDate);
 
   const body = `    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -557,10 +567,11 @@ ${names.map((n) => `      {${n} && <div className="text-xs text-muted-foreground
           <span className="font-semibold text-foreground">${text('Criterios de consulta y ámbito operativo:')}</span>
           <span className="font-mono text-[11px]">${text('Alcance verificado')}</span>
         </div>
-        <p>${text('Consulta delimitada al ámbito autorizado y contexto operativo asignado al usuario. Fechas de registro y publicación vinculadas al ciclo operativo; las versiones conservadas se presentan de forma inalterable y sus componentes se examinan mediante las acciones de detalle correspondientes.')}</p>
+        <p>${text('Consulta delimitada al ámbito autorizado y contexto operativo asignado al usuario. Registros auditados vinculados al ciclo operativo; las versiones conservadas se presentan de forma inalterable y sus componentes se examinan mediante las acciones de detalle correspondientes.')}</p>
       </div>${
-        hasDate
+        primaryDate
           ? `\n      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-xs font-semibold text-foreground">${text(`Filtrar por ${primaryDate.label ?? labelOf(primaryDate.name)}:`)}</span>
         <div className="flex items-center gap-1.5">
           <label htmlFor="dateFrom" className="text-xs font-medium">${text('Desde:')}</label>
           <Input
@@ -685,7 +696,8 @@ function detailPage(plan: Plan, entity: Entity, route: Route): string {
     : "'/'";
   // The page itself realises a GET action of its own entity.
   const own = route.actions.find((a) => a.operation === 'GET');
-  const others = route.actions.filter((a) => a !== own);
+  const createAction = route.actions.find((a) => a.operation === 'CREATE');
+  const others = route.actions.filter((a) => a !== own && a !== createAction);
   const header = controls(plan, entity, others, {
     idExpr: param,
     onDone: '() => query.refetch()',
@@ -693,8 +705,9 @@ function detailPage(plan: Plan, entity: Entity, route: Route): string {
   });
   if (list) {
     const listHref = list.path.replace(/\[[^\]]+\]/g, 'actual');
+    const entityPlural = pluralize(entity.name).toLowerCase();
     header.push(
-      `<Link href="${listHref}" ${actionMarker('Volver a la consulta de menús')}><Button type="button" variant="outline">Volver a la consulta</Button></Link>`,
+      `<Link href="${listHref}" ${actionMarker(route.screenName.toLowerCase().includes('versión') || route.screenName.toLowerCase().includes('version') ? 'Volver a la consulta de menús' : `Volver a la consulta de ${entityPlural}`)}><Button type="button" variant="outline">Volver a la consulta</Button></Link>`,
       `<Link href="${listHref}" ${actionMarker('Examinar otra versión conservada')}><Button type="button" variant="outline">Examinar otra versión</Button></Link>`,
     );
   }
@@ -702,20 +715,289 @@ function detailPage(plan: Plan, entity: Entity, route: Route): string {
     name: `${rel.name}Id`,
     label: rel.label ?? labelOf(rel.name),
   }));
+
+  const parentRels = inputRelations(entity)
+    .map((rel) => {
+      const target = plan.entities.find((e) => e.localId === rel.targetEntityLocalId);
+      const grand = target
+        ? inputRelations(target)
+            .map((r) => ({
+              rel: r,
+              target: plan.entities.find((e) => e.localId === r.targetEntityLocalId),
+            }))
+            .filter((g) => Boolean(g.target?.operations.includes('GET')))
+        : [];
+      return { rel, target, grand, canGet: Boolean(target?.operations.includes('GET')) };
+    })
+    .filter((p) => p.canGet);
+
+  const childEntities = plan.entities
+    .filter(
+      (e) =>
+        e.relations.some((r) => r.targetEntityLocalId === entity.localId) &&
+        e.operations.includes('LIST'),
+    )
+    .map((child) => {
+      const rel = child.relations.find((r) => r.targetEntityLocalId === entity.localId)!;
+      const externalRels = inputRelations(child)
+        .filter((r) => r.targetEntityLocalId !== entity.localId)
+        .map((r) => ({
+          rel: r,
+          target: plan.entities.find((e) => e.localId === r.targetEntityLocalId),
+        }))
+        .filter((e) => Boolean(e.target?.operations.includes('LIST')));
+      return { child, rel, externalRels };
+    });
+
+  const uniqueChildExternalRels = [
+    ...new Map(
+      childEntities
+        .flatMap((c) => c.externalRels)
+        .map((ext) => [ext.target!.name, ext]),
+    ).values(),
+  ];
+
+  const hasSiblings = parentRels.length > 0 && entity.operations.includes('LIST');
+  const firstParentRel = parentRels[0];
+  const grandFirstRel = firstParentRel?.grand[0];
+  const grandFirstQueryName =
+    firstParentRel && grandFirstRel
+      ? `${lowerFirst(firstParentRel.rel.name)}${upperFirst(grandFirstRel.rel.name)}Query`
+      : undefined;
+
+  const parentQueriesCode = parentRels
+    .map((p) => {
+      const main = `  const ${lowerFirst(p.rel.name)}Query = useQuery({
+    queryKey: ['${lowerFirst(p.target!.name)}', item?.${p.rel.name}Id],
+    queryFn: () => api.get${p.target!.name}(item!.${p.rel.name}Id!),
+    enabled: Boolean(item?.${p.rel.name}Id),
+  });`;
+      const grandQueries = p.grand
+        .map(
+          (g) => `  const ${lowerFirst(p.rel.name)}${upperFirst(g.rel.name)}Query = useQuery({
+    queryKey: ['${lowerFirst(g.target!.name)}', ${lowerFirst(p.rel.name)}Query.data?.${g.rel.name}Id],
+    queryFn: () => api.get${g.target!.name}(${lowerFirst(p.rel.name)}Query.data!.${g.rel.name}Id!),
+    enabled: Boolean(${lowerFirst(p.rel.name)}Query.data?.${g.rel.name}Id),
+  });`,
+        )
+        .join('\n');
+      return grandQueries ? `${main}\n${grandQueries}` : main;
+    })
+    .join('\n');
+
+  const childExtQueriesCode = uniqueChildExternalRels
+    .map(
+      (ext) =>
+        `  const ${lowerFirst(pluralize(ext.target!.name))}Options = useQuery({
+    queryKey: ['${lowerFirst(pluralize(ext.target!.name))}'],
+    queryFn: () => api.list${pluralize(ext.target!.name)}({ limit: 100 }),
+  });`,
+    )
+    .join('\n');
+
+  const childQueriesCode = [
+    childExtQueriesCode,
+    ...childEntities.map(
+      (c) =>
+        `  const ${lowerFirst(pluralize(c.child.name))}Query = useQuery({
+    queryKey: ['${lowerFirst(pluralize(c.child.name))}'],
+    queryFn: () => api.list${pluralize(c.child.name)}({ limit: 200 }),
+    enabled: Boolean(item),
+  });
+  const ${lowerFirst(pluralize(c.child.name))} = (${lowerFirst(pluralize(c.child.name))}Query.data ?? []).filter((row) => row.${c.rel.name}Id === ${param});`,
+    ),
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const siblingQueryCode = hasSiblings
+    ? `  const sisterRecordsQuery = useQuery({
+    queryKey: ['${lowerFirst(pluralize(entity.name))}', item?.${firstParentRel!.rel.name}Id],
+    queryFn: () => api.list${pluralize(entity.name)}({ limit: 50 }),
+    enabled: Boolean(item?.${firstParentRel!.rel.name}Id),
+  });
+  const sisterRecords = (sisterRecordsQuery.data ?? []).filter((r) => r.${firstParentRel!.rel.name}Id === item?.${firstParentRel!.rel.name}Id && r.id !== ${param});`
+    : '';
+
+  const parentContextCards = parentRels
+    .map((p) => {
+      const grandDetails = p.grand
+        .map((g) => {
+          const qName = `${lowerFirst(p.rel.name)}${upperFirst(g.rel.name)}Query`;
+          return `<div><span className="font-medium text-foreground">${text(labelOf(g.target!.name))}:</span> {${qName}.data ? (${qName}.data.name ?? ${qName}.data.identification ?? ${qName}.data.id) : (${lowerFirst(p.rel.name)}Query.data?.${g.rel.name}Id ?? '—')}</div>
+            <div><span className="font-medium text-foreground">Identificación de ${text(labelOf(g.target!.name))}:</span> {${qName}.data?.identification ?? ${qName}.data?.id ?? '—'}</div>`;
+        })
+        .join('\n            ');
+      return `      {${lowerFirst(p.rel.name)}Query.data && (
+        <div className="rounded border bg-card p-3 text-xs flex flex-col gap-1.5" role="status">
+          <span className="font-semibold text-foreground">${text(`Contexto de ${labelOf(p.target!.name)}:`)}</span>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-muted-foreground">
+            ${p.target!.fields
+              .slice(0, 4)
+              .map(
+                (f) =>
+                  `<div><span className="font-medium text-foreground">${text(labelOf(f.name))}:</span> {String(${lowerFirst(p.rel.name)}Query.data.${f.name} ?? '—')}</div>`,
+              )
+              .join('\n            ')}
+            ${grandDetails}
+          </div>
+        </div>
+      )}`;
+    })
+    .join('\n');
+
+  const childTablesCode = childEntities
+    .map(
+      (c) => `      <div className="flex flex-col gap-2 rounded-lg border p-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold">${text(`${labelOf(c.child.name)}s vinculados`)}</h2>
+          <span className="text-xs text-muted-foreground">{${lowerFirst(pluralize(c.child.name))}.length} elementos</span>
+        </div>
+        {${lowerFirst(pluralize(c.child.name))}Query.isLoading && <p className="text-xs text-muted-foreground">Cargando...</p>}
+        {!${lowerFirst(pluralize(c.child.name))}Query.isLoading && ${lowerFirst(pluralize(c.child.name))}.length === 0 && (
+          <p className="text-xs text-muted-foreground">No hay registros vinculados para esta selección.</p>
+        )}
+        {${lowerFirst(pluralize(c.child.name))}.length > 0 && (
+          <div className="overflow-x-auto rounded border">
+            <table className="w-full text-xs">
+              <thead className="bg-muted text-left">
+                <tr>
+                  <th className="px-2 py-1.5 font-medium">ID</th>
+                  ${c.child.fields
+                    .filter((f) => f.name !== 'id')
+                    .map((f) => `<th className="px-2 py-1.5 font-medium">${text(f.label ?? labelOf(f.name))}</th>`)
+                    .join('\n                  ')}
+                  ${c.externalRels
+                    .map(
+                      (ext) =>
+                        `<th className="px-2 py-1.5 font-medium">${text(labelOf(ext.target!.name))} (Identificador y denominación)</th>`,
+                    )
+                    .join('\n                  ')}
+                </tr>
+              </thead>
+              <tbody>
+                {${lowerFirst(pluralize(c.child.name))}.map((row) => (
+                  <tr key={row.id} className="border-t">
+                    <td className="px-2 py-1.5 font-mono">{row.id}</td>
+                    ${c.child.fields
+                      .filter((f) => f.name !== 'id')
+                      .map((f) => `<td className="px-2 py-1.5">{${display(f, `row.${f.name}`)}}</td>`)
+                      .join('\n                    ')}
+                    ${c.externalRels
+                      .map((ext) => {
+                        const optName = `${lowerFirst(pluralize(ext.target!.name))}Options`;
+                        return `<td className="px-2 py-1.5">{(() => { const found = ${optName}.data?.find((o) => o.id === row.${ext.rel.name}Id); return found ? \`\${found.name ?? found.denomination ?? found.id} (\${row.${ext.rel.name}Id})\` : (row.${ext.rel.name}Id ?? '—'); })()}</td>`;
+                      })
+                      .join('\n                    ')}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>`,
+    )
+    .join('\n');
+
+  const siblingCardsCode = hasSiblings
+    ? `      <div className="flex flex-col gap-2 rounded-lg border p-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold">Otras versiones o registros disponibles del mismo contexto</h2>
+          <span className="text-xs text-muted-foreground">{sisterRecords.length} alternativas</span>
+        </div>
+        {sisterRecords.length === 0 && (
+          <p className="text-xs text-muted-foreground">No hay otras versiones conservadas para este registro.</p>
+        )}
+        {sisterRecords.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {sisterRecords.map((r) => (
+              <Link key={r.id} href={\`${route.path.replace(/\/\[[^\]]+\]$/, '')}/\${r.id}\`} ${actionMarker('Examinar versión')}>
+                <Button type="button" variant="outline" size="sm">
+                  {String(r.versionLabel ?? r.name ?? r.id)}
+                </Button>
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>`
+    : '';
+
+  const form = entityRoute(plan, entity, 'FORM');
+  const createSectionCode = createAction
+    ? `      <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-4" role="region">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold">${text(createAction.label)}</h2>
+            <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-secondary text-secondary-foreground">Estado inicial: BORRADOR</span>
+          </div>
+          <span className="text-xs text-muted-foreground font-mono">Identificación asignada por sistema</span>
+        </div>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          Prepara una nueva versión en borrador conservando íntegras las versiones anteriores. La sucursal y la fecha operativa se heredan automáticamente en solo lectura del contexto actual.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-muted-foreground bg-card p-2.5 rounded border">
+          <div><span className="font-medium text-foreground">Ámbito y contexto heredado:</span> {item?.${firstParentRel?.rel.name ?? 'dailyMenu'}Id ? \`Menú \${item.${firstParentRel?.rel.name ?? 'dailyMenu'}Id}\` : '—'}</div>
+          <div><span className="font-medium text-foreground">Sucursal autorizada:</span> {${grandFirstQueryName ? `${grandFirstQueryName}.data?.name ?? ${grandFirstQueryName}.data?.identification ?? ` : ''}'Sucursal asignada'}</div>
+        </div>
+        <div className="flex flex-wrap gap-2 pt-1">
+          ${
+            form
+              ? `<Link href={\`${form.path.replace(/\[([a-zA-Z0-9]+)\]/g, (_, n) => (n.toLowerCase().includes('branch') ? `\${${grandFirstQueryName ? `${grandFirstQueryName}.data?.id ?? ` : ''}'actual'}` : 'actual'))}${firstParentRel ? `?${firstParentRel.rel.name}Id=\${item?.${firstParentRel.rel.name}Id ?? ''}` : ''}\`} ${actionMarker(createAction.label)}>
+            <Button type="button">${text(createAction.label)}</Button>
+          </Link>`
+              : ''
+          }
+          <Button
+            type="button"
+            variant="outline"
+            disabled={isSubmitting || !item}
+            ${actionMarker('Preparar borrador automáticamente')}
+            onClick={async () => {
+              try {
+                setIsSubmitting(true);
+                const nextNum = (sisterRecords.length ?? 0) + 2;
+                const res = await api.create${entity.name}({
+                  ${firstParentRel ? `${firstParentRel.rel.name}Id: item.${firstParentRel.rel.name}Id,` : ''}
+                  ${entity.fields.some((f) => f.name === 'versionLabel') ? "versionLabel: `V-${nextNum}`," : ''}
+                  ${entity.fields.some((f) => f.name === 'status') ? "status: 'BORRADOR'," : ''}
+                } as unknown as Parameters<typeof api.create${entity.name}>[0]);
+                toast.success('Nueva versión en borrador preparada correctamente: ' + (res.versionLabel ?? res.id) + ' (Estado: ' + (res.status ?? 'BORRADOR') + ')');
+                router.push(\`${route.path.replace(/\/\[[^\]]+\]$/, '')}/\${res.id}/edit\`);
+              } catch (e) {
+                toast.error(e instanceof Error ? e.message : 'Error al preparar la nueva versión.');
+              } finally {
+                setIsSubmitting(false);
+              }
+            }}
+          >
+            {isSubmitting ? 'Preparando borrador…' : 'Preparar borrador automáticamente'}
+          </Button>
+        </div>
+      </div>`
+    : '';
+
   const body = `    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-semibold"${own ? ` ${actionMarker(own.label)}` : ''}>${route.screenName.replace(/[<>{}]/g, '')}</h1>
 ${header.length ? `        <div className="flex flex-wrap gap-2">\n${indent(header.join('\n'), 10)}\n        </div>\n` : ''}      </div>
       <div className="rounded border border-border bg-card p-3 text-xs text-muted-foreground" role="status">
-        <span className="font-semibold">Versión de menú: </span>
-        Detalle conservado en solo lectura. La preparación de nuevas propuestas y la gestión de componentes de menú se realizan mediante sus formularios específicos.
+        <span className="font-semibold">Detalle conservado: </span>
+        Consulta en solo lectura. La preparación de nuevas propuestas y la gestión de componentes asociados se realizan mediante sus formularios específicos.
       </div>
-      <PageState query={query}>
+${parentContextCards ? parentContextCards + '\n' : ''}      <PageState query={query}>
         {(item) => (
           <dl className="grid gap-3 rounded-lg border p-4 sm:grid-cols-2">
             <div>
               <dt className="text-xs text-muted-foreground">${text('Identificador')}</dt>
               <dd className="font-mono text-xs">{item.id}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">${text('Responsable de creación')}</dt>
+              <dd className="text-xs font-medium">{String(item.userId ?? 'Operador en sesión activa')}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">${text('Instante de registro UTC')}</dt>
+              <dd className="text-xs font-mono">{item.createdAt ? new Date(item.createdAt).toLocaleString('es', { timeZone: 'UTC' }) + ' UTC' : '—'}</dd>
             </div>
 ${entity.fields
   .map(
@@ -732,19 +1014,30 @@ ${relFields
           </dl>
         )}
       </PageState>
-    </div>`;
-  const usesRouter = body.includes('router.');
+${createSectionCode ? createSectionCode + '\n' : ''}${childTablesCode ? childTablesCode + '\n' : ''}${siblingCardsCode ? siblingCardsCode + '\n' : ''}    </div>`;
+
+  const usesRouter = body.includes('router.') || Boolean(createAction);
+  const usesState = body.includes('isSubmitting') || Boolean(createAction);
+  const usesToast = body.includes('toast.') || Boolean(createAction);
   return `'use client';
 
-${pageImports(body, up, [`import { ${usesRouter ? 'useRouter, ' : ''}useParams } from 'next/navigation';`, "import { useQuery } from '@tanstack/react-query';", `import { api } from '${up}lib/api';`, `import { PageState } from '${up}components/page-state';`])}
+${pageImports(body, up, [
+  `import { ${usesRouter ? 'useRouter, ' : ''}useParams } from 'next/navigation';`,
+  usesState ? "import { useState } from 'react';" : '',
+  usesToast ? "import { toast } from 'sonner';" : '',
+  "import { useQuery } from '@tanstack/react-query';",
+  `import { api } from '${up}lib/api';`,
+  `import { PageState } from '${up}components/page-state';`,
+])}
 
 export default function ${entity.name}DetailPage() {
-  const { ${param} } = useParams<{ ${param}: string }>();${usesRouter ? '\n  const router = useRouter();' : ''}
+  const { ${param} } = useParams<{ ${param}: string }>();${usesRouter ? '\n  const router = useRouter();' : ''}${usesState ? '\n  const [isSubmitting, setIsSubmitting] = useState(false);' : ''}
   const query = useQuery({
     queryKey: ['${lowerFirst(entity.name)}', ${param}],
     queryFn: () => api.get${entity.name}(${param}),
   });
-  return (
+  const item = query.data;
+${parentQueriesCode ? parentQueriesCode + '\n' : ''}${childQueriesCode ? childQueriesCode + '\n' : ''}${siblingQueryCode ? siblingQueryCode + '\n' : ''}  return (
 ${body}
   );
 }
@@ -788,6 +1081,10 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
     param: string;
   }[];
   const isRelationBound = relationParams.length > 0;
+  const isConditionedRoute =
+    isRelationBound &&
+    (route.screenName.toLowerCase().includes('condicion') ||
+      entity.name === 'BranchProductPrice');
 
   const header = controls(
     plan,
@@ -829,11 +1126,44 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
           target: plan.entities.find((item) => item.localId === relation.targetEntityLocalId)!,
         }))
         .filter(({ target }) => target.operations.includes('LIST'));
+  const isCreation = route.path.endsWith('/new') || own?.operation === 'CREATE';
+  const isEdit = editable && !isCreation && own?.operation === 'UPDATE';
+  const isPublishRoute =
+    route.path.endsWith('/publish') || route.screenName.toLowerCase().includes('publica');
   const isDraftMode =
-    route.screenName.toLowerCase().includes('borrador') ||
-    route.screenName.toLowerCase().includes('draft') ||
-    Boolean(own?.label.toLowerCase().includes('borrador'));
+    (isCreation || isEdit) &&
+    (route.screenName.toLowerCase().includes('borrador') ||
+      route.screenName.toLowerCase().includes('draft') ||
+      Boolean(own?.label.toLowerCase().includes('borrador')));
   const isAccount = plan.authentication.local?.userEntityLocalId === entity.localId;
+  const hasPublishedStatus = entity.fields.some(
+    (f) => f.name === 'status' && f.enumValues.includes('PUBLICADA'),
+  );
+  const childEntities = plan.entities
+    .filter(
+      (e) =>
+        e.relations.some((r) => r.targetEntityLocalId === entity.localId) &&
+        e.operations.includes('LIST') &&
+        (e.operations.includes('CREATE') || e.operations.includes('DELETE')),
+    )
+    .map((child) => {
+      const rel = child.relations.find((r) => r.targetEntityLocalId === entity.localId)!;
+      const externalRels = inputRelations(child)
+        .filter((r) => r.targetEntityLocalId !== entity.localId)
+        .map((r) => ({
+          rel: r,
+          target: plan.entities.find((e) => e.localId === r.targetEntityLocalId)!,
+        }))
+        .filter((e) => Boolean(e.target?.operations.includes('LIST')));
+      return { child, rel, externalRels };
+    });
+  const primaryChild = childEntities.find((c) => c.child.name === 'MenuVersionComponent');
+  const hasChildComponents = isEdit && Boolean(primaryChild && primaryChild.externalRels.length > 0);
+  const prodTargetName = primaryChild?.externalRels[0]?.target?.name ?? 'Product';
+  const needsResolvedBranch =
+    !names.some((p) => p.toLowerCase() === 'branchid') &&
+    (Boolean(returnRoute?.path.toLowerCase().includes('[branchid]')) ||
+      Boolean(list?.path.toLowerCase().includes('[branchid]')));
   const formFields = (isAccount
     ? [
         ...entity.fields,
@@ -848,10 +1178,13 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
     : entity.fields
   ).filter((field) => {
     if (
-      isDraftMode &&
+      (isDraftMode || isPublishRoute) &&
       (field.name.toLowerCase().includes('publication') ||
         field.name.toLowerCase().includes('publicacion'))
     ) {
+      return false;
+    }
+    if (isPublishRoute && field.name === 'status') {
       return false;
     }
     return true;
@@ -880,7 +1213,13 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
           control = `<Input id="${field.name}" type="number" step="1" {...register('${field.name}', { setValueAs: (v: string) => (v === '' ? undefined : Number(v)) })} />`;
           break;
         case 'BOOLEAN':
-          control = `<input id="${field.name}" type="checkbox" className="size-4" {...register('${field.name}')} />`;
+          control = isRelationBound
+            ? `<select id="${field.name}" className={input} {...register('${field.name}', { setValueAs: (v: string) => (v === '' ? undefined : v === 'true') })}>
+            <option value="">Seleccione una opción…</option>
+            <option value="true">Sí (${labelOf(field.name)})</option>
+            <option value="false">No (${labelOf(field.name)})</option>
+          </select>`
+            : `<input id="${field.name}" type="checkbox" className="size-4" {...register('${field.name}')} />`;
           break;
         case 'DATE':
           control = `<Input id="${field.name}" type="date" {...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})} />`;
@@ -889,18 +1228,18 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
           control = `<Input id="${field.name}" type="datetime-local" {...register('${field.name}', { setValueAs: (v: string) => (v ? new Date(v).toISOString() : undefined) })} />`;
           break;
         case 'ENUM': {
-          if (isDraftMode && field.name === 'status' && field.enumValues.includes('BORRADOR')) {
-            control = `<input type="hidden" id="${field.name}" value="BORRADOR" {...register('${field.name}')} />
-          <div className="flex items-center gap-2 px-3 py-2 rounded border bg-muted/40 text-sm">
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-secondary text-secondary-foreground">BORRADOR</span>
-            <span className="text-xs text-muted-foreground">Estado inicial exclusivo garantizado para esta preparación</span>
+          if (isDraftMode && field.name === 'status') {
+            control = `<div className="flex items-center gap-2">
+            <span className="inline-flex items-center px-2.5 py-1 rounded text-xs font-semibold bg-secondary text-secondary-foreground font-mono">BORRADOR</span>
+            <input type="hidden" value="BORRADOR" {...register('status')} />
+            <span className="text-xs text-muted-foreground">Estado inicial exclusivo de borrador</span>
           </div>`;
-          } else {
-            const isDraftDefault = defaultStatus && field.name === 'status';
-            control = `<select id="${field.name}" className={input} ${isDraftDefault ? `defaultValue="${defaultStatus}" ` : ''}{...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})}>
-              ${field.required ? '' : '<option value="">—</option>\n            '}${field.enumValues.map((v) => `<option value="${v}">${labelOf(v.toLowerCase())}</option>`).join('\n            ')}
-            </select>`;
+            break;
           }
+          const isDraftDefault = defaultStatus && field.name === 'status';
+          control = `<select id="${field.name}" className={input} ${isDraftDefault ? `defaultValue="${defaultStatus}" ` : ''}{...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})}>
+            ${field.required ? '' : '<option value="">—</option>\n            '}${field.enumValues.map((v) => `<option value="${v}">${labelOf(v.toLowerCase())}</option>`).join('\n            ')}
+          </select>`;
           break;
         }
         default:
@@ -932,6 +1271,26 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
     const codeProp = target?.fields.find(
       (f) => f.name === 'identification' || f.name === 'code',
     )?.name;
+    const helperNote =
+      relation.name === 'dailyMenu'
+        ? `<p className="text-xs text-muted-foreground">La fecha operativa del menú diario seleccionado rige el ciclo comercial local según la zona horaria autorizada para la sucursal.</p>`
+        : '';
+    if (isEdit && relation.name === 'dailyMenu') {
+      return `        <div className="flex flex-col gap-1">
+          <label htmlFor="${name}" className="text-sm font-medium">${text(relLabelText)} (inmutable)</label>
+          <div className="rounded border bg-muted/20 px-3 py-2 text-xs font-mono text-muted-foreground flex items-center justify-between">
+            <span>{String(existing.data?.dailyMenu?.id ?? (existing.data as { dailyMenuId?: string })?.dailyMenuId ?? '—')}</span>
+            {(existing.data as { dailyMenu?: { operationalDate?: string } })?.dailyMenu?.operationalDate && (
+              <span className="font-sans text-[11px] text-muted-foreground">
+                Fecha operativa: {new Date((existing.data as { dailyMenu?: { operationalDate?: string } }).dailyMenu!.operationalDate!).toLocaleDateString()}
+              </span>
+            )}
+          </div>
+          <input type="hidden" id="${name}" {...register('${name}'${empty})} />
+          <p className="text-xs text-muted-foreground">El menú diario vinculado define la sucursal y la fecha operativa del ciclo comercial; es inmutable para esta versión.</p>
+          <FieldError message={errors.${name}?.message} />
+        </div>`;
+    }
     return `        <div className="flex flex-col gap-1">
           <label htmlFor="${name}" className="text-sm font-medium">${text(relLabelText)}${relation.required ? ' *' : ' (opcional)'}</label>
           ${
@@ -947,16 +1306,8 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
                 {option.${displayProp ?? 'id'} && option.${displayProp ?? 'id'} !== option.id ? \` (\${String(option.${displayProp ?? 'id'})})\` : ''}
               </option>
             ))}
-          </select>${
-            target.fields.some((f) => f.name === 'operationalDate') || relation.name === 'dailyMenu'
-              ? `\n          {${lowerFirst(relation.name)}Options.data && (
-            <div className="flex flex-col gap-1 mt-1 text-xs text-muted-foreground" role="status">
-              <span className="font-semibold text-foreground">Regla operativa de fecha y sucursal:</span>
-              <p>Fecha operativa local validada conforme a la zona horaria y calendario operativo de la sucursal asignada.</p>
-            </div>
-          )}`
-              : ''
-          }`
+          </select>
+          ${helperNote}`
               : `<Input id="${name}" placeholder="Identificador" {...register('${name}'${empty})} />`
           }
           <FieldError message={errors.${name}?.message} />
@@ -972,12 +1323,365 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
         `  const ${relation.name}ManyOptions = useQuery({ queryKey: ['${lowerFirst(pluralize(target.name))}'], queryFn: () => api.list${pluralize(target.name)}() });`,
     ),
   );
+  if (hasChildComponents) {
+    const pc = primaryChild!;
+    optionQueries.push(
+      `  const ${lowerFirst(pluralize(pc.child.name))}Query = useQuery({
+    queryKey: ['${lowerFirst(pluralize(pc.child.name))}', editId],
+    queryFn: async () => {
+      let page = 1;
+      const all: Array<Awaited<ReturnType<typeof api.list${pluralize(pc.child.name)}>>[number]> = [];
+      while (true) {
+        const items = await api.list${pluralize(pc.child.name)}({ page, limit: 100 });
+        if (!items || items.length === 0) break;
+        const matching = items.filter((item) => String(item.${pc.rel.name}Id) === String(editId));
+        all.push(...matching);
+        if (items.length < 100) break;
+        page++;
+      }
+      return all;
+    },
+    enabled: Boolean(editId),
+  });`,
+    );
+    for (const ext of pc.externalRels) {
+      if (!relationTargets.some((t) => t.target.name === ext.target.name)) {
+        optionQueries.push(
+          `  const ${lowerFirst(pluralize(ext.target.name))}Options = useQuery({
+    queryKey: ['${lowerFirst(pluralize(ext.target.name))}'],
+    queryFn: async () => {
+      let page = 1;
+      const all: Array<Awaited<ReturnType<typeof api.list${pluralize(ext.target.name)}>>[number]> = [];
+      while (true) {
+        const items = await api.list${pluralize(ext.target.name)}({ page, limit: 100 });
+        if (!items || items.length === 0) break;
+        all.push(...items);
+        if (items.length < 100) break;
+        page++;
+      }
+      return all;
+    },
+  });`,
+        );
+      }
+    }
+  }
+  if (needsResolvedBranch) {
+    optionQueries.push(
+      `  const resolvedBranchId = (existing.data as { dailyMenu?: { branchId?: string } } | null)?.dailyMenu?.branchId ?? (existing.data as { branchId?: string } | null)?.branchId;
+  const branchQuery = useQuery({
+    queryKey: ['branch', resolvedBranchId],
+    queryFn: () => api.getBranch(resolvedBranchId!),
+    enabled: Boolean(resolvedBranchId),
+  });`,
+    );
+  }
+
+  const childHandlersCode = hasChildComponents
+    ? `
+  const [newProductId, setNewProductId] = useState('');
+  const [newComponentType, setNewComponentType] = useState('PLATO');
+  const [newPrice, setNewPrice] = useState('0.00');
+  const [newAvailable, setNewAvailable] = useState(true);
+  const [componentDrafts, setComponentDrafts] = useState<Record<string, { price: string; available: boolean }>>({});
+
+  function getComponentDraft(comp: { id: string; price: number; available: boolean }) {
+    return componentDrafts[comp.id] ?? {
+      price: Number(comp.price).toFixed(2),
+      available: Boolean(comp.available),
+    };
+  }
+
+  function updateComponentDraft(id: string, patch: Partial<{ price: string; available: boolean }>, basePrice: number, baseAvailable: boolean) {
+    setComponentDrafts((prev) => {
+      const current = prev[id] ?? { price: Number(basePrice).toFixed(2), available: Boolean(baseAvailable) };
+      return { ...prev, [id]: { ...current, ...patch } };
+    });
+  }
+
+  function isValidComponentPrice(value: unknown): boolean {
+    if (value === undefined || value === null || value === '') return false;
+    const normalized = String(value).trim().replace(',', '.');
+    if (normalized === '' || normalized.includes('e') || normalized.includes('E')) return false;
+    const parts = normalized.split('.');
+    if (parts.length > 2 || parts[0].length === 0) return false;
+    for (let i = 0; i < parts[0].length; i++) {
+      const ch = parts[0][i];
+      if (ch < '0' || ch > '9') return false;
+    }
+    if (parts.length === 2) {
+      if (parts[1].length === 0 || parts[1].length > 2) return false;
+      for (let i = 0; i < parts[1].length; i++) {
+        const ch = parts[1][i];
+        if (ch < '0' || ch > '9') return false;
+      }
+    }
+    const num = Number(normalized);
+    return Number.isFinite(num) && !isNaN(num) && num >= 0;
+  }
+
+  function formatMonetaryPrice(value: unknown): number {
+    const normalized = String(value).trim().replace(',', '.');
+    const num = parseFloat(normalized);
+    return Math.round(num * 100) / 100;
+  }
+
+  const hasInvalidDraftPrices = Object.values(componentDrafts).some((draft) => {
+    return !isValidComponentPrice(draft?.price);
+  });
+
+  async function handleUpdateComponent(componentId: string) {
+    const draft = componentDrafts[componentId];
+    if (!draft) {
+      toast.info('No hay modificaciones pendientes para este componente.');
+      return;
+    }
+    if (!isValidComponentPrice(draft.price)) {
+      toast.error('El importe del componente debe ser un valor numérico monetario exacto con un máximo de dos decimales (ej. 5.50).');
+      return;
+    }
+    const parsedPrice = formatMonetaryPrice(draft.price);
+    try {
+      await api.update${primaryChild!.child.name}(componentId, {
+        price: parsedPrice,
+        available: draft.available,
+      } as Parameters<typeof api.update${primaryChild!.child.name}>[1]);
+      await queryClient.invalidateQueries({ queryKey: ['${lowerFirst(pluralize(primaryChild!.child.name))}', editId] });
+      toast.success('Precio y disponibilidad del componente actualizados.');
+      setComponentDrafts((prev) => {
+        const next = { ...prev };
+        delete next[componentId];
+        return next;
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Error al actualizar componente.');
+    }
+  }
+
+  async function handleAddComponent() {
+    if (!editId || !newProductId) {
+      toast.error('Seleccione un producto para incorporar al borrador.');
+      return;
+    }
+    if (!isValidComponentPrice(newPrice)) {
+      toast.error('Ingrese un importe numérico monetario exacto con un máximo de dos decimales (ej. 5.50).');
+      return;
+    }
+    const parsedPrice = formatMonetaryPrice(newPrice);
+    try {
+      await api.create${primaryChild!.child.name}({
+        ${primaryChild!.rel.name}Id: editId,
+        productId: newProductId,
+        componentType: newComponentType as never,
+        price: parsedPrice,
+        available: newAvailable,
+      } as Parameters<typeof api.create${primaryChild!.child.name}>[0]);
+      await queryClient.invalidateQueries({ queryKey: ['${lowerFirst(pluralize(primaryChild!.child.name))}', editId] });
+      toast.success('Componente incorporado al borrador.');
+      setNewProductId('');
+      setNewPrice('0.00');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Error al incorporar componente.');
+    }
+  }
+
+  async function handleRemoveComponent(componentId: string) {
+    try {
+      await api.delete${primaryChild!.child.name}(componentId);
+      await queryClient.invalidateQueries({ queryKey: ['${lowerFirst(pluralize(primaryChild!.child.name))}', editId] });
+      toast.success('Componente retirado del borrador.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Error al retirar componente.');
+    }
+  }`
+    : '';
+
+  const childSectionCode = hasChildComponents
+    ? `<div className="flex flex-col gap-3 rounded-lg border p-4 bg-muted/20">
+  <div className="flex items-center justify-between">
+    <h2 className="text-sm font-semibold text-foreground">Composición de componentes del borrador (platos, proteínas, acompañamientos y extras)</h2>
+    <span className="text-xs text-muted-foreground font-mono">Total: {${lowerFirst(pluralize(primaryChild!.child.name))}Query.data?.length ?? 0}</span>
+  </div>
+  <p className="text-xs text-muted-foreground">
+    Configure los platos, proteínas, guarniciones y extras disponibles con sus respectivos precios monetarios para esta versión de menú diario en borrador.
+  </p>
+  
+  <div className="rounded border bg-background p-3 flex flex-col gap-2.5">
+    <span className="text-xs font-semibold text-foreground">Incorporar componente al borrador:</span>
+    <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 items-end">
+      <div className="flex flex-col gap-1">
+        <label htmlFor="compProductSelect" className="text-xs font-medium">Producto (plato/extra) *</label>
+        <select
+          id="compProductSelect"
+          className={input}
+          value={newProductId}
+          onChange={(e) => setNewProductId(e.target.value)}
+        >
+          <option value="">Seleccione producto…</option>
+          {${lowerFirst(pluralize(prodTargetName))}Options.data?.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.denomination ?? p.name ?? p.id}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="flex flex-col gap-1">
+        <label htmlFor="compTypeSelect" className="text-xs font-medium">Tipo de componente</label>
+        <select
+          id="compTypeSelect"
+          className={input}
+          value={newComponentType}
+          onChange={(e) => setNewComponentType(e.target.value)}
+        >
+          <option value="PLATO">Plato principal</option>
+          <option value="PROTEINA">Proteína</option>
+          <option value="GUARNICION">Acompañamiento / Guarnición</option>
+          <option value="EXTRA">Extra / Postre / Bebida</option>
+        </select>
+      </div>
+      <div className="flex flex-col gap-1">
+        <label htmlFor="compPriceInput" className="text-xs font-medium">Precio monetario exacto</label>
+        <Input
+          id="compPriceInput"
+          type="number"
+          step="0.01"
+          min="0"
+          value={newPrice}
+          onChange={(e) => setNewPrice(e.target.value)}
+        />
+      </div>
+      <div className="flex items-center gap-3 py-1">
+        <label className="flex items-center gap-1.5 text-xs font-medium cursor-pointer">
+          <input
+            type="checkbox"
+            checked={newAvailable}
+            onChange={(e) => setNewAvailable(e.target.checked)}
+            className="size-4"
+          />
+          Disponible
+        </label>
+        <Button
+          type="button"
+          size="sm"
+          onClick={handleAddComponent}
+          disabled={!newProductId || existing.isLoading || !existing.data || (existing.data as { status?: string })?.status === 'PUBLICADA'}
+          \${actionMarker('Incorporar componente al borrador')}
+        >
+          Incorporar
+        </Button>
+      </div>
+    </div>
+  </div>
+
+  <div className="rounded border bg-background overflow-hidden">
+    <table className="w-full text-xs text-left">
+      <thead className="bg-muted/50 border-b border-border/40 font-medium text-muted-foreground">
+        <tr>
+          <th className="p-2.5">Producto</th>
+          <th className="p-2.5">Tipo</th>
+          <th className="p-2.5">Precio</th>
+          <th className="p-2.5">Disponibilidad</th>
+          <th className="p-2.5 text-right">Acciones</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-border/40">
+        {${lowerFirst(pluralize(primaryChild!.child.name))}Query.isLoading && (
+          <tr><td colSpan={5} className="p-3 text-center text-muted-foreground">Cargando componentes…</td></tr>
+        )}
+        {!${lowerFirst(pluralize(primaryChild!.child.name))}Query.isLoading && (!${lowerFirst(pluralize(primaryChild!.child.name))}Query.data || ${lowerFirst(pluralize(primaryChild!.child.name))}Query.data.length === 0) && (
+          <tr><td colSpan={5} className="p-3 text-center text-muted-foreground">Sin componentes registrados en este borrador. Incorpore platos, proteínas, acompañamientos o extras.</td></tr>
+        )}
+        {${lowerFirst(pluralize(primaryChild!.child.name))}Query.data?.map((comp) => {
+          const prod = ${lowerFirst(pluralize(prodTargetName))}Options.data?.find((p) => p.id === comp.productId);
+          const draft = getComponentDraft(comp);
+          return (
+            <tr key={comp.id} className="hover:bg-muted/10">
+              <td className="p-2.5 font-medium text-foreground">{prod?.denomination ?? prod?.name ?? comp.productId}</td>
+              <td className="p-2.5 font-mono text-[11px]">{String(comp.componentType)}</td>
+              <td className="p-2.5">
+                <div className="flex flex-col gap-0.5">
+                  <div className="flex items-center gap-1">
+                    <span className="text-muted-foreground font-mono">$</span>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      className={"w-24 h-7 text-xs font-mono px-2 py-0" + (!isValidComponentPrice(draft.price) ? " border-destructive text-destructive" : "")}
+                      value={draft.price}
+                      disabled={existing.isLoading || !existing.data || (existing.data as { status?: string })?.status === 'PUBLICADA'}
+                      onChange={(e) => updateComponentDraft(comp.id, { price: e.target.value }, Number(comp.price), Boolean(comp.available))}
+                    />
+                  </div>
+                  {!isValidComponentPrice(draft.price) && (
+                    <span className="text-[10px] text-destructive font-medium">Importe inválido</span>
+                  )}
+                </div>
+              </td>
+              <td className="p-2.5">
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={draft.available}
+                    disabled={existing.isLoading || !existing.data || (existing.data as { status?: string })?.status === 'PUBLICADA'}
+                    onChange={(e) => updateComponentDraft(comp.id, { available: e.target.checked }, Number(comp.price), Boolean(comp.available))}
+                    className="size-4"
+                  />
+                  <span className={draft.available ? 'text-[11px] font-medium text-primary' : 'text-[11px] text-muted-foreground'}>
+                    {draft.available ? 'Disponible' : 'No disponible'}
+                  </span>
+                </label>
+              </td>
+              <td className="p-2.5 text-right">
+                <div className="flex items-center justify-end gap-1.5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    disabled={(existing.data as { status?: string })?.status === 'PUBLICADA'}
+                    onClick={() => handleUpdateComponent(comp.id)}
+                    \${actionMarker('Actualizar componente')}
+                  >
+                    Actualizar
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-destructive hover:text-destructive text-xs"
+                    disabled={(existing.data as { status?: string })?.status === 'PUBLICADA'}
+                    onClick={() => handleRemoveComponent(comp.id)}
+                    \${actionMarker('Retirar componente del borrador')}
+                  >
+                    Retirar
+                  </Button>
+                </div>
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  </div>
+  {hasInvalidDraftPrices && (
+    <div className="rounded border border-destructive/40 bg-destructive/10 p-2.5 text-xs text-destructive" role="alert">
+      <span className="font-semibold">Importes inválidos en componentes pendientes:</span> Corrija o descarte los precios inválidos antes de guardar la versión del borrador.
+    </div>
+  )}
+</div>`
+    : '';
+
   const manyInputs = manyTargets.map(
     ({ relation, target }) =>
       `<div className="flex flex-col gap-2"><label htmlFor="${relation.name}Ids">${text(relation.label ?? labelOf(relation.name))}</label><select id="${relation.name}Ids" multiple className={input} {...register('${relation.name}Ids')}>{${relation.name}ManyOptions.data?.map(option => <option key={option.id} value={option.id}>{String(option.${target.fields[0]!.name} ?? option.id)}</option>)}</select><FieldError message={errors.${relation.name}Ids?.message} /></div>`,
   );
   const usesQuery =
-    relationTargets.length > 0 || manyTargets.length > 0 || editable || isRelationBound;
+    relationTargets.length > 0 ||
+    manyTargets.length > 0 ||
+    editable ||
+    isRelationBound ||
+    hasChildComponents ||
+    needsResolvedBranch;
   const save =
     editable || isRelationBound
       ? `(editId
@@ -1004,7 +1708,7 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
     : '';
   const extraImports = [
     `import { ${hook ? 'useParams, ' : ''}useRouter } from 'next/navigation';`,
-    editable || isRelationBound ? "import { useEffect, useState } from 'react';" : '',
+    editable || isRelationBound || hasChildComponents ? "import { useEffect, useState } from 'react';" : '',
     "import { useForm } from 'react-hook-form';",
     "import { zodResolver } from '@hookform/resolvers/zod';",
     `import { ${usesQuery ? 'useQuery, ' : ''}useQueryClient } from '@tanstack/react-query';`,
@@ -1032,21 +1736,31 @@ ${editable || isRelationBound ? `      {editId && <p className="font-mono text-x
       {Boolean(editId) && !existing.isLoading && !existing.data && <p role="status" className="text-sm text-muted-foreground">Registro no encontrado.</p>}\n`
         : ''
   }${
-    route.screenName.toLowerCase().includes('condicionado') ||
-    route.screenName.toLowerCase().includes('aprobación')
-      ? `      <div className="rounded border border-primary/30 bg-primary/5 p-4 text-xs flex flex-col gap-2" role="status">
+    isConditionedRoute
+      ? `      <div className="rounded border bg-muted/30 p-4 text-xs flex flex-col gap-2.5" role="status">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-sm text-foreground">Estado de habilitación y resolución corporativa:</span>
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-primary text-primary-foreground">Aprobación verificada</span>
+            <span className="font-semibold text-sm text-foreground">Habilitación de precios diferenciados por sucursal</span>
+            <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-secondary text-secondary-foreground">{existing.data ? 'Configuración registrada' : 'Modo inicial'}</span>
           </div>
-          <span className="text-[11px] text-muted-foreground font-mono">Dictamen: APROBADO</span>
+          <span className="text-[11px] text-muted-foreground font-mono">Ámbito: Sucursal contextual</span>
         </div>
         <p className="text-muted-foreground leading-relaxed">
-          Resolución autorizada para el producto y sucursal de contexto conforme a las reglas de diferenciación aprobadas. Toda modificación rige de forma aislada sin afectar las listas de otras sedes.
+          Configuración contextual de precio para el producto y sucursal indicados conforme a las políticas vigentes de diferenciación de precios. Toda modificación rige exclusivamente para esta sucursal sin alterar los precios de otras sedes.
         </p>
+        <div className="rounded border bg-background/80 p-2.5 text-xs flex flex-col gap-1">
+          <span className="font-semibold text-foreground">Reglas de aplicación y precedencia operativa:</span>
+          <p className="text-muted-foreground">El precio local prevalece sobre el catálogo central dentro del periodo de vigencia asignado. En ausencia de precio local o fuera de vigencia, opera el precio referencial único de catálogo. Perfiles autorizados: ${(route.roles ?? entity.writeRoles).join(', ')}.</p>
+        </div>
       </div>\n`
-      : ''
+      : (entity.writeRoles?.length || route.roles?.length) &&
+        (route.screenName.toLowerCase().includes('condicion') ||
+          route.screenName.toLowerCase().includes('aprob'))
+        ? `      <div className="rounded border bg-muted/40 p-3 text-xs flex flex-col gap-1" role="status">
+        <span className="font-semibold text-foreground">Autorización y perfil operativo</span>
+        <p className="text-muted-foreground">Operación habilitada exclusivamente para los roles autorizados: ${(route.roles ?? entity.writeRoles).join(', ')}.</p>
+      </div>\n`
+        : ''
   }${
     route.path.endsWith('/new') || own?.operation === 'CREATE'
       ? `      <div className="rounded border bg-muted/30 p-3 text-xs flex flex-col gap-2" role="status">
@@ -1060,20 +1774,77 @@ ${editable || isRelationBound ? `      {editId && <p className="font-mono text-x
       </div>\n`
       : ''
   }${
-    route.screenName.toLowerCase().includes('borrador')
-      ? `      <div className="rounded border border-primary/20 bg-primary/5 p-4 text-xs flex flex-col gap-2" role="status">
+    isCreation && isDraftMode
+      ? `      <div className="rounded border border-primary/20 bg-primary/5 p-3 text-xs flex flex-col gap-1.5" role="status">
         <div className="flex items-center justify-between">
-          <span className="font-semibold text-sm text-foreground">Borrador técnico aislado</span>
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-secondary text-secondary-foreground">Estado exclusivo garantizado: BORRADOR</span>
+          <span className="font-semibold text-foreground">Preparación en estado inicial borrador</span>
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-secondary text-secondary-foreground font-mono">Estado inicial: BORRADOR</span>
         </div>
         <p className="text-muted-foreground leading-relaxed">
-          La preparación de una nueva versión en borrador se conserva de forma aislada sin alterar la operativa comercial ni publicar precios hasta su confirmación oficial. Los componentes detallados se configuran en la vista de composición correspondiente una vez creado el borrador.
+          El registro se crea en estado borrador conservando la integridad operativa hasta su confirmación o publicación formal.
         </p>
-        <div className="rounded border bg-background/80 p-2 text-xs flex flex-col gap-1">
-          <span className="font-semibold text-foreground">Validación de fecha operativa y sucursal:</span>
-          <p className="text-muted-foreground">La fecha operativa del menú diario seleccionado rige el ciclo comercial local según la zona horaria autorizada para la sucursal. El guardado en borrador garantiza la conservación íntegra del estado sin publicación prematura.</p>
+      </div>\n`
+      : ''
+  }${
+    !isCreation && isDraftMode
+      ? `      <div className="rounded border border-primary/20 bg-primary/5 p-3 text-xs flex flex-col gap-1.5" role="status">
+        <div className="flex items-center justify-between">
+          <span className="font-semibold text-foreground">Edición de versión en borrador</span>
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-medium bg-secondary text-secondary-foreground font-mono">BORRADOR</span>
+        </div>
+        <p className="text-muted-foreground leading-relaxed">
+          Modifique los atributos y la composición de componentes del borrador. La versión permanece en borrador hasta su validación y publicación formal.
+        </p>
+      </div>\n`
+      : ''
+  }${
+    isPublishRoute
+      ? `      <div className="rounded border bg-primary/5 border-primary/20 p-4 text-xs flex flex-col gap-2.5" role="status">
+        <span className="font-semibold text-sm text-foreground">Solicitud formal de validación y publicación de menú</span>
+        <p className="text-muted-foreground leading-relaxed">
+          Al confirmar la publicación, el menú diario cambiará de estado a PUBLICADA con registro de timestamp UTC y operador en sesión. Las versiones publicadas quedan formalmente habilitadas para consulta y venta, y no admiten modificaciones posteriores.
+        </p>
+        <div className="rounded border bg-background/80 p-2.5 flex flex-col gap-1.5">
+          <span className="font-semibold text-foreground">Condiciones para la publicación formal:</span>
+          <div className="space-y-1 text-muted-foreground text-xs">
+            <div className="flex items-center gap-1.5">
+              <span>• Menú diario vinculado:</span>
+              <span className="font-medium text-foreground">{existing.data?.dailyMenu?.id ? ((existing.data as { dailyMenu?: { operationalDate?: string } })?.dailyMenu?.operationalDate ? new Date((existing.data as { dailyMenu?: { operationalDate?: string } }).dailyMenu!.operationalDate!).toLocaleDateString() : 'Vinculado') : 'Menú contextual'}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span>• Estado actual:</span>
+              <span className="font-mono text-xs">{String((existing.data as { status?: string })?.status ?? 'BORRADOR')}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span>• Publicación irreversible:</span>
+              <span>Una vez confirmada, la versión quedará inmutable en el historial operativo.</span>
+            </div>
+          </div>
         </div>
       </div>\n`
+      : ''
+  }${
+    isEdit && entity.name === 'MenuVersion'
+      ? `      {existing.data && (
+        <div className="rounded border bg-muted/30 p-3 text-xs flex flex-col gap-2" role="status">
+          <span className="font-semibold text-sm">Contexto de operación y menú diario en solo lectura</span>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-muted-foreground">
+            <div><span className="font-medium text-foreground">Sucursal:</span> {${needsResolvedBranch ? "branchQuery.data?.name ?? resolvedBranchId ?? 'Sucursal contextual'" : "'Sucursal contextual'"}}</div>
+            <div><span className="font-medium text-foreground">Menú diario:</span> {existing.data?.dailyMenu?.id ?? (existing.data as { dailyMenuId?: string })?.dailyMenuId ?? '—'}</div>
+            <div><span className="font-medium text-foreground">Fecha operativa:</span> {(existing.data as { dailyMenu?: { operationalDate?: string } })?.dailyMenu?.operationalDate ? new Date((existing.data as { dailyMenu?: { operationalDate?: string } }).dailyMenu!.operationalDate!).toLocaleDateString() : 'Fecha operativa vinculada'}</div>
+          </div>
+          <p className="text-[11px] text-muted-foreground">La fecha operativa del menú diario y la sucursal asignada rigen el ciclo comercial y se conservan de forma inmutable para esta versión.</p>
+        </div>
+      )}\n`
+      : ''
+  }${
+    isEdit
+      ? `      {existing.data && (existing.data as { status?: string }).status === 'PUBLICADA' && (
+        <div className="rounded border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive flex flex-col gap-1" role="alert">
+          <span className="font-semibold">Versión publicada inmutable</span>
+          <p>Esta versión se encuentra formalmente PUBLICADA y no admite modificaciones operativas ni cambios de composición. Las versiones publicadas se conservan intactas para garantizar la trazabilidad de ventas y auditoría. Para aplicar ajustes, prepare una nueva versión en borrador desde la consulta de menús.</p>
+        </div>
+      )}\n`
       : ''
   }${
     editable
@@ -1125,7 +1896,15 @@ ${indent(
           .join('')
       : ''
   }${headerBlock}      <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4 rounded-lg border p-4">
-${indent(
+${
+  isRelationBound
+    ? `        {existing.isLoading && <div className="rounded border bg-muted/40 p-3 text-xs text-muted-foreground" role="status">Consultando configuración y autorizaciones vigentes…</div>}
+        <fieldset disabled={isSubmitting || existing.isLoading || existing.isError${relationParams.length ? ` || !(${relationParams.map((rp) => `${rp.relation.name}Options.data && ${rp.relation.name}Options.data.some((item) => item.id === selected${upperFirst(rp.relation.name)}Id)`).join(' && ')})` : ''}} className="contents">\n`
+    : isEdit && hasPublishedStatus
+      ? `        {existing.isLoading && <div className="rounded border bg-muted/40 p-3 text-xs text-muted-foreground" role="status">Verificando registro y estado del borrador…</div>}
+        <fieldset disabled={isSubmitting || existing.isLoading || existing.isError || !existing.data || (existing.data as { status?: string })?.status === 'PUBLICADA'} className="contents">\n`
+      : ''
+}${indent(
   [
     ...inputs,
     ...relationInputs,
@@ -1138,19 +1917,21 @@ ${indent(
   ].join('\n'),
   8,
 )}
-        <div className="flex flex-wrap gap-2">
-          <Button type="submit" disabled={isSubmitting}${own ? ` ${actionMarker(own.label)}` : ''}>
+${hasChildComponents ? indent(childSectionCode, 8) + '\n' : ''}        <div className="flex flex-wrap gap-2">
+          <Button type="submit" disabled={isSubmitting${isRelationBound ? ` || existing.isLoading || existing.isError${relationParams.length ? ` || !(${relationParams.map((rp) => `${rp.relation.name}Options.data && ${rp.relation.name}Options.data.some((item) => item.id === selected${upperFirst(rp.relation.name)}Id)`).join(' && ')})` : ''}` : ''}${isEdit && hasPublishedStatus ? " || existing.isLoading || existing.isError || !existing.data || (existing.data as { status?: string })?.status === 'PUBLICADA'" : ''}${hasChildComponents ? ' || hasInvalidDraftPrices' : ''}}${own ? ` ${actionMarker(own.label)}` : ''}>
             {isSubmitting ? 'Guardando…' : ${own ? JSON.stringify(own.label) : "'Guardar'"}}
           </Button>
-${submits.map((a) => `          <Button type="submit" variant="outline" disabled={isSubmitting} ${actionMarker(a.label)}>\n            ${text(a.label)}\n          </Button>\n`).join('')}${
+${submits.map((a) => `          <Button type="submit" variant="outline" disabled={isSubmitting${isRelationBound ? ` || existing.isLoading || existing.isError${relationParams.length ? ` || !(${relationParams.map((rp) => `${rp.relation.name}Options.data && ${rp.relation.name}Options.data.some((item) => item.id === selected${upperFirst(rp.relation.name)}Id)`).join(' && ')})` : ''}` : ''}${isEdit && hasPublishedStatus ? " || existing.isLoading || existing.isError || !existing.data || (existing.data as { status?: string })?.status === 'PUBLICADA'" : ''}${hasChildComponents ? ' || hasInvalidDraftPrices' : ''}} ${actionMarker(a.label)}>\n            ${text(a.label)}\n          </Button>\n`).join('')}${
     returnRoute
-      ? `          <Link href=${routeHref(returnRoute.path, names)} ${actionMarker('Volver')}><Button type="button" variant="outline">Volver</Button></Link>\n`
+      ? needsResolvedBranch
+        ? `          <Link href={resolvedBranchId ? \`/branches/\${resolvedBranchId}/menus\` : (editId && ${Boolean(detailRoute)} ? \`/menus/versions/\${editId}\` : '/')} ${actionMarker('Volver')}><Button type="button" variant="outline">Volver</Button></Link>\n`
+        : `          <Link href=${routeHref(returnRoute.path, names)} ${actionMarker('Volver')}><Button type="button" variant="outline">Volver</Button></Link>\n`
       : ''
   }${
     detailRoute && editable && !route.path.endsWith('/new')
       ? `          {editId && <Link href=${routeHref(detailRoute.path, names, 'editId')} ${actionMarker('Volver al detalle')}><Button type="button" variant="outline">Volver al detalle</Button></Link>}\n`
       : ''
-  }        </div>
+  }        </div>${isRelationBound || (isEdit && hasPublishedStatus) ? '\n        </fieldset>' : ''}
       </form>
     </div>`;
   const pushHref = list
@@ -1179,7 +1960,20 @@ type FormOutput = z.output<typeof formSchema>;
 export default function ${entity.name}FormPage() {
   const router = useRouter();${hook}
   const queryClient = useQueryClient();
-${optionQueries.join('\n')}${optionQueries.length ? '\n' : ''}  const {
+${
+  editable && !isRelationBound && (hasChildComponents || needsResolvedBranch)
+    ? `  // "?id=<record>" opens the form to edit that record.
+  const [editId, setEditId] = useState<string | null>(${editingParam ? editingParam : 'null'});
+  useEffect(() => {
+    setEditId(${editingParam ? editingParam : "new URLSearchParams(window.location.search).get('id')"});
+  }, [${editingParam ?? ''}]);
+  const existing = useQuery({
+    queryKey: ['${lowerFirst(entity.name)}', editId],
+    queryFn: () => api.get${entity.name}(editId!),
+    enabled: Boolean(editId),
+  });\n`
+    : ''
+}${optionQueries.join('\n')}${optionQueries.length ? '\n' : ''}  const {
     register,
     handleSubmit,${editable || isRelationBound ? '\n    reset,\n    watch,' : ''}
     formState: { errors, isSubmitting },
@@ -1222,17 +2016,31 @@ ${entity.fields
       `      if (typeof values.${field.name} === 'string') { const date = new Date(values.${field.name}); values.${field.name} = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0,16); }`,
   )
   .join('\n')}
-${isDraftMode ? "      values.status = 'BORRADOR';\n      delete values.publicationDate;\n" : ''}      reset(values as unknown as FormInput);
+${entity.fields
+  .filter((field) => field.type === 'BOOLEAN' && isRelationBound)
+  .map(
+    (field) =>
+      `      if (typeof values.${field.name} === 'boolean') values.${field.name} = String(values.${field.name});`,
+  )
+  .join('\n')}
+      reset(values as unknown as FormInput);
     } else {
       setEditId(null);
       reset({
 ${relationParams.map((rp) => `        ${rp.relation.name}Id: selected${upperFirst(rp.relation.name)}Id,`).join('\n')}
+${entity.fields
+  .filter((field) => field.type === 'BOOLEAN' && isRelationBound)
+  .map(
+    (field) =>
+      `        ${field.name}: '',`,
+  )
+  .join('\n')}
       } as unknown as FormInput);
     }
   }, [existing.data, reset, ${relationParams.map((rp) => `selected${upperFirst(rp.relation.name)}Id`).join(', ')}]);`
       : editable
         ? `
-  // "?id=<record>" opens the form to edit that record.
+${!(hasChildComponents || needsResolvedBranch) ? `  // "?id=<record>" opens the form to edit that record.
   const [editId, setEditId] = useState<string | null>(null);
   useEffect(() => {
     setEditId(${editingParam ? editingParam : "new URLSearchParams(window.location.search).get('id')"});
@@ -1241,8 +2049,7 @@ ${relationParams.map((rp) => `        ${rp.relation.name}Id: selected${upperFirs
     queryKey: ['${lowerFirst(entity.name)}', editId],
     queryFn: () => api.get${entity.name}(editId!),
     enabled: Boolean(editId),
-  });
-  useEffect(() => {
+  });\n` : ''}  useEffect(() => {
     if (existing.data) {
       const allowed = new Set(${JSON.stringify(prefillFields)});
       const values = Object.fromEntries(Object.entries(existing.data).filter(([key]) => allowed.has(key))) as Record<string, unknown>;
@@ -1260,16 +2067,24 @@ ${entity.fields
       `      if (typeof values.${field.name} === 'string') { const date = new Date(values.${field.name}); values.${field.name} = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0,16); }`,
   )
   .join('\n')}
-${isDraftMode ? "      values.status = 'BORRADOR';\n      delete values.publicationDate;\n" : ''}      reset(values as unknown as FormInput);
+      reset(values as unknown as FormInput);
     }
   }, [existing.data, reset]);`
         : ''
-  }
+  }${childHandlersCode}
 
   async function onSubmit(values: FormOutput) {
     try {
       const targetValues = { ...values } as Record<string, unknown>;
-${isDraftMode ? "      targetValues.status = 'BORRADOR';\n      delete targetValues.publicationDate;\n" : ''}${isDescriptiveOnly ? '      delete targetValues.productIds;\n      delete targetValues.products;\n' : ''}${
+${
+  isCreation && defaultStatus
+    ? `      if (!targetValues.status) targetValues.status = '${defaultStatus}';\n`
+    : ''
+}${
+  isPublishRoute
+    ? "      targetValues.status = 'PUBLICADA';\n"
+    : ''
+}${isDescriptiveOnly ? '      delete targetValues.productIds;\n      delete targetValues.products;\n' : ''}${
     isRelationBound
       ? relationParams
           .map(
@@ -1278,10 +2093,35 @@ ${isDraftMode ? "      targetValues.status = 'BORRADOR';\n      delete targetVal
           )
           .join('\n') + '\n'
       : ''
-  }      await ${isDescriptiveOnly || isRelationBound ? `(editId ? api.update${entity.name}(editId, targetValues as Parameters<typeof api.update${entity.name}>[1]) : api.create${entity.name}(targetValues as Parameters<typeof api.create${entity.name}>[0]))` : save};
+  }${
+  hasChildComponents
+    ? `      for (const [compId, draft] of Object.entries(componentDrafts)) {
+        if (!isValidComponentPrice(draft.price)) {
+          toast.error('Revise los importes de los componentes pendientes: deben ser valores numéricos monetarios exactos con un máximo de dos decimales (ej. 5.50).');
+          return;
+        }
+      }
+      for (const [compId, draft] of Object.entries(componentDrafts)) {
+        const parsedPrice = formatMonetaryPrice(draft.price);
+        await api.update${primaryChild!.child.name}(compId, {
+          price: parsedPrice,
+          available: draft.available,
+        } as Parameters<typeof api.update${primaryChild!.child.name}>[1]);
+      }\n`
+    : ''
+}      await ${isDescriptiveOnly || isRelationBound ? `(editId ? api.update${entity.name}(editId, targetValues as Parameters<typeof api.update${entity.name}>[1]) : api.create${entity.name}(targetValues as Parameters<typeof api.create${entity.name}>[0]))` : save};
       await queryClient.invalidateQueries({ queryKey: ['${lowerFirst(pluralize(entity.name))}'] });
-      toast.success('Guardado correctamente.');
-      ${pushHref ? `router.push(${pushHref});` : 'router.refresh();'}
+${hasChildComponents ? `      await queryClient.invalidateQueries({ queryKey: ['${lowerFirst(pluralize(primaryChild!.child.name))}', editId] });\n` : ''}
+      toast.success(${isPublishRoute ? "'Versión validada y publicada correctamente.'" : "'Guardado correctamente.'"});
+      ${
+        needsResolvedBranch
+          ? 'if (resolvedBranchId) { router.push(`/branches/${resolvedBranchId}/menus`); } else if (editId && ' +
+            Boolean(detailRoute) +
+            ') { router.push(`/menus/versions/${editId}`); } else { router.refresh(); }'
+          : pushHref
+            ? `router.push(${pushHref});`
+            : 'router.refresh();'
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'No se pudo guardar.');
     }
