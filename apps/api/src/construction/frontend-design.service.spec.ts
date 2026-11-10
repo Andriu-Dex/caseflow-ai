@@ -155,7 +155,7 @@ describe('frozen design adaptation', () => {
         projectId: id,
         sourceArtifactVersionId: mockupId,
         promptKey: 'frontend-design.generate',
-        promptVersion: 30,
+        promptVersion: 35,
       }),
     );
     const sent = JSON.parse(ai.generateStructured.mock.calls[0]![0].messages[0].content);

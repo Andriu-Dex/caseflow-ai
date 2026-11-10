@@ -29,6 +29,11 @@ import {
   FRONTEND_DESIGN_PROMPT_V28,
   FRONTEND_DESIGN_PROMPT_V29,
   FRONTEND_DESIGN_PROMPT_V30,
+  FRONTEND_DESIGN_PROMPT_V31,
+  FRONTEND_DESIGN_PROMPT_V32,
+  FRONTEND_DESIGN_PROMPT_V33,
+  FRONTEND_DESIGN_PROMPT_V34,
+  FRONTEND_DESIGN_PROMPT_V35,
 } from '../construction/frontend-design-prompt';
 import {
   USE_CASE_BATCH_PROMPT,
@@ -826,6 +831,41 @@ import {
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'frontend_presentation',
             systemInstructions: FRONTEND_DESIGN_PROMPT_V30,
+          },
+          {
+            key: 'frontend-design.generate',
+            version: 31,
+            capability: 'STRUCTURED_OUTPUT',
+            purpose: 'frontend_presentation',
+            systemInstructions: FRONTEND_DESIGN_PROMPT_V31,
+          },
+          {
+            key: 'frontend-design.generate',
+            version: 32,
+            capability: 'STRUCTURED_OUTPUT',
+            purpose: 'frontend_presentation',
+            systemInstructions: FRONTEND_DESIGN_PROMPT_V32,
+          },
+          {
+            key: 'frontend-design.generate',
+            version: 33,
+            capability: 'STRUCTURED_OUTPUT',
+            purpose: 'frontend_presentation',
+            systemInstructions: FRONTEND_DESIGN_PROMPT_V33,
+          },
+          {
+            key: 'frontend-design.generate',
+            version: 34,
+            capability: 'STRUCTURED_OUTPUT',
+            purpose: 'frontend_presentation',
+            systemInstructions: FRONTEND_DESIGN_PROMPT_V34,
+          },
+          {
+            key: 'frontend-design.generate',
+            version: 35,
+            capability: 'STRUCTURED_OUTPUT',
+            purpose: 'frontend_presentation',
+            systemInstructions: FRONTEND_DESIGN_PROMPT_V35,
           },
           {
             key: 'code-repair.generate',

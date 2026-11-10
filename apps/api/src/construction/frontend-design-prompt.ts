@@ -169,3 +169,57 @@ export const FRONTEND_DESIGN_PROMPT_V30 = `${FRONTEND_DESIGN_PROMPT_V29}
 - Temporal date range filters enforce validated bounds on both client and server, rejecting invalid date strings and inverted chronological ranges.
 - Historical immutability is strictly maintained: records with status 'PUBLICADA' lock form inputs and submission controls, presenting a clear immutability notice.`;
 
+export const FRONTEND_DESIGN_PROMPT_V31 = `${FRONTEND_DESIGN_PROMPT_V30}
+16. Formal version publication and validation routes (/menus/versions/[versionid]/publish):
+- In version publication views:
+  * The screen realizes formal validation and publication request of the draft version: version attributes (label, creation timestamp, status), branch assignment, and parent daily menu operational cycle are displayed in read-only informational cards.
+  * Child components (MenuVersionComponent) and referenced products are queried and presented in a read-only data table displaying component type, product denomination, monetary price/surcharge, and warehouse availability; component composition and prices are strictly read-only and no insertion, edition, or removal controls are present.
+  * Applicable approved operating parameters and validity rules are queried (OperationalParameter) and displayed as verified operational guidelines governing publication.
+  * Formal publication is executed via a single atomic update request (submitting status: 'PUBLICADA' with server-validated publication timestamp), without partial separate component mutations. If the version is already published or has zero registered components, publication actions are locked with clear feedback.
+  * Return navigation links navigate back to the version detail view (/menus/versions/[versionid]) or branch menus collection (/branches/[branchid]/menus).`;
+
+export const FRONTEND_DESIGN_PROMPT_V32 = `${FRONTEND_DESIGN_PROMPT_V31}
+17. Rigorous domain validation and authentic data presentation:
+- Banners or informational notices must never be treated as substitutes for real entity data, database queries, or server validation. Evaluators must verify authentic data bindings and contracts.
+- In routes conditioned to authorized roles, access is governed by the application role-based permissions and route guards. No fictional approval entities or approval resolution banners are required or accepted.
+- In entity creation and edition routes, draft status and operational dates are validated by structured domain rules and backend enforcement, not superficial string labels.
+- Temporal filters enforce validated, bounded date intervals on both client and server before querying persistence: client-side date inputs validate that 'Desde' is not after 'Hasta' before running queries (disabling query execution and query action buttons when inverted, and rendering accessible role="alert" validation messages); server-side endpoints enforce bounded finite date limits.
+- In version detail views (/menus/versions/[versionid]): parent entity context and child components are queried and presented in structured cards and tables. The action to prepare a new draft version invokes the entity's CREATE operation with the contextual parent relation; the server atomically assigns and guarantees sequential unique version labeling (e.g. V-1, V-2) and initial 'BORRADOR' status within the parent daily menu. Navigation links satisfy return and draft composition actions.`;
+
+export const FRONTEND_DESIGN_PROMPT_V33 = `${FRONTEND_DESIGN_PROMPT_V32}
+18. Version draft edition and dedicated publication isolation:
+- In version draft edition routes (such as /menus/versions/[versionid]/edit):
+  * The form exclusively preserves the 'BORRADOR' status; the status control is locked to 'BORRADOR' with a hidden input, and publicationDate is strictly excluded from editable inputs, prefill values, and update submission payloads.
+  * Saving the draft persists the version and synchronizes component edits while preserving the draft state exclusively.
+  * Formal publication is reserved exclusively for the dedicated publication route (/menus/versions/[versionid]/publish).
+  * Child entity components (dishes, proteins, sides, extras, prices, and availability) are loaded and managed via dedicated component operations. When all required controls, bindings, and components are present with zero missing fields, limitations must be an empty array [].`;
+
+export const FRONTEND_DESIGN_PROMPT_V34 = `${FRONTEND_DESIGN_PROMPT_V33}
+19. Dedicated publication validation and operational parameter enforcement (/menus/versions/[versionid]/publish):
+- In publication validation routes:
+  * The form queries child components (MenuVersionComponent) and operational parameters (OperationalParameter).
+  * The submission button ('Solicitar validación y publicación') is reactively bound to query state and strictly disabled while queries are loading, if the version has zero components, if any component price is invalid, or if operational parameters are not approved/available.
+  * The backend update operation verifies existence of components, non-negative monetary prices, valid dailyMenu operationalDate, and queries OperationalParameter to enforce that approved validity guidelines are active before transitioning status to 'PUBLICADA'.
+  * When all verification criteria are satisfied, limitations must be an empty array [].`;
+
+export const FRONTEND_DESIGN_PROMPT_V35 = `${FRONTEND_DESIGN_PROMPT_V34}
+20. Custom operational workflows and ActionForm bindings (/checkout/[saleid], sales, and custom module endpoints):
+- Authoritative contract boundary: In custom operational views, the physical endpoint contracts in bindings.customEndpoints and the actions in bindings.route.actions define the authoritative, approved API surface of the system. In V1, business operations for sales (creation, draft updating, calculation review, explicit confirmation, internal notes, cancellation, and corrections) are realized strictly through dedicated domain endpoints, not generic entity CRUD.
+- Action mapping on checkout views (/checkout/[saleid], /checkout/new):
+  * «Agregar producto seleccionado» invokes POST /sales/drafts to initialize a sale draft from catalog products with automatic redirect to /checkout/[saleid].
+  * «Guardar cambios del borrador» invokes POST /sales/:saleId/draft with the current revision and lines to update the active draft.
+  * «Solicitar cálculo y revisión de importes» invokes GET /sales/:saleId/review to calculate validated totals, prices, and discounts on the server prior to confirmation.
+  * «Confirmar explícitamente la venta» invokes POST /sales/:saleId/confirm with the quote fingerprint and idempotency key from review.
+  * «Guardar observación interna vinculada» invokes POST /sales/:saleId/notes.
+- Line items and product selection:
+  * When an endpoint contract specifies simple line items ({ productId, quantity }), this fully implements the approved sales draft contract. Blueprint conversational notes regarding future protein/extra configuration or delivery address details not modeled in bindings.customEndpoints do NOT constitute missing form bindings.
+  * Product references are loaded via api.listProducts() references in ActionForm; local price conditions and availability are validated and calculated by the server during review (GET /review) and draft processing. Client-side separate category filter queries or local price displays prior to item selection are not required.
+  * Discarding a draft: leaving an unconfirmed draft retains it as an unconfirmed draft without financial effects; navigating away (via «Descartar borrador» or navigation links to /sales) realizes draft discarding. No dedicated discard deletion endpoint exists in bindings.route.actions; do not report missing discard action bindings.
+  * Active record summary: The consulted record query (GET /sales/[saleid]) renders the current persisted draft metadata (identifier, status, sale date, operational date, channel) as contextual summary in the screen.
+- Policy-deactivated operations: Endpoints with a disabledReason (such as discount endpoints) are disabled by approved system policy; disabled controls with status explanations fully satisfy their contract.
+When the screen binds each planned action to its respective ActionForm and custom endpoint contract, report limitations as an empty array [].`;
+
+
+
+
+
