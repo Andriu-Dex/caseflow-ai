@@ -89,6 +89,9 @@ export class FrontendDesignService {
     if (baseline.entries.some((item) => item.artifactVersion.projectId !== projectId))
       throw new UnprocessableEntityException('Las fuentes del diseño no pertenecen al proyecto.');
     const language = await getProjectLanguage(this.prisma, projectId);
+    // Every screen is evaluated before failing, so one run reports all gaps;
+    // accepted screens stay checkpointed for the next run.
+    const incomplete: string[] = [];
     for (const route of plan.routes) {
       const screen = blueprint.screens.find((item) => item.localId === route.screenLocalId);
       if (!screen)
@@ -207,6 +210,26 @@ export class FrontendDesignService {
         where: { path: cachePath, generationRun: { projectId, designBaselineId: baselineId } },
         select: { content: true },
       });
+      // An evaluation with findings is kept under the same inputs hash: the
+      // findings survive an interrupted run and are not paid for twice.
+      const findingsPath = `docs/presentation-findings/${cacheHash}.json`;
+      const reported = cached
+        ? null
+        : await this.prisma.generatedFile.findFirst({
+            where: {
+              path: findingsPath,
+              generationRun: { projectId, designBaselineId: baselineId },
+            },
+            select: { content: true },
+          });
+      const report = (findings: string) =>
+        incomplete.push(
+          `La pantalla «${screen.name}» (${route.path}) necesita completar sus enlaces funcionales. ${findings}`,
+        );
+      if (reported) {
+        report(JSON.parse(reported.content).findings);
+        continue;
+      }
       let presentation;
       if (cached) {
         presentation = presentationSchema.parse(JSON.parse(cached.content));
@@ -233,9 +256,21 @@ export class FrontendDesignService {
           const findings = presentation.limitations
             .map((item) => `${item.code}: ${item.description}`)
             .join(' ');
-          throw new UnprocessableEntityException(
-            `La pantalla «${screen.name}» (${route.path}) necesita completar sus enlaces funcionales. ${findings}`,
-          );
+          const content = json({ routePath: route.path, findings });
+          await this.prisma.generatedFile.upsert({
+            where: { generationRunId_path: { generationRunId, path: findingsPath } },
+            update: {},
+            create: {
+              generationRunId,
+              path: findingsPath,
+              content,
+              kind: 'DOCUMENTATION',
+              origin: 'AI_ASSISTED',
+              sha256: hash(content),
+            },
+          });
+          report(findings);
+          continue;
         }
         validatePresentation(presentation, sources);
       }
@@ -278,6 +313,10 @@ export class FrontendDesignService {
         presentation,
       });
     }
+    if (incomplete.length)
+      throw new UnprocessableEntityException(
+        `${incomplete.length === 1 ? 'Una pantalla necesita' : `${incomplete.length} pantallas necesitan`} completar sus enlaces funcionales.\n${incomplete.join('\n')}`,
+      );
     applyPresentationShell(output, records, projectName, themeToggle);
     output.push(
       file(

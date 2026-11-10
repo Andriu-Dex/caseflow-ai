@@ -252,18 +252,33 @@ describe('frozen design adaptation', () => {
         },
       } as never;
     });
+    const stored = new Map<string, string>();
+    prisma.generatedFile.findFirst.mockImplementation(async ({ where }) =>
+      stored.has(where.path) ? { content: stored.get(where.path) } : null,
+    );
+    prisma.generatedFile.upsert.mockImplementation(async (args) => {
+      stored.set(args.create.path, args.create.content);
+      return args.create;
+    });
     await expect(service.adapt(id, id, plan, files(), 'Catálogo', false, id)).rejects.toThrow(
       'Artículos',
     );
+    // The findings are kept, never an accepted presentation, and a second run
+    // reports them again without another evaluation.
+    expect([...stored.keys()]).toEqual([expect.stringMatching(/^docs\/presentation-findings\//)]);
     await expect(service.adapt(id, id, plan, files(), 'Catálogo', false, id)).rejects.toThrow(
       'Falta el enlace de existencias',
     );
-    expect(prisma.generatedFile.upsert).not.toHaveBeenCalled();
+    expect(ai.generateStructured).toHaveBeenCalledTimes(1);
   });
   it('does not fall back to presentation evaluations from older prompt versions', async () => {
     const { service, prisma } = await setup();
     prisma.generatedFile.findFirst.mockResolvedValue(null);
     await service.adapt(id, id, plan, files(), 'Catálogo', false, id);
-    expect(prisma.generatedFile.findFirst).toHaveBeenCalledTimes(1);
+    // One lookup for an accepted presentation and one for recorded findings,
+    // both under the current version's inputs hash.
+    const paths = prisma.generatedFile.findFirst.mock.calls.map(([args]) => args.where.path);
+    expect(paths).toHaveLength(2);
+    expect(new Set(paths.map((path: string) => path.split('/').at(-1))).size).toBe(1);
   });
 });
