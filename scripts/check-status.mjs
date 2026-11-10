@@ -15,11 +15,6 @@ async function main() {
   console.log('Total cached presentations in DB:', presentations.length);
   presentations.forEach((p, i) => console.log(`${i + 1}. ${p.path}`));
 
-  const runs = await prisma.generationRun.findMany({
-    orderBy: { id: 'desc' },
-    take: 5,
-    include: { _count: { select: { files: true } } },
-  });
   console.log('\nRecent Generation Runs:');
   const allRuns = await prisma.generationRun.findMany({
     orderBy: { createdAt: 'desc' },
