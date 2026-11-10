@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { CASEFLOW_WEB_TS_V2 } from '@caseflow-ai/domain';
 import { implementationPlanContentSchema } from '@caseflow-ai/contracts';
 import { FakeStorageProvider } from '@caseflow-ai/integrations';
-import { FrontendDesignService } from './frontend-design.service';
+import {
+  FrontendDesignService,
+  serverMethods,
+  sharedComponentImports,
+} from './frontend-design.service';
 import { generateProject } from '../code-generation/engine/project-generator';
 import { structuralProblems } from './project-validation';
 import { planTraceLinks } from '../code-generation/engine/trace-links';
@@ -280,5 +284,36 @@ describe('frozen design adaptation', () => {
     const paths = prisma.generatedFile.findFirst.mock.calls.map(([args]) => args.where.path);
     expect(paths).toHaveLength(2);
     expect(new Set(paths.map((path: string) => path.split('/').at(-1))).size).toBe(1);
+  });
+});
+
+describe('evaluation evidence', () => {
+  it('collects the shared components a page imports, without UI primitives', () => {
+    const imports = sharedComponentImports(
+      'apps/web/app/items/[itemId]/page.tsx',
+      "import { PageState } from '../../../components/page-state';\nimport { Button } from '../../../components/ui/button';\nimport { api } from '../../../lib/api';",
+    );
+    expect([...imports]).toEqual(['apps/web/components/page-state.tsx']);
+  });
+
+  it('extracts only the named server methods from generated API sources', () => {
+    const methods = serverMethods(
+      [
+        {
+          path: 'apps/api/src/sales/sales.service.ts',
+          content:
+            'export class SalesService {\n  async confirmSale(id: string) { return { id }; }\n  other() { return 1; }\n}',
+        },
+        { path: 'apps/api/src/sales/sales.service.spec.ts', content: 'confirmSale' },
+        { path: 'apps/web/app/page.tsx', content: 'confirmSale' },
+      ],
+      'confirmSale',
+    );
+    expect(methods).toEqual([
+      {
+        path: 'apps/api/src/sales/sales.service.ts',
+        source: 'async confirmSale(id: string) { return { id }; }',
+      },
+    ]);
   });
 });

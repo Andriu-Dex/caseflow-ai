@@ -1,5 +1,7 @@
 import { Inject, Injectable, UnprocessableEntityException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import { posix } from 'node:path';
+import ts from 'typescript';
 import { AIOrchestrator } from '@caseflow-ai/ai';
 import { uiBlueprintContentSchema, type ImplementationPlanContent } from '@caseflow-ai/contracts';
 import type { StorageProvider } from '@caseflow-ai/integrations';
@@ -15,6 +17,7 @@ import {
 import { applyPresentationShell } from '../code-generation/engine/presentation-shell';
 import { file, json, type GeneratedProjectFile } from '../code-generation/engine/types';
 import { kebabCase } from '../code-generation/naming';
+import { actionMethodName } from '../code-generation/engine/backend.templates';
 
 const FRONTEND_DESIGN_VERSION = 36;
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
@@ -134,6 +137,13 @@ export class FrontendDesignService {
         route.actions.some((action) => action.endpoint === 'POST /auth/logout') && loginRoute
           ? `apps/web/app${loginRoute.path}/page.tsx`
           : undefined;
+      const importedComponents = sharedComponentImports(path, target.content);
+      const usedEndpoints = plan.customEndpoints.filter(
+        (endpoint) =>
+          route.actions.some(
+            (action) => action.endpoint === `${endpoint.method} ${endpoint.path}`,
+          ) || route.contextQueries?.includes(`${endpoint.method} ${endpoint.path}`),
+      );
       const bindings = {
         functionalPageSource: target.content,
         route,
@@ -142,6 +152,7 @@ export class FrontendDesignService {
           .filter(
             (item) =>
               item.path === 'apps/web/components/operation-context.tsx' ||
+              importedComponents.has(item.path) ||
               (item.path === 'apps/web/components/action-form.tsx' &&
                 target.content.includes('<ActionForm')) ||
               item.path === loginPage,
@@ -188,11 +199,14 @@ export class FrontendDesignService {
             : {}),
         },
         entity: routeEntity ?? null,
-        endpoints: plan.customEndpoints.filter(
-          (endpoint) =>
-            route.actions.some(
-              (action) => action.endpoint === `${endpoint.method} ${endpoint.path}`,
-            ) || route.contextQueries?.includes(`${endpoint.method} ${endpoint.path}`),
+        endpoints: usedEndpoints,
+        // The server side of each action the screen calls, so its behavior is
+        // judged from the code rather than reported as missing evidence.
+        endpointImplementations: usedEndpoints.flatMap((endpoint) =>
+          serverMethods(output, actionMethodName(endpoint)).map((method) => ({
+            endpoint: `${endpoint.method} ${endpoint.path}`,
+            ...method,
+          })),
         ),
       };
       const cacheHash = hash(
@@ -350,4 +364,35 @@ export class FrontendDesignService {
     );
     return { files: output, records };
   }
+}
+
+// Shared (non-primitive) web components a page imports by relative path.
+export function sharedComponentImports(pagePath: string, source: string): Set<string> {
+  const found = new Set<string>();
+  for (const match of source.matchAll(/from '(\.{1,2}\/[^']+)'/g)) {
+    const resolved = posix.normalize(posix.join(posix.dirname(pagePath), match[1]!));
+    if (resolved.startsWith('apps/web/components/') && !resolved.includes('/ui/'))
+      found.add(`${resolved}.tsx`);
+  }
+  return found;
+}
+
+// Methods with this name in the generated API sources (service and controller).
+export function serverMethods(
+  files: readonly { path: string; content: string }[],
+  name: string,
+): { path: string; source: string }[] {
+  const methods: { path: string; source: string }[] = [];
+  for (const item of files) {
+    if (!item.path.startsWith('apps/api/src/') || !item.path.endsWith('.ts')) continue;
+    if (item.path.endsWith('.spec.ts') || !item.content.includes(name)) continue;
+    const sourceFile = ts.createSourceFile(item.path, item.content, ts.ScriptTarget.Latest, true);
+    const visit = (node: ts.Node) => {
+      if (ts.isMethodDeclaration(node) && node.name.getText(sourceFile) === name)
+        methods.push({ path: item.path, source: node.getText(sourceFile) });
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+  }
+  return methods;
 }
