@@ -435,6 +435,32 @@ describe('projectSlug', () => {
   });
 });
 
+describe('edit-only form routes', () => {
+  it('declares the record parameter it edits, even with no other controls', () => {
+    const files = byPath(
+      generateProject(
+        ctx(
+          basePlan({
+            routes: [
+              {
+                path: '/orders/[orderid]/edit',
+                screenName: 'Editar pedido',
+                moduleLocalId: 'sales',
+                kind: 'FORM',
+                entityLocalId: 'order',
+                actions: [{ label: 'Guardar cambios', operation: 'UPDATE' }],
+              },
+            ],
+          }),
+        ),
+      ),
+    );
+    const page = files.get('apps/web/app/orders/[orderid]/edit/page.tsx')!.content;
+    expect(page).toContain('const { orderid } = useParams<{ orderid: string }>();');
+    expect(page).toContain('setEditId(orderid);');
+  });
+});
+
 describe('screen actions (DEC-121)', () => {
   const plan = basePlan({
     routes: [
@@ -488,7 +514,12 @@ describe('screen actions (DEC-121)', () => {
       'data-action={"Eliminar"} run={() => api.deleteOrder(orderId)} onDone={() => router.push("/orders")}',
     );
     expect(page('apps/web/app/orders/new/page.tsx')).toContain(
-      '<Button type="submit" disabled={isSubmitting} data-action={"Registrar pedido"}>',
+      '<Button type="submit" disabled={isSubmitting || (Boolean(editId) && (existing.isLoading || existing.isError || !existing.data))} data-action={"Registrar pedido"}>',
+    );
+    // An edit shows loading and missing-record states before it can save.
+    expect(page('apps/web/app/orders/new/page.tsx')).toContain('Cargando el registro…');
+    expect(page('apps/web/app/orders/new/page.tsx')).toContain(
+      'El registro no existe o ya no está disponible.',
     );
   });
 
@@ -527,7 +558,7 @@ describe('screen actions (DEC-121)', () => {
     expect(review).toContain('const { orderid } = useParams<{ orderid: string }>();');
     expect(review).toContain('run={() => api.postOrdersConfirm({ orderId: orderid }, {})}');
     expect(review).toContain(
-      'variant="outline" disabled={isSubmitting} data-action={"Guardar borrador"}',
+      'variant="outline" disabled={isSubmitting || (Boolean(editId) && (existing.isLoading || existing.isError || !existing.data))} data-action={"Guardar borrador"}',
     );
     // No list or detail screen for orders: consulting runs the query.
     expect(more.get('apps/web/app/reports/page.tsx')!.content).toContain(

@@ -923,7 +923,8 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
     : `api.create${entity.name}(payload as Parameters<typeof api.create${entity.name}>[0])`;
   const editingParam =
     editable && own?.operation === 'UPDATE' ? entityParam(entity, names) : undefined;
-  const hook = paramsHook(names, names.join(' ') + header.join('\n') + (editingParam ?? ''));
+  // Separated, so a parameter that only the editing query uses still matches.
+  const hook = paramsHook(names, [...names, ...header, editingParam ?? ''].join('\n'));
   const prefillFields = [
     ...entity.fields
       .filter(
@@ -951,13 +952,22 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
     `import { ${schema} } from '${SCOPE}/contracts';`,
     `import { api } from '${up}lib/api';`,
   ].filter(Boolean);
-  const mutationDisabled =
-    entity.lifecycle && editable
-      ? `isSubmitting || (Boolean(editId) && (existing.isLoading || existing.isError || !existing.data)) || ${JSON.stringify(entity.lifecycle.immutableStates)}.includes(String(existing.data?.${entity.lifecycle.stateField}))`
-      : 'isSubmitting';
+  // An edit never saves over a record that has not loaded.
+  const editGuard =
+    'isSubmitting || (Boolean(editId) && (existing.isLoading || existing.isError || !existing.data))';
+  const mutationDisabled = !editable
+    ? 'isSubmitting'
+    : entity.lifecycle
+      ? `${editGuard} || ${JSON.stringify(entity.lifecycle.immutableStates)}.includes(String(existing.data?.${entity.lifecycle.stateField}))`
+      : editGuard;
+  const editStatus = editable
+    ? `      {editId && existing.isLoading ? <p role="status" className="text-sm text-muted-foreground">Cargando el registro…</p> : null}
+      {editId && existing.isError ? <p role="alert" className="text-sm text-destructive">{(existing.error as { status?: number } | null)?.status === 404 ? 'El registro no existe o ya no está disponible.' : 'No se pudo cargar el registro. Intente de nuevo.'}</p> : null}
+`
+    : '';
   const body = `    <div className="flex max-w-xl flex-col gap-4">
       <h1 className="text-xl font-semibold">${route.screenName.replace(/[<>{}]/g, '')}</h1>
-${headerBlock}${entity.lifecycle ? `<p role="status" className="text-sm text-muted-foreground">${editable ? `{existing.data ? 'Estado: ' + String(existing.data.${entity.lifecycle.stateField}) : ${JSON.stringify('Estado inicial: ' + entity.lifecycle.initialState)}}` : text('Estado inicial: ' + entity.lifecycle.initialState)}</p>` : ''}      <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4 rounded-lg border p-4">
+${headerBlock}${editStatus}${entity.lifecycle ? `<p role="status" className="text-sm text-muted-foreground">${editable ? `{existing.data ? 'Estado: ' + String(existing.data.${entity.lifecycle.stateField}) : ${JSON.stringify('Estado inicial: ' + entity.lifecycle.initialState)}}` : text('Estado inicial: ' + entity.lifecycle.initialState)}</p>` : ''}      <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4 rounded-lg border p-4">
 ${[...inputs, ...relationInputs, ...manyInputs, ...(isAccount ? [`<div><label htmlFor="roleNames">Roles</label><select id="roleNames" multiple {...register('roleNames')}>${plan.authentication.roles.map((role) => `<option value={${JSON.stringify(role)}}>{${JSON.stringify(role)}}</option>`).join('')}</select></div>`] : [])].join('\n')}
         <div className="flex flex-wrap gap-2">
           <Button type="submit" disabled={${mutationDisabled}}${own ? ` ${actionMarker(own.label)}` : ''}>
@@ -1074,7 +1084,7 @@ function simplePage(plan: Plan, route: Route): string {
       routeParams: names,
     }),
   ];
-  const hook = paramsHook(names, names.join(' ') + header.join('\n'));
+  const hook = paramsHook(names, [...names, ...header].join('\n'));
   const body = `    <div className="flex flex-col gap-4">
       <h1 className="text-xl font-semibold">${route.screenName.replace(/[<>{}]/g, '')}</h1>
       <p className="text-sm text-muted-foreground">${module.description.replace(/[<>{}]/g, '')}</p>
