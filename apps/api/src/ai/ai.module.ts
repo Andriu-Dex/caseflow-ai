@@ -64,10 +64,11 @@ import {
   AIOrchestrator,
   DisabledAIProvider,
   FallbackAIProvider,
+  RoutingAIProvider,
   PromptRegistry,
   type AIProvider,
 } from '@caseflow-ai/ai';
-import { loadAIConfig } from '@caseflow-ai/config';
+import { loadAIConfig, loadAIRoutes, type AIProviderSlot } from '@caseflow-ai/config';
 import {
   ChatGPTProvider,
   HttpChatGPTBroker,
@@ -86,6 +87,44 @@ import {
   REQUIREMENTS_DEPENDENCY_PROMPT,
 } from '../requirements/requirements-prompt';
 
+// A free-tier slot keeps the fallback provider's rate-limit waits.
+const slotProvider = (slot: AIProviderSlot): AIProvider =>
+  new FallbackAIProvider([
+    {
+      provider: new OpenAICompatibleProvider(slot),
+      capacity: {
+        maxInputTokens: slot.maxInputTokens,
+        tokensPerMinute: slot.tokensPerMinute,
+        dayResetTimeZone: slot.dayResetTimeZone,
+      },
+    },
+  ]);
+
+function defaultProvider(): AIProvider {
+  const config = loadAIConfig(process.env);
+  if (config.provider === 'disabled') return new DisabledAIProvider();
+  if (config.provider === 'chatgpt')
+    return new ChatGPTProvider({
+      model: config.model,
+      timeoutMs: config.timeoutMs,
+      maxInputTokens: config.maxInputTokens,
+      maxOutputTokens: config.maxOutputTokens,
+      broker: new HttpChatGPTBroker(config.brokerUrl, config.brokerSecret),
+    });
+  if (config.provider === 'fallback')
+    return new FallbackAIProvider(
+      config.chain.map((slot) => ({
+        provider: new OpenAICompatibleProvider(slot),
+        capacity: {
+          maxInputTokens: slot.maxInputTokens,
+          tokensPerMinute: slot.tokensPerMinute,
+          dayResetTimeZone: slot.dayResetTimeZone,
+        },
+      })),
+    );
+  return new OpenAICompatibleProvider(config);
+}
+
 @Module({
   controllers: [AIStatusController],
   providers: [
@@ -93,28 +132,14 @@ import {
     {
       provide: AI_PROVIDER,
       useFactory: (): AIProvider => {
-        const config = loadAIConfig(process.env);
-        if (config.provider === 'disabled') return new DisabledAIProvider();
-        if (config.provider === 'chatgpt')
-          return new ChatGPTProvider({
-            model: config.model,
-            timeoutMs: config.timeoutMs,
-            maxInputTokens: config.maxInputTokens,
-            maxOutputTokens: config.maxOutputTokens,
-            broker: new HttpChatGPTBroker(config.brokerUrl, config.brokerSecret),
-          });
-        if (config.provider === 'fallback')
-          return new FallbackAIProvider(
-            config.chain.map((slot) => ({
-              provider: new OpenAICompatibleProvider(slot),
-              capacity: {
-                maxInputTokens: slot.maxInputTokens,
-                tokensPerMinute: slot.tokensPerMinute,
-                dayResetTimeZone: slot.dayResetTimeZone,
-              },
-            })),
-          );
-        return new OpenAICompatibleProvider(config);
+        const base = defaultProvider();
+        const routes = loadAIRoutes(process.env);
+        return routes.size
+          ? new RoutingAIProvider(
+              base,
+              new Map([...routes].map(([purpose, slot]) => [purpose, slotProvider(slot)])),
+            )
+          : base;
       },
     },
     {

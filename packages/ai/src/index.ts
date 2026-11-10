@@ -360,6 +360,29 @@ export class AIOrchestrator {
   }
 }
 
+// Sends the requests of some purposes to another provider (e.g. screen
+// evaluation to a free tier) and everything else to the default one.
+export class RoutingAIProvider implements AIProvider {
+  readonly id: string;
+  readonly maxInputTokens?: number;
+  constructor(
+    private readonly fallback: AIProvider,
+    private readonly routes: ReadonlyMap<string, AIProvider>,
+  ) {
+    this.id = fallback.id;
+    this.maxInputTokens = fallback.maxInputTokens;
+  }
+  generateStructured(request: AIProviderRequest): Promise<AIProviderResponse> {
+    return (this.routes.get(request.purpose) ?? this.fallback).generateStructured(request);
+  }
+  status(): AIProviderStatus[] {
+    return [
+      ...(this.fallback.status?.() ?? []),
+      ...[...this.routes.values()].flatMap((provider) => provider.status?.() ?? []),
+    ];
+  }
+}
+
 export class DisabledAIProvider implements AIProvider {
   readonly id = 'disabled';
   async generateStructured(): Promise<never> {
