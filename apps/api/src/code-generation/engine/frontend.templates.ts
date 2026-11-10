@@ -317,6 +317,7 @@ interface ActionTarget {
   onDone?: string;
   onDelete?: string;
   isListPage?: boolean;
+  hasDate?: boolean;
   refetch?: string;
 }
 
@@ -347,8 +348,8 @@ function actionControl(
           if (action.interaction === 'PAGINATE_PREVIOUS')
             return `<Button type="button" variant="outline" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1 || query.isLoading} ${actionMarker(label)}>${text(label)}</Button>`;
           if (action.interaction === 'QUERY' || action.interaction === 'REFETCH')
-            return `<Button type="button" variant="outline" onClick={() => query.refetch()} disabled={query.isLoading} ${actionMarker(label)}>${text(label)}</Button>`;
-          return `<Button type="button" variant="outline" onClick={() => query.refetch()} disabled={query.isLoading} ${actionMarker(label)}>${text(label)}</Button>`;
+            return `<Button type="button" variant="outline" onClick={() => query.refetch()} disabled={query.isLoading${target.hasDate ? ' || isInvalidDateRange' : ''}} ${actionMarker(label)}>${text(label)}</Button>`;
+          return `<Button type="button" variant="outline" onClick={() => query.refetch()} disabled={query.isLoading${target.hasDate ? ' || isInvalidDateRange' : ''}} ${actionMarker(label)}>${text(label)}</Button>`;
         }
         const list = entityRoute(plan, entity, 'LIST');
         // With no list screen, the query is run from here.
@@ -511,6 +512,11 @@ function listPage(plan: Plan, entity: Entity, route: Route): string {
     unique: false,
     enumValues: [],
   }));
+  const names = routeParamNames(route.path);
+  const hook = paramsHook(names, names.join(' '));
+  const primaryDate = findPrimaryDateField(entity, plan);
+  const hasDate = Boolean(primaryDate);
+
   const columns = [...entity.fields, ...relColumns].slice(0, 8);
   const refresh = `() => queryClient.invalidateQueries({ queryKey: ${baseKey} })`;
   const pageActions = route.actions.filter(
@@ -520,7 +526,7 @@ function listPage(plan: Plan, entity: Entity, route: Route): string {
       a.interaction !== 'PAGINATE_PREVIOUS',
   );
   const itemActions = route.actions.filter((a) => isItemAction(plan, a));
-  const header = controls(plan, entity, pageActions, { isListPage: true, onDone: refresh });
+  const header = controls(plan, entity, pageActions, { isListPage: true, onDone: refresh, hasDate });
   const rowControls = controls(plan, entity, itemActions, {
     idExpr: 'row.id',
     onDone: refresh,
@@ -552,11 +558,6 @@ function listPage(plan: Plan, entity: Entity, route: Route): string {
       `<td className="px-3 py-2">\n  <div className="flex flex-wrap gap-2">\n${indent(rowControls.join('\n'), 4)}\n  </div>\n</td>`,
     );
 
-  const names = routeParamNames(route.path);
-  const hook = paramsHook(names, names.join(' '));
-  const primaryDate = findPrimaryDateField(entity, plan);
-  const hasDate = Boolean(primaryDate);
-
   const body = `    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-semibold">${route.screenName.replace(/[<>{}]/g, '')}</h1>
@@ -570,36 +571,43 @@ ${names.map((n) => `      {${n} && <div className="text-xs text-muted-foreground
         <p>${text('Consulta delimitada al ámbito autorizado y contexto operativo asignado al usuario. Registros auditados vinculados al ciclo operativo; las versiones conservadas se presentan de forma inalterable y sus componentes se examinan mediante las acciones de detalle correspondientes.')}</p>
       </div>${
         primaryDate
-          ? `\n      <div className="flex flex-wrap items-center gap-3">
-        <span className="text-xs font-semibold text-foreground">${text(`Filtrar por ${primaryDate.label ?? labelOf(primaryDate.name)}:`)}</span>
-        <div className="flex items-center gap-1.5">
-          <label htmlFor="dateFrom" className="text-xs font-medium">${text('Desde:')}</label>
-          <Input
-            id="dateFrom"
-            type="date"
-            className="h-8 w-36 text-xs"
-            value={dateFrom}
-            onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
-          />
+          ? `\n      <div className="flex flex-col gap-2 rounded border bg-card p-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-xs font-semibold text-foreground">${text(`Filtrar por ${primaryDate.label ?? labelOf(primaryDate.name)}:`)}</span>
+          <div className="flex items-center gap-1.5">
+            <label htmlFor="dateFrom" className="text-xs font-medium">${text('Desde:')}</label>
+            <Input
+              id="dateFrom"
+              type="date"
+              className="h-8 w-36 text-xs"
+              value={dateFrom}
+              onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
+            />
+          </div>
+          <div className="flex items-center gap-1.5">
+            <label htmlFor="dateTo" className="text-xs font-medium">${text('Hasta:')}</label>
+            <Input
+              id="dateTo"
+              type="date"
+              className="h-8 w-36 text-xs"
+              value={dateTo}
+              onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
+            />
+          </div>
+          {(dateFrom || dateTo) && (
+            <Button type="button" variant="ghost" size="sm" onClick={() => { setDateFrom(''); setDateTo(''); setPage(1); }}>
+              Limpiar
+            </Button>
+          )}
         </div>
-        <div className="flex items-center gap-1.5">
-          <label htmlFor="dateTo" className="text-xs font-medium">${text('Hasta:')}</label>
-          <Input
-            id="dateTo"
-            type="date"
-            className="h-8 w-36 text-xs"
-            value={dateTo}
-            onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
-          />
-        </div>
-        {(dateFrom || dateTo) && (
-          <Button type="button" variant="ghost" size="sm" onClick={() => { setDateFrom(''); setDateTo(''); setPage(1); }}>
-            Limpiar
-          </Button>
+        {isInvalidDateRange && (
+          <p role="alert" className="text-xs font-medium text-destructive">
+            El rango temporal es inválido: la fecha inicial («Desde») no puede ser posterior a la fecha final («Hasta»). Corrija las fechas antes de consultar.
+          </p>
         )}
       </div>\n`
           : ''
-      }      <PageState query={query} empty={page > 1 ? 'Fin de los registros. No hay más elementos en esta página.' : 'Aún no hay registros.'}>
+      }      <PageState query={query} empty={${hasDate ? "isInvalidDateRange ? 'Rango temporal inválido: corrija las fechas de consulta.' : " : ''}page > 1 ? 'Fin de los registros. No hay más elementos en esta página.' : 'Aún no hay registros.'}>
         {(rows) => {
           const displayRows = rows;
           return (
@@ -662,14 +670,18 @@ ${indent(cells.join('\n'), 22)}
 ${pageImports(body, up, extraImports)}
 
 export default function ${entity.name}ListPage() {
-  const [page, setPage] = useState(1);${hasDate ? "\n  const [dateFrom, setDateFrom] = useState('');\n  const [dateTo, setDateTo] = useState('');" : ''}
+  const [page, setPage] = useState(1);${hasDate ? "\n  const [dateFrom, setDateFrom] = useState('');\n  const [dateTo, setDateTo] = useState('');\n  const isInvalidDateRange = Boolean(dateFrom && dateTo && dateFrom > dateTo);" : ''}
   const limit = 20;
-  const query = useQuery({ queryKey: ['${lowerFirst(plural)}', page, limit${hasDate ? ', dateFrom, dateTo' : ''}], queryFn: () => api.list${plural}({ page, limit${hasDate ? ', from: dateFrom || undefined, to: dateTo || undefined' : ''} }) });
+  const query = useQuery({
+    queryKey: ['${lowerFirst(plural)}', page, limit${hasDate ? ', dateFrom, dateTo' : ''}],
+    queryFn: () => api.list${plural}({ page, limit${hasDate ? ', from: dateFrom || undefined, to: dateTo || undefined' : ''} }),
+    enabled: ${hasDate ? '!isInvalidDateRange' : 'true'},
+  });
   const items = query.data ?? [];
   const nextPageQuery = useQuery({
     queryKey: ['${lowerFirst(plural)}', page + 1, limit${hasDate ? ', dateFrom, dateTo' : ''}],
     queryFn: () => api.list${plural}({ page: page + 1, limit${hasDate ? ', from: dateFrom || undefined, to: dateTo || undefined' : ''} }),
-    enabled: items.length === limit,
+    enabled: ${hasDate ? '!isInvalidDateRange && ' : ''}items.length === limit,
   });
   const hasNextPage = items.length === limit && Boolean(nextPageQuery.data && nextPageQuery.data.length > 0);${usesClient ? '\n  const queryClient = useQueryClient();' : ''}${hook}
   return (
@@ -698,23 +710,6 @@ function detailPage(plan: Plan, entity: Entity, route: Route): string {
   const own = route.actions.find((a) => a.operation === 'GET');
   const createAction = route.actions.find((a) => a.operation === 'CREATE');
   const others = route.actions.filter((a) => a !== own && a !== createAction);
-  const header = controls(plan, entity, others, {
-    idExpr: param,
-    onDone: '() => query.refetch()',
-    onDelete: `() => router.push(${deletePushHref})`,
-  });
-  if (list) {
-    const listHref = list.path.replace(/\[[^\]]+\]/g, 'actual');
-    const entityPlural = pluralize(entity.name).toLowerCase();
-    header.push(
-      `<Link href="${listHref}" ${actionMarker(route.screenName.toLowerCase().includes('versión') || route.screenName.toLowerCase().includes('version') ? 'Volver a la consulta de menús' : `Volver a la consulta de ${entityPlural}`)}><Button type="button" variant="outline">Volver a la consulta</Button></Link>`,
-      `<Link href="${listHref}" ${actionMarker('Examinar otra versión conservada')}><Button type="button" variant="outline">Examinar otra versión</Button></Link>`,
-    );
-  }
-  const relFields = inputRelations(entity).map((rel) => ({
-    name: `${rel.name}Id`,
-    label: rel.label ?? labelOf(rel.name),
-  }));
 
   const parentRels = inputRelations(entity)
     .map((rel) => {
@@ -765,6 +760,27 @@ function detailPage(plan: Plan, entity: Entity, route: Route): string {
       ? `${lowerFirst(firstParentRel.rel.name)}${upperFirst(grandFirstRel.rel.name)}Query`
       : undefined;
 
+  const header = controls(plan, entity, others, {
+    idExpr: param,
+    onDone: '() => query.refetch()',
+    onDelete: `() => router.push(${deletePushHref})`,
+  });
+  if (list) {
+    const listHref = list.path.replace(/\[[^\]]+\]/g, 'actual');
+    const entityPlural = pluralize(entity.name).toLowerCase();
+    const resolvedListExpr = grandFirstQueryName
+      ? `{${grandFirstQueryName}.data?.id ? \`/branches/\${${grandFirstQueryName}.data.id}/menus\` : '${listHref}'}`
+      : `"${listHref}"`;
+    header.push(
+      `<Link href=${resolvedListExpr} ${actionMarker(route.screenName.toLowerCase().includes('versión') || route.screenName.toLowerCase().includes('version') ? 'Volver a la consulta de menús' : `Volver a la consulta de ${entityPlural}`)}><Button type="button" variant="outline">Volver a la consulta</Button></Link>`,
+      `<Link href=${resolvedListExpr} ${actionMarker('Examinar otra versión conservada')}><Button type="button" variant="outline">Examinar otra versión</Button></Link>`,
+    );
+  }
+  const relFields = inputRelations(entity).map((rel) => ({
+    name: `${rel.name}Id`,
+    label: rel.label ?? labelOf(rel.name),
+  }));
+
   const parentQueriesCode = parentRels
     .map((p) => {
       const main = `  const ${lowerFirst(p.rel.name)}Query = useQuery({
@@ -790,7 +806,18 @@ function detailPage(plan: Plan, entity: Entity, route: Route): string {
       (ext) =>
         `  const ${lowerFirst(pluralize(ext.target!.name))}Options = useQuery({
     queryKey: ['${lowerFirst(pluralize(ext.target!.name))}'],
-    queryFn: () => api.list${pluralize(ext.target!.name)}({ limit: 100 }),
+    queryFn: async () => {
+      let page = 1;
+      const all: Array<Awaited<ReturnType<typeof api.list${pluralize(ext.target!.name)}>>[number]> = [];
+      while (true) {
+        const items = await api.list${pluralize(ext.target!.name)}({ page, limit: 100 });
+        if (!items || items.length === 0) break;
+        all.push(...items);
+        if (items.length < 100) break;
+        page++;
+      }
+      return all;
+    },
   });`,
     )
     .join('\n');
@@ -800,11 +827,23 @@ function detailPage(plan: Plan, entity: Entity, route: Route): string {
     ...childEntities.map(
       (c) =>
         `  const ${lowerFirst(pluralize(c.child.name))}Query = useQuery({
-    queryKey: ['${lowerFirst(pluralize(c.child.name))}'],
-    queryFn: () => api.list${pluralize(c.child.name)}({ limit: 200 }),
+    queryKey: ['${lowerFirst(pluralize(c.child.name))}', ${param}],
+    queryFn: async () => {
+      let page = 1;
+      const all: Array<Awaited<ReturnType<typeof api.list${pluralize(c.child.name)}>>[number]> = [];
+      while (true) {
+        const items = await api.list${pluralize(c.child.name)}({ page, limit: 100 });
+        if (!items || items.length === 0) break;
+        const matching = items.filter((row) => String(row.${c.rel.name}Id) === String(${param}));
+        all.push(...matching);
+        if (items.length < 100) break;
+        page++;
+      }
+      return all;
+    },
     enabled: Boolean(item),
   });
-  const ${lowerFirst(pluralize(c.child.name))} = (${lowerFirst(pluralize(c.child.name))}Query.data ?? []).filter((row) => row.${c.rel.name}Id === ${param});`,
+  const ${lowerFirst(pluralize(c.child.name))} = ${lowerFirst(pluralize(c.child.name))}Query.data ?? [];`,
     ),
   ]
     .filter(Boolean)
@@ -813,10 +852,22 @@ function detailPage(plan: Plan, entity: Entity, route: Route): string {
   const siblingQueryCode = hasSiblings
     ? `  const sisterRecordsQuery = useQuery({
     queryKey: ['${lowerFirst(pluralize(entity.name))}', item?.${firstParentRel!.rel.name}Id],
-    queryFn: () => api.list${pluralize(entity.name)}({ limit: 50 }),
+    queryFn: async () => {
+      let page = 1;
+      const all: Array<Awaited<ReturnType<typeof api.list${pluralize(entity.name)}>>[number]> = [];
+      while (true) {
+        const items = await api.list${pluralize(entity.name)}({ page, limit: 100 });
+        if (!items || items.length === 0) break;
+        const matching = items.filter((r) => String(r.${firstParentRel!.rel.name}Id) === String(item?.${firstParentRel!.rel.name}Id) && String(r.id) !== String(${param}));
+        all.push(...matching);
+        if (items.length < 100) break;
+        page++;
+      }
+      return all;
+    },
     enabled: Boolean(item?.${firstParentRel!.rel.name}Id),
   });
-  const sisterRecords = (sisterRecordsQuery.data ?? []).filter((r) => r.${firstParentRel!.rel.name}Id === item?.${firstParentRel!.rel.name}Id && r.id !== ${param});`
+  const sisterRecords = sisterRecordsQuery.data ?? [];`
     : '';
 
   const parentContextCards = parentRels
@@ -853,11 +904,16 @@ function detailPage(plan: Plan, entity: Entity, route: Route): string {
           <h2 className="text-sm font-semibold">${text(`${labelOf(c.child.name)}s vinculados`)}</h2>
           <span className="text-xs text-muted-foreground">{${lowerFirst(pluralize(c.child.name))}.length} elementos</span>
         </div>
-        {${lowerFirst(pluralize(c.child.name))}Query.isLoading && <p className="text-xs text-muted-foreground">Cargando...</p>}
-        {!${lowerFirst(pluralize(c.child.name))}Query.isLoading && ${lowerFirst(pluralize(c.child.name))}.length === 0 && (
+        {${lowerFirst(pluralize(c.child.name))}Query.isLoading && (
+          <p role="status" className="text-xs text-muted-foreground">Consultando registros y componentes vinculados…</p>
+        )}
+        {${lowerFirst(pluralize(c.child.name))}Query.isError && (
+          <p role="alert" className="text-xs text-destructive">Error al consultar los registros vinculados en el servidor.</p>
+        )}
+        {!${lowerFirst(pluralize(c.child.name))}Query.isLoading && !${lowerFirst(pluralize(c.child.name))}Query.isError && ${lowerFirst(pluralize(c.child.name))}.length === 0 && (
           <p className="text-xs text-muted-foreground">No hay registros vinculados para esta selección.</p>
         )}
-        {${lowerFirst(pluralize(c.child.name))}.length > 0 && (
+        {!${lowerFirst(pluralize(c.child.name))}Query.isLoading && !${lowerFirst(pluralize(c.child.name))}Query.isError && ${lowerFirst(pluralize(c.child.name))}.length > 0 && (
           <div className="overflow-x-auto rounded border">
             <table className="w-full text-xs">
               <thead className="bg-muted text-left">
@@ -905,10 +961,16 @@ function detailPage(plan: Plan, entity: Entity, route: Route): string {
           <h2 className="text-sm font-semibold">Otras versiones o registros disponibles del mismo contexto</h2>
           <span className="text-xs text-muted-foreground">{sisterRecords.length} alternativas</span>
         </div>
-        {sisterRecords.length === 0 && (
+        {sisterRecordsQuery.isLoading && (
+          <p role="status" className="text-xs text-muted-foreground">Consultando otras versiones conservadas del mismo contexto…</p>
+        )}
+        {sisterRecordsQuery.isError && (
+          <p role="alert" className="text-xs text-destructive">Error al consultar las versiones alternativas en el servidor.</p>
+        )}
+        {!sisterRecordsQuery.isLoading && !sisterRecordsQuery.isError && sisterRecords.length === 0 && (
           <p className="text-xs text-muted-foreground">No hay otras versiones conservadas para este registro.</p>
         )}
-        {sisterRecords.length > 0 && (
+        {!sisterRecordsQuery.isLoading && !sisterRecordsQuery.isError && sisterRecords.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {sisterRecords.map((r) => (
               <Link key={r.id} href={\`${route.path.replace(/\/\[[^\]]+\]$/, '')}/\${r.id}\`} ${actionMarker('Examinar versión')}>
@@ -930,7 +992,7 @@ function detailPage(plan: Plan, entity: Entity, route: Route): string {
             <h2 className="text-sm font-semibold">${text(createAction.label)}</h2>
             <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-secondary text-secondary-foreground">Estado inicial: BORRADOR</span>
           </div>
-          <span className="text-xs text-muted-foreground font-mono">Identificación asignada por sistema</span>
+          <span className="text-xs text-muted-foreground font-mono">Identificación correlativa atómica asignada por servidor</span>
         </div>
         <p className="text-xs text-muted-foreground leading-relaxed">
           Prepara una nueva versión en borrador conservando íntegras las versiones anteriores. La sucursal y la fecha operativa se heredan automáticamente en solo lectura del contexto actual.
@@ -940,25 +1002,15 @@ function detailPage(plan: Plan, entity: Entity, route: Route): string {
           <div><span className="font-medium text-foreground">Sucursal autorizada:</span> {${grandFirstQueryName ? `${grandFirstQueryName}.data?.name ?? ${grandFirstQueryName}.data?.identification ?? ` : ''}'Sucursal asignada'}</div>
         </div>
         <div className="flex flex-wrap gap-2 pt-1">
-          ${
-            form
-              ? `<Link href={\`${form.path.replace(/\[([a-zA-Z0-9]+)\]/g, (_, n) => (n.toLowerCase().includes('branch') ? `\${${grandFirstQueryName ? `${grandFirstQueryName}.data?.id ?? ` : ''}'actual'}` : 'actual'))}${firstParentRel ? `?${firstParentRel.rel.name}Id=\${item?.${firstParentRel.rel.name}Id ?? ''}` : ''}\`} ${actionMarker(createAction.label)}>
-            <Button type="button">${text(createAction.label)}</Button>
-          </Link>`
-              : ''
-          }
           <Button
             type="button"
-            variant="outline"
             disabled={isSubmitting || !item}
-            ${actionMarker('Preparar borrador automáticamente')}
+            ${actionMarker(createAction.label)}
             onClick={async () => {
               try {
                 setIsSubmitting(true);
-                const nextNum = (sisterRecords.length ?? 0) + 2;
                 const res = await api.create${entity.name}({
                   ${firstParentRel ? `${firstParentRel.rel.name}Id: item.${firstParentRel.rel.name}Id,` : ''}
-                  ${entity.fields.some((f) => f.name === 'versionLabel') ? "versionLabel: `V-${nextNum}`," : ''}
                   ${entity.fields.some((f) => f.name === 'status') ? "status: 'BORRADOR'," : ''}
                 } as unknown as Parameters<typeof api.create${entity.name}>[0]);
                 toast.success('Nueva versión en borrador preparada correctamente: ' + (res.versionLabel ?? res.id) + ' (Estado: ' + (res.status ?? 'BORRADOR') + ')');
@@ -970,7 +1022,7 @@ function detailPage(plan: Plan, entity: Entity, route: Route): string {
               }
             }}
           >
-            {isSubmitting ? 'Preparando borrador…' : 'Preparar borrador automáticamente'}
+            {isSubmitting ? 'Preparando borrador…' : ${JSON.stringify(createAction.label)}}
           </Button>
         </div>
       </div>`
@@ -1130,15 +1182,34 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
   const isEdit = editable && !isCreation && own?.operation === 'UPDATE';
   const isPublishRoute =
     route.path.endsWith('/publish') || route.screenName.toLowerCase().includes('publica');
-  const isDraftMode =
-    (isCreation || isEdit) &&
-    (route.screenName.toLowerCase().includes('borrador') ||
-      route.screenName.toLowerCase().includes('draft') ||
-      Boolean(own?.label.toLowerCase().includes('borrador')));
-  const isAccount = plan.authentication.local?.userEntityLocalId === entity.localId;
   const hasPublishedStatus = entity.fields.some(
     (f) => f.name === 'status' && f.enumValues.includes('PUBLICADA'),
   );
+  const hasDraftStatus = entity.fields.some(
+    (f) => f.name === 'status' && f.enumValues.includes('BORRADOR'),
+  );
+  const hasSiblingPublishRoute = plan.routes.some(
+    (r) =>
+      r !== route &&
+      r.entityLocalId === entity.localId &&
+      (r.path.endsWith('/publish') || r.screenName.toLowerCase().includes('publica')),
+  );
+  const isDraftCreation =
+    isCreation &&
+    hasDraftStatus &&
+    (route.screenName.toLowerCase().includes('borrador') ||
+      route.screenName.toLowerCase().includes('draft') ||
+      Boolean(own?.label.toLowerCase().includes('borrador')) ||
+      hasSiblingPublishRoute);
+  const isDraftEdit =
+    isEdit &&
+    !isPublishRoute &&
+    hasDraftStatus &&
+    (route.screenName.toLowerCase().includes('borrador') ||
+      route.screenName.toLowerCase().includes('draft') ||
+      Boolean(own?.label.toLowerCase().includes('borrador')) ||
+      hasSiblingPublishRoute);
+  const isAccount = plan.authentication.local?.userEntityLocalId === entity.localId;
   const childEntities = plan.entities
     .filter(
       (e) =>
@@ -1158,7 +1229,9 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
       return { child, rel, externalRels };
     });
   const primaryChild = childEntities.find((c) => c.child.name === 'MenuVersionComponent');
-  const hasChildComponents = isEdit && Boolean(primaryChild && primaryChild.externalRels.length > 0);
+  const hasChildComponents =
+    isEdit && !isPublishRoute && Boolean(primaryChild && primaryChild.externalRels.length > 0);
+  const hasReadOnlyComponents = isPublishRoute && Boolean(primaryChild);
   const prodTargetName = primaryChild?.externalRels[0]?.target?.name ?? 'Product';
   const needsResolvedBranch =
     !names.some((p) => p.toLowerCase() === 'branchid') &&
@@ -1178,7 +1251,7 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
     : entity.fields
   ).filter((field) => {
     if (
-      (isDraftMode || isPublishRoute) &&
+      (isDraftCreation || isDraftEdit || isPublishRoute) &&
       (field.name.toLowerCase().includes('publication') ||
         field.name.toLowerCase().includes('publicacion'))
     ) {
@@ -1190,8 +1263,7 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
     return true;
   });
   const defaultStatus =
-    isDraftMode &&
-    entity.fields.some((f) => f.name === 'status' && f.enumValues.includes('BORRADOR'))
+    (isDraftCreation || isDraftEdit) && hasDraftStatus
       ? 'BORRADOR'
       : undefined;
   const formDefaultValues = defaultStatus ? `, defaultValues: { status: '${defaultStatus}' }` : '';
@@ -1228,11 +1300,11 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
           control = `<Input id="${field.name}" type="datetime-local" {...register('${field.name}', { setValueAs: (v: string) => (v ? new Date(v).toISOString() : undefined) })} />`;
           break;
         case 'ENUM': {
-          if (isDraftMode && field.name === 'status') {
+          if ((isDraftCreation || isDraftEdit) && field.name === 'status') {
             control = `<div className="flex items-center gap-2">
             <span className="inline-flex items-center px-2.5 py-1 rounded text-xs font-semibold bg-secondary text-secondary-foreground font-mono">BORRADOR</span>
             <input type="hidden" value="BORRADOR" {...register('status')} />
-            <span className="text-xs text-muted-foreground">Estado inicial exclusivo de borrador</span>
+            <span className="text-xs text-muted-foreground">${isDraftEdit ? 'Estado exclusivo de borrador (la publicación formal se realiza en la pantalla correspondiente)' : 'Estado inicial exclusivo de borrador'}</span>
           </div>`;
             break;
           }
@@ -1273,7 +1345,7 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
     )?.name;
     const helperNote =
       relation.name === 'dailyMenu'
-        ? `<p className="text-xs text-muted-foreground">La fecha operativa del menú diario seleccionado rige el ciclo comercial local según la zona horaria autorizada para la sucursal.</p>`
+        ? `<p className="text-xs text-muted-foreground">Menú diario seleccionado vinculado al ciclo operativo.</p>`
         : '';
     if (isEdit && relation.name === 'dailyMenu') {
       return `        <div className="flex flex-col gap-1">
@@ -1323,7 +1395,7 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
         `  const ${relation.name}ManyOptions = useQuery({ queryKey: ['${lowerFirst(pluralize(target.name))}'], queryFn: () => api.list${pluralize(target.name)}() });`,
     ),
   );
-  if (hasChildComponents) {
+  if (hasChildComponents || hasReadOnlyComponents) {
     const pc = primaryChild!;
     optionQueries.push(
       `  const ${lowerFirst(pluralize(pc.child.name))}Query = useQuery({
@@ -1365,6 +1437,14 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
         );
       }
     }
+  }
+  if (isPublishRoute) {
+    optionQueries.push(
+      `  const operationalParametersQuery = useQuery({
+    queryKey: ['operationalParameters'],
+    queryFn: () => api.listOperationalParameters(),
+  });`,
+    );
   }
   if (needsResolvedBranch) {
     optionQueries.push(
@@ -1565,7 +1645,7 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
           size="sm"
           onClick={handleAddComponent}
           disabled={!newProductId || existing.isLoading || !existing.data || (existing.data as { status?: string })?.status === 'PUBLICADA'}
-          \${actionMarker('Incorporar componente al borrador')}
+          ${actionMarker('Incorporar componente al borrador')}
         >
           Incorporar
         </Button>
@@ -1640,7 +1720,7 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
                     className="h-7 px-2 text-xs"
                     disabled={(existing.data as { status?: string })?.status === 'PUBLICADA'}
                     onClick={() => handleUpdateComponent(comp.id)}
-                    \${actionMarker('Actualizar componente')}
+                    ${actionMarker('Actualizar componente')}
                   >
                     Actualizar
                   </Button>
@@ -1651,7 +1731,7 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
                     className="h-7 px-2 text-destructive hover:text-destructive text-xs"
                     disabled={(existing.data as { status?: string })?.status === 'PUBLICADA'}
                     onClick={() => handleRemoveComponent(comp.id)}
-                    \${actionMarker('Retirar componente del borrador')}
+                    ${actionMarker('Retirar componente del borrador')}
                   >
                     Retirar
                   </Button>
@@ -1681,7 +1761,9 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
     editable ||
     isRelationBound ||
     hasChildComponents ||
-    needsResolvedBranch;
+    hasReadOnlyComponents ||
+    needsResolvedBranch ||
+    isPublishRoute;
   const save =
     editable || isRelationBound
       ? `(editId
@@ -1703,12 +1785,146 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
     ...manyTargets.map(({ relation }) => relation.name + 'Ids'),
     ...(isAccount ? ['roleNames'] : []),
   ];
+  const publishSectionCode = isPublishRoute
+    ? `<input type="hidden" value="PUBLICADA" {...register('status')} />
+<div className="rounded border bg-muted/20 p-4 text-xs space-y-3" role="region" aria-label="Identificación de versión y ciclo operativo">
+  <div className="flex items-center justify-between pb-2 border-b border-border/40">
+    <span className="font-semibold text-sm text-foreground">Sucursal, fecha operativa y versión seleccionada</span>
+    <span className="font-mono text-xs text-muted-foreground">ID: {editId}</span>
+  </div>
+  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+    <div className="p-2.5 rounded bg-background border border-border/40">
+      <span className="text-[11px] text-muted-foreground block">Sucursal asignada</span>
+      <p className="font-medium text-foreground text-sm mt-0.5">{${needsResolvedBranch ? "branchQuery.data?.name ?? resolvedBranchId ?? 'Sucursal contextual'" : "'Sucursal contextual'"}}</p>
+    </div>
+    <div className="p-2.5 rounded bg-background border border-border/40">
+      <span className="text-[11px] text-muted-foreground block">Menú diario / Fecha operativa</span>
+      <p className="font-medium text-foreground text-sm mt-0.5">{(existing.data as { dailyMenu?: { operationalDate?: string } })?.dailyMenu?.operationalDate ? new Date((existing.data as { dailyMenu?: { operationalDate?: string } }).dailyMenu!.operationalDate!).toLocaleDateString() : '—'}</p>
+    </div>
+    <div className="p-2.5 rounded bg-background border border-border/40">
+      <span className="text-[11px] text-muted-foreground block">Versión en evaluación</span>
+      <p className="font-medium text-foreground text-sm mt-0.5">{String((existing.data as { versionLabel?: string })?.versionLabel ?? 'VER')}</p>
+      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-secondary text-secondary-foreground">{String((existing.data as { status?: string })?.status ?? 'BORRADOR')}</span>
+    </div>
+  </div>
+  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-xs">
+    <div className="flex items-center justify-between p-2 rounded bg-background border border-border/40">
+      <span className="text-muted-foreground">Instante de creación:</span>
+      <span className="font-mono text-foreground">{(existing.data as { creationDate?: string })?.creationDate ? new Date((existing.data as { creationDate?: string }).creationDate!).toLocaleString() : '—'}</span>
+    </div>
+    <div className="flex items-center justify-between p-2 rounded bg-background border border-border/40">
+      <span className="text-muted-foreground">Publicación prevista:</span>
+      <span className="font-medium text-foreground">Inmediata tras validación del servidor</span>
+    </div>
+  </div>
+  <p className="text-[11px] text-muted-foreground">Formulario en modo verificación y solicitud de publicación; la composición y precios son de solo lectura y no admiten edición directa en esta instancia.</p>
+</div>
+<div className="rounded border bg-card p-4 text-xs space-y-3" role="region" aria-label="Composición de componentes de la versión">
+  <div className="flex items-center justify-between pb-2 border-b border-border/40">
+    <span className="font-semibold text-sm text-foreground">Composición, precios y disponibilidad de la versión (solo lectura)</span>
+    <span className="text-muted-foreground text-xs font-mono">{${lowerFirst(pluralize(primaryChild?.child.name ?? 'Component'))}Query.data?.length ?? 0} componentes registrados</span>
+  </div>
+  {${lowerFirst(pluralize(primaryChild?.child.name ?? 'Component'))}Query.isLoading && <div className="text-muted-foreground py-4 text-center">Cargando componentes de la versión…</div>}
+  {${lowerFirst(pluralize(primaryChild?.child.name ?? 'Component'))}Query.isError && <div className="text-destructive py-2" role="alert">Error al cargar componentes de la versión.</div>}
+  {${lowerFirst(pluralize(primaryChild?.child.name ?? 'Component'))}Query.data && ${lowerFirst(pluralize(primaryChild?.child.name ?? 'Component'))}Query.data.length === 0 && (
+    <div className="rounded border border-destructive/30 bg-destructive/10 p-3 text-destructive" role="alert">
+      No se puede publicar una versión de menú sin componentes registrados. Regrese a la edición de borrador para incorporar platos y productos.
+    </div>
+  )}
+  {${lowerFirst(pluralize(primaryChild?.child.name ?? 'Component'))}Query.data && ${lowerFirst(pluralize(primaryChild?.child.name ?? 'Component'))}Query.data.length > 0 && (
+    <div className="overflow-x-auto">
+      <table className="w-full text-left border-collapse text-xs">
+        <thead>
+          <tr className="border-b border-border bg-muted/30 text-muted-foreground">
+            <th className="py-2 px-2.5">Tipo de componente</th>
+            <th className="py-2 px-2.5">Producto referenciado</th>
+            <th className="py-2 px-2.5">Precio / Sobrecoste</th>
+            <th className="py-2 px-2.5">Disponibilidad</th>
+            <th className="py-2 px-2.5 text-center">Estado</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border/40">
+          {${lowerFirst(pluralize(primaryChild?.child.name ?? 'Component'))}Query.data.map((comp) => {
+            const prod = ${lowerFirst(pluralize(prodTargetName))}Options.data?.find((p) => String(p.id) === String(comp.productId));
+            return (
+              <tr key={comp.id} className="hover:bg-muted/10">
+                <td className="py-2 px-2.5 font-medium text-foreground">{comp.componentType ?? 'Plato base'}</td>
+                <td className="py-2 px-2.5">{prod ? (prod.name ?? prod.denomination ?? prod.id) : String(comp.productId)}</td>
+                <td className="py-2 px-2.5 font-mono text-foreground">{comp.price != null ? \`$\${Number(comp.price).toFixed(2)}\` : 'Incluido'}</td>
+                <td className="py-2 px-2.5">{comp.available ? <span className="text-emerald-600 font-medium">Disponible</span> : <span className="text-muted-foreground">No disponible</span>}</td>
+                <td className="py-2 px-2.5 text-center"><span className="px-1.5 py-0.5 rounded text-[10px] bg-secondary text-secondary-foreground font-mono">Conforme</span></td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  )}
+</div>
+<div className="rounded border bg-muted/20 p-4 text-xs space-y-3" role="region" aria-label="Reglas de vigencia aprobadas aplicables">
+  <div className="flex items-center justify-between pb-2 border-b border-border/40">
+    <span className="font-semibold text-sm text-foreground">Reglas de vigencia aprobadas aplicables</span>
+    {operationalParametersQuery.data && operationalParametersQuery.data.length > 0 ? (
+      <span className="text-[11px] font-medium text-emerald-700 bg-emerald-100 dark:bg-emerald-950 dark:text-emerald-300 px-2 py-0.5 rounded border border-emerald-300">Directrices operativas aprobadas</span>
+    ) : operationalParametersQuery.isLoading ? (
+      <span className="text-[11px] font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded">Consultando directrices…</span>
+    ) : (
+      <span className="text-[11px] font-medium text-destructive bg-destructive/10 px-2 py-0.5 rounded border border-destructive/30">Directrices no disponibles</span>
+    )}
+  </div>
+  {operationalParametersQuery.isLoading && <div role="status" className="text-muted-foreground py-2 text-xs">Consultando y verificando directrices operativas aprobadas en el sistema…</div>}
+  {operationalParametersQuery.isError && <div role="alert" className="text-destructive py-2 text-xs">Error al consultar las directrices operativas aprobadas.</div>}
+  {!operationalParametersQuery.isLoading && (!operationalParametersQuery.data || operationalParametersQuery.data.length === 0) && (
+    <div className="rounded border border-destructive/30 bg-destructive/10 p-2.5 text-xs text-destructive" role="alert">
+      <span className="font-semibold">Bloqueo de directrices:</span> No se encontraron directrices de vigencia de OperationalParameter aprobadas en el sistema. La publicación se encuentra bloqueada.
+    </div>
+  )}
+  {operationalParametersQuery.data && operationalParametersQuery.data.length > 0 && (
+    <div className="space-y-2">
+      {operationalParametersQuery.data.slice(0, 3).map((param) => (
+        <div key={param.id} className="p-2.5 rounded bg-background border border-border/40 flex flex-col gap-1">
+          <div className="flex items-center justify-between">
+            <span className="font-medium text-foreground">{param.name}</span>
+            <span className="text-[10px] font-mono text-muted-foreground">Parámetro operativo</span>
+          </div>
+          <p className="text-[11px] text-muted-foreground">{param.applicationRules || param.allowedValues || 'Regla operativa autorizada para vigencia comercial.'}</p>
+        </div>
+      ))}
+    </div>
+  )}
+  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-border/40 text-xs">
+    <div className="flex items-center gap-1.5 font-medium">
+      <span className={${lowerFirst(pluralize(primaryChild?.child.name ?? 'Component'))}Query.data && ${lowerFirst(pluralize(primaryChild?.child.name ?? 'Component'))}Query.data.length > 0 && !${lowerFirst(pluralize(primaryChild?.child.name ?? 'Component'))}Query.data.some((c) => c.price == null || Number(c.price) < 0 || isNaN(Number(c.price))) ? "text-emerald-700 dark:text-emerald-400" : "text-destructive"}>
+        {${lowerFirst(pluralize(primaryChild?.child.name ?? 'Component'))}Query.data && ${lowerFirst(pluralize(primaryChild?.child.name ?? 'Component'))}Query.data.length > 0 && !${lowerFirst(pluralize(primaryChild?.child.name ?? 'Component'))}Query.data.some((c) => c.price == null || Number(c.price) < 0 || isNaN(Number(c.price))) ? '✓' : '✗'}
+      </span>
+      <span className={${lowerFirst(pluralize(primaryChild?.child.name ?? 'Component'))}Query.data && ${lowerFirst(pluralize(primaryChild?.child.name ?? 'Component'))}Query.data.length > 0 && !${lowerFirst(pluralize(primaryChild?.child.name ?? 'Component'))}Query.data.some((c) => c.price == null || Number(c.price) < 0 || isNaN(Number(c.price))) ? "text-foreground" : "text-destructive"}>
+        Integridad de componentes ({${lowerFirst(pluralize(primaryChild?.child.name ?? 'Component'))}Query.data?.length ?? 0} registrados)
+      </span>
+    </div>
+    <div className="flex items-center gap-1.5 font-medium">
+      <span className={operationalParametersQuery.data && operationalParametersQuery.data.length > 0 ? "text-emerald-700 dark:text-emerald-400" : "text-destructive"}>
+        {operationalParametersQuery.data && operationalParametersQuery.data.length > 0 ? '✓' : '✗'}
+      </span>
+      <span className={operationalParametersQuery.data && operationalParametersQuery.data.length > 0 ? "text-foreground" : "text-destructive"}>
+        Directrices de vigencia de OperationalParameter {operationalParametersQuery.data && operationalParametersQuery.data.length > 0 ? 'aprobadas' : 'no aprobadas'}
+      </span>
+    </div>
+  </div>
+  {(!${lowerFirst(pluralize(primaryChild?.child.name ?? 'Component'))}Query.data || ${lowerFirst(pluralize(primaryChild?.child.name ?? 'Component'))}Query.data.length === 0 || operationalParametersQuery.isLoading || !operationalParametersQuery.data || operationalParametersQuery.data.length === 0 || (existing.data as { status?: string })?.status === 'PUBLICADA') && (
+    <div className="rounded border border-destructive/30 bg-destructive/10 p-2.5 text-xs text-destructive" role="alert">
+      {(existing.data as { status?: string })?.status === 'PUBLICADA'
+        ? 'Esta versión ya se encuentra formalmente publicada e inmutable.'
+        : 'La solicitud de publicación permanece bloqueada hasta que todas las consultas confirmen componentes válidos y directrices de vigencia de OperationalParameter aprobadas en el sistema.'}
+    </div>
+  )}
+</div>`
+    : '';
   const headerBlock = header.length
     ? `      <div className="flex flex-wrap gap-2">\n${indent(header.join('\n'), 8)}\n      </div>\n`
     : '';
   const extraImports = [
     `import { ${hook ? 'useParams, ' : ''}useRouter } from 'next/navigation';`,
-    editable || isRelationBound || hasChildComponents ? "import { useEffect, useState } from 'react';" : '',
+    editable || isRelationBound || hasChildComponents || hasReadOnlyComponents ? "import { useEffect, useState } from 'react';" : '',
     "import { useForm } from 'react-hook-form';",
     "import { zodResolver } from '@hookform/resolvers/zod';",
     `import { ${usesQuery ? 'useQuery, ' : ''}useQueryClient } from '@tanstack/react-query';`,
@@ -1717,6 +1933,11 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
     `import { ${schema} } from '${SCOPE}/contracts';`,
     `import { api } from '${up}lib/api';`,
   ].filter(Boolean);
+  const usesFieldset =
+    !isPublishRoute && (isRelationBound || (isEdit && hasPublishedStatus));
+  const publishDisabledExpr = isPublishRoute
+    ? ` || existing.isLoading || existing.isError || !existing.data || (existing.data as { status?: string })?.status === 'PUBLICADA' || ${lowerFirst(pluralize(primaryChild?.child.name ?? 'Component'))}Query.isLoading || ${lowerFirst(pluralize(primaryChild?.child.name ?? 'Component'))}Query.isError || !${lowerFirst(pluralize(primaryChild?.child.name ?? 'Component'))}Query.data || ${lowerFirst(pluralize(primaryChild?.child.name ?? 'Component'))}Query.data.length === 0 || ${lowerFirst(pluralize(primaryChild?.child.name ?? 'Component'))}Query.data.some((c) => c.price == null || Number(c.price) < 0 || isNaN(Number(c.price))) || operationalParametersQuery.isLoading || operationalParametersQuery.isError || !operationalParametersQuery.data || operationalParametersQuery.data.length === 0`
+    : '';
   const body = `    <div className="flex max-w-xl flex-col gap-4">
       <h1 className="text-xl font-semibold">${route.screenName.replace(/[<>{}]/g, '')}</h1>
 ${names.map((n) => `      {${n} && <div className="text-xs text-muted-foreground"><span className="font-semibold">${text(labelOf(n.replace(/id$/i, '')))}:</span> {${n}}</div>}`).join('\n')}
@@ -1754,8 +1975,7 @@ ${editable || isRelationBound ? `      {editId && <p className="font-mono text-x
         </div>
       </div>\n`
       : (entity.writeRoles?.length || route.roles?.length) &&
-        (route.screenName.toLowerCase().includes('condicion') ||
-          route.screenName.toLowerCase().includes('aprob'))
+        (isConditionedRoute || route.screenName.toLowerCase().includes('condicion'))
         ? `      <div className="rounded border bg-muted/40 p-3 text-xs flex flex-col gap-1" role="status">
         <span className="font-semibold text-foreground">Autorización y perfil operativo</span>
         <p className="text-muted-foreground">Operación habilitada exclusivamente para los roles autorizados: ${(route.roles ?? entity.writeRoles).join(', ')}.</p>
@@ -1774,7 +1994,7 @@ ${editable || isRelationBound ? `      {editId && <p className="font-mono text-x
       </div>\n`
       : ''
   }${
-    isCreation && isDraftMode
+    isCreation && isDraftCreation
       ? `      <div className="rounded border border-primary/20 bg-primary/5 p-3 text-xs flex flex-col gap-1.5" role="status">
         <div className="flex items-center justify-between">
           <span className="font-semibold text-foreground">Preparación en estado inicial borrador</span>
@@ -1786,42 +2006,18 @@ ${editable || isRelationBound ? `      {editId && <p className="font-mono text-x
       </div>\n`
       : ''
   }${
-    !isCreation && isDraftMode
-      ? `      <div className="rounded border border-primary/20 bg-primary/5 p-3 text-xs flex flex-col gap-1.5" role="status">
-        <div className="flex items-center justify-between">
-          <span className="font-semibold text-foreground">Edición de versión en borrador</span>
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-medium bg-secondary text-secondary-foreground font-mono">BORRADOR</span>
-        </div>
-        <p className="text-muted-foreground leading-relaxed">
-          Modifique los atributos y la composición de componentes del borrador. La versión permanece en borrador hasta su validación y publicación formal.
-        </p>
-      </div>\n`
-      : ''
-  }${
-    isPublishRoute
-      ? `      <div className="rounded border bg-primary/5 border-primary/20 p-4 text-xs flex flex-col gap-2.5" role="status">
-        <span className="font-semibold text-sm text-foreground">Solicitud formal de validación y publicación de menú</span>
-        <p className="text-muted-foreground leading-relaxed">
-          Al confirmar la publicación, el menú diario cambiará de estado a PUBLICADA con registro de timestamp UTC y operador en sesión. Las versiones publicadas quedan formalmente habilitadas para consulta y venta, y no admiten modificaciones posteriores.
-        </p>
-        <div className="rounded border bg-background/80 p-2.5 flex flex-col gap-1.5">
-          <span className="font-semibold text-foreground">Condiciones para la publicación formal:</span>
-          <div className="space-y-1 text-muted-foreground text-xs">
-            <div className="flex items-center gap-1.5">
-              <span>• Menú diario vinculado:</span>
-              <span className="font-medium text-foreground">{existing.data?.dailyMenu?.id ? ((existing.data as { dailyMenu?: { operationalDate?: string } })?.dailyMenu?.operationalDate ? new Date((existing.data as { dailyMenu?: { operationalDate?: string } }).dailyMenu!.operationalDate!).toLocaleDateString() : 'Vinculado') : 'Menú contextual'}</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span>• Estado actual:</span>
-              <span className="font-mono text-xs">{String((existing.data as { status?: string })?.status ?? 'BORRADOR')}</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span>• Publicación irreversible:</span>
-              <span>Una vez confirmada, la versión quedará inmutable en el historial operativo.</span>
-            </div>
+    isEdit && entity.fields.some((f) => f.name === 'status')
+      ? `      {existing.data && (existing.data as { status?: string }).status === 'BORRADOR' && (
+        <div className="rounded border border-primary/20 bg-primary/5 p-3 text-xs flex flex-col gap-1.5" role="status">
+          <div className="flex items-center justify-between">
+            <span className="font-semibold text-foreground">Edición de registro en borrador</span>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-medium bg-secondary text-secondary-foreground font-mono">BORRADOR</span>
           </div>
+          <p className="text-muted-foreground leading-relaxed">
+            El registro se conserva en estado borrador hasta su confirmación o publicación formal.
+          </p>
         </div>
-      </div>\n`
+      )}\n`
       : ''
   }${
     isEdit && entity.name === 'MenuVersion'
@@ -1897,31 +2093,34 @@ ${indent(
       : ''
   }${headerBlock}      <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4 rounded-lg border p-4">
 ${
-  isRelationBound
-    ? `        {existing.isLoading && <div className="rounded border bg-muted/40 p-3 text-xs text-muted-foreground" role="status">Consultando configuración y autorizaciones vigentes…</div>}
+  usesFieldset
+    ? isRelationBound
+      ? `        {existing.isLoading && <div className="rounded border bg-muted/40 p-3 text-xs text-muted-foreground" role="status">Consultando configuración y autorizaciones vigentes…</div>}
         <fieldset disabled={isSubmitting || existing.isLoading || existing.isError${relationParams.length ? ` || !(${relationParams.map((rp) => `${rp.relation.name}Options.data && ${rp.relation.name}Options.data.some((item) => item.id === selected${upperFirst(rp.relation.name)}Id)`).join(' && ')})` : ''}} className="contents">\n`
-    : isEdit && hasPublishedStatus
-      ? `        {existing.isLoading && <div className="rounded border bg-muted/40 p-3 text-xs text-muted-foreground" role="status">Verificando registro y estado del borrador…</div>}
+      : `        {existing.isLoading && <div className="rounded border bg-muted/40 p-3 text-xs text-muted-foreground" role="status">Verificando registro y estado del borrador…</div>}
         <fieldset disabled={isSubmitting || existing.isLoading || existing.isError || !existing.data || (existing.data as { status?: string })?.status === 'PUBLICADA'} className="contents">\n`
-      : ''
-}${indent(
-  [
-    ...inputs,
-    ...relationInputs,
-    ...manyInputs,
-    ...(isAccount
-      ? [
-          `<div><label htmlFor="roleNames">Roles</label><select id="roleNames" multiple {...register('roleNames')}>${plan.authentication.roles.map((role) => `<option value={${JSON.stringify(role)}}>{${JSON.stringify(role)}}</option>`).join('')}</select></div>`,
-        ]
-      : []),
-  ].join('\n'),
-  8,
-)}
-${hasChildComponents ? indent(childSectionCode, 8) + '\n' : ''}        <div className="flex flex-wrap gap-2">
-          <Button type="submit" disabled={isSubmitting${isRelationBound ? ` || existing.isLoading || existing.isError${relationParams.length ? ` || !(${relationParams.map((rp) => `${rp.relation.name}Options.data && ${rp.relation.name}Options.data.some((item) => item.id === selected${upperFirst(rp.relation.name)}Id)`).join(' && ')})` : ''}` : ''}${isEdit && hasPublishedStatus ? " || existing.isLoading || existing.isError || !existing.data || (existing.data as { status?: string })?.status === 'PUBLICADA'" : ''}${hasChildComponents ? ' || hasInvalidDraftPrices' : ''}}${own ? ` ${actionMarker(own.label)}` : ''}>
-            {isSubmitting ? 'Guardando…' : ${own ? JSON.stringify(own.label) : "'Guardar'"}}
+    : ''
+}${
+  isPublishRoute
+    ? indent(publishSectionCode, 8)
+    : indent(
+        [
+          ...inputs,
+          ...relationInputs,
+          ...manyInputs,
+          ...(isAccount
+            ? [
+                `<div><label htmlFor="roleNames">Roles</label><select id="roleNames" multiple {...register('roleNames')}>${plan.authentication.roles.map((role) => `<option value={${JSON.stringify(role)}}>{${JSON.stringify(role)}}</option>`).join('')}</select></div>`,
+              ]
+            : []),
+        ].join('\n'),
+        8,
+      ) + (hasChildComponents ? '\n' + indent(childSectionCode, 8) : '')
+}        <div className="flex flex-wrap gap-2">
+          <Button type="submit" disabled={isSubmitting${publishDisabledExpr}${isRelationBound ? ` || existing.isLoading || existing.isError${relationParams.length ? ` || !(${relationParams.map((rp) => `${rp.relation.name}Options.data && ${rp.relation.name}Options.data.some((item) => item.id === selected${upperFirst(rp.relation.name)}Id)`).join(' && ')})` : ''}` : ''}${isEdit && !isPublishRoute && hasPublishedStatus ? " || existing.isLoading || existing.isError || !existing.data || (existing.data as { status?: string })?.status === 'PUBLICADA'" : ''}${hasChildComponents ? ' || hasInvalidDraftPrices' : ''}}${own ? ` ${actionMarker(own.label)}` : ''}>
+            {isSubmitting ? ${isPublishRoute ? "'Publicando…'" : "'Guardando…'"} : ${own ? JSON.stringify(own.label) : "'Guardar'"}}
           </Button>
-${submits.map((a) => `          <Button type="submit" variant="outline" disabled={isSubmitting${isRelationBound ? ` || existing.isLoading || existing.isError${relationParams.length ? ` || !(${relationParams.map((rp) => `${rp.relation.name}Options.data && ${rp.relation.name}Options.data.some((item) => item.id === selected${upperFirst(rp.relation.name)}Id)`).join(' && ')})` : ''}` : ''}${isEdit && hasPublishedStatus ? " || existing.isLoading || existing.isError || !existing.data || (existing.data as { status?: string })?.status === 'PUBLICADA'" : ''}${hasChildComponents ? ' || hasInvalidDraftPrices' : ''}} ${actionMarker(a.label)}>\n            ${text(a.label)}\n          </Button>\n`).join('')}${
+${submits.map((a) => `          <Button type="submit" variant="outline" disabled={isSubmitting${publishDisabledExpr}${isRelationBound ? ` || existing.isLoading || existing.isError${relationParams.length ? ` || !(${relationParams.map((rp) => `${rp.relation.name}Options.data && ${rp.relation.name}Options.data.some((item) => item.id === selected${upperFirst(rp.relation.name)}Id)`).join(' && ')})` : ''}` : ''}${isEdit && !isPublishRoute && hasPublishedStatus ? " || existing.isLoading || existing.isError || !existing.data || (existing.data as { status?: string })?.status === 'PUBLICADA'" : ''}${hasChildComponents ? ' || hasInvalidDraftPrices' : ''}} ${actionMarker(a.label)}>\n            ${text(a.label)}\n          </Button>\n`).join('')}${
     returnRoute
       ? needsResolvedBranch
         ? `          <Link href={resolvedBranchId ? \`/branches/\${resolvedBranchId}/menus\` : (editId && ${Boolean(detailRoute)} ? \`/menus/versions/\${editId}\` : '/')} ${actionMarker('Volver')}><Button type="button" variant="outline">Volver</Button></Link>\n`
@@ -1931,7 +2130,7 @@ ${submits.map((a) => `          <Button type="submit" variant="outline" disabled
     detailRoute && editable && !route.path.endsWith('/new')
       ? `          {editId && <Link href=${routeHref(detailRoute.path, names, 'editId')} ${actionMarker('Volver al detalle')}><Button type="button" variant="outline">Volver al detalle</Button></Link>}\n`
       : ''
-  }        </div>${isRelationBound || (isEdit && hasPublishedStatus) ? '\n        </fieldset>' : ''}
+  }        </div>${usesFieldset ? '\n        </fieldset>' : ''}
       </form>
     </div>`;
   const pushHref = list
@@ -1961,7 +2160,7 @@ export default function ${entity.name}FormPage() {
   const router = useRouter();${hook}
   const queryClient = useQueryClient();
 ${
-  editable && !isRelationBound && (hasChildComponents || needsResolvedBranch)
+  editable && !isRelationBound && (hasChildComponents || hasReadOnlyComponents || needsResolvedBranch)
     ? `  // "?id=<record>" opens the form to edit that record.
   const [editId, setEditId] = useState<string | null>(${editingParam ? editingParam : 'null'});
   useEffect(() => {
@@ -2040,7 +2239,7 @@ ${entity.fields
   }, [existing.data, reset, ${relationParams.map((rp) => `selected${upperFirst(rp.relation.name)}Id`).join(', ')}]);`
       : editable
         ? `
-${!(hasChildComponents || needsResolvedBranch) ? `  // "?id=<record>" opens the form to edit that record.
+${!(hasChildComponents || hasReadOnlyComponents || needsResolvedBranch) ? `  // "?id=<record>" opens the form to edit that record.
   const [editId, setEditId] = useState<string | null>(null);
   useEffect(() => {
     setEditId(${editingParam ? editingParam : "new URLSearchParams(window.location.search).get('id')"});
@@ -2053,7 +2252,7 @@ ${!(hasChildComponents || needsResolvedBranch) ? `  // "?id=<record>" opens the 
     if (existing.data) {
       const allowed = new Set(${JSON.stringify(prefillFields)});
       const values = Object.fromEntries(Object.entries(existing.data).filter(([key]) => allowed.has(key))) as Record<string, unknown>;
-${entity.fields
+${isDraftEdit ? "      values.status = 'BORRADOR';\n      delete values.publicationDate;\n" : ''}${entity.fields
   .filter((field) => field.type === 'DATE')
   .map(
     (field) =>
@@ -2077,8 +2276,12 @@ ${entity.fields
     try {
       const targetValues = { ...values } as Record<string, unknown>;
 ${
-  isCreation && defaultStatus
-    ? `      if (!targetValues.status) targetValues.status = '${defaultStatus}';\n`
+  (isCreation || isDraftEdit) && defaultStatus
+    ? `      targetValues.status = '${defaultStatus}';\n`
+    : ''
+}${
+  isDraftEdit || isDraftCreation
+    ? `      delete targetValues.publicationDate;\n`
     : ''
 }${
   isPublishRoute
@@ -2112,7 +2315,7 @@ ${
 }      await ${isDescriptiveOnly || isRelationBound ? `(editId ? api.update${entity.name}(editId, targetValues as Parameters<typeof api.update${entity.name}>[1]) : api.create${entity.name}(targetValues as Parameters<typeof api.create${entity.name}>[0]))` : save};
       await queryClient.invalidateQueries({ queryKey: ['${lowerFirst(pluralize(entity.name))}'] });
 ${hasChildComponents ? `      await queryClient.invalidateQueries({ queryKey: ['${lowerFirst(pluralize(primaryChild!.child.name))}', editId] });\n` : ''}
-      toast.success(${isPublishRoute ? "'Versión validada y publicada correctamente.'" : "'Guardado correctamente.'"});
+      toast.success(${isPublishRoute ? "'Versión validada y publicada correctamente.'" : isDraftEdit ? "'Cambios del borrador guardados correctamente.'" : "'Guardado correctamente.'"});
       ${
         needsResolvedBranch
           ? 'if (resolvedBranchId) { router.push(`/branches/${resolvedBranchId}/menus`); } else if (editId && ' +
@@ -2204,6 +2407,11 @@ function simplePage(plan: Plan, route: Route): string {
     })
     .filter(Boolean);
 
+  const isCheckoutRoute = route.path.startsWith('/checkout');
+  const discardAction = isCheckoutRoute
+    ? `      <div className="flex flex-wrap gap-2">\n        <Link href="/sales" ${actionMarker('Descartar borrador')}>\n          <Button type="button" variant="outline">Descartar borrador</Button>\n        </Link>\n      </div>\n`
+    : '';
+
   const body = `    <div className="flex flex-col gap-4">
       <h1 className="text-xl font-semibold">${route.screenName.replace(/[<>{}]/g, '')}</h1>
       <p className="text-sm text-muted-foreground">${module.description.replace(/[<>{}]/g, '')}</p>
@@ -2229,7 +2437,7 @@ ${parentDisplays.length ? parentDisplays.join('\n') + '\n' : ''}${parentLinks.le
         </div>
       )}\n`
       : ''
-  }${header.length ? `      <div className="flex flex-wrap gap-2">\n${indent(header.join('\n'), 8)}\n      </div>\n` : ''}${
+  }${discardAction}${header.length ? `      <div className="flex flex-wrap gap-2">\n${indent(header.join('\n'), 8)}\n      </div>\n` : ''}${
     links.length
       ? `      <ul className="grid gap-2 sm:grid-cols-2">
 ${links.map((l) => `        <li>\n          <Link className="block rounded-lg border p-4 hover:bg-muted" href="${l.path}">\n            ${l.screenName.replace(/[<>{}]/g, '')}\n          </Link>\n        </li>`).join('\n')}
