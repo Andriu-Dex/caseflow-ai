@@ -146,3 +146,4 @@ La pantalla 17 corresponde al **Detalle de versión de menú diario** (`pantalla
 4. **Trazabilidad completa:** Presentar el operador responsable de creación y el instante UTC formateado (fecha y hora completas).
 
 Se procederá con la adaptación de la Pantalla 17 siguiendo estos principios para continuar el avance continuo hasta la ruta 81 del plan.
+

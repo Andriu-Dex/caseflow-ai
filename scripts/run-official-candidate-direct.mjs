@@ -9,6 +9,8 @@ const { GenerationRunsService } =
   await import('../apps/api/dist/construction/generation-runs.service.js');
 const { FrontendDesignService } =
   await import('../apps/api/dist/construction/frontend-design.service.js');
+const { SandboxRunsService } =
+  await import('../apps/api/dist/construction/sandbox-runs.service.js');
 const { PrismaService } = await import('../apps/api/dist/database/prisma.service.js');
 const { AuditService } = await import('../apps/api/dist/audit/audit.service.js');
 const { findTargetTemplate } = await import('../packages/domain/dist/index.js');
@@ -143,6 +145,30 @@ async function main() {
     console.log('Error message:', finalRun.errorMessage);
     console.log('Warnings count:', finalRun.warnings?.length);
     console.log('====================================================');
+
+    if (finalRun.status === 'GENERATED') {
+      console.log('Generation succeeded! Starting Docker sandbox validation...');
+      const sandboxRuns = app.get(SandboxRunsService);
+      const sbResult = await sandboxRuns.start(PROJECT_ID, USER_ID, finalRun.id);
+      console.log(`Sandbox run created: ${sbResult.id}. Running sandbox job in-process...`);
+      await sandboxRuns.runJob(PROJECT_ID, sbResult.id);
+
+      const finalSb = await prisma.sandboxRun.findUnique({
+        where: { id: sbResult.id },
+        include: { stages: true },
+      });
+      console.log('Sandbox validation result:', finalSb.status);
+
+      const snapshot = await prisma.generatedProjectSnapshot.findFirst({
+        where: { generationRunId: finalRun.id },
+      });
+      console.log('Official Snapshot created:', snapshot ? snapshot.id : 'None');
+      if (snapshot) {
+        console.log('Snapshot fileCount:', snapshot.fileCount);
+        console.log('Snapshot archiveKey:', snapshot.archiveStorageKey);
+        console.log('Snapshot archiveSize:', snapshot.archiveSize);
+      }
+    }
   } catch (err) {
     console.error('runJob threw unhandled exception:', err);
   } finally {
