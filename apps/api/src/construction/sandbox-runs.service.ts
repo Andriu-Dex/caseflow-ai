@@ -6,6 +6,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import type { Queue } from 'bullmq';
@@ -17,9 +18,11 @@ import {
   type TargetTemplateVersion,
 } from '@caseflow-ai/domain';
 import {
+  E2E_TEST_PROVIDER,
   SandboxExecutionError,
   StorageProviderError,
   stagePassed,
+  type E2ETestProvider,
   type SandboxExecutionProvider,
   type StorageProvider,
 } from '@caseflow-ai/integrations';
@@ -33,6 +36,7 @@ import { PrismaService } from '../database/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { STORAGE_PROVIDER } from '../sources/storage-provider.token';
 import { projectSlug } from '../code-generation/engine/project-generator';
+import { e2eScreens } from '../code-generation/engine/frontend.templates';
 import { AutoRepairService } from './auto-repair.service';
 import { CONSTRUCTION_QUEUE_TOKEN } from './construction-queue.token';
 import { DependencyCatalogService } from './dependency-catalog.service';
@@ -74,6 +78,7 @@ const STAGE_ORDER: SandboxValidationStage[] = [
   'BUILD',
   'STRUCTURE',
   'TRACEABILITY',
+  'E2E',
 ];
 
 interface StageRecord {
@@ -100,6 +105,7 @@ export class SandboxRunsService {
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
     @Inject(CONSTRUCTION_QUEUE_TOKEN) private readonly queue: Queue<ConstructionJobPayload>,
     private readonly userManuals: UserManualsService,
+    @Optional() @Inject(E2E_TEST_PROVIDER) private readonly e2e?: E2ETestProvider | null,
   ) {}
 
   async start(projectId: string, userId: string, generationRunId: string) {
@@ -344,6 +350,8 @@ export class SandboxRunsService {
             traceabilityProblems(files, new Set(links.map((l) => l.generatedFile.path))),
           ),
         );
+      if (stages.at(-1)!.passed)
+        stages.push(await this.endToEnd(sandboxRunId, files, plan, result.collected[LOCKFILE]));
     }
     await this.prisma.sandboxRun.updateMany({
       where: { id: sandboxRunId, status: 'RUNNING' },
@@ -353,6 +361,57 @@ export class SandboxRunsService {
       data: stages.map((s) => ({ sandboxRunId, ...s })),
     });
     return stages;
+  }
+
+  // DEC-159: the generated Playwright tests run against the built stack with a
+  // disposable database. Without the runner the stage fails: READY requires it.
+  private async endToEnd(
+    sandboxRunId: string,
+    files: ProjectFile[],
+    plan: ImplementationPlanContent,
+    lockfile: string | undefined,
+  ): Promise<StageRecord> {
+    await this.prisma.sandboxRun.updateMany({
+      where: { id: sandboxRunId, status: 'RUNNING' },
+      data: { currentStage: 'E2E' },
+    });
+    const failed = (output: string): StageRecord => ({
+      stage: 'E2E',
+      passed: false,
+      exitCode: null,
+      timedOut: false,
+      durationMs: 0,
+      output,
+    });
+    if (!this.e2e) return failed('El ejecutor de pruebas de extremo a extremo no está disponible.');
+    if (!lockfile) return failed('No se obtuvo el archivo de bloqueo de dependencias.');
+    try {
+      const result = await this.e2e.runE2E({
+        files: [
+          ...files
+            .filter((file) => file.path !== LOCKFILE)
+            .map(({ path, content }) => ({ path, content })),
+          { path: LOCKFILE, content: lockfile },
+        ],
+        roles: e2eScreens(plan).map((screen) => screen.role),
+      });
+      return {
+        stage: 'E2E',
+        passed: result.passed,
+        exitCode: result.passed ? 0 : 1,
+        timedOut: false,
+        durationMs: result.durationMs,
+        output: result.output.slice(-16_000),
+      };
+    } catch (error) {
+      logger.warn(
+        `E2E stage of sandbox run "${sandboxRunId}" errored: ${error instanceof Error ? error.message : error}`,
+      );
+      throw new SandboxExecutionError(
+        'SANDBOX_UNAVAILABLE',
+        'El entorno de pruebas de extremo a extremo no está disponible.',
+      );
+    }
   }
 
   private async formalize(

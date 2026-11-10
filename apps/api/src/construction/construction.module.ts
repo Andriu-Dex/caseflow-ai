@@ -6,6 +6,7 @@ import {
   DockerSandboxExecutionProvider,
   DockerRuntimeCaptureProvider,
   RUNTIME_CAPTURE_PROVIDER,
+  E2E_TEST_PROVIDER,
   type SandboxExecutionProvider,
 } from '@caseflow-ai/integrations';
 import { AIModule } from '../ai/ai.module';
@@ -74,6 +75,7 @@ import { UserManualsController } from '../user-manuals/user-manuals.controller';
   ],
   providers: [
     { provide: RUNTIME_CAPTURE_PROVIDER, useFactory: () => new DockerRuntimeCaptureProvider() },
+    { provide: E2E_TEST_PROVIDER, useFactory: () => new DockerRuntimeCaptureProvider() },
     InterruptedJobsRecovery,
     UserManualsService,
     DependencyCatalogService,

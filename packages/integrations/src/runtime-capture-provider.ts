@@ -26,6 +26,25 @@ export interface RuntimeCaptureProvider {
   capture(request: RuntimeCaptureRequest): Promise<RuntimeCaptureResult[]>;
 }
 export const RUNTIME_CAPTURE_PROVIDER = Symbol('RUNTIME_CAPTURE_PROVIDER');
+
+// Generated Playwright tests (apps/web/e2e) run against the disposable stack.
+export interface E2ETestRequest {
+  signal?: AbortSignal;
+  files: readonly { path: string; content: string }[];
+  // Roles whose test sessions the generated tests need.
+  roles: readonly string[];
+}
+export interface E2ETestResult {
+  passed: boolean;
+  output: string;
+  durationMs: number;
+}
+export interface E2ETestProvider {
+  runE2E(request: E2ETestRequest): Promise<E2ETestResult>;
+}
+export const E2E_TEST_PROVIDER = Symbol('E2E_TEST_PROVIDER');
+export const E2E_DIRECTORY = 'apps/web/e2e/';
+const E2E_EXIT_MARKER = 'CASEFLOW_E2E_EXIT=';
 export const CAPTURE_PROFILE = 'EMPTY_DATABASE_DESKTOP_V1';
 
 export function captureTimeouts(environment: Record<string, string | undefined>) {
@@ -86,12 +105,134 @@ const runDocker: Runner = (args, timeoutMs, signal) =>
   });
 
 // No model-supplied Dockerfile, Compose file, command, environment or bind mount is used.
-export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider {
+export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider, E2ETestProvider {
   constructor(private readonly docker: Runner = runDocker) {}
 
   async capture(request: RuntimeCaptureRequest): Promise<RuntimeCaptureResult[]> {
     request.signal?.throwIfAborted();
     validateCaptureInput(request);
+    return this.withApplication(request, request.targets, async (stack) => {
+      const { command, controller, output, browser, browserArgs, sessionFor } = stack;
+      await writeFile(
+        join(controller, 'plan.json'),
+        JSON.stringify(
+          request.targets.map((target) => ({ ...target, ...sessionFor(target.role) })),
+        ),
+      );
+      await command([...browserArgs, stack.browserImage, 'node', '/tmp/controller/browser.cjs']);
+      await command(['cp', `${controller}/.`, `${browser}:/tmp/controller`]);
+      await command(['start', '-a', browser], stack.timeouts.browserMs);
+      await command(['cp', `${browser}:/tmp/capture-output/.`, output]);
+      const results: RuntimeCaptureResult[] = [];
+      for (let index = 0; index < request.targets.length; index++) {
+        const metadata = JSON.parse(await readFile(join(output, `${index}.json`), 'utf8')) as {
+          status: string;
+          reasonCode?: string;
+        };
+        const target = request.targets[index]!;
+        if (metadata.status === 'CAPTURED') {
+          const png = await readFile(join(output, `${index}.png`));
+          assertCapturePng(png);
+          results.push({
+            ...target,
+            status: 'CAPTURED',
+            reason: null,
+            png,
+            width: 1440,
+            height: 900,
+          });
+        } else
+          results.push({
+            ...target,
+            status: metadata.status === 'SKIPPED' ? 'SKIPPED' : 'FAILED',
+            reason:
+              metadata.status === 'SKIPPED'
+                ? 'Esta ruta necesita un registro de prueba. Revísela manualmente con datos adecuados.'
+                : captureFailureMessage(metadata.reasonCode),
+          });
+      }
+      request.signal?.throwIfAborted();
+      return results;
+    });
+  }
+
+  // The tests come from the deterministic generator and run only in the browser
+  // container, on the internal network, never in the CASEFlow process.
+  async runE2E(request: E2ETestRequest): Promise<E2ETestResult> {
+    request.signal?.throwIfAborted();
+    const roles = [...new Set(request.roles.filter(Boolean))];
+    validateCaptureInput({
+      files: request.files,
+      targets: (roles.length ? roles : ['']).map((role) => ({ routePath: '/', role })),
+    });
+    const tests = request.files.filter((file) => file.path.startsWith(E2E_DIRECTORY));
+    if (!tests.some((file) => file.path.endsWith('.spec.ts')))
+      throw new Error('The generated project has no end-to-end tests.');
+    const started = Date.now();
+    const targets = roles.map((role) => ({ routePath: '/', role }));
+    return this.withApplication(request, targets, async (stack) => {
+      const { command, controller, browser, browserArgs, sessionFor } = stack;
+      const run = join(controller, 'run');
+      for (const file of tests) {
+        const path = join(run, 'e2e', file.path.slice(E2E_DIRECTORY.length));
+        await mkdir(dirname(path), { recursive: true });
+        await writeFile(path, file.content);
+      }
+      await writeFile(
+        join(run, 'sessions.json'),
+        JSON.stringify(Object.fromEntries(roles.map((role) => [role, sessionFor(role)]))),
+      );
+      // The controller's own config: the generated one targets a local developer stack.
+      await writeFile(
+        join(run, 'playwright.config.cjs'),
+        "module.exports = { testDir: './e2e', workers: 1, retries: 0, timeout: 60000, outputDir: '/tmp/e2e-results', use: { baseURL: 'http://application:3000', serviceWorkers: 'block' } };\n",
+      );
+      const script = [
+        'for i in $(seq 1 120); do node -e "fetch(\'http://application:3000\').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))" && break; sleep 1; done',
+        'cd /opt/capture/run && /opt/capture/node_modules/.bin/playwright test -c playwright.config.cjs --reporter=list',
+        `echo ${E2E_EXIT_MARKER}$?`,
+      ].join('; ');
+      await command([
+        ...browserArgs,
+        '-e',
+        'E2E_API_URL=http://application:3001',
+        '-e',
+        'E2E_SESSIONS=/opt/capture/run/sessions.json',
+        '-e',
+        'CI=1',
+        '-e',
+        'FORCE_COLOR=0',
+        stack.browserImage,
+        'sh',
+        '-c',
+        script,
+      ]);
+      await command(['cp', `${run}/.`, `${browser}:/opt/capture/run`]);
+      const output = await command(['start', '-a', browser], stack.timeouts.browserMs);
+      request.signal?.throwIfAborted();
+      const exit = new RegExp(`${E2E_EXIT_MARKER}(\\d+)`).exec(output);
+      return {
+        passed: exit?.[1] === '0',
+        output: output.replace(new RegExp(`${E2E_EXIT_MARKER}\\d+\\s*$`), '').trim(),
+        durationMs: Date.now() - started,
+      };
+    });
+  }
+
+  private async withApplication<T>(
+    request: { signal?: AbortSignal; files: readonly { path: string; content: string }[] },
+    targets: readonly RuntimeCaptureTarget[],
+    phase: (stack: {
+      command: (args: string[], timeout?: number) => Promise<string>;
+      controller: string;
+      output: string;
+      browser: string;
+      browserArgs: string[];
+      browserImage: string;
+      timeouts: ReturnType<typeof captureTimeouts>;
+      sessionFor: (role: string) => { token: string | null; scopeId: string | null };
+    }) => Promise<T>,
+  ): Promise<T> {
     const timeouts = captureTimeouts(process.env);
     const localSessions = request.files.some(
       (file) =>
@@ -128,7 +269,7 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider {
       '--cpus=2',
     ];
     const nodeImage = 'caseflow-runtime-capture-node:24-pnpm11.27.0-v1';
-    const browserImage = 'caseflow-runtime-capture-browser:1.55.0-v1';
+    const browserImage = 'caseflow-runtime-capture-browser:1.55.0-v2';
     try {
       await command(['info', '--format', '{{.ServerVersion}}'], 10_000);
       await Promise.all([mkdir(source), mkdir(dependencies), mkdir(controller), mkdir(output)]);
@@ -156,7 +297,7 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider {
       );
       await writeFile(
         join(controller, 'Dockerfile.browser'),
-        'FROM mcr.microsoft.com/playwright:v1.55.0-noble\nWORKDIR /opt/capture\nRUN npm install --ignore-scripts --no-audit --no-fund playwright@1.55.0\n',
+        'FROM mcr.microsoft.com/playwright:v1.55.0-noble\nWORKDIR /opt/capture\nRUN npm install --ignore-scripts --no-audit --no-fund @playwright/test@1.55.0 && mkdir /opt/capture/run && chown pwuser /opt/capture/run\n',
       );
       // Like sandbox validation, reuse the versioned controller toolchain.
       // No generated code is ever included in the image build context.
@@ -323,7 +464,7 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider {
                 "process.stdout.write(require('node:fs').readFileSync('/app/.capture-sessions.json','utf8'))",
               ]),
             );
-            sessionTokens = validateCaptureSessions(tokens, request.targets, jwtSecret);
+            sessionTokens = validateCaptureSessions(tokens, targets, jwtSecret);
             break;
           } catch {
             request.signal?.throwIfAborted();
@@ -332,26 +473,19 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider {
           }
         }
       }
-      await writeFile(
-        join(controller, 'plan.json'),
-        JSON.stringify(
-          request.targets.map((target) => ({
-            ...target,
-            token: target.role
-              ? localSessions
-                ? sessionTokens[target.role]
-                : createCaptureSessionToken(target.role, jwtSecret)
-              : null,
-            scopeId:
-              localSessions && target.role
-                ? (JSON.parse(
-                    Buffer.from(sessionTokens[target.role]!.split('.')[1]!, 'base64url').toString(),
-                  ).scopeId ?? null)
-                : null,
-          })),
-        ),
-      );
-      await command([
+      const sessionFor = (role: string) => ({
+        token: role
+          ? localSessions
+            ? sessionTokens[role]!
+            : createCaptureSessionToken(role, jwtSecret)
+          : null,
+        scopeId:
+          localSessions && role
+            ? (JSON.parse(Buffer.from(sessionTokens[role]!.split('.')[1]!, 'base64url').toString())
+                .scopeId ?? null)
+            : null,
+      });
+      const browserArgs = [
         'create',
         '--name',
         browser,
@@ -364,43 +498,17 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider {
         `seccomp=${join(controller, 'seccomp.json')}`,
         '-e',
         `CASEFLOW_BROWSER_TIMEOUT_MS=${timeouts.browserMs}`,
+      ];
+      return await phase({
+        command,
+        controller,
+        output,
+        browser,
+        browserArgs,
         browserImage,
-        'node',
-        '/tmp/controller/browser.cjs',
-      ]);
-      await command(['cp', `${controller}/.`, `${browser}:/tmp/controller`]);
-      await command(['start', '-a', browser], timeouts.browserMs);
-      await command(['cp', `${browser}:/tmp/capture-output/.`, output]);
-      const results: RuntimeCaptureResult[] = [];
-      for (let index = 0; index < request.targets.length; index++) {
-        const metadata = JSON.parse(await readFile(join(output, `${index}.json`), 'utf8')) as {
-          status: string;
-          reasonCode?: string;
-        };
-        const target = request.targets[index]!;
-        if (metadata.status === 'CAPTURED') {
-          const png = await readFile(join(output, `${index}.png`));
-          assertCapturePng(png);
-          results.push({
-            ...target,
-            status: 'CAPTURED',
-            reason: null,
-            png,
-            width: 1440,
-            height: 900,
-          });
-        } else
-          results.push({
-            ...target,
-            status: metadata.status === 'SKIPPED' ? 'SKIPPED' : 'FAILED',
-            reason:
-              metadata.status === 'SKIPPED'
-                ? 'Esta ruta necesita un registro de prueba. Revísela manualmente con datos adecuados.'
-                : captureFailureMessage(metadata.reasonCode),
-          });
-      }
-      request.signal?.throwIfAborted();
-      return results;
+        timeouts,
+        sessionFor,
+      });
     } finally {
       // Cleanup is restricted to names generated for this invocation, including timeout paths.
       await this.docker(['rm', '-f', browser, app, database, copy, build, install], 20_000).catch(

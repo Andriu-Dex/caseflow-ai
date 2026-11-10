@@ -18,6 +18,9 @@ const {
 const { generateProject } = require(
   resolve(root, 'apps/api/dist/code-generation/engine/project-generator.js'),
 );
+const { e2eScreens } = require(
+  resolve(root, 'apps/api/dist/code-generation/engine/frontend.templates.js'),
+);
 const { OPERATION_SCOPE_RUNTIME } = require(
   resolve(root, 'apps/api/dist/code-generation/engine/operation-scope.templates.js'),
 );
@@ -135,6 +138,12 @@ async function main() {
       { routePath: '/revisions/new', role: 'EDITOR' },
     ],
   });
+  const e2e = await new DockerRuntimeCaptureProvider().runE2E({
+    files,
+    roles: e2eScreens(plan).map((screen) => screen.role),
+  });
+  console.log('E2E', e2e.passed, e2e.durationMs);
+  console.log(e2e.output.slice(-4000));
   if (!proof?.includes('"status":"PASSED"'))
     throw new Error('Missing PostgreSQL validation evidence.');
   const report = {
@@ -147,6 +156,7 @@ async function main() {
       timedOut,
     })),
     postgres: JSON.parse(proof.trim().split('\n').at(-1)),
+    e2e: { passed: e2e.passed, durationMs: e2e.durationMs },
     captures: captures.map(({ png, ...metadata }) => ({
       ...metadata,
       imageBytes: png?.length ?? 0,
@@ -157,6 +167,7 @@ async function main() {
   console.log('REPORT', output);
   if (captures.some((capture) => capture.status !== 'CAPTURED'))
     throw new Error('The evaluated screens failed runtime capture.');
+  if (!e2e.passed) throw new Error('The generated end-to-end tests failed.');
 }
 
 main().catch((error) => {

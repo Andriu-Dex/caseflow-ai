@@ -286,6 +286,7 @@ const STAGE_LABELS: Record<SandboxValidationStage, string> = {
   BUILD: 'Compilación',
   STRUCTURE: 'Estructura',
   TRACEABILITY: 'Trazabilidad',
+  E2E: 'Pruebas en navegador',
 };
 
 const REPAIR_LABELS = {

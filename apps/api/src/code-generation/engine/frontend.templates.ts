@@ -1154,7 +1154,7 @@ export function frontendFiles(ctx: GenerationContext): GeneratedProjectFile[] {
   };
   const themeToggle = theme?.content.mode === 'BOTH';
   const auth = plan.authentication.required;
-  const hasE2E = plan.tests.some((t) => t.kind === 'E2E');
+  const plannedE2E = plan.tests.filter((t) => t.kind === 'E2E');
   const entityById = new Map(plan.entities.map((e) => [e.localId, e]));
   const navRoutes = plan.routes.filter((r) => !r.path.includes('[') && r.path !== '/');
   const files: GeneratedProjectFile[] = [];
@@ -1180,7 +1180,7 @@ export function frontendFiles(ctx: GenerationContext): GeneratedProjectFile[] {
           typecheck: 'tsc --noEmit',
           lint: 'eslint app components lib',
           test: 'vitest run',
-          ...(hasE2E ? { 'test:e2e': 'playwright test' } : {}),
+          'test:e2e': 'playwright test',
         },
         dependencies: dependencies(
           template,
@@ -1211,7 +1211,7 @@ export function frontendFiles(ctx: GenerationContext): GeneratedProjectFile[] {
           'tailwindcss',
           'typescript',
           'vitest',
-          ...(hasE2E ? ['@playwright/test'] : []),
+          '@playwright/test',
         ]),
       }),
       { kind: 'CONFIG' },
@@ -1707,42 +1707,83 @@ export default function AccessPage() {
     );
   }
 
-  if (hasE2E)
-    files.push(
-      file(
-        'apps/web/playwright.config.ts',
-        `import { defineConfig } from '@playwright/test';
+  const screens = e2eScreens(plan);
+  files.push(
+    file(
+      'apps/web/playwright.config.ts',
+      `import { defineConfig } from '@playwright/test';
 
-// End-to-end tests run against a running stack (pnpm run dev); they are not
-// part of the offline validation pipeline.
+// Run against a started stack (pnpm run dev). E2E_SESSIONS points to a JSON
+// file of test sessions by role: { "<role>": { "token": "...", "scopeId": null } }.
 export default defineConfig({
   testDir: './e2e',
+  workers: 1,
   use: { baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:3000' },
 });
 `,
-        { kind: 'CONFIG' },
-      ),
-      file(
-        'apps/web/e2e/navigation.spec.ts',
-        `import { expect, test } from '@playwright/test';
+      { kind: 'CONFIG' },
+    ),
+    file(
+      'apps/web/e2e/screens.spec.ts',
+      `import { readFileSync } from 'node:fs';
+import { expect, test } from '@playwright/test';
 
-${plan.tests
-  .filter((t) => t.kind === 'E2E')
-  .map((t) => `// Planned: ${t.description.replace(/\n/g, ' ')}`)
-  .join('\n')}
-test('the home page lists the main screens', async ({ page }) => {
-  await page.goto('/');
-  await expect(page.getByRole('navigation', { name: 'Navegación principal' })).toBeVisible();
-});
+${plannedE2E.map((t) => `// Planned: ${t.description.replace(/\n/g, ' ')}`).join('\n')}
+type Session = { token: string | null; scopeId: string | null };
+
+const SCREENS: { path: string; screenName: string; role: string }[] = ${JSON.stringify(screens, null, 2)};
+const API_URL = process.env.E2E_API_URL ?? 'http://localhost:3001';
+const sessions: Record<string, Session> = process.env.E2E_SESSIONS
+  ? JSON.parse(readFileSync(process.env.E2E_SESSIONS, 'utf8'))
+  : {};
+
+for (const screen of SCREENS) {
+  test(\`\${screen.screenName} (\${screen.path}) opens without errors\`, async ({ page }) => {
+    const session = screen.role ? sessions[screen.role] : undefined;
+    if (screen.role) expect(session?.token, \`Missing test session for role \${screen.role}\`).toBeTruthy();
+    if (session)
+      await page.addInitScript((value: Session) => {
+        window.sessionStorage.setItem('access-token', value.token ?? '');
+        if (value.scopeId) window.sessionStorage.setItem('operation-scope', value.scopeId);
+      }, session);
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(\`Browser error: \${error.message}\`));
+    page.on('response', (response) => {
+      if (response.url().startsWith(API_URL) && response.status() >= 400)
+        errors.push(\`API \${response.status()}: \${response.request().method()} \${response.url()}\`);
+    });
+    const response = await page.goto(screen.path, { waitUntil: 'networkidle' });
+    expect(response?.ok(), 'The screen must respond successfully').toBe(true);
+    expect(new URL(page.url()).pathname, 'The screen must not redirect').toBe(screen.path);
+    await expect(page.locator('h1').first()).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+}
 `,
-        {
-          origin: 'DETERMINISTIC',
-          kind: 'TEST',
-          planElements: plan.tests
-            .filter((t) => t.kind === 'E2E')
-            .map((t) => `module:${t.moduleLocalId}`),
-        },
-      ),
-    );
+      {
+        origin: 'DETERMINISTIC',
+        kind: 'TEST',
+        planElements: [
+          ...screens.map((screen) => `route:${screen.path}`),
+          ...plannedE2E.map((t) => `module:${t.moduleLocalId}`),
+        ],
+      },
+    ),
+  );
   return files;
+}
+
+// DEC-159: every static screen opens with one authorized role. Detail routes
+// ([param]) need a record and are covered by later flow tests.
+export function e2eScreens(plan: ImplementationPlanContent) {
+  return plan.routes
+    .filter((route) => !route.path.includes('['))
+    .map((route) => ({
+      path: route.path,
+      screenName: route.screenName,
+      role:
+        route.builtinView === 'ACCOUNT_ACCESS' || !plan.authentication.required
+          ? ''
+          : (route.roles?.[0] ?? plan.authentication.roles[0] ?? ''),
+    }));
 }

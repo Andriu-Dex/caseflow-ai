@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { FakeAIProvider } from '@caseflow-ai/ai';
 import request from 'supertest';
 import JSZip from 'jszip';
+import { E2E_TEST_PROVIDER, type E2ETestProvider } from '@caseflow-ai/integrations';
 import { writeFileSync } from 'node:fs';
 import {
   DockerSandboxExecutionProvider,
@@ -187,6 +188,7 @@ describe('Construction sandbox validation integration', () => {
       ['BUILD', true],
       ['STRUCTURE', true],
       ['TRACEABILITY', true],
+      ['E2E', true],
     ]);
     const executed = sandbox.requests.at(-1)!;
     expect(executed.commands.map((c) => [c.argv.join(' '), c.network])).toEqual([
@@ -311,6 +313,30 @@ describe('Construction sandbox validation integration', () => {
     expect(
       await ctx.prisma.generatedProjectSnapshot.count({ where: { generationRunId: runId } }),
     ).toBe(0);
+  });
+
+  it('never reaches READY when the generated end-to-end tests fail (DEC-159)', async () => {
+    const runId = await generatedRun();
+    const e2e = ctx.app.get<E2ETestProvider>(E2E_TEST_PROVIDER);
+    const spy = vi.spyOn(e2e, 'runE2E').mockResolvedValue({
+      passed: false,
+      output: 'Pedidos (/orders) opens without errors: API 500',
+      durationMs: 1,
+    });
+    try {
+      await validate(runId);
+      const [item] = await runs(runId);
+      expect(item).toMatchObject({
+        status: 'VALIDATION_FAILED',
+        failedStage: 'E2E',
+        snapshotId: null,
+      });
+      expect(
+        spy.mock.calls[0]![0].files.some((file) => file.path === 'apps/web/e2e/screens.spec.ts'),
+      ).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('applies at most 3 repair rounds, feeding each patch into the next attempt', async () => {

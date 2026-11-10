@@ -76,6 +76,41 @@ describe('Docker runtime capture boundary', () => {
       vi.unstubAllEnvs();
     }
   });
+  it('runs the generated end-to-end tests in the browser container and reads their verdict', async () => {
+    const calls: string[][] = [];
+    const copied: Record<string, string> = {};
+    const run = (exit: number) =>
+      new DockerRuntimeCaptureProvider(async (args) => {
+        calls.push(args);
+        if (args[0] === 'cp' && args[2]?.endsWith(':/opt/capture/run')) {
+          copied.spec = await readFile(join(args[1]!.slice(0, -2), 'e2e/screens.spec.ts'), 'utf8');
+          copied.sessions = await readFile(join(args[1]!.slice(0, -2), 'sessions.json'), 'utf8');
+        }
+        return args[0] === 'start' ? `1 passed\nCASEFLOW_E2E_EXIT=${exit}\n` : '';
+      }).runE2E({
+        files: [...input.files, { path: 'apps/web/e2e/screens.spec.ts', content: '// screens' }],
+        roles: ['Editor', '', 'Editor'],
+      });
+    const passed = await run(0);
+    expect(passed).toMatchObject({ passed: true, output: '1 passed' });
+    expect(copied.spec).toBe('// screens');
+    expect(Object.keys(JSON.parse(copied.sessions!))).toEqual(['Editor']);
+    const create = calls.find((args) => args[0] === 'create' && args.includes('sh'))!;
+    expect(create).toContain('--network');
+    expect(create).toContain('--cap-drop=ALL');
+    expect(create.indexOf('E2E_SESSIONS=/opt/capture/run/sessions.json')).toBeLessThan(
+      create.indexOf('sh'),
+    );
+    expect(calls.at(-3)![0]).toBe('rm');
+    expect((await run(1)).passed).toBe(false);
+  });
+  it('refuses to run end-to-end tests when the project has none', async () => {
+    const docker = vi.fn();
+    await expect(
+      new DockerRuntimeCaptureProvider(docker).runE2E({ files: input.files, roles: [] }),
+    ).rejects.toThrow('no end-to-end tests');
+    expect(docker).not.toHaveBeenCalled();
+  });
   it('validates timeout units and refuses values that disable or overflow the capture boundary', async () => {
     expect(captureTimeouts({})).toEqual({
       buildMs: 600_000,

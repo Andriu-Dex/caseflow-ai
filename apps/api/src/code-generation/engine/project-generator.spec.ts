@@ -645,12 +645,16 @@ describe('forms and pages for every field type', () => {
     expect(create).toContain('api.createHidden(');
   });
 
-  it('serves the home page and adds the end-to-end script only when the plan has such tests', () => {
+  it('serves the home page and always generates screen end-to-end tests (DEC-159)', () => {
     expect(generated.get('apps/web/app/page.tsx')!.content).toContain('Inicio');
-    const web = JSON.parse(generated.get('apps/web/package.json')!.content);
-    expect(JSON.stringify(web)).toContain('playwright');
     const without = byPath(generateProject(ctx(basePlan({ tests: [] }))));
-    expect(without.get('apps/web/package.json')!.content).not.toContain('playwright');
+    const web = JSON.parse(without.get('apps/web/package.json')!.content);
+    expect(web.scripts['test:e2e']).toBe('playwright test');
+    expect(web.devDependencies['@playwright/test']).toBeDefined();
+    const screens = without.get('apps/web/e2e/screens.spec.ts')!.content;
+    expect(screens).toContain('"path": "/');
+    expect(screens).not.toContain('/[');
+    expect(screens).toContain("locator('h1')");
   });
 });
 

@@ -1815,6 +1815,7 @@ enum ValidationStage {
   BUILD
   STRUCTURE
   TRACEABILITY
+  E2E
 
   @@map("validation_stage")
 }

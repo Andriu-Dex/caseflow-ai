@@ -21,6 +21,7 @@ export const SANDBOX_VALIDATION_STAGES = [
   'BUILD',
   'STRUCTURE',
   'TRACEABILITY',
+  'E2E',
 ] as const;
 export type SandboxValidationStage = (typeof SANDBOX_VALIDATION_STAGES)[number];
 
