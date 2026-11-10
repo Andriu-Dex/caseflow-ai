@@ -45,6 +45,83 @@ export const actionMethodName = (e: Endpoint) =>
 
 const rolesLiteral = (roles: string[]) => roles.map((r) => `'${r}'`).join(', ');
 
+export interface PrimaryDateResolution {
+  name: string;
+  label: string;
+  relationName?: string;
+}
+
+export function findPrimaryDateResolution(
+  entity: Entity,
+  plan?: ImplementationPlanContent,
+): PrimaryDateResolution | undefined {
+  const dates = entity.fields.filter((f) => f.type === 'DATE' || f.type === 'DATETIME');
+  // 1. Specific operational business dates on the entity itself
+  const operationalDate = dates.find((f) => /(?:operational|sale|servicio|operativ)/i.test(f.name));
+  if (operationalDate) {
+    return {
+      name: operationalDate.name,
+      label: operationalDate.label ?? operationalDate.name,
+    };
+  }
+  // 2. Validity period dates
+  const validityDate = dates.find((f) => /(?:validfrom|validadesde)/i.test(f.name));
+  if (validityDate) {
+    return {
+      name: validityDate.name,
+      label: validityDate.label ?? validityDate.name,
+    };
+  }
+  // 3. Parent relation domain operational dates (e.g. dailyMenu.operationalDate)
+  if (plan) {
+    for (const rel of entity.relations.filter((r) => r.kind === 'MANY_TO_ONE')) {
+      const target = plan.entities.find((e) => e.localId === rel.targetEntityLocalId);
+      if (target) {
+        const targetDates = target.fields.filter((f) => f.type === 'DATE' || f.type === 'DATETIME');
+        const parentDomainDate = targetDates.find((f) => /(?:operational|sale|fecha)/i.test(f.name));
+        if (parentDomainDate) {
+          return {
+            name: parentDomainDate.name,
+            label: `Fecha operativa de ${rel.name === 'dailyMenu' ? 'menú diario' : rel.name}`,
+            relationName: rel.name,
+          };
+        }
+      }
+    }
+  }
+  // 4. Other specific domain dates (excluding pure audit and publication)
+  const domainDate = dates.find(
+    (f) =>
+      /(?:period|date|fecha|due|vencimiento)/i.test(f.name) &&
+      !/(?:creat|updat|delet|publication)/i.test(f.name),
+  );
+  if (domainDate) {
+    return {
+      name: domainDate.name,
+      label: domainDate.label ?? domainDate.name,
+    };
+  }
+  // 5. Publication date
+  const publicationDate = dates.find((f) => /publication/i.test(f.name));
+  if (publicationDate) {
+    return {
+      name: publicationDate.name,
+      label: publicationDate.label ?? publicationDate.name,
+    };
+  }
+  // 6. Audit creation date fallback
+  const createdDate = dates.find((f) => /created/i.test(f.name));
+  if (createdDate) return { name: createdDate.name, label: createdDate.label ?? createdDate.name };
+  return undefined;
+}
+
+export function findPrimaryDateField(
+  entity: Entity,
+  plan?: ImplementationPlanContent,
+): PrimaryDateResolution | undefined {
+  return findPrimaryDateResolution(entity, plan);
+}
+
 function entityController(plan: Plan, entity: Entity, moduleName: string): string {
   const e = entity.name;
   const ops = new Set(entity.operations);
@@ -52,7 +129,7 @@ function entityController(plan: Plan, entity: Entity, moduleName: string): strin
   const scoped = Boolean(plan.authentication.local?.scope);
   const read = auth ? `\n  @Roles(${rolesLiteral(entity.readRoles)})` : '';
   const write = auth ? `\n  @Roles(${rolesLiteral(entity.writeRoles)})` : '';
-  const dateFields = entity.fields.filter((f) => f.type === 'DATE' || f.type === 'DATETIME');
+  const primaryDate = findPrimaryDateResolution(entity, plan);
   const operation = (method: string, detail = false) =>
     scoped
       ? `\n  @Operation(${JSON.stringify(method + ' ' + collectionPath(e) + (detail ? '/:id' : ''))})`
@@ -60,12 +137,26 @@ function entityController(plan: Plan, entity: Entity, moduleName: string): strin
   const methods = [
     ops.has('LIST') &&
       `  @Get()${read}${operation('GET')}
-  list(@Query('page') page?: string, @Query('limit') limit?: string${dateFields.length ? ", @Query('from') from?: string, @Query('to') to?: string" : ''}) {
+  list(@Query('page') page?: string, @Query('limit') limit?: string${primaryDate ? ", @Query('from') from?: string, @Query('to') to?: string" : ''}) {
     const pageNum = page !== undefined ? Number(page) : undefined;
     const limitNum = limit !== undefined ? Number(limit) : undefined;
-    return this.service.list({
+    ${
+      primaryDate
+        ? `if (from !== undefined) {
+      const ms = Date.parse(from);
+      if (!Number.isFinite(ms)) throw new BadRequestException('El parámetro "from" debe ser una fecha válida (formato YYYY-MM-DD o ISO).');
+    }
+    if (to !== undefined) {
+      const ms = Date.parse(to);
+      if (!Number.isFinite(ms)) throw new BadRequestException('El parámetro "to" debe ser una fecha válida (formato YYYY-MM-DD o ISO).');
+    }
+    if (from !== undefined && to !== undefined && Date.parse(from) > Date.parse(to)) {
+      throw new BadRequestException('El rango temporal es inválido: "from" no puede ser posterior a "to".');
+    }\n    `
+        : ''
+    }return this.service.list({
       page: pageNum !== undefined && Number.isFinite(pageNum) && pageNum >= 1 ? Math.min(Math.floor(pageNum), 100_000) : undefined,
-      limit: limitNum !== undefined && Number.isFinite(limitNum) && limitNum >= 1 ? Math.min(Math.floor(limitNum), 500) : undefined,${dateFields.length ? '\n      from,\n      to,' : ''}
+      limit: limitNum !== undefined && Number.isFinite(limitNum) && limitNum >= 1 ? Math.min(Math.floor(limitNum), 500) : undefined,${primaryDate ? '\n      from: typeof from === "string" && from.trim() ? from.trim() : undefined,\n      to: typeof to === "string" && to.trim() ? to.trim() : undefined,' : ''}
     });
   }`,
     ops.has('GET') &&
@@ -97,6 +188,7 @@ function entityController(plan: Plan, entity: Entity, moduleName: string): strin
     'Controller',
     ops.has('LIST') || ops.has('GET') ? 'Get' : '',
     ops.has('LIST') ? 'Query' : '',
+    ops.has('LIST') && primaryDate ? 'BadRequestException' : '',
     ops.has('GET') || ops.has('UPDATE') || ops.has('DELETE') ? 'Param' : '',
     ops.has('GET') || ops.has('UPDATE') || ops.has('DELETE') ? 'ParseUUIDPipe' : '',
     ops.has('CREATE') ? 'Post' : '',
@@ -148,6 +240,7 @@ function entityService(entity: Entity, plan: ImplementationPlanContent): string 
   const e = entity.name;
   const ops = new Set(entity.operations);
   const delegate = lowerFirst(e);
+  const toOne = entity.relations.filter((relation) => relation.kind === 'MANY_TO_ONE');
   const many = entity.relations.filter(
     (relation) =>
       relation.kind === 'MANY_TO_MANY' &&
@@ -156,35 +249,63 @@ function entityService(entity: Entity, plan: ImplementationPlanContent): string 
   );
   const includes = [
     ...(local ? [local.roleRelation] : []),
+    ...toOne.map((relation) => relation.name),
     ...many.map((relation) => relation.name),
   ];
   const accountInclude = includes.length
     ? `, include: { ${includes.map((name) => `${name}: true`).join(', ')} }`
     : '';
   const projectResult = local ? 'publicAccount' : many.length ? 'publicRelations' : undefined;
-  const dateFields = entity.fields.filter((f) => f.type === 'DATE' || f.type === 'DATETIME');
+  const primaryDate = findPrimaryDateResolution(entity, plan);
+  const entityDateFields = entity.fields.filter((f) => f.type === 'DATE' || f.type === 'DATETIME');
   const needsInput = ops.has('CREATE') || ops.has('UPDATE');
   const methods = [
     ops.has('LIST') &&
-      `  ${projectResult ? 'async ' : ''}list(query?: { page?: number; limit?: number${dateFields.length ? '; from?: string; to?: string' : ''} }) {
+      `  ${projectResult ? 'async ' : ''}list(query?: { page?: number; limit?: number${primaryDate ? '; from?: string; to?: string' : ''} }) {
     // Bounded: a list endpoint never returns an unlimited number of rows.
     const page = query?.page && Number.isFinite(query.page) && query.page >= 1 ? Math.min(Math.floor(query.page), 100_000) : 1;
     const limit = query?.limit && Number.isFinite(query.limit) && query.limit >= 1 ? Math.min(Math.floor(query.limit), 500) : (query?.page !== undefined ? 20 : 500);
     const skip = query?.page !== undefined ? (page - 1) * limit : 0;
     ${
-      dateFields.length
-        ? `const hasDateFilter = Boolean(query?.from || query?.to);
+      primaryDate
+        ? `const parseDateGte = (v?: string) => {
+      if (!v || typeof v !== 'string') return undefined;
+      const ms = Date.parse(v.includes('T') ? v : v + 'T00:00:00.000Z');
+      if (!Number.isFinite(ms)) throw new BadRequestException('El parámetro "from" no es una fecha válida.');
+      return new Date(ms);
+    };
+    const parseDateLte = (v?: string) => {
+      if (!v || typeof v !== 'string') return undefined;
+      const ms = Date.parse(v.includes('T') ? v : v + 'T23:59:59.999Z');
+      if (!Number.isFinite(ms)) throw new BadRequestException('El parámetro "to" no es una fecha válida.');
+      return new Date(ms);
+    };
+    const gteDate = parseDateGte(query?.from);
+    const lteDate = parseDateLte(query?.to);
+    if (gteDate && lteDate && gteDate > lteDate) {
+      throw new BadRequestException('El parámetro "from" no puede ser posterior a "to".');
+    }
+    const hasDateFilter = Boolean(gteDate || lteDate);
     const dateWhere = hasDateFilter ? {
       where: {
-        ${dateFields[0]!.name}: {
-          ...(query?.from ? { gte: new Date(query.from) } : {}),
-          ...(query?.to ? { lte: new Date(query.to.includes('T') ? query.to : query.to + 'T23:59:59.999Z') } : {}),
+        ${
+          primaryDate.relationName
+            ? `${primaryDate.relationName}: {
+          ${primaryDate.name}: {
+            ...(gteDate ? { gte: gteDate } : {}),
+            ...(lteDate ? { lte: lteDate } : {}),
+          },
+        }`
+            : `${primaryDate.name}: {
+          ...(gteDate ? { gte: gteDate } : {}),
+          ...(lteDate ? { lte: lteDate } : {}),
+        }`
         },
       },
     } : {};\n    `
         : ''
     }return ${projectResult ? '(await ' : ''}this.prisma.${delegate}.findMany({
-      ${dateFields.length ? '...dateWhere,\n      ' : ''}orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+      ${primaryDate ? '...dateWhere,\n      ' : ''}orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
       take: limit,
       ...(skip > 0 ? { skip } : {})${omitFields(entity)}${accountInclude}
     })${projectResult ? `).map(${projectResult})` : ''};
@@ -201,8 +322,24 @@ function entityService(entity: Entity, plan: ImplementationPlanContent): string 
   }`,
     ops.has('UPDATE') &&
       `  async update(id: string, input: Update${e}Input) {
-    await this.get(id);
+    const current = await this.get(id);
     ${
+      entity.fields.some((f) => f.name === 'status' && f.enumValues?.includes('PUBLICADA'))
+        ? `if ((current as { status?: string }).status === 'PUBLICADA') {
+      throw new BadRequestException('No se puede modificar una versión publicada; las versiones publicadas son inmutables.');
+    }
+    if ((input as { status?: string }).status === 'PUBLICADA') {
+      ${
+        entity.name === 'MenuVersion'
+          ? `const compCount = await this.prisma.menuVersionComponent.count({ where: { menuVersionId: id } });
+      if (compCount === 0) {
+        throw new BadRequestException('No se puede publicar una versión de menú sin componentes registrados.');
+      }\n      `
+          : ''
+      }(input as Record<string, unknown>).publicationDate = new Date();
+    }\n    `
+        : ''
+    }${
       local
         ? `const data = await toAccountData(input, true);
     return this.prisma.$transaction(async tx => {
@@ -219,12 +356,13 @@ function entityService(entity: Entity, plan: ImplementationPlanContent): string 
     await this.prisma.${delegate}.delete({ where: { id } });
   }`,
   ].filter(Boolean);
-  const conversions = dateFields.map(
+  const conversions = entityDateFields.map(
     (f) => `  if (typeof data.${f.name} === 'string') data.${f.name} = new Date(data.${f.name});`,
   );
   const usesGet = ops.has('GET') || ops.has('UPDATE') || ops.has('DELETE');
+  const hasStatusCheck = entity.fields.some((f) => f.name === 'status' && f.enumValues?.includes('PUBLICADA'));
   return [
-    `import { Injectable${usesGet ? ', NotFoundException' : ''}${local ? ', BadRequestException' : ''} } from '@nestjs/common';`,
+    `import { Injectable${usesGet ? ', NotFoundException' : ''}${local || hasStatusCheck || primaryDate ? ', BadRequestException' : ''} } from '@nestjs/common';`,
     local ? "import * as argon2 from 'argon2';" : '',
     needsInput
       ? `import type { ${[ops.has('CREATE') && `Create${e}Input`, ops.has('UPDATE') && `Update${e}Input`].filter(Boolean).join(', ')} } from '${SCOPE}/contracts';`
@@ -285,6 +423,7 @@ function entityServiceSpec(entity: Entity, plan: ImplementationPlanContent): str
   const e = entity.name;
   const ops = new Set(entity.operations);
   const delegate = lowerFirst(e);
+  const toOne = entity.relations.filter((relation) => relation.kind === 'MANY_TO_ONE');
   const many = entity.relations.filter(
     (relation) =>
       relation.kind === 'MANY_TO_MANY' &&
@@ -293,6 +432,7 @@ function entityServiceSpec(entity: Entity, plan: ImplementationPlanContent): str
   );
   const includes = [
     ...(local ? [local.roleRelation] : []),
+    ...toOne.map((relation) => relation.name),
     ...many.map((relation) => relation.name),
   ];
   const accountInclude = includes.length
