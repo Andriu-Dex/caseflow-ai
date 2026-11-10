@@ -1,0 +1,340 @@
+{
+  "User": { "relations": { "role": "Rol" } },
+  "Role": { "fields": { "name": "Nombre del rol" } },
+  "Permission": { "fields": { "operation": "Operación permitida" } },
+  "Branch": {
+    "fields": {
+      "identification": "Identificación de la sucursal",
+      "name": "Nombre de la sucursal",
+      "address": "Dirección",
+      "timeZone": "Zona horaria",
+      "status": "Estado"
+    }
+  },
+  "Session": {
+    "fields": {
+      "startedAt": "Inicio de sesión",
+      "lastActivityAt": "Última actividad",
+      "invalidatedAt": "Cierre o invalidación",
+      "status": "Estado de la sesión"
+    },
+    "relations": { "user": "Usuario" }
+  },
+  "AccessEvent": {
+    "fields": {
+      "occurredAt": "Fecha y hora",
+      "result": "Resultado del acceso",
+      "requestCorrelation": "Correlación de la solicitud"
+    },
+    "relations": { "user": "Usuario" }
+  },
+  "OperationalParameter": {
+    "fields": {
+      "valueType": "Tipo de valor",
+      "allowedValues": "Valores permitidos",
+      "applicationRules": "Reglas de aplicación"
+    }
+  },
+  "ParameterValue": {
+    "fields": { "scope": "Ámbito", "value": "Valor" },
+    "relations": { "operationalParameter": "Parámetro operativo", "branch": "Sucursal" }
+  },
+  "ProductCategory": { "relations": { "product": "Producto" } },
+  "BranchProductAvailability": {
+    "fields": { "available": "Disponible en la sucursal" },
+    "relations": { "product": "Producto", "branch": "Sucursal" }
+  },
+  "BranchProductPrice": {
+    "fields": {
+      "amount": "Precio local",
+      "applicationConditions": "Condiciones de aplicación",
+      "validFrom": "Vigente desde",
+      "validUntil": "Vigente hasta"
+    },
+    "relations": { "product": "Producto", "branch": "Sucursal" }
+  },
+  "DailyMenu": {
+    "fields": { "operationalDate": "Fecha operativa" },
+    "relations": { "branch": "Sucursal" }
+  },
+  "MenuVersion": {
+    "fields": {
+      "versionLabel": "Versión",
+      "status": "Estado de la versión",
+      "creationDate": "Fecha de creación",
+      "publicationDate": "Fecha de publicación",
+      "revision": "Revisión",
+      "publicationPolicyCode": "Política de publicación",
+      "publicationTimeZone": "Zona horaria de publicación"
+    },
+    "relations": {
+      "dailyMenu": "Menú diario",
+      "user": "Responsable",
+      "publicationApprover": "Aprobador de la publicación"
+    }
+  },
+  "MenuVersionComponent": {
+    "fields": {
+      "componentType": "Tipo de componente",
+      "price": "Precio",
+      "available": "Disponible"
+    },
+    "relations": { "menuVersion": "Versión del menú", "product": "Producto" }
+  },
+  "Sale": {
+    "fields": {
+      "saleDate": "Fecha y hora de la venta",
+      "operationalDate": "Fecha operativa",
+      "channel": "Canal de venta",
+      "subtotal": "Subtotal",
+      "totalDiscount": "Descuento total",
+      "revision": "Revisión"
+    },
+    "relations": { "branch": "Sucursal", "user": "Cajero" }
+  },
+  "SaleLine": {
+    "fields": {
+      "quantity": "Cantidad",
+      "historicalUnitPrice": "Precio unitario aplicado",
+      "appliedDiscount": "Descuento aplicado",
+      "historicalClassification": "Clasificación aplicada",
+      "subtotal": "Subtotal de la línea"
+    },
+    "relations": { "sale": "Venta", "product": "Producto" }
+  },
+  "ProteinExtraSelection": {
+    "fields": { "selectionType": "Tipo de selección", "quantity": "Cantidad" },
+    "relations": { "saleLine": "Línea de venta", "product": "Producto" }
+  },
+  "AuthorizedDiscount": {
+    "fields": {
+      "appliedAmount": "Importe del descuento",
+      "reason": "Motivo",
+      "authorizationEvidence": "Evidencia de autorización",
+      "appliedAt": "Fecha de aplicación"
+    },
+    "relations": { "sale": "Venta" }
+  },
+  "SaleInternalNote": {
+    "fields": { "content": "Observación", "recordedAt": "Fecha de registro" },
+    "relations": { "sale": "Venta", "user": "Autor" }
+  },
+  "SaleCompensatingOperation": {
+    "fields": {
+      "type": "Tipo de operación",
+      "reason": "Motivo",
+      "performedAt": "Fecha de ejecución",
+      "derivedEffects": "Efectos derivados",
+      "previousTotal": "Total anterior",
+      "resultingTotal": "Total resultante",
+      "totalChange": "Variación del total"
+    },
+    "relations": { "sale": "Venta", "user": "Responsable", "replacementSale": "Venta de reemplazo" }
+  },
+  "BranchProductStock": {
+    "fields": { "revision": "Revisión" },
+    "relations": { "product": "Producto", "branch": "Sucursal" }
+  },
+  "InventoryMovement": {
+    "fields": {
+      "unit": "Unidad",
+      "stockUnitChange": "Cambio de existencias",
+      "origin": "Origen del movimiento",
+      "previousBalance": "Saldo anterior",
+      "resultingBalance": "Saldo resultante",
+      "operationalDate": "Fecha operativa"
+    },
+    "relations": { "branchProductStock": "Existencias del producto", "user": "Responsable" }
+  },
+  "ExpenseCategory": {
+    "fields": { "scope": "Ámbito" },
+    "relations": { "branch": "Sucursal" }
+  },
+  "Expense": {
+    "fields": {
+      "date": "Fecha del gasto",
+      "currency": "Moneda",
+      "confirmedAt": "Fecha de confirmación"
+    },
+    "relations": {
+      "expenseCategory": "Categoría de gasto",
+      "branch": "Sucursal",
+      "user": "Responsable"
+    }
+  },
+  "ExpenseCorrection": {
+    "fields": { "reason": "Motivo de la corrección", "date": "Fecha de la corrección" },
+    "relations": { "expense": "Gasto", "user": "Responsable" }
+  },
+  "Receipt": {
+    "fields": {
+      "fileName": "Nombre del archivo",
+      "mimeType": "Tipo de archivo",
+      "extension": "Extensión",
+      "size": "Tamaño",
+      "privateStorageReference": "Referencia de almacenamiento privado"
+    },
+    "relations": { "expense": "Gasto" }
+  },
+  "OcrExtractionRequest": {
+    "fields": {
+      "requestedAt": "Fecha de solicitud",
+      "status": "Estado de la extracción",
+      "respondedAt": "Fecha de respuesta",
+      "failure": "Motivo del fallo"
+    },
+    "relations": { "receipt": "Comprobante", "user": "Solicitante", "ocrProposal": "Propuesta OCR" }
+  },
+  "OcrProposal": {
+    "fields": {
+      "status": "Estado de la propuesta",
+      "explicitReviewDeclaration": "Declaración de revisión",
+      "reviewedAt": "Fecha de revisión"
+    },
+    "relations": { "user": "Revisor", "expense": "Gasto" }
+  },
+  "OcrReviewField": {
+    "fields": {
+      "fieldName": "Campo",
+      "proposedValue": "Valor propuesto",
+      "workingValue": "Valor en revisión",
+      "acceptedValue": "Valor aceptado",
+      "provenance": "Procedencia",
+      "reviewResult": "Resultado de la revisión",
+      "confidence": "Confianza",
+      "evidence": "Evidencia",
+      "uncertainty": "Incertidumbre"
+    },
+    "relations": { "ocrProposal": "Propuesta OCR" }
+  },
+  "CateringClient": {
+    "fields": {
+      "identification": "Identificación del cliente",
+      "contactDetails": "Datos de contacto"
+    }
+  },
+  "CateringRequest": {
+    "fields": {
+      "contact": "Contacto",
+      "scheduledAt": "Fecha y hora del servicio",
+      "location": "Lugar",
+      "expectedAttendees": "Asistentes previstos",
+      "menuOrServicePreferences": "Preferencias de menú o servicio",
+      "serviceScope": "Alcance del servicio",
+      "status": "Estado de la solicitud",
+      "revision": "Revisión"
+    },
+    "relations": { "cateringClient": "Cliente", "branch": "Sucursal" }
+  },
+  "CateringTermsVersion": {
+    "fields": { "versionNumber": "Número de versión", "content": "Condiciones", "date": "Fecha" },
+    "relations": { "cateringRequest": "Solicitud de catering", "user": "Responsable" }
+  },
+  "CateringEvent": {
+    "fields": {
+      "referenceDate": "Fecha de referencia",
+      "status": "Estado del evento",
+      "revision": "Revisión"
+    },
+    "relations": { "cateringRequest": "Solicitud de catering" }
+  },
+  "CateringPlan": {
+    "fields": { "placeholder": "Planificación" },
+    "relations": {
+      "cateringRequest": "Solicitud de catering",
+      "cateringEvent": "Evento de catering"
+    }
+  },
+  "PlannedMenuComponent": {
+    "fields": { "component": "Componente del menú", "plannedQuantity": "Cantidad planificada" },
+    "relations": { "cateringPlan": "Planificación" }
+  },
+  "PlannedResource": {
+    "fields": {
+      "description": "Descripción",
+      "type": "Tipo de recurso",
+      "plannedQuantity": "Cantidad planificada",
+      "unit": "Unidad"
+    },
+    "relations": { "cateringPlan": "Planificación" }
+  },
+  "PlannedCateringTask": {
+    "fields": { "description": "Tarea" },
+    "relations": { "cateringPlan": "Planificación" }
+  },
+  "PlannedCateringCost": {
+    "fields": { "concept": "Concepto", "plannedAmount": "Importe planificado" },
+    "relations": { "cateringPlan": "Planificación" }
+  },
+  "AcceptedCateringTransition": {
+    "fields": {
+      "operation": "Operación",
+      "previousStatus": "Estado anterior",
+      "newStatus": "Estado nuevo",
+      "date": "Fecha",
+      "reason": "Motivo",
+      "notes": "Notas",
+      "authorizationEvidence": "Evidencia de autorización"
+    },
+    "relations": {
+      "cateringRequest": "Solicitud de catering",
+      "cateringEvent": "Evento de catering",
+      "user": "Responsable"
+    }
+  },
+  "CateringExpenseLink": {
+    "fields": { "allocatedAmount": "Importe asignado" },
+    "relations": { "cateringEvent": "Evento de catering", "expense": "Gasto" }
+  },
+  "AuditEvent": {
+    "fields": {
+      "affectedEntityType": "Tipo de registro afectado",
+      "affectedEntityReference": "Registro afectado",
+      "reason": "Motivo",
+      "requestCorrelation": "Correlación de la solicitud",
+      "reportKind": "Tipo de reporte",
+      "reportFileName": "Nombre del archivo del reporte",
+      "reportCsv": "Contenido CSV",
+      "reportFrom": "Periodo desde",
+      "reportTo": "Periodo hasta",
+      "reportCurrency": "Moneda del reporte"
+    },
+    "relations": { "user": "Usuario", "branch": "Sucursal" }
+  },
+  "FieldValueChange": {
+    "fields": {
+      "field": "Campo",
+      "affectedItemReference": "Elemento afectado",
+      "previousValue": "Valor anterior",
+      "resultingValue": "Valor resultante"
+    },
+    "relations": {
+      "auditEvent": "Evento de auditoría",
+      "saleCompensatingOperation": "Operación compensatoria",
+      "expenseCorrection": "Corrección de gasto"
+    }
+  },
+  "IdempotentOperation": {
+    "fields": {
+      "key": "Clave de reintento",
+      "scope": "Ámbito",
+      "operation": "Operación",
+      "payloadFingerprint": "Huella del contenido",
+      "status": "Estado",
+      "recoverableResult": "Resultado recuperable"
+    },
+    "relations": {
+      "user": "Usuario",
+      "sale": "Venta",
+      "expense": "Gasto",
+      "acceptedCateringTransition": "Transición de catering",
+      "inventoryMovement": "Movimiento de inventario",
+      "saleCompensatingOperation": "Operación compensatoria",
+      "menuVersion": "Versión del menú"
+    }
+  },
+  "ReceiptFile": {
+    "fields": { "contentBase64": "Contenido del archivo" },
+    "relations": { "receipt": "Comprobante" }
+  }
+}
