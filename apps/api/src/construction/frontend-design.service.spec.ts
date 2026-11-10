@@ -5,6 +5,7 @@ import { implementationPlanContentSchema } from '@caseflow-ai/contracts';
 import { FakeStorageProvider } from '@caseflow-ai/integrations';
 import {
   FrontendDesignService,
+  screenEvaluator,
   serverMethods,
   sharedComponentImports,
 } from './frontend-design.service';
@@ -331,5 +332,27 @@ describe('evaluation evidence', () => {
         source: 'async confirmSale(id: string) { return { id }; }',
       },
     ]);
+  });
+});
+
+describe('screen evaluator identity', () => {
+  it('keys checkpoints by the routed development model or the default model', () => {
+    const slot = {
+      AI_PROVIDER_2_ID: 'gemini',
+      AI_PROVIDER_2_BASE_URL: 'https://gemini.example/v1',
+      AI_PROVIDER_2_API_KEY: 'k',
+      AI_PROVIDER_2_MODEL: 'flash',
+    };
+    expect(screenEvaluator({ AI_PROVIDER: 'chatgpt', AI_MODEL: 'gpt-x', ...slot })).toBe(
+      'chatgpt:gpt-x',
+    );
+    expect(
+      screenEvaluator({
+        AI_PROVIDER: 'chatgpt',
+        AI_MODEL: 'gpt-x',
+        ...slot,
+        AI_ROUTE_FRONTEND_PRESENTATION: 'gemini:flash-lite',
+      }),
+    ).toBe('gemini:flash-lite');
   });
 });

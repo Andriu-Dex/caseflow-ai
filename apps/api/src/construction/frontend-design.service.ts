@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
 import ts from 'typescript';
 import { AIError, AIOrchestrator } from '@caseflow-ai/ai';
+import { loadAIRoutes } from '@caseflow-ai/config';
 import { uiBlueprintContentSchema, type ImplementationPlanContent } from '@caseflow-ai/contracts';
 import type { StorageProvider } from '@caseflow-ai/integrations';
 import { PrismaService } from '../database/prisma.service';
@@ -212,6 +213,7 @@ export class FrontendDesignService {
       const cacheHash = hash(
         json({
           version: FRONTEND_DESIGN_VERSION,
+          evaluator: screenEvaluator(process.env),
           sourceHash,
           htmlHash: hash(html),
           screen,
@@ -413,4 +415,14 @@ export function serverMethods(
     visit(sourceFile);
   }
   return methods;
+}
+
+// Who judges the screens. Part of the checkpoint key, so a verdict from a
+// development model (AI_ROUTE_FRONTEND_PRESENTATION) is never reused once the
+// default model evaluates.
+export function screenEvaluator(environment: NodeJS.ProcessEnv): string {
+  const route = loadAIRoutes(environment).get('frontend_presentation');
+  return route
+    ? `${route.id}:${route.model}`
+    : `${environment.AI_PROVIDER ?? 'disabled'}:${environment.AI_MODEL ?? ''}`;
 }
