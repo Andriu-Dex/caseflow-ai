@@ -286,7 +286,16 @@ export class FrontendDesignService {
           report(findings);
           continue;
         }
-        validatePresentation(presentation, sources);
+        // An invalid proposal fails only its screen and is not kept, so the
+        // next run asks again instead of stopping every other screen.
+        try {
+          validatePresentation(presentation, sources);
+        } catch (error) {
+          report(
+            `INVALID_PRESENTATION: ${error instanceof Error ? error.message : 'La propuesta no es válida.'}`,
+          );
+          continue;
+        }
       }
       const checkpoint = file(cachePath, json(presentation), {
         kind: 'DOCUMENTATION',
