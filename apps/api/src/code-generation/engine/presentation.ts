@@ -2,8 +2,20 @@ import ts from 'typescript';
 import { z } from 'zod';
 import { PlanGenerationError } from '../naming';
 
-// Presentation may arrange existing controls, but cannot supply executable code,
-// data, attributes, imports, requests, or replacement business logic.
+// Icons a composition may show, from the approved lucide-react set.
+export const PRESENTATION_ICONS = [
+  'AlertTriangle', 'ArrowRight', 'BarChart3', 'Bell', 'BookOpen', 'Box', 'Boxes', 'Building2',
+  'Calendar', 'CheckCircle2', 'ChefHat', 'ClipboardList', 'Clock', 'CreditCard', 'Database',
+  'DollarSign', 'FileText', 'Filter', 'FolderOpen', 'History', 'Home', 'Info', 'LayoutDashboard',
+  'LayoutGrid', 'Lightbulb', 'ListChecks', 'Lock', 'Package', 'PackageCheck', 'PackageMinus',
+  'PackagePlus', 'PieChart', 'Receipt', 'RefreshCw', 'Search', 'Settings', 'ShieldCheck',
+  'ShoppingCart', 'SlidersHorizontal', 'Store', 'Tag', 'Tags', 'TrendingUp', 'Truck', 'User',
+  'UserCog', 'Users', 'UtensilsCrossed', 'Wallet', 'Warehouse',
+] as const;
+
+// Presentation may arrange existing controls and add static headings,
+// descriptions and icons, but cannot supply executable code, data, attributes,
+// imports, requests, or replacement business logic.
 export const presentationSchema = z
   .object({
     navigation: z.enum(['TOP', 'SIDE', 'NONE']),
@@ -28,9 +40,14 @@ export const presentationSchema = z
           .object({
             id: z.string().regex(/^[a-z][a-z0-9-]{0,39}$/),
             parentId: z.string().nullable().default(null),
-            kind: z.enum(['CONTAINER', 'SLOT', 'FRAME']),
-            tag: z.enum(['div', 'section', 'header', 'footer', 'aside']).nullable().default(null),
+            kind: z.enum(['CONTAINER', 'SLOT', 'FRAME', 'TEXT', 'ICON']),
+            tag: z
+              .enum(['div', 'section', 'header', 'footer', 'aside', 'article', 'h2', 'h3', 'p', 'span'])
+              .nullable()
+              .default(null),
             sourceId: z.string().nullable().default(null),
+            text: z.string().max(240).nullable().default(null),
+            icon: z.enum(PRESENTATION_ICONS).nullable().default(null),
             className: z.string().max(1000),
           })
           .strict(),
@@ -148,6 +165,8 @@ function assertClasses(value: string) {
     throw new PlanGenerationError('La composición contiene estilos no permitidos.');
 }
 
+const TEXT_TAGS = new Set(['h2', 'h3', 'p', 'span']);
+
 export function validatePresentation(value: ScreenPresentation, sources: PresentationSource[]) {
   presentationSchema.parse(value);
   if (value.limitations.length)
@@ -169,7 +188,12 @@ export function validatePresentation(value: ScreenPresentation, sources: Present
     const seen = new Set([node.id]);
     while (parent !== null) {
       const item = byId.get(parent);
-      if (!item || seen.has(parent) || ancestors.length >= 12 || item.kind === 'SLOT')
+      if (
+        !item ||
+        seen.has(parent) ||
+        ancestors.length >= 12 ||
+        ['SLOT', 'TEXT', 'ICON'].includes(item.kind)
+      )
         throw new PlanGenerationError(
           'La composición contiene referencias, ciclos o niveles inválidos.',
         );
@@ -178,8 +202,23 @@ export function validatePresentation(value: ScreenPresentation, sources: Present
       parent = item.parentId;
     }
     if (node.kind === 'CONTAINER') {
-      if (!node.tag || node.sourceId)
+      if (!node.tag || TEXT_TAGS.has(node.tag) || node.sourceId || node.text || node.icon)
         throw new PlanGenerationError('Contenedor de presentación inválido.');
+    } else if (node.kind === 'TEXT') {
+      // Static wording only: no figures (sample records, amounts, dates or
+      // counts would read as real data) and nothing JSX could interpret.
+      if (
+        !node.tag ||
+        !TEXT_TAGS.has(node.tag) ||
+        node.sourceId ||
+        node.icon ||
+        !node.text?.trim() ||
+        /[0-9{}<>]/.test(node.text)
+      )
+        throw new PlanGenerationError('Texto de presentación inválido.');
+    } else if (node.kind === 'ICON') {
+      if (node.tag || node.sourceId || node.text || !node.icon)
+        throw new PlanGenerationError('Icono de presentación inválido.');
     } else {
       const source = originals.get(node.sourceId ?? '');
       if (
@@ -362,6 +401,10 @@ export function applyPresentation(content: string, presentation: ScreenPresentat
       .join('\n');
     if (node.kind === 'CONTAINER')
       return `<${node.tag} className={${JSON.stringify(node.className)}}>${children}</${node.tag}>`;
+    if (node.kind === 'TEXT')
+      return `<${node.tag} className={${JSON.stringify(node.className)}}>{${JSON.stringify(node.text)}}</${node.tag}>`;
+    if (node.kind === 'ICON')
+      return `<PresentationIcons.${node.icon} className={${JSON.stringify(node.className || 'h-5 w-5')}} aria-hidden />`;
     const source = originals.get(node.sourceId!)!;
     if (node.kind === 'FRAME')
       return `${styledJsx(source.jsx, node.className, source.frameTag ?? 'form')}${children}</${source.frameTag ?? 'form'}>`;
@@ -389,8 +432,13 @@ export function applyPresentation(content: string, presentation: ScreenPresentat
   ).expression;
   // Reparse the complete result instead of printing nodes from a different source
   // file, which would give the printer incorrect string and text positions.
+  const icons = presentation.nodes.some((node) => node.kind === 'ICON');
+  // The icon import follows the directive prologue ('use client' stays first).
+  const directive = /^(['"])use client\1;?\n?/.exec(content)?.[0] ?? '';
   const updated =
-    content.slice(0, statement.getStart(source)) +
+    directive +
+    (icons ? "import * as PresentationIcons from 'lucide-react';\n" : '') +
+    content.slice(directive.length, statement.getStart(source)) +
     `return (${jsx});` +
     content.slice(statement.end);
   const diagnostics =

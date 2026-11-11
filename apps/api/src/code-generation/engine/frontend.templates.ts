@@ -64,6 +64,10 @@ function globalsCss(theme: DesignThemeContent | undefined): string {
 
 @theme {
 ${cssVariables(base, '  ')}
+  --color-card: var(--color-background);
+  --color-card-foreground: var(--color-foreground);
+  --color-input: var(--color-border);
+  --color-ring: var(--color-primary);
 }
 ${
   theme.mode === 'BOTH'
@@ -817,7 +821,7 @@ ${header.length ? `        <div className="flex flex-wrap gap-2">\n${indent(head
 ${entity.fields
   .map(
     (f) =>
-      `            <div>\n              <dt className="text-xs text-muted-foreground">${labelOf(f.name)}</dt>\n              <dd>{${display(f, `item.${f.name}`)}}</dd>\n            </div>`,
+      `            <div>\n              <dt className="text-xs text-muted-foreground">${f.label ? text(f.label) : labelOf(f.name)}</dt>\n              <dd>{${display(f, `item.${f.name}`)}}</dd>\n            </div>`,
   )
   .join('\n')}
           </dl>
@@ -903,7 +907,7 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
     )
     .filter((field) => !('readOnly' in field && field.readOnly))
     .map((field) => {
-      const label = `<label htmlFor="${field.name}" className="text-sm font-medium">${isAccount && field.name === 'password' ? 'Contraseña' : labelOf(field.name)}${field.required ? '' : ' (opcional)'}</label>`;
+      const label = `<label htmlFor="${field.name}" className="text-sm font-medium">${isAccount && field.name === 'password' ? 'Contraseña' : field.label ? text(field.label) : labelOf(field.name)}${field.required ? '' : ' (opcional)'}</label>`;
       const empty = field.required ? '' : ", setValueAs: (v: string) => (v === '' ? undefined : v)";
       let control: string;
       switch (field.type) {

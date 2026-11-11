@@ -37,6 +37,8 @@ function layout(content = page): ScreenPresentation {
         kind: 'CONTAINER',
         tag: 'section',
         sourceId: null,
+        text: null,
+        icon: null,
         className: 'mx-auto max-w-5xl space-y-6',
       },
       ...sources.map((source) => ({
@@ -45,6 +47,8 @@ function layout(content = page): ScreenPresentation {
         kind: source.kind,
         tag: null,
         sourceId: source.id,
+        text: null,
+        icon: null,
         className: source.kind === 'FRAME' ? 'grid gap-4 md:grid-cols-2' : 'rounded-lg border p-4',
       })),
     ],
@@ -92,6 +96,24 @@ describe('approved presentation compiler', () => {
     expect(rendered).toContain('data-caseflow-action="Guardar"');
     expect(rendered).toContain('rows.map(row =>');
     expect(rendered).not.toContain('<PageState className');
+  });
+  it('adds static headings and icons from the mockup after the client directive', () => {
+    const value = layout();
+    value.nodes.push(
+      { id: 'title', parentId: 'root', kind: 'TEXT', tag: 'h2', sourceId: null, text: 'Guía de estados', icon: null, className: 'text-lg font-semibold' },
+      { id: 'mark', parentId: 'root', kind: 'ICON', tag: null, sourceId: null, text: null, icon: 'Store', className: 'h-5 w-5 text-primary' },
+    );
+    const rendered = applyPresentation(page, value);
+    expect(rendered.startsWith("'use client';\nimport * as PresentationIcons from 'lucide-react';")).toBe(true);
+    expect(rendered).toContain('<h2 className={"text-lg font-semibold"}>{"Guía de estados"}</h2>');
+    expect(rendered).toContain('<PresentationIcons.Store className={"h-5 w-5 text-primary"} aria-hidden />');
+  });
+  it('rejects static text that could pass for data or code', () => {
+    for (const text of ['Mostrando 6 productos', 'Total {amount}', '<b>Hola</b>']) {
+      const value = layout();
+      value.nodes.push({ id: 'note', parentId: 'root', kind: 'TEXT', tag: 'p', sourceId: null, text, icon: null, className: '' });
+      expect(() => validatePresentation(value, presentationSources(page))).toThrow();
+    }
   });
   it('accepts semantic border colors without mistaking border for an order utility', () => {
     const value = layout();

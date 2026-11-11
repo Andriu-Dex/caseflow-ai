@@ -27,7 +27,7 @@ import { file, json, type GeneratedProjectFile } from '../code-generation/engine
 import { kebabCase } from '../code-generation/naming';
 import { actionMethodName } from '../code-generation/engine/backend.templates';
 
-const FRONTEND_DESIGN_VERSION = 36;
+const FRONTEND_DESIGN_VERSION = 37;
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 
 @Injectable()
