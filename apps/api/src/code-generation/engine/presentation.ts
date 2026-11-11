@@ -254,6 +254,21 @@ export function layoutClasses(className: string) {
     .join(' ');
 }
 
+// On a solid semantic background the text takes that background's paired
+// foreground, whatever color the proposal chose, so it is always readable.
+const SOLID = /^bg-(primary|secondary|accent|destructive)$/;
+export function readable(className: string) {
+  const tokens = className.split(/\s+/).filter(Boolean);
+  const solid = tokens.map((token) => SOLID.exec(token)?.[1]).find(Boolean);
+  if (!solid) return className;
+  return [
+    ...tokens.filter(
+      (token) => !/^text-(?!xs$|sm$|base$|lg$|xl$|[2-9]xl$|left$|center$|right$|justify$)/.test(token),
+    ),
+    `text-${solid}-foreground`,
+  ].join(' ');
+}
+
 function styledJsx(jsx: string, className: string, frameTag?: 'form' | 'ActionForm') {
   const frame = Boolean(frameTag);
   if (!className) return jsx;
@@ -412,11 +427,11 @@ export function applyPresentation(content: string, presentation: ScreenPresentat
       .map(render)
       .join('\n');
     if (node.kind === 'CONTAINER')
-      return `<${node.tag} className={${JSON.stringify(node.className)}}>${children}</${node.tag}>`;
+      return `<${node.tag} className={${JSON.stringify(readable(node.className))}}>${children}</${node.tag}>`;
     if (node.kind === 'TEXT')
-      return `<${node.tag} className={${JSON.stringify(node.className)}}>{${JSON.stringify(node.text)}}</${node.tag}>`;
+      return `<${node.tag} className={${JSON.stringify(readable(node.className))}}>{${JSON.stringify(node.text)}}</${node.tag}>`;
     if (node.kind === 'ICON')
-      return `<PresentationIcons.${node.icon} className={${JSON.stringify(node.className || 'h-5 w-5')}} aria-hidden />`;
+      return `<PresentationIcons.${node.icon} className={${JSON.stringify(readable(node.className || 'h-5 w-5'))}} aria-hidden />`;
     const source = originals.get(node.sourceId!)!;
     if (node.kind === 'FRAME')
       return `${styledJsx(source.jsx, node.className, source.frameTag ?? 'form')}${children}</${source.frameTag ?? 'form'}>`;

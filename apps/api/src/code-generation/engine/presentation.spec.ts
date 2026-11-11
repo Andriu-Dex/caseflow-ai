@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applyPresentation,
   layoutClasses,
+  readable,
   presentationSchema,
   presentationSources,
   validatePresentation,
@@ -278,5 +279,14 @@ describe('component slot wrappers', () => {
     expect(layoutClasses('flex justify-end gap-2 bg-primary text-primary-foreground rounded-lg p-2 md:col-span-2 border')).toBe(
       'flex justify-end gap-2 md:col-span-2',
     );
+  });
+});
+
+describe('readable static nodes', () => {
+  it('pair a solid semantic background with its foreground text', () => {
+    expect(readable('rounded-full bg-accent px-3 text-xs text-primary font-semibold')).toBe(
+      'rounded-full bg-accent px-3 text-xs font-semibold text-accent-foreground',
+    );
+    expect(readable('bg-primary/10 text-primary')).toBe('bg-primary/10 text-primary');
   });
 });
