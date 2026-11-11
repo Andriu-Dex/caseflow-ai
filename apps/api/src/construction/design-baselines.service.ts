@@ -210,16 +210,21 @@ export class DesignBaselinesService {
       );
   }
 
-  // The latest findings the screen evaluator recorded for each screen of this
-  // design, with the justified exception that covers them, if any.
+  // The findings of the latest run of this design that recorded any (each run
+  // records the findings it reports or reuses), with the justified exception
+  // that covers them, if any. Older evaluations are history, not current.
   async screenFindings(projectId: string, baselineId: string): Promise<ScreenFindingsResponse> {
     await this.get(projectId, baselineId);
-    const files = await this.prisma.generatedFile.findMany({
-      where: {
-        path: { startsWith: 'docs/presentation-findings/' },
-        generationRun: { projectId, designBaselineId: baselineId },
-      },
+    const findingsPath = { startsWith: 'docs/presentation-findings/' };
+    const latestRun = await this.prisma.generatedFile.findFirst({
+      where: { path: findingsPath, generationRun: { projectId, designBaselineId: baselineId } },
       orderBy: [{ generationRun: { createdAt: 'desc' } }, { id: 'desc' }],
+      select: { generationRunId: true },
+    });
+    if (!latestRun) return { items: [] };
+    const files = await this.prisma.generatedFile.findMany({
+      where: { path: findingsPath, generationRunId: latestRun.generationRunId },
+      orderBy: { id: 'desc' },
       select: { content: true },
     });
     const exceptions = await this.prisma.screenDesignException.findMany({

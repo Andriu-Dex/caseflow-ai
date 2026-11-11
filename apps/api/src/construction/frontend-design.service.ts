@@ -271,6 +271,20 @@ export class FrontendDesignService {
       let acceptedException:
         { id: string; justification: string; findingsSha256: string } | undefined;
       if (reported) {
+        // Reused findings are recorded in this run too, so the current
+        // findings of a design are those of its latest run.
+        await this.prisma.generatedFile.upsert({
+          where: { generationRunId_path: { generationRunId, path: findingsPath } },
+          update: {},
+          create: {
+            generationRunId,
+            path: findingsPath,
+            content: reported.content,
+            kind: 'DOCUMENTATION',
+            origin: 'AI_ASSISTED',
+            sha256: hash(reported.content),
+          },
+        });
         const stored = JSON.parse(reported.content) as { findings: string; presentation?: unknown };
         const accepted = excepted(stored.findings, stored.presentation);
         if (!accepted) {

@@ -392,6 +392,40 @@ describe('Construction sandbox validation integration', () => {
         where: { projectId, action: 'SCREEN_DESIGN_EXCEPTION_ACCEPTED', entityId: created.body.id },
       }),
     ).toBe(1);
+    // A later evaluation replaces the current findings; older ones are history.
+    const later = await ctx.prisma.generationRun.create({
+      data: {
+        projectId,
+        createdByUserId: ctx.userId,
+        implementationPlanVersionId: planVersionId,
+        designBaselineId: baselineId,
+        targetTemplateIdentifier: 'CASEFLOW_WEB_TS_V1',
+        targetTemplateVersion: 2,
+        status: 'GENERATING',
+      },
+    });
+    const laterContent = JSON.stringify({
+      routePath: '/orders/new',
+      findings: 'MISSING_FORM_BINDING: Falta un campo.',
+    });
+    await ctx.prisma.generatedFile.create({
+      data: {
+        generationRunId: later.id,
+        path: 'docs/presentation-findings/' + 'c'.repeat(64) + '.json',
+        content: laterContent,
+        kind: 'DOCUMENTATION',
+        origin: 'AI_ASSISTED',
+        sha256: createHash('sha256').update(laterContent).digest('hex'),
+      },
+    });
+    await ctx.prisma.generationRun.update({
+      where: { id: later.id },
+      data: { status: 'FAILED', finishedAt: new Date() },
+    });
+    const current = await http().get(`${base}/screen-findings`).set(auth()).expect(200);
+    expect(current.body.items.map((item: { routePath: string }) => item.routePath)).toEqual([
+      '/orders/new',
+    ]);
   });
 
   it('never reaches READY when the generated end-to-end tests fail (DEC-159)', async () => {
