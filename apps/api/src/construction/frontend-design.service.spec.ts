@@ -332,6 +332,42 @@ describe('frozen design adaptation', () => {
     );
   });
 
+  it('keeps the functional page of an excepted screen whose proposed layout is invalid', async () => {
+    const { service, ai, prisma } = await setup();
+    ai.generateStructured.mockResolvedValue({
+      data: {
+        navigation: 'SIDE',
+        limitations: [{ code: 'UNSUPPORTED_LAYOUT', description: 'No encaja.' }],
+        nodes: [
+          {
+            id: 'root',
+            parentId: null,
+            kind: 'CONTAINER',
+            tag: 'div',
+            className: '',
+            sourceId: null,
+          },
+        ],
+      },
+    } as never);
+    const findings = 'UNSUPPORTED_LAYOUT: No encaja.';
+    prisma.screenDesignException.findMany.mockResolvedValue([
+      {
+        id: 'exception',
+        routePath: '/items',
+        findingsSha256: createHash('sha256').update(findings).digest('hex'),
+        justification: 'Demostración: se conserva la página funcional.',
+      },
+    ]);
+    const original = files().find((file) => file.path === 'apps/web/app/items/page.tsx')!.content;
+    const adapted = await service.adapt(id, id, plan, files(), 'Catálogo', false, id);
+    expect(adapted.records[0]).toMatchObject({ acceptedException: { id: 'exception' } });
+    expect(adapted.records[0]).not.toHaveProperty('presentation');
+    expect(adapted.files.find((file) => file.path === 'apps/web/app/items/page.tsx')!.content).toBe(
+      original,
+    );
+  });
+
   it('leaves a screen unevaluated when the provider fails and asks again next run', async () => {
     const { service, ai, prisma } = await setup();
     const original = ai.generateStructured.getMockImplementation()!;

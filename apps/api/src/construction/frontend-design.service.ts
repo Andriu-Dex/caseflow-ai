@@ -254,16 +254,17 @@ export class FrontendDesignService {
           `La pantalla «${screen.name}» (${route.path}) necesita completar sus enlaces funcionales. ${findings}`,
         );
       // Findings a person accepted with a justification let the proposed
-      // layout through; anything else is reported.
+      // layout through; without a valid proposed layout the screen keeps its
+      // functional page. Findings nobody accepted are reported.
       const excepted = (findings: string, proposal: unknown) => {
         const exception = exceptions.get(`${route.path}|${hash(findings)}`);
-        if (!exception || !proposal) return undefined;
+        if (!exception) return undefined;
         try {
           const accepted = presentationSchema.parse({ ...(proposal as object), limitations: [] });
           validatePresentation(accepted, sources);
-          return { presentation: accepted, exception };
+          return { presentation: accepted as typeof accepted | undefined, exception };
         } catch {
-          return undefined;
+          return { presentation: undefined, exception };
         }
       };
       let presentation;
@@ -339,7 +340,7 @@ export class FrontendDesignService {
         // An invalid proposal fails only its screen and is not kept, so the
         // next run asks again instead of stopping every other screen.
         try {
-          if (!acceptedException) validatePresentation(presentation, sources);
+          if (!acceptedException) validatePresentation(presentation!, sources);
         } catch (error) {
           report(
             `INVALID_PRESENTATION: ${error instanceof Error ? error.message : 'La propuesta no es válida.'}`,
@@ -347,6 +348,20 @@ export class FrontendDesignService {
           continue;
         }
       }
+      if (acceptedException && !presentation) {
+        records.push({
+          routePath: route.path,
+          screenLocalId: screen.localId,
+          mockupSha256: hash(html),
+          sourceSha256: sourceHash,
+          outputSha256: hash(target.content),
+          navigation: 'SIDE',
+          acceptedException,
+        });
+        continue;
+      }
+      // Only an excepted screen without a valid layout lacks one; it left above.
+      presentation = presentation!;
       if (!acceptedException) {
         const checkpoint = file(cachePath, json(presentation), {
           kind: 'DOCUMENTATION',
