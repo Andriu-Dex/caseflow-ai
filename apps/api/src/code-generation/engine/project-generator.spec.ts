@@ -517,6 +517,8 @@ describe('screen actions (DEC-121)', () => {
     expect(page('apps/web/app/orders/new/page.tsx')).toContain(
       '<Button type="submit" disabled={isSubmitting || (Boolean(editId) && (existing.isLoading || existing.isError || !existing.data))} data-action={"Registrar pedido"}>',
     );
+    // The confirmation names the saved record.
+    expect(page('apps/web/app/orders/new/page.tsx')).toContain('Identificador: ${saved.id}');
     // A form can be left without saving, back to the entity list.
     expect(page('apps/web/app/orders/new/page.tsx')).toContain('Cancelar y volver');
     // An edit shows loading and missing-record states before it can save.

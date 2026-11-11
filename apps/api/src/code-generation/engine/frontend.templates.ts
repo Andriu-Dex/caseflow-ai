@@ -1093,9 +1093,12 @@ ${entity.fields
   async function onSubmit(values: FormOutput) {
     try {
 ${entity.lifecycle ? `      const payload = { ...values, ${editable ? `...(editId ? {} : { ${entity.lifecycle.stateField}: ${JSON.stringify(entity.lifecycle.initialState)} })` : `${entity.lifecycle.stateField}: ${JSON.stringify(entity.lifecycle.initialState)}`} };` : '      const payload = values;'}
-      await ${save};
+      const saved = await ${save};
       await queryClient.invalidateQueries({ queryKey: ['${lowerFirst(pluralize(entity.name))}'] });
-      toast.success('Guardado correctamente.');
+      // The confirmation names the saved record, not just the success.
+      toast.success(${editable ? "editId ? 'Cambios guardados.' : 'Registro creado.'" : "'Registro creado.'"}, {
+        description: \`Identificador: \${saved.id}${entity.lifecycle ? ` · Estado: \${String(saved.${entity.lifecycle.stateField})}` : ''}\`,
+      });
       ${list ? `router.push(${routeHref(list.path, names).replace(/^\{(.*)\}$/, '$1')});` : 'router.refresh();'}
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'No se pudo guardar.');
