@@ -10,6 +10,7 @@ import {
 } from '@caseflow-ai/contracts';
 import { generateProject, projectSlug } from './project-generator';
 import { pruneUnusedParams } from './frontend.templates';
+import { demoEntities } from './demo-data.templates';
 import { catalogVersion, type GenerationContext } from './types';
 
 const basePlan = (overrides: Record<string, unknown> = {}): ImplementationPlanContent =>
@@ -817,5 +818,24 @@ describe('route parameter pruning', () => {
     const pruned = pruneUnusedParams(page('  load();'));
     expect(pruned).not.toContain('useParams');
     expect(pruned).toContain("import { useRouter } from 'next/navigation';");
+  });
+});
+
+describe('demonstration data (DEC-159)', () => {
+  it('seeds creatable entities after the entities they require', () => {
+    const order = demoEntities(basePlan()).map((entity) => entity.model);
+    expect(order).toEqual(['Customer', 'Order']);
+    const orderEntity = demoEntities(basePlan()).find((entity) => entity.model === 'Order')!;
+    expect(orderEntity.relations).toEqual([
+      { name: 'customer', target: 'Customer', required: true, unique: false },
+    ]);
+  });
+
+  it('emits a runnable seed script and its command', () => {
+    const files = byPath(generateProject(ctx()));
+    expect(files.get('apps/api/src/seed/demo-data.ts')!.content).toContain('"model": "Customer"');
+    expect(JSON.parse(files.get('package.json')!.content).scripts['seed:demo']).toBe(
+      'pnpm --filter ./apps/api exec node dist/seed/demo-data.js',
+    );
   });
 });

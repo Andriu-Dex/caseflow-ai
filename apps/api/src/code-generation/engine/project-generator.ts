@@ -1,3 +1,4 @@
+import { demoDataFiles } from './demo-data.templates';
 import { localAuthFiles } from './local-auth.templates';
 import { PlanGenerationError } from '../naming';
 import { apiClientFiles } from './api-client.templates';
@@ -55,6 +56,7 @@ export function generateProject(
     ...apiClientFiles(ctx),
     ...backendFiles(ctx, implementations),
     ...frontendFiles(ctx),
+    ...demoDataFiles(ctx),
   ];
   for (const adapted of localAuthFiles(ctx)) {
     const existing = files.findIndex((item) => item.path === adapted.path);

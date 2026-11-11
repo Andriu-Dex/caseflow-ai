@@ -51,6 +51,8 @@ export function rootFiles(ctx: GenerationContext): GeneratedProjectFile[] {
           build: 'pnpm -r run build',
           // First run in one command: .env, database and tables (scripts/setup.mjs).
           setup: 'node scripts/setup.mjs',
+          // Demonstration records derived from the plan (DEC-159); runs once.
+          'seed:demo': 'pnpm --filter ./apps/api exec node dist/seed/demo-data.js',
           ...(plan.authentication.local
             ? { 'account:create': 'pnpm --filter ./apps/api exec node dist/auth/create-account.js' }
             : {}),

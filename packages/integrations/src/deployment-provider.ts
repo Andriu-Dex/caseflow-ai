@@ -303,6 +303,9 @@ export class DockerTunnelDeploymentProvider implements DeploymentProvider {
               .at(-1) ?? '[]',
           ) as { role: string; identifier: string }[])
         : [];
+      // Demonstration records (DEC-159), after the accounts and their scope.
+      if (request.files.some((file) => file.path === 'apps/api/src/seed/demo-data.ts'))
+        await this.docker(['exec', names.app, 'node', 'apps/api/dist/seed/demo-data.js'], 300_000);
       const { publicUrl } = await this.startTunnel(names, scratch, request.tunnelToken);
       return { publicUrl, accounts };
     } catch (error) {
