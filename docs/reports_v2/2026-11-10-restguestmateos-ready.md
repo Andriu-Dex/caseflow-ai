@@ -36,3 +36,9 @@
 - Incluye el proxy `/api` de la web y `deploy-accounts` (una cuenta inicial por rol), necesarios para el despliegue de ADR-019.
 - Prueba del despliegue con Docker real y túnel rápido de Cloudflare: web, inicio de sesión y consultas autenticadas respondieron 200 desde la URL pública; la aplicación no tiene salida a internet (red interna) y la eliminación no dejó contenedores, volúmenes ni redes.
 - Mejoras cerradas: consulta de hallazgos solo con los vigentes; latido de trabajos para que el arranque de otro proceso no interrumpa generaciones o validaciones en curso.
+
+## Entrega con datos de ejemplo (2026-11-11)
+
+- Corrida `776f57dc`, validación `98b896ab`: **READY**, snapshot `521722fe` (todas las etapas, E2E incluida), ejecutada por el worker de `pnpm dev` sin interrupciones.
+- Incluye `seed/demo-data` (DEC-159): al desplegar, tras las cuentas iniciales, se crean 3 registros por cada entidad con alta CRUD (19 entidades en RestGuestMateos: productos, categorías, precios y disponibilidad por sucursal, gastos, catering…). Ventas, menús e inventario se crean con las acciones de negocio de la aplicación.
+- Verificado con un despliegue de prueba: los registros se consultan desde la URL pública con la cuenta de administrador.
