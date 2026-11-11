@@ -241,7 +241,7 @@ function Header() {
     </nav> : null}
   </header>;
 }
-${scoped ? "\nconst initials = (name: string) => name.split(/\\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]!.toUpperCase()).join('');\n" : ''}
+${scoped ? "\nconst initials = (name: string) => (name.match(/\\p{L}+/gu) ?? []).slice(0, 2).map((part) => part[0]!.toUpperCase()).join('');\n" : ''}
 
 export function PresentationShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
