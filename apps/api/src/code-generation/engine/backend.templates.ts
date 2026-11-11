@@ -1,7 +1,7 @@
 import { lifecycleGuard, lifecycleParents } from './lifecycle.templates';
 import type { ImplementationPlanContent } from '@caseflow-ai/contracts';
 import { generatePrismaSchema } from '../prisma-schema.generator';
-import { collectionPath, kebabCase, lowerFirst, upperFirst } from '../naming';
+import { collectionPath, kebabCase, listFilters, lowerFirst, upperFirst } from '../naming';
 import { createSchemaName, sampleInput, updateSchemaName } from './contracts.templates';
 import { customEndpointOperationId } from '../naming';
 import { actionSchemaName, actionTypeName } from './action-contract.templates';
@@ -151,6 +151,7 @@ function entityController(plan: Plan, entity: Entity, moduleName: string): strin
   const read = auth ? `\n  @Roles(${rolesLiteral(entity.readRoles)})` : '';
   const write = auth ? `\n  @Roles(${rolesLiteral(entity.writeRoles)})` : '';
   const primaryDate = ops.has('LIST') ? findPrimaryDateResolution(entity, plan) : undefined;
+  const filters = listFilters(entity);
   const operation = (method: string, detail = false) =>
     scoped
       ? `\n  @Operation(${JSON.stringify(method + ' ' + collectionPath(e) + (detail ? '/:id' : ''))})`
@@ -158,8 +159,16 @@ function entityController(plan: Plan, entity: Entity, moduleName: string): strin
   const methods = [
     ops.has('LIST') &&
       `  @Get()${read}${operation('GET')}
-  list(@Query('page') page?: string, @Query('limit') limit?: string${primaryDate ? ", @Query('from') from?: string, @Query('to') to?: string" : ''}) {
-    const pageNum = page !== undefined ? Number(page) : undefined;
+  list(@Query('page') page?: string, @Query('limit') limit?: string${primaryDate ? ", @Query('from') from?: string, @Query('to') to?: string" : ''}${filters.map((filter) => `, @Query('${filter.name}') ${filter.name}?: string`).join('')}) {
+    const pageNum = page !== undefined ? Number(page) : undefined;${filters
+      .map((filter) =>
+        filter.enumValues
+          ? `
+    if (${filter.name} !== undefined && !${JSON.stringify(filter.enumValues)}.includes(${filter.name})) throw new BadRequestException(${JSON.stringify(`El filtro «${filter.label}» no es válido.`)});`
+          : `
+    if (${filter.name} !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(${filter.name})) throw new BadRequestException(${JSON.stringify(`El filtro «${filter.label}» no es válido.`)});`,
+      )
+      .join('')}
     const limitNum = limit !== undefined ? Number(limit) : undefined;
     ${
       primaryDate
@@ -186,7 +195,7 @@ function entityController(plan: Plan, entity: Entity, moduleName: string): strin
         : ''
     }return this.service.list({
       page: pageNum !== undefined && Number.isFinite(pageNum) && pageNum >= 1 ? Math.min(Math.floor(pageNum), 100_000) : undefined,
-      limit: limitNum !== undefined && Number.isFinite(limitNum) && limitNum >= 1 ? Math.min(Math.floor(limitNum), 500) : undefined,${primaryDate ? '\n      from: trimmedFrom,\n      to: trimmedTo,' : ''}
+      limit: limitNum !== undefined && Number.isFinite(limitNum) && limitNum >= 1 ? Math.min(Math.floor(limitNum), 500) : undefined,${primaryDate ? '\n      from: trimmedFrom,\n      to: trimmedTo,' : ''}${filters.map((filter) => `\n      ${filter.name},`).join('')}
     });
   }`,
     ops.has('GET') &&
@@ -218,7 +227,7 @@ function entityController(plan: Plan, entity: Entity, moduleName: string): strin
     'Controller',
     ops.has('LIST') || ops.has('GET') ? 'Get' : '',
     ops.has('LIST') ? 'Query' : '',
-    ops.has('LIST') && primaryDate ? 'BadRequestException' : '',
+    ops.has('LIST') && (primaryDate || filters.length) ? 'BadRequestException' : '',
     ops.has('GET') || ops.has('UPDATE') || ops.has('DELETE') ? 'Param' : '',
     ops.has('GET') || ops.has('UPDATE') || ops.has('DELETE') ? 'ParseUUIDPipe' : '',
     ops.has('CREATE') ? 'Post' : '',
@@ -286,6 +295,7 @@ function entityService(entity: Entity, plan: ImplementationPlanContent): string 
     : '';
   const projectResult = local ? 'publicAccount' : many.length ? 'publicRelations' : undefined;
   const primaryDate = ops.has('LIST') ? findPrimaryDateResolution(entity, plan) : undefined;
+  const filters = ops.has('LIST') ? listFilters(entity) : [];
   const entityDateFields = entity.fields.filter((f) => f.type === 'DATE' || f.type === 'DATETIME');
   const needsInput = ops.has('CREATE') || ops.has('UPDATE');
   const guard = lifecycleGuard(entity, plan);
@@ -293,7 +303,7 @@ function entityService(entity: Entity, plan: ImplementationPlanContent): string 
   const database = guarded ? 'tx' : 'this.prisma';
   const methods = [
     ops.has('LIST') &&
-      `  ${projectResult ? 'async ' : ''}list(query?: { page?: number; limit?: number${primaryDate ? '; from?: string; to?: string' : ''} }) {
+      `  ${projectResult ? 'async ' : ''}list(query?: { page?: number; limit?: number${primaryDate ? '; from?: string; to?: string' : ''}${filters.map((filter) => `; ${filter.name}?: string`).join('')} }) {
     // Bounded: a list endpoint never returns an unlimited number of rows.
     const page = query?.page && Number.isFinite(query.page) && query.page >= 1 ? Math.min(Math.floor(query.page), 100_000) : 1;
     const limit = query?.limit && Number.isFinite(query.limit) && query.limit >= 1 ? Math.min(Math.floor(query.limit), 500) : (query?.page !== undefined ? 20 : 500);
@@ -324,8 +334,28 @@ function entityService(entity: Entity, plan: ImplementationPlanContent): string 
       },
     } : {};\n    `
         : ''
+    }${
+      filters.length
+        ? `const filterWhere: Prisma.${e}WhereInput = {${filters
+            .map(
+              (filter) =>
+                `
+      ...(query?.${filter.name} !== undefined ? { ${filter.name}: query.${filter.name} as Prisma.${e}WhereInput['${filter.name}'] } : {}),`,
+            )
+            .join('')}
+    };
+    const where: Prisma.${e}WhereInput = { ${primaryDate ? '...dateWhere.where, ' : ''}...filterWhere };
+    `
+        : ''
     }return ${projectResult ? '(await ' : ''}this.prisma.${delegate}.findMany({
-      ${primaryDate ? '...dateWhere,\n      ' : ''}orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+      ${
+        filters.length
+          ? `...(Object.keys(where).length ? { where } : {}),
+      `
+          : primaryDate
+            ? '...dateWhere,\n      '
+            : ''
+      }orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
       take: limit,
       ...(skip > 0 ? { skip } : {})${omitFields(entity)}${accountInclude}
     })${projectResult ? `).map(${projectResult})` : ''};
@@ -370,7 +400,7 @@ function entityService(entity: Entity, plan: ImplementationPlanContent): string 
   const usesGet = ops.has('GET') || ops.has('UPDATE') || ops.has('DELETE');
   return [
     `import { Injectable${usesGet || guarded ? ', NotFoundException' : ''}${local || primaryDate || guarded ? ', BadRequestException' : ''} } from '@nestjs/common';`,
-    guarded || primaryDate
+    guarded || primaryDate || filters.length
       ? `import ${guarded && !plan.authentication.local?.scope ? '' : 'type '}{ Prisma } from '../generated/prisma/client';`
       : '',
     guarded && plan.authentication.local?.scope

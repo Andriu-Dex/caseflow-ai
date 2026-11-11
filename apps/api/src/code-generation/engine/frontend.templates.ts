@@ -5,7 +5,7 @@ import {
   type ImplementationPlanContent,
   type ActionValueDefinition,
 } from '@caseflow-ai/contracts';
-import { lowerFirst, pluralize, upperFirst } from '../naming';
+import { listFilters, lowerFirst, pluralize, upperFirst } from '../naming';
 import { customEndpointOperationId } from '../openapi.generator';
 import { actionSchemaName } from './action-contract.templates';
 import { actionFormFile } from './action-form.templates';
@@ -237,6 +237,24 @@ const entityParam = (entity: Entity | undefined, names: string[]) =>
         );
       })
     : undefined;
+// Drops route parameters a finished page declares but never reads, so the
+// generated code passes the unused-variable lint rule.
+export function pruneUnusedParams(content: string): string {
+  const declaration = /\n  const \{ ([^}]+) \} = useParams<\{ [^}]* \}>\(\);/.exec(content);
+  if (!declaration) return content;
+  const rest = content.replace(declaration[0], '');
+  const used = declaration[1]!.split(', ').filter((name) => new RegExp(`\\b${name}\\b`).test(rest));
+  if (used.length === declaration[1]!.split(', ').length) return content;
+  if (used.length)
+    return content.replace(
+      declaration[0],
+      `\n  const { ${used.join(', ')} } = useParams<{ ${used.map((name) => `${name}: string`).join('; ')} }>();`,
+    );
+  return rest
+    .replace("import { useParams } from 'next/navigation';\n", '')
+    .replace('import { useParams, ', 'import { ');
+}
+
 // Reads the URL parameters a page body uses.
 const paramsHook = (names: string[], body: string) => {
   const used = names.filter((name) => new RegExp(`\\b${name}\\b`).test(body));
@@ -556,6 +574,21 @@ function listPage(plan: Plan, entity: Entity, route: Route): string {
   const hook = paramsHook(names, names.join(' '));
   const primaryDate = findPrimaryDateField(entity, plan);
   const hasDate = Boolean(primaryDate);
+  // Enum fields become selectable filters; a route parameter naming a
+  // relation ([branchid] for branchId) scopes the list to that record.
+  const enumFilters = listFilters(entity).filter((filter) => filter.enumValues);
+  const routeFilters = listFilters(entity).flatMap((filter) => {
+    const param =
+      !filter.enumValues && names.find((name) => name.toLowerCase() === filter.name.toLowerCase());
+    return param ? [`${filter.name}: ${param}`] : [];
+  });
+  const filterArgs = [
+    ...routeFilters,
+    ...enumFilters.map((filter) => `${filter.name}: filterValues.${filter.name} || undefined`),
+  ];
+  const filterKey = filterArgs.length
+    ? `, ${[...routeFilters.map((item) => item.split(': ')[1]), ...(enumFilters.length ? ['filterValues'] : [])].join(', ')}`
+    : '';
 
   const columns = [...entity.fields, ...relColumns].slice(0, 8);
   const refresh = `() => queryClient.invalidateQueries({ queryKey: ${baseKey} })`;
@@ -650,6 +683,28 @@ ${names.map((n) => `      {${n} && <div className="text-xs text-muted-foreground
         )}
       </div>\n`
           : ''
+      }${
+        enumFilters.length
+          ? `      <div className="flex flex-wrap items-end gap-3 rounded border bg-card p-3">
+${enumFilters
+  .map(
+    (filter) => `        <div className="flex flex-col gap-1">
+          <label htmlFor="filter-${filter.name}" className="text-xs font-medium">${text(filter.label)}</label>
+          <select id="filter-${filter.name}" className="h-8 rounded border bg-background px-2 text-xs" value={filterValues.${filter.name} ?? ''} onChange={(e) => { setFilterValues((current) => ({ ...current, ${filter.name}: e.target.value })); setPage(1); }}>
+            <option value="">Todos</option>
+${filter.enumValues!.map((value) => `            <option value=${JSON.stringify(value)}>${text(value)}</option>`).join('\n')}
+          </select>
+        </div>`,
+  )
+  .join('\n')}
+        {Object.values(filterValues).some(Boolean) && (
+          <Button type="button" variant="ghost" size="sm" onClick={() => { setFilterValues({}); setPage(1); }}>
+            Limpiar filtros
+          </Button>
+        )}
+      </div>
+`
+          : ''
       }      <PageState query={query} empty={${hasDate ? "isInvalidDateRange ? 'Rango temporal inválido: corrija las fechas de consulta.' : " : ''}page > 1 ? 'Fin de los registros. No hay más elementos en esta página.' : 'Aún no hay registros.'}>
         {(rows) => {
           const displayRows = rows;
@@ -713,17 +768,17 @@ ${indent(cells.join('\n'), 22)}
 ${pageImports(body, up, extraImports)}
 
 export default function ${entity.name}ListPage() {
-  const [page, setPage] = useState(1);${hasDate ? "\n  const [dateFrom, setDateFrom] = useState('');\n  const [dateTo, setDateTo] = useState('');\n  const isInvalidDateRange = Boolean(dateFrom && dateTo && dateFrom > dateTo);" : ''}
+  const [page, setPage] = useState(1);${enumFilters.length ? '\n  const [filterValues, setFilterValues] = useState<Record<string, string>>({});' : ''}${hasDate ? "\n  const [dateFrom, setDateFrom] = useState('');\n  const [dateTo, setDateTo] = useState('');\n  const isInvalidDateRange = Boolean(dateFrom && dateTo && dateFrom > dateTo);" : ''}
   const limit = 20;
   const query = useQuery({
-    queryKey: ['${lowerFirst(plural)}', page, limit${hasDate ? ', dateFrom, dateTo' : ''}],
-    queryFn: () => api.list${plural}({ page, limit${hasDate ? ', from: dateFrom || undefined, to: dateTo || undefined' : ''} }),
+    queryKey: ['${lowerFirst(plural)}', page, limit${hasDate ? ', dateFrom, dateTo' : ''}${filterKey}],
+    queryFn: () => api.list${plural}({ page, limit${hasDate ? ', from: dateFrom || undefined, to: dateTo || undefined' : ''}${filterArgs.map((arg) => `, ${arg}`).join('')} }${filterArgs.length ? ` as Parameters<typeof api.list${plural}>[0]` : ''}),
     enabled: ${hasDate ? '!isInvalidDateRange' : 'true'},
   });
   const items = query.data ?? [];
   const nextPageQuery = useQuery({
-    queryKey: ['${lowerFirst(plural)}', page + 1, limit${hasDate ? ', dateFrom, dateTo' : ''}],
-    queryFn: () => api.list${plural}({ page: page + 1, limit${hasDate ? ', from: dateFrom || undefined, to: dateTo || undefined' : ''} }),
+    queryKey: ['${lowerFirst(plural)}', page + 1, limit${hasDate ? ', dateFrom, dateTo' : ''}${filterKey}],
+    queryFn: () => api.list${plural}({ page: page + 1, limit${hasDate ? ', from: dateFrom || undefined, to: dateTo || undefined' : ''}${filterArgs.map((arg) => `, ${arg}`).join('')} }${filterArgs.length ? ` as Parameters<typeof api.list${plural}>[0]` : ''}),
     enabled: ${hasDate ? '!isInvalidDateRange && ' : ''}items.length === limit,
   });
   const hasNextPage = items.length === limit && Boolean(nextPageQuery.data && nextPageQuery.data.length > 0);${usesClient ? '\n  const queryClient = useQueryClient();' : ''}${hook}
@@ -973,7 +1028,7 @@ ${[...inputs, ...relationInputs, ...manyInputs, ...(isAccount ? [`<div><label ht
           <Button type="submit" disabled={${mutationDisabled}}${own ? ` ${actionMarker(own.label)}` : ''}>
             {isSubmitting ? 'Guardando…' : ${own ? JSON.stringify(own.label) : "'Guardar'"}}
           </Button>
-${submits.map((a) => `          <Button type="submit" variant="outline" disabled={${mutationDisabled}} ${actionMarker(a.label)}>\n            ${text(a.label)}\n          </Button>\n`).join('')}        </div>
+${submits.map((a) => `          <Button type="submit" variant="outline" disabled={${mutationDisabled}} ${actionMarker(a.label)}>\n            ${text(a.label)}\n          </Button>\n`).join('')}${list ? `          <Button type="button" variant="ghost" disabled={isSubmitting} onClick={() => router.push(${routeHref(list.path, names).replace(/^\{(.*)\}$/, '$1')})}>\n            Cancelar y volver\n          </Button>\n` : ''}        </div>
       </form>
     </div>`;
   return `'use client';
@@ -1706,7 +1761,7 @@ export default function AccessPage() {
       content = formPage(plan, entity, route, sameEntity('LIST'));
     else content = simplePage(plan, route);
     files.push(
-      file(pagePath(route.path), content, {
+      file(pagePath(route.path), pruneUnusedParams(content), {
         origin: 'DETERMINISTIC',
         planElements: [
           `route:${route.path}`,

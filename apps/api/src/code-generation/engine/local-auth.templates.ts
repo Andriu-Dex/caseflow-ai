@@ -330,7 +330,7 @@ export class LocalAuthController {
   // Malformed attempts are recorded too, before the validation error is returned.
   async login(@Body() raw: unknown, @Req() req: { ip?: string }) {
     let body: { identifier: string; password: string };
-    try { body = new ZodValidationPipe(z.object({ identifier: z.string().trim().min(1).max(255), password: z.string().min(1).max(1024) }).strict()).transform(raw); }
+    try { body = new ZodValidationPipe(z.object({ identifier: z.string().trim().min(1).max(255), password: z.string().min(1).max(1024) }).strict()).transform(raw) as { identifier: string; password: string }; }
     catch (failure) { await this.auth.recordRejectedLogin(); throw failure; }
     return this.auth.login(body.identifier, body.password, req.ip ?? 'unknown');
   }

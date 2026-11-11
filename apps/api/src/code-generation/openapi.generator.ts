@@ -1,6 +1,6 @@
 import { customEndpointOperationId } from './naming';
 import type { ImplementationPlanContent } from '@caseflow-ai/contracts';
-import { PlanGenerationError, collectionPath, pluralize } from './naming';
+import { PlanGenerationError, collectionPath, listFilters, pluralize } from './naming';
 import { manyInputRelations } from './engine/contracts.templates';
 import { actionValueOpenApi } from './engine/action-contract.templates';
 
@@ -198,6 +198,15 @@ export function generateOpenApi(plan: ImplementationPlanContent, title: string):
                   },
                 ]
               : []),
+            ...listFilters(entity).map((filter) => ({
+              name: filter.name,
+              in: 'query',
+              required: false,
+              schema: filter.enumValues
+                ? { type: 'string', enum: filter.enumValues }
+                : { type: 'string', format: 'uuid' },
+              description: `Filtro por ${filter.label}.`,
+            })),
           ],
           responses: {
             '200': { description: 'OK', ...json({ type: 'array', items: ref(entity.name) }) },

@@ -9,6 +9,7 @@ import {
   type ImplementationPlanContent,
 } from '@caseflow-ai/contracts';
 import { generateProject, projectSlug } from './project-generator';
+import { pruneUnusedParams } from './frontend.templates';
 import { catalogVersion, type GenerationContext } from './types';
 
 const basePlan = (overrides: Record<string, unknown> = {}): ImplementationPlanContent =>
@@ -516,6 +517,8 @@ describe('screen actions (DEC-121)', () => {
     expect(page('apps/web/app/orders/new/page.tsx')).toContain(
       '<Button type="submit" disabled={isSubmitting || (Boolean(editId) && (existing.isLoading || existing.isError || !existing.data))} data-action={"Registrar pedido"}>',
     );
+    // A form can be left without saving, back to the entity list.
+    expect(page('apps/web/app/orders/new/page.tsx')).toContain('Cancelar y volver');
     // An edit shows loading and missing-record states before it can save.
     expect(page('apps/web/app/orders/new/page.tsx')).toContain('Cargando el registro…');
     expect(page('apps/web/app/orders/new/page.tsx')).toContain(
@@ -769,5 +772,48 @@ describe('shared list generator and pagination (DEC-121)', () => {
     expect(controller).toContain("@Query('limit') limit?: string");
     expect(service).toContain("orderBy: [{ createdAt: 'desc' }, { id: 'asc' }]");
     expect(service).toContain('take: limit');
+  });
+});
+
+describe('list filters', () => {
+  const files = byPath(generateProject(ctx()));
+
+  it('filters lists by enum fields and by related records, validated by the server', () => {
+    const openapi = JSON.parse(files.get('packages/api-client/openapi.json')!.content);
+    const parameters = openapi.paths['/orders'].get.parameters.map(
+      (parameter: { name: string }) => parameter.name,
+    );
+    expect(parameters).toEqual(expect.arrayContaining(['status', 'customerId']));
+    const controller = files.get('apps/api/src/sales/order.controller.ts')!.content;
+    expect(controller).toContain('["DRAFT","CONFIRMED"].includes(status)');
+    expect(controller).toContain(
+      'throw new BadRequestException("El filtro «customer» no es válido.")',
+    );
+    const service = files.get('apps/api/src/sales/order.service.ts')!.content;
+    expect(service).toContain('...(Object.keys(where).length ? { where } : {})');
+  });
+
+  it('offers a select for each enum filter on the list page', () => {
+    const page = files.get('apps/web/app/orders/page.tsx')!.content;
+    expect(page).toContain('id="filter-status"');
+    expect(page).toContain('status: filterValues.status || undefined');
+    expect(page).toContain('Limpiar filtros');
+  });
+});
+
+describe('route parameter pruning', () => {
+  const page = (body: string) =>
+    `import { useParams, useRouter } from 'next/navigation';\nfunction Page() {\n  const { branchid, productid } = useParams<{ branchid: string; productid: string }>();\n${body}\n}`;
+
+  it('keeps only the parameters the page reads', () => {
+    expect(pruneUnusedParams(page('  load(branchid);'))).toContain(
+      'const { branchid } = useParams<{ branchid: string }>();',
+    );
+  });
+
+  it('removes the hook and its import when no parameter is read', () => {
+    const pruned = pruneUnusedParams(page('  load();'));
+    expect(pruned).not.toContain('useParams');
+    expect(pruned).toContain("import { useRouter } from 'next/navigation';");
   });
 });
