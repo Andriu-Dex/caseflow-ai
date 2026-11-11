@@ -377,7 +377,19 @@ describe('frozen design adaptation', () => {
     await expect(service.adapt(id, id, plan, files(), 'Catálogo', false, id)).rejects.toThrow(
       'NOT_EVALUATED',
     );
-    expect(prisma.generatedFile.upsert).not.toHaveBeenCalled();
+    // Recorded so a person can accept it; never reused while unaccepted.
+    expect(prisma.generatedFile.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          path: expect.stringMatching(/^docs\/presentation-findings\//),
+          content: expect.stringContaining('NOT_EVALUATED: El proveedor de IA no está disponible.'),
+        }),
+      }),
+    );
+    const recorded = prisma.generatedFile.upsert.mock.calls[0]![0].create.content as string;
+    prisma.generatedFile.findFirst.mockImplementation(async ({ where }) =>
+      where.path.startsWith('docs/presentation-findings/') ? { content: recorded } : null,
+    );
     ai.generateStructured.mockImplementation(original);
     await service.adapt(id, id, plan, files(), 'Catálogo', false, id);
     expect(ai.generateStructured).toHaveBeenCalledTimes(2);

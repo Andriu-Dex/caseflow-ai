@@ -28,6 +28,7 @@ import { kebabCase } from '../code-generation/naming';
 import { actionMethodName } from '../code-generation/engine/backend.templates';
 
 const FRONTEND_DESIGN_VERSION = 37;
+const NOT_EVALUATED = 'NOT_EVALUATED:';
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 
 @Injectable()
@@ -247,7 +248,7 @@ export class FrontendDesignService {
       // An evaluation with findings is kept under the same inputs hash: the
       // findings survive an interrupted run and are not paid for twice.
       const findingsPath = `docs/presentation-findings/${cacheHash}.json`;
-      const reported = cached
+      const found = cached
         ? null
         : await this.prisma.generatedFile.findFirst({
             where: {
@@ -256,6 +257,16 @@ export class FrontendDesignService {
             },
             select: { content: true },
           });
+      // A screen the provider could not evaluate is kept only once a person
+      // accepted shipping it unevaluated; otherwise the next run asks again.
+      const unevaluated = found
+        ? (JSON.parse(found.content) as { findings: string }).findings
+        : undefined;
+      const reported =
+        unevaluated?.startsWith(NOT_EVALUATED) &&
+        !exceptions.has(`${route.path}|${hash(unevaluated)}`)
+          ? null
+          : found;
       const report = (findings: string) =>
         incomplete.push(
           `La pantalla «${screen.name}» (${route.path}) necesita completar sus enlaces funcionales. ${findings}`,
@@ -325,7 +336,38 @@ export class FrontendDesignService {
           });
         } catch (error) {
           if (!(error instanceof AIError)) throw error;
-          report(`NOT_EVALUATED: ${error.message}`);
+          // Recorded like any finding so a person can accept shipping the
+          // screen with its functional page; an accepted one is not retried.
+          const findings = `${NOT_EVALUATED} ${error.message}`;
+          const content = json({
+            routePath: route.path,
+            findings,
+            evaluator: screenEvaluator(process.env),
+          });
+          await this.prisma.generatedFile.upsert({
+            where: { generationRunId_path: { generationRunId, path: findingsPath } },
+            update: { content, sha256: hash(content) },
+            create: {
+              generationRunId,
+              path: findingsPath,
+              content,
+              kind: 'DOCUMENTATION',
+              origin: 'AI_ASSISTED',
+              sha256: hash(content),
+            },
+          });
+          const accepted = excepted(findings, undefined);
+          if (!accepted) report(findings);
+          else
+            records.push({
+              routePath: route.path,
+              screenLocalId: screen.localId,
+              mockupSha256: hash(html),
+              sourceSha256: sourceHash,
+              outputSha256: hash(target.content),
+              navigation: 'SIDE',
+              acceptedException: accepted.exception,
+            });
           continue;
         }
         presentation = presentationSchema.parse(result.data);
