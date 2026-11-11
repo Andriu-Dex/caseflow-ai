@@ -4,6 +4,7 @@ import { MockupsService } from '../mockups/mockups.service';
 import { GenerationRunsService } from './generation-runs.service';
 import { SandboxRunsService } from './sandbox-runs.service';
 import { WorkflowRunsService } from './workflow-runs.service';
+import { HEARTBEAT_INTERVAL_MS, HEARTBEAT_STALE_MS } from '../common/interrupted';
 
 const logger = new Logger('InterruptedJobsRecovery');
 
@@ -35,6 +36,16 @@ export class InterruptedJobsRecovery implements OnApplicationBootstrap {
       ['user manual job', () => this.userManuals.recover(bootedAt)],
       ['workflow run', () => this.workflowRuns.resumeInterrupted(bootedAt)],
     ];
+    // A job started just before this boot may still have a fresh heartbeat
+    // from a process that already died; look again once it would be stale.
+    const recheck = setTimeout(() => {
+      const now = new Date();
+      void Promise.all([
+        this.generationRuns.markInterrupted(now),
+        this.sandboxRuns.markInterrupted(now),
+      ]).catch(() => undefined);
+    }, HEARTBEAT_STALE_MS + HEARTBEAT_INTERVAL_MS);
+    recheck.unref?.();
     for (const [label, step] of steps) {
       try {
         const count = await step();

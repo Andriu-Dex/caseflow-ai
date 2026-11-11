@@ -1768,6 +1768,8 @@ model GenerationRun {
   createdByUserId             String              @map("created_by_user_id") @db.Uuid
   createdAt                   DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   startedAt                   DateTime?           @map("started_at") @db.Timestamptz(6)
+  // Refreshed by the process running the job (stale = abandoned).
+  heartbeatAt DateTime? @map("heartbeat_at") @db.Timestamptz(6)
   finishedAt                  DateTime?           @map("finished_at") @db.Timestamptz(6)
   // Hidden from the list by a person; the run and its files stay as history.
   archivedAt                  DateTime?           @map("archived_at") @db.Timestamptz(6)
@@ -1869,6 +1871,8 @@ model SandboxRun {
   createdByUserId String           @map("created_by_user_id") @db.Uuid
   createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   startedAt       DateTime?        @map("started_at") @db.Timestamptz(6)
+  // Refreshed by the process running the job (stale = abandoned).
+  heartbeatAt DateTime? @map("heartbeat_at") @db.Timestamptz(6)
   finishedAt      DateTime?        @map("finished_at") @db.Timestamptz(6)
 
   project       Project                   @relation(fields: [projectId], references: [id], onDelete: Restrict)

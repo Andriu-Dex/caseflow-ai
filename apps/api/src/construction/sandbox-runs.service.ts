@@ -1,4 +1,4 @@
-import { INTERRUPTED_BY_RESTART } from '../common/interrupted';
+import { INTERRUPTED_BY_RESTART, startHeartbeat, staleHeartbeat } from '../common/interrupted';
 import { randomUUID } from 'node:crypto';
 import {
   ConflictException,
@@ -168,7 +168,7 @@ export class SandboxRunsService {
   // validation starts automatically, once per generation.
   async markInterrupted(bootedAt: Date): Promise<number> {
     const runs = await this.prisma.sandboxRun.findMany({
-      where: { status: 'RUNNING', startedAt: { lt: bootedAt } },
+      where: { status: 'RUNNING', startedAt: { lt: bootedAt }, ...staleHeartbeat(bootedAt) },
       select: {
         id: true,
         projectId: true,
@@ -196,52 +196,62 @@ export class SandboxRunsService {
   async runJob(projectId: string, sandboxRunId: string): Promise<void> {
     const { count } = await this.prisma.sandboxRun.updateMany({
       where: { id: sandboxRunId, projectId, status: 'QUEUED' },
-      data: { status: 'RUNNING', startedAt: new Date() },
+      data: { status: 'RUNNING', startedAt: new Date(), heartbeatAt: new Date() },
     });
     if (!count) return; // Already picked up by a previous delivery of the job.
     const run = await this.prisma.sandboxRun.findUniqueOrThrow({
       where: { id: sandboxRunId },
       include: { generationRun: { include: { project: { select: { name: true } } } } },
     });
-    const generation = run.generationRun;
+    const stopHeartbeat = startHeartbeat(() =>
+      this.prisma.sandboxRun.updateMany({
+        where: { id: sandboxRunId, status: 'RUNNING' },
+        data: { heartbeatAt: new Date() },
+      }),
+    );
     try {
-      const template = findTargetTemplate(
-        generation.targetTemplateIdentifier,
-        generation.targetTemplateVersion,
-      );
-      if (!template)
-        throw new SandboxExecutionError('SANDBOX_INVALID_INPUT', 'Plantilla no soportada.');
-      const files = await this.projectFiles(generation.id, run.attemptNumber);
-      const stages = await this.validate(projectId, run.id, generation.id, files, template);
-      const failed = stages.find((s) => !s.passed);
-      if (!failed) {
-        await this.formalize(run, files, template, stages);
-        return;
+      const generation = run.generationRun;
+      try {
+        const template = findTargetTemplate(
+          generation.targetTemplateIdentifier,
+          generation.targetTemplateVersion,
+        );
+        if (!template)
+          throw new SandboxExecutionError('SANDBOX_INVALID_INPUT', 'Plantilla no soportada.');
+        const files = await this.projectFiles(generation.id, run.attemptNumber);
+        const stages = await this.validate(projectId, run.id, generation.id, files, template);
+        const failed = stages.find((s) => !s.passed);
+        if (!failed) {
+          await this.formalize(run, files, template, stages);
+          return;
+        }
+        // Dependencies are pinned from the catalog, so a registry outage says
+        // nothing about the code: an environment error, retryable.
+        if (failed.stage === 'INSTALL' && REGISTRY_UNREACHABLE.test(failed.output)) {
+          await this.finish(run.id, projectId, {
+            status: 'ERROR',
+            failedStage: 'INSTALL',
+            errorMessage:
+              'No se pudieron descargar las dependencias desde el registro aprobado. Intente de nuevo más tarde.',
+          });
+          return;
+        }
+        await this.afterFailure(run, failed, files);
+      } catch (error) {
+        const message =
+          error instanceof SandboxExecutionError
+            ? 'El entorno aislado de validación no está disponible. Intente de nuevo más tarde.'
+            : error instanceof StorageProviderError
+              ? 'No se pudo almacenar el proyecto validado. Intente de nuevo más tarde.'
+              : 'La validación no pudo completarse.';
+        logger.warn(
+          `Sandbox run "${sandboxRunId}" errored: ${error instanceof Error ? error.message : error}`,
+          error instanceof Error ? error.stack : undefined,
+        );
+        await this.finish(run.id, projectId, { status: 'ERROR', errorMessage: message });
       }
-      // Dependencies are pinned from the catalog, so a registry outage says
-      // nothing about the code: an environment error, retryable.
-      if (failed.stage === 'INSTALL' && REGISTRY_UNREACHABLE.test(failed.output)) {
-        await this.finish(run.id, projectId, {
-          status: 'ERROR',
-          failedStage: 'INSTALL',
-          errorMessage:
-            'No se pudieron descargar las dependencias desde el registro aprobado. Intente de nuevo más tarde.',
-        });
-        return;
-      }
-      await this.afterFailure(run, failed, files);
-    } catch (error) {
-      const message =
-        error instanceof SandboxExecutionError
-          ? 'El entorno aislado de validación no está disponible. Intente de nuevo más tarde.'
-          : error instanceof StorageProviderError
-            ? 'No se pudo almacenar el proyecto validado. Intente de nuevo más tarde.'
-            : 'La validación no pudo completarse.';
-      logger.warn(
-        `Sandbox run "${sandboxRunId}" errored: ${error instanceof Error ? error.message : error}`,
-        error instanceof Error ? error.stack : undefined,
-      );
-      await this.finish(run.id, projectId, { status: 'ERROR', errorMessage: message });
+    } finally {
+      stopHeartbeat();
     }
   }
 

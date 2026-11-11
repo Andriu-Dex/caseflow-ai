@@ -1,7 +1,7 @@
 import { implementationReadinessProblems } from './implementation-readiness';
 import { FrontendDesignService } from './frontend-design.service';
 import { assertCanGenerate } from '../common/generation-cancelled';
-import { INTERRUPTED_BY_RESTART } from '../common/interrupted';
+import { INTERRUPTED_BY_RESTART, startHeartbeat, staleHeartbeat } from '../common/interrupted';
 import { createHash } from 'node:crypto';
 import {
   ConflictException,
@@ -342,7 +342,7 @@ export class GenerationRunsService {
   async markInterrupted(bootedAt: Date): Promise<number> {
     const cutoff = new Date(bootedAt.getTime() - 15_000);
     const runs = await this.prisma.generationRun.findMany({
-      where: { status: 'GENERATING', startedAt: { lt: cutoff } },
+      where: { status: 'GENERATING', startedAt: { lt: cutoff }, ...staleHeartbeat(bootedAt) },
       select: { id: true, projectId: true },
     });
     let marked = 0;
@@ -374,134 +374,147 @@ export class GenerationRunsService {
   async runJob(projectId: string, runId: string): Promise<void> {
     const { count } = await this.prisma.generationRun.updateMany({
       where: { id: runId, projectId, status: 'QUEUED' },
-      data: { status: 'GENERATING', startedAt: new Date() },
+      data: { status: 'GENERATING', startedAt: new Date(), heartbeatAt: new Date() },
     });
     if (!count) return; // Already picked up (e.g. a retried job): nothing to do.
     const run = await this.prisma.generationRun.findUniqueOrThrow({
       where: { id: runId },
       include: { project: { select: { name: true } } },
     });
+    const stopHeartbeat = startHeartbeat(() =>
+      this.prisma.generationRun.updateMany({
+        where: { id: runId, status: 'GENERATING' },
+        data: { heartbeatAt: new Date() },
+      }),
+    );
     try {
-      const plan = await this.approvedPlan(projectId, run.implementationPlanVersionId);
-      const template = findTargetTemplate(run.targetTemplateIdentifier, run.targetTemplateVersion);
-      if (!template)
-        throw new PlanGenerationError('La plantilla de la corrida ya no está soportada.');
-      if (template.version >= 2) {
-        const problems = implementationReadinessProblems(plan);
-        if (problems.length) throw new PlanGenerationError(problems.join(' '));
-      }
-      const {
-        implementations,
-        warnings,
-        checkpoints = [],
-      } = await this.businessLogic.implement(projectId, runId, plan, template);
-      if (template.version >= 2 && warnings.length) {
-        await this.prisma.generationRun.update({ where: { id: runId }, data: { warnings } });
-        throw new PlanGenerationError(
-          `Hay ${warnings.length} ${warnings.length === 1 ? 'acción de negocio sin implementar' : 'acciones de negocio sin implementar'}. Revise las advertencias de la corrida.`,
+      try {
+        const plan = await this.approvedPlan(projectId, run.implementationPlanVersionId);
+        const template = findTargetTemplate(
+          run.targetTemplateIdentifier,
+          run.targetTemplateVersion,
         );
-      }
-      const theme = await this.frozenTheme(projectId, run.designBaselineId);
-      let files = generateProject(
-        {
-          plan,
-          template,
-          projectName: run.project.name,
-          slug: projectSlug(run.project.name),
-          theme,
-        },
-        implementations,
-      );
-      files.push(...checkpoints);
-      if (template.version >= 2) {
-        if (!this.frontendDesign)
-          throw new PlanGenerationError('El adaptador del diseño aprobado no está disponible.');
-        const adapted = await this.frontendDesign.adapt(
-          projectId,
-          run.designBaselineId,
-          plan,
-          files,
-          run.project.name,
-          theme?.content.mode === 'BOTH',
-          runId,
+        if (!template)
+          throw new PlanGenerationError('La plantilla de la corrida ya no está soportada.');
+        if (template.version >= 2) {
+          const problems = implementationReadinessProblems(plan);
+          if (problems.length) throw new PlanGenerationError(problems.join(' '));
+        }
+        const {
+          implementations,
+          warnings,
+          checkpoints = [],
+        } = await this.businessLogic.implement(projectId, runId, plan, template);
+        if (template.version >= 2 && warnings.length) {
+          await this.prisma.generationRun.update({ where: { id: runId }, data: { warnings } });
+          throw new PlanGenerationError(
+            `Hay ${warnings.length} ${warnings.length === 1 ? 'acción de negocio sin implementar' : 'acciones de negocio sin implementar'}. Revise las advertencias de la corrida.`,
+          );
+        }
+        const theme = await this.frozenTheme(projectId, run.designBaselineId);
+        let files = generateProject(
+          {
+            plan,
+            template,
+            projectName: run.project.name,
+            slug: projectSlug(run.project.name),
+            theme,
+          },
+          implementations,
         );
-        files = adapted.files;
-        warnings.push(
-          'La composición conserva los controles y usa el boceto aprobado. Revise la fidelidad visual en la aplicación; la comprobación estructural no sustituye esa revisión.',
-        );
-      }
-      const frozen = await this.frozenVersionsByCode(projectId, run.designBaselineId);
-      const links = planTraceLinks(files, plan, run.implementationPlanVersionId, frozen);
-      await this.prisma.$transaction(async (tx) => {
-        const checkpoints = await tx.generatedFile.findMany({
-          where: { generationRunId: runId },
-          select: { id: true, path: true },
-        });
-        const existing = new Set(checkpoints.map((item) => item.path));
-        const created = await tx.generatedFile.createManyAndReturn({
-          data: files
-            .filter((item) => !existing.has(item.path))
-            .map((f) => ({
-              generationRunId: runId,
-              path: f.path,
-              content: f.content,
-              sha256: createHash('sha256').update(f.content).digest('hex'),
-              origin: f.origin,
-              kind: f.kind,
+        files.push(...checkpoints);
+        if (template.version >= 2) {
+          if (!this.frontendDesign)
+            throw new PlanGenerationError('El adaptador del diseño aprobado no está disponible.');
+          const adapted = await this.frontendDesign.adapt(
+            projectId,
+            run.designBaselineId,
+            plan,
+            files,
+            run.project.name,
+            theme?.content.mode === 'BOTH',
+            runId,
+          );
+          files = adapted.files;
+          warnings.push(
+            'La composición conserva los controles y usa el boceto aprobado. Revise la fidelidad visual en la aplicación; la comprobación estructural no sustituye esa revisión.',
+          );
+        }
+        const frozen = await this.frozenVersionsByCode(projectId, run.designBaselineId);
+        const links = planTraceLinks(files, plan, run.implementationPlanVersionId, frozen);
+        await this.prisma.$transaction(async (tx) => {
+          const checkpoints = await tx.generatedFile.findMany({
+            where: { generationRunId: runId },
+            select: { id: true, path: true },
+          });
+          const existing = new Set(checkpoints.map((item) => item.path));
+          const created = await tx.generatedFile.createManyAndReturn({
+            data: files
+              .filter((item) => !existing.has(item.path))
+              .map((f) => ({
+                generationRunId: runId,
+                path: f.path,
+                content: f.content,
+                sha256: createHash('sha256').update(f.content).digest('hex'),
+                origin: f.origin,
+                kind: f.kind,
+              })),
+            select: { id: true, path: true },
+          });
+          const idByPath = new Map([...checkpoints, ...created].map((f) => [f.path, f.id]));
+          await tx.codeTraceLink.createMany({
+            data: links.map((link) => ({
+              generatedFileId: idByPath.get(link.path)!,
+              sourceArtifactVersionId: link.sourceArtifactVersionId,
+              planElement: link.planElement,
+              linkType: link.linkType,
             })),
-          select: { id: true, path: true },
+          });
+          await tx.generationRun.update({
+            where: { id: runId },
+            data: { status: 'GENERATED', finishedAt: new Date(), warnings },
+          });
+          await this.audit.record(
+            {
+              projectId,
+              actorUserId: null,
+              action: 'GENERATION_RUN_FINISHED',
+              entityType: 'GENERATION_RUN',
+              entityId: runId,
+              metadata: { status: 'GENERATED', files: files.length, warnings: warnings.length },
+            },
+            tx,
+          );
         });
-        const idByPath = new Map([...checkpoints, ...created].map((f) => [f.path, f.id]));
-        await tx.codeTraceLink.createMany({
-          data: links.map((link) => ({
-            generatedFileId: idByPath.get(link.path)!,
-            sourceArtifactVersionId: link.sourceArtifactVersionId,
-            planElement: link.planElement,
-            linkType: link.linkType,
-          })),
-        });
-        await tx.generationRun.update({
-          where: { id: runId },
-          data: { status: 'GENERATED', finishedAt: new Date(), warnings },
-        });
-        await this.audit.record(
-          {
-            projectId,
-            actorUserId: null,
-            action: 'GENERATION_RUN_FINISHED',
-            entityType: 'GENERATION_RUN',
-            entityId: runId,
-            metadata: { status: 'GENERATED', files: files.length, warnings: warnings.length },
-          },
-          tx,
+      } catch (error) {
+        const message =
+          error instanceof PlanGenerationError || error instanceof UnprocessableEntityException
+            ? error.message
+            : 'No se pudo generar el proyecto.';
+        logger.warn(
+          `Generation run "${runId}" failed: ${message}`,
+          error instanceof Error ? error.stack : undefined,
         );
-      });
-    } catch (error) {
-      const message =
-        error instanceof PlanGenerationError || error instanceof UnprocessableEntityException
-          ? error.message
-          : 'No se pudo generar el proyecto.';
-      logger.warn(
-        `Generation run "${runId}" failed: ${message}`,
-        error instanceof Error ? error.stack : undefined,
-      );
-      await this.prisma.$transaction(async (tx) => {
-        await tx.generationRun.update({
-          where: { id: runId },
-          data: { status: 'FAILED', errorMessage: message, finishedAt: new Date() },
+        await this.prisma.$transaction(async (tx) => {
+          await tx.generationRun.update({
+            where: { id: runId },
+            data: { status: 'FAILED', errorMessage: message, finishedAt: new Date() },
+          });
+          await this.audit.record(
+            {
+              projectId,
+              actorUserId: null,
+              action: 'GENERATION_RUN_FINISHED',
+              entityType: 'GENERATION_RUN',
+              entityId: runId,
+              metadata: { status: 'FAILED' },
+            },
+            tx,
+          );
         });
-        await this.audit.record(
-          {
-            projectId,
-            actorUserId: null,
-            action: 'GENERATION_RUN_FINISHED',
-            entityType: 'GENERATION_RUN',
-            entityId: runId,
-            metadata: { status: 'FAILED' },
-          },
-          tx,
-        );
-      });
+      }
+    } finally {
+      stopHeartbeat();
     }
   }
 

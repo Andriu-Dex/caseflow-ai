@@ -428,6 +428,38 @@ describe('Construction sandbox validation integration', () => {
     ]);
   });
 
+  it('marks only abandoned runs as interrupted on startup, not runs another process keeps alive', async () => {
+    const started = new Date(Date.now() - 10 * 60_000);
+    const create = (heartbeatAt: Date | null) =>
+      ctx.prisma.generationRun.create({
+        data: {
+          projectId,
+          createdByUserId: ctx.userId,
+          implementationPlanVersionId: planVersionId,
+          designBaselineId: baselineId,
+          targetTemplateIdentifier: 'CASEFLOW_WEB_TS_V1',
+          targetTemplateVersion: 2,
+          status: 'GENERATING',
+          startedAt: started,
+          heartbeatAt,
+        },
+      });
+    const alive = await create(new Date());
+    const abandoned = await create(new Date(Date.now() - 5 * 60_000));
+    try {
+      await generationRuns.markInterrupted(new Date());
+      const status = async (id: string) =>
+        (await ctx.prisma.generationRun.findUniqueOrThrow({ where: { id } })).status;
+      expect(await status(alive.id)).toBe('GENERATING');
+      expect(await status(abandoned.id)).toBe('FAILED');
+    } finally {
+      await ctx.prisma.generationRun.updateMany({
+        where: { id: alive.id, status: 'GENERATING' },
+        data: { status: 'FAILED', finishedAt: new Date() },
+      });
+    }
+  });
+
   it('never reaches READY when the generated end-to-end tests fail (DEC-159)', async () => {
     const runId = await generatedRun();
     const e2e = ctx.app.get<E2ETestProvider>(E2E_TEST_PROVIDER);
