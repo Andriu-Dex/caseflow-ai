@@ -240,7 +240,7 @@ const entityParam = (entity: Entity | undefined, names: string[]) =>
 // Drops route parameters a finished page declares but never reads, so the
 // generated code passes the unused-variable lint rule.
 export function pruneUnusedParams(content: string): string {
-  const declaration = /\n  const \{ ([^}]+) \} = useParams<\{ [^}]* \}>\(\);/.exec(content);
+  const declaration = /\n {2}const \{ ([^}]+) \} = useParams<\{ [^}]* \}>\(\);/.exec(content);
   if (!declaration) return content;
   const rest = content.replace(declaration[0], '');
   const used = declaration[1]!.split(', ').filter((name) => new RegExp(`\\b${name}\\b`).test(rest));
