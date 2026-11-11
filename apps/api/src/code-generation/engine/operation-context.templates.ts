@@ -37,7 +37,7 @@ function OperationBoundary({children}: {children: ReactNode}) {
  return <div key={revision}>{children}</div>;
 }
 export function Providers({children}: {children: ReactNode}) {
- const [client] = useState(() => new QueryClient());
+ const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: (count, error) => count < 3 && ((error as { status?: number }).status ?? 500) >= 500 } } }));
  return <QueryClientProvider client={client}><OperationBoundary>{children}</OperationBoundary><Toaster richColors position="top-right" /></QueryClientProvider>;
 }
 `,

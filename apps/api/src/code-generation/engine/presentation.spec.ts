@@ -6,7 +6,12 @@ import {
   validatePresentation,
   type ScreenPresentation,
 } from './presentation';
-import { applyPresentationShell } from './presentation-shell';
+import { applyPresentationShell, navigationGroups } from './presentation-shell';
+import type {
+  ImplementationPlanContent,
+  NavigationTreeContent,
+  UiBlueprintContent,
+} from '@caseflow-ai/contracts';
 import type { GeneratedProjectFile } from './types';
 
 const page = `'use client';
@@ -196,5 +201,51 @@ describe('approved presentation compiler', () => {
     expect(files[0]!.content).not.toContain('<AppNav');
     expect(files[1]!.content).toContain('TOP');
     expect(files[1]!.content).toContain("selected?.navigation === 'NONE'");
+  });
+});
+
+describe('navigation groups', () => {
+  it('groups screens by their top-level branch of the approved navigation tree', () => {
+    const route = (path: string, screenLocalId: string, endpoint = 'GET /items') => ({
+      path,
+      screenLocalId,
+      actions: [{ endpoint }],
+    });
+    const plan = {
+      routes: [
+        route('/home', 's-home', 'GET /auth/options'),
+        route('/logout', 's-out', 'POST /auth/logout'),
+        route('/products', 's-products'),
+        route('/products/new', 's-new'),
+        route('/audit', 's-audit'),
+      ],
+    } as unknown as ImplementationPlanContent;
+    const blueprint = {
+      screens: [
+        { localId: 's-home', navigationNodeLocalId: 'home' },
+        { localId: 's-out', navigationNodeLocalId: 'out' },
+        { localId: 's-products', navigationNodeLocalId: 'products' },
+        { localId: 's-new', navigationNodeLocalId: 'new' },
+        { localId: 's-audit', navigationNodeLocalId: 'audit' },
+      ],
+    } as unknown as UiBlueprintContent;
+    const tree = {
+      nodes: [
+        { localId: 'home', label: 'Inicio' },
+        { localId: 'out', label: 'Cerrar sesión', parentLocalId: 'home' },
+        { localId: 'catalog', label: 'Catálogo', parentLocalId: 'home' },
+        { localId: 'products', label: 'Productos', parentLocalId: 'catalog' },
+        { localId: 'new', label: 'Registrar', parentLocalId: 'products' },
+        { localId: 'audit', label: 'Auditoría', parentLocalId: 'home' },
+      ],
+    } as unknown as NavigationTreeContent;
+    expect(navigationGroups(plan, blueprint, tree)).toEqual({
+      home: '/home',
+      logout: '/logout',
+      groups: [
+        { label: 'Catálogo', paths: ['/products', '/products/new'] },
+        { label: 'Auditoría', paths: ['/audit'] },
+      ],
+    });
   });
 });

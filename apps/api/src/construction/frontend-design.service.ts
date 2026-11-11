@@ -4,7 +4,11 @@ import { posix } from 'node:path';
 import ts from 'typescript';
 import { AIError, AIOrchestrator } from '@caseflow-ai/ai';
 import { loadAIRoutes } from '@caseflow-ai/config';
-import { uiBlueprintContentSchema, type ImplementationPlanContent } from '@caseflow-ai/contracts';
+import {
+  navigationTreeContentSchema,
+  uiBlueprintContentSchema,
+  type ImplementationPlanContent,
+} from '@caseflow-ai/contracts';
 import type { StorageProvider } from '@caseflow-ai/integrations';
 import { PrismaService } from '../database/prisma.service';
 import { STORAGE_PROVIDER } from '../sources/storage-provider.token';
@@ -15,7 +19,10 @@ import {
   presentationSources,
   validatePresentation,
 } from '../code-generation/engine/presentation';
-import { applyPresentationShell } from '../code-generation/engine/presentation-shell';
+import {
+  applyPresentationShell,
+  navigationGroups,
+} from '../code-generation/engine/presentation-shell';
 import { file, json, type GeneratedProjectFile } from '../code-generation/engine/types';
 import { kebabCase } from '../code-generation/naming';
 import { actionMethodName } from '../code-generation/engine/backend.templates';
@@ -422,7 +429,15 @@ export class FrontendDesignService {
       throw new UnprocessableEntityException(
         `${incomplete.length === 1 ? 'Una pantalla necesita' : `${incomplete.length} pantallas necesitan`} completar sus enlaces funcionales.\n${incomplete.join('\n')}`,
       );
-    applyPresentationShell(output, records, projectName, themeToggle);
+    const tree = baseline.entries.find((item) => item.role === 'NAVIGATION_TREE')?.artifactVersion
+      .structuredAnalysisDetail?.content;
+    applyPresentationShell(
+      output,
+      records,
+      projectName,
+      themeToggle,
+      tree ? navigationGroups(plan, blueprint, navigationTreeContentSchema.parse(tree)) : undefined,
+    );
     output.push(
       file(
         'docs/design-fidelity.json',

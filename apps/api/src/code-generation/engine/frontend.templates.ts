@@ -100,15 +100,13 @@ import { Button } from './ui/button';
 
 const STORAGE_KEY = 'theme';
 
-// Light/dark switch: the saved choice wins, otherwise the system preference.
+// Light/dark switch. The approved mockups are light, so the application opens
+// light and turns dark only when the person chose it.
 export function ThemeToggle() {
   const [dark, setDark] = useState(false);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(STORAGE_KEY);
-    const initial = saved
-      ? saved === 'dark'
-      : window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const initial = window.localStorage.getItem(STORAGE_KEY) === 'dark';
     document.documentElement.classList.toggle('dark', initial);
     setDark(initial);
   }, []);
@@ -133,7 +131,7 @@ export function ThemeToggle() {
 }
 `;
 
-const THEME_TOGGLE_SPEC = `import { afterEach, describe, expect, it, vi } from 'vitest';
+const THEME_TOGGLE_SPEC = `import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { ThemeToggle } from './theme-toggle';
 
@@ -145,7 +143,6 @@ describe('ThemeToggle', () => {
   });
 
   it('switches to dark and remembers the choice', () => {
-    window.matchMedia = vi.fn().mockReturnValue({ matches: false });
     render(<ThemeToggle />);
     fireEvent.click(screen.getByRole('button', { name: 'Usar tema oscuro' }));
     expect(document.documentElement.classList.contains('dark')).toBe(true);
@@ -1630,7 +1627,7 @@ import { useState, type ReactNode } from 'react';
 import { Toaster } from 'sonner';
 
 export function Providers({ children }: { children: ReactNode }) {
-  const [client] = useState(() => new QueryClient());
+  const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: (count, error) => count < 3 && ((error as { status?: number }).status ?? 500) >= 500 } } }));
   return (
     <QueryClientProvider client={client}>
       {children}
