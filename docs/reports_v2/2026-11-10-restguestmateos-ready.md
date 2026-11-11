@@ -1,0 +1,31 @@
+# RestGuestMateos: primera entrega READY (plan v27)
+
+## Resultado
+
+- Corrida de generación `180fe7e4`, plan de implementación v27, línea base de diseño `ac298b2c`.
+- Validación `f7f58e7b`: **READY**, snapshot oficial `4ea10675`.
+
+| Etapa        | Resultado | Duración |
+| ------------ | --------- | -------- |
+| INSTALL      | Correcta  | 54 s     |
+| LINT         | Correcta  | 6 s      |
+| TYPECHECK    | Correcta  | 11 s     |
+| TEST         | Correcta  | 16 s     |
+| BUILD        | Correcta  | 24 s     |
+| STRUCTURE    | Correcta  | —        |
+| TRACEABILITY | Correcta  | —        |
+| E2E          | Correcta  | 109 s    |
+
+## Cómo se llegó
+
+- Plan v27: etiquetas en español para 150 campos y 74 relaciones; sin cambios funcionales respecto a v26, por lo que la lógica de negocio de las 18 acciones se reutilizó desde caché.
+- Pantallas evaluadas con Gemini Flash-Lite (`AI_ROUTE_FRONTEND_PRESENTATION`); ninguna llamada de ChatGPT en las corridas de esta etapa.
+- Las pantallas con hallazgos quedaron cubiertas por excepciones justificadas (DEC-160), registradas por el propietario con la justificación «Simplificación aceptada para la demostración; la funcionalidad completa queda fuera del alcance de esta entrega».
+- Cuatro errores de la lógica generada por IA (dos de lint y dos de tipos) se corrigieron como revisiones explícitas en versiones de trabajo (ADR-018), sin nuevas llamadas de IA.
+- Correcciones del generador encontradas con el proyecto completo: parámetros de ruta, filtros de listas, botones de paginación con la etiqueta del plan, tipos del formulario de acciones y del login.
+
+## Limitaciones conocidas
+
+- La aceptación de pantallas se hizo sobre la evaluación de Gemini Flash-Lite, más permisiva que el evaluador principal; una pasada final con ChatGPT exigiría nuevas aceptaciones para los hallazgos que cambien.
+- La consulta de hallazgos devuelve los últimos registrados por pantalla en cualquier corrida; incluye evaluaciones antiguas (40 excepciones sin efecto práctico).
+- Arrancar un proceso auxiliar de CASEFlow mientras corre otro (p. ej. `pnpm dev` en modo `--watch`) marca como interrumpidos los trabajos en curso del otro proceso.
