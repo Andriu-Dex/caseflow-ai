@@ -257,9 +257,15 @@ export function layoutClasses(className: string) {
 // On a solid semantic background the text takes that background's paired
 // foreground, whatever color the proposal chose, so it is always readable.
 const SOLID = /^bg-(primary|secondary|accent|destructive)$/;
-export function readable(className: string) {
+const solidOf = (className: string) =>
+  className
+    .split(/\s+/)
+    .map((token) => SOLID.exec(token)?.[1])
+    .find(Boolean);
+// Static text and icons inside a solid container take its foreground too.
+export function readable(className: string, inherited?: string) {
   const tokens = className.split(/\s+/).filter(Boolean);
-  const solid = tokens.map((token) => SOLID.exec(token)?.[1]).find(Boolean);
+  const solid = solidOf(className) ?? inherited;
   if (!solid) return className;
   return [
     ...tokens.filter(
@@ -421,17 +427,18 @@ export function applyPresentation(content: string, presentation: ScreenPresentat
   const sources = presentationSources(content);
   validatePresentation(presentation, sources);
   const originals = new Map(sources.map((source) => [source.id, source]));
-  const render = (node: ScreenPresentation['nodes'][number]): string => {
+  const render = (node: ScreenPresentation['nodes'][number], inherited?: string): string => {
+    const solid = node.kind === 'CONTAINER' ? (solidOf(node.className) ?? inherited) : undefined;
     const children = presentation.nodes
       .filter((child) => child.parentId === node.id)
-      .map(render)
+      .map((child) => render(child, solid))
       .join('\n');
     if (node.kind === 'CONTAINER')
       return `<${node.tag} className={${JSON.stringify(readable(node.className))}}>${children}</${node.tag}>`;
     if (node.kind === 'TEXT')
-      return `<${node.tag} className={${JSON.stringify(readable(node.className))}}>{${JSON.stringify(node.text)}}</${node.tag}>`;
+      return `<${node.tag} className={${JSON.stringify(readable(node.className, inherited))}}>{${JSON.stringify(node.text)}}</${node.tag}>`;
     if (node.kind === 'ICON')
-      return `<PresentationIcons.${node.icon} className={${JSON.stringify(readable(node.className || 'h-5 w-5'))}} aria-hidden />`;
+      return `<PresentationIcons.${node.icon} className={${JSON.stringify(readable(node.className || 'h-5 w-5', inherited))}} aria-hidden />`;
     const source = originals.get(node.sourceId!)!;
     if (node.kind === 'FRAME')
       return `${styledJsx(source.jsx, node.className, source.frameTag ?? 'form')}${children}</${source.frameTag ?? 'form'}>`;
