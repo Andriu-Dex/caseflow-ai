@@ -5,6 +5,7 @@ import { INTERRUPTED_BY_RESTART, startHeartbeat, staleHeartbeat } from '../commo
 import { createHash } from 'node:crypto';
 import {
   ConflictException,
+  ServiceUnavailableException,
   Inject,
   Injectable,
   Logger,
@@ -326,11 +327,27 @@ export class GenerationRunsService {
       );
       return created;
     });
-    await this.queue.add(CONSTRUCTION_QUEUE, {
-      type: 'generation-run',
-      runId: run.id,
-      projectId,
-    });
+    // A run that never reached the queue would stay QUEUED and block every
+    // later generation of the project, so it fails instead.
+    try {
+      await Promise.race([
+        this.queue.add(CONSTRUCTION_QUEUE, { type: 'generation-run', runId: run.id, projectId }),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Queue unavailable.')), 30_000).unref(),
+        ),
+      ]);
+    } catch {
+      await this.prisma.generationRun.updateMany({
+        where: { id: run.id, status: 'QUEUED' },
+        data: {
+          status: 'FAILED',
+          errorMessage: 'No se pudo poner en cola la generación. Inténtelo de nuevo.',
+        },
+      });
+      throw new ServiceUnavailableException(
+        'No se pudo poner en cola la generación. Inténtelo de nuevo.',
+      );
+    }
     return this.map(run);
   }
 
