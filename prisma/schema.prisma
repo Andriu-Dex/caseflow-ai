@@ -237,21 +237,22 @@ model User {
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   archivedAt   DateTime? @map("archived_at") @db.Timestamptz(6)
 
-  sessions                  Session[]
-  workspaceMemberships      WorkspaceMembership[]
-  projectMemberships        ProjectMembership[]
-  projectBaselines          ProjectBaseline[]
-  auditEvents               AuditEvent[]
-  requestedProposals        DependencyProposal[]       @relation("DependencyProposalRequester")
-  decidedProposals          DependencyProposal[]       @relation("DependencyProposalDecider")
-  designBaselines           DesignBaseline[]
-  screenDesignExceptions    ScreenDesignException[]
-  workflowRuns              WorkflowRun[]
-  generationRuns            GenerationRun[]
-  sandboxRuns               SandboxRun[]
-  generatedProjectSnapshots GeneratedProjectSnapshot[]
-  projectDeletions          ProjectDeletion[]
-  stageConfirmations        StageConfirmation[]
+  sessions                    Session[]
+  workspaceMemberships        WorkspaceMembership[]
+  projectMemberships          ProjectMembership[]
+  projectBaselines            ProjectBaseline[]
+  auditEvents                 AuditEvent[]
+  requestedProposals          DependencyProposal[]         @relation("DependencyProposalRequester")
+  decidedProposals            DependencyProposal[]         @relation("DependencyProposalDecider")
+  designBaselines             DesignBaseline[]
+  screenDesignExceptions      ScreenDesignException[]
+  generatedProjectDeployments GeneratedProjectDeployment[]
+  workflowRuns                WorkflowRun[]
+  generationRuns              GenerationRun[]
+  sandboxRuns                 SandboxRun[]
+  generatedProjectSnapshots   GeneratedProjectSnapshot[]
+  projectDeletions            ProjectDeletion[]
+  stageConfirmations          StageConfirmation[]
 
   @@map("users")
 }
@@ -373,6 +374,7 @@ model Project {
   dependencyProposals           DependencyProposal[]
   designBaselines               DesignBaseline[]
   screenDesignExceptions        ScreenDesignException[]
+  generatedProjectDeployments   GeneratedProjectDeployment[]
   generationRuns                GenerationRun[]
   sandboxRuns                   SandboxRun[]
   generatedProjectSnapshots     GeneratedProjectSnapshot[]
@@ -1769,7 +1771,7 @@ model GenerationRun {
   createdAt                   DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   startedAt                   DateTime?           @map("started_at") @db.Timestamptz(6)
   // Refreshed by the process running the job (stale = abandoned).
-  heartbeatAt DateTime? @map("heartbeat_at") @db.Timestamptz(6)
+  heartbeatAt                 DateTime?           @map("heartbeat_at") @db.Timestamptz(6)
   finishedAt                  DateTime?           @map("finished_at") @db.Timestamptz(6)
   // Hidden from the list by a person; the run and its files stay as history.
   archivedAt                  DateTime?           @map("archived_at") @db.Timestamptz(6)
@@ -1872,7 +1874,7 @@ model SandboxRun {
   createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   startedAt       DateTime?        @map("started_at") @db.Timestamptz(6)
   // Refreshed by the process running the job (stale = abandoned).
-  heartbeatAt DateTime? @map("heartbeat_at") @db.Timestamptz(6)
+  heartbeatAt     DateTime?        @map("heartbeat_at") @db.Timestamptz(6)
   finishedAt      DateTime?        @map("finished_at") @db.Timestamptz(6)
 
   project       Project                   @relation(fields: [projectId], references: [id], onDelete: Restrict)
@@ -1952,6 +1954,46 @@ model RepairFinding {
 }
 
 // Immutable official result of a validated generation (spec §172, DEC-104/105).
+enum DeploymentStatus {
+  STARTING
+  RUNNING
+  STOPPED
+  FAILED
+
+  @@map("deployment_status")
+}
+
+enum DeploymentTunnelMode {
+  QUICK
+  NAMED
+
+  @@map("deployment_tunnel_mode")
+}
+
+// ADR-019: a READY snapshot running in local Docker behind Cloudflare Tunnel.
+// Holds no secret: passwords and tunnel tokens are passed to the containers
+// and never stored. Accounts lists only the initial roles and identifiers.
+model GeneratedProjectDeployment {
+  id              String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId       String               @map("project_id") @db.Uuid
+  snapshotId      String               @map("snapshot_id") @db.Uuid
+  status          DeploymentStatus     @default(STARTING)
+  tunnelMode      DeploymentTunnelMode @map("tunnel_mode")
+  publicUrl       String?              @map("public_url")
+  accounts        Json                 @default("[]")
+  errorMessage    String?              @map("error_message")
+  createdByUserId String               @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project   Project                  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  snapshot  GeneratedProjectSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  createdBy User                     @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, createdAt])
+  @@map("generated_project_deployments")
+}
+
 model GeneratedProjectSnapshot {
   id                          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   projectId                   String   @map("project_id") @db.Uuid
@@ -1970,13 +2012,14 @@ model GeneratedProjectSnapshot {
   createdByUserId             String   @map("created_by_user_id") @db.Uuid
   createdAt                   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  project                   Project            @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  generationRun             GenerationRun      @relation(fields: [generationRunId], references: [id], onDelete: Restrict)
-  sandboxRun                SandboxRun         @relation(fields: [sandboxRunId], references: [id], onDelete: Restrict)
-  generationPlanVersion     ArtifactVersion?   @relation("SnapshotGenerationPlan", fields: [generationPlanVersionId], references: [id], onDelete: Restrict)
-  designBaseline            DesignBaseline     @relation(fields: [designBaselineId], references: [id], onDelete: Restrict)
-  implementationPlanVersion ArtifactVersion    @relation("SnapshotImplementationPlan", fields: [implementationPlanVersionId], references: [id], onDelete: Restrict)
-  createdBy                 User               @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  project                   Project                      @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  deployments               GeneratedProjectDeployment[]
+  generationRun             GenerationRun                @relation(fields: [generationRunId], references: [id], onDelete: Restrict)
+  sandboxRun                SandboxRun                   @relation(fields: [sandboxRunId], references: [id], onDelete: Restrict)
+  generationPlanVersion     ArtifactVersion?             @relation("SnapshotGenerationPlan", fields: [generationPlanVersionId], references: [id], onDelete: Restrict)
+  designBaseline            DesignBaseline               @relation(fields: [designBaselineId], references: [id], onDelete: Restrict)
+  implementationPlanVersion ArtifactVersion              @relation("SnapshotImplementationPlan", fields: [implementationPlanVersionId], references: [id], onDelete: Restrict)
+  createdBy                 User                         @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
   userManuals               UserManualDetail[]
   userManualJob             UserManualJob?
 

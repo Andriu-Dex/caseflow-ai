@@ -7,6 +7,7 @@ import type {
   DataModelInput,
   DesignBaselineResponse,
   ScreenDesignExceptionResponse,
+  DeploymentResponse,
   ScreenFindingsResponse,
   GeneratedFileResponse,
   GeneratedFileSummary,
@@ -895,6 +896,19 @@ export const api = {
         `/projects/${projectId}/design-baselines/${baselineId}/screen-exceptions`,
         data,
       ),
+  },
+  // ADR-019: a READY snapshot running locally behind Cloudflare Tunnel.
+  deployments: {
+    list: (projectId: string) =>
+      get<{ items: DeploymentResponse[] }>(`/projects/${projectId}/deployments`),
+    start: (
+      projectId: string,
+      data: { snapshotId: string; initialPassword: string; tunnelToken?: string },
+    ) => post<DeploymentResponse>(`/projects/${projectId}/deployments`, data),
+    stop: (projectId: string, id: string) =>
+      post<DeploymentResponse>(`/projects/${projectId}/deployments/${id}/stop`),
+    resume: (projectId: string, id: string, data: { tunnelToken?: string } = {}) =>
+      post<DeploymentResponse>(`/projects/${projectId}/deployments/${id}/start`, data),
   },
   ai: {
     status: () => get<AIStatus>('/ai/status'),

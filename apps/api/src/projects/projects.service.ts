@@ -284,6 +284,7 @@ export class ProjectsService {
         await tx.$executeRaw`DELETE FROM code_trace_links WHERE generated_file_id IN (SELECT gf.id FROM generated_files gf JOIN generation_runs gr ON gr.id = gf.generation_run_id WHERE gr.project_id = ${p})`;
         await tx.$executeRaw`DELETE FROM repair_findings WHERE auto_repair_attempt_id IN (SELECT a.id FROM auto_repair_attempts a JOIN generation_runs gr ON gr.id = a.generation_run_id WHERE gr.project_id = ${p})`;
         await tx.$executeRaw`DELETE FROM repair_patches WHERE auto_repair_attempt_id IN (SELECT a.id FROM auto_repair_attempts a JOIN generation_runs gr ON gr.id = a.generation_run_id WHERE gr.project_id = ${p})`;
+        await tx.$executeRaw`DELETE FROM generated_project_deployments WHERE project_id = ${p}`;
         await tx.$executeRaw`DELETE FROM generated_project_snapshots WHERE project_id = ${p}`;
         await tx.$executeRaw`DELETE FROM auto_repair_attempts WHERE generation_run_id IN (SELECT id FROM generation_runs WHERE project_id = ${p})`;
         await tx.$executeRaw`DELETE FROM sandbox_stage_results WHERE sandbox_run_id IN (SELECT id FROM sandbox_runs WHERE project_id = ${p})`;

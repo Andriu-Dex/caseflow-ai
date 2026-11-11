@@ -4,6 +4,7 @@ import { MockupsService } from '../mockups/mockups.service';
 import { GenerationRunsService } from './generation-runs.service';
 import { SandboxRunsService } from './sandbox-runs.service';
 import { WorkflowRunsService } from './workflow-runs.service';
+import { DeploymentsService } from './deployments.service';
 import { HEARTBEAT_INTERVAL_MS, HEARTBEAT_STALE_MS } from '../common/interrupted';
 
 const logger = new Logger('InterruptedJobsRecovery');
@@ -22,6 +23,7 @@ export class InterruptedJobsRecovery implements OnApplicationBootstrap {
     private readonly sandboxRuns: SandboxRunsService,
     private readonly workflowRuns: WorkflowRunsService,
     private readonly userManuals: UserManualsService,
+    private readonly deployments: DeploymentsService,
   ) {}
 
   async onApplicationBootstrap() {
@@ -33,6 +35,7 @@ export class InterruptedJobsRecovery implements OnApplicationBootstrap {
       ['queued mockup job', () => this.mockups.requeuePending()],
       ['generation run', () => this.generationRuns.markInterrupted(bootedAt)],
       ['sandbox run', () => this.sandboxRuns.markInterrupted(bootedAt)],
+      ['deployment', () => this.deployments.markInterrupted(bootedAt)],
       ['user manual job', () => this.userManuals.recover(bootedAt)],
       ['workflow run', () => this.workflowRuns.resumeInterrupted(bootedAt)],
     ];

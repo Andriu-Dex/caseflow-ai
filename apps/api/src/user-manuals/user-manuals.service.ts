@@ -10,7 +10,6 @@ import {
 } from '@nestjs/common';
 import JSZip from 'jszip';
 import { createHash, randomUUID } from 'node:crypto';
-import { Readable } from 'node:stream';
 import {
   canTransitionArtifactVersionStatus,
   formatArtifactCode,
@@ -37,6 +36,7 @@ import type { Prisma } from '../generated/prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { CONSTRUCTION_QUEUE_TOKEN } from '../construction/construction-queue.token';
 import { STORAGE_PROVIDER } from '../sources/storage-provider.token';
+import { readSnapshotFiles } from '../construction/snapshot-archive';
 import { buildUserManual } from './user-manual-builder';
 import { renderManualHtml, renderManualPdf } from './user-manual-renderer';
 
@@ -701,34 +701,7 @@ export class UserManualsService {
         const snapshot = await this.snapshot(projectId, snapshotId);
         if (snapshot.targetTemplateIdentifier !== 'CASEFLOW_WEB_TS_V1')
           throw new Error('Unsupported capture template.');
-        if (snapshot.archiveSize > 30_000_000) throw new Error('Capture archive too large.');
-        const archive = await this.storage.getObject(snapshot.archiveStorageKey);
-        if (digest(archive) !== snapshot.archiveSha256) throw new Error('Snapshot hash mismatch.');
-        const zip = await JSZip.loadAsync(archive);
-        const entries = Object.values(zip.files).filter((entry) => !entry.dir);
-        if (entries.length > 4000) throw new Error('Too many archive entries.');
-        const files: { path: string; content: string }[] = [];
-        let size = 0;
-        const roots = new Set(entries.map((entry) => entry.name.split('/')[0]));
-        if (roots.size !== 1) throw new Error('Invalid archive root.');
-        for (const entry of entries) {
-          // JSZip exposes the original name separately when it normalizes traversal.
-          if (
-            (entry as typeof entry & { unsafeOriginalName?: string }).unsafeOriginalName !==
-              entry.name ||
-            (Number(entry.unixPermissions) & 0o170000) === 0o120000
-          )
-            throw new Error('Unsafe archive entry.');
-          const chunks: Buffer[] = [];
-          for await (const chunk of new Readable().wrap(entry.nodeStream())) {
-            const bytes = Buffer.from(chunk);
-            size += bytes.length;
-            if (size > 30_000_000) throw new Error('Expanded archive too large.');
-            chunks.push(bytes);
-          }
-          const content = Buffer.concat(chunks).toString('utf8');
-          files.push({ path: entry.name.slice(entry.name.indexOf('/') + 1), content });
-        }
+        const files = await readSnapshotFiles(this.storage, snapshot);
         const scheduled = targets.slice(0, 40);
         results = await this.captureProvider.capture({
           files,

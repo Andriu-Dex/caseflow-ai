@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { newestApprovedPlan, newestRunForPlan } from '../../../lib/construction-progress';
 import { WorkingCopySummary } from './working-copy-summary';
 import { ScreenFindings } from './screen-findings';
+import { DeploymentPanel } from './deployment-panel';
 import { useFailureToast } from '../../../lib/use-failure-toast';
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -473,6 +474,9 @@ function ValidationAttemptItem({
           </div>
         ) : null}
       </div>
+      {attempt.status === 'READY' && attempt.snapshotId ? (
+        <DeploymentPanel projectId={projectId} snapshotId={attempt.snapshotId} />
+      ) : null}
 
       {/* Pipeline de Validación de 7 Etapas (Siempre visible) */}
       <div className="mt-3 flex flex-col gap-2">

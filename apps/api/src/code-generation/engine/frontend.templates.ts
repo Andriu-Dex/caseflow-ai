@@ -1318,7 +1318,23 @@ export function frontendFiles(ctx: GenerationContext): GeneratedProjectFile[] {
     ),
     file(
       'apps/web/next.config.ts',
-      `import type { NextConfig } from 'next';\n\nconst nextConfig: NextConfig = {};\n\nexport default nextConfig;`,
+      `import type { NextConfig } from 'next';
+
+// Requests to /api go to the API, so one origin can serve the whole
+// application (a deployment builds with NEXT_PUBLIC_API_URL=/api).
+const nextConfig: NextConfig = {
+  async rewrites() {
+    return [
+      {
+        source: '/api/:path*',
+        destination: \`\${process.env.API_INTERNAL_URL ?? 'http://127.0.0.1:3001'}/:path*\`,
+      },
+    ];
+  },
+};
+
+export default nextConfig;
+`,
       {
         kind: 'CONFIG',
       },

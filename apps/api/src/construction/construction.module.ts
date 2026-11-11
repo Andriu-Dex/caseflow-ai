@@ -7,12 +7,16 @@ import {
   DockerRuntimeCaptureProvider,
   RUNTIME_CAPTURE_PROVIDER,
   E2E_TEST_PROVIDER,
+  DEPLOYMENT_PROVIDER,
+  DockerTunnelDeploymentProvider,
   type SandboxExecutionProvider,
 } from '@caseflow-ai/integrations';
 import { AIModule } from '../ai/ai.module';
 import { STORAGE_PROVIDER } from '../sources/storage-provider.token';
 import { AutoRepairService } from './auto-repair.service';
 import { BusinessLogicService } from './business-logic.service';
+import { DeploymentsController } from './deployments.controller';
+import { DeploymentsService } from './deployments.service';
 import {
   DependencyProposalsController,
   TargetTemplatesController,
@@ -72,10 +76,13 @@ import { UserManualsController } from '../user-manuals/user-manuals.controller';
     WorkflowRunsController,
     SandboxStatusController,
     UserManualsController,
+    DeploymentsController,
   ],
   providers: [
     { provide: RUNTIME_CAPTURE_PROVIDER, useFactory: () => new DockerRuntimeCaptureProvider() },
     { provide: E2E_TEST_PROVIDER, useFactory: () => new DockerRuntimeCaptureProvider() },
+    { provide: DEPLOYMENT_PROVIDER, useFactory: () => new DockerTunnelDeploymentProvider() },
+    DeploymentsService,
     InterruptedJobsRecovery,
     UserManualsService,
     DependencyCatalogService,

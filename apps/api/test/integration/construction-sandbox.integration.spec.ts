@@ -14,6 +14,7 @@ import {
 import { AutoRepairService } from '../../src/construction/auto-repair.service';
 import { GenerationRunsService } from '../../src/construction/generation-runs.service';
 import { SandboxRunsService } from '../../src/construction/sandbox-runs.service';
+import { DeploymentsService } from '../../src/construction/deployments.service';
 import { SANDBOX_EXECUTION_PROVIDER } from '../../src/construction/sandbox-provider.token';
 import {
   createTestContext,
@@ -426,6 +427,72 @@ describe('Construction sandbox validation integration', () => {
     expect(current.body.items.map((item: { routePath: string }) => item.routePath)).toEqual([
       '/orders/new',
     ]);
+  });
+
+  it('deploys a READY snapshot in the background, keeps no secret and stops it (ADR-019)', async () => {
+    const snapshot = await ctx.prisma.generatedProjectSnapshot.findFirstOrThrow({
+      where: { projectId },
+    });
+    const deployments = ctx.app.get(DeploymentsService);
+    const fake = {
+      deploy: vi.fn(async () => ({
+        publicUrl: 'https://demo.trycloudflare.com',
+        accounts: [{ role: 'ADMIN', identifier: 'demo-1-abc' }],
+      })),
+      stop: vi.fn(async () => undefined),
+      start: vi.fn(async () => ({ publicUrl: 'https://otra.trycloudflare.com' })),
+    };
+    Reflect.set(deployments, 'provider', fake);
+    try {
+      const base = `/projects/${projectId}/deployments`;
+      await http()
+        .post(base)
+        .set(auth())
+        .send({ snapshotId: snapshot.id, initialPassword: 'corta' })
+        .expect(400);
+      const started = await http()
+        .post(base)
+        .set(auth())
+        .send({ snapshotId: snapshot.id, initialPassword: 'Demostracion-2026!' })
+        .expect(202);
+      expect(started.body).toMatchObject({ status: 'STARTING', tunnelMode: 'QUICK' });
+      let current = started.body;
+      for (let attempt = 0; attempt < 50 && current.status === 'STARTING'; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        current = (await http().get(base).set(auth()).expect(200)).body.items[0];
+      }
+      expect(current).toMatchObject({
+        status: 'RUNNING',
+        publicUrl: 'https://demo.trycloudflare.com',
+        accounts: [{ role: 'ADMIN', identifier: 'demo-1-abc' }],
+      });
+      // The provider received the snapshot files and the password, which is not stored.
+      const [request] = fake.deploy.mock.calls[0] as unknown as [
+        { files: { path: string }[]; initialPassword: string },
+      ];
+      expect(request.files.some((file) => file.path === 'package.json')).toBe(true);
+      expect(request.initialPassword).toBe('Demostracion-2026!');
+      const stored = await ctx.prisma.generatedProjectDeployment.findUniqueOrThrow({
+        where: { id: current.id },
+      });
+      expect(JSON.stringify(stored)).not.toContain('Demostracion-2026!');
+      const stopped = await http().post(`${base}/${current.id}/stop`).set(auth()).expect(200);
+      expect(stopped.body.status).toBe('STOPPED');
+      const resumed = await http()
+        .post(`${base}/${current.id}/start`)
+        .set(auth())
+        .send({})
+        .expect(200);
+      expect(resumed.body).toMatchObject({
+        status: 'RUNNING',
+        publicUrl: 'https://otra.trycloudflare.com',
+      });
+      expect(
+        await ctx.prisma.auditEvent.count({ where: { projectId, entityId: current.id } }),
+      ).toBe(4);
+    } finally {
+      Reflect.set(deployments, 'provider', null);
+    }
   });
 
   it('marks only abandoned runs as interrupted on startup, not runs another process keeps alive', async () => {

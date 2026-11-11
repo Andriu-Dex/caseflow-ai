@@ -426,6 +426,48 @@ void main().catch(() => { console.error('Capture accounts could not be prepared.
       { origin: 'DETERMINISTIC', planElements: elements },
     ),
   );
+  files.push(
+    file(
+      'apps/api/src/auth/deploy-accounts.ts',
+      `import { randomBytes } from 'node:crypto';
+import { PrismaService } from '../prisma/prisma.service';
+import { ${account.name}Service } from '../${kebabCase(plan.modules.find((m) => m.localId === account.moduleLocalId)!.name)}/${kebabCase(account.name)}.service';
+${scope ? "import { initializeAuthorization } from './initialize-authorization';" : ''}
+// Invoked once by the fixed command of a deployment: one initial account per
+// role, all with the password the person chose (INITIAL_PASSWORD), which is
+// never printed. Only the identifiers are reported.
+async function main() {
+ const prisma = new PrismaService();
+ const accounts: { role: string; identifier: string }[] = [];
+ const password = process.env.INITIAL_PASSWORD ?? '';
+ if (password.length < 12) throw new Error('INITIAL_PASSWORD must have at least 12 characters.');
+ try {
+  if (await prisma.${lowerFirst(account.name)}.count()) { console.log('[]'); return; }
+  ${
+    scope
+      ? `await initializeAuthorization(prisma);
+  const initialScope = await prisma.${lowerFirst(scopeEntity!.name)}.create({ data: { ...${JSON.stringify(sampleInput(scopeEntity!))}, ${scope.labelField}: 'Ámbito inicial', ${scope.statusField}: ${JSON.stringify(scope.activeStatus)} } });`
+      : ''
+  }
+  const roles = ${JSON.stringify(plan.authentication.roles)} as const;
+  for (const [index, role] of roles.entries()) {
+   const identifier = 'demo-' + (index + 1) + '-' + randomBytes(3).toString('hex');
+   await new ${account.name}Service(prisma).create({ ...${JSON.stringify(createInput)}, ${account.fields
+     .filter((field) => field.unique && field.name !== local.loginField && field.type === 'STRING')
+     .map((field) => `${field.name}: identifier + ${JSON.stringify('-' + field.name)},`)
+     .join(
+       ' ',
+     )} ${local.loginField}: identifier, password, roleNames: [role]${scope ? `, ${scope.accountRelation}Ids: [initialScope.id]` : ''} });
+   accounts.push({ role, identifier });
+  }
+  console.log(JSON.stringify(accounts));
+ } finally { await prisma.$disconnect(); }
+}
+void main().catch(() => { console.error('Initial accounts could not be prepared.'); process.exitCode = 1; });
+`,
+      { origin: 'DETERMINISTIC', planElements: elements },
+    ),
+  );
   for (const route of plan.routes) {
     const builtin = route.actions
       .map((a) => plan.customEndpoints.find((e) => `${e.method} ${e.path}` === a.endpoint)?.builtin)
