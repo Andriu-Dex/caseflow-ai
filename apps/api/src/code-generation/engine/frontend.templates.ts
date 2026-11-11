@@ -1524,6 +1524,98 @@ export function PasswordInput({ className, ...props }: Omit<InputHTMLAttributes<
 `,
     ),
     file(
+      'apps/web/components/ui/fields.tsx',
+      `import type { InputHTMLAttributes, ReactNode } from 'react';
+import { cn } from '../../lib/utils';
+import { input } from './input';
+
+type Native = Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'id'>;
+
+// One choice among a few, shown as selectable cards. They are native radios,
+// so a registered form field, keyboard use and validation keep working.
+export function ChoiceCards({
+  options,
+  legend,
+  className,
+  ...field
+}: Native & { legend: string; options: { value: string; label: string; description?: string }[] }) {
+  return (
+    <fieldset className={cn('grid gap-3 sm:grid-cols-[repeat(auto-fit,minmax(12rem,1fr))]', className)}>
+      <legend className="sr-only">{legend}</legend>
+      {options.map((option) => (
+        <label
+          key={option.value}
+          className="flex cursor-pointer items-start gap-3 rounded-md border border-input p-4 text-sm has-[:checked]:border-primary has-[:checked]:bg-secondary has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary"
+        >
+          <input type="radio" value={option.value} className="mt-0.5 accent-[var(--color-primary)]" {...field} />
+          <span className="flex flex-col gap-0.5">
+            <span className="font-medium">{option.label}</span>
+            {option.description ? <span className="text-muted-foreground">{option.description}</span> : null}
+          </span>
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
+// An amount with its currency around the value.
+export function MoneyInput({
+  prefix,
+  suffix,
+  className,
+  ...props
+}: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> & { prefix?: ReactNode; suffix?: ReactNode }) {
+  return (
+    <div className="relative">
+      {prefix ? <span aria-hidden className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-sm text-muted-foreground">{prefix}</span> : null}
+      <input inputMode="decimal" className={cn(input, 'text-right tabular-nums', prefix ? 'pl-8' : '', suffix ? 'pr-14' : '', className)} {...props} />
+      {suffix ? <span aria-hidden className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3.5 text-xs font-medium text-muted-foreground">{suffix}</span> : null}
+    </div>
+  );
+}
+
+// The guidance under a field.
+export function FieldHint({ children }: { children: ReactNode }) {
+  return <p className="text-xs text-muted-foreground">{children}</p>;
+}
+`,
+    ),
+    file(
+      'apps/web/components/ui/fields.spec.tsx',
+      `import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { ChoiceCards, MoneyInput } from './fields';
+
+describe('form field variants', () => {
+  afterEach(cleanup);
+
+  it('choose one option as native radios of the same field', () => {
+    render(
+      <ChoiceCards
+        legend="Estado"
+        name="status"
+        options={[
+          { value: 'ACTIVE', label: 'Activo' },
+          { value: 'INACTIVE', label: 'Inactivo' },
+        ]}
+      />,
+    );
+    const inactive = screen.getByLabelText('Inactivo') as HTMLInputElement;
+    fireEvent.click(inactive);
+    expect(inactive.checked).toBe(true);
+    expect((screen.getByLabelText('Activo') as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('keeps the amount editable between its currency marks', () => {
+    render(<MoneyInput aria-label="Precio" prefix="$" suffix="MXN" />);
+    const amount = screen.getByLabelText('Precio') as HTMLInputElement;
+    fireEvent.change(amount, { target: { value: '145.50' } });
+    expect(amount.value).toBe('145.50');
+  });
+});
+`,
+    ),
+    file(
       'apps/web/components/ui/input.spec.tsx',
       `import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';

@@ -262,6 +262,52 @@ export class DesignBaselinesService {
 
   // Accepts recorded findings of one screen with a justification. Only
   // findings actually recorded for this design can be accepted.
+  // A hand-written screen that follows its mockup (DEC-161). Generation checks
+  // its functional bindings; here it is only recorded, audited and immutable.
+  async recordScreenOverride(
+    projectId: string,
+    baselineId: string,
+    userId: string,
+    input: { routePath: string; content: string; justification: string },
+  ): Promise<{ id: string; contentSha256: string }> {
+    await assertCanGenerate(this.prisma, projectId, userId);
+    const baseline = await this.prisma.designBaseline.findFirst({
+      where: { id: baselineId, projectId },
+      select: { id: true },
+    });
+    if (!baseline) throw new NotFoundException('Diseño aprobado no encontrado.');
+    if (!input.routePath.startsWith('/') || !input.content.trim() || input.justification.trim().length < 10)
+      throw new UnprocessableEntityException(
+        'Indique la ruta, el código de la pantalla y una justificación de al menos 10 caracteres.',
+      );
+    const contentSha256 = createHash('sha256').update(input.content).digest('hex');
+    return this.prisma.$transaction(async (tx) => {
+      const row = await tx.screenDesignOverride.create({
+        data: {
+          projectId,
+          designBaselineId: baselineId,
+          routePath: input.routePath,
+          content: input.content,
+          contentSha256,
+          justification: input.justification.trim(),
+          createdByUserId: userId,
+        },
+      });
+      await this.audit.record(
+        {
+          projectId,
+          actorUserId: userId,
+          action: 'SCREEN_DESIGN_OVERRIDE_RECORDED',
+          entityType: 'SCREEN_DESIGN_OVERRIDE',
+          entityId: row.id,
+          metadata: { designBaselineId: baselineId, routePath: input.routePath, contentSha256 },
+        },
+        tx,
+      );
+      return { id: row.id, contentSha256 };
+    });
+  }
+
   async createScreenException(
     projectId: string,
     baselineId: string,

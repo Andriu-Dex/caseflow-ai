@@ -2,7 +2,7 @@ import type { DesignThemeContent, ImplementationPlanContent } from '@caseflow-ai
 import { findCatalogDependency, type TargetTemplateVersion } from '@caseflow-ai/domain';
 import { PlanGenerationError } from '../naming';
 
-export type FileOrigin = 'TEMPLATE' | 'DETERMINISTIC' | 'AI_ASSISTED';
+export type FileOrigin = 'TEMPLATE' | 'DETERMINISTIC' | 'AI_ASSISTED' | 'MANUAL';
 export type FileKind = 'SOURCE' | 'TEST' | 'CONFIG' | 'DOCUMENTATION';
 
 // One file of the generated project. `planElements` names what in the

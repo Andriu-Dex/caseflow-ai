@@ -8,6 +8,7 @@ import {
   FrontendDesignService,
   screenEvaluator,
   serverMethods,
+  missingBindings,
   sharedComponentImports,
 } from './frontend-design.service';
 import { generateProject } from '../code-generation/engine/project-generator';
@@ -76,6 +77,7 @@ async function setup() {
     designBaseline: { findFirst: vi.fn().mockResolvedValue(baseline) },
     project: { findUnique: vi.fn().mockResolvedValue({ language: 'ES' }) },
     screenDesignException: { findMany: vi.fn().mockResolvedValue([]) },
+    screenDesignOverride: { findMany: vi.fn().mockResolvedValue([]) },
     generatedFile: {
       findFirst: vi.fn().mockResolvedValue(null),
       upsert: vi.fn(async (args) => {
@@ -457,5 +459,22 @@ describe('screen evaluator identity', () => {
         AI_ROUTE_FRONTEND_PRESENTATION: 'gemini:flash-lite',
       }),
     ).toBe('gemini:flash-lite');
+  });
+});
+
+describe('hand-written screens', () => {
+  const generated = `<form onSubmit={handleSubmit(save)}><input {...register('name')} /><input {...register('price')} />
+<Button type="submit" data-action={"Guardar producto"}>Guardar</Button></form>{api.listItems(query)}`;
+  it('keep every action, registered field and API call of the generated page', () => {
+    const written = `<section><input id="name" {...register('name')} /><MoneyInput {...register('price')} />
+<Button className="w-full" data-action={"Guardar producto"}>Guardar producto</Button>{api.listItems(query)}</section>`;
+    expect(missingBindings(generated, written)).toEqual([]);
+  });
+  it('report what a hand-written screen lost', () => {
+    expect(missingBindings(generated, `<input {...register('name')} />`)).toEqual([
+      'data-action={"Guardar producto"}',
+      "register('price'",
+      'api.listItems(',
+    ]);
   });
 });

@@ -246,6 +246,7 @@ model User {
   decidedProposals            DependencyProposal[]         @relation("DependencyProposalDecider")
   designBaselines             DesignBaseline[]
   screenDesignExceptions      ScreenDesignException[]
+  screenDesignOverrides       ScreenDesignOverride[]
   generatedProjectDeployments GeneratedProjectDeployment[]
   workflowRuns                WorkflowRun[]
   generationRuns              GenerationRun[]
@@ -374,6 +375,7 @@ model Project {
   dependencyProposals           DependencyProposal[]
   designBaselines               DesignBaseline[]
   screenDesignExceptions        ScreenDesignException[]
+  screenDesignOverrides         ScreenDesignOverride[]
   generatedProjectDeployments   GeneratedProjectDeployment[]
   generationRuns                GenerationRun[]
   sandboxRuns                   SandboxRun[]
@@ -1685,6 +1687,30 @@ model ScreenDesignException {
   @@map("screen_design_exceptions")
 }
 
+// A screen of a design baseline written by hand to follow its mockup (DEC-161).
+// Official generation uses the latest one for the route instead of the AI
+// composition, only while it keeps every functional binding of the generated
+// page. Append-only history: a correction is a new row.
+model ScreenDesignOverride {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId        String   @map("project_id") @db.Uuid
+  designBaselineId String   @map("design_baseline_id") @db.Uuid
+  routePath        String   @map("route_path")
+  content          String
+  contentSha256    String   @map("content_sha256") @db.Char(64)
+  justification    String
+  createdByUserId  String   @map("created_by_user_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project        Project        @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  designBaseline DesignBaseline @relation(fields: [designBaselineId], references: [id], onDelete: Restrict)
+  createdBy      User           @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([designBaselineId, routePath, createdAt])
+  @@index([projectId])
+  @@map("screen_design_overrides")
+}
+
 model DesignBaseline {
   structuredGenerationJobs StructuredGenerationJob[]
   id                       String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -1702,6 +1728,7 @@ model DesignBaseline {
   generationRuns   GenerationRun[]
   snapshots        GeneratedProjectSnapshot[]
   screenExceptions ScreenDesignException[]
+  screenOverrides  ScreenDesignOverride[]
 
   @@index([projectId, createdAt])
   @@map("design_baselines")
@@ -1733,6 +1760,7 @@ enum GeneratedFileOrigin {
   TEMPLATE
   DETERMINISTIC
   AI_ASSISTED
+  MANUAL
 
   @@map("generated_file_origin")
 }

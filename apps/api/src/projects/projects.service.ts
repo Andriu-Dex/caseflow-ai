@@ -317,6 +317,7 @@ export class ProjectsService {
         await tx.$executeRaw`DELETE FROM structured_generation_job_sources WHERE job_id IN (SELECT id FROM structured_generation_jobs WHERE project_id = ${p})`;
         await tx.$executeRaw`DELETE FROM structured_generation_jobs WHERE project_id = ${p}`;
         await tx.$executeRaw`DELETE FROM screen_design_exceptions WHERE project_id = ${p}`;
+        await tx.$executeRaw`DELETE FROM screen_design_overrides WHERE project_id = ${p}`;
         await tx.$executeRaw`DELETE FROM design_baseline_entries WHERE baseline_id IN (SELECT id FROM design_baselines WHERE project_id = ${p})`;
         await tx.$executeRaw`DELETE FROM design_baselines WHERE project_id = ${p}`;
         await tx.$executeRaw`DELETE FROM project_baseline_entries WHERE baseline_id IN (SELECT id FROM project_baselines WHERE project_id = ${p})`;

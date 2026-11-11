@@ -98,6 +98,8 @@ export class FrontendDesignService {
       presentation?: unknown;
       // The justified exception that let this screen through, if any.
       acceptedException?: { id: string; justification: string; findingsSha256: string };
+      // The hand-written screen used instead of the AI composition (DEC-161).
+      manualOverride?: { id: string; justification: string; contentSha256: string };
     }[] = [];
     const output = files.map((item) => ({ ...item }));
     if (baseline.entries.some((item) => item.artifactVersion.projectId !== projectId))
@@ -115,6 +117,17 @@ export class FrontendDesignService {
         })
       ).map((item) => [`${item.routePath}|${item.findingsSha256}`, item]),
     );
+    // The latest hand-written screen of each route (DEC-161).
+    const overrides = new Map<
+      string,
+      { id: string; content: string; contentSha256: string; justification: string }
+    >();
+    for (const item of await this.prisma.screenDesignOverride.findMany({
+      where: { projectId, designBaselineId: baselineId },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, routePath: true, content: true, contentSha256: true, justification: true },
+    }))
+      overrides.set(item.routePath, item);
     for (const route of plan.routes) {
       const screen = blueprint.screens.find((item) => item.localId === route.screenLocalId);
       if (!screen)
@@ -146,6 +159,37 @@ export class FrontendDesignService {
         throw new UnprocessableEntityException(
           `El HTML de ${screen.name} no puede procesarse con seguridad.`,
         );
+      const override = overrides.get(route.path);
+      if (override) {
+        const missing = missingBindings(target.content, override.content);
+        if (missing.length)
+          throw new UnprocessableEntityException(
+            `El ajuste manual de la pantalla ${screen.name} (${route.path}) pierde enlaces funcionales de la página generada: ${missing.slice(0, 8).join(', ')}.`,
+          );
+        records.push({
+          routePath: route.path,
+          screenLocalId: screen.localId,
+          mockupSha256: hash(html),
+          sourceSha256: hash(target.content),
+          outputSha256: override.contentSha256,
+          navigation: route.actions.some((action) => action.endpoint === 'POST /auth/login')
+            ? 'NONE'
+            : 'TOP',
+          manualOverride: {
+            id: override.id,
+            justification: override.justification,
+            contentSha256: override.contentSha256,
+          },
+        });
+        target.content = override.content;
+        target.origin = 'MANUAL';
+        target.planElements = [
+          ...target.planElements,
+          `design-source:${entry!.artifactVersionId}`,
+          `design-source:${blueprintEntry!.artifactVersionId}`,
+        ];
+        continue;
+      }
       const sourceHash = hash(target.content);
       const sources = presentationSources(target.content);
       const routeEntity = plan.entities.find((item) => item.localId === route.entityLocalId);
@@ -553,4 +597,17 @@ export function screenEvaluator(environment: NodeJS.ProcessEnv): string {
   return route
     ? `${route.id}:${route.model}`
     : `${environment.AI_PROVIDER ?? 'disabled'}:${environment.AI_MODEL ?? ''}`;
+}
+
+// The functional bindings of a generated page a hand-written screen must keep:
+// its action markers, registered form fields and API client calls.
+export function missingBindings(generated: string, written: string): string[] {
+  const bindings = new Set([
+    ...[...generated.matchAll(/data-action=\{("(?:[^"\\]|\\.)*")\}/g)].map(
+      (m) => `data-action={${m[1]}}`,
+    ),
+    ...[...generated.matchAll(/register\('([^']+)'/g)].map((m) => `register('${m[1]}'`),
+    ...[...generated.matchAll(/\bapi\.(\w+)\(/g)].map((m) => `api.${m[1]}(`),
+  ]);
+  return [...bindings].filter((binding) => !written.includes(binding));
 }
