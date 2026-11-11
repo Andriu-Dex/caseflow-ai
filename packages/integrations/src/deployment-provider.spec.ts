@@ -67,6 +67,17 @@ describe('DockerTunnelDeploymentProvider', () => {
     expect(calls).toContainEqual(['network', 'rm', names.network]);
   });
 
+  it('fails removal when a resource of the deployment is still present', async () => {
+    const run = vi.fn(async (args: string[]) => (args[0] === 'ps' ? 'abc123' : ''));
+    await expect(new DockerTunnelDeploymentProvider(run).remove(deploymentId)).rejects.toThrow(
+      'could not be removed',
+    );
+    const clean = vi.fn(async () => '');
+    await expect(
+      new DockerTunnelDeploymentProvider(clean).remove(deploymentId),
+    ).resolves.toBeUndefined();
+  });
+
   it('rejects a short initial password before touching Docker', async () => {
     const { run } = docker();
     await expect(

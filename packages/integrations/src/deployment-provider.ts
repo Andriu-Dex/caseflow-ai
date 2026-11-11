@@ -364,6 +364,14 @@ export class DockerTunnelDeploymentProvider implements DeploymentProvider {
     );
     for (const network of [names.network, names.egress])
       await this.docker(['network', 'rm', network], 30_000).catch(() => undefined);
+    // Removal fails closed: anything of this deployment still present is an error.
+    const prefix = names.network.slice(0, -'-net'.length);
+    const left = [
+      await this.docker(['ps', '-aq', '--filter', `name=^${prefix}-`], 30_000),
+      await this.docker(['volume', 'ls', '-q', '--filter', `name=^${prefix}-`], 30_000),
+      await this.docker(['network', 'ls', '-q', '--filter', `name=^${prefix}-`], 30_000),
+    ].join('');
+    if (left.trim()) throw new Error('Some deployment resources could not be removed.');
   }
 
   // The tunnel is the only container with Internet access: it starts on its
