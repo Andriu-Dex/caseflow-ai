@@ -455,7 +455,11 @@ async function main() {
    const identifier = 'demo-' + (index + 1) + '-' + randomBytes(3).toString('hex');
    await new ${account.name}Service(prisma).create({ ...${JSON.stringify(createInput)}, ${account.fields
      .filter((field) => field.unique && field.name !== local.loginField && field.type === 'STRING')
-     .map((field) => `${field.name}: identifier + ${JSON.stringify('-' + field.name)},`)
+     .map((field) =>
+       field.name === scope?.displayNameField
+         ? `${field.name}: role + ' (demostración)',`
+         : `${field.name}: identifier + ${JSON.stringify('-' + field.name)},`,
+     )
      .join(
        ' ',
      )} ${local.loginField}: identifier, password, roleNames: [role]${scope ? `, ${scope.accountRelation}Ids: [initialScope.id]` : ''} });

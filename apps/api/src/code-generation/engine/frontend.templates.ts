@@ -207,7 +207,7 @@ const SPANISH_LABELS: Record<string, string> = {
   menuversion: 'Versión de menú',
 };
 
-const labelOf = (name: string) => {
+export const labelOf = (name: string) => {
   const lower = name.toLowerCase();
   if (SPANISH_LABELS[lower]) return SPANISH_LABELS[lower];
   return upperFirst(name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase());

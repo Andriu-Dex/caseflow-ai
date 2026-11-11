@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyPresentation,
+  layoutClasses,
   presentationSchema,
   presentationSources,
   validatePresentation,
@@ -269,5 +270,13 @@ describe('navigation groups', () => {
         { label: 'Auditoría', paths: ['/audit'] },
       ],
     });
+  });
+});
+
+describe('component slot wrappers', () => {
+  it('keep only layout utilities so a component keeps its own colors', () => {
+    expect(layoutClasses('flex justify-end gap-2 bg-primary text-primary-foreground rounded-lg p-2 md:col-span-2 border')).toBe(
+      'flex justify-end gap-2 md:col-span-2',
+    );
   });
 });

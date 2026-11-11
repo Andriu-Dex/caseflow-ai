@@ -242,6 +242,18 @@ export function validatePresentation(value: ScreenPresentation, sources: Present
     );
 }
 
+// A component slot (a button, a state wrapper) keeps its own look: the div
+// wrapped around it only places it. Colors, backgrounds and borders there
+// would mismatch the component (white text inherited by a white button).
+const LAYOUT_UTILITY =
+  /^(?:flex|inline-flex|grid|block|inline-block|contents|col-|row-|gap|justify-|items-|self-|place-|m[trblxy]?-|-m[trblxy]?-|w-|min-w-|max-w-|basis-|grow|shrink|flex-|space-[xy]-|overflow-x-auto)/;
+export function layoutClasses(className: string) {
+  return className
+    .split(/\s+/)
+    .filter((token) => LAYOUT_UTILITY.test(token.split(':').at(-1)!.replace(/^!/, '')))
+    .join(' ');
+}
+
 function styledJsx(jsx: string, className: string, frameTag?: 'form' | 'ActionForm') {
   const frame = Boolean(frameTag);
   if (!className) return jsx;
@@ -337,7 +349,7 @@ function styledJsx(jsx: string, className: string, frameTag?: 'form' | 'ActionFo
       )) ||
     (!frame && dynamicClass)
   )
-    return `<div className={${JSON.stringify(className)}}>${jsx}</div>`;
+    return `<div className={${JSON.stringify(layoutClasses(className))}}>${jsx}</div>`;
   const attributes = ts.factory.createJsxAttributes([
     ...opening.attributes.properties.filter(
       (attr) => !ts.isJsxAttribute(attr) || attr.name.getText(parsed) !== 'className',
