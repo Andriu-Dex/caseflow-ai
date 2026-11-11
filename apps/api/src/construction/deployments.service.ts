@@ -139,10 +139,11 @@ export class DeploymentsService {
   }
 
   // A deployment being prepared when the API stopped was cut off; whatever it
-  // had created is removed so nothing stays exposed.
+  // had created is removed so nothing stays exposed. One still beating belongs
+  // to another live process (its heartbeat touches it every 30 seconds).
   async markInterrupted(bootedAt: Date): Promise<number> {
     const rows = await this.prisma.generatedProjectDeployment.findMany({
-      where: { status: 'STARTING', updatedAt: { lt: bootedAt } },
+      where: { status: 'STARTING', updatedAt: { lt: new Date(bootedAt.getTime() - 90_000) } },
       select: { id: true },
     });
     for (const row of rows) await this.provider?.remove(row.id).catch(() => undefined);
@@ -162,6 +163,11 @@ export class DeploymentsService {
     input: StartDeploymentRequest,
   ) {
     const row = await this.find(projectId, id);
+    const heartbeat = setInterval(() => {
+      void this.prisma.generatedProjectDeployment
+        .updateMany({ where: { id, status: 'STARTING' }, data: { updatedAt: new Date() } })
+        .catch(() => undefined);
+    }, 30_000);
     try {
       const files = await readSnapshotFiles(this.storage, snapshot);
       const result = await provider.deploy({
@@ -182,6 +188,8 @@ export class DeploymentsService {
         status: 'FAILED',
         errorMessage: DEPLOY_FAILED,
       });
+    } finally {
+      clearInterval(heartbeat);
     }
   }
 

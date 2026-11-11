@@ -57,7 +57,17 @@ const runDocker: Runner = (args, timeoutMs) =>
     child.on('close', (code) => {
       clearTimeout(timer);
       if (code === 0) resolve(output);
-      else reject(new Error('Deployment container command failed.'));
+      else {
+        // Server-side diagnosis only: the subcommand, the container it names and
+        // the last output line. Secrets travel in env files, never in arguments.
+        const name = args[args.indexOf('--name') + 1];
+        const last = output.trim().split('\n').slice(-3).join(' | ').slice(-400);
+        reject(
+          new Error(
+            `Deployment container command failed (exit ${code}): docker ${args[0]}${args.includes('--name') ? ` ${name}` : ''}: ${last}`,
+          ),
+        );
+      }
     });
   });
 
