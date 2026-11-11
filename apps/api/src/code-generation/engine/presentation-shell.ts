@@ -181,7 +181,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronDown, ${logout ? 'LogOut, ' : ''}UserRound } from 'lucide-react';
+import { ChevronDown, ChevronRight, ${logout ? 'LogOut, ' : ''}UserRound } from 'lucide-react';
 import { api, accessToken } from '../lib/api';
 ${scoped ? "import { OperationContextPanel } from './operation-context';\n" : ''}${themeToggle ? "import { ThemeToggle } from './theme-toggle';\n" : ''}
 const bareRoutes: string[] = ${JSON.stringify(routes.filter((route) => route.navigation === 'NONE' && !route.routePath.includes('[')).map((route) => route.routePath))};
@@ -201,6 +201,8 @@ function Header() {
     .filter((group) => group.items.length);
   const rest = options.filter((item) => item.path !== ${JSON.stringify(home ?? '')} && !groups.some((group) => group.paths.includes(item.path)));
   if (rest.length) sections.push({ label: 'Otras opciones', items: rest });
+  const trail = sections.flatMap((section) => section.items.filter((item) => item.path === pathname).map((item) => ({ section: section.label, label: item.label })))[0];
+  ${scoped ? "const person = useQuery({ queryKey: ['operation-context'], queryFn: () => api.getAuthContext(), enabled: ready && Boolean(accessToken.get()), retry: false }).data;" : ''}
   return <header className="border-b bg-background">
     <div className="mx-auto flex max-w-screen-2xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 md:px-8">
       <Link href={${JSON.stringify(home ?? '/')}} className="text-xl font-bold text-primary">{${JSON.stringify(projectName)}}</Link>
@@ -222,7 +224,11 @@ function Header() {
       <div className="flex items-center gap-2">
         ${themeToggle ? '<ThemeToggle />' : ''}
         <details key={pathname} className="relative">
-          <summary className="flex cursor-pointer list-none items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted"><UserRound className="h-4 w-4" aria-hidden />Mi sesión</summary>
+          <summary className="flex cursor-pointer list-none items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted">${
+            scoped
+              ? `{person ? <><span aria-hidden className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">{initials(person.displayName)}</span><span className="flex flex-col text-left leading-tight"><span>{person.displayName}</span><span className="text-xs font-normal text-muted-foreground">{person.roles.join(', ')}</span></span></> : <><UserRound className="h-4 w-4" aria-hidden />Mi sesión</>}`
+              : '<UserRound className="h-4 w-4" aria-hidden />Mi sesión'
+          }</summary>
           <div className={menu + ' right-0 min-w-80 gap-2 p-3'}>
             ${scoped ? '<OperationContextPanel compact />' : ''}
             ${logout ? `<Link href={${JSON.stringify(logout)}} className="flex items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-muted"><LogOut className="h-4 w-4" aria-hidden />Cerrar sesión</Link>` : ''}
@@ -230,8 +236,12 @@ function Header() {
         </details>
       </div>
     </div>
+    {trail ? <nav aria-label="Ruta de navegación" className="mx-auto flex max-w-screen-2xl items-center gap-2 border-t px-4 py-2 text-sm text-muted-foreground md:px-8">
+      <span>{trail.section}</span><ChevronRight className="h-4 w-4" aria-hidden /><span aria-current="page" className="font-medium text-foreground">{trail.label}</span>
+    </nav> : null}
   </header>;
 }
+${scoped ? "\nconst initials = (name: string) => name.split(/\\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]!.toUpperCase()).join('');\n" : ''}
 
 export function PresentationShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();

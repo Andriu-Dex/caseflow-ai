@@ -60,10 +60,15 @@ const cssVariables = (palette: DesignThemePalette, indent: string) =>
 function globalsCss(theme: DesignThemeContent | undefined): string {
   if (!theme) return STANDARD_GLOBALS_CSS;
   const base = theme.light ?? theme.dark!;
-  return `@import 'tailwindcss';
+  return `@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import 'tailwindcss';
 
 @theme {
 ${cssVariables(base, '  ')}
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.375rem;
+  --radius-xl: 0.5rem;
   --color-card: var(--color-background);
   --color-card-foreground: var(--color-foreground);
   --color-input: var(--color-border);
@@ -83,15 +88,30 @@ ${cssVariables(theme.dark!, '  ')}
   color-scheme: ${theme.mode === 'DARK' ? 'dark' : 'light'};
 }
 
+/* Dividers and cards use a softer line than form controls (border-input). */
 *,
 ::before,
 ::after {
-  border-color: var(--color-border);
+  border-color: color-mix(in oklab, var(--color-border) 45%, transparent);
 }
 
 body {
   background: var(--color-background);
   color: var(--color-foreground);
+  font-family: var(--font-sans);
+}
+
+@layer base {
+  th {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-muted-foreground);
+  }
+  label {
+    font-weight: 500;
+  }
 }
 `;
 }
@@ -1450,10 +1470,10 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: 'bg-primary text-primary-foreground hover:opacity-90',
-        outline: 'border bg-background hover:bg-muted',
+        outline: 'bg-secondary text-secondary-foreground hover:opacity-90',
         ghost: 'hover:bg-muted',
       },
-      size: { default: 'h-10', sm: 'h-8 px-3 text-xs' },
+      size: { default: 'h-11 px-5', sm: 'h-8 px-3 text-xs' },
     },
     defaultVariants: { variant: 'default', size: 'default' },
   },
@@ -1477,7 +1497,7 @@ import { Eye, EyeOff } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 export const input =
-  'w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary';
+  'w-full rounded-md border border-input bg-background px-3.5 py-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary';
 
 export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
   return <input className={cn(input, className)} {...props} />;
