@@ -1,7 +1,7 @@
 import type { GenerationContext, GeneratedProjectFile } from './types';
 import { file } from './types';
 import { pluralize } from '../naming';
-import { actionMarker, labelOf, pagePath, toWebRoot } from './frontend.templates';
+import { actionMarker, pagePath, toWebRoot } from './frontend.templates';
 
 export function operationContextFiles({ plan }: GenerationContext): GeneratedProjectFile[] {
   const local = plan.authentication.local!;
@@ -24,12 +24,6 @@ export function operationContextFiles({ plan }: GenerationContext): GeneratedPro
         .targetEntityLocalId,
   )!;
   const scopes = plan.entities.find((entity) => entity.localId === scope.entityLocalId)!;
-  // The account status is shown with the same Spanish labels as its form.
-  const statusLabels = Object.fromEntries(
-    (account.fields.find((field) => field.name === local.statusField)?.enumValues ?? []).map(
-      (value) => [value, labelOf(value.toLowerCase())],
-    ),
-  );
   const files = [
     file(
       'apps/web/app/providers.tsx',
@@ -71,7 +65,7 @@ export function OperationContextPanel({compact = false, 'data-action': scopeActi
  const context = query.data;
  const selected = context.scopes.find(item => item.id === context.selectedScopeId);
  return <section aria-label="Contexto de operación" className="space-y-3 rounded-lg border p-4">
-  <p className="font-semibold">{context.displayName}</p><p className="text-sm text-muted-foreground">{context.roles.join(', ')}</p><p>Estado de la cuenta: {(${JSON.stringify(statusLabels)} as Record<string, string>)[context.userStatus] ?? context.userStatus}</p>
+  <p className="font-semibold">{context.displayName}</p><p className="text-sm text-muted-foreground">{context.roles.join(', ')}</p><p>Estado de la cuenta: {context.userStatus}</p>
   {compact ? <><p>{selected?.label ?? 'Seleccione un ámbito para operar'}</p><Link href={${JSON.stringify(home)}}>Cambiar contexto de operación</Link></> : <>
    <label className="block font-medium" htmlFor="operation-scope">{${JSON.stringify(scope.label)}}</label>
    <select id="operation-scope" data-action={scopeAction} className="w-full rounded-md border p-3" disabled={saving || !context.scopes.length} value={context.selectedScopeId ?? ''} onChange={event => { if (event.target.value) void select(event.target.value); }}>
