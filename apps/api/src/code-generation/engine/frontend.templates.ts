@@ -849,6 +849,7 @@ ${body}
 function inputImport(body: string, up: string): string {
   const names = [
     body.includes('<Input') ? 'Input' : '',
+    body.includes('<PasswordInput') ? 'PasswordInput' : '',
     body.includes('{input}') ? 'input' : '',
   ].filter(Boolean);
   return names.length ? `import { ${names.join(', ')} } from '${up}components/ui/input';` : '';
@@ -933,7 +934,7 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
           control = `<Input id="${field.name}" ${field.type === 'DECIMAL' ? 'inputMode="decimal" ' : ''}{...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})} />`;
       }
       if (isAccount && field.name === 'password')
-        control = `<Input id="password" type="password" autoComplete="new-password" required={${editable ? '!editId' : 'true'}} {...register('password', { setValueAs: (value: string) => value || undefined })} />`;
+        control = `<PasswordInput id="password" autoComplete="new-password" required={${editable ? '!editId' : 'true'}} {...register('password', { setValueAs: (value: string) => value || undefined })} />`;
       return `        <div className="flex flex-col gap-1">
           ${label}
           ${control}
@@ -1469,7 +1470,9 @@ export function Button({
     ),
     file(
       'apps/web/components/ui/input.tsx',
-      `import type { InputHTMLAttributes } from 'react';
+      `'use client';
+import { useState, type InputHTMLAttributes } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 export const input =
@@ -1478,6 +1481,46 @@ export const input =
 export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
   return <input className={cn(input, className)} {...props} />;
 }
+
+// A password field whose text the person can reveal to check what was typed.
+export function PasswordInput({ className, ...props }: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'>) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="relative">
+      <input type={visible ? 'text' : 'password'} className={cn(input, 'pr-10', className)} {...props} />
+      <button
+        type="button"
+        onClick={() => setVisible((value) => !value)}
+        aria-label={visible ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+        aria-pressed={visible}
+        className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-muted-foreground hover:text-foreground"
+      >
+        {visible ? <EyeOff className="h-4 w-4" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}
+      </button>
+    </div>
+  );
+}
+`,
+    ),
+    file(
+      'apps/web/components/ui/input.spec.tsx',
+      `import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { PasswordInput } from './input';
+
+describe('PasswordInput', () => {
+  afterEach(cleanup);
+
+  it('reveals and hides the typed password', () => {
+    render(<PasswordInput aria-label="Contraseña" />);
+    const field = screen.getByLabelText('Contraseña');
+    expect(field.getAttribute('type')).toBe('password');
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar contraseña' }));
+    expect(field.getAttribute('type')).toBe('text');
+    fireEvent.click(screen.getByRole('button', { name: 'Ocultar contraseña' }));
+    expect(field.getAttribute('type')).toBe('password');
+  });
+});
 `,
     ),
     file(

@@ -195,7 +195,7 @@ describe('local authentication generation', () => {
     expect(get('apps/api/src/auth/local-auth.service.ts')).toContain(
       "recordRejectedLogin() { return this.recordAccess(null, 'FAILURE'); }",
     );
-    expect(get('apps/web/app/signin/page.tsx')).toContain('type="password"');
+    expect(get('apps/web/app/signin/page.tsx')).toContain('<PasswordInput id="password"');
     expect(get('apps/web/app/signin/page.tsx')).toContain('api.postAuthLogin');
     expect(get('apps/web/app/signin/page.tsx')).not.toContain('listMembers');
     expect(get('apps/web/app/members/new/page.tsx')).not.toContain('secretDigest');

@@ -87,13 +87,14 @@ ${scope ? "import { OperationContextPanel } from './operation-context';" : ''}
 export function AppNav() {
  const pathname = usePathname();
  const [ready, setReady] = useState(false);
+ const [filter, setFilter] = useState('');
  useEffect(() => setReady(true), []);
  const query = useQuery({ queryKey: ['authorized-options'], queryFn: () => api.getAuthOptions(), enabled: ready && Boolean(accessToken.get()) });
  if (!ready) return <nav aria-label="Navegación principal"><p role="status">Cargando navegación…</p></nav>;
  if (!accessToken.get()) return <nav aria-label="Navegación principal"><Link href={${JSON.stringify(loginRoute?.path ?? '/access')}}>Iniciar sesión</Link></nav>;
  if (query.isPending) return <p role="status">Consultando opciones…</p>;
  if (query.isError) return <p role="alert">No se pudieron consultar las opciones autorizadas.</p>;
- return <nav aria-label="Navegación principal" className="flex flex-col gap-1">${scope ? '<OperationContextPanel compact />' : ''}{(query.data ?? []).map(item => <Link key={item.path} href={item.path} aria-current={pathname === item.path ? 'page' : undefined} className="rounded-md px-3 py-2 text-sm hover:bg-muted">{item.label}</Link>)}<Link href={${JSON.stringify(plan.routes.find((r) => r.actions.some((a) => a.endpoint === 'POST /auth/logout'))?.path ?? '/access')}} className="rounded-md px-3 py-2 text-sm hover:bg-muted">Cerrar sesión</Link></nav>;
+ return <nav aria-label="Navegación principal" className="flex flex-col gap-1">${scope ? '<OperationContextPanel compact />' : ''}{(query.data ?? []).length > 8 ? <input type="search" value={filter} onChange={event => setFilter(event.target.value)} placeholder="Buscar opción…" aria-label="Buscar opción del menú" className="mb-2 w-full rounded-md border bg-background px-3 py-2 text-sm" /> : null}{(query.data ?? []).filter(item => item.label.toLocaleLowerCase('es').includes(filter.trim().toLocaleLowerCase('es'))).map(item => <Link key={item.path} href={item.path} aria-current={pathname === item.path ? 'page' : undefined} className="rounded-md px-3 py-2 text-sm hover:bg-muted aria-[current=page]:bg-primary aria-[current=page]:text-primary-foreground">{item.label}</Link>)}<Link href={${JSON.stringify(plan.routes.find((r) => r.actions.some((a) => a.endpoint === 'POST /auth/logout'))?.path ?? '/access')}} className="rounded-md px-3 py-2 text-sm hover:bg-muted">Cerrar sesión</Link></nav>;
 }
 `,
       { origin: 'DETERMINISTIC', planElements: elements },
@@ -482,8 +483,10 @@ void main().catch(() => { console.error('Initial accounts could not be prepared.
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
+import { ArrowRight, ShieldCheck } from 'lucide-react';
 import { api, accessToken${scope ? ', operationScope' : ''} } from '${up}lib/api';
 import { Button } from '${up}components/ui/button';
+import { Input, PasswordInput } from '${up}components/ui/input';
 export default function LoginPage() {
  const router = useRouter(); const cache = useQueryClient(); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
  const [expired, setExpired] = useState(false); const [closed, setClosed] = useState(false);
@@ -493,13 +496,20 @@ export default function LoginPage() {
   try { const response = await api.postAuthLogin({ identifier: String(data.get('identifier') ?? ''), password: String(data.get('password') ?? '') }); cache.clear(); ${scope ? 'operationScope.clear();' : ''} accessToken.set(response.token); router.replace(${JSON.stringify(homeRoute?.path ?? '/')}); }
   catch (failure) { setError(failure instanceof Error ? failure.message : 'No se pudo iniciar sesión.'); } finally { setBusy(false); }
  }
- return <section className="mx-auto flex max-w-md flex-col gap-5 p-6"><h1 className="text-2xl font-semibold">{${JSON.stringify(route.screenName)}}</h1>
- {expired ? <p role="status">Su sesión anterior ha expirado. Inicie sesión nuevamente.</p> : null}{closed ? <p role="status">Sesión cerrada correctamente.</p> : null}
- <form onSubmit={submit} className="flex flex-col gap-4 rounded-xl border p-6">
- <div><label htmlFor="identifier">Identificador de acceso</label><input className="w-full rounded-md border p-3" id="identifier" name="identifier" autoComplete="username" required maxLength={255} /></div>
- <div><label htmlFor="password">Contraseña</label><input className="w-full rounded-md border p-3" id="password" name="password" type="password" autoComplete="current-password" required maxLength={1024} /></div>
- <Button type="submit" disabled={busy} ${marker}>{busy ? 'Validando…' : ${JSON.stringify(route.actions[0]?.label ?? 'Iniciar sesión')}}</Button>
- </form>{error ? <p role="alert">{error}</p> : null}</section>;
+ return <div className="flex min-h-screen flex-col bg-muted/40">
+ <header className="border-b bg-background px-6 py-4"><p className="text-lg font-semibold">{${JSON.stringify(ctx.projectName)}}</p></header>
+ <section className="flex flex-1 items-center justify-center p-6">
+ <div className="w-full max-w-lg rounded-lg border border-t-4 border-t-primary bg-background p-8 shadow-sm">
+ <h1 className="text-2xl font-semibold">{${JSON.stringify(route.screenName)}}</h1>
+ <p className="mt-1 text-muted-foreground">Introduzca sus credenciales para acceder.</p>
+ {expired ? <p role="status" className="mt-6 rounded-md border bg-muted p-4 text-sm">Su sesión anterior ha expirado. Inicie sesión nuevamente.</p> : null}{closed ? <p role="status" className="mt-6 rounded-md border bg-muted p-4 text-sm">Sesión cerrada correctamente.</p> : null}
+ <form onSubmit={submit} className="mt-6 flex flex-col gap-5">
+ <div className="flex flex-col gap-1.5"><label htmlFor="identifier" className="text-sm font-medium">Identificador de acceso <span className="text-destructive" aria-hidden>*</span></label><Input id="identifier" name="identifier" autoComplete="username" required maxLength={255} /></div>
+ <div className="flex flex-col gap-1.5"><label htmlFor="password" className="text-sm font-medium">Contraseña <span className="text-destructive" aria-hidden>*</span></label><PasswordInput id="password" name="password" autoComplete="current-password" required maxLength={1024} />
+ <p className="flex items-center gap-2 text-xs text-muted-foreground"><ShieldCheck className="h-4 w-4" aria-hidden />La contraseña introducida no se conserva en los registros de acceso.</p></div>
+ <Button type="submit" disabled={busy} className="w-full" ${marker}>{busy ? 'Validando…' : ${JSON.stringify(route.actions[0]?.label ?? 'Iniciar sesión')}}{busy ? null : <ArrowRight className="ml-2 h-4 w-4" aria-hidden />}</Button>
+ </form>{error ? <p role="alert" className="mt-4 rounded-md border border-destructive p-3 text-sm text-destructive">{error}</p> : null}
+ </div></section></div>;
 }
 `,
           { origin: 'DETERMINISTIC', planElements: [`route:${route.path}`, ...elements] },

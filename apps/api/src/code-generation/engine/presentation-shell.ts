@@ -91,13 +91,13 @@ export function PresentationShell({ children }: { children: ReactNode }) {
     const path = pathname.split('/');
     return pattern.length === path.length && pattern.every((part, index) => part.startsWith('[') ? Boolean(path[index]) : part === path[index]);
   });
-  const placement = selected?.navigation ?? 'SIDE';
-  if (placement === 'NONE') return <main className="min-h-screen p-4 md:p-8">{children}</main>;
-  const top = placement === 'TOP';
-  return <div className={top ? 'flex min-h-screen flex-col' : 'flex min-h-screen flex-col md:flex-row'}>
-    <aside className={top ? 'border-b bg-background p-4 [&_nav]:flex-row [&_nav]:flex-wrap' : 'border-b bg-background p-4 md:w-64 md:shrink-0 md:border-b-0 md:border-r'}>
+  if (selected?.navigation === 'NONE') return <main className="min-h-screen p-4 md:p-8">{children}</main>;
+  // Even where the design places the menu on top, a long menu only fits in a
+  // sidebar, which scrolls and filters it.
+  return <div className="flex min-h-screen flex-col md:flex-row">
+    <aside className="border-b bg-background p-4 md:w-72 md:shrink-0 md:border-b-0 md:border-r">
       <p className="mb-4 px-3 font-semibold">{${JSON.stringify(projectName)}}</p>
-      <div className={top ? '' : 'max-h-[50vh] overflow-y-auto md:max-h-[80vh]'}><AppNav /></div>
+      <div className="max-h-[50vh] overflow-y-auto md:max-h-[calc(100vh-8rem)]"><AppNav /></div>
       ${themeToggle ? '<div className="mt-4 px-3"><ThemeToggle /></div>' : ''}
     </aside>
     <main className="min-w-0 flex-1 p-4 md:p-8">{children}</main>

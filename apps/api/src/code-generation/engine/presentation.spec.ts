@@ -195,6 +195,6 @@ describe('approved presentation compiler', () => {
     expect(files[0]!.content).toContain('<Providers>');
     expect(files[0]!.content).not.toContain('<AppNav');
     expect(files[1]!.content).toContain('TOP');
-    expect(files[1]!.content).toContain("placement === 'NONE'");
+    expect(files[1]!.content).toContain("selected?.navigation === 'NONE'");
   });
 });
