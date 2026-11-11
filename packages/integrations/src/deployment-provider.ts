@@ -26,6 +26,8 @@ export interface DeploymentProvider {
   stop(deploymentId: string): Promise<void>;
   // Starts a stopped deployment again; a quick tunnel gets a new URL.
   start(deploymentId: string, tunnelToken?: string): Promise<{ publicUrl: string | null }>;
+  // Removes every container, volume and network of the deployment.
+  remove(deploymentId: string): Promise<void>;
 }
 export const DEPLOYMENT_PROVIDER = Symbol('DEPLOYMENT_PROVIDER');
 
@@ -64,6 +66,7 @@ export const deploymentNames = (deploymentId: string) => {
   const prefix = `caseflow-deploy-${deploymentId.slice(0, 8)}`;
   return {
     network: `${prefix}-net`,
+    egress: `${prefix}-egress`,
     appVolume: `${prefix}-app`,
     dataVolume: `${prefix}-data`,
     database: `${prefix}-db`,
@@ -92,6 +95,8 @@ export class DockerTunnelDeploymentProvider implements DeploymentProvider {
     const databaseUrl = `postgresql://app:${databasePassword}@database:5432/app`;
     const jwtSecret = randomBytes(32).toString('base64url');
     const scratch = await mkdtemp(join(tmpdir(), 'caseflow-deploy-'));
+    const secrets = join(scratch, 'secrets.env');
+    const accountSecrets = join(scratch, 'accounts.env');
     const source = join(scratch, 'source');
     const dependencies = join(scratch, 'dependencies');
     try {
@@ -109,6 +114,14 @@ export class DockerTunnelDeploymentProvider implements DeploymentProvider {
           await writeFile(target, file.content);
         }
       }
+      await writeFile(
+        secrets,
+        `DATABASE_URL=${databaseUrl}\nJWT_SECRET=${jwtSecret}\nPOSTGRES_PASSWORD=${databasePassword}\n`,
+        { mode: 0o600 },
+      );
+      await writeFile(accountSecrets, `INITIAL_PASSWORD=${request.initialPassword}\n`, {
+        mode: 0o600,
+      });
       await writeFile(join(dependencies, 'pnpm-workspace.yaml'), workspace);
       await writeFile(join(source, 'pnpm-workspace.yaml'), workspace);
       await this.ensureNodeImage(scratch);
@@ -161,8 +174,8 @@ export class DockerTunnelDeploymentProvider implements DeploymentProvider {
           '--cpus=2',
           '-v',
           `${names.appVolume}:/app`,
-          '-e',
-          `DATABASE_URL=${databaseUrl}`,
+          '--env-file',
+          secrets,
           '-e',
           'NEXT_PUBLIC_API_URL=/api',
           '-e',
@@ -176,7 +189,17 @@ export class DockerTunnelDeploymentProvider implements DeploymentProvider {
         ],
         900_000,
       );
-      await this.docker(['network', 'create', names.network], 60_000);
+      await this.docker(
+        [
+          'network',
+          'create',
+          '--internal',
+          '-o',
+          'com.docker.network.bridge.gateway_mode_ipv4=isolated',
+          names.network,
+        ],
+        60_000,
+      );
       await this.docker(
         [
           'run',
@@ -194,10 +217,10 @@ export class DockerTunnelDeploymentProvider implements DeploymentProvider {
           '--security-opt=no-new-privileges',
           '-v',
           `${names.dataVolume}:/var/lib/postgresql/data`,
+          '--env-file',
+          secrets,
           '-e',
           'POSTGRES_USER=app',
-          '-e',
-          `POSTGRES_PASSWORD=${databasePassword}`,
           '-e',
           'POSTGRES_DB=app',
           POSTGRES_IMAGE,
@@ -225,10 +248,8 @@ export class DockerTunnelDeploymentProvider implements DeploymentProvider {
           '--cpus=2',
           '-v',
           `${names.appVolume}:/app`,
-          '-e',
-          `DATABASE_URL=${databaseUrl}`,
-          '-e',
-          `JWT_SECRET=${jwtSecret}`,
+          '--env-file',
+          secrets,
           '-e',
           'DEV_LOGIN=false',
           '-e',
@@ -268,8 +289,8 @@ export class DockerTunnelDeploymentProvider implements DeploymentProvider {
               await this.docker(
                 [
                   'exec',
-                  '-e',
-                  `INITIAL_PASSWORD=${request.initialPassword}`,
+                  '--env-file',
+                  accountSecrets,
                   names.app,
                   'node',
                   'apps/api/dist/auth/deploy-accounts.js',
@@ -282,8 +303,12 @@ export class DockerTunnelDeploymentProvider implements DeploymentProvider {
               .at(-1) ?? '[]',
           ) as { role: string; identifier: string }[])
         : [];
-      const { publicUrl } = await this.startTunnel(names, request.tunnelToken);
+      const { publicUrl } = await this.startTunnel(names, scratch, request.tunnelToken);
       return { publicUrl, accounts };
+    } catch (error) {
+      // A failed deployment leaves nothing running or exposed behind.
+      await this.remove(request.deploymentId).catch(() => undefined);
+      throw error;
     } finally {
       await this.docker(['rm', '-f', names.copy, names.install, names.build], 30_000).catch(
         () => undefined,
@@ -315,14 +340,43 @@ export class DockerTunnelDeploymentProvider implements DeploymentProvider {
         ),
       120,
     );
-    return this.startTunnel(names, tunnelToken);
+    const scratch = await mkdtemp(join(tmpdir(), 'caseflow-deploy-'));
+    try {
+      return await this.startTunnel(names, scratch, tunnelToken);
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
   }
 
+  async remove(deploymentId: string): Promise<void> {
+    const names = deploymentNames(deploymentId);
+    const containers = [
+      names.tunnel,
+      names.app,
+      names.database,
+      names.copy,
+      names.install,
+      names.build,
+    ];
+    await this.docker(['rm', '-f', ...containers], 120_000).catch(() => undefined);
+    await this.docker(['volume', 'rm', '-f', names.appVolume, names.dataVolume], 60_000).catch(
+      () => undefined,
+    );
+    for (const network of [names.network, names.egress])
+      await this.docker(['network', 'rm', network], 30_000).catch(() => undefined);
+  }
+
+  // The tunnel is the only container with Internet access: it starts on its
+  // own egress network and joins the internal one to reach the web.
   private async startTunnel(
     names: ReturnType<typeof deploymentNames>,
+    scratch: string,
     tunnelToken?: string,
   ): Promise<{ publicUrl: string | null }> {
     await this.docker(['rm', '-f', names.tunnel], 30_000).catch(() => undefined);
+    await this.docker(['network', 'create', names.egress], 60_000).catch(() => undefined);
+    const tokenFile = join(scratch, 'tunnel.env');
+    if (tunnelToken) await writeFile(tokenFile, `TUNNEL_TOKEN=${tunnelToken}\n`, { mode: 0o600 });
     await this.docker(
       [
         'run',
@@ -330,11 +384,11 @@ export class DockerTunnelDeploymentProvider implements DeploymentProvider {
         '--name',
         names.tunnel,
         '--network',
-        names.network,
+        names.egress,
         '--restart',
         'unless-stopped',
         ...['--cap-drop=ALL', '--security-opt=no-new-privileges', '--memory=256m'],
-        ...(tunnelToken ? ['-e', `TUNNEL_TOKEN=${tunnelToken}`] : []),
+        ...(tunnelToken ? ['--env-file', tokenFile] : []),
         CLOUDFLARED_IMAGE,
         'tunnel',
         '--no-autoupdate',
@@ -342,6 +396,7 @@ export class DockerTunnelDeploymentProvider implements DeploymentProvider {
       ],
       180_000,
     );
+    await this.docker(['network', 'connect', names.network, names.tunnel], 60_000);
     // A named tunnel's URL is the hostname set in the person's Cloudflare account.
     if (tunnelToken) return { publicUrl: null };
     for (let attempt = 0; attempt < 60; attempt++) {

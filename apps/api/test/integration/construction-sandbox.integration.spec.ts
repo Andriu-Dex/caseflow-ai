@@ -441,6 +441,7 @@ describe('Construction sandbox validation integration', () => {
       })),
       stop: vi.fn(async () => undefined),
       start: vi.fn(async () => ({ publicUrl: 'https://otra.trycloudflare.com' })),
+      remove: vi.fn(async () => undefined),
     };
     Reflect.set(deployments, 'provider', fake);
     try {

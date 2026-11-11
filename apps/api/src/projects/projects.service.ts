@@ -5,9 +5,14 @@ import {
   Logger,
   NotFoundException,
   Optional,
+  ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import type { StorageProvider } from '@caseflow-ai/integrations';
+import {
+  DEPLOYMENT_PROVIDER,
+  type DeploymentProvider,
+  type StorageProvider,
+} from '@caseflow-ai/integrations';
 import {
   WORKFLOW_ROUTES,
   type CreateProjectRequest,
@@ -37,6 +42,10 @@ export class ProjectsService {
     @Optional() audit?: AuditService,
     // Files of a deleted project; optional so code without storage still works.
     @Optional() @Inject(STORAGE_PROVIDER) private readonly storage?: StorageProvider,
+    // Deployments of a deleted project are removed first (ADR-019).
+    @Optional()
+    @Inject(DEPLOYMENT_PROVIDER)
+    private readonly deployments?: DeploymentProvider | null,
   ) {
     this.audit = audit ?? new AuditService(prisma);
   }
@@ -267,6 +276,15 @@ export class ProjectsService {
         'El nombre escrito no coincide con el del proyecto. Escríbalo exactamente para confirmar.',
       );
     const files = await this.storedFiles(projectId);
+    const deployed = await this.prisma.generatedProjectDeployment.findMany({
+      where: { projectId, status: { not: 'FAILED' } },
+      select: { id: true },
+    });
+    if (deployed.length && !this.deployments)
+      throw new ServiceUnavailableException(
+        'No se pueden retirar los despliegues del proyecto en este entorno. Inténtelo desde la aplicación de escritorio.',
+      );
+    for (const deployment of deployed) await this.deployments!.remove(deployment.id);
 
     await this.prisma.$transaction(
       async (tx) => {

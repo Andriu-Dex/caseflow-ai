@@ -138,10 +138,16 @@ export class DeploymentsService {
     }
   }
 
-  // A deployment being prepared when the API stopped was cut off.
+  // A deployment being prepared when the API stopped was cut off; whatever it
+  // had created is removed so nothing stays exposed.
   async markInterrupted(bootedAt: Date): Promise<number> {
-    const { count } = await this.prisma.generatedProjectDeployment.updateMany({
+    const rows = await this.prisma.generatedProjectDeployment.findMany({
       where: { status: 'STARTING', updatedAt: { lt: bootedAt } },
+      select: { id: true },
+    });
+    for (const row of rows) await this.provider?.remove(row.id).catch(() => undefined);
+    const { count } = await this.prisma.generatedProjectDeployment.updateMany({
+      where: { id: { in: rows.map((row) => row.id) }, status: 'STARTING' },
       data: { status: 'FAILED', errorMessage: INTERRUPTED_BY_RESTART },
     });
     return count;
@@ -171,6 +177,7 @@ export class DeploymentsService {
       });
     } catch (error) {
       logger.warn(`Deployment "${id}" failed: ${describe(error)}`);
+      await provider.remove(id).catch(() => undefined);
       await this.finish(row, userId, 'DEPLOYMENT_FAILED', {
         status: 'FAILED',
         errorMessage: DEPLOY_FAILED,
