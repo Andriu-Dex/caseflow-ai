@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { newestApprovedPlan, newestRunForPlan } from '../../../lib/construction-progress';
 import { WorkingCopySummary } from './working-copy-summary';
+import { ScreenFindings } from './screen-findings';
 import { useFailureToast } from '../../../lib/use-failure-toast';
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -1202,6 +1203,7 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
           {run.errorMessage}
         </p>
       ) : null}
+      {run.status === 'FAILED' ? <ScreenFindings projectId={projectId} run={run} /> : null}
       {run.warnings.length ? (
         <details className="mt-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-800 dark:text-amber-300 group">
           <summary className="cursor-pointer font-semibold flex items-center justify-between select-none">

@@ -6,6 +6,8 @@ import type {
   CreateDesignBaselineRequest,
   DataModelInput,
   DesignBaselineResponse,
+  ScreenDesignExceptionResponse,
+  ScreenFindingsResponse,
   GeneratedFileResponse,
   GeneratedFileSummary,
   GenerationRunResponse,
@@ -880,6 +882,19 @@ export const api = {
       get<{ items: DesignBaselineResponse[] }>(`/projects/${projectId}/design-baselines`),
     create: (projectId: string, data: CreateDesignBaselineRequest) =>
       post<DesignBaselineResponse>(`/projects/${projectId}/design-baselines`, data),
+    screenFindings: (projectId: string, baselineId: string) =>
+      get<ScreenFindingsResponse>(
+        `/projects/${projectId}/design-baselines/${baselineId}/screen-findings`,
+      ),
+    acceptScreenFindings: (
+      projectId: string,
+      baselineId: string,
+      data: { routePath: string; findingsSha256: string; justification: string },
+    ) =>
+      post<ScreenDesignExceptionResponse>(
+        `/projects/${projectId}/design-baselines/${baselineId}/screen-exceptions`,
+        data,
+      ),
   },
   ai: {
     status: () => get<AIStatus>('/ai/status'),

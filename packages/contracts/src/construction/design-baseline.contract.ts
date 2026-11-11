@@ -84,3 +84,45 @@ export const implementationPlanArtifactsResponseSchema = z.object({
 export type ImplementationPlanArtifactsResponse = z.infer<
   typeof implementationPlanArtifactsResponseSchema
 >;
+
+// Justified acceptance of the exact findings the screen evaluator reported for
+// one screen of a design baseline (AGENTS.md §16).
+export const createScreenDesignExceptionRequestSchema = z
+  .object({
+    routePath: z.string().trim().min(1).max(200),
+    findingsSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    justification: z
+      .string()
+      .trim()
+      .min(10, 'Explique en al menos 10 caracteres por qué se acepta la diferencia.')
+      .max(2000),
+  })
+  .strict();
+export type CreateScreenDesignExceptionRequest = z.output<
+  typeof createScreenDesignExceptionRequestSchema
+>;
+
+export const screenDesignExceptionResponseSchema = z.object({
+  id: z.uuid(),
+  routePath: z.string(),
+  findingsSha256: z.string(),
+  findings: z.string(),
+  justification: z.string(),
+  createdByUserId: z.uuid(),
+  createdAt: z.string(),
+});
+export type ScreenDesignExceptionResponse = z.infer<typeof screenDesignExceptionResponseSchema>;
+
+// The latest findings per screen, with the exception that covers them if any.
+export const screenFindingsResponseSchema = z.object({
+  items: z.array(
+    z.object({
+      routePath: z.string(),
+      findings: z.string(),
+      findingsSha256: z.string(),
+      evaluator: z.string().nullable(),
+      exception: screenDesignExceptionResponseSchema.nullable(),
+    }),
+  ),
+});
+export type ScreenFindingsResponse = z.infer<typeof screenFindingsResponseSchema>;

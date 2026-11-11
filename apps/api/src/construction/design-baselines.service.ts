@@ -1,4 +1,6 @@
+import { createHash } from 'node:crypto';
 import {
+  ConflictException,
   Injectable,
   NotFoundException,
   Optional,
@@ -8,12 +10,16 @@ import { StageCurrencyService } from '../readiness/stage-currency';
 import {
   DESIGN_BASELINE_ROLES,
   type CreateDesignBaselineRequest,
+  type CreateScreenDesignExceptionRequest,
+  type ScreenDesignExceptionResponse,
+  type ScreenFindingsResponse,
   type DesignBaselineResponse,
   type DesignBaselineRole,
 } from '@caseflow-ai/contracts';
 import { PrismaService } from '../database/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { ConsistencyEngineService } from '../consistency-engine/consistency-engine.service';
+import { assertCanGenerate } from '../common/generation-cancelled';
 
 const ROLE_LABELS: Record<DesignBaselineRole, string> = {
   GENERATION_PLAN: 'el plan de generación',
@@ -204,6 +210,123 @@ export class DesignBaselinesService {
       );
   }
 
+  // The latest findings the screen evaluator recorded for each screen of this
+  // design, with the justified exception that covers them, if any.
+  async screenFindings(projectId: string, baselineId: string): Promise<ScreenFindingsResponse> {
+    await this.get(projectId, baselineId);
+    const files = await this.prisma.generatedFile.findMany({
+      where: {
+        path: { startsWith: 'docs/presentation-findings/' },
+        generationRun: { projectId, designBaselineId: baselineId },
+      },
+      orderBy: [{ generationRun: { createdAt: 'desc' } }, { id: 'desc' }],
+      select: { content: true },
+    });
+    const exceptions = await this.prisma.screenDesignException.findMany({
+      where: { projectId, designBaselineId: baselineId },
+    });
+    const latest = new Map<string, { findings: string; evaluator: string | null }>();
+    for (const file of files) {
+      const stored = JSON.parse(file.content) as {
+        routePath: string;
+        findings: string;
+        evaluator?: string;
+      };
+      if (!latest.has(stored.routePath))
+        latest.set(stored.routePath, {
+          findings: stored.findings,
+          evaluator: stored.evaluator ?? null,
+        });
+    }
+    return {
+      items: [...latest].map(([routePath, { findings, evaluator }]) => {
+        const findingsSha256 = sha256(findings);
+        const exception = exceptions.find(
+          (item) => item.routePath === routePath && item.findingsSha256 === findingsSha256,
+        );
+        return {
+          routePath,
+          findings,
+          findingsSha256,
+          evaluator,
+          exception: exception ? this.mapException(exception) : null,
+        };
+      }),
+    };
+  }
+
+  // Accepts recorded findings of one screen with a justification. Only
+  // findings actually recorded for this design can be accepted.
+  async createScreenException(
+    projectId: string,
+    baselineId: string,
+    userId: string,
+    input: CreateScreenDesignExceptionRequest,
+  ): Promise<ScreenDesignExceptionResponse> {
+    await assertCanGenerate(this.prisma, projectId, userId);
+    const recorded = (await this.screenFindings(projectId, baselineId)).items.find(
+      (item) => item.routePath === input.routePath && item.findingsSha256 === input.findingsSha256,
+    );
+    if (!recorded)
+      throw new NotFoundException('No hay hallazgos registrados que coincidan con esta pantalla.');
+    try {
+      const created = await this.prisma.$transaction(async (tx) => {
+        const row = await tx.screenDesignException.create({
+          data: {
+            projectId,
+            designBaselineId: baselineId,
+            routePath: input.routePath,
+            findingsSha256: input.findingsSha256,
+            findings: recorded.findings,
+            justification: input.justification,
+            createdByUserId: userId,
+          },
+        });
+        await this.audit.record(
+          {
+            projectId,
+            actorUserId: userId,
+            action: 'SCREEN_DESIGN_EXCEPTION_ACCEPTED',
+            entityType: 'SCREEN_DESIGN_EXCEPTION',
+            entityId: row.id,
+            metadata: {
+              designBaselineId: baselineId,
+              routePath: input.routePath,
+              findingsSha256: input.findingsSha256,
+            },
+          },
+          tx,
+        );
+        return row;
+      });
+      return this.mapException(created);
+    } catch (error) {
+      if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002')
+        throw new ConflictException('Estos hallazgos ya fueron aceptados.');
+      throw error;
+    }
+  }
+
+  private mapException(row: {
+    id: string;
+    routePath: string;
+    findingsSha256: string;
+    findings: string;
+    justification: string;
+    createdByUserId: string;
+    createdAt: Date;
+  }): ScreenDesignExceptionResponse {
+    return {
+      id: row.id,
+      routePath: row.routePath,
+      findingsSha256: row.findingsSha256,
+      findings: row.findings,
+      justification: row.justification,
+      createdByUserId: row.createdByUserId,
+      createdAt: row.createdAt.toISOString(),
+    };
+  }
+
   private map(row: {
     id: string;
     projectId: string;
@@ -242,3 +365,5 @@ export class DesignBaselinesService {
     };
   }
 }
+
+const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');

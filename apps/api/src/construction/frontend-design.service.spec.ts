@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { AIError } from '@caseflow-ai/ai';
 import { CASEFLOW_WEB_TS_V2 } from '@caseflow-ai/domain';
@@ -74,6 +75,7 @@ async function setup() {
     generationRun: { findFirst: vi.fn().mockResolvedValue({ id }) },
     designBaseline: { findFirst: vi.fn().mockResolvedValue(baseline) },
     project: { findUnique: vi.fn().mockResolvedValue({ language: 'ES' }) },
+    screenDesignException: { findMany: vi.fn().mockResolvedValue([]) },
     generatedFile: {
       findFirst: vi.fn().mockResolvedValue(null),
       upsert: vi.fn(async (args) => {
@@ -277,6 +279,59 @@ describe('frozen design adaptation', () => {
     );
     expect(ai.generateStructured).toHaveBeenCalledTimes(1);
   });
+  it('lets findings through only with a justified exception for those exact findings', async () => {
+    const { service, ai, prisma } = await setup();
+    const original = ai.generateStructured.getMockImplementation()!;
+    ai.generateStructured.mockImplementation(async (input) => {
+      const result = await original(input);
+      return {
+        data: {
+          ...result.data,
+          limitations: [{ code: 'MISSING_DATA_BINDING', description: 'Falta el resumen.' }],
+        },
+      } as never;
+    });
+    const stored = new Map<string, string>();
+    prisma.generatedFile.findFirst.mockImplementation(async ({ where }) =>
+      stored.has(where.path) ? { content: stored.get(where.path) } : null,
+    );
+    prisma.generatedFile.upsert.mockImplementation(async (args) => {
+      stored.set(args.create.path, args.create.content);
+      return args.create;
+    });
+    await expect(service.adapt(id, id, plan, files(), 'Catálogo', false, id)).rejects.toThrow(
+      'Falta el resumen',
+    );
+    const findings = JSON.parse([...stored.values()][0]!).findings as string;
+    prisma.screenDesignException.findMany.mockResolvedValue([
+      {
+        id: 'exception',
+        routePath: '/items',
+        findingsSha256: createHash('sha256').update(findings).digest('hex'),
+        justification: 'Demostración: el resumen no es necesario.',
+      },
+    ]);
+    const adapted = await service.adapt(id, id, plan, files(), 'Catálogo', false, id);
+    expect(adapted.records[0]).toMatchObject({
+      routePath: '/items',
+      acceptedException: { id: 'exception' },
+    });
+    // The second run reused the recorded findings instead of asking again.
+    expect(ai.generateStructured).toHaveBeenCalledTimes(1);
+    // An exception for different findings does not apply.
+    prisma.screenDesignException.findMany.mockResolvedValue([
+      {
+        id: 'other',
+        routePath: '/items',
+        findingsSha256: 'f'.repeat(64),
+        justification: 'x'.repeat(12),
+      },
+    ]);
+    await expect(service.adapt(id, id, plan, files(), 'Catálogo', false, id)).rejects.toThrow(
+      'Falta el resumen',
+    );
+  });
+
   it('leaves a screen unevaluated when the provider fails and asks again next run', async () => {
     const { service, ai, prisma } = await setup();
     const original = ai.generateStructured.getMockImplementation()!;

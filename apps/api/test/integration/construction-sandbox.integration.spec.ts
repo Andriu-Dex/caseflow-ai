@@ -3,6 +3,7 @@ import { FakeAIProvider } from '@caseflow-ai/ai';
 import request from 'supertest';
 import JSZip from 'jszip';
 import { E2E_TEST_PROVIDER, type E2ETestProvider } from '@caseflow-ai/integrations';
+import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import {
   DockerSandboxExecutionProvider,
@@ -32,6 +33,7 @@ describe('Construction sandbox validation integration', () => {
   let projectId: string;
   let otherProjectId: string;
   let planVersionId: string;
+  let baselineId: string;
   const http = () => request(ctx.app.getHttpServer());
   const auth = () => ({ Authorization: `Bearer ${ctx.token}` });
 
@@ -95,6 +97,7 @@ describe('Construction sandbox validation integration', () => {
     projectId = (await ctx.projects.create({ workspaceId: workspace.id, name: 'Tienda' })).id;
     otherProjectId = (await ctx.projects.create({ workspaceId: workspace.id, name: 'Otra' })).id;
     const { baseline } = await approvedDesignBaseline(ctx, projectId);
+    baselineId = baseline.id;
     const plan = await ctx.structuredAnalysis.create(projectId, 'IMPLEMENTATION_PLAN', 'Plan', {
       designBaselineId: baseline.id,
       authentication: { required: false, roles: [] },
@@ -313,6 +316,82 @@ describe('Construction sandbox validation integration', () => {
     expect(
       await ctx.prisma.generatedProjectSnapshot.count({ where: { generationRunId: runId } }),
     ).toBe(0);
+  });
+
+  it('accepts recorded screen findings only with a justification, once, and keeps it immutable', async () => {
+    const run = await ctx.prisma.generationRun.create({
+      data: {
+        projectId,
+        createdByUserId: ctx.userId,
+        implementationPlanVersionId: planVersionId,
+        designBaselineId: baselineId,
+        targetTemplateIdentifier: 'CASEFLOW_WEB_TS_V1',
+        targetTemplateVersion: 2,
+        status: 'GENERATING',
+      },
+    });
+    const content = JSON.stringify({
+      routePath: '/orders',
+      findings: 'MISSING_DATA_BINDING: Falta el resumen.',
+    });
+    await ctx.prisma.generatedFile.create({
+      data: {
+        generationRunId: run.id,
+        path: 'docs/presentation-findings/' + 'a'.repeat(64) + '.json',
+        content,
+        kind: 'DOCUMENTATION',
+        origin: 'AI_ASSISTED',
+        sha256: createHash('sha256').update(content).digest('hex'),
+      },
+    });
+    // Close the run so later generations are not blocked by it.
+    await ctx.prisma.generationRun.update({
+      where: { id: run.id },
+      data: { status: 'FAILED', finishedAt: new Date() },
+    });
+    const base = `/projects/${projectId}/design-baselines/${baselineId}`;
+    const listed = await http().get(`${base}/screen-findings`).set(auth()).expect(200);
+    expect(listed.body.items).toEqual([
+      expect.objectContaining({ routePath: '/orders', exception: null }),
+    ]);
+    const { findingsSha256 } = listed.body.items[0];
+    await http()
+      .post(`${base}/screen-exceptions`)
+      .set(auth())
+      .send({
+        routePath: '/orders',
+        findingsSha256: 'b'.repeat(64),
+        justification: 'Demostración simplificada.',
+      })
+      .expect(404);
+    await http()
+      .post(`${base}/screen-exceptions`)
+      .set(auth())
+      .send({ routePath: '/orders', findingsSha256, justification: 'corta' })
+      .expect(400);
+    const created = await http()
+      .post(`${base}/screen-exceptions`)
+      .set(auth())
+      .send({ routePath: '/orders', findingsSha256, justification: 'Demostración simplificada.' })
+      .expect(201);
+    await http()
+      .post(`${base}/screen-exceptions`)
+      .set(auth())
+      .send({ routePath: '/orders', findingsSha256, justification: 'Demostración simplificada.' })
+      .expect(409);
+    const after = await http().get(`${base}/screen-findings`).set(auth()).expect(200);
+    expect(after.body.items[0].exception).toMatchObject({ id: created.body.id });
+    await expect(
+      ctx.prisma.screenDesignException.update({
+        where: { id: created.body.id },
+        data: { justification: 'Otra justificación distinta.' },
+      }),
+    ).rejects.toThrow();
+    expect(
+      await ctx.prisma.auditEvent.count({
+        where: { projectId, action: 'SCREEN_DESIGN_EXCEPTION_ACCEPTED', entityId: created.body.id },
+      }),
+    ).toBe(1);
   });
 
   it('never reaches READY when the generated end-to-end tests fail (DEC-159)', async () => {

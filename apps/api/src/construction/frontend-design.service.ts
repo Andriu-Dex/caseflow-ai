@@ -88,6 +88,8 @@ export class FrontendDesignService {
       outputSha256: string;
       navigation: string;
       presentation?: unknown;
+      // The justified exception that let this screen through, if any.
+      acceptedException?: { id: string; justification: string; findingsSha256: string };
     }[] = [];
     const output = files.map((item) => ({ ...item }));
     if (baseline.entries.some((item) => item.artifactVersion.projectId !== projectId))
@@ -96,6 +98,15 @@ export class FrontendDesignService {
     // Every screen is evaluated before failing, so one run reports all gaps;
     // accepted screens stay checkpointed for the next run.
     const incomplete: string[] = [];
+    // Justified acceptances of exact findings (AGENTS.md §16), by route and hash.
+    const exceptions = new Map(
+      (
+        await this.prisma.screenDesignException.findMany({
+          where: { projectId, designBaselineId: baselineId },
+          select: { id: true, routePath: true, findingsSha256: true, justification: true },
+        })
+      ).map((item) => [`${item.routePath}|${item.findingsSha256}`, item]),
+    );
     for (const route of plan.routes) {
       const screen = blueprint.screens.find((item) => item.localId === route.screenLocalId);
       if (!screen)
@@ -242,12 +253,31 @@ export class FrontendDesignService {
         incomplete.push(
           `La pantalla «${screen.name}» (${route.path}) necesita completar sus enlaces funcionales. ${findings}`,
         );
-      if (reported) {
-        report(JSON.parse(reported.content).findings);
-        continue;
-      }
+      // Findings a person accepted with a justification let the proposed
+      // layout through; anything else is reported.
+      const excepted = (findings: string, proposal: unknown) => {
+        const exception = exceptions.get(`${route.path}|${hash(findings)}`);
+        if (!exception || !proposal) return undefined;
+        try {
+          const accepted = presentationSchema.parse({ ...(proposal as object), limitations: [] });
+          validatePresentation(accepted, sources);
+          return { presentation: accepted, exception };
+        } catch {
+          return undefined;
+        }
+      };
       let presentation;
-      if (cached) {
+      let acceptedException:
+        { id: string; justification: string; findingsSha256: string } | undefined;
+      if (reported) {
+        const stored = JSON.parse(reported.content) as { findings: string; presentation?: unknown };
+        const accepted = excepted(stored.findings, stored.presentation);
+        if (!accepted) {
+          report(stored.findings);
+          continue;
+        }
+        ({ presentation, exception: acceptedException } = accepted);
+      } else if (cached) {
         presentation = presentationSchema.parse(JSON.parse(cached.content));
         validatePresentation(presentation, sources);
       } else {
@@ -281,7 +311,12 @@ export class FrontendDesignService {
           const findings = presentation.limitations
             .map((item) => `${item.code}: ${item.description}`)
             .join(' ');
-          const content = json({ routePath: route.path, findings });
+          const content = json({
+            routePath: route.path,
+            findings,
+            evaluator: screenEvaluator(process.env),
+            presentation,
+          });
           await this.prisma.generatedFile.upsert({
             where: { generationRunId_path: { generationRunId, path: findingsPath } },
             update: {},
@@ -294,13 +329,17 @@ export class FrontendDesignService {
               sha256: hash(content),
             },
           });
-          report(findings);
-          continue;
+          const accepted = excepted(findings, presentation);
+          if (!accepted) {
+            report(findings);
+            continue;
+          }
+          ({ presentation, exception: acceptedException } = accepted);
         }
         // An invalid proposal fails only its screen and is not kept, so the
         // next run asks again instead of stopping every other screen.
         try {
-          validatePresentation(presentation, sources);
+          if (!acceptedException) validatePresentation(presentation, sources);
         } catch (error) {
           report(
             `INVALID_PRESENTATION: ${error instanceof Error ? error.message : 'La propuesta no es válida.'}`,
@@ -308,28 +347,30 @@ export class FrontendDesignService {
           continue;
         }
       }
-      const checkpoint = file(cachePath, json(presentation), {
-        kind: 'DOCUMENTATION',
-        origin: 'AI_ASSISTED',
-        planElements: [
-          `route:${route.path}`,
-          `design-source:${entry!.artifactVersionId}`,
-          `design-source:${blueprintEntry!.artifactVersionId}`,
-        ],
-      });
-      await this.prisma.generatedFile.upsert({
-        where: { generationRunId_path: { generationRunId, path: cachePath } },
-        update: {},
-        create: {
-          generationRunId,
-          path: checkpoint.path,
-          content: checkpoint.content,
-          kind: checkpoint.kind,
-          origin: checkpoint.origin,
-          sha256: hash(checkpoint.content),
-        },
-      });
-      output.push(checkpoint);
+      if (!acceptedException) {
+        const checkpoint = file(cachePath, json(presentation), {
+          kind: 'DOCUMENTATION',
+          origin: 'AI_ASSISTED',
+          planElements: [
+            `route:${route.path}`,
+            `design-source:${entry!.artifactVersionId}`,
+            `design-source:${blueprintEntry!.artifactVersionId}`,
+          ],
+        });
+        await this.prisma.generatedFile.upsert({
+          where: { generationRunId_path: { generationRunId, path: cachePath } },
+          update: {},
+          create: {
+            generationRunId,
+            path: checkpoint.path,
+            content: checkpoint.content,
+            kind: checkpoint.kind,
+            origin: checkpoint.origin,
+            sha256: hash(checkpoint.content),
+          },
+        });
+        output.push(checkpoint);
+      }
       target.content = applyPresentation(target.content, presentation);
       target.origin = 'AI_ASSISTED';
       target.planElements = [
@@ -345,6 +386,7 @@ export class FrontendDesignService {
         outputSha256: hash(target.content),
         navigation: presentation.navigation,
         presentation,
+        ...(acceptedException ? { acceptedException } : {}),
       });
     }
     if (incomplete.length)

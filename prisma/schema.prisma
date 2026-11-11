@@ -245,6 +245,7 @@ model User {
   requestedProposals        DependencyProposal[]       @relation("DependencyProposalRequester")
   decidedProposals          DependencyProposal[]       @relation("DependencyProposalDecider")
   designBaselines           DesignBaseline[]
+  screenDesignExceptions    ScreenDesignException[]
   workflowRuns              WorkflowRun[]
   generationRuns            GenerationRun[]
   sandboxRuns               SandboxRun[]
@@ -371,6 +372,7 @@ model Project {
   auditEvents                   AuditEvent[]
   dependencyProposals           DependencyProposal[]
   designBaselines               DesignBaseline[]
+  screenDesignExceptions        ScreenDesignException[]
   generationRuns                GenerationRun[]
   sandboxRuns                   SandboxRun[]
   generatedProjectSnapshots     GeneratedProjectSnapshot[]
@@ -1658,6 +1660,29 @@ enum DesignBaselineRole {
 // Approved, frozen design (spec §160, DEC-094): the exact approved versions an
 // official ImplementationPlan and code generation are built from. Creating
 // one is the human Design Gate approval; rows are immutable afterwards.
+// A justified acceptance of the exact findings the screen evaluator reported
+// for one screen of a design baseline (AGENTS.md §16: justify exceptions).
+// It covers only those findings: different findings need a new justification.
+model ScreenDesignException {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId        String   @map("project_id") @db.Uuid
+  designBaselineId String   @map("design_baseline_id") @db.Uuid
+  routePath        String   @map("route_path")
+  findingsSha256   String   @map("findings_sha256") @db.Char(64)
+  findings         String
+  justification    String
+  createdByUserId  String   @map("created_by_user_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project        Project        @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  designBaseline DesignBaseline @relation(fields: [designBaselineId], references: [id], onDelete: Restrict)
+  createdBy      User           @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([designBaselineId, routePath, findingsSha256])
+  @@index([projectId])
+  @@map("screen_design_exceptions")
+}
+
 model DesignBaseline {
   structuredGenerationJobs StructuredGenerationJob[]
   id                       String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -1669,11 +1694,12 @@ model DesignBaseline {
   approvalOrigin           ApprovalOrigin            @default(HUMAN) @map("approval_origin")
   createdAt                DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  project        Project                    @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  approvedBy     User                       @relation(fields: [approvedByUserId], references: [id], onDelete: Restrict)
-  entries        DesignBaselineEntry[]
-  generationRuns GenerationRun[]
-  snapshots      GeneratedProjectSnapshot[]
+  project          Project                    @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  approvedBy       User                       @relation(fields: [approvedByUserId], references: [id], onDelete: Restrict)
+  entries          DesignBaselineEntry[]
+  generationRuns   GenerationRun[]
+  snapshots        GeneratedProjectSnapshot[]
+  screenExceptions ScreenDesignException[]
 
   @@index([projectId, createdAt])
   @@map("design_baselines")
@@ -2007,29 +2033,29 @@ model UserManualStep {
 }
 
 model UserManualJob {
-  id           String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  projectId    String                   @map("project_id") @db.Uuid
-  snapshotId   String                   @unique @map("snapshot_id") @db.Uuid
-  status       String                   @default("QUEUED")
-  errorMessage String?                  @map("error_message")
-  captureRequested Boolean              @default(false) @map("capture_requested")
-  createdAt    DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  project      Project                  @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  snapshot     GeneratedProjectSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  id               String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId        String                   @map("project_id") @db.Uuid
+  snapshotId       String                   @unique @map("snapshot_id") @db.Uuid
+  status           String                   @default("QUEUED")
+  errorMessage     String?                  @map("error_message")
+  captureRequested Boolean                  @default(false) @map("capture_requested")
+  createdAt        DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project          Project                  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  snapshot         GeneratedProjectSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
 
   @@index([projectId, status])
   @@map("user_manual_jobs")
 }
 
 model UserManualCapture {
-  id         String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  taskId     String @map("task_id") @db.Uuid
-  bundleId   String @map("bundle_id") @db.Uuid
+  id         String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  taskId     String         @map("task_id") @db.Uuid
+  bundleId   String         @map("bundle_id") @db.Uuid
   role       String
   status     String
   reason     String?
-  storageKey String? @map("storage_key")
+  storageKey String?        @map("storage_key")
   sha256     String?
   width      Int?
   height     Int?
