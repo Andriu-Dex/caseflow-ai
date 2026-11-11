@@ -599,6 +599,13 @@ function listPage(plan: Plan, entity: Entity, route: Route): string {
       a.interaction !== 'PAGINATE_PREVIOUS',
   );
   const itemActions = route.actions.filter((a) => isItemAction(plan, a));
+  // The pager buttons realise the plan's own paging actions, by their labels.
+  const nextLabel =
+    route.actions.find((a) => a.interaction === 'PAGINATE_NEXT')?.label ??
+    'Ir a la página siguiente';
+  const previousLabel =
+    route.actions.find((a) => a.interaction === 'PAGINATE_PREVIOUS')?.label ??
+    'Ir a la página anterior';
   const header = controls(plan, entity, pageActions, {
     isListPage: true,
     routeParams: names,
@@ -736,7 +743,7 @@ ${indent(cells.join('\n'), 22)}
           size="sm"
           disabled={page <= 1 || query.isLoading}
           onClick={() => setPage((p) => Math.max(1, p - 1))}
-          ${actionMarker('Ir a la página anterior')}
+          ${actionMarker(previousLabel)}
         >
           Página anterior
         </Button>
@@ -747,7 +754,7 @@ ${indent(cells.join('\n'), 22)}
           size="sm"
           disabled={!hasNextPage || query.isLoading}
           onClick={() => setPage((p) => p + 1)}
-          ${actionMarker('Ir a la página siguiente')}
+          ${actionMarker(nextLabel)}
         >
           Página siguiente
         </Button>
