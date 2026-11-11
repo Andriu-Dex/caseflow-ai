@@ -29,3 +29,10 @@
 - La aceptación de pantallas se hizo sobre la evaluación de Gemini Flash-Lite, más permisiva que el evaluador principal; una pasada final con ChatGPT exigiría nuevas aceptaciones para los hallazgos que cambien.
 - La consulta de hallazgos devuelve los últimos registrados por pantalla en cualquier corrida; incluye evaluaciones antiguas (40 excepciones sin efecto práctico).
 - Arrancar un proceso auxiliar de CASEFlow mientras corre otro (p. ej. `pnpm dev` en modo `--watch`) marca como interrumpidos los trabajos en curso del otro proceso.
+
+## Entrega desplegable (2026-11-11)
+
+- Corrida `48052a71`, validación `d42f5c2e`: **READY**, snapshot `a3aacd15` (todas las etapas, E2E incluida).
+- Incluye el proxy `/api` de la web y `deploy-accounts` (una cuenta inicial por rol), necesarios para el despliegue de ADR-019.
+- Prueba del despliegue con Docker real y túnel rápido de Cloudflare: web, inicio de sesión y consultas autenticadas respondieron 200 desde la URL pública; la aplicación no tiene salida a internet (red interna) y la eliminación no dejó contenedores, volúmenes ni redes.
+- Mejoras cerradas: consulta de hallazgos solo con los vigentes; latido de trabajos para que el arranque de otro proceso no interrumpa generaciones o validaciones en curso.
