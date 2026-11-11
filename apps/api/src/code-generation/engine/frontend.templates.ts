@@ -1639,7 +1639,31 @@ ${themeToggle ? '              <div className="mt-4 px-3">\n                <The
       }),
     );
 
-  if (!plan.routes.some((r) => r.path === '/'))
+  // With local accounts the application opens on its login, then on the
+  // plan's home screen: never on a list of every screen.
+  const entry = applicationEntry(plan);
+  if (!plan.routes.some((r) => r.path === '/') && entry)
+    files.push(
+      file(
+        'apps/web/app/page.tsx',
+        `'use client';
+
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { accessToken } from '../lib/api';
+
+export default function HomePage() {
+  const router = useRouter();
+  useEffect(() => {
+    router.replace(accessToken.get() ? ${JSON.stringify(entry.home)} : ${JSON.stringify(entry.login)});
+  }, [router]);
+  return <p role="status" className="text-sm text-muted-foreground">Cargando…</p>;
+}
+`,
+        { planElements: [`route:${entry.login}`, `route:${entry.home}`] },
+      ),
+    );
+  else if (!plan.routes.some((r) => r.path === '/'))
     files.push(
       file(
         'apps/web/app/page.tsx',
@@ -1823,6 +1847,17 @@ ${plannedE2E.map((t) => `// Planned: ${t.description.replace(/\n/g, ' ')}`).join
 type Session = { token: string | null; scopeId: string | null };
 
 const SCREENS: { path: string; screenName: string; role: string }[] = ${JSON.stringify(screens, null, 2)};
+${
+  entry
+    ? `
+test('the application opens on its login without a session', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForURL((url) => url.pathname === ${JSON.stringify(entry.login)});
+  await expect(page.locator('h1').first()).toBeVisible();
+});
+`
+    : ''
+}
 const API_URL = process.env.E2E_API_URL ?? 'http://localhost:3001';
 const sessions: Record<string, Session> = process.env.E2E_SESSIONS
   ? JSON.parse(readFileSync(process.env.E2E_SESSIONS, 'utf8'))
@@ -1877,4 +1912,26 @@ export function e2eScreens(plan: ImplementationPlanContent) {
           ? ''
           : (route.roles?.[0] ?? plan.authentication.roles[0] ?? ''),
     }));
+}
+
+// Where a local-account application starts: its login route and the screen a
+// signed-in person opens first (the one loading the session's options, or the
+// first plain screen). Undefined when the plan has no local login.
+export function applicationEntry(plan: ImplementationPlanContent) {
+  if (!plan.authentication.local) return undefined;
+  const login = plan.routes.find((route) =>
+    route.actions.some((action) => action.endpoint === 'POST /auth/login'),
+  );
+  if (!login) return undefined;
+  const home =
+    plan.routes.find((route) =>
+      route.actions.some((action) => action.endpoint === 'GET /auth/options'),
+    ) ??
+    plan.routes.find(
+      (route) =>
+        route !== login &&
+        !route.path.includes('[') &&
+        !route.actions.some((action) => action.endpoint === 'POST /auth/logout'),
+    );
+  return home ? { login: login.path, home: home.path } : undefined;
 }

@@ -132,6 +132,20 @@ const planInput = () => ({
 });
 
 describe('local authentication generation', () => {
+  it('opens the application on its login, then on the home screen, never on a screen index', () => {
+    const files = generateProject({
+      plan: implementationPlanContentSchema.parse(planInput()),
+      template: CASEFLOW_WEB_TS_V2,
+      projectName: 'Biblioteca',
+      slug: 'library',
+    });
+    const root = files.find((file) => file.path === 'apps/web/app/page.tsx')!.content;
+    expect(root).toContain('router.replace(accessToken.get() ? "/home" : "/signin")');
+    expect(root).not.toContain('<Link');
+    const e2e = files.find((file) => file.path === 'apps/web/e2e/screens.spec.ts')!.content;
+    expect(e2e).toContain('the application opens on its login without a session');
+  });
+
   it('rejects creating an account as the implementation of deactivating that account', () => {
     const input = planInput();
     input.routes.push({
