@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 // ADR-019: deployment of a READY snapshot (local Docker + Cloudflare Tunnel).
-export const DEPLOYMENT_STATUSES = ['STARTING', 'RUNNING', 'STOPPED', 'FAILED'] as const;
+export const DEPLOYMENT_STATUSES = ['STARTING', 'RUNNING', 'STOPPED', 'FAILED', 'REMOVED'] as const;
 
 const tunnelToken = z
   .string()

@@ -68,11 +68,15 @@ export class DeploymentsService {
       })
     )
       throw new ConflictException('Ya hay un despliegue en preparación para este proyecto.');
-    // The previous deployment of the project stops before a new one starts.
-    for (const running of await this.prisma.generatedProjectDeployment.findMany({
-      where: { projectId, status: 'RUNNING' },
-    }))
-      await this.stop(projectId, userId, running.id);
+    // A new deployment supersedes the previous ones of the project: their
+    // containers, volumes and networks are removed, so stopped deployments do
+    // not pile up until Docker runs out of network address pools.
+    for (const previous of await this.prisma.generatedProjectDeployment.findMany({
+      where: { projectId, status: { in: ['RUNNING', 'STOPPED'] } },
+    })) {
+      await provider.remove(previous.id);
+      await this.finish(previous, userId, 'DEPLOYMENT_REMOVED', { status: 'REMOVED' });
+    }
     const row = await this.prisma.$transaction(async (tx) => {
       const created = await tx.generatedProjectDeployment.create({
         data: {
@@ -197,9 +201,13 @@ export class DeploymentsService {
     row: Row,
     userId: string,
     action:
-      'DEPLOYMENT_RUNNING' | 'DEPLOYMENT_FAILED' | 'DEPLOYMENT_STOPPED' | 'DEPLOYMENT_RESUMED',
+      | 'DEPLOYMENT_RUNNING'
+      | 'DEPLOYMENT_FAILED'
+      | 'DEPLOYMENT_STOPPED'
+      | 'DEPLOYMENT_RESUMED'
+      | 'DEPLOYMENT_REMOVED',
     data: {
-      status: 'RUNNING' | 'STOPPED' | 'FAILED';
+      status: 'RUNNING' | 'STOPPED' | 'FAILED' | 'REMOVED';
       publicUrl?: string | null;
       accounts?: { role: string; identifier: string }[];
       errorMessage?: string | null;

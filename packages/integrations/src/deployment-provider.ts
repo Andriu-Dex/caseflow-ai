@@ -395,7 +395,12 @@ export class DockerTunnelDeploymentProvider implements DeploymentProvider {
     tunnelToken?: string,
   ): Promise<{ publicUrl: string | null }> {
     await this.docker(['rm', '-f', names.tunnel], 30_000).catch(() => undefined);
-    await this.docker(['network', 'create', names.egress], 60_000).catch(() => undefined);
+    await this.docker(['network', 'create', names.egress], 60_000).catch((error: Error) => {
+      // An existing network is reused; any other failure (such as Docker
+      // having no address pool left) must surface here, not as a later
+      // "network not found".
+      if (!/already exists/.test(error.message)) throw error;
+    });
     const tokenFile = join(scratch, 'tunnel.env');
     if (tunnelToken) await writeFile(tokenFile, `TUNNEL_TOKEN=${tunnelToken}\n`, { mode: 0o600 });
     await this.docker(

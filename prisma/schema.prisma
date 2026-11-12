@@ -1987,6 +1987,7 @@ enum DeploymentStatus {
   RUNNING
   STOPPED
   FAILED
+  REMOVED
 
   @@map("deployment_status")
 }

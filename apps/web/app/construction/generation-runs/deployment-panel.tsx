@@ -12,6 +12,7 @@ const STATUS_LABELS: Record<DeploymentResponse['status'], string> = {
   RUNNING: 'En línea',
   STOPPED: 'Detenido',
   FAILED: 'No se pudo desplegar',
+  REMOVED: 'Retirado',
 };
 
 // ADR-019: deploys this READY snapshot on this machine behind Cloudflare Tunnel.
