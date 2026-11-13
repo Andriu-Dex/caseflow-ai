@@ -276,7 +276,11 @@ export class DesignBaselinesService {
       select: { id: true },
     });
     if (!baseline) throw new NotFoundException('Diseño aprobado no encontrado.');
-    if (!input.routePath.startsWith('/') || !input.content.trim() || input.justification.trim().length < 10)
+    if (
+      !input.routePath.startsWith('/') ||
+      !input.content.trim() ||
+      input.justification.trim().length < 10
+    )
       throw new UnprocessableEntityException(
         'Indique la ruta, el código de la pantalla y una justificación de al menos 10 caracteres.',
       );

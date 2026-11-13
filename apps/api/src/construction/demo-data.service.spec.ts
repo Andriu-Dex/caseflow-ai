@@ -33,20 +33,31 @@ describe('demonstration values', () => {
         {
           model: 'Product',
           records: [
-            record({ name: 'Café de olla', price: '45.00', status: 'ACTIVE', since: '2026-03-01', stage: 'PUBLISHED', ghost: 'x' }),
+            record({
+              name: 'Café de olla',
+              price: '45.00',
+              status: 'ACTIVE',
+              since: '2026-03-01',
+              stage: 'PUBLISHED',
+              ghost: 'x',
+            }),
             record({ name: 'Café de olla', price: '12,5', status: 'SOLD', since: 'ayer' }),
           ],
         },
         { model: 'Unknown', records: [record({ name: 'x' })] },
       ],
     });
-    expect(accepted).toEqual({ Product: [{ name: 'Café de olla', price: '45.00', status: 'ACTIVE', since: '2026-03-01' }] });
+    expect(accepted).toEqual({
+      Product: [{ name: 'Café de olla', price: '45.00', status: 'ACTIVE', since: '2026-03-01' }],
+    });
   });
 });
 
 describe('plan currency', () => {
   it('is the ISO code the plan names most often', () => {
-    const plan = { modules: [{ description: 'Ventas en USD; gastos en USD, nunca EUR.' }] } as never;
+    const plan = {
+      modules: [{ description: 'Ventas en USD; gastos en USD, nunca EUR.' }],
+    } as never;
     expect(planCurrency(plan)).toBe('USD');
   });
 });

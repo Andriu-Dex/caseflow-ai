@@ -102,18 +102,49 @@ describe('approved presentation compiler', () => {
   it('adds static headings and icons from the mockup after the client directive', () => {
     const value = layout();
     value.nodes.push(
-      { id: 'title', parentId: 'root', kind: 'TEXT', tag: 'h2', sourceId: null, text: 'Guía de estados', icon: null, className: 'text-lg font-semibold' },
-      { id: 'mark', parentId: 'root', kind: 'ICON', tag: null, sourceId: null, text: null, icon: 'Store', className: 'h-5 w-5 text-primary' },
+      {
+        id: 'title',
+        parentId: 'root',
+        kind: 'TEXT',
+        tag: 'h2',
+        sourceId: null,
+        text: 'Guía de estados',
+        icon: null,
+        className: 'text-lg font-semibold',
+      },
+      {
+        id: 'mark',
+        parentId: 'root',
+        kind: 'ICON',
+        tag: null,
+        sourceId: null,
+        text: null,
+        icon: 'Store',
+        className: 'h-5 w-5 text-primary',
+      },
     );
     const rendered = applyPresentation(page, value);
-    expect(rendered.startsWith("'use client';\nimport * as PresentationIcons from 'lucide-react';")).toBe(true);
+    expect(
+      rendered.startsWith("'use client';\nimport * as PresentationIcons from 'lucide-react';"),
+    ).toBe(true);
     expect(rendered).toContain('<h2 className={"text-lg font-semibold"}>{"Guía de estados"}</h2>');
-    expect(rendered).toContain('<PresentationIcons.Store className={"h-5 w-5 text-primary"} aria-hidden />');
+    expect(rendered).toContain(
+      '<PresentationIcons.Store className={"h-5 w-5 text-primary"} aria-hidden />',
+    );
   });
   it('rejects static text that could pass for data or code', () => {
     for (const text of ['Mostrando 6 productos', 'Total {amount}', '<b>Hola</b>']) {
       const value = layout();
-      value.nodes.push({ id: 'note', parentId: 'root', kind: 'TEXT', tag: 'p', sourceId: null, text, icon: null, className: '' });
+      value.nodes.push({
+        id: 'note',
+        parentId: 'root',
+        kind: 'TEXT',
+        tag: 'p',
+        sourceId: null,
+        text,
+        icon: null,
+        className: '',
+      });
       expect(() => validatePresentation(value, presentationSources(page))).toThrow();
     }
   });
@@ -276,9 +307,11 @@ describe('navigation groups', () => {
 
 describe('component slot wrappers', () => {
   it('keep only layout utilities so a component keeps its own colors', () => {
-    expect(layoutClasses('flex justify-end gap-2 bg-primary text-primary-foreground rounded-lg p-2 md:col-span-2 border')).toBe(
-      'flex justify-end gap-2 md:col-span-2',
-    );
+    expect(
+      layoutClasses(
+        'flex justify-end gap-2 bg-primary text-primary-foreground rounded-lg p-2 md:col-span-2 border',
+      ),
+    ).toBe('flex justify-end gap-2 md:col-span-2');
   });
 });
 

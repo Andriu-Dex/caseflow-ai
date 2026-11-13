@@ -87,7 +87,10 @@ export function applyPresentationShell(
       file(
         'apps/web/components/presentation-shell.tsx',
         headerShell(routes, projectName, themeToggle, groups, scoped),
-        { origin: 'DETERMINISTIC', planElements: routes.map((route) => `route:${route.routePath}`) },
+        {
+          origin: 'DETERMINISTIC',
+          planElements: routes.map((route) => `route:${route.routePath}`),
+        },
       ),
     );
     return;

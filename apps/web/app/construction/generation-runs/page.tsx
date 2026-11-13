@@ -207,7 +207,11 @@ function RunUnits({ projectId, run }: { projectId: string; run: GenerationRunRes
   return (
     <QueryState isLoading={units.isLoading} error={units.error}>
       <div className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Tipo de unidad">
+        <div
+          className="flex flex-wrap items-center gap-2"
+          role="tablist"
+          aria-label="Tipo de unidad"
+        >
           {(Object.keys(UNIT_KINDS) as ConstructionUnit['kind'][]).map((option) => (
             <button
               key={option}
@@ -219,7 +223,9 @@ function RunUnits({ projectId, run }: { projectId: string; run: GenerationRunRes
                 setFileId(undefined);
               }}
               className={`rounded-md border px-2.5 py-1 text-xs font-medium ${
-                kind === option ? 'border-primary bg-primary/10 text-primary' : 'border-border hover:bg-muted'
+                kind === option
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-border hover:bg-muted'
               }`}
             >
               {UNIT_KINDS[option]} ({items.filter((unit) => unit.kind === option).length})
@@ -281,7 +287,9 @@ function RunUnits({ projectId, run }: { projectId: string; run: GenerationRunRes
                           onClick={() => setFileId(file.id)}
                           title={file.path}
                           className={`w-full truncate rounded px-1.5 py-1 text-left font-mono text-[11px] ${
-                            file.id === fileId ? 'bg-primary/10 font-semibold text-primary' : 'hover:bg-muted'
+                            file.id === fileId
+                              ? 'bg-primary/10 font-semibold text-primary'
+                              : 'hover:bg-muted'
                           }`}
                         >
                           {file.path}
@@ -293,7 +301,9 @@ function RunUnits({ projectId, run }: { projectId: string; run: GenerationRunRes
               </li>
             ))}
             {!shown.length ? (
-              <li className="p-3 text-center text-xs text-muted-foreground">No hay unidades que coincidan.</li>
+              <li className="p-3 text-center text-xs text-muted-foreground">
+                No hay unidades que coincidan.
+              </li>
             ) : null}
           </ul>
           {fileId ? (
@@ -318,15 +328,35 @@ function RunFiles({ projectId, run }: { projectId: string; run: GenerationRunRes
     `rounded px-2.5 py-1 ${view === value ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`;
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex gap-1 self-start rounded-md border p-0.5 text-xs" role="tablist" aria-label="Vista del código">
-        <button type="button" role="tab" aria-selected={view === 'units'} onClick={() => setView('units')} className={tab('units')}>
+      <div
+        className="flex gap-1 self-start rounded-md border p-0.5 text-xs"
+        role="tablist"
+        aria-label="Vista del código"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === 'units'}
+          onClick={() => setView('units')}
+          className={tab('units')}
+        >
           Por unidades
         </button>
-        <button type="button" role="tab" aria-selected={view === 'files'} onClick={() => setView('files')} className={tab('files')}>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === 'files'}
+          onClick={() => setView('files')}
+          className={tab('files')}
+        >
           Todos los archivos
         </button>
       </div>
-      {view === 'units' ? <RunUnits projectId={projectId} run={run} /> : <RunFileList projectId={projectId} run={run} />}
+      {view === 'units' ? (
+        <RunUnits projectId={projectId} run={run} />
+      ) : (
+        <RunFileList projectId={projectId} run={run} />
+      )}
     </div>
   );
 }

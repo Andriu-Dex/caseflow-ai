@@ -124,7 +124,7 @@ describe('GenerationRunsPage', () => {
     render(<GenerationRunsPage />, { wrapper: TestProviders });
     expect(await screen.findByText(/Confirmar pedido/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Ver archivos' }));
-  await userEvent.click(screen.getByRole('tab', { name: 'Todos los archivos' }));
+    await userEvent.click(screen.getByRole('tab', { name: 'Todos los archivos' }));
     await userEvent.click(screen.getByRole('tab', { name: 'Todos los archivos' }));
     await userEvent.click(await screen.findByRole('button', { name: /main\.ts/ }));
     expect(await screen.findByText('bootstrap();')).toBeInTheDocument();

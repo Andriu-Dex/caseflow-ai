@@ -10,7 +10,12 @@ export const GENERATION_RUN_STATUSES = [
   'FAILED',
   'WORKING_COPY',
 ] as const;
-export const GENERATED_FILE_ORIGINS = ['TEMPLATE', 'DETERMINISTIC', 'AI_ASSISTED', 'MANUAL'] as const;
+export const GENERATED_FILE_ORIGINS = [
+  'TEMPLATE',
+  'DETERMINISTIC',
+  'AI_ASSISTED',
+  'MANUAL',
+] as const;
 export const GENERATED_FILE_KINDS = ['SOURCE', 'TEST', 'CONFIG', 'DOCUMENTATION'] as const;
 export const CODE_TRACE_LINK_TYPES = ['IMPLEMENTS', 'TESTS', 'CONFIGURES'] as const;
 
@@ -115,7 +120,9 @@ export const constructionUnitSchema = z.object({
   ),
 });
 export type ConstructionUnit = z.infer<typeof constructionUnitSchema>;
-export const constructionUnitListResponseSchema = z.object({ items: z.array(constructionUnitSchema) });
+export const constructionUnitListResponseSchema = z.object({
+  items: z.array(constructionUnitSchema),
+});
 export type ConstructionUnitListResponse = z.infer<typeof constructionUnitListResponseSchema>;
 export const generatedFileListResponseSchema = z.object({
   items: z.array(generatedFileSummarySchema),

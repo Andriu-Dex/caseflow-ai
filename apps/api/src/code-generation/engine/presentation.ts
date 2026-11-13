@@ -4,13 +4,56 @@ import { PlanGenerationError } from '../naming';
 
 // Icons a composition may show, from the approved lucide-react set.
 export const PRESENTATION_ICONS = [
-  'AlertTriangle', 'ArrowRight', 'BarChart3', 'Bell', 'BookOpen', 'Box', 'Boxes', 'Building2',
-  'Calendar', 'CheckCircle2', 'ChefHat', 'ClipboardList', 'Clock', 'CreditCard', 'Database',
-  'DollarSign', 'FileText', 'Filter', 'FolderOpen', 'History', 'Home', 'Info', 'LayoutDashboard',
-  'LayoutGrid', 'Lightbulb', 'ListChecks', 'Lock', 'Package', 'PackageCheck', 'PackageMinus',
-  'PackagePlus', 'PieChart', 'Receipt', 'RefreshCw', 'Search', 'Settings', 'ShieldCheck',
-  'ShoppingCart', 'SlidersHorizontal', 'Store', 'Tag', 'Tags', 'TrendingUp', 'Truck', 'User',
-  'UserCog', 'Users', 'UtensilsCrossed', 'Wallet', 'Warehouse',
+  'AlertTriangle',
+  'ArrowRight',
+  'BarChart3',
+  'Bell',
+  'BookOpen',
+  'Box',
+  'Boxes',
+  'Building2',
+  'Calendar',
+  'CheckCircle2',
+  'ChefHat',
+  'ClipboardList',
+  'Clock',
+  'CreditCard',
+  'Database',
+  'DollarSign',
+  'FileText',
+  'Filter',
+  'FolderOpen',
+  'History',
+  'Home',
+  'Info',
+  'LayoutDashboard',
+  'LayoutGrid',
+  'Lightbulb',
+  'ListChecks',
+  'Lock',
+  'Package',
+  'PackageCheck',
+  'PackageMinus',
+  'PackagePlus',
+  'PieChart',
+  'Receipt',
+  'RefreshCw',
+  'Search',
+  'Settings',
+  'ShieldCheck',
+  'ShoppingCart',
+  'SlidersHorizontal',
+  'Store',
+  'Tag',
+  'Tags',
+  'TrendingUp',
+  'Truck',
+  'User',
+  'UserCog',
+  'Users',
+  'UtensilsCrossed',
+  'Wallet',
+  'Warehouse',
 ] as const;
 
 // Presentation may arrange existing controls and add static headings,
@@ -42,7 +85,18 @@ export const presentationSchema = z
             parentId: z.string().nullable().default(null),
             kind: z.enum(['CONTAINER', 'SLOT', 'FRAME', 'TEXT', 'ICON']),
             tag: z
-              .enum(['div', 'section', 'header', 'footer', 'aside', 'article', 'h2', 'h3', 'p', 'span'])
+              .enum([
+                'div',
+                'section',
+                'header',
+                'footer',
+                'aside',
+                'article',
+                'h2',
+                'h3',
+                'p',
+                'span',
+              ])
               .nullable()
               .default(null),
             sourceId: z.string().nullable().default(null),
@@ -269,7 +323,8 @@ export function readable(className: string, inherited?: string) {
   if (!solid) return className;
   return [
     ...tokens.filter(
-      (token) => !/^text-(?!xs$|sm$|base$|lg$|xl$|[2-9]xl$|left$|center$|right$|justify$)/.test(token),
+      (token) =>
+        !/^text-(?!xs$|sm$|base$|lg$|xl$|[2-9]xl$|left$|center$|right$|justify$)/.test(token),
     ),
     `text-${solid}-foreground`,
   ].join(' ');

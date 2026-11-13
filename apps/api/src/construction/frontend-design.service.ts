@@ -125,7 +125,13 @@ export class FrontendDesignService {
     for (const item of await this.prisma.screenDesignOverride.findMany({
       where: { projectId, designBaselineId: baselineId },
       orderBy: { createdAt: 'asc' },
-      select: { id: true, routePath: true, content: true, contentSha256: true, justification: true },
+      select: {
+        id: true,
+        routePath: true,
+        content: true,
+        contentSha256: true,
+        justification: true,
+      },
     }))
       overrides.set(item.routePath, item);
     for (const route of plan.routes) {

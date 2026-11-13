@@ -435,7 +435,13 @@ export class GenerationRunsService {
         const theme = await this.frozenTheme(projectId, run.designBaselineId);
         const demo =
           template.version >= 2 && this.demoData
-            ? await this.demoData.propose(projectId, run.designBaselineId, runId, run.project.name, plan)
+            ? await this.demoData.propose(
+                projectId,
+                run.designBaselineId,
+                runId,
+                run.project.name,
+                plan,
+              )
             : {};
         if (demo.warning) warnings.push(demo.warning);
         let files = generateProject(
@@ -641,7 +647,9 @@ export class GenerationRunsService {
         traceLinks: {
           select: {
             planElement: true,
-            sourceArtifactVersion: { select: { versionNumber: true, artifact: { select: { code: true } } } },
+            sourceArtifactVersion: {
+              select: { versionNumber: true, artifact: { select: { code: true } } },
+            },
           },
         },
       },

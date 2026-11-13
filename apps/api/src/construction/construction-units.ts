@@ -26,7 +26,13 @@ const ROUTE_KINDS: Record<string, string> = {
   VIEW: 'vista',
   ACTION: 'operación',
 };
-const ORDER: Record<ConstructionUnit['kind'], number> = { SCREEN: 0, ACTION: 1, ENTITY: 2, MODULE: 3, PROJECT: 4 };
+const ORDER: Record<ConstructionUnit['kind'], number> = {
+  SCREEN: 0,
+  ACTION: 1,
+  ENTITY: 2,
+  MODULE: 3,
+  PROJECT: 4,
+};
 const list = (items: string[]) =>
   items.length <= 1 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} y ${items.at(-1)}`;
 
@@ -36,11 +42,21 @@ const list = (items: string[]) =>
 // claim of functional correctness beyond validation).
 export function constructionUnits(plan: Plan, files: UnitFile[]): ConstructionUnit[] {
   const units = new Map<string, ConstructionUnit>();
-  const moduleName = (localId?: string) => plan.modules.find((item) => item.localId === localId)?.name;
-  const unit = (key: string, build: () => Omit<ConstructionUnit, 'id' | 'files' | 'origins' | 'traces'>) => {
+  const moduleName = (localId?: string) =>
+    plan.modules.find((item) => item.localId === localId)?.name;
+  const unit = (
+    key: string,
+    build: () => Omit<ConstructionUnit, 'id' | 'files' | 'origins' | 'traces'>,
+  ) => {
     let found = units.get(key);
     if (!found) {
-      found = { id: key, ...build(), files: [], origins: { TEMPLATE: 0, DETERMINISTIC: 0, AI_ASSISTED: 0, MANUAL: 0 }, traces: [] };
+      found = {
+        id: key,
+        ...build(),
+        files: [],
+        origins: { TEMPLATE: 0, DETERMINISTIC: 0, AI_ASSISTED: 0, MANUAL: 0 },
+        traces: [],
+      };
       units.set(key, found);
     }
     return found;
@@ -73,8 +89,12 @@ export function constructionUnits(plan: Plan, files: UnitFile[]): ConstructionUn
     if (kind === 'entity') {
       const entity = plan.entities.find((item) => item.localId === value);
       if (!entity) return undefined;
-      const fields = entity.fields.filter((field) => !field.internal).map((field) => field.label ?? field.name);
-      const operations = entity.operations.map((operation) => OPERATION_LABELS[operation] ?? operation.toLowerCase());
+      const fields = entity.fields
+        .filter((field) => !field.internal)
+        .map((field) => field.label ?? field.name);
+      const operations = entity.operations.map(
+        (operation) => OPERATION_LABELS[operation] ?? operation.toLowerCase(),
+      );
       return unit(element, () => ({
         kind: 'ENTITY',
         title: `Entidad ${entity.name}`,
@@ -116,12 +136,17 @@ export function constructionUnits(plan: Plan, files: UnitFile[]): ConstructionUn
       unit('project', () => ({
         kind: 'PROJECT',
         title: 'Base del proyecto',
-        summary: 'Estructura, configuración, dependencias, documentación y componentes comunes del proyecto generado.',
+        summary:
+          'Estructura, configuración, dependencias, documentación y componentes comunes del proyecto generado.',
       }));
     target.files.push({ id: file.id, path: file.path, origin: file.origin, kind: file.kind });
     target.origins[file.origin] += 1;
     for (const trace of file.traces)
-      if (!target.traces.some((item) => item.code === trace.code && item.versionNumber === trace.versionNumber))
+      if (
+        !target.traces.some(
+          (item) => item.code === trace.code && item.versionNumber === trace.versionNumber,
+        )
+      )
         target.traces.push(trace);
   }
   return [...units.values()]

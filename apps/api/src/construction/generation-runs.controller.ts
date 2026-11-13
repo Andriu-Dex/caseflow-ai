@@ -143,7 +143,10 @@ export class GenerationRunsController {
   }
 
   @Get(':runId/units')
-  @ApiOperation({ operationId: 'listConstructionUnits', summary: 'Listar el código generado por unidades de construcción' })
+  @ApiOperation({
+    operationId: 'listConstructionUnits',
+    summary: 'Listar el código generado por unidades de construcción',
+  })
   @ApiZodResponse(200, 'Construction units.', constructionUnitListResponseSchema)
   units(
     @Param('projectId', uuidParamPipe) projectId: string,

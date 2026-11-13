@@ -26,7 +26,11 @@ export const demoDataSchema = z
                 z
                   .object({
                     values: z
-                      .array(z.object({ field: z.string().max(100), value: z.string().max(500) }).strict())
+                      .array(
+                        z
+                          .object({ field: z.string().max(100), value: z.string().max(500) })
+                          .strict(),
+                      )
                       .max(60),
                   })
                   .strict(),
@@ -45,7 +49,9 @@ type Entity = ReturnType<typeof demoEntities>[number];
 // The currency the plan works in: the ISO code its text names most often.
 export function planCurrency(plan: ImplementationPlanContent): string | undefined {
   const counts = new Map<string, number>();
-  for (const match of JSON.stringify(plan).matchAll(/\b(USD|EUR|MXN|COP|PEN|ARS|CLP|BRL|GBP|CAD|GTQ|BOB|UYU|PYG|DOP|CRC|HNL|NIO|PAB|VES)\b/g))
+  for (const match of JSON.stringify(plan).matchAll(
+    /\b(USD|EUR|MXN|COP|PEN|ARS|CLP|BRL|GBP|CAD|GTQ|BOB|UYU|PYG|DOP|CRC|HNL|NIO|PAB|VES)\b/g,
+  ))
     counts.set(match[1]!, (counts.get(match[1]!) ?? 0) + 1);
   return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0];
 }
@@ -53,7 +59,11 @@ export function planCurrency(plan: ImplementationPlanContent): string | undefine
 // Keeps only values that satisfy their field: unknown fields, wrong types,
 // enum values outside the plan and repeated unique values are dropped, so a
 // proposal can never produce a record the model would reject for its shape.
-export function acceptedDemoValues(entities: Entity[], proposal: Proposal, currency?: string): Values {
+export function acceptedDemoValues(
+  entities: Entity[],
+  proposal: Proposal,
+  currency?: string,
+): Values {
   const result: Values = {};
   for (const entity of entities) {
     const proposed = proposal.entities.find((item) => item.model === entity.model);
@@ -65,7 +75,10 @@ export function acceptedDemoValues(entities: Entity[], proposal: Proposal, curre
         const field = entity.fields.find((item) => item.name === name);
         if (!field || field.value !== undefined) continue;
         // A currency field always holds the plan's currency.
-        const text = currency && field.type === 'STRING' && /currency|moneda/i.test(name) ? currency : raw.trim();
+        const text =
+          currency && field.type === 'STRING' && /currency|moneda/i.test(name)
+            ? currency
+            : raw.trim();
         let value: string | number | boolean | undefined;
         switch (field.type) {
           case 'STRING':
@@ -84,10 +97,16 @@ export function acceptedDemoValues(entities: Entity[], proposal: Proposal, curre
             value = text === 'true' ? true : text === 'false' ? false : undefined;
             break;
           case 'DATE':
-            value = /^\d{4}-\d{2}-\d{2}$/.test(text) && !Number.isNaN(Date.parse(text)) ? text : undefined;
+            value =
+              /^\d{4}-\d{2}-\d{2}$/.test(text) && !Number.isNaN(Date.parse(text))
+                ? text
+                : undefined;
             break;
           case 'DATETIME':
-            value = !Number.isNaN(Date.parse(text)) && /^\d{4}-\d{2}-\d{2}T/.test(text) ? new Date(text).toISOString() : undefined;
+            value =
+              !Number.isNaN(Date.parse(text)) && /^\d{4}-\d{2}-\d{2}T/.test(text)
+                ? new Date(text).toISOString()
+                : undefined;
             break;
           case 'ENUM':
             value = field.enumValues.includes(text) ? text : undefined;
@@ -132,12 +151,22 @@ export class DemoDataService {
     const request = {
       projectName,
       currency: planCurrency(plan) ?? null,
-      modules: plan.modules.map((module) => ({ name: module.name, description: module.description })),
+      modules: plan.modules.map((module) => ({
+        name: module.name,
+        description: module.description,
+      })),
       entities: entities.map((entity) => ({
         model: entity.model,
         fields: entity.fields
           .filter((field) => field.value === undefined)
-          .map(({ name, label, type, required, unique, enumValues }) => ({ name, label, type, required, unique, enumValues })),
+          .map(({ name, label, type, required, unique, enumValues }) => ({
+            name,
+            label,
+            type,
+            required,
+            unique,
+            enumValues,
+          })),
       })),
       recordsPerEntity: RECORDS,
     };
@@ -183,6 +212,9 @@ export class DemoDataService {
         sha256: hash(checkpoint.content),
       },
     });
-    return { values: acceptedDemoValues(entities, proposal, request.currency ?? undefined), checkpoint };
+    return {
+      values: acceptedDemoValues(entities, proposal, request.currency ?? undefined),
+      checkpoint,
+    };
   }
 }
