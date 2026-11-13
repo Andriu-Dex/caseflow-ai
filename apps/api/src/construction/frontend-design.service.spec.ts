@@ -473,6 +473,15 @@ describe('hand-written screens', () => {
 <Button className="w-full" data-action={"Guardar producto"}>Guardar producto</Button>{api.listItems(query)}</section>`;
     expect(missingBindings(generated, written)).toEqual([]);
   });
+  it('require the links to other screens of the generated page', () => {
+    const page = 'return <Link href={`/orders/${row.id}/edit`}>Editar</Link>;';
+    expect(missingBindings(page, '<a href="/orders">Pedidos</a>')).toEqual([
+      'href={`/orders/${row.id}/edit`}',
+    ]);
+    expect(
+      missingBindings(page, '<Link href={`/orders/${row.id}/edit`} className="x">Editar</Link>'),
+    ).toEqual([]);
+  });
   it('report what a hand-written screen lost', () => {
     expect(missingBindings(generated, `<input {...register('name')} />`)).toEqual([
       'data-action={"Guardar producto"}',

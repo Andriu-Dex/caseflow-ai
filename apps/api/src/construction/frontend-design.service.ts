@@ -623,7 +623,8 @@ export function screenEvaluator(environment: NodeJS.ProcessEnv): string {
 }
 
 // The functional bindings of a generated page a hand-written screen must keep:
-// its action markers, registered form fields and API client calls.
+// its action markers, registered form fields, API client calls and links to
+// other screens.
 export function missingBindings(generated: string, written: string): string[] {
   const bindings = new Set([
     ...[...generated.matchAll(/data-action=\{("(?:[^"\\]|\\.)*")\}/g)].map(
@@ -631,6 +632,8 @@ export function missingBindings(generated: string, written: string): string[] {
     ),
     ...[...generated.matchAll(/register\('([^']+)'/g)].map((m) => `register('${m[1]}'`),
     ...[...generated.matchAll(/\bapi\.(\w+)\(/g)].map((m) => `api.${m[1]}(`),
+    // Navigation to other screens, so every route stays reachable.
+    ...[...generated.matchAll(/href=\{`([^`]+)`\}/g)].map((m) => `href={\`${m[1]}\`}`),
   ]);
   return [...bindings].filter((binding) => !written.includes(binding));
 }
