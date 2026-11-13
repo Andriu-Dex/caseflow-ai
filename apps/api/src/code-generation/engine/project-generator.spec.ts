@@ -839,3 +839,47 @@ describe('demonstration data (DEC-159)', () => {
     );
   });
 });
+
+describe('contextual navigation', () => {
+  it('links each record to the screens that take its id after the same collection', () => {
+    const files = byPath(
+      generateProject(
+        ctx(
+          basePlan({
+            routes: [
+              {
+                path: '/orders',
+                screenName: 'Pedidos',
+                moduleLocalId: 'sales',
+                kind: 'LIST',
+                entityLocalId: 'order',
+                actions: [{ label: 'Consultar', operation: 'LIST' }],
+              },
+              {
+                path: '/orders/[orderid]/edit',
+                screenName: 'Editar pedido',
+                moduleLocalId: 'sales',
+                kind: 'FORM',
+                entityLocalId: 'order',
+                actions: [{ label: 'Guardar cambios', operation: 'UPDATE' }],
+              },
+              {
+                path: '/archive/orders/[orderid]/edit',
+                screenName: 'Otra colección',
+                moduleLocalId: 'sales',
+                kind: 'FORM',
+                entityLocalId: 'order',
+                actions: [{ label: 'Guardar', operation: 'UPDATE' }],
+              },
+            ],
+          }),
+        ),
+      ),
+    );
+    const list = files.get('apps/web/app/orders/page.tsx')!.content;
+    expect(list).toContain(
+      '<Link href={`/orders/${row.id}/edit`} className="text-primary underline">{"Editar pedido"}</Link>',
+    );
+    expect(list).toContain('/archive/orders/${row.id}/edit');
+  });
+});

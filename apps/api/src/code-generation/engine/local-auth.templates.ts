@@ -16,6 +16,21 @@ export function localAuthFiles(ctx: GenerationContext): GeneratedProjectFile[] {
   const { plan } = ctx;
   const local = plan.authentication.local;
   if (!local) return [];
+  // A route whose only parameters name the operation scope ([branchid]) is
+  // offered in the menu with the selected scope in place.
+  const scopeName = plan.entities.find(
+    (entity) => entity.localId === local.scope?.entityLocalId,
+  )?.name;
+  const onlyScopeParams = (path: string) => {
+    const params = [...path.matchAll(/\[([a-zA-Z0-9]+)\]/g)].map((match) =>
+      match[1]!.toLowerCase(),
+    );
+    return (
+      Boolean(scopeName) &&
+      params.length > 0 &&
+      params.every((param) => param === `${scopeName!.toLowerCase()}id`)
+    );
+  };
   const account = plan.entities.find((e) => e.localId === local.userEntityLocalId)!;
   const session = plan.entities.find((e) => e.localId === local.sessionEntityLocalId)!;
   const scope = local.scope;
@@ -302,8 +317,8 @@ export class LocalAuthService {
     return { closed: true };
   }
   options(actor: SessionActor) {
-    const routes = ${JSON.stringify(plan.routes.filter((r) => !r.path.includes('[') && !r.actions.some((a) => ['POST /auth/login', 'POST /auth/logout'].includes(a.endpoint ?? ''))).map((r) => ({ path: r.path, label: r.screenName, roles: r.roles ?? [], ...(scope ? { operations: r.actions.flatMap((action) => (action.endpoint && !['GET /auth/options', 'GET /auth/context', 'POST /auth/context'].includes(action.endpoint) ? [action.endpoint] : action.operation && r.entityLocalId ? [{ LIST: 'GET', GET: 'GET', CREATE: 'POST', UPDATE: 'PATCH', DELETE: 'DELETE' }[action.operation] + ' ' + collectionPath(plan.entities.find((entity) => entity.localId === r.entityLocalId)!.name) + (['GET', 'UPDATE', 'DELETE'].includes(action.operation) ? '/:id' : '')] : [])) } : {}) })))};
-    return routes.filter(route => (!route.roles.length || route.roles.some(role => actor.roles.includes(role)))${scope ? ' && (!route.operations.length || route.operations.some(operation => actor.permissions.includes(operation)))' : ''}).map(({ path, label }) => ({ path, label }));
+    const routes = ${JSON.stringify(plan.routes.filter((r) => (!r.path.includes('[') || onlyScopeParams(r.path)) && !r.actions.some((a) => ['POST /auth/login', 'POST /auth/logout'].includes(a.endpoint ?? ''))).map((r) => ({ path: r.path, label: r.screenName, roles: r.roles ?? [], ...(scope ? { operations: r.actions.flatMap((action) => (action.endpoint && !['GET /auth/options', 'GET /auth/context', 'POST /auth/context'].includes(action.endpoint) ? [action.endpoint] : action.operation && r.entityLocalId ? [{ LIST: 'GET', GET: 'GET', CREATE: 'POST', UPDATE: 'PATCH', DELETE: 'DELETE' }[action.operation] + ' ' + collectionPath(plan.entities.find((entity) => entity.localId === r.entityLocalId)!.name) + (['GET', 'UPDATE', 'DELETE'].includes(action.operation) ? '/:id' : '')] : [])) } : {}) })))};
+    return routes.filter(route => (!route.roles.length || route.roles.some(role => actor.roles.includes(role)))${scope ? ' && (!route.operations.length || route.operations.some(operation => actor.permissions.includes(operation)))' : ''}${scope ? " && (!route.path.includes('[') || Boolean(actor.selectedScopeId))" : ''}).map(({ path, label }) => ({ path: ${scope ? "path.replace(/\\[[a-zA-Z0-9]+\\]/g, actor.selectedScopeId ?? '')" : 'path'}, label }));
   }
   ${
     scope

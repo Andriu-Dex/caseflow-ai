@@ -190,6 +190,13 @@ ${themeToggle ? "import { ThemeToggle } from './theme-toggle';\n" : ''}
 const bareRoutes: string[] = ${JSON.stringify(routes.filter((route) => route.navigation === 'NONE' && !route.routePath.includes('[')).map((route) => route.routePath))};
 // The approved navigation grouped by module, shared with screens that list options.
 export const groups: { label: string; paths: string[] }[] = ${JSON.stringify(groups)};
+// Whether a concrete path (/branches/123/menus) is an instance of a route (/branches/[branchid]/menus).
+export const matchesRoute = (route: string, path: string) => {
+  const a = route.split('/');
+  const b = path.split('/');
+  return a.length === b.length && a.every((part, index) => part.startsWith('[') ? Boolean(b[index]) : part === b[index]);
+};
+export const inGroup = (group: { paths: string[] }, path: string) => group.paths.some((route) => matchesRoute(route, path));
 const menu = 'flex min-w-64 flex-col rounded-md border bg-background p-1 shadow-lg md:absolute md:z-30 md:mt-1';
 
 // The application's header: its name, the approved navigation grouped by
@@ -201,9 +208,9 @@ function Header() {
   const query = useQuery({ queryKey: ['authorized-options'], queryFn: () => api.getAuthOptions(), enabled: ready && Boolean(accessToken.get()) });
   const options = query.data ?? [];
   const sections = groups
-    .map((group) => ({ label: group.label, items: options.filter((item) => group.paths.includes(item.path)) }))
+    .map((group) => ({ label: group.label, items: options.filter((item) => inGroup(group, item.path)) }))
     .filter((group) => group.items.length);
-  const rest = options.filter((item) => item.path !== ${JSON.stringify(home ?? '')} && !groups.some((group) => group.paths.includes(item.path)));
+  const rest = options.filter((item) => item.path !== ${JSON.stringify(home ?? '')} && !groups.some((group) => inGroup(group, item.path)));
   if (rest.length) sections.push({ label: 'Otras opciones', items: rest });
   const trail = sections.flatMap((section) => section.items.filter((item) => item.path === pathname).map((item) => ({ section: section.label, label: item.label })))[0];
   ${scoped ? "const person = useQuery({ queryKey: ['operation-context'], queryFn: () => api.getAuthContext(), enabled: ready && Boolean(accessToken.get()), retry: false }).data;" : ''}

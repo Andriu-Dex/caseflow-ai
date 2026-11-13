@@ -358,6 +358,65 @@ function routeHref(
 const recordHref = (path: string, entity: Entity, names: string[], id: string) =>
   routeHref(path, names, id, entityParam(entity, routeParamNames(path)));
 
+// The screens a record opens, so every parametrized route of the plan is
+// reachable: routes that take this entity's id right after the page's own
+// collection segment (/products -> /products/[productid]/edit and
+// /branches/[branchid]/products/[productid]/availability), with any other
+// parameter taken from the page or from the selected operation scope.
+function contextLinks(
+  plan: Plan,
+  entity: Entity,
+  page: Route,
+  names: string[],
+  idExpr: string,
+  collection: string | undefined,
+): string[] {
+  const scope = plan.entities
+    .find((item) => item.localId === plan.authentication.local?.scope?.entityLocalId)
+    ?.name.toLowerCase();
+  const detail = entityRoute(plan, entity, 'DETAIL')?.path;
+  return plan.routes.flatMap((target) => {
+    if (
+      !collection ||
+      target === page ||
+      target.path === detail ||
+      target.builtinView === 'ACCOUNT_ACCESS' ||
+      !target.path.includes('[')
+    )
+      return [];
+    const own = entityParam(entity, routeParamNames(target.path));
+    const segments = target.path.split('/');
+    if (!own || segments[segments.indexOf(`[${own}]`) - 1] !== collection) return [];
+    let scoped = false;
+    let unresolved = false;
+    const href = target.path.replace(/\[([a-zA-Z0-9]+)\]/g, (_, name: string) => {
+      if (name === own) return `\${${idExpr}}`;
+      const matched = names.find((item) => item.toLowerCase() === name.toLowerCase());
+      if (matched) return `\${${matched}}`;
+      if (scope && name.toLowerCase() === `${scope}id`) {
+        scoped = true;
+        return '__scope__';
+      }
+      unresolved = true;
+      return '';
+    });
+    if (unresolved) return [];
+    const label = text(target.screenName.replace(/[<>{}]/g, ''));
+    return [
+      scoped
+        ? `<ScopeLink href={\`${href}\`}>${label}</ScopeLink>`
+        : `<Link href={\`${href}\`} className="text-primary underline">${label}</Link>`,
+    ];
+  });
+}
+// The static segment a page's records belong to: /products -> products,
+// /sales/[saleid] -> sales.
+const collectionOf = (path: string, recordParam?: string) => {
+  const segments = path.split('/').filter(Boolean);
+  const at = recordParam ? segments.indexOf(`[${recordParam}]`) : -1;
+  return at > 0 ? segments[at - 1] : [...segments].reverse().find((item) => !item.startsWith('['));
+};
+
 interface ActionTarget {
   autoLoad?: boolean;
   navigations?: Array<{
@@ -566,6 +625,7 @@ function pageImports(body: string, up: string, extra: string[] = []): string {
     extra.push(`import { ${actionSchemas.join(', ')} } from '@app/contracts';`);
   const lines = [
     body.includes('<Link') ? "import Link from 'next/link';" : '',
+    body.includes('<ScopeLink') ? `import { ScopeLink } from '${up}components/scope-link';` : '',
     ...extra,
     body.includes('<Button') ? `import { Button } from '${up}components/ui/button';` : '',
     body.includes('<Input') ? `import { Input } from '${up}components/ui/input';` : '',
@@ -646,6 +706,7 @@ function listPage(plan: Plan, entity: Entity, route: Route): string {
     rowControls.push(
       `<Link href=${recordHref(accessEditor.path, entity, names, 'row.id')} className="text-primary underline">Roles y ámbitos de operación</Link>`,
     );
+  rowControls.push(...contextLinks(plan, entity, route, names, 'row.id', collectionOf(route.path)));
   const detailHref = detail ? recordHref(detail.path, entity, names, 'row.id') : undefined;
   const idCell = detailHref
     ? `<td className="px-3 py-2 font-mono text-xs">\n  <Link className="text-primary underline" href=${detailHref}>\n    {row.id}\n  </Link>\n</td>`
@@ -831,10 +892,12 @@ function detailPage(plan: Plan, entity: Entity, route: Route): string {
     onDone: '() => query.refetch()',
     onDelete: `() => router.push(${list ? routeHref(list.path, names).replace(/^\{(.*)\}$/, '$1') : JSON.stringify('/')})`,
   });
+  const links = contextLinks(plan, entity, route, names, param, collectionOf(route.path, param));
   const body = `    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-semibold"${own ? ` ${actionMarker(own.label)}` : ''}>${route.screenName.replace(/[<>{}]/g, '')}</h1>
 ${header.length ? `        <div className="flex flex-wrap gap-2">\n${indent(header.join('\n'), 10)}\n        </div>\n` : ''}      </div>
+${links.length ? `      <nav aria-label="Operaciones del registro" className="flex flex-wrap gap-3 text-sm">\n${indent(links.join('\n'), 8)}\n      </nav>\n` : ''}
       <PageState query={query}>
         {(item) => (
           <dl className="grid gap-3 rounded-lg border p-4 sm:grid-cols-2">
@@ -1171,11 +1234,20 @@ function simplePage(plan: Plan, route: Route): string {
       routeParams: names,
     }),
   ];
-  const hook = paramsHook(names, [...names, ...header].join('\n'));
+  const recordParam = entityParam(entity, names);
+  const recordLinks =
+    entity && recordParam
+      ? contextLinks(plan, entity, route, names, recordParam, collectionOf(route.path, recordParam))
+      : [];
+  const hook = paramsHook(names, [...names, ...header, ...recordLinks].join('\n'));
   const body = `    <div className="flex flex-col gap-4">
       <h1 className="text-xl font-semibold">${route.screenName.replace(/[<>{}]/g, '')}</h1>
       <p className="text-sm text-muted-foreground">${module.description.replace(/[<>{}]/g, '')}</p>
 ${header.length ? `      <div className="flex flex-wrap gap-2">\n${indent(header.join('\n'), 8)}\n      </div>\n` : ''}${
+    recordLinks.length
+      ? `      <nav aria-label="Operaciones del registro" className="flex flex-wrap gap-3 text-sm">\n${indent(recordLinks.join('\n'), 8)}\n      </nav>\n`
+      : ''
+  }${
     links.length
       ? `      <ul className="grid gap-2 sm:grid-cols-2">
 ${links.map((l) => `        <li>\n          <Link className="block rounded-lg border p-4 hover:bg-muted" href="${l.path}">\n            ${l.screenName.replace(/[<>{}]/g, '')}\n          </Link>\n        </li>`).join('\n')}
@@ -1634,6 +1706,33 @@ describe('PasswordInput', () => {
     expect(field.getAttribute('type')).toBe('password');
   });
 });
+`,
+    ),
+    file(
+      'apps/web/components/scope-link.tsx',
+      `'use client';
+import Link from 'next/link';
+import { useEffect, useState, type ReactNode } from 'react';
+import { operationScope } from '../lib/api';
+
+// A link whose route needs the selected operation scope (__scope__ in href).
+// It appears once the scope is known in the browser, so server and client
+// render the same markup.
+export function ScopeLink({ href, children }: { href: string; children: ReactNode }) {
+  const [scope, setScope] = useState<string | null>(null);
+  useEffect(() => {
+    const read = () => setScope(operationScope.get());
+    read();
+    window.addEventListener('operation-scope-changed', read);
+    return () => window.removeEventListener('operation-scope-changed', read);
+  }, []);
+  if (!scope) return null;
+  return (
+    <Link href={href.replace('__scope__', scope)} className="text-primary underline">
+      {children}
+    </Link>
+  );
+}
 `,
     ),
     file(
