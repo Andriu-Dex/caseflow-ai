@@ -185,7 +185,8 @@ import { ChevronDown, ChevronRight, ${logout ? 'LogOut, ' : ''}UserRound } from 
 import { api, accessToken } from '../lib/api';
 ${themeToggle ? "import { ThemeToggle } from './theme-toggle';\n" : ''}
 const bareRoutes: string[] = ${JSON.stringify(routes.filter((route) => route.navigation === 'NONE' && !route.routePath.includes('[')).map((route) => route.routePath))};
-const groups: { label: string; paths: string[] }[] = ${JSON.stringify(groups)};
+// The approved navigation grouped by module, shared with screens that list options.
+export const groups: { label: string; paths: string[] }[] = ${JSON.stringify(groups)};
 const menu = 'flex min-w-64 flex-col rounded-md border bg-background p-1 shadow-lg md:absolute md:z-30 md:mt-1';
 
 // The application's header: its name, the approved navigation grouped by
