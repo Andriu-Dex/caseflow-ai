@@ -174,6 +174,22 @@ export class MockupsController {
     return this.service.version(projectId, mockupId, body.uiBlueprintVersionId, body.deviceType);
   }
 
+  @Post(':mockupId/carry-over')
+  @ApiOperation({
+    operationId: 'carryOverMockup',
+    summary: 'Trasladar un boceto aprobado a una versión más reciente del plano sin regenerarlo',
+  })
+  @ApiZodBody(createMockupRequestSchema)
+  @ApiZodResponse(201, 'Mockup.', mockupResponseSchema)
+  carryOver(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('mockupId', uuidParamPipe) mockupId: string,
+    @Body(new ZodValidationPipe(createMockupRequestSchema))
+    body: z.output<typeof createMockupRequestSchema>,
+  ) {
+    return this.service.carryOver(projectId, mockupId, body.uiBlueprintVersionId);
+  }
+
   @Post(':mockupId/refine')
   @HttpCode(202)
   @ApiOperation({

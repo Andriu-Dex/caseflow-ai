@@ -138,6 +138,68 @@ export class MockupsService {
     return this.enqueueJob(projectId, uiBlueprintVersionId, mockupId, deviceType);
   }
 
+  // A new version of an approved Stitch mockup for a newer approved UI
+  // Blueprint whose screens are a subset of the previous one, each unchanged
+  // (a scope cut): the approved screens are carried over, nothing is
+  // regenerated. Any new or changed screen must be generated or refined.
+  async carryOver(projectId: string, mockupId: string, uiBlueprintVersionId: string) {
+    await this.assertApprovedBlueprint(projectId, uiBlueprintVersionId);
+    const latest = (await this.findLatest(projectId, mockupId)).versions[0]!;
+    const detail = latest.mockupDetail!;
+    if (latest.status !== 'APPROVED' || detail.generatorKind !== 'STITCH')
+      throw new UnprocessableEntityException(
+        'Solo se puede trasladar la última versión aprobada de un boceto de Stitch.',
+      );
+    if (detail.uiBlueprintVersionId === uiBlueprintVersionId)
+      throw new UnprocessableEntityException('El boceto ya corresponde a esta versión del plano.');
+    const [before, after] = (await Promise.all(
+      [detail.uiBlueprintVersionId, uiBlueprintVersionId].map(async (id) =>
+        uiBlueprintContentSchema.parse(
+          (
+            await this.prisma.artifactVersion.findFirstOrThrow({
+              where: { id, projectId },
+              include: { structuredAnalysisDetail: true },
+            })
+          ).structuredAnalysisDetail?.content,
+        ),
+      ),
+    )) as [
+      ReturnType<typeof uiBlueprintContentSchema.parse>,
+      ReturnType<typeof uiBlueprintContentSchema.parse>,
+    ];
+    const blocked = after.screens.filter((screen) => {
+      const previous = before.screens.find((item) => item.localId === screen.localId);
+      return (
+        !previous ||
+        JSON.stringify(previous) !== JSON.stringify(screen) ||
+        !detail.screens.some((item) => item.screenLocalId === screen.localId)
+      );
+    });
+    if (blocked.length)
+      throw new UnprocessableEntityException(
+        `Estas pantallas son nuevas o cambiaron y deben generarse o refinarse: ${blocked.map((screen) => screen.name).join(', ')}.`,
+      );
+    const kept = new Set(after.screens.map((screen) => screen.localId));
+    return this.prisma.$transaction((tx) =>
+      this.createVersionInTx(tx, projectId, mockupId, uiBlueprintVersionId, detail.deviceType, {
+        kind: 'STITCH',
+        designThemeVersionId: detail.designThemeVersionId,
+        screens: detail.screens
+          .filter((screen) => kept.has(screen.screenLocalId))
+          .map((screen) => ({
+            screenLocalId: screen.screenLocalId,
+            screenName: screen.screenName,
+            imageStorageKey: screen.imageStorageKey,
+            imageContentType: screen.imageContentType,
+            htmlStorageKey: screen.htmlStorageKey,
+            stitchProjectId: screen.stitchProjectId,
+            stitchScreenId: screen.stitchScreenId,
+            refinementPrompt: screen.refinementPrompt,
+          })),
+      }),
+    );
+  }
+
   // Refinement = a new version of the same mockup, regenerated from the same
   // approved UI Blueprint plus the user's instruction. Only Stitch mockups
   // qualify: the internal wireframe is deterministic and has no prompt.
