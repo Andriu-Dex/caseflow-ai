@@ -16,6 +16,8 @@ x-api-env: &api-env
   JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET (at least 32 characters)}
   INTERNAL_JOBS_SECRET: ${INTERNAL_JOBS_SECRET:?Set INTERNAL_JOBS_SECRET}
   WEB_ORIGIN: ${PUBLIC_WEB_URL:-http://localhost:3000}
+  # Only the proxies listed here may say who the client is (see ADR-011); empty: none.
+  TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
   REDIS_URL: redis://redis:6379
   API_INTERNAL_URL: http://api:3001
   S3_ENDPOINT: http://seaweedfs:8333

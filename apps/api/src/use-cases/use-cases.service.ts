@@ -262,7 +262,7 @@ export class UseCasesService {
             projectId,
             language,
             promptKey: 'use-cases.generate',
-            promptVersion: 4,
+            promptVersion: 5,
             messages: [
               {
                 role: 'user',

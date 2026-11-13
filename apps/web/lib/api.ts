@@ -1,9 +1,16 @@
 import { toast } from 'sonner';
 import type {
+  UserManualState,
+  UserManualResponse,
+  EditUserManualRequest,
   CreateDesignBaselineRequest,
   DataModelInput,
   DesignBaselineResponse,
+  ScreenDesignExceptionResponse,
+  DeploymentResponse,
+  ScreenFindingsResponse,
   GeneratedFileResponse,
+  ConstructionUnit,
   GeneratedFileSummary,
   GenerationRunResponse,
   SandboxRunResponse,
@@ -877,6 +884,32 @@ export const api = {
       get<{ items: DesignBaselineResponse[] }>(`/projects/${projectId}/design-baselines`),
     create: (projectId: string, data: CreateDesignBaselineRequest) =>
       post<DesignBaselineResponse>(`/projects/${projectId}/design-baselines`, data),
+    screenFindings: (projectId: string, baselineId: string) =>
+      get<ScreenFindingsResponse>(
+        `/projects/${projectId}/design-baselines/${baselineId}/screen-findings`,
+      ),
+    acceptScreenFindings: (
+      projectId: string,
+      baselineId: string,
+      data: { routePath: string; findingsSha256: string; justification: string },
+    ) =>
+      post<ScreenDesignExceptionResponse>(
+        `/projects/${projectId}/design-baselines/${baselineId}/screen-exceptions`,
+        data,
+      ),
+  },
+  // ADR-019: a READY snapshot running locally behind Cloudflare Tunnel.
+  deployments: {
+    list: (projectId: string) =>
+      get<{ items: DeploymentResponse[] }>(`/projects/${projectId}/deployments`),
+    start: (
+      projectId: string,
+      data: { snapshotId: string; initialPassword: string; tunnelToken?: string },
+    ) => post<DeploymentResponse>(`/projects/${projectId}/deployments`, data),
+    stop: (projectId: string, id: string) =>
+      post<DeploymentResponse>(`/projects/${projectId}/deployments/${id}/stop`),
+    resume: (projectId: string, id: string, data: { tunnelToken?: string } = {}) =>
+      post<DeploymentResponse>(`/projects/${projectId}/deployments/${id}/start`, data),
   },
   ai: {
     status: () => get<AIStatus>('/ai/status'),
@@ -897,7 +930,47 @@ export const api = {
     approve: (projectId: string, runId: string) =>
       post<WorkflowRunResponse>(`/projects/${projectId}/workflow-runs/${runId}/approve`),
   },
+  userManuals: {
+    cancelCapture: (p: string, s: string) =>
+      post<UserManualState>(
+        `/projects/${p}/generated-project-snapshots/${s}/user-manual/capture/cancel`,
+        {},
+      ),
+    capture: (p: string, s: string) =>
+      post<UserManualState>(
+        `/projects/${p}/generated-project-snapshots/${s}/user-manual/capture`,
+        {},
+      ),
+    captureUrl: (p: string, s: string, v: string, c: string) =>
+      `${BASE_URL}/projects/${p}/generated-project-snapshots/${s}/user-manual/versions/${v}/captures/${c}`,
+    state: (p: string, s: string) =>
+      get<UserManualState>(`/projects/${p}/generated-project-snapshots/${s}/user-manual`),
+    generate: (p: string, s: string) =>
+      post(`/projects/${p}/generated-project-snapshots/${s}/user-manual/generate`, {}),
+    version: (p: string, s: string, v: string) =>
+      get<UserManualResponse>(
+        `/projects/${p}/generated-project-snapshots/${s}/user-manual/versions/${v}`,
+      ),
+    edit: (p: string, s: string, input: EditUserManualRequest) =>
+      post<UserManualResponse>(
+        `/projects/${p}/generated-project-snapshots/${s}/user-manual/versions`,
+        input,
+      ),
+    transition: (p: string, s: string, v: string, status: ArtifactVersionStatus) =>
+      post<UserManualResponse>(
+        `/projects/${p}/generated-project-snapshots/${s}/user-manual/versions/${v}/transition`,
+        { status },
+      ),
+    downloadUrl: (p: string, s: string, v: string, format: 'html' | 'pdf' | 'zip') =>
+      `${BASE_URL}/projects/${p}/generated-project-snapshots/${s}/user-manual/versions/${v}/download?format=${format}`,
+  },
   generationRuns: {
+    workingCopy: (projectId: string, implementationPlanVersionId: string) =>
+      post<GenerationRunResponse>(`/projects/${projectId}/generation-runs/working-copies`, {
+        implementationPlanVersionId,
+        reason: 'Consolidar los checkpoints disponibles para continuar la implementación.',
+        revisions: [],
+      }),
     list: (projectId: string) =>
       get<{ items: GenerationRunResponse[] }>(`/projects/${projectId}/generation-runs`),
     start: (projectId: string, implementationPlanVersionId: string) =>
@@ -914,6 +987,8 @@ export const api = {
       ),
     file: (projectId: string, runId: string, fileId: string) =>
       get<GeneratedFileResponse>(`/projects/${projectId}/generation-runs/${runId}/files/${fileId}`),
+    units: (projectId: string, runId: string) =>
+      get<{ items: ConstructionUnit[] }>(`/projects/${projectId}/generation-runs/${runId}/units`),
     sandboxRuns: (projectId: string, runId: string) =>
       get<{ items: SandboxRunResponse[] }>(
         `/projects/${projectId}/generation-runs/${runId}/sandbox-runs`,

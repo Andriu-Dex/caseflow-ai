@@ -1040,6 +1040,8 @@ Temporary hosted preview is P1 and does not block V1.
 
 Git push and automatic deployment are not P0 requirements for V1.
 
+Version 2 (DEC-157, `docs/decisions/ADR-019-despliegue-del-software-generado.md`) requires generated software to be delivered deployed: `READY` snapshots run in local Docker and are published through Cloudflare Tunnel via `DeploymentProvider`, isolated and without CASEFlow secrets. CASEFlow itself remains a desktop application. Generated code review is presented by construction unit (DEC-158, ADR-020). Version 2 is the final product version.
+
 ---
 
 ## 29. Language Policy

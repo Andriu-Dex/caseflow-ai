@@ -1,14 +1,23 @@
+import { FrontendDesignService } from './frontend-design.service';
+import { DemoDataService } from './demo-data.service';
 import { Inject, Module, type OnModuleDestroy } from '@nestjs/common';
 import { createJobQueue, createStorageProvider, type JobQueue } from '../common/infrastructure';
 import { CONSTRUCTION_QUEUE, type ConstructionJobPayload } from '@caseflow-ai/domain';
 import {
   DockerSandboxExecutionProvider,
+  DockerRuntimeCaptureProvider,
+  RUNTIME_CAPTURE_PROVIDER,
+  E2E_TEST_PROVIDER,
+  DEPLOYMENT_PROVIDER,
+  DockerTunnelDeploymentProvider,
   type SandboxExecutionProvider,
 } from '@caseflow-ai/integrations';
 import { AIModule } from '../ai/ai.module';
 import { STORAGE_PROVIDER } from '../sources/storage-provider.token';
 import { AutoRepairService } from './auto-repair.service';
 import { BusinessLogicService } from './business-logic.service';
+import { DeploymentsController } from './deployments.controller';
+import { DeploymentsService } from './deployments.service';
 import {
   DependencyProposalsController,
   TargetTemplatesController,
@@ -41,6 +50,8 @@ import { MockupsModule } from '../mockups/mockups.module';
 import { ConsistencyEngineModule } from '../consistency-engine/consistency-engine.module';
 import { InterruptedJobsRecovery } from './interrupted-jobs.recovery';
 import { StageCurrencyModule } from '../readiness/stage-currency';
+import { UserManualsService } from '../user-manuals/user-manuals.service';
+import { UserManualsController } from '../user-manuals/user-manuals.controller';
 
 @Module({
   imports: [
@@ -65,13 +76,22 @@ import { StageCurrencyModule } from '../readiness/stage-currency';
     InternalConstructionJobsController,
     WorkflowRunsController,
     SandboxStatusController,
+    UserManualsController,
+    DeploymentsController,
   ],
   providers: [
+    { provide: RUNTIME_CAPTURE_PROVIDER, useFactory: () => new DockerRuntimeCaptureProvider() },
+    { provide: E2E_TEST_PROVIDER, useFactory: () => new DockerRuntimeCaptureProvider() },
+    { provide: DEPLOYMENT_PROVIDER, useFactory: () => new DockerTunnelDeploymentProvider() },
+    DeploymentsService,
     InterruptedJobsRecovery,
+    UserManualsService,
     DependencyCatalogService,
     DependencyProposalsService,
     DesignBaselinesService,
     BusinessLogicService,
+    FrontendDesignService,
+    DemoDataService,
     GenerationRunsService,
     AutoRepairService,
     SandboxRunsService,

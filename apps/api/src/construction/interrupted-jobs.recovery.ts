@@ -1,8 +1,11 @@
 import { Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common';
+import { UserManualsService } from '../user-manuals/user-manuals.service';
 import { MockupsService } from '../mockups/mockups.service';
 import { GenerationRunsService } from './generation-runs.service';
 import { SandboxRunsService } from './sandbox-runs.service';
 import { WorkflowRunsService } from './workflow-runs.service';
+import { DeploymentsService } from './deployments.service';
+import { HEARTBEAT_INTERVAL_MS, HEARTBEAT_STALE_MS } from '../common/interrupted';
 
 const logger = new Logger('InterruptedJobsRecovery');
 
@@ -19,6 +22,8 @@ export class InterruptedJobsRecovery implements OnApplicationBootstrap {
     private readonly generationRuns: GenerationRunsService,
     private readonly sandboxRuns: SandboxRunsService,
     private readonly workflowRuns: WorkflowRunsService,
+    private readonly userManuals: UserManualsService,
+    private readonly deployments: DeploymentsService,
   ) {}
 
   async onApplicationBootstrap() {
@@ -30,8 +35,20 @@ export class InterruptedJobsRecovery implements OnApplicationBootstrap {
       ['queued mockup job', () => this.mockups.requeuePending()],
       ['generation run', () => this.generationRuns.markInterrupted(bootedAt)],
       ['sandbox run', () => this.sandboxRuns.markInterrupted(bootedAt)],
+      ['deployment', () => this.deployments.markInterrupted(bootedAt)],
+      ['user manual job', () => this.userManuals.recover(bootedAt)],
       ['workflow run', () => this.workflowRuns.resumeInterrupted(bootedAt)],
     ];
+    // A job started just before this boot may still have a fresh heartbeat
+    // from a process that already died; look again once it would be stale.
+    const recheck = setTimeout(() => {
+      const now = new Date();
+      void Promise.all([
+        this.generationRuns.markInterrupted(now),
+        this.sandboxRuns.markInterrupted(now),
+      ]).catch(() => undefined);
+    }, HEARTBEAT_STALE_MS + HEARTBEAT_INTERVAL_MS);
+    recheck.unref?.();
     for (const [label, step] of steps) {
       try {
         const count = await step();

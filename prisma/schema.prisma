@@ -237,20 +237,23 @@ model User {
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   archivedAt   DateTime? @map("archived_at") @db.Timestamptz(6)
 
-  sessions                  Session[]
-  workspaceMemberships      WorkspaceMembership[]
-  projectMemberships        ProjectMembership[]
-  projectBaselines          ProjectBaseline[]
-  auditEvents               AuditEvent[]
-  requestedProposals        DependencyProposal[]       @relation("DependencyProposalRequester")
-  decidedProposals          DependencyProposal[]       @relation("DependencyProposalDecider")
-  designBaselines           DesignBaseline[]
-  workflowRuns              WorkflowRun[]
-  generationRuns            GenerationRun[]
-  sandboxRuns               SandboxRun[]
-  generatedProjectSnapshots GeneratedProjectSnapshot[]
-  projectDeletions          ProjectDeletion[]
-  stageConfirmations        StageConfirmation[]
+  sessions                    Session[]
+  workspaceMemberships        WorkspaceMembership[]
+  projectMemberships          ProjectMembership[]
+  projectBaselines            ProjectBaseline[]
+  auditEvents                 AuditEvent[]
+  requestedProposals          DependencyProposal[]         @relation("DependencyProposalRequester")
+  decidedProposals            DependencyProposal[]         @relation("DependencyProposalDecider")
+  designBaselines             DesignBaseline[]
+  screenDesignExceptions      ScreenDesignException[]
+  screenDesignOverrides       ScreenDesignOverride[]
+  generatedProjectDeployments GeneratedProjectDeployment[]
+  workflowRuns                WorkflowRun[]
+  generationRuns              GenerationRun[]
+  sandboxRuns                 SandboxRun[]
+  generatedProjectSnapshots   GeneratedProjectSnapshot[]
+  projectDeletions            ProjectDeletion[]
+  stageConfirmations          StageConfirmation[]
 
   @@map("users")
 }
@@ -371,6 +374,9 @@ model Project {
   auditEvents                   AuditEvent[]
   dependencyProposals           DependencyProposal[]
   designBaselines               DesignBaseline[]
+  screenDesignExceptions        ScreenDesignException[]
+  screenDesignOverrides         ScreenDesignOverride[]
+  generatedProjectDeployments   GeneratedProjectDeployment[]
   generationRuns                GenerationRun[]
   sandboxRuns                   SandboxRun[]
   generatedProjectSnapshots     GeneratedProjectSnapshot[]
@@ -380,6 +386,7 @@ model Project {
   useCaseGenerationJobs         UseCaseGenerationJob[]
   structuredGenerationJobs      StructuredGenerationJob[]
   dataModelGenerationJobs       DataModelGenerationJob[]
+  userManualJobs                UserManualJob[]
 
   @@index([workspaceId, createdAt, id])
   @@map("projects")
@@ -485,6 +492,7 @@ model ArtifactVersion {
   repairFindings                      RepairFinding[]
   snapshotsAsGenerationPlan           GeneratedProjectSnapshot[]           @relation("SnapshotGenerationPlan")
   snapshotsAsImplementationPlan       GeneratedProjectSnapshot[]           @relation("SnapshotImplementationPlan")
+  userManualDetail                    UserManualDetail?
 
   @@unique([artifactId, versionNumber])
   @@unique([id, projectId])
@@ -1494,7 +1502,7 @@ model MockupGenerationJob {
   createdAt            DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  project Project                 @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  project Project                @relation(fields: [projectId], references: [id], onDelete: Restrict)
   parts   MockupGenerationPart[]
 
   @@index([projectId, createdAt])
@@ -1656,6 +1664,53 @@ enum DesignBaselineRole {
 // Approved, frozen design (spec §160, DEC-094): the exact approved versions an
 // official ImplementationPlan and code generation are built from. Creating
 // one is the human Design Gate approval; rows are immutable afterwards.
+// A justified acceptance of the exact findings the screen evaluator reported
+// for one screen of a design baseline (AGENTS.md §16: justify exceptions).
+// It covers only those findings: different findings need a new justification.
+model ScreenDesignException {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId        String   @map("project_id") @db.Uuid
+  designBaselineId String   @map("design_baseline_id") @db.Uuid
+  routePath        String   @map("route_path")
+  findingsSha256   String   @map("findings_sha256") @db.Char(64)
+  findings         String
+  justification    String
+  createdByUserId  String   @map("created_by_user_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project        Project        @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  designBaseline DesignBaseline @relation(fields: [designBaselineId], references: [id], onDelete: Restrict)
+  createdBy      User           @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([designBaselineId, routePath, findingsSha256])
+  @@index([projectId])
+  @@map("screen_design_exceptions")
+}
+
+// A screen of a design baseline written by hand to follow its mockup (DEC-161).
+// Official generation uses the latest one for the route instead of the AI
+// composition, only while it keeps every functional binding of the generated
+// page. Append-only history: a correction is a new row.
+model ScreenDesignOverride {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId        String   @map("project_id") @db.Uuid
+  designBaselineId String   @map("design_baseline_id") @db.Uuid
+  routePath        String   @map("route_path")
+  content          String
+  contentSha256    String   @map("content_sha256") @db.Char(64)
+  justification    String
+  createdByUserId  String   @map("created_by_user_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project        Project        @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  designBaseline DesignBaseline @relation(fields: [designBaselineId], references: [id], onDelete: Restrict)
+  createdBy      User           @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([designBaselineId, routePath, createdAt])
+  @@index([projectId])
+  @@map("screen_design_overrides")
+}
+
 model DesignBaseline {
   structuredGenerationJobs StructuredGenerationJob[]
   id                       String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -1667,11 +1722,13 @@ model DesignBaseline {
   approvalOrigin           ApprovalOrigin            @default(HUMAN) @map("approval_origin")
   createdAt                DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  project        Project                    @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  approvedBy     User                       @relation(fields: [approvedByUserId], references: [id], onDelete: Restrict)
-  entries        DesignBaselineEntry[]
-  generationRuns GenerationRun[]
-  snapshots      GeneratedProjectSnapshot[]
+  project          Project                    @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  approvedBy       User                       @relation(fields: [approvedByUserId], references: [id], onDelete: Restrict)
+  entries          DesignBaselineEntry[]
+  generationRuns   GenerationRun[]
+  snapshots        GeneratedProjectSnapshot[]
+  screenExceptions ScreenDesignException[]
+  screenOverrides  ScreenDesignOverride[]
 
   @@index([projectId, createdAt])
   @@map("design_baselines")
@@ -1694,6 +1751,7 @@ enum GenerationRunStatus {
   GENERATING
   GENERATED
   FAILED
+  WORKING_COPY
 
   @@map("generation_run_status")
 }
@@ -1702,6 +1760,7 @@ enum GeneratedFileOrigin {
   TEMPLATE
   DETERMINISTIC
   AI_ASSISTED
+  MANUAL
 
   @@map("generated_file_origin")
 }
@@ -1739,6 +1798,8 @@ model GenerationRun {
   createdByUserId             String              @map("created_by_user_id") @db.Uuid
   createdAt                   DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   startedAt                   DateTime?           @map("started_at") @db.Timestamptz(6)
+  // Refreshed by the process running the job (stale = abandoned).
+  heartbeatAt                 DateTime?           @map("heartbeat_at") @db.Timestamptz(6)
   finishedAt                  DateTime?           @map("finished_at") @db.Timestamptz(6)
   // Hidden from the list by a person; the run and its files stay as history.
   archivedAt                  DateTime?           @map("archived_at") @db.Timestamptz(6)
@@ -1765,8 +1826,9 @@ model GeneratedFile {
   origin          GeneratedFileOrigin
   kind            GeneratedFileKind
 
-  generationRun GenerationRun   @relation(fields: [generationRunId], references: [id], onDelete: Restrict)
+  generationRun GenerationRun    @relation(fields: [generationRunId], references: [id], onDelete: Restrict)
   traceLinks    CodeTraceLink[]
+  manualTasks   UserManualTask[]
 
   @@unique([generationRunId, path])
   @@map("generated_files")
@@ -1811,6 +1873,7 @@ enum ValidationStage {
   BUILD
   STRUCTURE
   TRACEABILITY
+  E2E
 
   @@map("validation_stage")
 }
@@ -1838,6 +1901,8 @@ model SandboxRun {
   createdByUserId String           @map("created_by_user_id") @db.Uuid
   createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   startedAt       DateTime?        @map("started_at") @db.Timestamptz(6)
+  // Refreshed by the process running the job (stale = abandoned).
+  heartbeatAt     DateTime?        @map("heartbeat_at") @db.Timestamptz(6)
   finishedAt      DateTime?        @map("finished_at") @db.Timestamptz(6)
 
   project       Project                   @relation(fields: [projectId], references: [id], onDelete: Restrict)
@@ -1917,6 +1982,47 @@ model RepairFinding {
 }
 
 // Immutable official result of a validated generation (spec §172, DEC-104/105).
+enum DeploymentStatus {
+  STARTING
+  RUNNING
+  STOPPED
+  FAILED
+  REMOVED
+
+  @@map("deployment_status")
+}
+
+enum DeploymentTunnelMode {
+  QUICK
+  NAMED
+
+  @@map("deployment_tunnel_mode")
+}
+
+// ADR-019: a READY snapshot running in local Docker behind Cloudflare Tunnel.
+// Holds no secret: passwords and tunnel tokens are passed to the containers
+// and never stored. Accounts lists only the initial roles and identifiers.
+model GeneratedProjectDeployment {
+  id              String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId       String               @map("project_id") @db.Uuid
+  snapshotId      String               @map("snapshot_id") @db.Uuid
+  status          DeploymentStatus     @default(STARTING)
+  tunnelMode      DeploymentTunnelMode @map("tunnel_mode")
+  publicUrl       String?              @map("public_url")
+  accounts        Json                 @default("[]")
+  errorMessage    String?              @map("error_message")
+  createdByUserId String               @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project   Project                  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  snapshot  GeneratedProjectSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  createdBy User                     @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, createdAt])
+  @@map("generated_project_deployments")
+}
+
 model GeneratedProjectSnapshot {
   id                          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   projectId                   String   @map("project_id") @db.Uuid
@@ -1935,16 +2041,105 @@ model GeneratedProjectSnapshot {
   createdByUserId             String   @map("created_by_user_id") @db.Uuid
   createdAt                   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  project                   Project          @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  generationRun             GenerationRun    @relation(fields: [generationRunId], references: [id], onDelete: Restrict)
-  sandboxRun                SandboxRun       @relation(fields: [sandboxRunId], references: [id], onDelete: Restrict)
-  generationPlanVersion     ArtifactVersion? @relation("SnapshotGenerationPlan", fields: [generationPlanVersionId], references: [id], onDelete: Restrict)
-  designBaseline            DesignBaseline   @relation(fields: [designBaselineId], references: [id], onDelete: Restrict)
-  implementationPlanVersion ArtifactVersion  @relation("SnapshotImplementationPlan", fields: [implementationPlanVersionId], references: [id], onDelete: Restrict)
-  createdBy                 User             @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  project                   Project                      @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  deployments               GeneratedProjectDeployment[]
+  generationRun             GenerationRun                @relation(fields: [generationRunId], references: [id], onDelete: Restrict)
+  sandboxRun                SandboxRun                   @relation(fields: [sandboxRunId], references: [id], onDelete: Restrict)
+  generationPlanVersion     ArtifactVersion?             @relation("SnapshotGenerationPlan", fields: [generationPlanVersionId], references: [id], onDelete: Restrict)
+  designBaseline            DesignBaseline               @relation(fields: [designBaselineId], references: [id], onDelete: Restrict)
+  implementationPlanVersion ArtifactVersion              @relation("SnapshotImplementationPlan", fields: [implementationPlanVersionId], references: [id], onDelete: Restrict)
+  createdBy                 User                         @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  userManuals               UserManualDetail[]
+  userManualJob             UserManualJob?
 
   @@index([projectId, createdAt])
   @@map("generated_project_snapshots")
+}
+
+model UserManualDetail {
+  artifactVersionId String                   @id @map("artifact_version_id") @db.Uuid
+  snapshotId        String                   @map("snapshot_id") @db.Uuid
+  introduction      String
+  artifactVersion   ArtifactVersion          @relation(fields: [artifactVersionId], references: [id], onDelete: Restrict)
+  snapshot          GeneratedProjectSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  tasks             UserManualTask[]
+
+  @@index([snapshotId])
+  @@map("user_manual_details")
+}
+
+model UserManualTask {
+  id              String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  manualVersionId String               @map("manual_version_id") @db.Uuid
+  generatedFileId String               @map("generated_file_id") @db.Uuid
+  position        Int
+  title           String
+  routePath       String               @map("route_path")
+  verified        Boolean              @default(false)
+  manual          UserManualDetail     @relation(fields: [manualVersionId], references: [artifactVersionId], onDelete: Restrict)
+  generatedFile   GeneratedFile        @relation(fields: [generatedFileId], references: [id], onDelete: Restrict)
+  roles           UserManualTaskRole[]
+  steps           UserManualStep[]
+  captures        UserManualCapture[]
+
+  @@unique([manualVersionId, position])
+  @@unique([manualVersionId, routePath])
+  @@map("user_manual_tasks")
+}
+
+model UserManualTaskRole {
+  taskId String         @map("task_id") @db.Uuid
+  name   String
+  task   UserManualTask @relation(fields: [taskId], references: [id], onDelete: Restrict)
+
+  @@id([taskId, name])
+  @@map("user_manual_task_roles")
+}
+
+model UserManualStep {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  taskId         String         @map("task_id") @db.Uuid
+  position       Int
+  instruction    String
+  expectedResult String         @map("expected_result")
+  task           UserManualTask @relation(fields: [taskId], references: [id], onDelete: Restrict)
+
+  @@unique([taskId, position])
+  @@map("user_manual_steps")
+}
+
+model UserManualJob {
+  id               String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId        String                   @map("project_id") @db.Uuid
+  snapshotId       String                   @unique @map("snapshot_id") @db.Uuid
+  status           String                   @default("QUEUED")
+  errorMessage     String?                  @map("error_message")
+  captureRequested Boolean                  @default(false) @map("capture_requested")
+  createdAt        DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project          Project                  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  snapshot         GeneratedProjectSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, status])
+  @@map("user_manual_jobs")
+}
+
+model UserManualCapture {
+  id         String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  taskId     String         @map("task_id") @db.Uuid
+  bundleId   String         @map("bundle_id") @db.Uuid
+  role       String
+  status     String
+  reason     String?
+  storageKey String?        @map("storage_key")
+  sha256     String?
+  width      Int?
+  height     Int?
+  profile    String
+  task       UserManualTask @relation(fields: [taskId], references: [id], onDelete: Restrict)
+
+  @@unique([taskId, role])
+  @@map("user_manual_captures")
 }
 
 enum WorkflowRunStatus {

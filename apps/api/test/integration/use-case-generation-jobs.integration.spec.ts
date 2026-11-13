@@ -36,7 +36,7 @@ describe('Batched use case generation jobs', () => {
             throw new AIError('AI_PROVIDER_ERROR', 'Proveedor no disponible.');
           }
           const earlier: { candidateId: string }[] = payload.existingUseCases;
-          // The model cites the shared non-functional context too; it must not stick.
+          // Explicitly cited shared guarantees remain traceable, without becoming batch targets.
           const context: string[] = payload.contextRequirementSources.map(
             (source: { sourceId: string }) => source.sourceId,
           );
@@ -154,8 +154,26 @@ describe('Batched use case generation jobs', () => {
     const generation = await ctx.useCases.getGeneration(projectId, job.generationId!);
     expect(generation.candidates).toHaveLength(14);
     expect(generation.sources).toHaveLength(15);
-    // Every proposal cites exactly the requirement it was made for.
-    expect(generation.candidates.every((c) => c.sources.length === 1)).toBe(true);
+    // Each proposal keeps its own functional requirement and the explicitly cited shared guarantee.
+    const sharedVersionId = versionIds[14]!;
+    const functionalVersions = new Map(
+      versionIds
+        .slice(0, 14)
+        .map((versionId, index) => [
+          `Procesar RF-${String(index + 1).padStart(3, '0')}`,
+          versionId,
+        ]),
+    );
+    expect(
+      generation.sources.some((source) => source.requirementVersionId === sharedVersionId),
+    ).toBe(true);
+    for (const candidate of generation.candidates) {
+      const functionalVersionId = functionalVersions.get(candidate.name);
+      expect(functionalVersionId).toBeDefined();
+      expect(new Set(candidate.sources.map((source) => source.requirementVersionId))).toEqual(
+        new Set([functionalVersionId, sharedVersionId]),
+      );
+    }
     // A relation to a proposal of an earlier batch survives under its final id.
     const related = generation.candidates.filter((c) => (c.relations as unknown[]).length);
     expect(related.map((c) => c.candidateId)).toEqual(['B2-C1', 'B3-C1']);

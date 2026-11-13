@@ -1,12 +1,17 @@
 'use client';
 
 import Link from 'next/link';
+import { newestApprovedPlan, newestRunForPlan } from '../../../lib/construction-progress';
+import { WorkingCopySummary } from './working-copy-summary';
+import { ScreenFindings } from './screen-findings';
+import { DeploymentPanel } from './deployment-panel';
 import { useFailureToast } from '../../../lib/use-failure-toast';
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   Archive,
+  BookOpen,
   ChevronDown,
   ChevronRight,
   ArrowRight,
@@ -35,6 +40,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
+  type ConstructionUnit,
   type GenerationRunResponse,
   type ImplementationPlanContent,
   type SandboxRunResponse,
@@ -68,6 +74,7 @@ const STATUS_LABELS: Record<GenerationRunResponse['status'], string> = {
   GENERATING: 'Generando',
   GENERATED: 'Generado',
   FAILED: 'Falló',
+  WORKING_COPY: 'Versión de trabajo · incompleta',
 };
 
 const LINK_LABELS = { IMPLEMENTS: 'Implementa', TESTS: 'Prueba', CONFIGURES: 'Configura' };
@@ -166,16 +173,205 @@ function FileViewer({
   );
 }
 
-function RunFiles({ projectId, run }: { projectId: string; run: GenerationRunResponse }) {
+const UNIT_KINDS: Record<ConstructionUnit['kind'], string> = {
+  SCREEN: 'Pantallas',
+  ACTION: 'Acciones de negocio',
+  ENTITY: 'Entidades',
+  MODULE: 'Módulos',
+  PROJECT: 'Base del proyecto',
+};
+const ORIGIN_LABELS: Record<keyof ConstructionUnit['origins'], string> = {
+  TEMPLATE: 'Plantilla',
+  DETERMINISTIC: 'Determinista',
+  AI_ASSISTED: 'Asistido por IA',
+  MANUAL: 'Ajuste manual',
+};
+
+// ADR-020: the generated code by construction unit (what was generated, its
+// origin and traceability), with each file opened on demand.
+function RunUnits({ projectId, run }: { projectId: string; run: GenerationRunResponse }) {
+  const [kind, setKind] = useState<ConstructionUnit['kind']>('SCREEN');
+  const [filter, setFilter] = useState('');
   const [fileId, setFileId] = useState<string>();
+  const units = useQuery({
+    queryKey: ['construction-units', projectId, run.id],
+    queryFn: () => api.generationRuns.units(projectId, run.id),
+  });
+  const items = units.data?.items ?? [];
+  const term = filter.trim().toLowerCase();
+  const shown = items.filter(
+    (unit) =>
+      unit.kind === kind &&
+      (!term || `${unit.title} ${unit.module ?? ''} ${unit.summary}`.toLowerCase().includes(term)),
+  );
+  return (
+    <QueryState isLoading={units.isLoading} error={units.error}>
+      <div className="flex flex-col gap-3">
+        <div
+          className="flex flex-wrap items-center gap-2"
+          role="tablist"
+          aria-label="Tipo de unidad"
+        >
+          {(Object.keys(UNIT_KINDS) as ConstructionUnit['kind'][]).map((option) => (
+            <button
+              key={option}
+              type="button"
+              role="tab"
+              aria-selected={kind === option}
+              onClick={() => {
+                setKind(option);
+                setFileId(undefined);
+              }}
+              className={`rounded-md border px-2.5 py-1 text-xs font-medium ${
+                kind === option
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-border hover:bg-muted'
+              }`}
+            >
+              {UNIT_KINDS[option]} ({items.filter((unit) => unit.kind === option).length})
+            </button>
+          ))}
+          <input
+            type="search"
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            placeholder="Buscar unidad…"
+            aria-label="Buscar unidad"
+            className="ml-auto h-8 w-56 rounded-md border border-input bg-background px-2.5 text-xs"
+          />
+        </div>
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
+          <ul className="flex max-h-[36rem] flex-col gap-2 overflow-auto pr-1">
+            {shown.map((unit) => (
+              <li key={unit.id} className="rounded-lg border border-border/80 bg-card p-3 text-xs">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <p className="text-sm font-semibold text-foreground">{unit.title}</p>
+                  {unit.origins.AI_ASSISTED && unit.kind !== 'PROJECT' ? (
+                    <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+                      Revisar primero: IA
+                    </span>
+                  ) : null}
+                </div>
+                {unit.module ? (
+                  <p className="text-[11px] text-muted-foreground">Módulo: {unit.module}</p>
+                ) : null}
+                <p className="mt-1.5 leading-relaxed text-foreground/90">{unit.summary}</p>
+                <p className="mt-1.5 flex flex-wrap gap-1">
+                  {(Object.keys(unit.origins) as (keyof ConstructionUnit['origins'])[])
+                    .filter((origin) => unit.origins[origin])
+                    .map((origin) => (
+                      <span key={origin} className="rounded bg-muted px-1.5 py-0.5 text-[10px]">
+                        {ORIGIN_LABELS[origin]}: {unit.origins[origin]}
+                      </span>
+                    ))}
+                </p>
+                {unit.traces.length ? (
+                  <p className="mt-1.5 text-[11px] text-muted-foreground">
+                    Procede de:{' '}
+                    {unit.traces
+                      .slice(0, 8)
+                      .map((trace) => `${trace.code} v${trace.versionNumber}`)
+                      .join(', ')}
+                    {unit.traces.length > 8 ? ` y ${unit.traces.length - 8} más` : ''}
+                  </p>
+                ) : null}
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-[11px] font-medium text-primary">
+                    Archivos ({unit.files.length})
+                  </summary>
+                  <ul className="mt-1 flex flex-col">
+                    {unit.files.map((file) => (
+                      <li key={file.id}>
+                        <button
+                          type="button"
+                          onClick={() => setFileId(file.id)}
+                          title={file.path}
+                          className={`w-full truncate rounded px-1.5 py-1 text-left font-mono text-[11px] ${
+                            file.id === fileId
+                              ? 'bg-primary/10 font-semibold text-primary'
+                              : 'hover:bg-muted'
+                          }`}
+                        >
+                          {file.path}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              </li>
+            ))}
+            {!shown.length ? (
+              <li className="p-3 text-center text-xs text-muted-foreground">
+                No hay unidades que coincidan.
+              </li>
+            ) : null}
+          </ul>
+          {fileId ? (
+            <FileViewer projectId={projectId} runId={run.id} fileId={fileId} />
+          ) : (
+            <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-border p-4 text-center">
+              <p className="text-xs text-muted-foreground">
+                Elija una unidad y abra uno de sus archivos para ver el código y su trazabilidad.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </QueryState>
+  );
+}
+
+function RunFiles({ projectId, run }: { projectId: string; run: GenerationRunResponse }) {
+  const [view, setView] = useState<'units' | 'files'>('units');
+  if (run.status !== 'GENERATED' && run.status !== 'WORKING_COPY') return null;
+  const tab = (value: 'units' | 'files') =>
+    `rounded px-2.5 py-1 ${view === value ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`;
+  return (
+    <div className="flex flex-col gap-3">
+      <div
+        className="flex gap-1 self-start rounded-md border p-0.5 text-xs"
+        role="tablist"
+        aria-label="Vista del código"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === 'units'}
+          onClick={() => setView('units')}
+          className={tab('units')}
+        >
+          Por unidades
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === 'files'}
+          onClick={() => setView('files')}
+          className={tab('files')}
+        >
+          Todos los archivos
+        </button>
+      </div>
+      {view === 'units' ? (
+        <RunUnits projectId={projectId} run={run} />
+      ) : (
+        <RunFileList projectId={projectId} run={run} />
+      )}
+    </div>
+  );
+}
+
+function RunFileList({ projectId, run }: { projectId: string; run: GenerationRunResponse }) {
+  const [fileId, setFileId] = useState<string>();
+
   const [fileFilter, setFileFilter] = useState('');
   const files = useQuery({
     queryKey: ['generated-files', projectId, run.id],
     queryFn: () => api.generationRuns.files(projectId, run.id),
-    enabled: run.status === 'GENERATED',
+    enabled: run.status === 'GENERATED' || run.status === 'WORKING_COPY',
   });
 
-  if (run.status !== 'GENERATED') return null;
+  if (run.status !== 'GENERATED' && run.status !== 'WORKING_COPY') return null;
 
   const allFiles = files.data?.items ?? [];
   const filtered = fileFilter.trim()
@@ -282,6 +478,7 @@ const STAGE_LABELS: Record<SandboxValidationStage, string> = {
   BUILD: 'Compilación',
   STRUCTURE: 'Estructura',
   TRACEABILITY: 'Trazabilidad',
+  E2E: 'Pruebas en navegador',
 };
 
 const REPAIR_LABELS = {
@@ -313,27 +510,32 @@ function StageErrorEvidence({ stage, output }: { stage: SandboxValidationStage; 
   return (
     <details
       open
-      className="mt-2.5 rounded-lg border border-destructive/30 bg-card overflow-hidden shadow-2xs"
+      className="mt-2.5 rounded-lg border border-destructive/30 bg-card overflow-hidden shadow-2xs group"
     >
       <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-destructive hover:text-destructive/80 flex items-center justify-between bg-destructive/10 select-none">
         <span className="flex items-center gap-1.5">
           <XCircle className="size-3.5 shrink-0 text-destructive" aria-hidden="true" />
           Evidencia de {STAGE_LABELS[stage].toLowerCase()}
         </span>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            copyError();
-          }}
-          className="inline-flex items-center gap-1 rounded border border-border/60 bg-background px-2 py-0.5 text-[11px] font-medium text-foreground hover:bg-muted transition-colors"
-        >
-          {copied ? <Check className="size-3 text-emerald-600" /> : <Copy className="size-3" />}
-          {copied ? 'Copiado' : 'Copiar salida'}
-        </button>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-muted-foreground font-normal hidden sm:inline">
+            (clic para alternar)
+          </span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              copyError();
+            }}
+            className="inline-flex items-center gap-1 rounded border border-border/60 bg-background px-2 py-0.5 text-[11px] font-medium text-foreground hover:bg-muted transition-colors"
+          >
+            {copied ? <Check className="size-3 text-emerald-600" /> : <Copy className="size-3" />}
+            {copied ? 'Copiado' : 'Copiar salida'}
+          </button>
+        </div>
       </summary>
-      <pre className="max-h-64 overflow-auto border-t border-border/40 bg-slate-950 p-3 font-mono text-[11px] text-slate-100 dark:bg-black/90 leading-relaxed select-text">
+      <pre className="max-h-48 overflow-auto border-t border-border/40 bg-slate-950 p-3 font-mono text-[11px] text-slate-100 dark:bg-black/90 leading-relaxed select-text">
         {output}
       </pre>
     </details>
@@ -449,9 +651,22 @@ function ValidationAttemptItem({
               <Download className="size-4" aria-hidden="true" />
               Descargar ZIP
             </AuthedDownloadButton>
+            <Link
+              href={`/construction/user-manual?snapshotId=${attempt.snapshotId}`}
+              className="inline-flex items-center gap-1.5 h-8 rounded-lg border border-border/80 bg-background px-3 text-xs font-semibold text-foreground shadow-2xs hover:border-indigo-500/40 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all duration-150"
+            >
+              <BookOpen
+                className="size-3.5 text-indigo-500 dark:text-indigo-400 shrink-0"
+                aria-hidden="true"
+              />
+              Manual de usuario
+            </Link>
           </div>
         ) : null}
       </div>
+      {attempt.status === 'READY' && attempt.snapshotId ? (
+        <DeploymentPanel projectId={projectId} snapshotId={attempt.snapshotId} />
+      ) : null}
 
       {/* Pipeline de Validación de 7 Etapas (Siempre visible) */}
       <div className="mt-3 flex flex-col gap-2">
@@ -627,8 +842,11 @@ function ValidationAttemptItem({
               Archivos modificados: {attempt.repair.patchedPaths.join(', ')}
             </p>
           ) : null}
-          {attempt.repair.findings.map((finding) => (
-            <p key={finding} className="mt-1 text-amber-800 dark:text-amber-300 font-medium">
+          {attempt.repair.findings.map((finding, idx) => (
+            <p
+              key={`${finding}-${idx}`}
+              className="mt-1 text-amber-800 dark:text-amber-300 font-medium"
+            >
               Hallazgo: {finding}
             </p>
           ))}
@@ -662,6 +880,8 @@ function RunValidation({
   const queryClient = useQueryClient();
   const [starting, setStarting] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [selectedAttemptId, setSelectedAttemptId] = useState<string | null>(null);
+  const [viewAllAttempts, setViewAllAttempts] = useState(false);
   const prevStatusesRef = useRef<Map<string, string>>(new Map());
   const celebratedAttemptsRef = useRef<Set<string>>(new Set());
 
@@ -679,6 +899,13 @@ function RunValidation({
   const items = attempts.data?.items ?? [];
   const last = items.at(-1);
   const canStart = !last || last.status === 'ERROR';
+
+  const activeAttemptId =
+    selectedAttemptId && items.some((i) => i.id === selectedAttemptId)
+      ? selectedAttemptId
+      : (last?.id ?? null);
+  const activeAttempt = items.find((i) => i.id === activeAttemptId) ?? last;
+  const isViewingOldAttempt = Boolean(activeAttempt && last && activeAttempt.id !== last.id);
 
   useEffect(() => {
     for (const item of items) {
@@ -738,17 +965,147 @@ function RunValidation({
 
       <QueryState isLoading={attempts.isLoading} error={attempts.error}>
         {items.length ? (
-          <ol className="flex flex-col gap-3">
-            {items.map((attempt) => (
-              <ValidationAttemptItem
-                key={attempt.id}
-                projectId={projectId}
-                run={run}
-                attempt={attempt}
-                primaryRole={primaryRole}
-              />
-            ))}
-          </ol>
+          <div className="flex flex-col gap-3">
+            {/* Selector de intentos por pestañas/pills cuando hay más de 1 intento */}
+            {items.length > 1 ? (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl border border-border/70 bg-muted/40 p-2 sm:px-3 text-xs shadow-2xs">
+                <div
+                  className="flex flex-wrap items-center gap-1.5"
+                  role="group"
+                  aria-label="Intentos de validación"
+                >
+                  <span className="text-[11px] font-semibold text-muted-foreground mr-1">
+                    Intentos ({items.length}):
+                  </span>
+                  {items.map((item, idx) => {
+                    const isSelected = !viewAllAttempts && item.id === activeAttempt?.id;
+                    const isReady = item.status === 'READY';
+                    const isFailed =
+                      item.status === 'FAILED' || item.status === 'VALIDATION_FAILED';
+                    const isRunning = item.status === 'RUNNING' || item.status === 'QUEUED';
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        aria-pressed={isSelected}
+                        onClick={() => {
+                          setSelectedAttemptId(item.id);
+                          setViewAllAttempts(false);
+                        }}
+                        className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
+                          isSelected
+                            ? 'bg-primary text-primary-foreground shadow-2xs font-semibold'
+                            : 'bg-card text-muted-foreground hover:bg-muted hover:text-foreground border border-border/60 shadow-2xs'
+                        }`}
+                      >
+                        {isReady ? (
+                          <CheckCircle2
+                            className={`size-3 shrink-0 ${
+                              isSelected
+                                ? 'text-primary-foreground'
+                                : 'text-emerald-600 dark:text-emerald-400'
+                            }`}
+                          />
+                        ) : isFailed ? (
+                          <XCircle
+                            className={`size-3 shrink-0 ${
+                              isSelected ? 'text-primary-foreground' : 'text-destructive'
+                            }`}
+                          />
+                        ) : isRunning ? (
+                          <Loader2
+                            className={`size-3 animate-spin shrink-0 ${
+                              isSelected ? 'text-primary-foreground' : 'text-primary'
+                            }`}
+                          />
+                        ) : null}
+                        <span>Intento {item.attemptNumber}</span>
+                        {isReady ? (
+                          <span
+                            className={`text-[10px] font-bold px-1 rounded ${
+                              isSelected
+                                ? 'bg-primary-foreground/20 text-primary-foreground'
+                                : 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300'
+                            }`}
+                          >
+                            Listo
+                          </span>
+                        ) : isRunning ? (
+                          <span
+                            className={`text-[10px] font-bold px-1 rounded animate-pulse ${
+                              isSelected
+                                ? 'bg-primary-foreground/20 text-primary-foreground'
+                                : 'bg-primary/10 text-primary'
+                            }`}
+                          >
+                            Validando
+                          </span>
+                        ) : null}
+                        {idx === items.length - 1 ? (
+                          <span className="text-[10px] opacity-75 font-mono">· actual</span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setViewAllAttempts(!viewAllAttempts)}
+                  className="h-7 px-2 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                >
+                  {viewAllAttempts
+                    ? 'Ver sólo intento activo'
+                    : `Ver todos (${items.length}) en lista`}
+                </Button>
+              </div>
+            ) : null}
+
+            {/* Aviso contextual cuando se consulta un intento histórico */}
+            {!viewAllAttempts && isViewingOldAttempt && last && activeAttempt ? (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs text-primary">
+                <span>
+                  Consultando el <strong>Intento {activeAttempt.attemptNumber}</strong>. El último
+                  es el <strong>Intento {last.attemptNumber}</strong> (
+                  {SANDBOX_STATUS_LABELS[last.status]}).
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedAttemptId(last.id)}
+                  className="font-semibold underline hover:text-primary/80 shrink-0"
+                >
+                  Ir al intento {last.attemptNumber}
+                </button>
+              </div>
+            ) : null}
+
+            {/* Renderizado de intentos */}
+            {viewAllAttempts ? (
+              <ol className="flex flex-col gap-3">
+                {items.map((attempt) => (
+                  <ValidationAttemptItem
+                    key={attempt.id}
+                    projectId={projectId}
+                    run={run}
+                    attempt={attempt}
+                    primaryRole={primaryRole}
+                  />
+                ))}
+              </ol>
+            ) : activeAttempt ? (
+              <ol className="flex flex-col gap-3">
+                <ValidationAttemptItem
+                  key={activeAttempt.id}
+                  projectId={projectId}
+                  run={run}
+                  attempt={activeAttempt}
+                  primaryRole={primaryRole}
+                />
+              </ol>
+            ) : null}
+          </div>
         ) : (
           <div className="rounded-xl border border-dashed border-border p-6 text-center">
             <ShieldCheck className="mx-auto size-8 text-muted-foreground/40 mb-2" />
@@ -905,7 +1262,10 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
   const [planVersionId, setPlanVersionId] = useState<string>();
   const [openRunId, setOpenRunId] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
-  const chosenPlan = planVersionId ?? approvedPlans[0]?.version.id;
+  const latestApprovedPlan = newestApprovedPlan(approvedPlans);
+  const chosenPlan =
+    (approvedPlans.some((plan) => plan.version.id === planVersionId) ? planVersionId : undefined) ??
+    latestApprovedPlan?.version.id;
   // The first role of the plan this run was generated from (the roles are in the
   // plan's content, not in its version): the one the dev token example uses.
   const primaryRoleOf = (run: GenerationRunResponse): string | undefined => {
@@ -919,6 +1279,11 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
   const hasActiveRun = (runs.data?.items ?? []).some(isActive);
   // Archived runs leave the list but stay as history, and can be restored.
   const visibleRuns = (runs.data?.items ?? []).filter((run) => !run.archivedAt);
+  const currentRun = newestRunForPlan(runs.data?.items ?? [], chosenPlan);
+  const currentVisibleRun = currentRun && !currentRun.archivedAt ? currentRun : undefined;
+  const historyRuns = visibleRuns.filter((run) => run.id !== currentVisibleRun?.id);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyRunId, setHistoryRunId] = useState<string>();
   const archivedRuns = (runs.data?.items ?? []).filter((run) => run.archivedAt);
   const [showArchived, setShowArchived] = useState(false);
   const [archivingId, setArchivingId] = useState<string>();
@@ -941,12 +1306,18 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
     }
   }
 
-  async function start() {
+  async function start(workingCopy = false) {
     if (!chosenPlan || hasActiveRun) return;
     setSubmitting(true);
     try {
-      const run = await api.generationRuns.start(projectId, chosenPlan);
-      toast.success('Generación encolada.');
+      const run = workingCopy
+        ? await api.generationRuns.workingCopy(projectId, chosenPlan)
+        : await api.generationRuns.start(projectId, chosenPlan);
+      toast.success(
+        workingCopy
+          ? 'Versión de trabajo integrada. No es una entrega oficial.'
+          : 'Generación encolada.',
+      );
       setOpenRunId(run.id);
       await queryClient.invalidateQueries({ queryKey: ['generation-runs', projectId] });
     } catch (err) {
@@ -956,12 +1327,136 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
     }
   }
 
+  const renderRun = (run: GenerationRunResponse) => (
+    <li key={run.id} className="rounded-xl border border-border/80 bg-card p-4 shadow-2xs">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/40 pb-2.5">
+        <div className="flex items-center gap-2">
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
+              run.status === 'GENERATED'
+                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                : run.status === 'GENERATING'
+                  ? 'border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300'
+                  : run.status === 'QUEUED' || run.status === 'WORKING_COPY'
+                    ? 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                    : 'border-destructive/30 bg-destructive/10 text-destructive'
+            }`}
+          >
+            {run.status === 'GENERATED' ? (
+              <CheckCircle2 className="size-3 text-emerald-600 dark:text-emerald-400" />
+            ) : run.status === 'WORKING_COPY' ? (
+              <Code2 className="size-3 text-amber-600 dark:text-amber-400" />
+            ) : run.status === 'QUEUED' ? (
+              <Clock className="size-3 text-amber-600 dark:text-amber-400" />
+            ) : run.status === 'GENERATING' ? (
+              <Sparkles className="size-3 text-blue-600 dark:text-blue-400 animate-spin" />
+            ) : (
+              <XCircle className="size-3 text-destructive" />
+            )}
+            <strong>{STATUS_LABELS[run.status]}</strong>
+            {run.status === 'GENERATED' || run.status === 'WORKING_COPY' ? (
+              <span className="font-normal opacity-90">· {run.fileCount} archivos</span>
+            ) : null}
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <span className="text-xs text-muted-foreground font-mono">
+            {run.targetTemplateIdentifier} v{run.targetTemplateVersion} ·{' '}
+            {new Date(run.createdAt).toLocaleString('es-EC')}
+          </span>
+          {isActive(run) ? null : (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1.5 text-xs font-medium border-border/80 bg-background/80 hover:bg-amber-500/10 hover:border-amber-500/40 hover:text-amber-800 dark:hover:bg-amber-950/20 dark:hover:text-amber-300 text-muted-foreground shadow-2xs transition-colors"
+              disabled={archivingId === run.id}
+              onClick={() => setRunToArchive(run)}
+            >
+              <Archive className="size-3.5" aria-hidden="true" />
+              Archivar
+            </Button>
+          )}
+        </div>
+      </div>
+      {run.status === 'WORKING_COPY' ? (
+        <WorkingCopySummary
+          projectId={projectId}
+          run={run}
+          plan={
+            plans.data?.items.find((plan) => plan.version.id === run.implementationPlanVersionId)
+              ?.content as ImplementationPlanContent | undefined
+          }
+        />
+      ) : null}
+      {run.errorMessage ? (
+        <p
+          role="alert"
+          className="mt-2.5 rounded-lg border border-destructive/20 bg-destructive/10 p-2.5 text-xs text-destructive font-medium max-h-36 overflow-auto"
+        >
+          {run.errorMessage}
+        </p>
+      ) : null}
+      {run.status === 'FAILED' ? <ScreenFindings projectId={projectId} run={run} /> : null}
+      {run.warnings.length ? (
+        <details className="mt-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-800 dark:text-amber-300 group">
+          <summary className="cursor-pointer font-semibold flex items-center justify-between select-none">
+            <span className="flex items-center gap-1.5">
+              <AlertTriangle
+                className="size-3.5 shrink-0 text-amber-600 dark:text-amber-400"
+                aria-hidden="true"
+              />
+              {run.status === 'WORKING_COPY'
+                ? `Detalles técnicos (${run.warnings.length} avisos)`
+                : `${run.warnings.length} ${run.warnings.length === 1 ? 'advertencia detectada' : 'advertencias detectadas'}`}
+            </span>
+            <span className="text-[11px] font-normal opacity-75 group-open:hidden">
+              (clic para ver detalles)
+            </span>
+            <span className="text-[11px] font-normal opacity-75 hidden group-open:inline">
+              (ocultar)
+            </span>
+          </summary>
+          <ul className="mt-2 flex flex-col gap-1 border-t border-amber-500/20 pt-2 max-h-60 overflow-auto">
+            {run.warnings.map((warning, index) => (
+              <li key={`${warning}-${index}`} className="flex gap-1.5 items-start">
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                <span>{warning}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+      {isActive(run) ? <ActiveGenerationProgress run={run} /> : null}
+      {run.status === 'GENERATED' || run.status === 'WORKING_COPY' ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="mt-3 h-8 text-xs gap-1.5"
+          onClick={() => setOpenRunId(openRunId === run.id ? undefined : run.id)}
+        >
+          <Code2 className="size-3.5 text-primary" />
+          {openRunId === run.id ? 'Ocultar archivos' : 'Ver archivos'}
+        </Button>
+      ) : null}
+      {openRunId === run.id ? (
+        <div className="mt-3.5">
+          <RunFiles projectId={projectId} run={run} />
+        </div>
+      ) : null}
+      {run.status === 'GENERATED' ? (
+        <RunValidation projectId={projectId} run={run} primaryRole={primaryRoleOf(run)} />
+      ) : null}
+    </li>
+  );
+
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4 sm:gap-5">
       <PageHeading title="Generación de código" projectId={projectId} />
 
-      {/* Banner Ejecutivo Hito Final */}
-      <div className="relative overflow-hidden rounded-xl border border-primary/20 bg-linear-to-br from-primary/5 via-card to-background p-4 shadow-xs">
+      {/* Banner Ejecutivo y de Consolidación Unificado */}
+      <div className="relative overflow-hidden rounded-xl border border-primary/20 bg-linear-to-br from-primary/5 via-card to-background p-3.5 sm:p-4 shadow-xs space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -989,54 +1484,73 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
             </span>
           </div>
         </div>
+
+        {/* Versión de trabajo secundaria */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-lg border border-border/60 bg-muted/30 p-2.5 text-xs text-muted-foreground">
+          <p className="leading-relaxed">
+            Preparar una versión de trabajo conserva el código disponible y sus pendientes, sin
+            nuevas inferencias. Generar proyecto inicia una nueva corrida; su validación se realiza
+            después.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs shrink-0 font-medium border-border/80 bg-background"
+            disabled={!chosenPlan || hasActiveRun || submitting}
+            onClick={() => start(true)}
+          >
+            Preparar versión de trabajo
+          </Button>
+        </div>
       </div>
 
       <DockerSetupAssistant />
 
-      <p className="text-sm text-muted-foreground">
-        Genere el proyecto web a partir de un plan de implementación aprobado. Cada generación queda
-        registrada como historial y cada archivo enlaza a las versiones aprobadas que implementa.
-        Generar no equivale a validar: la validación se ejecuta aparte, en un entorno aislado.
-      </p>
-
       {/* Nueva generación */}
       <section className="flex flex-col gap-3 rounded-xl border border-border/80 bg-card p-4 shadow-2xs">
-        <div className="flex items-center gap-2 border-b border-border/40 pb-2.5">
-          <Cpu className="size-4 text-primary" />
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-foreground">
-            Nueva generación de software
-          </h2>
+        <div className="flex items-center justify-between gap-2 border-b border-border/40 pb-2.5">
+          <div className="flex items-center gap-2">
+            <Cpu className="size-4 text-primary" />
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-foreground">
+              Nueva generación de software
+            </h2>
+          </div>
+          <span className="text-[11px] text-muted-foreground hidden sm:inline">
+            A partir del plan de implementación aprobado
+          </span>
         </div>
         <QueryState isLoading={plans.isLoading} error={plans.error}>
           {approvedPlans.length ? (
             <div className="flex flex-col gap-3">
-              <label className="flex flex-col gap-1.5 text-xs">
-                <span className="font-medium text-foreground">
-                  Plan de implementación aprobado:
-                </span>
-                <select
-                  className="rounded-md border border-input bg-background px-2.5 py-1.5 text-xs font-medium"
-                  value={chosenPlan ?? ''}
-                  onChange={(e) => setPlanVersionId(e.target.value)}
-                  disabled={hasActiveRun}
-                >
-                  {approvedPlans.map((plan) => (
-                    <option key={plan.version.id} value={plan.version.id}>
-                      {plan.code} · {plan.title} (v{plan.version.versionNumber})
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+                <label className="flex-1 flex flex-col gap-1.5 text-xs">
+                  <span className="font-medium text-foreground">
+                    Plan de implementación aprobado:
+                  </span>
+                  <select
+                    className="h-8 rounded-md border border-input bg-background px-2.5 text-xs font-medium focus:border-primary focus:outline-none"
+                    value={chosenPlan ?? ''}
+                    onChange={(e) => setPlanVersionId(e.target.value)}
+                    disabled={hasActiveRun}
+                  >
+                    {approvedPlans.map((plan) => (
+                      <option key={plan.version.id} value={plan.version.id}>
+                        {plan.code} · {plan.title} (v{plan.version.versionNumber})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
                 <Button
                   type="button"
-                  className={`self-start text-xs gap-1.5 font-semibold h-8 transition-all ${
+                  className={`text-xs gap-1.5 font-semibold h-8 shrink-0 transition-all ${
                     hasActiveRun
                       ? 'border border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300 hover:bg-amber-500/10 cursor-not-allowed opacity-90'
                       : ''
                   }`}
                   disabled={submitting || !chosenPlan || hasActiveRun}
-                  onClick={start}
+                  onClick={() => start()}
                 >
                   {submitting ? (
                     <>
@@ -1058,19 +1572,20 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
                     </>
                   )}
                 </Button>
-                {hasActiveRun ? (
-                  <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
-                    <AlertTriangle
-                      className="size-3.5 shrink-0 text-amber-600 dark:text-amber-400"
-                      aria-hidden="true"
-                    />
-                    <span>
-                      Ya hay una generación de código en proceso para este proyecto. Espere a que
-                      finalice para poder iniciar una nueva.
-                    </span>
-                  </div>
-                ) : null}
               </div>
+
+              {hasActiveRun ? (
+                <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+                  <AlertTriangle
+                    className="size-3.5 shrink-0 text-amber-600 dark:text-amber-400"
+                    aria-hidden="true"
+                  />
+                  <span>
+                    Ya hay una generación de código en proceso para este proyecto. Espere a que
+                    finalice para poder iniciar una nueva.
+                  </span>
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
@@ -1100,120 +1615,62 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
             Generaciones Realizadas ({visibleRuns.length})
           </h2>
         </div>
-        <QueryState isLoading={runs.isLoading} error={runs.error}>
-          {visibleRuns.length ? (
-            <ul className="flex flex-col gap-3">
-              {visibleRuns.map((run) => (
-                <li
-                  key={run.id}
-                  className="rounded-xl border border-border/80 bg-card p-4 shadow-2xs"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/40 pb-2.5">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
-                          run.status === 'GENERATED'
-                            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                            : run.status === 'GENERATING'
-                              ? 'border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300'
-                              : run.status === 'QUEUED'
-                                ? 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                                : 'border-destructive/30 bg-destructive/10 text-destructive'
-                        }`}
-                      >
-                        {run.status === 'GENERATED' ? (
-                          <CheckCircle2 className="size-3 text-emerald-600 dark:text-emerald-400" />
-                        ) : run.status === 'QUEUED' ? (
-                          <Clock className="size-3 text-amber-600 dark:text-amber-400" />
-                        ) : run.status === 'GENERATING' ? (
-                          <Sparkles className="size-3 text-blue-600 dark:text-blue-400 animate-spin" />
-                        ) : (
-                          <XCircle className="size-3 text-destructive" />
-                        )}
-                        <strong>
-                          {STATUS_LABELS[run.status]}
-                          {run.status === 'GENERATED' ? ` · ${run.fileCount} archivos` : ''}
-                        </strong>
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2.5">
-                      <span className="text-xs text-muted-foreground font-mono">
-                        {run.targetTemplateIdentifier} v{run.targetTemplateVersion} ·{' '}
-                        {new Date(run.createdAt).toLocaleString('es-EC')}
-                      </span>
-                      {isActive(run) ? null : (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-7 gap-1.5 text-xs font-medium border-border/80 bg-background/80 hover:bg-amber-500/10 hover:border-amber-500/40 hover:text-amber-800 dark:hover:bg-amber-950/20 dark:hover:text-amber-300 text-muted-foreground shadow-2xs transition-colors"
-                          disabled={archivingId === run.id}
-                          onClick={() => setRunToArchive(run)}
-                        >
-                          <Archive className="size-3.5" aria-hidden="true" />
-                          Archivar
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                  {run.errorMessage ? (
-                    <p
-                      role="alert"
-                      className="mt-2.5 rounded-lg border border-destructive/20 bg-destructive/10 p-2.5 text-xs text-destructive font-medium"
-                    >
-                      {run.errorMessage}
-                    </p>
-                  ) : null}
-                  {run.warnings.length ? (
-                    <div className="mt-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-800 dark:text-amber-300">
-                      <span className="font-semibold block mb-1">Advertencias detectadas:</span>
-                      <ul className="flex flex-col gap-1">
-                        {run.warnings.map((warning) => (
-                          <li key={warning} className="flex gap-1.5 items-start">
-                            <AlertTriangle
-                              className="mt-0.5 size-3.5 shrink-0"
-                              aria-hidden="true"
-                            />
-                            <span>{warning}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                  {isActive(run) ? <ActiveGenerationProgress run={run} /> : null}
-
-                  {run.status === 'GENERATED' ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="mt-3 h-8 text-xs gap-1.5"
-                      onClick={() => setOpenRunId(openRunId === run.id ? undefined : run.id)}
-                    >
-                      <Code2 className="size-3.5 text-primary" />
-                      {openRunId === run.id ? 'Ocultar archivos' : 'Ver archivos'}
-                    </Button>
-                  ) : null}
-                  {openRunId === run.id ? (
-                    <div className="mt-3.5">
-                      <RunFiles projectId={projectId} run={run} />
-                    </div>
-                  ) : null}
-                  {run.status === 'GENERATED' ? (
-                    <RunValidation
-                      projectId={projectId}
-                      run={run}
-                      primaryRole={primaryRoleOf(run)}
-                    />
-                  ) : null}
-                </li>
-              ))}
+        <QueryState isLoading={runs.isLoading || plans.isLoading} error={runs.error || plans.error}>
+          {currentVisibleRun ? (
+            <ul className="flex flex-col gap-3" aria-label="Generación del plan seleccionado">
+              {renderRun(currentVisibleRun)}
             </ul>
           ) : (
-            <EmptyState title="Aún no hay generaciones">
-              Apruebe un plan de implementación y genere el proyecto desde aquí.
+            <EmptyState
+              title={
+                currentRun?.archivedAt
+                  ? 'La última generación de este plan está archivada'
+                  : 'Aún no hay generaciones para el plan seleccionado'
+              }
+            >
+              {currentRun?.archivedAt
+                ? 'Puede restaurarla desde Archivadas. El historial se conserva.'
+                : 'Seleccione un plan aprobado y prepare una versión de trabajo o genere el proyecto.'}
             </EmptyState>
           )}
+          {historyRuns.length ? (
+            <details
+              className="mt-3 rounded-xl border border-border/80 bg-card"
+              onToggle={(event) => setHistoryOpen(event.currentTarget.open)}
+            >
+              <summary className="cursor-pointer p-3 text-sm font-medium">
+                Historial de generaciones ({historyRuns.length})
+              </summary>
+              {historyOpen ? (
+                <ul className="divide-y divide-border/60 border-t border-border/60">
+                  {historyRuns.map((run) => (
+                    <li key={run.id} className="p-3">
+                      <button
+                        type="button"
+                        className="flex w-full flex-wrap items-center justify-between gap-2 text-left text-xs"
+                        aria-expanded={historyRunId === run.id}
+                        onClick={() =>
+                          setHistoryRunId(historyRunId === run.id ? undefined : run.id)
+                        }
+                      >
+                        <span>
+                          {STATUS_LABELS[run.status]} ·{' '}
+                          {new Date(run.createdAt).toLocaleString('es-EC')}
+                          {run.implementationPlanVersionId !== chosenPlan
+                            ? ' · Otro plan de implementación'
+                            : ''}
+                        </span>
+                        <span className="font-medium text-primary">
+                          {historyRunId === run.id ? 'Ocultar detalles' : 'Ver detalles'}
+                        </span>
+                      </button>
+                      {historyRunId === run.id ? <ul className="mt-3">{renderRun(run)}</ul> : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </details>
+          ) : null}
         </QueryState>
 
         {/* Modal de confirmación para archivar */}

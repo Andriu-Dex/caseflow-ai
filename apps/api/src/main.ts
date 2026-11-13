@@ -5,10 +5,14 @@ import { setupOpenApi } from './openapi/openapi';
 import cookieParser from 'cookie-parser';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { configureBodyLimits } from './common/body-limits';
+import { trustProxySetting } from './common/trust-proxy';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   configureBodyLimits(app);
+  // The client address (rate limits) is the connection's unless the proxies are named.
+  const trustedProxies = trustProxySetting(process.env.TRUSTED_PROXIES);
+  if (trustedProxies !== undefined) app.set('trust proxy', trustedProxies);
   app.use(cookieParser());
   // Ensures the Prisma client disconnects cleanly on SIGTERM/SIGINT.
   app.enableShutdownHooks();

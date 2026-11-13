@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CASEFLOW_WEB_TS_V1,
+  CASEFLOW_WEB_TS_V2,
   TARGET_TEMPLATES,
   VALIDATION_STAGES,
   findCatalogDependency,
@@ -8,9 +9,10 @@ import {
 } from './target-templates';
 
 describe('target templates', () => {
-  it('ships exactly one V1 template with the approved stack and design profile', () => {
+  it('ships one target family with versioned catalogs and the approved stack and design profile', () => {
     expect(TARGET_TEMPLATES.map((t) => `${t.identifier}@${t.version}`)).toEqual([
       'CASEFLOW_WEB_TS_V1@1',
+      'CASEFLOW_WEB_TS_V1@2',
     ]);
     expect(CASEFLOW_WEB_TS_V1.designSystemProfile.identifier).toBe('CASEFLOW_STANDARD_WEB_V1');
     for (const name of ['next', 'react', '@nestjs/core', 'prisma', 'zod', 'react-hook-form'])
@@ -23,7 +25,7 @@ describe('target templates', () => {
   });
 
   it('resolves the latest or an exact version, and nothing for unknown templates', () => {
-    expect(findTargetTemplate('CASEFLOW_WEB_TS_V1')).toBe(CASEFLOW_WEB_TS_V1);
+    expect(findTargetTemplate('CASEFLOW_WEB_TS_V1')).toBe(CASEFLOW_WEB_TS_V2);
     expect(findTargetTemplate('CASEFLOW_WEB_TS_V1', 1)).toBe(CASEFLOW_WEB_TS_V1);
     expect(findTargetTemplate('CASEFLOW_WEB_TS_V1', 99)).toBeUndefined();
     expect(findTargetTemplate('CASEFLOW_DJANGO_REACT')).toBeUndefined();

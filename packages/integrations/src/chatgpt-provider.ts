@@ -125,11 +125,16 @@ export class ChatGPTProvider implements AIProvider {
   // ineligibility is explained without retrying; revocation asks to reconnect.
   private async failure(status: number, body: string): Promise<AIError> {
     let code: unknown;
+    let type: unknown;
     try {
-      code = (JSON.parse(body) as { error?: { code?: unknown } }).error?.code;
+      ({ code, type } =
+        (JSON.parse(body) as { error?: { code?: unknown; type?: unknown } }).error ?? {});
     } catch {
       code = undefined;
     }
+    // An overload reported inside the stream arrives with HTTP 200.
+    if (code === 'server_is_overloaded' || type === 'service_unavailable_error')
+      return new AIError('AI_PROVIDER_UNAVAILABLE', 'El proveedor de IA no está disponible.');
     if (code === 'subscription_sharing_usage_limit_exceeded') {
       await this.config.broker.reportUsageLimit();
       return new AIError('AI_RATE_LIMITED', CHATGPT_MESSAGES.usageLimit);

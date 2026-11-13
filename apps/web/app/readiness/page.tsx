@@ -27,6 +27,7 @@ import { HtmlPreviewDialog } from '../../components/html-preview-dialog';
 import { Confetti } from '../../components/confetti';
 
 const CONSISTENCY_RULE_LABELS: Record<string, string> = {
+  REQUIREMENT_COMMITMENT: 'Compromisos del requisito → comportamiento declarado',
   'Mockup Association': 'Asociación de boceto',
   'Unique Use Case Name': 'Nombre de caso de uso único',
   'Requirement Use Case Coverage': 'Cobertura requisito → caso de uso',
@@ -335,7 +336,9 @@ function ReadinessContent({ projectId }: { projectId: string }) {
             <div className="flex flex-col gap-2 rounded-xl border border-border/80 bg-card p-4 shadow-2xs">
               <div className="flex items-center justify-between text-sm">
                 <span className="font-semibold text-foreground">
-                  {readiness.data.ready ? 'Proyecto completo' : 'En progreso'}
+                  {readiness.data.ready
+                    ? 'Análisis y diseño completos'
+                    : 'Análisis y diseño en progreso'}
                 </span>
                 <span className="text-xs text-muted-foreground font-mono">
                   {done} de {total} etapas completas ({percentage}%)
@@ -347,6 +350,13 @@ function ReadinessContent({ projectId }: { projectId: string }) {
                   style={{ width: `${total ? (done / total) * 100 : 0}%` }}
                 />
               </div>
+              <p className="text-xs text-muted-foreground">
+                Este avance no acredita que el software generado esté validado.{' '}
+                <Link className="underline" href="/construction/generation-runs">
+                  Revisar construcción y validaciones
+                </Link>
+                .
+              </p>
 
               {/* Filter Tabs */}
               <div className="flex items-center gap-1 pt-2 border-t border-border/60">

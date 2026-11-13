@@ -3,6 +3,8 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   plugins: [react()],
+  // Next preserves JSX for its compiler; Vite's test transformer must emit it.
+  oxc: { jsx: { runtime: 'automatic' } },
   test: {
     environment: 'jsdom',
     include: ['**/*.spec.tsx', '**/*.spec.ts'],

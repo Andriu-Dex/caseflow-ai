@@ -1,3 +1,7 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { CASEFLOW_WEB_TS_V1, findCatalogDependency } from '@caseflow-ai/domain';
 import {
@@ -5,6 +9,8 @@ import {
   type ImplementationPlanContent,
 } from '@caseflow-ai/contracts';
 import { generateProject, projectSlug } from './project-generator';
+import { pruneUnusedParams } from './frontend.templates';
+import { demoEntities } from './demo-data.templates';
 import { catalogVersion, type GenerationContext } from './types';
 
 const basePlan = (overrides: Record<string, unknown> = {}): ImplementationPlanContent =>
@@ -97,6 +103,7 @@ describe('generateProject', () => {
       '.env.example',
       'README.md',
       'docker/docker-compose.yml',
+      'scripts/setup.mjs',
       'prisma/schema.prisma',
       'packages/contracts/src/index.ts',
       'packages/api-client/src/index.ts',
@@ -207,6 +214,8 @@ describe('generateProject', () => {
     expect([...open.keys()].some((p) => p.includes('/auth/'))).toBe(false);
     expect(open.get('apps/api/src/app.module.ts')!.content).not.toContain('APP_GUARD');
     expect(open.get('apps/web/app/access/page.tsx')).toBeUndefined();
+    expect(open.get('.env.example')!.content).not.toContain('DEV_LOGIN');
+    expect(open.get('docker/docker-compose.app.yml')!.content).not.toContain('DEV_LOGIN');
   });
 
   it('traces generated files back to the plan elements they implement (DEC-106)', () => {
@@ -268,10 +277,156 @@ describe('generateProject', () => {
     );
   });
 
-  it('never puts secrets in .env.example', () => {
+  it('ships only example secrets and never leaves a variable empty in .env.example', () => {
     const env = paths.get('.env.example')!.content;
-    expect(env).toContain('JWT_SECRET=change-me');
-    expect(env).not.toMatch(/sk-|password=(?!app)/i);
+    expect(env).toContain('JWT_SECRET=dev-only-jwt-secret');
+    expect(env).toContain('POSTGRES_PORT=5433');
+    expect(env).not.toMatch(/sk-/i);
+    expect(env).not.toMatch(/^[A-Z][A-Z0-9_]*=$/m);
+    for (const [, name, value] of env.matchAll(
+      /^([A-Z0-9_]*(?:SECRET|PASSWORD)[A-Z0-9_]*)=(.*)$/gm,
+    ))
+      expect(value, name).toMatch(/^dev-only-/);
+  });
+
+  // Regression: a colleague's first run failed with P1000 against a shared 5432/volume.
+  it('isolates the local database per project and exposes it on a configurable local port', () => {
+    const compose = paths.get('docker/docker-compose.yml')!.content;
+    expect(compose).toMatch(/^name: tienda-demo$/m);
+    expect(compose).toContain("'127.0.0.1:${POSTGRES_PORT:-5433}:5432'");
+    expect(compose).toContain('healthcheck:');
+    const root = JSON.parse(paths.get('package.json')!.content);
+    expect(root.scripts.setup).toBe('node scripts/setup.mjs');
+    expect(root.scripts['db:up']).toContain('--env-file .env');
+    expect(JSON.parse(paths.get('apps/api/package.json')!.content).scripts['db:deploy']).toBe(
+      'prisma migrate deploy',
+    );
+  });
+
+  it('runs the whole application in Docker without Node on the machine', () => {
+    const compose = paths.get('docker/docker-compose.app.yml')!.content;
+    expect(compose).toMatch(/^name: tienda-demo-app$/m);
+    for (const service of ['postgres', 'migrate', 'api', 'web'])
+      expect(compose).toMatch(new RegExp(`^  ${service}:$`, 'm'));
+    expect(compose).toContain('service_completed_successfully');
+    expect(compose).toContain('JWT_SECRET: ${JWT_SECRET:-dev-only-jwt-secret}');
+    expect(compose).toContain("'127.0.0.1:${WEB_PORT:-3000}:3000'");
+    const dockerfile = paths.get('docker/Dockerfile')!.content;
+    expect(dockerfile).toContain('FROM node:24-slim AS workspace');
+    for (const target of ['api', 'migrate', 'web']) expect(dockerfile).toContain(`AS ${target}`);
+    expect(dockerfile).toContain('migrate diff --from-empty');
+    expect(paths.get('.dockerignore')!.content).toContain('.env');
+    const readme = paths.get('README.md')!.content;
+    expect(readme).toContain(
+      'docker compose --project-directory . -f docker/docker-compose.app.yml up --build',
+    );
+    expect(readme).toContain('dev-token.js');
+  });
+
+  it('offers a development sign-in that is off by default and gated by DEV_LOGIN', () => {
+    expect(paths.get('.env.example')!.content).toContain('DEV_LOGIN=false');
+    expect(paths.get('docker/docker-compose.app.yml')!.content).toContain(
+      'DEV_LOGIN: ${DEV_LOGIN:-true}',
+    );
+    const controller = paths.get('apps/api/src/auth/dev-login.controller.ts')!.content;
+    expect(controller).toContain("process.env.DEV_LOGIN === 'true'");
+    expect(controller).toContain('["ADMIN","SELLER"]');
+    expect(paths.get('apps/api/src/app.module.ts')!.content).toContain('DevLoginController');
+    // Reachable only from this machine unless the container sets API_HOST.
+    expect(paths.get('apps/api/src/main.ts')!.content).toContain(
+      "process.env.DEV_LOGIN === 'true' ? '127.0.0.1' : '0.0.0.0'",
+    );
+    expect(paths.get('docker/docker-compose.app.yml')!.content).toContain('API_HOST: 0.0.0.0');
+    expect(paths.has('apps/api/src/auth/dev-login.spec.ts')).toBe(true);
+    const access = paths.get('apps/web/app/access/page.tsx')!.content;
+    expect(access).toContain('Entrar como');
+    expect(access).toContain('/auth/dev-login');
+  });
+
+  it('documents the four-command first run in the README', () => {
+    const readme = paths.get('README.md')!.content;
+    for (const command of ['corepack enable', 'pnpm install', 'pnpm run setup', 'pnpm run dev'])
+      expect(readme).toContain(command);
+    expect(readme).not.toContain('cp .env.example');
+    expect(readme).toContain('setup -- --reset');
+  });
+});
+
+describe('generated scripts/setup.mjs', () => {
+  type Setup = {
+    isOwnSecret: (name: string) => boolean;
+    needsGeneration: (name: string, value: string) => boolean;
+    buildEnv: (
+      example: string,
+      options: { port: number; makeSecret?: () => string },
+    ) => { text: string; generated: string[]; pending: string[]; values: Record<string, string> };
+    findFreePort: (
+      start: number,
+      isFree?: (port: number) => Promise<boolean>,
+      tries?: number,
+    ) => Promise<number>;
+    explainFailure: (output: string) => string[];
+  };
+
+  const load = async (): Promise<Setup> => {
+    const dir = mkdtempSync(join(tmpdir(), 'setup-script-'));
+    const target = join(dir, 'setup.mjs');
+    writeFileSync(target, byPath(generateProject(ctx())).get('scripts/setup.mjs')!.content);
+    return (await import(pathToFileURL(target).href)) as Setup;
+  };
+
+  const example = [
+    'POSTGRES_USER=app',
+    'POSTGRES_PASSWORD=dev-only-postgres-password',
+    'POSTGRES_DB=app',
+    'POSTGRES_PORT=5433',
+    'DATABASE_URL=postgresql://app:dev-only-postgres-password@127.0.0.1:5433/app',
+    'JWT_SECRET=dev-only-jwt-secret',
+    'DEV_LOGIN=false',
+    'STRIPE_API_KEY=replace-with-your-value',
+    '# OPTIONAL_KEY=',
+  ].join('\n');
+
+  it('generates own secrets, keeps the connection string consistent and reports what is pending', async () => {
+    const { buildEnv } = await load();
+    let n = 0;
+    const built = buildEnv(example, { port: 5434, makeSecret: () => `s3cret${++n}` });
+    expect(built.generated).toEqual(['POSTGRES_PASSWORD', 'JWT_SECRET']);
+    expect(built.values.POSTGRES_PORT).toBe('5434');
+    expect(built.values.DEV_LOGIN).toBe('true');
+    expect(built.values.DATABASE_URL).toBe('postgresql://app:s3cret1@127.0.0.1:5434/app');
+    expect(built.text).toContain('JWT_SECRET=s3cret2');
+    expect(built.text).toContain('# OPTIONAL_KEY=');
+    expect(built.pending).toEqual(['STRIPE_API_KEY']);
+  });
+
+  it('only replaces secrets that are empty or still the example value', async () => {
+    const { needsGeneration, isOwnSecret } = await load();
+    expect(needsGeneration('JWT_SECRET', '')).toBe(true);
+    expect(needsGeneration('JWT_SECRET', 'dev-only-jwt-secret')).toBe(true);
+    expect(needsGeneration('JWT_SECRET', 'already-chosen')).toBe(false);
+    expect(needsGeneration('STRIPE_API_KEY', '')).toBe(false);
+    expect(isOwnSecret('SESSION_SECRET')).toBe(true);
+    expect(isOwnSecret('SECRETARY')).toBe(false);
+  });
+
+  it('skips busy ports and gives up after the allowed tries', async () => {
+    const { findFreePort } = await load();
+    expect(await findFreePort(5433, async (p) => p >= 5435)).toBe(5435);
+    await expect(findFreePort(5433, async () => false, 3)).rejects.toThrow(/5433 y el 5435/);
+  });
+
+  it('explains the failures seen on first runs', async () => {
+    const { explainFailure } = await load();
+    expect(explainFailure('Error: P1000: Authentication failed')[0]).toContain('--reset');
+    expect(explainFailure('Bind for 0.0.0.0:5433 failed: port is already allocated')[0]).toContain(
+      'POSTGRES_PORT',
+    );
+    expect(explainFailure('error during connect: docker daemon')[0]).toContain('Docker Desktop');
+    expect(explainFailure('spawn x/schema-engine-windows.exe ENOENT')[0]).toContain(
+      'C:\\proyectos\\mi-app',
+    );
+    expect(explainFailure('everything fine')).toEqual([]);
   });
 });
 
@@ -279,6 +434,32 @@ describe('projectSlug', () => {
   it('builds an npm-safe workspace name', () => {
     expect(projectSlug('Tienda Demo Ñandú 2')).toBe('tienda-demo-nandu-2');
     expect(projectSlug('***')).toBe('generated-app');
+  });
+});
+
+describe('edit-only form routes', () => {
+  it('declares the record parameter it edits, even with no other controls', () => {
+    const files = byPath(
+      generateProject(
+        ctx(
+          basePlan({
+            routes: [
+              {
+                path: '/orders/[orderid]/edit',
+                screenName: 'Editar pedido',
+                moduleLocalId: 'sales',
+                kind: 'FORM',
+                entityLocalId: 'order',
+                actions: [{ label: 'Guardar cambios', operation: 'UPDATE' }],
+              },
+            ],
+          }),
+        ),
+      ),
+    );
+    const page = files.get('apps/web/app/orders/[orderid]/edit/page.tsx')!.content;
+    expect(page).toContain('const { orderid } = useParams<{ orderid: string }>();');
+    expect(page).toContain('setEditId(orderid);');
   });
 });
 
@@ -332,10 +513,19 @@ describe('screen actions (DEC-121)', () => {
     const detail = page('apps/web/app/orders/[orderId]/page.tsx');
     expect(detail).toContain('<h1 className="text-xl font-semibold" data-action={"Ver pedido"}>');
     expect(detail).toContain(
-      'data-action={"Eliminar"} run={() => api.deleteOrder(orderId)} onDone={() => router.push(\'/orders\')}',
+      'data-action={"Eliminar"} run={() => api.deleteOrder(orderId)} onDone={() => router.push("/orders")}',
     );
     expect(page('apps/web/app/orders/new/page.tsx')).toContain(
-      '<Button type="submit" disabled={isSubmitting} data-action={"Registrar pedido"}>',
+      '<Button type="submit" disabled={isSubmitting || (Boolean(editId) && (existing.isLoading || existing.isError || !existing.data))} data-action={"Registrar pedido"}>',
+    );
+    // The confirmation names the saved record.
+    expect(page('apps/web/app/orders/new/page.tsx')).toContain('Identificador: ${saved.id}');
+    // A form can be left without saving, back to the entity list.
+    expect(page('apps/web/app/orders/new/page.tsx')).toContain('Cancelar y volver');
+    // An edit shows loading and missing-record states before it can save.
+    expect(page('apps/web/app/orders/new/page.tsx')).toContain('Cargando el registro…');
+    expect(page('apps/web/app/orders/new/page.tsx')).toContain(
+      'El registro no existe o ya no está disponible.',
     );
   });
 
@@ -374,7 +564,7 @@ describe('screen actions (DEC-121)', () => {
     expect(review).toContain('const { orderid } = useParams<{ orderid: string }>();');
     expect(review).toContain('run={() => api.postOrdersConfirm({ orderId: orderid }, {})}');
     expect(review).toContain(
-      'variant="outline" disabled={isSubmitting} data-action={"Guardar borrador"}',
+      'variant="outline" disabled={isSubmitting || (Boolean(editId) && (existing.isLoading || existing.isError || !existing.data))} data-action={"Guardar borrador"}',
     );
     // No list or detail screen for orders: consulting runs the query.
     expect(more.get('apps/web/app/reports/page.tsx')!.content).toContain(
@@ -492,11 +682,160 @@ describe('forms and pages for every field type', () => {
     expect(create).toContain('api.createHidden(');
   });
 
-  it('serves the home page and adds the end-to-end script only when the plan has such tests', () => {
+  it('serves the home page and always generates screen end-to-end tests (DEC-159)', () => {
     expect(generated.get('apps/web/app/page.tsx')!.content).toContain('Inicio');
-    const web = JSON.parse(generated.get('apps/web/package.json')!.content);
-    expect(JSON.stringify(web)).toContain('playwright');
     const without = byPath(generateProject(ctx(basePlan({ tests: [] }))));
-    expect(without.get('apps/web/package.json')!.content).not.toContain('playwright');
+    const web = JSON.parse(without.get('apps/web/package.json')!.content);
+    expect(web.scripts['test:e2e']).toBe('playwright test');
+    expect(web.devDependencies['@playwright/test']).toBeDefined();
+    const screens = without.get('apps/web/e2e/screens.spec.ts')!.content;
+    expect(screens).toContain('"path": "/');
+    expect(screens).not.toContain('/[');
+    expect(screens).toContain("locator('h1')");
+  });
+});
+
+describe('shared list generator and pagination (DEC-121)', () => {
+  const plan = basePlan({
+    customEndpoints: [],
+    entities: [
+      {
+        localId: 'product',
+        name: 'Product',
+        moduleLocalId: 'sales',
+        fields: [
+          { name: 'name', type: 'STRING', label: 'Nombre comercial' },
+          { name: 'price', type: 'DECIMAL', label: 'Precio unitario' },
+        ],
+        operations: ['LIST', 'GET', 'CREATE'],
+      },
+    ],
+    routes: [
+      {
+        path: '/products',
+        screenName: 'Consulta de productos',
+        moduleLocalId: 'sales',
+        kind: 'LIST',
+        entityLocalId: 'product',
+        actions: [
+          { label: 'Consultar productos', operation: 'LIST', interaction: 'QUERY' },
+          { label: 'Ir a la página siguiente', operation: 'LIST', interaction: 'PAGINATE_NEXT' },
+          { label: 'Ir a la página anterior', operation: 'LIST', interaction: 'PAGINATE_PREVIOUS' },
+          { label: 'Reintentar consulta', operation: 'LIST', interaction: 'REFETCH' },
+        ],
+      },
+      {
+        path: '/products/new',
+        screenName: 'Nuevo producto',
+        moduleLocalId: 'sales',
+        kind: 'FORM',
+        entityLocalId: 'product',
+        actions: [{ label: 'Guardar', operation: 'CREATE' }],
+      },
+    ],
+  });
+  const files = byPath(generateProject(ctx(plan)));
+  const list = files.get('apps/web/app/products/page.tsx')!.content;
+  const client = files.get('packages/api-client/src/index.ts')!.content;
+  const controller = files.get('apps/api/src/sales/product.controller.ts')!.content;
+  const service = files.get('apps/api/src/sales/product.service.ts')!.content;
+
+  it('binds pagination, query and retry interactions with real state and without dummy links', () => {
+    expect(list).toContain('const [page, setPage] = useState(1);');
+    expect(list).toContain('const limit = 20;');
+    expect(list).toContain('queryFn: () => api.listProducts({ page, limit })');
+    expect(list).toContain('onClick={() => setPage((p) => p + 1)}');
+    expect(list).toContain('disabled={!hasNextPage || query.isLoading}');
+    expect(list).toContain('onClick={() => setPage((p) => Math.max(1, p - 1))}');
+    expect(list).toContain('disabled={page <= 1 || query.isLoading}');
+    expect(list).toContain('onClick={() => query.refetch()}');
+    expect(list).not.toContain('<Link href="/products"');
+  });
+
+  it('renders a visible Identificador column and structured field labels safely escaped', () => {
+    expect(list).toContain('<th className="px-3 py-2 font-medium">{"Identificador"}</th>');
+    expect(list).toContain('<th className="px-3 py-2 font-medium">{"Nombre comercial"}</th>');
+    expect(list).toContain('<th className="px-3 py-2 font-medium">{"Precio unitario"}</th>');
+    expect(list).toContain('{row.id}');
+    expect(list).toContain(
+      'hasNextPage = items.length === limit && Boolean(nextPageQuery.data && nextPageQuery.data.length > 0)',
+    );
+    expect(list).toContain(
+      "empty={page > 1 ? 'Fin de los registros. No hay más elementos en esta página.' : 'Aún no hay registros.'}",
+    );
+  });
+
+  it('does not inject an unapproved Nuevo button into a read-only list view', () => {
+    expect(list).not.toContain('<Button>Nuevo</Button>');
+  });
+
+  it('generates optional pagination parameters on OpenAPI, api-client and backend', () => {
+    expect(client).toContain('listProducts: (query?: { "page"?: number; "limit"?: number }) =>');
+    expect(controller).toContain("@Query('page') page?: string");
+    expect(controller).toContain("@Query('limit') limit?: string");
+    expect(service).toContain("orderBy: [{ createdAt: 'desc' }, { id: 'asc' }]");
+    expect(service).toContain('take: limit');
+  });
+});
+
+describe('list filters', () => {
+  const files = byPath(generateProject(ctx()));
+
+  it('filters lists by enum fields and by related records, validated by the server', () => {
+    const openapi = JSON.parse(files.get('packages/api-client/openapi.json')!.content);
+    const parameters = openapi.paths['/orders'].get.parameters.map(
+      (parameter: { name: string }) => parameter.name,
+    );
+    expect(parameters).toEqual(expect.arrayContaining(['status', 'customerId']));
+    const controller = files.get('apps/api/src/sales/order.controller.ts')!.content;
+    expect(controller).toContain('["DRAFT","CONFIRMED"].includes(status)');
+    expect(controller).toContain(
+      'throw new BadRequestException("El filtro «customer» no es válido.")',
+    );
+    const service = files.get('apps/api/src/sales/order.service.ts')!.content;
+    expect(service).toContain('...(Object.keys(where).length ? { where } : {})');
+  });
+
+  it('offers a select for each enum filter on the list page', () => {
+    const page = files.get('apps/web/app/orders/page.tsx')!.content;
+    expect(page).toContain('id="filter-status"');
+    expect(page).toContain('status: filterValues.status || undefined');
+    expect(page).toContain('Limpiar filtros');
+  });
+});
+
+describe('route parameter pruning', () => {
+  const page = (body: string) =>
+    `import { useParams, useRouter } from 'next/navigation';\nfunction Page() {\n  const { branchid, productid } = useParams<{ branchid: string; productid: string }>();\n${body}\n}`;
+
+  it('keeps only the parameters the page reads', () => {
+    expect(pruneUnusedParams(page('  load(branchid);'))).toContain(
+      'const { branchid } = useParams<{ branchid: string }>();',
+    );
+  });
+
+  it('removes the hook and its import when no parameter is read', () => {
+    const pruned = pruneUnusedParams(page('  load();'));
+    expect(pruned).not.toContain('useParams');
+    expect(pruned).toContain("import { useRouter } from 'next/navigation';");
+  });
+});
+
+describe('demonstration data (DEC-159)', () => {
+  it('seeds creatable entities after the entities they require', () => {
+    const order = demoEntities(basePlan()).map((entity) => entity.model);
+    expect(order).toEqual(['Customer', 'Order']);
+    const orderEntity = demoEntities(basePlan()).find((entity) => entity.model === 'Order')!;
+    expect(orderEntity.relations).toEqual([
+      { name: 'customer', target: 'Customer', required: true, unique: false },
+    ]);
+  });
+
+  it('emits a runnable seed script and its command', () => {
+    const files = byPath(generateProject(ctx()));
+    expect(files.get('apps/api/src/seed/demo-data.ts')!.content).toContain('"model": "Customer"');
+    expect(JSON.parse(files.get('package.json')!.content).scripts['seed:demo']).toBe(
+      'pnpm --filter ./apps/api exec node dist/seed/demo-data.js',
+    );
   });
 });

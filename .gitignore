@@ -44,6 +44,8 @@ prisma/generated/
 !.vscode/extensions.json
 !.vscode/settings.json
 .idea/
+scratch/
+
 
 # Operating system files
 .DS_Store

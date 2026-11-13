@@ -214,8 +214,22 @@ export const CASEFLOW_WEB_TS_V1: TargetTemplateVersion = Object.freeze({
   }),
 });
 
+export const CASEFLOW_WEB_TS_V2: TargetTemplateVersion = Object.freeze({
+  ...CASEFLOW_WEB_TS_V1,
+  version: 2,
+  dependencies: Object.freeze([
+    ...CASEFLOW_WEB_TS_V1.dependencies,
+    dep('argon2', '0.45.1', 'FRAMEWORK', 'BACKEND'),
+  ]),
+  toolchain: Object.freeze({
+    ...CASEFLOW_WEB_TS_V1.toolchain,
+    allowBuilds: Object.freeze({ ...CASEFLOW_WEB_TS_V1.toolchain.allowBuilds, argon2: true }),
+  }),
+});
+
 export const TARGET_TEMPLATES: readonly TargetTemplateVersion[] = Object.freeze([
   CASEFLOW_WEB_TS_V1,
+  CASEFLOW_WEB_TS_V2,
 ]);
 
 // The latest version of a template, or a specific one when `version` is given.

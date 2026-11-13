@@ -1,0 +1,403 @@
+{
+  "date": "2026-11-05",
+  "branch": "feat/visual-user-manual",
+  "committed": false,
+  "indexPreserved": true,
+  "run": {
+    "id": "204ae02d-7fe5-43d1-9d26-4c57153c51db",
+    "projectId": "4584e81d-42f3-4501-b0c8-58bac5f7253c",
+    "status": "FAILED",
+    "implementationPlanVersionId": "6cb0e78a-2af0-40b5-ac18-6e9aa919bc9a",
+    "designBaselineId": "ac298b2c-ba49-443a-a2c1-99b8d8a8ecc4",
+    "startedAt": "2026-11-06T01:19:49.220Z",
+    "finishedAt": "2026-11-06T01:26:11.703Z",
+    "errorMessage": "Evaluación parcial de inventario; la entrega completa requiere generar y validar las demás acciones."
+  },
+  "selectedActions": [
+    "POST /inventory/receipts/preview",
+    "POST /inventory/receipts/confirm",
+    "POST /inventory/issues/preview",
+    "POST /inventory/issues/confirm",
+    "POST /inventory/losses/preview",
+    "POST /inventory/losses/confirm",
+    "POST /inventory/adjustments/preview",
+    "POST /inventory/adjustments/confirm",
+    "POST /inventory/branches/:branchId/products/:productId/minimum",
+    "PATCH /inventory/branches/:branchId/products/:productId/minimum"
+  ],
+  "accepted": [
+    "POST /inventory/receipts/preview",
+    "POST /inventory/receipts/confirm",
+    "POST /inventory/issues/preview",
+    "POST /inventory/issues/confirm",
+    "POST /inventory/losses/preview",
+    "POST /inventory/losses/confirm",
+    "POST /inventory/adjustments/preview",
+    "POST /inventory/adjustments/confirm",
+    "POST /inventory/branches/:branchId/products/:productId/minimum",
+    "PATCH /inventory/branches/:branchId/products/:productId/minimum"
+  ],
+  "warnings": [],
+  "reusedActions": 2,
+  "newProviderCalls": 8,
+  "aiRuns": [
+    {
+      "id": "335c3654-a9da-40d3-9e40-2faa79d91a09",
+      "promptKey": "business-logic.generate",
+      "promptVersion": 6,
+      "status": "SUCCEEDED",
+      "latencyMs": 45874,
+      "errorCode": null
+    },
+    {
+      "id": "20f58570-4150-421e-9c8a-76faff810f89",
+      "promptKey": "business-logic.generate",
+      "promptVersion": 6,
+      "status": "SUCCEEDED",
+      "latencyMs": 55883,
+      "errorCode": null
+    },
+    {
+      "id": "9427f9e2-f5ed-49c2-8ee5-390f3c0a9108",
+      "promptKey": "business-logic.generate",
+      "promptVersion": 6,
+      "status": "SUCCEEDED",
+      "latencyMs": 42987,
+      "errorCode": null
+    },
+    {
+      "id": "ca1b08cf-cb11-4eaa-a6d4-180da4d511c5",
+      "promptKey": "business-logic.generate",
+      "promptVersion": 6,
+      "status": "SUCCEEDED",
+      "latencyMs": 57022,
+      "errorCode": null
+    },
+    {
+      "id": "9cdab82b-bf82-4276-ba01-3a08372e4ea4",
+      "promptKey": "business-logic.generate",
+      "promptVersion": 6,
+      "status": "SUCCEEDED",
+      "latencyMs": 45036,
+      "errorCode": null
+    },
+    {
+      "id": "b2a2de0a-7a8f-4cd7-8977-0574bcb79e1d",
+      "promptKey": "business-logic.generate",
+      "promptVersion": 6,
+      "status": "SUCCEEDED",
+      "latencyMs": 63613,
+      "errorCode": null
+    },
+    {
+      "id": "76e3a83f-b648-4486-9f8c-5a9105e8dd5a",
+      "promptKey": "business-logic.generate",
+      "promptVersion": 6,
+      "status": "SUCCEEDED",
+      "latencyMs": 38989,
+      "errorCode": null
+    },
+    {
+      "id": "3bbdac4c-c8fe-40c1-b73a-935a4dabe8aa",
+      "promptKey": "business-logic.generate",
+      "promptVersion": 6,
+      "status": "SUCCEEDED",
+      "latencyMs": 32543,
+      "errorCode": null
+    }
+  ],
+  "checkpoints": [
+    {
+      "path": "docs/business-logic/011edad26217d521a972d1c0817b7adb9673357b8ab19cf204045596db1b4028.json",
+      "sha256": "0dacb93c74f643f572ad054b1ac846bd1f913170df0d3fb19186126e1ddd9911",
+      "kind": "DOCUMENTATION"
+    },
+    {
+      "path": "docs/business-logic/1646830f9dee1c949aec0ee956382f66404005046ee0fa9506e097546f273f66.json",
+      "sha256": "65d8c28a54a5a0f5296611b41b0aba37f0c64901c380a31a8680e47f92148852",
+      "kind": "DOCUMENTATION"
+    },
+    {
+      "path": "docs/business-logic/5d4634bcc63f937d679fe9fd1afa8455be3474dd68e12109b8a7b70801b542a4.json",
+      "sha256": "ee6064a0feabe4e3e3f62f3ce1e9019cdac956fd0ec316dcd34c0ead541a0527",
+      "kind": "DOCUMENTATION"
+    },
+    {
+      "path": "docs/business-logic/70004c407517bf5fd3e01f5ca04ef2e4e420ab1b615af8cc838cccf0403f34de.json",
+      "sha256": "048f2c239c51a5c9ccba4933bbf393c38235e5f7451f04892d2a9ea61fb0bcbc",
+      "kind": "DOCUMENTATION"
+    },
+    {
+      "path": "docs/business-logic/739d395e90dda1de5195a6e6a725d5e784bba50826681f86408efb1fed2632dd.json",
+      "sha256": "4bc572f65b855071c5e0d1cdb49e08570af835e1bde3261dd408fc9cee9a0a0c",
+      "kind": "DOCUMENTATION"
+    },
+    {
+      "path": "docs/business-logic/8ed38bf606c1c97bf0158832f0f24ad93072bb45008626510ff2e5a2930845e4.json",
+      "sha256": "c24e04f6a5d14f8a051dfa95334112a84cf8c76d2feb7cac5d4dd3e26472b1ff",
+      "kind": "DOCUMENTATION"
+    },
+    {
+      "path": "docs/business-logic/c8566600559744284eb42cf093332d1b29ac38cd4110f04b653338f301d31d42.json",
+      "sha256": "4c59f785b031353d59256368c7889ef66a7d73b854d1a2dbfc5ba3ed634d3b6d",
+      "kind": "DOCUMENTATION"
+    },
+    {
+      "path": "docs/business-logic/d272d122a9541b55c68f8456a534cf7a6e53ee097c53d82f6b0709128ab0771e.json",
+      "sha256": "e7c186996d4edadbf2e7746f9dc5f5944f9ff1cdf6412e12be49571b5162e2b8",
+      "kind": "DOCUMENTATION"
+    },
+    {
+      "path": "docs/business-logic/e78a1e3325b141a96836c39ed0438da7de4fc3613c3e058273b419cc5f38f53e.json",
+      "sha256": "2210418f49099cfc8070dc16e4e3de186d5cfbd916354040fb7cb9cd97abb285",
+      "kind": "DOCUMENTATION"
+    },
+    {
+      "path": "docs/business-logic/f1d8b7d8dae56df0eed5f52becaf1622e3b3e7b253d91b57a4127c55b014597b.json",
+      "sha256": "c006363e3df55f97474e7feb6b6d612d51f9b62eb7b007290f423c26a00f074a",
+      "kind": "DOCUMENTATION"
+    }
+  ],
+  "initialValidation": {
+    "stages": [
+      {
+        "stage": "INSTALL",
+        "exitCode": 0,
+        "timedOut": false,
+        "durationMs": 18900
+      },
+      {
+        "stage": "LINT",
+        "exitCode": 0,
+        "timedOut": false,
+        "durationMs": 7339
+      },
+      {
+        "stage": "TYPECHECK",
+        "exitCode": 2,
+        "timedOut": false,
+        "durationMs": 10673
+      }
+    ],
+    "diagnostics": [
+      "apps/api typecheck: src/inventory/inventory-actions.service.ts(1253,7): error TS2322: Type '{ branchId: string | undefined; productId: string; stockId: string; revision: number; balance: string; stockUnit: string; configuredMinimum: string; isConfigured: true; }' is not assignable to type '{ branchId: string; productId: string; stockId: string | null; revision: number; balance: string; stockUnit: string; configuredMinimum: string | null; isConfigured: boolean; }'.",
+      "apps/api typecheck: src/inventory/inventory-actions.service.ts(1302,13): error TS2322: Type '{ productId: string; branchId: string | undefined; balance: string; stockUnit: string; configuredMinimum: string; revision: number; }' is not assignable to type '((Without<BranchProductStockCreateInput, BranchProductStockUncheckedCreateInput> & BranchProductStockUncheckedCreateInput) | (Without<...> & BranchProductStockCreateInput)) & object'."
+    ]
+  },
+  "focusedCorrections": [
+    {
+      "path": "apps/api/src/inventory/inventory-actions.service.ts",
+      "previousSha256": "66744fe9f71331b6a4a4212b1cb332d7260c95a717853e0260cdc9b13cec152c",
+      "sha256": "246fde865b3332333cdba61abe140bdfdd05cba35c064f27bfcbb3e18c275fce",
+      "renamedReferences": 435,
+      "narrowedScopeReferences": 6
+    }
+  ],
+  "finalValidation": [
+    {
+      "stage": "INSTALL",
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 17770
+    },
+    {
+      "stage": "LINT",
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 5590
+    },
+    {
+      "stage": "TYPECHECK",
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 10893
+    },
+    {
+      "stage": "TEST",
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 15425
+    },
+    {
+      "stage": "BUILD",
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 22544
+    }
+  ],
+  "evaluationFiles": {
+    "count": 316,
+    "manifestSha256": "96efc5a64ab85e5b6f610dda3e4f722a97a2bd67f0caed2f09b82462ae0b7288"
+  },
+  "runtime": {
+    "proof": {
+      "inventory": {
+        "checks": [
+          "Inventory role signs in",
+          "Inventory requires selected scope",
+          "Forged inventory scope rejected",
+          "Client balance rejected",
+          "Client inventory actor rejected",
+          "Zero receipt rejected",
+          "Negative receipt rejected",
+          "Receipt origin required",
+          "Mass-to-volume conversion rejected",
+          "Inexact conversion rejected without rounding",
+          "Future operational date rejected",
+          "Preview converts 500 g to 0.50 kg",
+          "Preview performs no persistent writes",
+          "Receipt initializes and updates stock atomically",
+          "Movement stores original units, exact change and actor",
+          "Same-key retry recovers original result without effects",
+          "Same key with changed payload rejected",
+          "Stale initial-stock review rejected",
+          "Generic stock creation closed",
+          "Generic balance editing closed",
+          "Generic movement creation closed",
+          "Foreign-scope movement is inaccessible",
+          "Second receipt reviewed",
+          "Concurrent same-key receipt has one effect",
+          "Different stale key cannot overwrite stock",
+          "Review cannot be moved to a different scope",
+          "Concurrent initial receipt recovers after unique stock conflict",
+          "Catalog unit change preserves existing stock unit",
+          "Audit failure rolls back stock, movement and idempotency safely",
+          "Past operational date allowed",
+          "Backdated receipt confirmed without rewriting old movements",
+          "Occurrence time stays server UTC despite operational date",
+          "Final stock equals sum of accepted movement deltas",
+          "Each committed receipt has one audit event",
+          "Balance and revision changes audited"
+        ],
+        "scopeA": "4a25398e-a80b-4b5f-9bde-aabf4f752cf9",
+        "scopeB": "3de1e70e-3390-426c-87cc-d03776321549",
+        "productId": "89b65982-bb04-48a9-a7e6-c36a71b11750",
+        "stockId": "5c7d5802-2d67-4af2-8c6d-a508a1c4c52e",
+        "balance": "0.80"
+      },
+      "sales": {
+        "checks": [
+          "Test cashier signs in",
+          "Selected scope required",
+          "Forged scope rejected",
+          "Client total rejected",
+          "Client actor rejected",
+          "Zero quantity rejected",
+          "Partial create failure rolls back sale",
+          "Catalog fallback and HALF_UP 0.005 to 0.01",
+          "Draft creation audited",
+          "Sale inaccessible from another scope",
+          "Draft update increments revision and exact total",
+          "Stale draft update rejected",
+          "Failed update rolls back revision, lines and audit",
+          "Selected-branch unavailability rejected",
+          "Negative selected-branch price rejected",
+          "Uninterpreted pricing conditions rejected",
+          "Overlapping effective prices rejected",
+          "Review uses effective selected-branch price",
+          "Review does not mutate sale, lines or audit",
+          "Changed quote prevents confirmation",
+          "New review refreshes price",
+          "Concurrent same-key confirmation recovers one result",
+          "One idempotency record persisted",
+          "Retry returns original complete result",
+          "Same key with altered payload rejected",
+          "Second distinct confirmation rejected",
+          "Confirmed sale cannot be edited",
+          "Confirmed draft review rejects repricing",
+          "Historical sale remains unchanged after catalog price update",
+          "Historical line price remains unchanged after catalog price update",
+          "Internal note appended",
+          "Notes preserve earlier records",
+          "Notes do not modify historical amount",
+          "Sales do not change inventory",
+          "Field-change audit persisted"
+        ],
+        "saleId": "bfb5cb88-e81c-4103-8ca2-325d9fba4ddd",
+        "scopeA": "9f1cfffb-53b5-4fdc-a637-a267194aa6fa",
+        "scopeB": "76b603c7-b524-4977-9f8e-bb58ac3f2c2c",
+        "productId": "aa047500-d1cf-44ad-aed6-dae63567628d"
+      },
+      "flows": {
+        "checks": [
+          "Inventory operator authenticated",
+          "Initial stock reviewed",
+          "Initial stock established",
+          "issues prevents negative stock",
+          "issues rejects zero",
+          "issues review succeeds",
+          "issues concurrent idempotent confirmation applies once",
+          "issues records exact signed delta",
+          "issues rejects stale review",
+          "losses prevents negative stock",
+          "losses requires a reason",
+          "losses rejects zero",
+          "losses review succeeds",
+          "losses concurrent idempotent confirmation applies once",
+          "losses records exact signed delta",
+          "losses rejects stale review",
+          "adjustments prevents negative stock",
+          "adjustments requires a reason",
+          "adjustments rejects zero",
+          "adjustments review succeeds",
+          "adjustments concurrent idempotent confirmation applies once",
+          "adjustments records exact signed delta",
+          "adjustments rejects stale review",
+          "Positive adjustment reviewed",
+          "Positive adjustment restores exact stock",
+          "Competing withdrawals cannot consume the last unit twice",
+          "Concurrent withdrawals preserve nonnegative balance",
+          "issues direct forged confirmation has no effect",
+          "losses direct forged confirmation has no effect",
+          "adjustments direct forged confirmation has no effect",
+          "Minimum modification requires existing configuration",
+          "Zero minimum is configured, not absent",
+          "Minimum cannot be established twice",
+          "Minimum modification preserves stock balance",
+          "Negative minimum rejected",
+          "Minimum cannot alter client supplied balance",
+          "Minimum changes create no movements",
+          "Path scope cannot bypass selected branch",
+          "Minimum can initialize zero stock with normalized unit",
+          "Cashier denied receipts",
+          "Cashier denied issues",
+          "Cashier denied losses",
+          "Cashier denied adjustments",
+          "Cashier denied minimum modification",
+          "Final inventory balance remains exact"
+        ],
+        "balance": "8.00"
+      }
+    },
+    "browserPassed": true,
+    "results": [
+      {
+        "role": "Administrador",
+        "routePath": "/home",
+        "status": "CAPTURED",
+        "reason": null,
+        "width": 1440,
+        "height": 900
+      }
+    ]
+  },
+  "fixtureCorrection": {
+    "previous": "UTC calendar day",
+    "current": "America/Guayaquil calendar day",
+    "applicationValidationRelaxed": false
+  },
+  "globalBusinessActions": {
+    "total": 31,
+    "evaluated": 15,
+    "pending": 16
+  },
+  "newOfficialSnapshots": 0,
+  "limits": [
+    "Partial evaluation, not a complete delivery",
+    "Focused corrections applied to evaluation files; original proposal checkpoints preserved",
+    "No complete inventory list/history/alerts UX certification",
+    "No mobile or full role matrix validation",
+    "Other sixteen business actions pending",
+    "No new repository source suites run; previous verification remains historical"
+  ]
+}

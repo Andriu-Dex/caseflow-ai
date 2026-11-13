@@ -6,6 +6,7 @@ import {
   DisabledAIProvider,
   FakeAIProvider,
   FallbackAIProvider,
+  RoutingAIProvider,
   PromptRegistry,
   msUntilMidnight,
   outputAllowance,
@@ -207,6 +208,19 @@ const providerRequest = {
   modelProfile: 'BALANCED' as const,
   timeoutMs: 1_000,
 };
+
+describe('RoutingAIProvider', () => {
+  it('sends a routed purpose to its provider and everything else to the default', async () => {
+    const chatgpt = new FakeAIProvider(response);
+    const gemini = new FakeAIProvider(response);
+    const router = new RoutingAIProvider(chatgpt, new Map([['frontend_presentation', gemini]]));
+    await router.generateStructured({ ...providerRequest, purpose: 'frontend_presentation' });
+    expect(gemini.lastRequest?.purpose).toBe('frontend_presentation');
+    expect(chatgpt.lastRequest).toBeUndefined();
+    await router.generateStructured(providerRequest);
+    expect(chatgpt.lastRequest?.purpose).toBe('foundation_probe');
+  });
+});
 
 describe('FallbackAIProvider', () => {
   it('rejects an empty chain', () => {

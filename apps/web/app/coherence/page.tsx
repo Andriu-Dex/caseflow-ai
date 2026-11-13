@@ -23,6 +23,11 @@ import { PageHeading } from '../../components/page-heading';
 // with what is missing and where it is fixed.
 
 const CHAIN_LABELS: Record<CoherenceChain, { title: string; description: string }> = {
+  REQUIREMENT_COMMITMENT: {
+    title: 'Compromisos del requisito → comportamiento declarado',
+    description:
+      'Comprobaciones puntuales de conservación, máximos y actores. Detectan contradicciones explícitas en formatos reconocidos; no certifican el cumplimiento semántico ni sustituyen pruebas del software generado.',
+  },
   QUALITY_REQUIREMENT_DESIGN: {
     title: 'Requisito no funcional → diseño',
     description:
@@ -56,6 +61,11 @@ const CHAIN_LABELS: Record<CoherenceChain, { title: string; description: string 
 };
 
 const CHAIN_STEPS: Record<CoherenceChain, string[]> = {
+  REQUIREMENT_COMMITMENT: [
+    'Compromiso declarado',
+    'Comportamiento propuesto',
+    'Revisión y pruebas',
+  ],
   QUALITY_REQUIREMENT_DESIGN: ['Requisito no funcional', 'Arquitectura y Diseño'],
   CONTEXT_REQUIREMENT: ['Contexto del proyecto', 'Requisitos aprobados'],
   REQUIREMENT_USE_CASE_SCREEN: ['Requisito funcional', 'Caso de uso', 'Pantalla UI'],
@@ -72,6 +82,11 @@ const CHAIN_FIX_PAGES: Partial<Record<CoherenceChain, string>> = {
 
 // Where each gap is fixed: the artifact that must change to cover it.
 const FIX_PAGES: Record<string, string> = {
+  USE_CASE: '/use-cases',
+  SOFTWARE_ARCHITECTURE: '/design/software-architecture',
+  SYSTEM_ARCHITECTURE: '/design/system-architecture',
+  NAVIGATION_TREE: '/design/navigation',
+  DATA_MODEL: '/data-model',
   REQUIREMENT: '/use-cases',
   CLASS_DIAGRAM: '/class-diagram',
   CONCEPTUAL_DOMAIN_MODEL: '/construction/conceptual-model',
@@ -80,6 +95,9 @@ const FIX_PAGES: Record<string, string> = {
 };
 
 const FIX_PAGE_LABELS: Record<string, string> = {
+  '/data-model': 'Modelo de datos',
+  '/design/system-architecture': 'Arquitectura de sistema',
+  '/design/navigation': 'Navegación',
   '/requirements': 'Requisitos',
   '/use-cases': 'Casos de uso',
   '/class-diagram': 'Diagrama de clases',
@@ -321,7 +339,11 @@ function CoherenceContent({ projectId }: { projectId: string }) {
                               : ''
                           }`}
                         >
-                          {open.length ? `${open.length} por resolver` : 'Satisfecha'}
+                          {open.length
+                            ? `${open.length} por resolver`
+                            : chain === 'REQUIREMENT_COMMITMENT'
+                              ? 'Sin contradicciones detectadas'
+                              : 'Satisfecha'}
                         </Badge>
                       </div>
 
@@ -352,7 +374,9 @@ function CoherenceContent({ projectId }: { projectId: string }) {
                         <div className="flex items-center gap-2 rounded-lg border border-emerald-200/80 bg-emerald-50/50 p-3 text-xs sm:text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-300">
                           <CheckCircle2 className="size-4 text-emerald-600 shrink-0" />
                           <span>
-                            Sin huecos en lo aprobado hasta ahora. Cobertura formal completa.
+                            {chain === 'REQUIREMENT_COMMITMENT'
+                              ? 'Sin contradicciones explícitas detectadas en los formatos reconocidos. El cumplimiento requiere revisión y pruebas.'
+                              : 'Sin huecos en lo aprobado hasta ahora. Cobertura formal completa.'}
                           </span>
                         </div>
                       ) : (

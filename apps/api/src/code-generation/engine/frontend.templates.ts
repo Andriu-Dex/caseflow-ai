@@ -3,10 +3,14 @@ import {
   type DesignThemeContent,
   type DesignThemePalette,
   type ImplementationPlanContent,
+  type ActionValueDefinition,
 } from '@caseflow-ai/contracts';
-import { lowerFirst, pluralize, upperFirst } from '../naming';
+import { listFilters, lowerFirst, pluralize, upperFirst } from '../naming';
 import { customEndpointOperationId } from '../openapi.generator';
-import { createSchemaName, inputRelations } from './contracts.templates';
+import { actionSchemaName } from './action-contract.templates';
+import { actionFormFile } from './action-form.templates';
+import { createSchemaName, inputRelations, manyInputRelations } from './contracts.templates';
+import { findPrimaryDateField } from './backend.templates';
 import {
   SCOPE,
   dependencies,
@@ -56,10 +60,19 @@ const cssVariables = (palette: DesignThemePalette, indent: string) =>
 function globalsCss(theme: DesignThemeContent | undefined): string {
   if (!theme) return STANDARD_GLOBALS_CSS;
   const base = theme.light ?? theme.dark!;
-  return `@import 'tailwindcss';
+  return `@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import 'tailwindcss';
 
 @theme {
 ${cssVariables(base, '  ')}
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.375rem;
+  --radius-xl: 0.5rem;
+  --color-card: var(--color-background);
+  --color-card-foreground: var(--color-foreground);
+  --color-input: var(--color-border);
+  --color-ring: var(--color-primary);
 }
 ${
   theme.mode === 'BOTH'
@@ -75,15 +88,30 @@ ${cssVariables(theme.dark!, '  ')}
   color-scheme: ${theme.mode === 'DARK' ? 'dark' : 'light'};
 }
 
+/* Dividers and cards use a softer line than form controls (border-input). */
 *,
 ::before,
 ::after {
-  border-color: var(--color-border);
+  border-color: color-mix(in oklab, var(--color-border) 45%, transparent);
 }
 
 body {
   background: var(--color-background);
   color: var(--color-foreground);
+  font-family: var(--font-sans);
+}
+
+@layer base {
+  th {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-muted-foreground);
+  }
+  label {
+    font-weight: 500;
+  }
 }
 `;
 }
@@ -96,15 +124,13 @@ import { Button } from './ui/button';
 
 const STORAGE_KEY = 'theme';
 
-// Light/dark switch: the saved choice wins, otherwise the system preference.
+// Light/dark switch. The approved mockups are light, so the application opens
+// light and turns dark only when the person chose it.
 export function ThemeToggle() {
   const [dark, setDark] = useState(false);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(STORAGE_KEY);
-    const initial = saved
-      ? saved === 'dark'
-      : window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const initial = window.localStorage.getItem(STORAGE_KEY) === 'dark';
     document.documentElement.classList.toggle('dark', initial);
     setDark(initial);
   }, []);
@@ -129,7 +155,7 @@ export function ThemeToggle() {
 }
 `;
 
-const THEME_TOGGLE_SPEC = `import { afterEach, describe, expect, it, vi } from 'vitest';
+const THEME_TOGGLE_SPEC = `import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { ThemeToggle } from './theme-toggle';
 
@@ -141,7 +167,6 @@ describe('ThemeToggle', () => {
   });
 
   it('switches to dark and remembers the choice', () => {
-    window.matchMedia = vi.fn().mockReturnValue({ matches: false });
     render(<ThemeToggle />);
     fireEvent.click(screen.getByRole('button', { name: 'Usar tema oscuro' }));
     expect(document.documentElement.classList.contains('dark')).toBe(true);
@@ -151,14 +176,68 @@ describe('ThemeToggle', () => {
 });
 `;
 
-const labelOf = (name: string) =>
-  upperFirst(name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase());
+const SPANISH_LABELS: Record<string, string> = {
+  amount: 'Importe',
+  applicationconditions: 'Condiciones de aplicación',
+  validfrom: 'Válido desde',
+  validuntil: 'Válido hasta',
+  available: 'Disponible',
+  product: 'Producto',
+  branch: 'Sucursal',
+  name: 'Nombre',
+  identification: 'Identificación',
+  address: 'Dirección',
+  timezone: 'Zona horaria',
+  status: 'Estado',
+  category: 'Categoría',
+  price: 'Precio',
+  unit: 'Unidad de venta',
+  quantity: 'Cantidad',
+  date: 'Fecha',
+  user: 'Usuario',
+  role: 'Rol',
+  email: 'Correo electrónico',
+  password: 'Contraseña',
+  description: 'Descripción',
+  classification: 'Clasificación',
+  notes: 'Notas',
+  reason: 'Motivo',
+  concept: 'Concepto',
+  currency: 'Moneda',
+  balance: 'Saldo',
+  dailymenu: 'Menú diario',
+  versionlabel: 'Versión',
+  creationdate: 'Fecha de creación',
+  publicationdate: 'Fecha de publicación',
+  branchid: 'Sucursal',
+  saledate: 'Fecha de venta',
+  operationaldate: 'Fecha operativa',
+  channel: 'Canal',
+  totaldiscount: 'Descuento total',
+  subtotal: 'Subtotal',
+  total: 'Total',
+  appliedamount: 'Importe aplicado',
+  appliedat: 'Fecha de aplicación',
+  authorizationevidence: 'Evidencia de autorización',
+  historicalunitprice: 'Precio unitario histórico',
+  unitprice: 'Precio unitario',
+  discount: 'Descuento',
+  componenttype: 'Tipo de componente',
+  menuversioncomponent: 'Componente de versión de menú',
+  menuversion: 'Versión de menú',
+};
+
+export const labelOf = (name: string) => {
+  const lower = name.toLowerCase();
+  if (SPANISH_LABELS[lower]) return SPANISH_LABELS[lower];
+  return upperFirst(name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase());
+};
 
 // "/orders/[orderId]" -> "app/orders/[orderId]/page.tsx"
 export const pagePath = (routePath: string) =>
   routePath === '/' ? 'apps/web/app/page.tsx' : `apps/web/app${routePath}/page.tsx`;
 // Relative path from a route page back to the apps/web root.
-const toWebRoot = (routePath: string) =>
+export const toWebRoot = (routePath: string) =>
   '../'.repeat(routePath.split('/').filter(Boolean).length + 1);
 const dynamicParam = (routePath: string) => routePath.match(/\[([a-zA-Z0-9]+)\]/)?.[1];
 // Every URL parameter of a route, in order: /sales/[saleId]/lines -> ["saleId"].
@@ -179,6 +258,24 @@ const entityParam = (entity: Entity | undefined, names: string[]) =>
         );
       })
     : undefined;
+// Drops route parameters a finished page declares but never reads, so the
+// generated code passes the unused-variable lint rule.
+export function pruneUnusedParams(content: string): string {
+  const declaration = /\n {2}const \{ ([^}]+) \} = useParams<\{ [^}]* \}>\(\);/.exec(content);
+  if (!declaration) return content;
+  const rest = content.replace(declaration[0], '');
+  const used = declaration[1]!.split(', ').filter((name) => new RegExp(`\\b${name}\\b`).test(rest));
+  if (used.length === declaration[1]!.split(', ').length) return content;
+  if (used.length)
+    return content.replace(
+      declaration[0],
+      `\n  const { ${used.join(', ')} } = useParams<{ ${used.map((name) => `${name}: string`).join('; ')} }>();`,
+    );
+  return rest
+    .replace("import { useParams } from 'next/navigation';\n", '')
+    .replace('import { useParams, ', 'import { ');
+}
+
 // Reads the URL parameters a page body uses.
 const paramsHook = (names: string[], body: string) => {
   const used = names.filter((name) => new RegExp(`\\b${name}\\b`).test(body));
@@ -192,8 +289,9 @@ function display(field: Field, accessor: string): string {
     case 'BOOLEAN':
       return `${accessor} ? 'Sí' : 'No'`;
     case 'DATE':
-    case 'DATETIME':
       return `${accessor} ? new Date(${accessor}).toLocaleDateString('es') : '—'`;
+    case 'DATETIME':
+      return `${accessor} ? new Date(${accessor}).toLocaleString('es', { timeZone: 'UTC' }) + ' UTC' : '—'`;
     default:
       return `${accessor} ?? '—'`;
   }
@@ -237,15 +335,46 @@ const buttonControl = (label: string, run: string, onDone?: string, confirm?: st
   `<ActionButton ${actionMarker(label)} run={${run}}${onDone ? ` onDone={${onDone}}` : ''}${
     confirm ? ` confirm=${text(confirm)}` : ''
   } />`;
-const withId = (path: string, idExpr: string) =>
-  `{\`${path.replace(/\[[a-zA-Z0-9]+\]/, `\${${idExpr}}`)}\`}`;
+
+function routeHref(
+  path: string,
+  paramNames: string[],
+  idExpr?: string,
+  recordParam?: string,
+): string {
+  if (!path.includes('[')) return JSON.stringify(path);
+  const expr = path.replace(/\[([a-zA-Z0-9]+)\]/g, (_, name: string) => {
+    if (idExpr && name === recordParam) return `\${${idExpr}}`;
+    const matched = paramNames.find((p) => p.toLowerCase() === name.toLowerCase());
+    if (matched) return `\${${matched}}`;
+    if (idExpr && routeParamNames(path).length === 1) return `\${${idExpr}}`;
+    throw new Error(
+      `No se puede resolver el parámetro «${name}» de «${path}»; complete el enlace del plan.`,
+    );
+  });
+  return `{\`${expr}\`}`;
+}
+
+const recordHref = (path: string, entity: Entity, names: string[], id: string) =>
+  routeHref(path, names, id, entityParam(entity, routeParamNames(path)));
 
 interface ActionTarget {
+  autoLoad?: boolean;
+  navigations?: Array<{
+    label: string;
+    routePath: string;
+    sourceEndpoint?: string;
+    collectionField?: string;
+    idField: string;
+  }>;
   idExpr?: string;
   // The page's URL parameters ([saleId] -> "saleId"), each a variable in scope.
   routeParams?: string[];
   onDone?: string;
   onDelete?: string;
+  isListPage?: boolean;
+  hasDate?: boolean;
+  refetch?: string;
 }
 
 // The control for one action, or null when this template cannot realise it
@@ -258,36 +387,66 @@ function actionControl(
 ): string | null {
   const { label } = action;
   const { idExpr } = target;
+  if (action.navigation) {
+    if (action.navigation.sourceEndpoint) return null;
+    return linkControl(label, routeHref(action.navigation.routePath, target.routeParams ?? []));
+  }
   if (action.operation) {
     if (!entity || !entity.operations.includes(action.operation)) return null;
     const form = entityRoute(plan, entity, 'FORM');
     switch (action.operation) {
-      case 'CREATE':
-        return form ? linkControl(label, `"${form.path}"`) : null;
+      case 'CREATE': {
+        if (action.interaction?.startsWith('PAGINATE_')) return null;
+        if (!form) return null;
+        const names = target.routeParams ?? [];
+        if (routeParamNames(form.path).some((name) => !names.includes(name))) return null;
+        return linkControl(label, routeHref(form.path, names));
+      }
       case 'LIST': {
+        if (target.isListPage) {
+          if (action.interaction === 'PAGINATE_NEXT')
+            return `<Button type="button" variant="outline" onClick={() => setPage((p) => p + 1)} disabled={!hasNextPage || query.isLoading} ${actionMarker(label)}>${text(label)}</Button>`;
+          if (action.interaction === 'PAGINATE_PREVIOUS')
+            return `<Button type="button" variant="outline" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1 || query.isLoading} ${actionMarker(label)}>${text(label)}</Button>`;
+          if (action.interaction === 'QUERY' || action.interaction === 'REFETCH')
+            return `<Button type="button" variant="outline" onClick={() => query.refetch()} disabled={query.isLoading${target.hasDate ? ' || isInvalidDateRange' : ''}} ${actionMarker(label)}>${text(label)}</Button>`;
+          return `<Button type="button" variant="outline" onClick={() => query.refetch()} disabled={query.isLoading${target.hasDate ? ' || isInvalidDateRange' : ''}} ${actionMarker(label)}>${text(label)}</Button>`;
+        }
         const list = entityRoute(plan, entity, 'LIST');
         // With no list screen, the query is run from here.
         return list
-          ? linkControl(label, `"${list.path}"`)
+          ? linkControl(label, routeHref(list.path, target.routeParams ?? []))
           : buttonControl(label, `() => api.list${pluralize(entity.name)}()`, target.onDone);
       }
       case 'GET': {
         const detail = entityRoute(plan, entity, 'DETAIL');
-        if (detail && idExpr) return linkControl(label, withId(detail.path, idExpr));
+        if (detail && idExpr)
+          return linkControl(
+            label,
+            recordHref(detail.path, entity, target.routeParams ?? [], idExpr),
+          );
         // Without its detail screen, consulting runs the query from here; with
         // no record at hand it opens (or runs) the entity's list.
         if (idExpr)
           return buttonControl(label, `() => api.get${entity.name}(${idExpr})`, target.onDone);
+        if (target.refetch)
+          return `<Button type="button" variant="outline" ${actionMarker(label)} onClick={() => void ${target.refetch}()}>${text(label)}</Button>`;
         if (!entity.operations.includes('LIST')) return null;
         const list = entityRoute(plan, entity, 'LIST');
         return list
-          ? linkControl(label, `"${list.path}"`)
+          ? linkControl(label, routeHref(list.path, target.routeParams ?? []))
           : buttonControl(label, `() => api.list${pluralize(entity.name)}()`, target.onDone);
       }
-      case 'UPDATE':
-        return form && idExpr && entity.operations.includes('GET')
-          ? linkControl(label, `{\`${form.path}?id=\${${idExpr}}\`}`)
-          : null;
+      case 'UPDATE': {
+        if (!form || !idExpr || !entity.operations.includes('GET')) return null;
+        if (!form.path.includes('['))
+          return linkControl(label, `{\`${form.path}?id=\${${idExpr}}\`}`);
+        const href = recordHref(form.path, entity, target.routeParams ?? [], idExpr).replace(
+          /^\{(.*)\}$/,
+          '$1',
+        );
+        return linkControl(label, `{${href} + '?id=' + ${idExpr}}`);
+      }
       case 'DELETE':
         return idExpr
           ? buttonControl(
@@ -301,6 +460,8 @@ function actionControl(
   }
   const endpoint = customEndpoint(plan, action);
   if (!endpoint) return null;
+  if (endpoint.disabledReason)
+    return `<div><Button type="button" disabled ${actionMarker(label)}>{${JSON.stringify(label)}}</Button><p role="status">{${JSON.stringify(endpoint.disabledReason)}}</p></div>`;
   const params = pathParams(endpoint.path);
   // Each path parameter comes from the page's URL parameter of the same name
   // (case aside), or, when it is the only one, from the record at hand.
@@ -311,6 +472,49 @@ function actionControl(
       (params.length === 1 ? (idExpr ?? routeParams.at(-1)) : undefined),
   );
   if (values.some((value) => !value)) return null;
+  if (endpoint.contract) {
+    const id = customEndpointOperationId(endpoint);
+    const references = new Set<string>();
+    const collect = (value: ActionValueDefinition) => {
+      if (value.referenceEntityLocalId) references.add(value.referenceEntityLocalId);
+      for (const field of value.properties ?? []) collect(field.value);
+      if (value.items) collect(value.items);
+    };
+    if (endpoint.contract.body) collect(endpoint.contract.body);
+    if (endpoint.contract.query) collect(endpoint.contract.query);
+    const loaders = [...references].map((localId) => {
+      const entity = plan.entities.find((entity) => entity.localId === localId)!;
+      const label = entity.fields.find(
+        (field) => ['STRING', 'TEXT'].includes(field.type) && !field.internal,
+      )?.name;
+      return `${JSON.stringify(localId)}:async()=>(await api.list${pluralize(entity.name)}()).map(item=>({id:item.id,label:String(item.${label ?? 'id'})}))`;
+    });
+    const args = [
+      ...(params.length === 1 && params[0] === 'id'
+        ? [values[0]!]
+        : params.length
+          ? [`{ ${params.map((param, i) => `${param}: ${values[i]}`).join(', ')} }`]
+          : []),
+      ...(endpoint.contract.body ? [`${actionSchemaName(id, 'Body')}.parse(body)`] : []),
+      ...(endpoint.contract.query ? [`${actionSchemaName(id, 'Query')}.parse(query)`] : []),
+    ];
+    const resultSlots =
+      endpoint.contract.response.type === 'OBJECT'
+        ? endpoint.contract.response
+            .properties!.filter((field) => !field.value.technical)
+            .map((field) => '<ActionResult field={' + JSON.stringify(field.name) + '} />')
+            .join('')
+        : '<ActionResult />';
+    const navigations =
+      target.navigations?.filter(
+        (item) => item.sourceEndpoint === endpoint.method + ' ' + endpoint.path,
+      ) ?? [];
+    const form = `<ActionForm${target.autoLoad ? ' autoLoad' : ''}${navigations.length ? ` navigations={${JSON.stringify(navigations)}}` : ''} description={${JSON.stringify(endpoint.summary)}} label={${JSON.stringify(label)}} ${actionMarker(label)} actionKey={${JSON.stringify(endpoint.method + ' ' + endpoint.path)}} isMutation={${endpoint.method !== 'GET'}}${endpoint.contract.bindings ? ` bindings={${JSON.stringify(endpoint.contract.bindings)}}` : ''}${endpoint.contract.successNavigation ? ` successNavigation={${JSON.stringify(endpoint.contract.successNavigation)}}` : ''} ${endpoint.contract.body ? `bodyDefinition={${JSON.stringify(endpoint.contract.body)}}` : ''} ${endpoint.contract.query ? `queryDefinition={${JSON.stringify(endpoint.contract.query)}}` : ''} responseDefinition={${JSON.stringify(endpoint.contract.response)}}${loaders.length ? ` references={{${loaders.join(',')}}}` : ''} submit={async (body, query) => { void [body, query]; return api.${id}(${args.join(', ')}); }}${target.onDone ? ` onDone={${target.onDone}}` : ''}><ActionControls /><ActionFeedback />${resultSlots}</ActionForm>`;
+    return navigations.reduce(
+      (result, navigation) => `<div ${actionMarker(navigation.label)}>${result}</div>`,
+      form,
+    );
+  }
   const args = [
     ...(params.length === 1 && params[0] === 'id'
       ? [values[0]!]
@@ -323,6 +527,9 @@ function actionControl(
     label,
     `() => api.${customEndpointOperationId(endpoint)}(${args.join(', ')})`,
     target.onDone,
+    endpoint.builtin === 'ACCOUNT_DEACTIVATE'
+      ? '¿Desea desactivar esta cuenta y cerrar sus sesiones?'
+      : undefined,
   );
 }
 
@@ -344,80 +551,265 @@ const indent = (block: string, spaces: number) =>
 
 // Imports a page needs, read from the JSX it renders.
 function pageImports(body: string, up: string, extra: string[] = []): string {
+  if (body.includes('<ActionForm'))
+    extra.push(
+      `import { ActionForm, ActionControls, ActionFeedback, ActionResult } from '${up}components/action-form';`,
+    );
+  const actionSchemas = [
+    ...new Set(
+      [...body.matchAll(/\b([a-z][a-zA-Z0-9]*(?:Body|Query)Schema)\.parse\(/g)].map(
+        (match) => match[1],
+      ),
+    ),
+  ];
+  if (actionSchemas.length)
+    extra.push(`import { ${actionSchemas.join(', ')} } from '@app/contracts';`);
   const lines = [
     body.includes('<Link') ? "import Link from 'next/link';" : '',
     ...extra,
     body.includes('<Button') ? `import { Button } from '${up}components/ui/button';` : '',
+    body.includes('<Input') ? `import { Input } from '${up}components/ui/input';` : '',
     body.includes('<ActionButton')
       ? `import { ActionButton } from '${up}components/action-button';`
       : '',
   ];
-  return lines.filter(Boolean).join('\n');
+  return [...new Set(lines.filter(Boolean))].join('\n');
 }
 
 function listPage(plan: Plan, entity: Entity, route: Route): string {
   const up = toWebRoot(route.path);
   const plural = pluralize(entity.name);
-  const queryKey = `['${lowerFirst(plural)}']`;
+  const baseKey = `['${lowerFirst(plural)}']`;
   const detail = entity.operations.includes('GET')
     ? entityRoute(plan, entity, 'DETAIL')
     : undefined;
-  const form = entity.operations.includes('CREATE') ? entityRoute(plan, entity, 'FORM') : undefined;
-  const columns = entity.fields.slice(0, 5);
-  const refresh = `() => queryClient.invalidateQueries({ queryKey: ${queryKey} })`;
-  const pageActions = route.actions.filter((a) => !isItemAction(plan, a));
+  const relColumns = inputRelations(entity).map((rel) => ({
+    name: `${rel.name}Id`,
+    type: 'STRING' as const,
+    label: rel.label ?? labelOf(rel.name),
+    required: false,
+    unique: false,
+    enumValues: [],
+  }));
+  const names = routeParamNames(route.path);
+  const hook = paramsHook(names, names.join(' '));
+  const primaryDate = findPrimaryDateField(entity, plan);
+  const hasDate = Boolean(primaryDate);
+  // Enum fields become selectable filters; a route parameter naming a
+  // relation ([branchid] for branchId) scopes the list to that record.
+  const enumFilters = listFilters(entity).filter((filter) => filter.enumValues);
+  const routeFilters = listFilters(entity).flatMap((filter) => {
+    const param =
+      !filter.enumValues && names.find((name) => name.toLowerCase() === filter.name.toLowerCase());
+    return param ? [`${filter.name}: ${param}`] : [];
+  });
+  const filterArgs = [
+    ...routeFilters,
+    ...enumFilters.map((filter) => `${filter.name}: filterValues.${filter.name} || undefined`),
+  ];
+  const filterKey = filterArgs.length
+    ? `, ${[...routeFilters.map((item) => item.split(': ')[1]), ...(enumFilters.length ? ['filterValues'] : [])].join(', ')}`
+    : '';
+
+  const columns = [...entity.fields, ...relColumns].slice(0, 8);
+  const refresh = `() => queryClient.invalidateQueries({ queryKey: ${baseKey} })`;
+  const pageActions = route.actions.filter(
+    (a) =>
+      !isItemAction(plan, a) &&
+      a.interaction !== 'PAGINATE_NEXT' &&
+      a.interaction !== 'PAGINATE_PREVIOUS',
+  );
   const itemActions = route.actions.filter((a) => isItemAction(plan, a));
-  const header = controls(plan, entity, pageActions, { onDone: refresh });
-  // Without a planned create action, the form keeps its generic entry point.
-  if (form && !pageActions.some((a) => a.operation === 'CREATE'))
-    header.unshift(`<Link href="${form.path}">\n  <Button>Nuevo</Button>\n</Link>`);
+  // The pager buttons realise the plan's own paging actions, by their labels.
+  const nextLabel =
+    route.actions.find((a) => a.interaction === 'PAGINATE_NEXT')?.label ??
+    'Ir a la página siguiente';
+  const previousLabel =
+    route.actions.find((a) => a.interaction === 'PAGINATE_PREVIOUS')?.label ??
+    'Ir a la página anterior';
+  const header = controls(plan, entity, pageActions, {
+    isListPage: true,
+    routeParams: names,
+    onDone: refresh,
+    hasDate,
+  });
   const rowControls = controls(plan, entity, itemActions, {
     idExpr: 'row.id',
+    routeParams: names,
     onDone: refresh,
     onDelete: refresh,
   });
-  const detailHref = detail ? withId(detail.path, 'row.id') : undefined;
-  const cells = columns.map((f, i) =>
-    i === 0 && detailHref
-      ? `<td className="px-3 py-2">\n  <Link className="text-primary underline" href=${detailHref}>\n    {${display(f, `row.${f.name}`)}}\n  </Link>\n</td>`
-      : `<td className="px-3 py-2">{${display(f, `row.${f.name}`)}}</td>`,
+  const accessEditor = plan.routes.find(
+    (item) => item.entityLocalId === entity.localId && item.builtinView === 'ACCOUNT_ACCESS',
   );
+  if (accessEditor)
+    rowControls.push(
+      `<Link href=${recordHref(accessEditor.path, entity, names, 'row.id')} className="text-primary underline">Roles y ámbitos de operación</Link>`,
+    );
+  const detailHref = detail ? recordHref(detail.path, entity, names, 'row.id') : undefined;
+  const idCell = detailHref
+    ? `<td className="px-3 py-2 font-mono text-xs">\n  <Link className="text-primary underline" href=${detailHref}>\n    {row.id}\n  </Link>\n</td>`
+    : `<td className="px-3 py-2 font-mono text-xs">{row.id}</td>`;
+  const dataCells = columns.map((f, i) => {
+    const expr = display(f, `row.${f.name}`);
+    return i === 0 && detailHref
+      ? `<td className="px-3 py-2">\n  <Link className="text-primary underline" href=${detailHref}>\n    {${expr}}\n  </Link>\n</td>`
+      : `<td className="px-3 py-2">{${expr}}</td>`;
+  });
+  const cells = [idCell, ...dataCells];
   if (rowControls.length)
     cells.push(
       `<td className="px-3 py-2">\n  <div className="flex flex-wrap gap-2">\n${indent(rowControls.join('\n'), 4)}\n  </div>\n</td>`,
     );
+
   const body = `    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold">${labelOf(plural)}</h1>
+        <h1 className="text-xl font-semibold">${route.screenName.replace(/[<>{}]/g, '')}</h1>
 ${header.length ? `        <div className="flex flex-wrap gap-2">\n${indent(header.join('\n'), 10)}\n        </div>\n` : ''}      </div>
-      <PageState query={query} empty="Aún no hay registros.">
-        {(rows) => (
-          <div className="overflow-x-auto rounded-lg border">
-            <table className="w-full text-sm">
-              <thead className="bg-muted text-left">
-                <tr>
-${columns.map((f) => `                  <th className="px-3 py-2 font-medium">${labelOf(f.name)}</th>`).join('\n')}${rowControls.length ? '\n                  <th className="px-3 py-2 font-medium">Acciones</th>' : ''}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.id} className="border-t">
-${indent(cells.join('\n'), 20)}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+${names.map((n) => `      {${n} && <div className="text-xs text-muted-foreground"><span className="font-semibold">${text(labelOf(n.replace(/id$/i, '')))}:</span> {${n}}</div>}`).join('\n')}
+      <div className="rounded border bg-card p-3 text-xs text-muted-foreground flex flex-col gap-1.5" role="status">
+        <div className="flex items-center justify-between">
+          <span className="font-semibold text-foreground">${text('Criterios de consulta y ámbito operativo:')}</span>
+          <span className="font-mono text-[11px]">${text('Consulta actual')}</span>
+        </div>
+        <p>${text('La lista muestra los resultados de la consulta actual. Revise los filtros aplicados y consulte el detalle de cada registro.')}</p>
+      </div>${
+        primaryDate
+          ? `\n      <div className="flex flex-col gap-2 rounded border bg-card p-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-xs font-semibold text-foreground">${text(`Filtrar por ${primaryDate.label ?? labelOf(primaryDate.name)}:`)}</span>
+          <div className="flex items-center gap-1.5">
+            <label htmlFor="dateFrom" className="text-xs font-medium">${text('Desde:')}</label>
+            <Input
+              id="dateFrom"
+              type="date"
+              className="h-8 w-36 text-xs"
+              value={dateFrom}
+              onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
+            />
           </div>
+          <div className="flex items-center gap-1.5">
+            <label htmlFor="dateTo" className="text-xs font-medium">${text('Hasta:')}</label>
+            <Input
+              id="dateTo"
+              type="date"
+              className="h-8 w-36 text-xs"
+              value={dateTo}
+              onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
+            />
+          </div>
+          {(dateFrom || dateTo) && (
+            <Button type="button" variant="ghost" size="sm" onClick={() => { setDateFrom(''); setDateTo(''); setPage(1); }}>
+              Limpiar
+            </Button>
+          )}
+        </div>
+        {isInvalidDateRange && (
+          <p role="alert" className="text-xs font-medium text-destructive">
+            El rango temporal es inválido: la fecha inicial («Desde») no puede ser posterior a la fecha final («Hasta»). Corrija las fechas antes de consultar.
+          </p>
         )}
+      </div>\n`
+          : ''
+      }${
+        enumFilters.length
+          ? `      <div className="flex flex-wrap items-end gap-3 rounded border bg-card p-3">
+${enumFilters
+  .map(
+    (filter) => `        <div className="flex flex-col gap-1">
+          <label htmlFor="filter-${filter.name}" className="text-xs font-medium">${text(filter.label)}</label>
+          <select id="filter-${filter.name}" className="h-8 rounded border bg-background px-2 text-xs" value={filterValues.${filter.name} ?? ''} onChange={(e) => { setFilterValues((current) => ({ ...current, ${filter.name}: e.target.value })); setPage(1); }}>
+            <option value="">Todos</option>
+${filter.enumValues!.map((value) => `            <option value=${JSON.stringify(value)}>${text(value)}</option>`).join('\n')}
+          </select>
+        </div>`,
+  )
+  .join('\n')}
+        {Object.values(filterValues).some(Boolean) && (
+          <Button type="button" variant="ghost" size="sm" onClick={() => { setFilterValues({}); setPage(1); }}>
+            Limpiar filtros
+          </Button>
+        )}
+      </div>
+`
+          : ''
+      }      <PageState query={query} empty={${hasDate ? "isInvalidDateRange ? 'Rango temporal inválido: corrija las fechas de consulta.' : " : ''}page > 1 ? 'Fin de los registros. No hay más elementos en esta página.' : 'Aún no hay registros.'}>
+        {(rows) => {
+          const displayRows = rows;
+          return (
+            <div className="overflow-x-auto rounded-lg border">
+              <table className="w-full text-sm">
+                <thead className="bg-muted text-left">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">${text('Identificador')}</th>
+${columns.map((f) => `                    <th className="px-3 py-2 font-medium">${text(f.label ?? labelOf(f.name))}</th>`).join('\n')}${rowControls.length ? `\n                    <th className="px-3 py-2 font-medium">${text('Acciones')}</th>` : ''}
+                  </tr>
+                </thead>
+                <tbody>
+                  {displayRows.map((row) => (
+                    <tr key={row.id} className="border-t">
+${indent(cells.join('\n'), 22)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        }}
       </PageState>
+      <div className="flex items-center justify-between border-t pt-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={page <= 1 || query.isLoading}
+          onClick={() => setPage((p) => Math.max(1, p - 1))}
+          ${actionMarker(previousLabel)}
+        >
+          Página anterior
+        </Button>
+        <span className="text-xs text-muted-foreground">Página {page}</span>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={!hasNextPage || query.isLoading}
+          onClick={() => setPage((p) => p + 1)}
+          ${actionMarker(nextLabel)}
+        >
+          Página siguiente
+        </Button>
+      </div>
     </div>`;
+
   const usesClient = body.includes('queryClient');
+  const extraImports = [
+    "import { useState } from 'react';",
+    `import { ${usesClient ? 'useQueryClient, ' : ''}useQuery } from '@tanstack/react-query';`,
+    `import { api } from '${up}lib/api';`,
+    `import { PageState } from '${up}components/page-state';`,
+    hook ? "import { useParams } from 'next/navigation';" : '',
+  ].filter(Boolean);
+
   return `'use client';
 
-${pageImports(body, up, [`import { ${usesClient ? 'useQueryClient, ' : ''}useQuery } from '@tanstack/react-query';`, `import { api } from '${up}lib/api';`, `import { PageState } from '${up}components/page-state';`])}
+${pageImports(body, up, extraImports)}
 
 export default function ${entity.name}ListPage() {
-  const query = useQuery({ queryKey: ${queryKey}, queryFn: () => api.list${plural}() });${usesClient ? '\n  const queryClient = useQueryClient();' : ''}
+  const [page, setPage] = useState(1);${enumFilters.length ? '\n  const [filterValues, setFilterValues] = useState<Record<string, string>>({});' : ''}${hasDate ? "\n  const [dateFrom, setDateFrom] = useState('');\n  const [dateTo, setDateTo] = useState('');\n  const isInvalidDateRange = Boolean(dateFrom && dateTo && dateFrom > dateTo);" : ''}
+  const limit = 20;
+  const query = useQuery({
+    queryKey: ['${lowerFirst(plural)}', page, limit${hasDate ? ', dateFrom, dateTo' : ''}${filterKey}],
+    queryFn: () => api.list${plural}({ page, limit${hasDate ? ', from: dateFrom || undefined, to: dateTo || undefined' : ''}${filterArgs.map((arg) => `, ${arg}`).join('')} }${filterArgs.length ? ` as Parameters<typeof api.list${plural}>[0]` : ''}),
+    enabled: ${hasDate ? '!isInvalidDateRange' : 'true'},
+  });
+  const items = query.data ?? [];
+  const nextPageQuery = useQuery({
+    queryKey: ['${lowerFirst(plural)}', page + 1, limit${hasDate ? ', dateFrom, dateTo' : ''}${filterKey}],
+    queryFn: () => api.list${plural}({ page: page + 1, limit${hasDate ? ', from: dateFrom || undefined, to: dateTo || undefined' : ''}${filterArgs.map((arg) => `, ${arg}`).join('')} }${filterArgs.length ? ` as Parameters<typeof api.list${plural}>[0]` : ''}),
+    enabled: ${hasDate ? '!isInvalidDateRange && ' : ''}items.length === limit,
+  });
+  const hasNextPage = items.length === limit && Boolean(nextPageQuery.data && nextPageQuery.data.length > 0);${usesClient ? '\n  const queryClient = useQueryClient();' : ''}${hook}
   return (
 ${body}
   );
@@ -427,15 +819,17 @@ ${body}
 
 function detailPage(plan: Plan, entity: Entity, route: Route): string {
   const up = toWebRoot(route.path);
-  const param = dynamicParam(route.path) ?? 'id';
+  const names = routeParamNames(route.path);
+  const param = entityParam(entity, names) ?? dynamicParam(route.path) ?? 'id';
   const list = entityRoute(plan, entity, 'LIST');
   // The page itself realises a GET action of its own entity.
   const own = route.actions.find((a) => a.operation === 'GET');
   const others = route.actions.filter((a) => a !== own);
   const header = controls(plan, entity, others, {
     idExpr: param,
+    routeParams: names,
     onDone: '() => query.refetch()',
-    onDelete: `() => router.push('${list?.path ?? '/'}')`,
+    onDelete: `() => router.push(${list ? routeHref(list.path, names).replace(/^\{(.*)\}$/, '$1') : JSON.stringify('/')})`,
   });
   const body = `    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -447,7 +841,7 @@ ${header.length ? `        <div className="flex flex-wrap gap-2">\n${indent(head
 ${entity.fields
   .map(
     (f) =>
-      `            <div>\n              <dt className="text-xs text-muted-foreground">${labelOf(f.name)}</dt>\n              <dd>{${display(f, `item.${f.name}`)}}</dd>\n            </div>`,
+      `            <div>\n              <dt className="text-xs text-muted-foreground">${f.label ? text(f.label) : labelOf(f.name)}</dt>\n              <dd>{${display(f, `item.${f.name}`)}}</dd>\n            </div>`,
   )
   .join('\n')}
           </dl>
@@ -460,7 +854,7 @@ ${entity.fields
 ${pageImports(body, up, [`import { ${usesRouter ? 'useRouter, ' : ''}useParams } from 'next/navigation';`, "import { useQuery } from '@tanstack/react-query';", `import { api } from '${up}lib/api';`, `import { PageState } from '${up}components/page-state';`])}
 
 export default function ${entity.name}DetailPage() {
-  const { ${param} } = useParams<{ ${param}: string }>();${usesRouter ? '\n  const router = useRouter();' : ''}
+  const { ${names.join(', ') || param} } = useParams<{ ${names.map((name) => `${name}: string`).join('; ') || `${param}: string`} }>();${usesRouter ? '\n  const router = useRouter();' : ''}
   const query = useQuery({
     queryKey: ['${lowerFirst(entity.name)}', ${param}],
     queryFn: () => api.get${entity.name}(${param}),
@@ -476,6 +870,7 @@ ${body}
 function inputImport(body: string, up: string): string {
   const names = [
     body.includes('<Input') ? 'Input' : '',
+    body.includes('<PasswordInput') ? 'PasswordInput' : '',
     body.includes('{input}') ? 'input' : '',
   ].filter(Boolean);
   return names.length ? `import { ${names.join(', ')} } from '${up}components/ui/input';` : '';
@@ -505,40 +900,68 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
       target: plan.entities.find((e) => e.localId === relation.targetEntityLocalId)!,
     }))
     .filter(({ target }) => target.operations.includes('LIST'));
-  const inputs = entity.fields.map((field) => {
-    const label = `<label htmlFor="${field.name}" className="text-sm font-medium">${labelOf(field.name)}${field.required ? '' : ' (opcional)'}</label>`;
-    const empty = field.required ? '' : ", setValueAs: (v: string) => (v === '' ? undefined : v)";
-    let control: string;
-    switch (field.type) {
-      case 'TEXT':
-        control = `<textarea id="${field.name}" className={input} rows={4} {...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})} />`;
-        break;
-      case 'INT':
-        control = `<Input id="${field.name}" type="number" step="1" {...register('${field.name}', { setValueAs: (v: string) => (v === '' ? undefined : Number(v)) })} />`;
-        break;
-      case 'BOOLEAN':
-        control = `<input id="${field.name}" type="checkbox" className="size-4" {...register('${field.name}')} />`;
-        break;
-      case 'DATE':
-        control = `<Input id="${field.name}" type="date" {...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})} />`;
-        break;
-      case 'DATETIME':
-        control = `<Input id="${field.name}" type="datetime-local" {...register('${field.name}', { setValueAs: (v: string) => (v ? new Date(v).toISOString() : undefined) })} />`;
-        break;
-      case 'ENUM':
-        control = `<select id="${field.name}" className={input} {...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})}>
+  const manyTargets = manyInputRelations(entity, plan)
+    .map((relation) => ({
+      relation,
+      target: plan.entities.find((item) => item.localId === relation.targetEntityLocalId)!,
+    }))
+    .filter(({ target }) => target.operations.includes('LIST'));
+  const isAccount = plan.authentication.local?.userEntityLocalId === entity.localId;
+  const formFields = isAccount
+    ? [
+        ...entity.fields,
+        {
+          name: 'password',
+          type: 'STRING' as const,
+          required: true,
+          unique: false,
+          enumValues: [],
+        },
+      ]
+    : entity.fields;
+  const inputs = formFields
+    .filter(
+      (field) =>
+        field.name !== entity.lifecycle?.stateField &&
+        !entity.lifecycle?.managedFields.includes(field.name),
+    )
+    .filter((field) => !('readOnly' in field && field.readOnly))
+    .map((field) => {
+      const label = `<label htmlFor="${field.name}" className="text-sm font-medium">${isAccount && field.name === 'password' ? 'Contraseña' : field.label ? text(field.label) : labelOf(field.name)}${field.required ? '' : ' (opcional)'}</label>`;
+      const empty = field.required ? '' : ", setValueAs: (v: string) => (v === '' ? undefined : v)";
+      let control: string;
+      switch (field.type) {
+        case 'TEXT':
+          control = `<textarea id="${field.name}" className={input} rows={4} {...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})} />`;
+          break;
+        case 'INT':
+          control = `<Input id="${field.name}" type="number" step="1" {...register('${field.name}', { setValueAs: (v: string) => (v === '' ? undefined : Number(v)) })} />`;
+          break;
+        case 'BOOLEAN':
+          control = `<input id="${field.name}" type="checkbox" className="size-4" {...register('${field.name}')} />`;
+          break;
+        case 'DATE':
+          control = `<Input id="${field.name}" type="date" {...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})} />`;
+          break;
+        case 'DATETIME':
+          control = `<Input id="${field.name}" type="datetime-local" {...register('${field.name}', { setValueAs: (v: string) => (v ? new Date(v).toISOString() : undefined) })} />`;
+          break;
+        case 'ENUM':
+          control = `<select id="${field.name}" className={input} {...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})}>
             ${field.required ? '' : '<option value="">—</option>\n            '}${field.enumValues.map((v) => `<option value="${v}">${labelOf(v.toLowerCase())}</option>`).join('\n            ')}
           </select>`;
-        break;
-      default:
-        control = `<Input id="${field.name}" ${field.type === 'DECIMAL' ? 'inputMode="decimal" ' : ''}{...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})} />`;
-    }
-    return `        <div className="flex flex-col gap-1">
+          break;
+        default:
+          control = `<Input id="${field.name}" ${field.type === 'DECIMAL' ? 'inputMode="decimal" ' : ''}{...register('${field.name}'${empty ? `, { ${empty.slice(2)} }` : ''})} />`;
+      }
+      if (isAccount && field.name === 'password')
+        control = `<PasswordInput id="password" autoComplete="new-password" required={${editable ? '!editId' : 'true'}} {...register('password', { setValueAs: (value: string) => value || undefined })} />`;
+      return `        <div className="flex flex-col gap-1">
           ${label}
           ${control}
           <FieldError message={errors.${field.name}?.message} />
         </div>`;
-  });
+    });
   const relationInputs = inputRelations(entity).map((relation) => {
     const target = relationTargets.find((t) => t.relation.name === relation.name)?.target;
     const name = `${relation.name}Id`;
@@ -566,13 +989,39 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
     ({ relation, target }) =>
       `  const ${lowerFirst(relation.name)}Options = useQuery({ queryKey: ['${lowerFirst(pluralize(target.name))}'], queryFn: () => api.list${pluralize(target.name)}() });`,
   );
-  const usesQuery = relationTargets.length > 0 || editable;
+  optionQueries.push(
+    ...manyTargets.map(
+      ({ relation, target }) =>
+        `  const ${relation.name}ManyOptions = useQuery({ queryKey: ['${lowerFirst(pluralize(target.name))}'], queryFn: () => api.list${pluralize(target.name)}() });`,
+    ),
+  );
+  const manyInputs = manyTargets.map(
+    ({ relation, target }) =>
+      `<div className="flex flex-col gap-2"><label htmlFor="${relation.name}Ids">${text(relation.label ?? labelOf(relation.name))}</label><select id="${relation.name}Ids" multiple className={input} {...register('${relation.name}Ids')}>{${relation.name}ManyOptions.data?.map(option => <option key={option.id} value={option.id}>{String(option.${target.fields[0]!.name} ?? option.id)}</option>)}</select><FieldError message={errors.${relation.name}Ids?.message} /></div>`,
+  );
+  const usesQuery = relationTargets.length > 0 || manyTargets.length > 0 || editable;
   const save = editable
     ? `(editId
-        ? api.update${entity.name}(editId, values as Parameters<typeof api.update${entity.name}>[1])
-        : api.create${entity.name}(values as Parameters<typeof api.create${entity.name}>[0]))`
-    : `api.create${entity.name}(values as Parameters<typeof api.create${entity.name}>[0])`;
-  const hook = paramsHook(names, header.join('\n'));
+        ? api.update${entity.name}(editId, payload as Parameters<typeof api.update${entity.name}>[1])
+        : api.create${entity.name}(payload as Parameters<typeof api.create${entity.name}>[0]))`
+    : `api.create${entity.name}(payload as Parameters<typeof api.create${entity.name}>[0])`;
+  const editingParam =
+    editable && own?.operation === 'UPDATE' ? entityParam(entity, names) : undefined;
+  // Separated, so a parameter that only the editing query uses still matches.
+  const hook = paramsHook(names, [...names, ...header, editingParam ?? ''].join('\n'));
+  const prefillFields = [
+    ...entity.fields
+      .filter(
+        (field) =>
+          !field.readOnly &&
+          field.name !== entity.lifecycle?.stateField &&
+          !entity.lifecycle?.managedFields.includes(field.name),
+      )
+      .map((field) => field.name),
+    ...inputRelations(entity).map((relation) => relation.name + 'Id'),
+    ...manyTargets.map(({ relation }) => relation.name + 'Ids'),
+    ...(isAccount ? ['roleNames'] : []),
+  ];
   const headerBlock = header.length
     ? `      <div className="flex flex-wrap gap-2">\n${indent(header.join('\n'), 8)}\n      </div>\n`
     : '';
@@ -587,28 +1036,44 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
     `import { ${schema} } from '${SCOPE}/contracts';`,
     `import { api } from '${up}lib/api';`,
   ].filter(Boolean);
+  // An edit never saves over a record that has not loaded.
+  const editGuard =
+    'isSubmitting || (Boolean(editId) && (existing.isLoading || existing.isError || !existing.data))';
+  const mutationDisabled = !editable
+    ? 'isSubmitting'
+    : entity.lifecycle
+      ? `${editGuard} || ${JSON.stringify(entity.lifecycle.immutableStates)}.includes(String(existing.data?.${entity.lifecycle.stateField}))`
+      : editGuard;
+  const editStatus = editable
+    ? `      {editId && existing.isLoading ? <p role="status" className="text-sm text-muted-foreground">Cargando el registro…</p> : null}
+      {editId && existing.isError ? <p role="alert" className="text-sm text-destructive">{(existing.error as { status?: number } | null)?.status === 404 ? 'El registro no existe o ya no está disponible.' : 'No se pudo cargar el registro. Intente de nuevo.'}</p> : null}
+`
+    : '';
   const body = `    <div className="flex max-w-xl flex-col gap-4">
       <h1 className="text-xl font-semibold">${route.screenName.replace(/[<>{}]/g, '')}</h1>
-${headerBlock}      <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4 rounded-lg border p-4">
-${[...inputs, ...relationInputs].join('\n')}
+${headerBlock}${editStatus}${entity.lifecycle ? `<p role="status" className="text-sm text-muted-foreground">${editable ? `{existing.data ? 'Estado: ' + String(existing.data.${entity.lifecycle.stateField}) : ${JSON.stringify('Estado inicial: ' + entity.lifecycle.initialState)}}` : text('Estado inicial: ' + entity.lifecycle.initialState)}</p>` : ''}      <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4 rounded-lg border p-4">
+${[...inputs, ...relationInputs, ...manyInputs, ...(isAccount ? [`<div><label htmlFor="roleNames">Roles</label><select id="roleNames" multiple {...register('roleNames')}>${plan.authentication.roles.map((role) => `<option value={${JSON.stringify(role)}}>{${JSON.stringify(role)}}</option>`).join('')}</select></div>`] : [])].join('\n')}
         <div className="flex flex-wrap gap-2">
-          <Button type="submit" disabled={isSubmitting}${own ? ` ${actionMarker(own.label)}` : ''}>
+          <Button type="submit" disabled={${mutationDisabled}}${own ? ` ${actionMarker(own.label)}` : ''}>
             {isSubmitting ? 'Guardando…' : ${own ? JSON.stringify(own.label) : "'Guardar'"}}
           </Button>
-${submits.map((a) => `          <Button type="submit" variant="outline" disabled={isSubmitting} ${actionMarker(a.label)}>\n            ${text(a.label)}\n          </Button>\n`).join('')}        </div>
+${submits.map((a) => `          <Button type="submit" variant="outline" disabled={${mutationDisabled}} ${actionMarker(a.label)}>\n            ${text(a.label)}\n          </Button>\n`).join('')}${list ? `          <Button type="button" variant="ghost" disabled={isSubmitting} onClick={() => router.push(${routeHref(list.path, names).replace(/^\{(.*)\}$/, '$1')})}>\n            Cancelar y volver\n          </Button>\n` : ''}        </div>
       </form>
     </div>`;
   return `'use client';
 
-${pageImports(body, up, extraImports).replace(
-  `import { Button } from '${up}components/ui/button';`,
-  `import { Button } from '${up}components/ui/button';
+${pageImports(body, up, extraImports)
+  .replace(`import { Input } from '${up}components/ui/input';`, '')
+  .replace(
+    `import { Button } from '${up}components/ui/button';`,
+    `import { Button } from '${up}components/ui/button';
 ${inputImport(body, up)}
 import { FieldError } from '${up}components/field-error';`,
-)}
+  )}
 
-type FormInput = z.input<typeof ${schema}>;
-type FormOutput = z.output<typeof ${schema}>;
+const formSchema = ${schema}${entity.lifecycle ? `.omit(${JSON.stringify(Object.fromEntries([entity.lifecycle.stateField, ...entity.lifecycle.managedFields].filter((name) => entity.fields.some((field) => field.name === name && !field.readOnly && !field.internal)).map((name) => [name, true])))})` : ''}${isAccount ? '.partial({ password: true })' : ''};
+type FormInput = z.input<typeof formSchema>;
+type FormOutput = z.output<typeof formSchema>;
 
 export default function ${entity.name}FormPage() {
   const router = useRouter();${hook}
@@ -617,31 +1082,53 @@ ${optionQueries.join('\n')}${optionQueries.length ? '\n' : ''}  const {
     register,
     handleSubmit,${editable ? '\n    reset,' : ''}
     formState: { errors, isSubmitting },
-  } = useForm<FormInput, unknown, FormOutput>({ resolver: zodResolver(${schema}) });${
+  } = useForm<FormInput, unknown, FormOutput>({ resolver: zodResolver(formSchema) });${
     editable
       ? `
   // "?id=<record>" opens the form to edit that record.
   const [editId, setEditId] = useState<string | null>(null);
   useEffect(() => {
-    setEditId(new URLSearchParams(window.location.search).get('id'));
-  }, []);
+    setEditId(${editingParam ? editingParam : "new URLSearchParams(window.location.search).get('id')"});
+  }, [${editingParam ?? ''}]);
   const existing = useQuery({
     queryKey: ['${lowerFirst(entity.name)}', editId],
     queryFn: () => api.get${entity.name}(editId!),
     enabled: Boolean(editId),
   });
   useEffect(() => {
-    if (existing.data) reset(existing.data as unknown as FormInput);
+    if (existing.data) {
+      const allowed = new Set(${JSON.stringify(prefillFields)});
+      const values = Object.fromEntries(Object.entries(existing.data).filter(([key]) => allowed.has(key))) as Record<string, unknown>;
+${entity.fields
+  .filter((field) => field.type === 'DATE')
+  .map(
+    (field) =>
+      `      if (typeof values.${field.name} === 'string') values.${field.name} = values.${field.name}.slice(0, 10);`,
+  )
+  .join('\n')}
+${entity.fields
+  .filter((field) => field.type === 'DATETIME')
+  .map(
+    (field) =>
+      `      if (typeof values.${field.name} === 'string') { const date = new Date(values.${field.name}); values.${field.name} = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0,16); }`,
+  )
+  .join('\n')}
+      reset(values as unknown as FormInput);
+    }
   }, [existing.data, reset]);`
       : ''
   }
 
   async function onSubmit(values: FormOutput) {
     try {
-      await ${save};
+${entity.lifecycle ? `      const payload = { ...values, ${editable ? `...(editId ? {} : { ${entity.lifecycle.stateField}: ${JSON.stringify(entity.lifecycle.initialState)} })` : `${entity.lifecycle.stateField}: ${JSON.stringify(entity.lifecycle.initialState)}`} };` : '      const payload = values;'}
+      const saved = await ${save};
       await queryClient.invalidateQueries({ queryKey: ['${lowerFirst(pluralize(entity.name))}'] });
-      toast.success('Guardado correctamente.');
-      ${list ? `router.push('${list.path}');` : 'router.refresh();'}
+      // The confirmation names the saved record, not just the success.
+      toast.success(${editable ? "editId ? 'Cambios guardados.' : 'Registro creado.'" : "'Registro creado.'"}, {
+        description: \`Identificador: \${saved.id}${entity.lifecycle ? ` · Estado: \${String(saved.${entity.lifecycle.stateField})}` : ''}\`,
+      });
+      ${list ? `router.push(${routeHref(list.path, names).replace(/^\{(.*)\}$/, '$1')});` : 'router.refresh();'}
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'No se pudo guardar.');
     }
@@ -661,11 +1148,30 @@ function simplePage(plan: Plan, route: Route): string {
     (r) => r !== route && r.moduleLocalId === route.moduleLocalId && !r.path.includes('['),
   );
   const names = routeParamNames(route.path);
-  const header = controls(plan, entity, route.actions, {
-    idExpr: entityParam(entity, names),
-    routeParams: names,
-  });
-  const hook = paramsHook(names, header.join('\n'));
+  const navigations = route.actions.flatMap((action) =>
+    action.navigation?.sourceEndpoint
+      ? [{ ...action.navigation, label: action.label, idField: action.navigation.idField! }]
+      : [],
+  );
+  const contextControls = (route.contextQueries ?? [])
+    .map((endpoint) =>
+      actionControl(
+        plan,
+        entity,
+        { label: 'Información de la pantalla', endpoint },
+        { autoLoad: true, navigations, idExpr: entityParam(entity, names), routeParams: names },
+      ),
+    )
+    .filter((value): value is string => value !== null);
+  const header = [
+    ...contextControls,
+    ...controls(plan, entity, route.actions, {
+      navigations,
+      idExpr: entityParam(entity, names),
+      routeParams: names,
+    }),
+  ];
+  const hook = paramsHook(names, [...names, ...header].join('\n'));
   const body = `    <div className="flex flex-col gap-4">
       <h1 className="text-xl font-semibold">${route.screenName.replace(/[<>{}]/g, '')}</h1>
       <p className="text-sm text-muted-foreground">${module.description.replace(/[<>{}]/g, '')}</p>
@@ -677,10 +1183,12 @@ ${links.map((l) => `        <li>\n          <Link className="block rounded-lg bo
 `
       : ''
   }    </div>`;
-  const client = body.includes('<ActionButton') || Boolean(hook);
+  const client = body.includes('<ActionButton') || body.includes('<ActionForm') || Boolean(hook);
   const imports = pageImports(body, toWebRoot(route.path), [
     hook ? "import { useParams } from 'next/navigation';" : '',
-    body.includes('<ActionButton') ? `import { api } from '${toWebRoot(route.path)}lib/api';` : '',
+    body.includes('<ActionButton') || body.includes('<ActionForm')
+      ? `import { api } from '${toWebRoot(route.path)}lib/api';`
+      : '',
   ]);
   return `${client ? "'use client';\n\n" : ''}${imports ? `${imports}\n\n` : ''}export default function ${upperFirst(route.screenName.replace(/[^A-Za-z0-9]/g, '')) || 'Screen'}Page() {${hook}
   return (
@@ -733,13 +1241,27 @@ export function ActionButton({
 `;
 
 export function frontendFiles(ctx: GenerationContext): GeneratedProjectFile[] {
-  const { plan, template, projectName, theme } = ctx;
+  const { plan: storedPlan, template, projectName, theme } = ctx;
+  const plan = {
+    ...storedPlan,
+    entities: storedPlan.entities.map((entity) => ({
+      ...entity,
+      fields: entity.fields.filter((field) => !field.internal),
+    })),
+  };
   const themeToggle = theme?.content.mode === 'BOTH';
   const auth = plan.authentication.required;
-  const hasE2E = plan.tests.some((t) => t.kind === 'E2E');
+  const plannedE2E = plan.tests.filter((t) => t.kind === 'E2E');
   const entityById = new Map(plan.entities.map((e) => [e.localId, e]));
   const navRoutes = plan.routes.filter((r) => !r.path.includes('[') && r.path !== '/');
   const files: GeneratedProjectFile[] = [];
+  if (plan.customEndpoints.some((endpoint) => endpoint.contract)) {
+    const component = actionFormFile();
+    component.planElements = plan.customEndpoints
+      .filter((endpoint) => endpoint.contract)
+      .map((endpoint) => `endpoint:${endpoint.method} ${endpoint.path}`);
+    files.push(component);
+  }
 
   files.push(
     file(
@@ -755,7 +1277,7 @@ export function frontendFiles(ctx: GenerationContext): GeneratedProjectFile[] {
           typecheck: 'tsc --noEmit',
           lint: 'eslint app components lib',
           test: 'vitest run',
-          ...(hasE2E ? { 'test:e2e': 'playwright test' } : {}),
+          'test:e2e': 'playwright test',
         },
         dependencies: dependencies(
           template,
@@ -786,7 +1308,7 @@ export function frontendFiles(ctx: GenerationContext): GeneratedProjectFile[] {
           'tailwindcss',
           'typescript',
           'vitest',
-          ...(hasE2E ? ['@playwright/test'] : []),
+          '@playwright/test',
         ]),
       }),
       { kind: 'CONFIG' },
@@ -818,7 +1340,23 @@ export function frontendFiles(ctx: GenerationContext): GeneratedProjectFile[] {
     ),
     file(
       'apps/web/next.config.ts',
-      `import type { NextConfig } from 'next';\n\nconst nextConfig: NextConfig = {};\n\nexport default nextConfig;`,
+      `import type { NextConfig } from 'next';
+
+// Requests to /api go to the API, so one origin can serve the whole
+// application (a deployment builds with NEXT_PUBLIC_API_URL=/api).
+const nextConfig: NextConfig = {
+  async rewrites() {
+    return [
+      {
+        source: '/api/:path*',
+        destination: \`\${process.env.API_INTERNAL_URL ?? 'http://127.0.0.1:3001'}/:path*\`,
+      },
+    ];
+  },
+};
+
+export default nextConfig;
+`,
       {
         kind: 'CONFIG',
       },
@@ -887,8 +1425,36 @@ export const accessToken = {
 
 `
     : ''
-}export const api = createApiClient({
-  baseUrl: process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001',${auth ? '\n  getToken: accessToken.get,' : ''}
+}export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+${
+  plan.authentication.local?.scope
+    ? `
+export const operationScope = {
+ get: () => typeof window === 'undefined' ? null : window.sessionStorage.getItem('operation-scope'),
+ set: (id: string) => { window.sessionStorage.setItem('operation-scope', id); window.dispatchEvent(new Event('operation-scope-changed')); },
+ clear: () => { window.sessionStorage.removeItem('operation-scope'); window.dispatchEvent(new Event('operation-scope-changed')); },
+};`
+    : ''
+}
+
+export const api = createApiClient({
+  baseUrl: API_URL,${auth ? '\n  getToken: accessToken.get,' : ''}${
+    ctx.plan.authentication.local
+      ? `
+  fetch: async (input, init) => {
+    const requestToken = accessToken.get();
+    ${plan.authentication.local?.scope ? `const headers = new Headers(init?.headers); const scopeId = operationScope.get(); if (scopeId) headers.set('x-operation-scope', scopeId);` : ''}
+    const response = await fetch(input, ${plan.authentication.local?.scope ? '{ ...init, headers }' : 'init'});
+    if (response.status === 401 && typeof window !== 'undefined' && requestToken && accessToken.get() === requestToken && !String(input).endsWith('/auth/login')) {
+      accessToken.clear();
+      ${plan.authentication.local?.scope ? 'operationScope.clear();' : ''}
+      window.sessionStorage.setItem('session-expired', 'true');
+      window.location.assign(${JSON.stringify(ctx.plan.routes.find((route) => route.actions.some((action) => action.endpoint === 'POST /auth/login'))?.path ?? '/access')});
+    }
+    return response;
+  },`
+      : ''
+  }
 });
 `,
     ),
@@ -904,33 +1470,170 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: 'bg-primary text-primary-foreground hover:opacity-90',
-        outline: 'border bg-background hover:bg-muted',
+        outline: 'bg-secondary text-secondary-foreground hover:opacity-90',
+        ghost: 'hover:bg-muted',
       },
+      size: { default: 'h-11 px-5', sm: 'h-8 px-3 text-xs' },
     },
-    defaultVariants: { variant: 'default' },
+    defaultVariants: { variant: 'default', size: 'default' },
   },
 );
 
 export function Button({
   className,
   variant,
+  size,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & VariantProps<typeof buttonVariants>) {
-  return <button className={cn(buttonVariants({ variant }), className)} {...props} />;
+  return <button className={cn(buttonVariants({ variant, size }), className)} {...props} />;
 }
 `,
     ),
     file(
       'apps/web/components/ui/input.tsx',
-      `import type { InputHTMLAttributes } from 'react';
+      `'use client';
+import { useState, type InputHTMLAttributes } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 export const input =
-  'w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary';
+  'w-full rounded-md border border-input bg-background px-3.5 py-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary';
 
 export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
   return <input className={cn(input, className)} {...props} />;
 }
+
+// A password field whose text the person can reveal to check what was typed.
+export function PasswordInput({ className, ...props }: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'>) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="relative">
+      <input type={visible ? 'text' : 'password'} className={cn(input, 'pr-10', className)} {...props} />
+      <button
+        type="button"
+        onClick={() => setVisible((value) => !value)}
+        aria-label={visible ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+        aria-pressed={visible}
+        className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-muted-foreground hover:text-foreground"
+      >
+        {visible ? <EyeOff className="h-4 w-4" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}
+      </button>
+    </div>
+  );
+}
+`,
+    ),
+    file(
+      'apps/web/components/ui/fields.tsx',
+      `import type { InputHTMLAttributes, ReactNode } from 'react';
+import { cn } from '../../lib/utils';
+import { input } from './input';
+
+type Native = Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'id'>;
+
+// One choice among a few, shown as selectable cards. They are native radios,
+// so a registered form field, keyboard use and validation keep working.
+export function ChoiceCards({
+  options,
+  legend,
+  className,
+  ...field
+}: Native & { legend: string; options: { value: string; label: string; description?: string }[] }) {
+  return (
+    <fieldset className={cn('grid gap-3 sm:grid-cols-[repeat(auto-fit,minmax(12rem,1fr))]', className)}>
+      <legend className="sr-only">{legend}</legend>
+      {options.map((option) => (
+        <label
+          key={option.value}
+          className="flex cursor-pointer items-start gap-3 rounded-md border border-input p-4 text-sm has-[:checked]:border-primary has-[:checked]:bg-secondary has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary"
+        >
+          <input type="radio" value={option.value} className="mt-0.5 accent-[var(--color-primary)]" {...field} />
+          <span className="flex flex-col gap-0.5">
+            <span className="font-medium">{option.label}</span>
+            {option.description ? <span className="text-muted-foreground">{option.description}</span> : null}
+          </span>
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
+// An amount with its currency around the value.
+export function MoneyInput({
+  prefix,
+  suffix,
+  className,
+  ...props
+}: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> & { prefix?: ReactNode; suffix?: ReactNode }) {
+  return (
+    <div className="relative">
+      {prefix ? <span aria-hidden className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-sm text-muted-foreground">{prefix}</span> : null}
+      <input inputMode="decimal" className={cn(input, 'text-right tabular-nums', prefix ? 'pl-8' : '', suffix ? 'pr-14' : '', className)} {...props} />
+      {suffix ? <span aria-hidden className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3.5 text-xs font-medium text-muted-foreground">{suffix}</span> : null}
+    </div>
+  );
+}
+
+// The guidance under a field.
+export function FieldHint({ children }: { children: ReactNode }) {
+  return <p className="text-xs text-muted-foreground">{children}</p>;
+}
+`,
+    ),
+    file(
+      'apps/web/components/ui/fields.spec.tsx',
+      `import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { ChoiceCards, MoneyInput } from './fields';
+
+describe('form field variants', () => {
+  afterEach(cleanup);
+
+  it('choose one option as native radios of the same field', () => {
+    render(
+      <ChoiceCards
+        legend="Estado"
+        name="status"
+        options={[
+          { value: 'ACTIVE', label: 'Activo' },
+          { value: 'INACTIVE', label: 'Inactivo' },
+        ]}
+      />,
+    );
+    const inactive = screen.getByLabelText('Inactivo') as HTMLInputElement;
+    fireEvent.click(inactive);
+    expect(inactive.checked).toBe(true);
+    expect((screen.getByLabelText('Activo') as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('keeps the amount editable between its currency marks', () => {
+    render(<MoneyInput aria-label="Precio" prefix="$" suffix="MXN" />);
+    const amount = screen.getByLabelText('Precio') as HTMLInputElement;
+    fireEvent.change(amount, { target: { value: '145.50' } });
+    expect(amount.value).toBe('145.50');
+  });
+});
+`,
+    ),
+    file(
+      'apps/web/components/ui/input.spec.tsx',
+      `import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { PasswordInput } from './input';
+
+describe('PasswordInput', () => {
+  afterEach(cleanup);
+
+  it('reveals and hides the typed password', () => {
+    render(<PasswordInput aria-label="Contraseña" />);
+    const field = screen.getByLabelText('Contraseña');
+    expect(field.getAttribute('type')).toBe('password');
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar contraseña' }));
+    expect(field.getAttribute('type')).toBe('text');
+    fireEvent.click(screen.getByRole('button', { name: 'Ocultar contraseña' }));
+    expect(field.getAttribute('type')).toBe('password');
+  });
+});
 `,
     ),
     file(
@@ -1040,7 +1743,7 @@ import { useState, type ReactNode } from 'react';
 import { Toaster } from 'sonner';
 
 export function Providers({ children }: { children: ReactNode }) {
-  const [client] = useState(() => new QueryClient());
+  const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: (count, error) => count < 3 && ((error as { status?: number }).status ?? 500) >= 500 } } }));
   return (
     <QueryClientProvider client={client}>
       {children}
@@ -1092,7 +1795,31 @@ ${themeToggle ? '              <div className="mt-4 px-3">\n                <The
       }),
     );
 
-  if (!plan.routes.some((r) => r.path === '/'))
+  // With local accounts the application opens on its login, then on the
+  // plan's home screen: never on a list of every screen.
+  const entry = applicationEntry(plan);
+  if (!plan.routes.some((r) => r.path === '/') && entry)
+    files.push(
+      file(
+        'apps/web/app/page.tsx',
+        `'use client';
+
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { accessToken } from '../lib/api';
+
+export default function HomePage() {
+  const router = useRouter();
+  useEffect(() => {
+    router.replace(accessToken.get() ? ${JSON.stringify(entry.home)} : ${JSON.stringify(entry.login)});
+  }, [router]);
+  return <p role="status" className="text-sm text-muted-foreground">Cargando…</p>;
+}
+`,
+        { planElements: [`route:${entry.login}`, `route:${entry.home}`] },
+      ),
+    );
+  else if (!plan.routes.some((r) => r.path === '/'))
     files.push(
       file(
         'apps/web/app/page.tsx',
@@ -1114,23 +1841,65 @@ ${navRoutes.map((r) => `        <li>\n          <Link className="block rounded-l
       ),
     );
 
-  if (auth)
+  if (auth && !plan.routes.some((route) => route.path === '/access'))
     files.push(
       file(
         'apps/web/app/access/page.tsx',
         `'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { accessToken } from '../../lib/api';
+import { accessToken, API_URL } from '../../lib/api';
 import { Button } from '../../components/ui/button';
 import { input } from '../../components/ui/input';
 
+// One-click sign-in offered only while the API runs with DEV_LOGIN=true.
 export default function AccessPage() {
   const [token, setToken] = useState('');
+  const [devRoles, setDevRoles] = useState<string[]>([]);
+
+  useEffect(() => {
+    fetch(\`\${API_URL}/auth/dev-login\`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((status: { enabled?: boolean; roles?: string[] } | null) => {
+        if (status?.enabled) setDevRoles(status.roles ?? []);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  async function enterAs(role: string) {
+    try {
+      const response = await fetch(\`\${API_URL}/auth/dev-login\`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role }),
+      });
+      if (!response.ok) throw new Error();
+      const { token: issued } = (await response.json()) as { token: string };
+      accessToken.set(issued);
+      toast.success(\`Sesión iniciada como \${role}.\`);
+    } catch {
+      toast.error('No se pudo iniciar la sesión. Intente de nuevo.');
+    }
+  }
+
   return (
     <div className="flex max-w-xl flex-col gap-4">
       <h1 className="text-xl font-semibold">Acceso</h1>
+      {devRoles.length ? (
+        <div className="flex flex-col gap-2 rounded-md border p-3">
+          <p className="text-sm text-muted-foreground">
+            Modo de pruebas: entre sin credenciales con el rol que necesite.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {devRoles.map((role) => (
+              <Button key={role} type="button" onClick={() => enterAs(role)}>
+                Entrar como {role}
+              </Button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <p className="text-sm text-muted-foreground">
         Pegue su token de acceso. Se guarda solo durante esta sesión del navegador.
       </p>
@@ -1184,11 +1953,21 @@ export default function AccessPage() {
       dynamicParam(route.path)
     )
       content = detailPage(plan, entity, route);
-    else if (entity && route.kind === 'FORM' && entity.operations.includes('CREATE'))
+    else if (
+      entity &&
+      route.kind === 'FORM' &&
+      entity.operations.includes('CREATE') &&
+      !(
+        route.actions.some((action) => action.endpoint) &&
+        !route.actions.some(
+          (action) => action.operation === 'CREATE' || action.operation === 'UPDATE',
+        )
+      )
+    )
       content = formPage(plan, entity, route, sameEntity('LIST'));
     else content = simplePage(plan, route);
     files.push(
-      file(pagePath(route.path), content, {
+      file(pagePath(route.path), pruneUnusedParams(content), {
         origin: 'DETERMINISTIC',
         planElements: [
           `route:${route.path}`,
@@ -1199,42 +1978,116 @@ export default function AccessPage() {
     );
   }
 
-  if (hasE2E)
-    files.push(
-      file(
-        'apps/web/playwright.config.ts',
-        `import { defineConfig } from '@playwright/test';
+  const screens = e2eScreens(plan);
+  files.push(
+    file(
+      'apps/web/playwright.config.ts',
+      `import { defineConfig } from '@playwright/test';
 
-// End-to-end tests run against a running stack (pnpm run dev); they are not
-// part of the offline validation pipeline.
+// Run against a started stack (pnpm run dev). E2E_SESSIONS points to a JSON
+// file of test sessions by role: { "<role>": { "token": "...", "scopeId": null } }.
 export default defineConfig({
   testDir: './e2e',
+  workers: 1,
   use: { baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:3000' },
 });
 `,
-        { kind: 'CONFIG' },
-      ),
-      file(
-        'apps/web/e2e/navigation.spec.ts',
-        `import { expect, test } from '@playwright/test';
+      { kind: 'CONFIG' },
+    ),
+    file(
+      'apps/web/e2e/screens.spec.ts',
+      `import { readFileSync } from 'node:fs';
+import { expect, test } from '@playwright/test';
 
-${plan.tests
-  .filter((t) => t.kind === 'E2E')
-  .map((t) => `// Planned: ${t.description.replace(/\n/g, ' ')}`)
-  .join('\n')}
-test('the home page lists the main screens', async ({ page }) => {
+${plannedE2E.map((t) => `// Planned: ${t.description.replace(/\n/g, ' ')}`).join('\n')}
+type Session = { token: string | null; scopeId: string | null };
+
+const SCREENS: { path: string; screenName: string; role: string }[] = ${JSON.stringify(screens, null, 2)};
+${
+  entry
+    ? `
+test('the application opens on its login without a session', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('navigation', { name: 'Navegación principal' })).toBeVisible();
+  await page.waitForURL((url) => url.pathname === ${JSON.stringify(entry.login)});
+  await expect(page.locator('h1').first()).toBeVisible();
 });
+`
+    : ''
+}
+const API_URL = process.env.E2E_API_URL ?? 'http://localhost:3001';
+const sessions: Record<string, Session> = process.env.E2E_SESSIONS
+  ? JSON.parse(readFileSync(process.env.E2E_SESSIONS, 'utf8'))
+  : {};
+
+for (const screen of SCREENS) {
+  test(\`\${screen.screenName} (\${screen.path}) opens without errors\`, async ({ page }) => {
+    const session = screen.role ? sessions[screen.role] : undefined;
+    if (screen.role) expect(session?.token, \`Missing test session for role \${screen.role}\`).toBeTruthy();
+    if (session)
+      await page.addInitScript((value: Session) => {
+        window.sessionStorage.setItem('access-token', value.token ?? '');
+        if (value.scopeId) window.sessionStorage.setItem('operation-scope', value.scopeId);
+      }, session);
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(\`Browser error: \${error.message}\`));
+    page.on('response', (response) => {
+      if (response.url().startsWith(API_URL) && response.status() >= 400)
+        errors.push(\`API \${response.status()}: \${response.request().method()} \${response.url()}\`);
+    });
+    const response = await page.goto(screen.path, { waitUntil: 'networkidle' });
+    expect(response?.ok(), 'The screen must respond successfully').toBe(true);
+    expect(new URL(page.url()).pathname, 'The screen must not redirect').toBe(screen.path);
+    await expect(page.locator('h1').first()).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+}
 `,
-        {
-          origin: 'DETERMINISTIC',
-          kind: 'TEST',
-          planElements: plan.tests
-            .filter((t) => t.kind === 'E2E')
-            .map((t) => `module:${t.moduleLocalId}`),
-        },
-      ),
-    );
+      {
+        origin: 'DETERMINISTIC',
+        kind: 'TEST',
+        planElements: [
+          ...screens.map((screen) => `route:${screen.path}`),
+          ...plannedE2E.map((t) => `module:${t.moduleLocalId}`),
+        ],
+      },
+    ),
+  );
   return files;
+}
+
+// DEC-159: every static screen opens with one authorized role. Detail routes
+// ([param]) need a record and are covered by later flow tests.
+export function e2eScreens(plan: ImplementationPlanContent) {
+  return plan.routes
+    .filter((route) => !route.path.includes('['))
+    .map((route) => ({
+      path: route.path,
+      screenName: route.screenName,
+      role:
+        route.builtinView === 'ACCOUNT_ACCESS' || !plan.authentication.required
+          ? ''
+          : (route.roles?.[0] ?? plan.authentication.roles[0] ?? ''),
+    }));
+}
+
+// Where a local-account application starts: its login route and the screen a
+// signed-in person opens first (the one loading the session's options, or the
+// first plain screen). Undefined when the plan has no local login.
+export function applicationEntry(plan: ImplementationPlanContent) {
+  if (!plan.authentication.local) return undefined;
+  const login = plan.routes.find((route) =>
+    route.actions.some((action) => action.endpoint === 'POST /auth/login'),
+  );
+  if (!login) return undefined;
+  const home =
+    plan.routes.find((route) =>
+      route.actions.some((action) => action.endpoint === 'GET /auth/options'),
+    ) ??
+    plan.routes.find(
+      (route) =>
+        route !== login &&
+        !route.path.includes('[') &&
+        !route.actions.some((action) => action.endpoint === 'POST /auth/logout'),
+    );
+  return home ? { login: login.path, home: home.path } : undefined;
 }

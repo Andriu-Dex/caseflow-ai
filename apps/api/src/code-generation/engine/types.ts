@@ -2,7 +2,7 @@ import type { DesignThemeContent, ImplementationPlanContent } from '@caseflow-ai
 import { findCatalogDependency, type TargetTemplateVersion } from '@caseflow-ai/domain';
 import { PlanGenerationError } from '../naming';
 
-export type FileOrigin = 'TEMPLATE' | 'DETERMINISTIC' | 'AI_ASSISTED';
+export type FileOrigin = 'TEMPLATE' | 'DETERMINISTIC' | 'AI_ASSISTED' | 'MANUAL';
 export type FileKind = 'SOURCE' | 'TEST' | 'CONFIG' | 'DOCUMENTATION';
 
 // One file of the generated project. `planElements` names what in the
@@ -24,6 +24,9 @@ export interface GenerationContext {
   slug: string;
   // The theme the Design Baseline froze (DEC-118); absent = standard design.
   theme?: { code: string; content: DesignThemeContent };
+  // Realistic demonstration values by entity name, already validated against
+  // each field's type (DEC-159); absent = deterministic placeholders.
+  demoValues?: Record<string, Record<string, string | number | boolean>[]>;
 }
 
 // Workspace package scope; internal packages are @app/contracts and @app/api-client.

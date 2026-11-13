@@ -97,6 +97,36 @@ export type AIConfig =
     }
   | { provider: 'fallback'; chain: AIProviderSlot[] };
 
+// Per-purpose routes: AI_ROUTE_<PURPOSE>=<slot id>[:<model>] sends that
+// purpose (e.g. FRONTEND_PRESENTATION) to the numbered AI_PROVIDER_N_* slot
+// with that id, whatever AI_PROVIDER serves the rest.
+export function loadAIRoutes(environment: NodeJS.ProcessEnv): Map<string, AIProviderSlot> {
+  const routes = new Map<string, AIProviderSlot>();
+  const { AI_TIMEOUT_MS: timeoutMs } = fallbackTimeoutSchema.parse(environment);
+  for (const [key, value] of Object.entries(environment)) {
+    const match = /^AI_ROUTE_([A-Z][A-Z0-9_]*)$/.exec(key);
+    if (!match || !value) continue;
+    const [id, ...model] = value.split(':');
+    const index = Array.from({ length: MAX_AI_FALLBACK_PROVIDERS }, (_, i) => i + 1).find(
+      (n) => environment[`AI_PROVIDER_${n}_ID`] === id,
+    );
+    if (!index) throw new Error(`${key} names an unknown provider id "${id}".`);
+    const slot = fallbackSlotSchema.parse({
+      id: id!,
+      baseUrl: environment[`AI_PROVIDER_${index}_BASE_URL`],
+      apiKey: environment[`AI_PROVIDER_${index}_API_KEY`],
+      model: model.join(':') || environment[`AI_PROVIDER_${index}_MODEL`],
+      schemaDialect: environment[`AI_PROVIDER_${index}_SCHEMA_DIALECT`],
+      maxInputTokens: environment[`AI_PROVIDER_${index}_MAX_INPUT_TOKENS`] || undefined,
+      tokensPerMinute: environment[`AI_PROVIDER_${index}_TOKENS_PER_MINUTE`] || undefined,
+      maxOutputTokens: environment[`AI_PROVIDER_${index}_MAX_OUTPUT_TOKENS`] || undefined,
+      dayResetTimeZone: environment[`AI_PROVIDER_${index}_DAY_RESET_TIMEZONE`] || undefined,
+    });
+    routes.set(match[1]!.toLowerCase(), { ...slot, timeoutMs });
+  }
+  return routes;
+}
+
 // Chains free-tier providers (e.g. Groq then Gemini) behind one AI_PROVIDER
 // mode, since a single paid provider isn't an option here. Slots are
 // numbered AI_PROVIDER_1_*, AI_PROVIDER_2_*, ... and read until one has no

@@ -1,7 +1,10 @@
+import { lifecycleGuard, lifecycleParents } from './lifecycle.templates';
 import type { ImplementationPlanContent } from '@caseflow-ai/contracts';
 import { generatePrismaSchema } from '../prisma-schema.generator';
-import { collectionPath, kebabCase, lowerFirst, upperFirst } from '../naming';
+import { collectionPath, kebabCase, listFilters, lowerFirst, upperFirst } from '../naming';
 import { createSchemaName, sampleInput, updateSchemaName } from './contracts.templates';
+import { customEndpointOperationId } from '../naming';
+import { actionSchemaName, actionTypeName } from './action-contract.templates';
 import {
   SCOPE,
   dependencies,
@@ -43,30 +46,170 @@ export const actionMethodName = (e: Endpoint) =>
 
 const rolesLiteral = (roles: string[]) => roles.map((r) => `'${r}'`).join(', ');
 
+export interface PrimaryDateResolution {
+  name: string;
+  label: string;
+  relationName?: string;
+}
+
+export function findPrimaryDateResolution(
+  entity: Entity,
+  plan?: ImplementationPlanContent,
+): PrimaryDateResolution | undefined {
+  const dates = entity.fields.filter((f) => f.type === 'DATE' || f.type === 'DATETIME');
+  // 1. Specific operational business dates on the entity itself
+  const operationalDate = dates.find((f) => /(?:operational|sale|servicio|operativ)/i.test(f.name));
+  if (operationalDate) {
+    return {
+      name: operationalDate.name,
+      label: operationalDate.label ?? operationalDate.name,
+    };
+  }
+  // 2. Validity period dates
+  const validityDate = dates.find((f) => /(?:validfrom|validadesde)/i.test(f.name));
+  if (validityDate) {
+    return {
+      name: validityDate.name,
+      label: validityDate.label ?? validityDate.name,
+    };
+  }
+  // 3. Parent relation domain operational dates (e.g. dailyMenu.operationalDate)
+  if (plan) {
+    for (const rel of entity.relations.filter((r) => r.kind === 'MANY_TO_ONE')) {
+      const target = plan.entities.find((e) => e.localId === rel.targetEntityLocalId);
+      if (target) {
+        const targetDates = target.fields.filter((f) => f.type === 'DATE' || f.type === 'DATETIME');
+        const parentDomainDate = targetDates.find((f) =>
+          /(?:operational|sale|fecha)/i.test(f.name),
+        );
+        if (parentDomainDate) {
+          return {
+            name: parentDomainDate.name,
+            label: `Fecha operativa de ${rel.name === 'dailyMenu' ? 'menú diario' : rel.name}`,
+            relationName: rel.name,
+          };
+        }
+      }
+    }
+  }
+  // 4. Other specific domain dates (excluding pure audit and publication)
+  const domainDate = dates.find(
+    (f) =>
+      /(?:period|date|fecha|due|vencimiento)/i.test(f.name) &&
+      !/(?:creat|updat|delet|publication)/i.test(f.name),
+  );
+  if (domainDate) {
+    return {
+      name: domainDate.name,
+      label: domainDate.label ?? domainDate.name,
+    };
+  }
+  // 5. Publication date
+  const publicationDate = dates.find((f) => /publication/i.test(f.name));
+  if (publicationDate) {
+    return {
+      name: publicationDate.name,
+      label: publicationDate.label ?? publicationDate.name,
+    };
+  }
+  // 6. Audit creation date fallback
+  const createdDate = dates.find((f) => /created/i.test(f.name));
+  if (createdDate) return { name: createdDate.name, label: createdDate.label ?? createdDate.name };
+  return undefined;
+}
+
+export function findPrimaryDateField(
+  entity: Entity,
+  plan?: ImplementationPlanContent,
+): PrimaryDateResolution | undefined {
+  return findPrimaryDateResolution(entity, plan);
+}
+
+const DATE_BOUNDARY_VALIDATOR = String.raw`
+function parseDateBoundary(value: unknown, end = false): Date | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string') throw new BadRequestException('La fecha debe ser una cadena ISO.');
+  const date = value.trim();
+  if (!date) return undefined;
+  const iso = /^\d{4}-\d{2}-\d{2}(?:T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,3})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d))?$/;
+  const day = date.slice(0, 10);
+  const calendar = new Date(day + 'T00:00:00.000Z');
+  if (!iso.test(date) || Number(day.slice(0, 4)) < 1 || !Number.isFinite(calendar.getTime()) || calendar.toISOString().slice(0, 10) !== day) {
+    throw new BadRequestException('La fecha debe existir y usar YYYY-MM-DD o ISO con zona horaria explícita.');
+  }
+  const instant = new Date(date.length === 10 ? date + (end ? 'T23:59:59.999Z' : 'T00:00:00.000Z') : date);
+  if (!Number.isFinite(instant.getTime())) throw new BadRequestException('La fecha no es válida.');
+  return instant;
+}
+`;
+
 function entityController(plan: Plan, entity: Entity, moduleName: string): string {
   const e = entity.name;
   const ops = new Set(entity.operations);
   const auth = plan.authentication.required;
+  const scoped = Boolean(plan.authentication.local?.scope);
   const read = auth ? `\n  @Roles(${rolesLiteral(entity.readRoles)})` : '';
   const write = auth ? `\n  @Roles(${rolesLiteral(entity.writeRoles)})` : '';
+  const primaryDate = ops.has('LIST') ? findPrimaryDateResolution(entity, plan) : undefined;
+  const filters = listFilters(entity);
+  const operation = (method: string, detail = false) =>
+    scoped
+      ? `\n  @Operation(${JSON.stringify(method + ' ' + collectionPath(e) + (detail ? '/:id' : ''))})`
+      : '';
   const methods = [
     ops.has('LIST') &&
-      `  @Get()${read}
-  list() {
-    return this.service.list();
+      `  @Get()${read}${operation('GET')}
+  list(@Query('page') page?: string, @Query('limit') limit?: string${primaryDate ? ", @Query('from') from?: string, @Query('to') to?: string" : ''}${filters.map((filter) => `, @Query('${filter.name}') ${filter.name}?: string`).join('')}) {
+    const pageNum = page !== undefined ? Number(page) : undefined;${filters
+      .map((filter) =>
+        filter.enumValues
+          ? `
+    if (${filter.name} !== undefined && !${JSON.stringify(filter.enumValues)}.includes(${filter.name})) throw new BadRequestException(${JSON.stringify(`El filtro «${filter.label}» no es válido.`)});`
+          : `
+    if (${filter.name} !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(${filter.name})) throw new BadRequestException(${JSON.stringify(`El filtro «${filter.label}» no es válido.`)});`,
+      )
+      .join('')}
+    const limitNum = limit !== undefined ? Number(limit) : undefined;
+    ${
+      primaryDate
+        ? `const gte = parseDateBoundary(from);
+    const lte = parseDateBoundary(to, true);
+    if (gte && lte && gte > lte) throw new BadRequestException('El rango temporal es inválido.');
+    const trimmedFrom = typeof from === 'string' && from.trim() ? from.trim() : undefined;
+    const trimmedTo = typeof to === 'string' && to.trim() ? to.trim() : undefined;
+    if (trimmedFrom !== undefined) {
+      const ms = Date.parse(trimmedFrom.includes('T') ? trimmedFrom : trimmedFrom + 'T00:00:00.000Z');
+      if (!Number.isFinite(ms)) throw new BadRequestException('El parámetro "from" debe ser una fecha válida (formato YYYY-MM-DD o ISO).');
+    }
+    if (trimmedTo !== undefined) {
+      const ms = Date.parse(trimmedTo.includes('T') ? trimmedTo : trimmedTo + 'T23:59:59.999Z');
+      if (!Number.isFinite(ms)) throw new BadRequestException('El parámetro "to" debe ser una fecha válida (formato YYYY-MM-DD o ISO).');
+    }
+    if (trimmedFrom !== undefined && trimmedTo !== undefined) {
+      const startMs = Date.parse(trimmedFrom.includes('T') ? trimmedFrom : trimmedFrom + 'T00:00:00.000Z');
+      const endMs = Date.parse(trimmedTo.includes('T') ? trimmedTo : trimmedTo + 'T23:59:59.999Z');
+      if (startMs > endMs) {
+        throw new BadRequestException('El rango temporal es inválido: "from" no puede ser posterior a "to".');
+      }
+    }\n    `
+        : ''
+    }return this.service.list({
+      page: pageNum !== undefined && Number.isFinite(pageNum) && pageNum >= 1 ? Math.min(Math.floor(pageNum), 100_000) : undefined,
+      limit: limitNum !== undefined && Number.isFinite(limitNum) && limitNum >= 1 ? Math.min(Math.floor(limitNum), 500) : undefined,${primaryDate ? '\n      from: trimmedFrom,\n      to: trimmedTo,' : ''}${filters.map((filter) => `\n      ${filter.name},`).join('')}
+    });
   }`,
     ops.has('GET') &&
-      `  @Get(':id')${read}
+      `  @Get(':id')${read}${operation('GET', true)}
   get(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.get(id);
   }`,
     ops.has('CREATE') &&
-      `  @Post()${write}
+      `  @Post()${write}${operation('POST')}
   create(@Body(new ZodValidationPipe(${createSchemaName(e)})) body: Create${e}Input) {
     return this.service.create(body);
   }`,
     ops.has('UPDATE') &&
-      `  @Patch(':id')${write}
+      `  @Patch(':id')${write}${operation('PATCH', true)}
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(${updateSchemaName(e)})) body: Update${e}Input,
@@ -75,7 +218,7 @@ function entityController(plan: Plan, entity: Entity, moduleName: string): strin
   }`,
     ops.has('DELETE') &&
       `  @Delete(':id')
-  @HttpCode(204)${write}
+  @HttpCode(204)${write}${operation('DELETE', true)}
   async remove(@Param('id', ParseUUIDPipe) id: string) {
     await this.service.remove(id);
   }`,
@@ -83,6 +226,8 @@ function entityController(plan: Plan, entity: Entity, moduleName: string): strin
   const nestImports = [
     'Controller',
     ops.has('LIST') || ops.has('GET') ? 'Get' : '',
+    ops.has('LIST') ? 'Query' : '',
+    ops.has('LIST') && (primaryDate || filters.length) ? 'BadRequestException' : '',
     ops.has('GET') || ops.has('UPDATE') || ops.has('DELETE') ? 'Param' : '',
     ops.has('GET') || ops.has('UPDATE') || ops.has('DELETE') ? 'ParseUUIDPipe' : '',
     ops.has('CREATE') ? 'Post' : '',
@@ -100,8 +245,11 @@ function entityController(plan: Plan, entity: Entity, moduleName: string): strin
     "import { ApiTags } from '@nestjs/swagger';",
     contracts.length ? `import { ${contracts.join(', ')} } from '${SCOPE}/contracts';` : '',
     contracts.length ? "import { ZodValidationPipe } from '../common/zod-validation.pipe';" : '',
-    auth && methods.length ? "import { Roles } from '../auth/roles.decorator';" : '',
+    auth && methods.length
+      ? `import { Roles${scoped ? ', Operation' : ''} } from '../auth/roles.decorator';`
+      : '',
     `import { ${e}Service } from './${kebabCase(e)}.service';`,
+    primaryDate ? DATE_BOUNDARY_VALIDATOR : '',
     '',
     `@ApiTags('${moduleName}')`,
     `@Controller('${collectionPath(e).slice(1)}')`,
@@ -115,45 +263,150 @@ function entityController(plan: Plan, entity: Entity, moduleName: string): strin
     .join('\n');
 }
 
-function entityService(entity: Entity): string {
+const omitFields = (entity: Entity) =>
+  entity.fields.some((f) => f.internal)
+    ? ', omit: { ' +
+      entity.fields
+        .filter((f) => f.internal)
+        .map((f) => f.name + ': true')
+        .join(', ') +
+      ' }'
+    : '';
+function entityService(entity: Entity, plan: ImplementationPlanContent): string {
+  const local =
+    plan.authentication.local?.userEntityLocalId === entity.localId
+      ? plan.authentication.local
+      : undefined;
   const e = entity.name;
   const ops = new Set(entity.operations);
   const delegate = lowerFirst(e);
-  const dateFields = entity.fields.filter((f) => f.type === 'DATE' || f.type === 'DATETIME');
+  const many = entity.relations.filter(
+    (relation) =>
+      relation.kind === 'MANY_TO_MANY' &&
+      relation.name !== local?.roleRelation &&
+      Boolean(plan.authentication.local?.scope),
+  );
+  const includes = [
+    ...(local ? [local.roleRelation] : []),
+    ...many.map((relation) => relation.name),
+  ];
+  const accountInclude = includes.length
+    ? `, include: { ${includes.map((name) => `${name}: true`).join(', ')} }`
+    : '';
+  const projectResult = local ? 'publicAccount' : many.length ? 'publicRelations' : undefined;
+  const primaryDate = ops.has('LIST') ? findPrimaryDateResolution(entity, plan) : undefined;
+  const filters = ops.has('LIST') ? listFilters(entity) : [];
+  const entityDateFields = entity.fields.filter((f) => f.type === 'DATE' || f.type === 'DATETIME');
   const needsInput = ops.has('CREATE') || ops.has('UPDATE');
+  const guard = lifecycleGuard(entity, plan);
+  const guarded = Boolean(guard);
+  const database = guarded ? 'tx' : 'this.prisma';
   const methods = [
     ops.has('LIST') &&
-      `  list() {
+      `  ${projectResult ? 'async ' : ''}list(query?: { page?: number; limit?: number${primaryDate ? '; from?: string; to?: string' : ''}${filters.map((filter) => `; ${filter.name}?: string`).join('')} }) {
     // Bounded: a list endpoint never returns an unlimited number of rows.
-    return this.prisma.${delegate}.findMany({ orderBy: { createdAt: 'desc' }, take: 500 });
+    const page = query?.page && Number.isFinite(query.page) && query.page >= 1 ? Math.min(Math.floor(query.page), 100_000) : 1;
+    const limit = query?.limit && Number.isFinite(query.limit) && query.limit >= 1 ? Math.min(Math.floor(query.limit), 500) : (query?.page !== undefined ? 20 : 500);
+    const skip = query?.page !== undefined ? (page - 1) * limit : 0;
+    ${
+      primaryDate
+        ? `const gteDate = parseDateBoundary(query?.from);
+    const lteDate = parseDateBoundary(query?.to, true);
+    if (gteDate && lteDate && gteDate > lteDate) {
+      throw new BadRequestException('El parámetro "from" no puede ser posterior a "to".');
+    }
+    const hasDateFilter = Boolean(gteDate || lteDate);
+    const dateWhere: { where?: Prisma.${e}WhereInput } = hasDateFilter ? {
+      where: {
+        ${
+          primaryDate.relationName
+            ? `${primaryDate.relationName}: {
+          ${primaryDate.name}: {
+            ...(gteDate ? { gte: gteDate } : {}),
+            ...(lteDate ? { lte: lteDate } : {}),
+          },
+        }`
+            : `${primaryDate.name}: {
+          ...(gteDate ? { gte: gteDate } : {}),
+          ...(lteDate ? { lte: lteDate } : {}),
+        }`
+        },
+      },
+    } : {};\n    `
+        : ''
+    }${
+      filters.length
+        ? `const filterWhere: Prisma.${e}WhereInput = {${filters
+            .map(
+              (filter) =>
+                `
+      ...(query?.${filter.name} !== undefined ? { ${filter.name}: query.${filter.name} as Prisma.${e}WhereInput['${filter.name}'] } : {}),`,
+            )
+            .join('')}
+    };
+    const where: Prisma.${e}WhereInput = { ${primaryDate ? '...dateWhere.where, ' : ''}...filterWhere };
+    `
+        : ''
+    }return ${projectResult ? '(await ' : ''}this.prisma.${delegate}.findMany({
+      ${
+        filters.length
+          ? `...(Object.keys(where).length ? { where } : {}),
+      `
+          : primaryDate
+            ? '...dateWhere,\n      '
+            : ''
+      }orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+      take: limit,
+      ...(skip > 0 ? { skip } : {})${omitFields(entity)}${accountInclude}
+    })${projectResult ? `).map(${projectResult})` : ''};
   }`,
     (ops.has('GET') || ops.has('UPDATE') || ops.has('DELETE')) &&
       `  async get(id: string) {
-    const found = await this.prisma.${delegate}.findUnique({ where: { id } });
+    const found = await this.prisma.${delegate}.findUnique({ where: { id }${omitFields(entity)}${accountInclude} });
     if (!found) throw new NotFoundException('No se encontró el registro.');
-    return found;
+    return ${projectResult ? `${projectResult}(found)` : 'found'};
   }`,
     ops.has('CREATE') &&
-      `  create(input: Create${e}Input) {
-    return this.prisma.${delegate}.create({ data: toData(input) as never });
+      `  async create(input: Create${e}Input) {
+    ${guarded ? "return this.mutate('CREATE', undefined, input, async tx => {" : ''}
+    return ${projectResult ? `${projectResult}(await ` : ''}${database}.${delegate}.create({ data: ${local ? 'await toAccountData(input)' : 'toData(input)'} as never${omitFields(entity)}${accountInclude} })${projectResult ? ')' : ''};
+    ${guarded ? '});' : ''}
   }`,
     ops.has('UPDATE') &&
       `  async update(id: string, input: Update${e}Input) {
-    await this.get(id);
-    return this.prisma.${delegate}.update({ where: { id }, data: toData(input) as never });
+    ${guarded ? "return this.mutate('UPDATE', id, input, async tx => {" : 'await this.get(id);'}
+    ${
+      local
+        ? `const data = await toAccountData(input, true);
+    return this.prisma.$transaction(async tx => {
+      const updated = await tx.${delegate}.update({ where: { id }, data: data as never${omitFields(entity)}${accountInclude} });
+      if (input.password) await tx.${lowerFirst(plan.entities.find((e) => e.localId === local.sessionEntityLocalId)!.name)}.updateMany({ where: { ${local.sessionUserRelation}Id: id }, data: { ${local.invalidatedAtField}: new Date(), ${local.sessionStatusField}: ${JSON.stringify(local.closedSessionStatus)} } });
+      return publicAccount(updated);
+    });`
+        : `return ${projectResult ? `${projectResult}(await ` : ''}${database}.${delegate}.update({ where: { id }, data: toData(input, true) as never${omitFields(entity)}${accountInclude} })${projectResult ? ')' : ''};`
+    }
+    ${guarded ? '});' : ''}
   }`,
     ops.has('DELETE') &&
       `  async remove(id: string) {
-    await this.get(id);
-    await this.prisma.${delegate}.delete({ where: { id } });
+    ${guarded ? "return this.mutate('DELETE', id, {}, async tx => {" : 'await this.get(id);'}
+    await ${database}.${delegate}.delete({ where: { id } });
+    ${guarded ? '});' : ''}
   }`,
   ].filter(Boolean);
-  const conversions = dateFields.map(
+  const conversions = entityDateFields.map(
     (f) => `  if (typeof data.${f.name} === 'string') data.${f.name} = new Date(data.${f.name});`,
   );
   const usesGet = ops.has('GET') || ops.has('UPDATE') || ops.has('DELETE');
   return [
-    `import { Injectable${usesGet ? ', NotFoundException' : ''} } from '@nestjs/common';`,
+    `import { Injectable${usesGet || guarded ? ', NotFoundException' : ''}${local || primaryDate || guarded ? ', BadRequestException' : ''} } from '@nestjs/common';`,
+    guarded || primaryDate || filters.length
+      ? `import ${guarded && !plan.authentication.local?.scope ? '' : 'type '}{ Prisma } from '../generated/prisma/client';`
+      : '',
+    guarded && plan.authentication.local?.scope
+      ? "import { lockLifecycleRecord } from '../auth/operation-scope';"
+      : '',
+    local ? "import * as argon2 from 'argon2';" : '',
     needsInput
       ? `import type { ${[ops.has('CREATE') && `Create${e}Input`, ops.has('UPDATE') && `Update${e}Input`].filter(Boolean).join(', ')} } from '${SCOPE}/contracts';`
       : '',
@@ -161,34 +414,93 @@ function entityService(entity: Entity): string {
     '',
     needsInput
       ? `// Wire format -> database values (dates arrive as ISO strings).
-function toData(input: Record<string, unknown>): Record<string, unknown> {
+function toData(input: Record<string, unknown>, updating = false): Record<string, unknown> {
   const data = { ...input };
+  void updating;
+${entity.fields
+  .filter((f) => f.serverDefault !== undefined)
+  .map((f) => `  if (!updating) data.${f.name} = ${JSON.stringify(f.serverDefault)};`)
+  .join('\n')}
+${many.map((relation) => `  if (Array.isArray(data.${relation.name}Ids)) { data.${relation.name} = { [updating ? 'set' : 'connect']: (data.${relation.name}Ids as string[]).map(id => ({ id })) }; delete data.${relation.name}Ids; }`).join('\n')}
 ${conversions.join('\n')}${conversions.length ? '\n' : ''}  return data;
 }
 `
       : '',
+    many.length
+      ? `function publicRelations<T extends { ${many.map((relation) => `${relation.name}: { id: string }[]`).join('; ')} }>(record: T) {
+  const { ${many.map((relation) => relation.name).join(', ')}, ...fields } = record;
+  return { ...fields, ${many.map((relation) => `${relation.name}Ids: ${relation.name}.map(item => item.id)`).join(', ')} };
+}`
+      : '',
+    local
+      ? `function publicAccount<T extends { ${local.roleRelation}: { ${local.roleNameField}: string }[]; ${local.passwordHashField}?: unknown }>(record: T) {
+  const { ${local.roleRelation}: assignedRoles, ${local.passwordHashField}: hidden, ...publicFields } = record;
+  void hidden;
+  return { ...${many.length ? 'publicRelations(publicFields as typeof publicFields & { ' + many.map((relation) => relation.name + ': { id: string }[]').join('; ') + ' })' : 'publicFields'}, roleNames: assignedRoles.map(role => role.${local.roleNameField}) };
+}
+async function toAccountData(input: Record<string, unknown>, updating = false) {
+  const { password, roleNames, ...fields } = input;
+  if (!updating && typeof password !== 'string') throw new BadRequestException('Indique una contraseña.');
+  const data = toData(fields, updating);
+  if (typeof password === 'string') data.${local.passwordHashField} = await argon2.hash(password, { type: argon2.argon2id });
+  if (Array.isArray(roleNames)) data.${local.roleRelation} = ${local.scope ? `{ [updating ? 'set' : 'connect']: roleNames.map(name => ({ ${local.roleNameField}: name })) }` : `{ ...(updating ? { set: [] } : {}), connectOrCreate: roleNames.map(name => ({ where: { ${local.roleNameField}: name }, create: { ${local.roleNameField}: name } })) }`};
+  return data;
+}`
+      : '',
+    primaryDate ? DATE_BOUNDARY_VALIDATOR : '',
     '@Injectable()',
     `export class ${e}Service {`,
     '  constructor(private readonly prisma: PrismaService) {}',
     '',
     methods.join('\n\n'),
+    guard,
     '}',
   ]
     .filter((line, i) => !(line === '' && i === 1))
     .join('\n');
 }
 
-function entityServiceSpec(entity: Entity): string {
+function entityServiceSpec(entity: Entity, plan: ImplementationPlanContent): string {
+  const local =
+    plan.authentication.local?.userEntityLocalId === entity.localId
+      ? plan.authentication.local
+      : undefined;
   const e = entity.name;
   const ops = new Set(entity.operations);
   const delegate = lowerFirst(e);
-  const sample = sampleInput(entity);
-  const dateField = entity.fields.find((f) => f.type === 'DATE' || f.type === 'DATETIME');
+  const many = entity.relations.filter(
+    (relation) =>
+      relation.kind === 'MANY_TO_MANY' &&
+      relation.name !== local?.roleRelation &&
+      Boolean(plan.authentication.local?.scope),
+  );
+  const includes = [
+    ...(local ? [local.roleRelation] : []),
+    ...many.map((relation) => relation.name),
+  ];
+  const accountInclude = includes.length
+    ? `, include: { ${includes.map((name) => `${name}: true`).join(', ')} }`
+    : '';
+  const protectedParents = lifecycleParents(entity, plan);
+  const guarded = Boolean(lifecycleGuard(entity, plan));
+  const sample = {
+    ...sampleInput(entity),
+    ...(entity.lifecycle ? { [entity.lifecycle.stateField]: entity.lifecycle.initialState } : {}),
+    ...(local ? { password: 'test-password-only', roleNames: [plan.authentication.roles[0]] } : {}),
+  };
+  const dateField = entity.fields.find(
+    (f) => !f.readOnly && !f.internal && (f.type === 'DATE' || f.type === 'DATETIME'),
+  );
   const cases = [
     ops.has('LIST') &&
       `  it('lists the most recent records with a bounded page', async () => {
     await service.list();
-    expect(prisma.${delegate}.findMany).toHaveBeenCalledWith({ orderBy: { createdAt: 'desc' }, take: 500 });
+    expect(prisma.${delegate}.findMany).toHaveBeenCalledWith({ orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], take: 500${omitFields(entity)}${accountInclude} });
+  });`,
+    ops.has('LIST') &&
+      `  it('paginates records deterministically when requested', async () => {
+    await service.list({ page: 2, limit: 10 });
+    expect(prisma.${delegate}.findMany).toHaveBeenCalledWith({ orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], take: 10, skip: 10${omitFields(entity)}${accountInclude} });
   });`,
     (ops.has('GET') || ops.has('UPDATE') || ops.has('DELETE')) &&
       `  it('answers 404 for a record that does not exist', async () => {
@@ -198,7 +510,16 @@ function entityServiceSpec(entity: Entity): string {
       `  it('creates a record from a valid input', async () => {
     await service.create(input);
     const data = prisma.${delegate}.create.mock.calls[0]![0].data as Record<string, unknown>;
-    expect(Object.keys(data).sort()).toEqual(Object.keys(input).sort());${
+    ${
+      local
+        ? `expect(data.${local.passwordHashField}).toMatch(/^\\$argon2id\\$/);
+    expect(data).not.toHaveProperty('password');
+    expect(data).not.toHaveProperty('roleNames');`
+        : `expect(Object.keys(data).sort()).toEqual([...Object.keys(input), ...${JSON.stringify(entity.fields.filter((f) => f.serverDefault !== undefined).map((f) => f.name))}].sort());\n${entity.fields
+            .filter((f) => f.serverDefault !== undefined)
+            .map((f) => `    expect(data.${f.name}).toEqual(${JSON.stringify(f.serverDefault)});`)
+            .join('\n')}`
+    }${
       dateField
         ? `
     expect(data.${dateField.name}).toBeInstanceOf(Date);`
@@ -207,14 +528,14 @@ function entityServiceSpec(entity: Entity): string {
   });`,
     ops.has('DELETE') &&
       `  it('deletes an existing record', async () => {
-    prisma.${delegate}.findUnique.mockResolvedValueOnce({ id: 'x' });
+    prisma.${delegate}.findUnique.${guarded ? 'mockResolvedValue' : 'mockResolvedValueOnce'}({ id: 'x' });
     await service.remove('x');
     expect(prisma.${delegate}.delete).toHaveBeenCalledWith({ where: { id: 'x' } });
   });`,
   ].filter(Boolean);
   const usesNotFound = ops.has('GET') || ops.has('UPDATE') || ops.has('DELETE');
   return `import { describe, expect, it, vi, beforeEach } from 'vitest';
-${usesNotFound ? "import { NotFoundException } from '@nestjs/common';\n" : ''}${
+${usesNotFound || guarded ? `import { ${usesNotFound ? 'NotFoundException' : ''}${usesNotFound && guarded ? ', ' : ''}${guarded ? 'BadRequestException' : ''} } from '@nestjs/common';\n` : ''}${
     ops.has('CREATE') ? `import type { Create${e}Input } from '${SCOPE}/contracts';\n` : ''
   }import type { PrismaService } from '../prisma/prisma.service';
 import { ${e}Service } from './${kebabCase(e)}.service';
@@ -222,10 +543,30 @@ import { ${e}Service } from './${kebabCase(e)}.service';
 ${ops.has('CREATE') ? `const input = ${JSON.stringify(sample)} as Create${e}Input;\n` : ''}
 describe('${e}Service', () => {
   const prisma = {
+    ${guarded ? '$transaction: vi.fn(), $queryRaw: vi.fn(),' : ''}
+    ${protectedParents
+      .filter(
+        (parent, index, all) => all.findIndex((other) => other.model === parent.model) === index,
+      )
+      .map(
+        (parent) =>
+          `${parent.model}: { findUnique: vi.fn(async () => ({ id: 'parent', ${parent.policy.stateField}: ${JSON.stringify(parent.policy.initialState)} })) },`,
+      )
+      .join('\n')}
     ${delegate}: {
       findMany: vi.fn(async () => []),
       findUnique: vi.fn(async (): Promise<Record<string, unknown> | null> => null),
-      create: vi.fn(async (args: { data: Record<string, unknown> }) => ({ id: 'x', ...args.data })),
+      create: vi.fn(async (args: { data: Record<string, unknown> }) => ({ id: 'x', ...args.data${local ? `, ${local.roleRelation}: [{ ${local.roleNameField}: ${JSON.stringify(plan.authentication.roles[0])} }]` : ''}${
+        plan.authentication.local?.scope
+          ? entity.relations
+              .filter(
+                (relation) =>
+                  relation.kind === 'MANY_TO_MANY' && relation.name !== local?.roleRelation,
+              )
+              .map((relation) => `, ${relation.name}: []`)
+              .join('')
+          : ''
+      } })),
       update: vi.fn(async () => ({ id: 'x' })),
       delete: vi.fn(async () => ({ id: 'x' })),
     },
@@ -233,9 +574,55 @@ describe('${e}Service', () => {
   let service: ${e}Service;
   beforeEach(() => {
     vi.clearAllMocks();
+    prisma.${delegate}.findUnique.mockResolvedValue(null);
+    ${protectedParents.map((parent) => `prisma.${parent.model}.findUnique.mockResolvedValue({ id: 'parent', ${parent.policy.stateField}: ${JSON.stringify(parent.policy.initialState)} });`).join('\n')}
+    ${guarded ? 'prisma.$transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(prisma));' : ''}
     service = new ${e}Service(prisma as unknown as PrismaService);
   });
 
+${
+  entity.lifecycle && ops.has('CREATE')
+    ? `
+  it('rejects creation in an immutable state before persisting', async () => {
+    await expect(service.create({ ...input, ${entity.lifecycle.stateField}: ${JSON.stringify(entity.lifecycle.immutableStates[0])} })).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.${delegate}.create).not.toHaveBeenCalled();
+  });`
+    : ''
+}
+${
+  entity.lifecycle && ops.has('UPDATE')
+    ? `
+  it('rejects CRUD transitions and changes to finalized records', async () => {
+    prisma.${delegate}.findUnique.mockResolvedValue({ id: 'x', ${entity.lifecycle.stateField}: ${JSON.stringify(entity.lifecycle.initialState)} });
+    await expect(service.update('x', { ${entity.lifecycle.stateField}: ${JSON.stringify(entity.lifecycle.immutableStates[0])} })).rejects.toBeInstanceOf(BadRequestException);
+    prisma.${delegate}.findUnique.mockResolvedValue({ id: 'x', ${entity.lifecycle.stateField}: ${JSON.stringify(entity.lifecycle.immutableStates[0])} });
+    await expect(service.update('x', {})).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.${delegate}.update).not.toHaveBeenCalled();
+  });`
+    : ''
+}
+${
+  entity.lifecycle && ops.has('DELETE')
+    ? `
+  it('rejects deletion of a finalized record', async () => {
+    prisma.${delegate}.findUnique.mockResolvedValue({ id: 'x', ${entity.lifecycle.stateField}: ${JSON.stringify(entity.lifecycle.immutableStates[0])} });
+    await expect(service.remove('x')).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.${delegate}.delete).not.toHaveBeenCalled();
+  });`
+    : ''
+}
+${protectedParents
+  .map((parent) =>
+    ops.has('CREATE')
+      ? `
+  it('rejects composition changes to a finalized parent ${parent.model}', async () => {
+    prisma.${parent.model}.findUnique.mockResolvedValue({ id: 'parent', ${parent.policy.stateField}: ${JSON.stringify(parent.policy.immutableStates[0])} });
+    await expect(service.create({ ...input, ${parent.field}: 'parent' })).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.${delegate}.create).not.toHaveBeenCalled();
+  });`
+      : '',
+  )
+  .join('\n')}
 ${
   cases.length
     ? cases.join('\n\n')
@@ -247,27 +634,72 @@ ${
 `;
 }
 
+function actionDataAccess(plan: Plan, endpoint: Endpoint): Record<string, string[]> {
+  const access: Record<string, string[]> = {};
+  for (const entry of endpoint.dataAccess ?? []) {
+    const model = plan.entities.find((entity) => entity.localId === entry.entityLocalId)!.name;
+    access[model] = [...new Set([...(access[model] ?? []), ...entry.operations])];
+  }
+  return access;
+}
+
 function actionsController(plan: Plan, moduleName: string, endpoints: Endpoint[]): string {
+  endpoints = [...endpoints].sort(
+    (a, b) =>
+      (a.path.match(/:/g)?.length ?? 0) - (b.path.match(/:/g)?.length ?? 0) ||
+      b.path.length - a.path.length,
+  );
   const auth = plan.authentication.required;
+  const localActor = Boolean(plan.authentication.local);
   const verbs = [...new Set(endpoints.map((e) => upperFirst(e.method.toLowerCase())))];
   const methods = endpoints.map((endpoint) => {
     const params = [...endpoint.path.matchAll(/:([a-zA-Z0-9]+)/g)].map((m) => m[1]!);
     const hasBody = ['POST', 'PATCH', 'PUT'].includes(endpoint.method);
+    const id = customEndpointOperationId(endpoint);
+    const typed = endpoint.contract;
     const args = [
       ...params.map((p) => `@Param('${p}') ${p}: string`),
-      ...(hasBody ? ['@Body() body: Record<string, unknown>'] : []),
+      ...(hasBody
+        ? [
+            typed?.body
+              ? `@Body(new ZodValidationPipe(${actionSchemaName(id, 'Body')}, 'Revise los datos de la operación.')) body: ${actionTypeName(id, 'Body')}`
+              : '@Body() body: Record<string, unknown>',
+          ]
+        : []),
+      ...(typed?.query
+        ? [
+            `@Query(new ZodValidationPipe(${actionSchemaName(id, 'Query')}, 'Revise los filtros de consulta.')) query: ${actionTypeName(id, 'Query')}`,
+          ]
+        : typed
+          ? ['@Query() undeclaredQuery: Record<string, unknown>']
+          : []),
+      ...(localActor ? ['@Req() request: { user: SessionActor }'] : []),
     ];
-    return `  /** ${endpoint.summary} */
-  @${upperFirst(endpoint.method.toLowerCase())}('${endpoint.path.slice(1)}')${auth ? `\n  @Roles(${rolesLiteral(endpoint.roles)})` : ''}
-  ${actionMethodName(endpoint)}(${args.join(', ')}) {
-    return this.service.${actionMethodName(endpoint)}(${[...params, ...(hasBody ? ['body'] : [])].join(', ')});
+    return `  /** ${endpoint.summary.replace(/\*\//g, '* /').replace(/\s+/g, ' ')} */
+  @${upperFirst(endpoint.method.toLowerCase())}('${endpoint.path.slice(1)}')${auth ? `\n  @Roles(${rolesLiteral(endpoint.roles)})` : ''}${plan.authentication.local?.scope ? `\n  @Operation(${JSON.stringify(endpointKey(endpoint))})\n  @DataAccess(${JSON.stringify(actionDataAccess(plan, endpoint))})${endpoint.scopeAccess === 'ASSIGNED_SET' ? "\n  @ScopeAccess('ASSIGNED_SET')" : ''}` : ''}
+  ${typed ? '@HttpCode(200)\n  async ' : ''}${actionMethodName(endpoint)}(${args.join(', ')}) {
+    ${typed && !typed.query ? "if (Object.keys(undeclaredQuery).length) throw new BadRequestException('Esta acción no admite filtros de consulta.');" : ''}
+    ${endpoint.disabledReason ? `void [this.service, ${[...params, ...(hasBody ? ['body'] : []), ...(localActor ? ['request'] : [])].join(', ')}]; throw new ForbiddenException(${JSON.stringify(endpoint.disabledReason)});` : `return ${typed ? 'validateActionResponse(await ' : ''}this.service.${actionMethodName(endpoint)}(${[...params, ...(hasBody ? ['body'] : []), ...(typed?.query ? ['query'] : []), ...(localActor ? ['request.user'] : [])].join(', ')})${typed ? `, ${actionSchemaName(id, 'Response')})` : ''};`}
   }`;
   });
   const usesParam = endpoints.some((e) => e.path.includes(':'));
   const usesBody = endpoints.some((e) => ['POST', 'PATCH', 'PUT'].includes(e.method));
-  return `import { Controller, ${[...verbs, usesParam ? 'Param' : '', usesBody ? 'Body' : ''].filter(Boolean).join(', ')} } from '@nestjs/common';
+  const typedEndpoints = endpoints.filter((endpoint) => endpoint.contract);
+  const typedImports = typedEndpoints.flatMap((endpoint) => {
+    const id = customEndpointOperationId(endpoint);
+    return (['Body', 'Query', 'Response'] as const).flatMap((part) =>
+      endpoint.contract![part === 'Body' ? 'body' : part === 'Query' ? 'query' : 'response']
+        ? [
+            actionSchemaName(id, part),
+            ...(part !== 'Response' ? [`type ${actionTypeName(id, part)}`] : []),
+          ]
+        : [],
+    );
+  });
+  return `import { Controller, ${[...verbs, usesParam ? 'Param' : '', usesBody ? 'Body' : '', localActor ? 'Req' : '', typedEndpoints.length ? 'HttpCode, InternalServerErrorException, Query' : '', typedEndpoints.some((endpoint) => !endpoint.contract?.query) ? 'BadRequestException' : '', endpoints.some((endpoint) => endpoint.disabledReason) ? 'ForbiddenException' : ''].filter(Boolean).join(', ')} } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-${auth ? "import { Roles } from '../auth/roles.decorator';\n" : ''}import { ${moduleName}ActionsService } from './${kebabCase(moduleName)}-actions.service';
+${typedEndpoints.length ? `import { ${typedImports.join(', ')} } from '@app/contracts';\n${typedEndpoints.some((endpoint) => endpoint.contract?.body || endpoint.contract?.query) ? "import { ZodValidationPipe } from '../common/zod-validation.pipe';\n" : ''}function validateActionResponse<T>(value: unknown, schema: {parse(value:unknown):T}): T { try { return schema.parse(JSON.parse(JSON.stringify(value))); } catch { throw new InternalServerErrorException('La respuesta de la operación no cumple el contrato.'); } }` : ''}
+${localActor ? "import type { SessionActor } from '../auth/local-auth.service';\n" : ''}${auth ? `import { Roles${plan.authentication.local?.scope ? ', Operation, DataAccess' : ''}${plan.authentication.local?.scope && endpoints.some((endpoint) => endpoint.scopeAccess === 'ASSIGNED_SET') ? ', ScopeAccess' : ''} } from '../auth/roles.decorator';\n` : ''}import { ${moduleName}ActionsService } from './${kebabCase(moduleName)}-actions.service';
 
 // Business actions beyond CRUD, as declared in the Implementation Plan.
 @ApiTags('${moduleName}')
@@ -284,21 +716,37 @@ function actionsService(
   moduleName: string,
   endpoints: Endpoint[],
   implementations: EndpointImplementations,
+  localActor = false,
 ): string {
+  endpoints = endpoints.filter((endpoint) => !endpoint.disabledReason);
   const methods = endpoints.map((endpoint) => {
     const params = [...endpoint.path.matchAll(/:([a-zA-Z0-9]+)/g)].map((m) => m[1]!);
     const hasBody = ['POST', 'PATCH', 'PUT'].includes(endpoint.method);
+    const id = customEndpointOperationId(endpoint);
     const args = [
       ...params.map((p) => `${p}: string`),
-      ...(hasBody ? ['body: Record<string, unknown>'] : []),
+      ...(hasBody
+        ? [
+            endpoint.contract?.body
+              ? `body: ${actionTypeName(id, 'Body')}`
+              : 'body: Record<string, unknown>',
+          ]
+        : []),
+      ...(endpoint.contract?.query ? [`query: ${actionTypeName(id, 'Query')}`] : []),
+      ...(localActor ? ['actor: SessionActor'] : []),
     ];
     const body = implementations[endpointKey(endpoint)];
-    const names = [...params, ...(hasBody ? ['body'] : [])];
+    const names = [
+      ...params,
+      ...(hasBody ? ['body'] : []),
+      ...(endpoint.contract?.query ? ['query'] : []),
+      ...(localActor ? ['actor'] : []),
+    ];
     // An AI body may leave a parameter unused (the lint forbids it): such a
     // parameter is marked as used, as in the stub.
     const unused = body ? names.filter((name) => !new RegExp(`\\b${name}\\b`).test(body)) : [];
-    return `  /** ${endpoint.summary} */
-  async ${actionMethodName(endpoint)}(${args.join(', ')}): Promise<unknown> {
+    return `  /** ${endpoint.summary.replace(/\*\//g, '* /').replace(/\s+/g, ' ')} */
+  async ${actionMethodName(endpoint)}(${args.join(', ')}): Promise<${endpoint.contract ? actionTypeName(id, 'Response') : 'unknown'}> {
 ${
   body
     ? (unused.length ? `    void [${unused.join(', ')}];\n` : '') +
@@ -308,7 +756,7 @@ ${
         .join('\n')
     : `    // No business logic was generated for this action: it answers 501
     // until it is implemented, instead of pretending to succeed.${names.length ? `\n    void [${names.join(', ')}];` : ''}
-    throw new NotImplementedException('La acción «${endpoint.summary.replace(/'/g, '’')}» aún no está implementada.');`
+    throw new NotImplementedException(${JSON.stringify(`La acción «${endpoint.summary}» aún no está implementada.`)});`
 }
   }`;
   });
@@ -322,11 +770,13 @@ ${
     ...(anyStub ? ['NotImplementedException'] : []),
   ];
   return `import { ${nestImports.join(', ')} } from '@nestjs/common';
+${endpoints.some((endpoint) => endpoint.contract) ? `import type { ${endpoints.flatMap((endpoint) => (endpoint.contract ? (['Body', 'Query', 'Response'] as const).filter((part) => endpoint.contract![part === 'Body' ? 'body' : part === 'Query' ? 'query' : 'response']).map((part) => actionTypeName(customEndpointOperationId(endpoint), part)) : [])).join(', ')} } from '@app/contracts';` : ''}
+${localActor ? "import type { SessionActor } from '../auth/local-auth.service';" : ''}
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class ${moduleName}ActionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { ${endpoints.length ? '' : 'void this.prisma;'} }
 
 ${methods.join('\n\n')}
 }
@@ -361,8 +811,16 @@ export function backendFiles(
           test: 'pnpm run prisma:generate && vitest run',
           start: 'node dist/main.js',
           dev: 'pnpm run build && node dist/main.js',
+          // First run: creates the initial migration and applies it. `db:deploy` only applies
+          // the migrations that already exist (what scripts/setup.mjs uses once they do).
           'db:migrate': 'prisma migrate dev --name init',
-          ...(auth ? { 'dev-token': 'node dist/auth/dev-token.js' } : {}),
+          'db:deploy': 'prisma migrate deploy',
+          ...(auth && !plan.authentication.local
+            ? { 'dev-token': 'node dist/auth/dev-token.js' }
+            : {}),
+          ...(plan.authentication.local
+            ? { 'account:create': 'node dist/auth/create-account.js' }
+            : {}),
         },
         dependencies: dependencies(
           template,
@@ -376,6 +834,7 @@ export function backendFiles(
             'reflect-metadata',
             'rxjs',
             'zod',
+            ...(plan.authentication.local ? ['argon2'] : []),
           ],
           [`${SCOPE}/contracts`],
         ),
@@ -458,6 +917,7 @@ export default defineConfig({
       `import 'reflect-metadata';
 import { resolve } from 'node:path';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 
@@ -468,14 +928,17 @@ try {
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  app.useBodyParser('json', { limit: '2mb' });
   app.enableCors({ origin: process.env.WEB_ORIGIN ?? 'http://localhost:3000' });
   const config = new DocumentBuilder()
     .setTitle(${JSON.stringify(ctx.projectName)})
     .setVersion('1.0.0')${auth ? '\n    .addBearerAuth()' : ''}
     .build();
   SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, config));
-  await app.listen(Number(process.env.API_PORT ?? 3001));
+  // With DEV_LOGIN on, listen only on this machine unless API_HOST says otherwise.
+  const host = process.env.API_HOST ?? (process.env.DEV_LOGIN === 'true' ? '127.0.0.1' : '0.0.0.0');
+  await app.listen(Number(process.env.API_PORT ?? 3001), host);
 }
 
 void bootstrap();
@@ -487,13 +950,33 @@ void bootstrap();
       `import { Injectable, type OnModuleDestroy } from '@nestjs/common';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../generated/prisma/client';
+${plan.authentication.local?.scope ? "import { scopedTransaction, operationContext } from '../auth/operation-scope';\nimport { ForbiddenException } from '@nestjs/common';" : ''}
 
+${
+  plan.authentication.local?.scope
+    ? `function withOperationScope(database: PrismaClient): PrismaClient {
+    return new Proxy(Object.create(null) as object,{get(_target,key){
+      if(key==='$transaction') return (work:unknown,options?:Parameters<PrismaClient['$transaction']>[1])=>{
+        if(typeof work!=='function'){
+          if(operationContext.getStore())throw new ForbiddenException('Utilice una transacción interactiva con alcance.');
+          return database.$transaction(work as never,options as never);
+        }
+        return database.$transaction(async tx=>(work as (client:unknown)=>Promise<unknown>)(scopedTransaction(tx)),options);
+      };
+      if(operationContext.getStore())return Reflect.get(scopedTransaction(database) as object,key);
+      const value=Reflect.get(database,key);return typeof value==='function'?value.bind(database):value;
+    }}) as PrismaClient;
+}
+`
+    : ''
+}
 // Connects lazily on first query, so the app (and its tests) start without a
 // database; configure DATABASE_URL to reach one.
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleDestroy {
   constructor() {
     super({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }) });
+    ${plan.authentication.local?.scope ? 'return withOperationScope(this) as this;' : ''}
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -519,12 +1002,12 @@ import type { ZodType } from 'zod';
 
 // Validates request bodies against the shared contracts package.
 export class ZodValidationPipe implements PipeTransform {
-  constructor(private readonly schema: ZodType) {}
+  constructor(private readonly schema: ZodType, private readonly publicMessage?: string) {}
 
   transform(value: unknown) {
     const result = this.schema.safeParse(value);
     if (!result.success)
-      throw new BadRequestException(result.error.issues.map((issue) => issue.message).join(' '));
+      throw new BadRequestException(this.publicMessage ?? result.error.issues.map((issue) => issue.message).join(' '));
     return result.data;
   }
 }
@@ -551,6 +1034,7 @@ export class DatabaseErrorFilter extends BaseExceptionFilter implements Exceptio
     if (exception instanceof HttpException) return super.catch(exception, host);
     const code = (exception as { code?: unknown })?.code;
     if (code === 'P2025') return super.catch(new NotFoundException('No se encontró el registro.'), host);
+    if (code === 'P2034') return super.catch(new ConflictException('Los datos cambiaron durante la operación. Recargue y vuelva a intentarlo.'), host);
     if (code === 'P2002')
       return super.catch(new ConflictException('Ya existe un registro con esos datos.'), host);
     if (code === 'P2003')
@@ -582,6 +1066,7 @@ describe('DatabaseErrorFilter', () => {
   it('turns database errors into safe HTTP errors', () => {
     expect(handled({ code: 'P2025' })).toBeInstanceOf(NotFoundException);
     expect(handled({ code: 'P2002' })).toBeInstanceOf(ConflictException);
+    expect(handled({ code: 'P2034' })).toBeInstanceOf(ConflictException);
     expect((handled(new Error('SELECT * FROM secret')) as Error).message).not.toContain('SELECT');
   });
 });
@@ -613,7 +1098,7 @@ export interface TokenClaims {
   sub: string;
   roles: string[];
   exp: number;
-}
+${plan.authentication.local ? '  sessionId?: string;\n' : ''}${plan.authentication.local?.scope ? '  scopeId?: string;\n' : ''}}
 
 const encode = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
 const sign = (data: string, secret: string) =>
@@ -626,13 +1111,13 @@ export function signToken(claims: TokenClaims, secret: string): string {
 }
 
 export function verifyToken(token: string, secret: string, now = Date.now()): TokenClaims | null {
-  const [header, payload, signature] = token.split('.');
+${plan.authentication.local ? "  if (token.split('.').length !== 3) return null;\n" : ''}  const [header, payload, signature] = token.split('.');
   if (!header || !payload || !signature) return null;
   const expected = Buffer.from(sign(\`\${header}.\${payload}\`, secret));
   const actual = Buffer.from(signature);
   if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) return null;
   try {
-    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString()) as TokenClaims;
+${plan.authentication.local ? "    const algorithm = JSON.parse(Buffer.from(header, 'base64url').toString()) as { alg?: string };\n    if (algorithm.alg !== 'HS256') return null;\n" : ''}    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString()) as TokenClaims;
     if (typeof claims.exp !== 'number' || claims.exp * 1000 < now) return null;
     if (typeof claims.sub !== 'string' || !Array.isArray(claims.roles)) return null;
     return claims;
@@ -651,6 +1136,7 @@ export const PUBLIC_KEY = 'public';
 // Empty = any authenticated user.
 export const Roles = (...roles: string[]) => SetMetadata(ROLES_KEY, roles);
 export const Public = () => SetMetadata(PUBLIC_KEY, true);
+${plan.authentication.local?.scope ? "export const OPERATION_KEY = 'operation';\nexport const DATA_ACCESS_KEY = 'data-access';\nexport const DataAccess = (access: Record<string, string[]>) => SetMetadata(DATA_ACCESS_KEY, access);\nexport const SCOPE_ACCESS_KEY = 'scope-access';\nexport const SCOPE_OPTIONAL_KEY = 'scope-optional';\nexport const ScopeOptional = () => SetMetadata(SCOPE_OPTIONAL_KEY, true);\nexport const Operation = (operation: string) => SetMetadata(OPERATION_KEY, operation);\nexport const ScopeAccess = (access: 'ASSIGNED_SET') => SetMetadata(SCOPE_ACCESS_KEY, access);" : ''}
 `,
       ),
       file(
@@ -745,6 +1231,89 @@ describe('AuthGuard', () => {
         { kind: 'TEST' },
       ),
       file(
+        'apps/api/src/auth/dev-login.controller.ts',
+        `import { BadRequestException, Controller, Get, Logger, NotFoundException, Post, Body } from '@nestjs/common';
+import { ApiExcludeController } from '@nestjs/swagger';
+import { Public } from './roles.decorator';
+import { signToken } from './jwt';
+
+const ROLES: readonly string[] = ${JSON.stringify(plan.authentication.roles)};
+const EIGHT_HOURS = 8 * 3600;
+
+// Development sign-in: one click instead of pasting a token. Active only when
+// DEV_LOGIN=true, so it must be off (the default in .env.example) before publishing.
+export const devLoginEnabled = () => process.env.DEV_LOGIN === 'true';
+
+@ApiExcludeController()
+@Controller('auth/dev-login')
+export class DevLoginController {
+  constructor() {
+    if (devLoginEnabled())
+      new Logger('DevLogin').warn('DEV_LOGIN=true: cualquiera puede entrar sin credenciales. Desactívelo antes de publicar.');
+  }
+
+  // Lets the web app know whether to offer the one-click sign-in.
+  @Get()
+  @Public()
+  status() {
+    return devLoginEnabled() ? { enabled: true, roles: ROLES } : { enabled: false, roles: [] };
+  }
+
+  @Post()
+  @Public()
+  login(@Body() body: { role?: unknown }) {
+    const secret = process.env.JWT_SECRET;
+    if (!devLoginEnabled() || !secret) throw new NotFoundException();
+    const role = body?.role;
+    if (typeof role !== 'string' || !ROLES.includes(role))
+      throw new BadRequestException('Rol no válido.');
+    const exp = Math.floor(Date.now() / 1000) + EIGHT_HOURS;
+    return { token: signToken({ sub: 'dev-user', roles: [role], exp }, secret) };
+  }
+}
+`,
+      ),
+      file(
+        'apps/api/src/auth/dev-login.spec.ts',
+        `import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { DevLoginController } from './dev-login.controller';
+import { verifyToken } from './jwt';
+
+const ROLE = ${JSON.stringify(plan.authentication.roles[0] ?? 'USER')};
+
+describe('DevLoginController', () => {
+  const saved = { ...process.env };
+  beforeEach(() => {
+    process.env.JWT_SECRET = 'test-secret';
+  });
+  afterEach(() => {
+    process.env = { ...saved };
+  });
+
+  it('is invisible and refuses to sign tokens unless DEV_LOGIN is true', () => {
+    delete process.env.DEV_LOGIN;
+    const controller = new DevLoginController();
+    expect(controller.status()).toEqual({ enabled: false, roles: [] });
+    expect(() => controller.login({ role: ROLE })).toThrow(NotFoundException);
+    process.env.DEV_LOGIN = 'false';
+    expect(() => controller.login({ role: ROLE })).toThrow(NotFoundException);
+  });
+
+  it('signs a token for a planned role when enabled and rejects any other', () => {
+    process.env.DEV_LOGIN = 'true';
+    const controller = new DevLoginController();
+    expect(controller.status().enabled).toBe(true);
+    const { token } = controller.login({ role: ROLE });
+    expect(verifyToken(token, 'test-secret')?.roles).toEqual([ROLE]);
+    expect(() => controller.login({ role: 'NOT_A_ROLE' })).toThrow(BadRequestException);
+    expect(() => controller.login({})).toThrow(BadRequestException);
+  });
+});
+`,
+        { kind: 'TEST' },
+      ),
+      file(
         'apps/api/src/auth/dev-token.ts',
         `import { resolve } from 'node:path';
 import { signToken } from './jwt';
@@ -757,7 +1326,7 @@ try {
 }
 const secret = process.env.JWT_SECRET;
 if (!secret) {
-  console.error('Defina JWT_SECRET en .env');
+  console.error('Falta JWT_SECRET en .env. Ejecute "pnpm run setup": crea el archivo con el secreto.');
   process.exit(1);
 }
 const roles = process.argv.slice(2);
@@ -772,7 +1341,9 @@ console.log(
   for (const module of plan.modules) {
     const dir = kebabCase(module.name);
     const entities = plan.entities.filter((e) => e.moduleLocalId === module.localId);
-    const endpoints = plan.customEndpoints.filter((e) => e.moduleLocalId === module.localId);
+    const endpoints = plan.customEndpoints.filter(
+      (e) => e.moduleLocalId === module.localId && !e.builtin,
+    );
     const moduleElement = `module:${module.localId}`;
     for (const entity of entities) {
       const elements = [moduleElement, `entity:${entity.localId}`];
@@ -782,13 +1353,17 @@ console.log(
           entityController(plan, entity, module.name),
           { origin: 'DETERMINISTIC', planElements: elements },
         ),
-        file(`apps/api/src/${dir}/${kebabCase(entity.name)}.service.ts`, entityService(entity), {
-          origin: 'DETERMINISTIC',
-          planElements: elements,
-        }),
+        file(
+          `apps/api/src/${dir}/${kebabCase(entity.name)}.service.ts`,
+          entityService(entity, plan),
+          {
+            origin: 'DETERMINISTIC',
+            planElements: elements,
+          },
+        ),
         file(
           `apps/api/src/${dir}/${kebabCase(entity.name)}.service.spec.ts`,
-          entityServiceSpec(entity),
+          entityServiceSpec(entity, plan),
           { origin: 'DETERMINISTIC', kind: 'TEST', planElements: elements },
         ),
       );
@@ -804,14 +1379,19 @@ console.log(
         ),
         file(
           `apps/api/src/${dir}/${dir}-actions.service.ts`,
-          actionsService(module.name, endpoints, implementations),
+          actionsService(
+            module.name,
+            endpoints,
+            implementations,
+            Boolean(plan.authentication.local),
+          ),
           { origin: aiAssisted ? 'AI_ASSISTED' : 'DETERMINISTIC', planElements: elements },
         ),
       );
     }
     const controllers = [
-      ...entities.map((e) => `${e.name}Controller`),
       ...(endpoints.length ? [`${module.name}ActionsController`] : []),
+      ...entities.map((e) => `${e.name}Controller`),
     ];
     const providers = [
       ...entities.map((e) => `${e.name}Service`),
@@ -852,16 +1432,20 @@ export class ${module.name}Module {}
     file(
       'apps/api/src/app.module.ts',
       `import { Module } from '@nestjs/common';
-import { APP_FILTER${auth ? ', APP_GUARD' : ''} } from '@nestjs/core';
+import { APP_FILTER${auth ? ', APP_GUARD' : ''}${plan.authentication.local ? ', APP_INTERCEPTOR' : ''} } from '@nestjs/core';
 import { PrismaModule } from './prisma/prisma.module';
 import { HealthController } from './health.controller';
+${plan.authentication.local ? "import { LocalAuthService } from './auth/local-auth.service';\nimport { LocalAuthController } from './auth/local-auth.controller';\nimport { SafeResponseInterceptor } from './auth/safe-response.interceptor';" : ''}
+${plan.authentication.local?.scope ? "import { OperationScopeInterceptor } from './auth/operation-scope';" : ''}
 import { DatabaseErrorFilter } from './common/database-error.filter';
-${auth ? "import { AuthGuard } from './auth/auth.guard';\n" : ''}${moduleImports.join('\n')}
+${auth ? "import { AuthGuard } from './auth/auth.guard';\n" : ''}${auth && !plan.authentication.local ? "import { DevLoginController } from './auth/dev-login.controller';\n" : ''}${moduleImports.join('\n')}
 
 @Module({
   imports: [PrismaModule, ${plan.modules.map((m) => `${m.name}Module`).join(', ')}],
-  controllers: [HealthController],
+  controllers: [HealthController${auth && !plan.authentication.local ? ', DevLoginController' : ''}${plan.authentication.local ? ', LocalAuthController' : ''}],
   providers: [
+    ${plan.authentication.local ? 'LocalAuthService, { provide: APP_INTERCEPTOR, useClass: SafeResponseInterceptor },' : ''}
+    ${plan.authentication.local?.scope ? '{ provide: APP_INTERCEPTOR, useClass: OperationScopeInterceptor },' : ''}
     { provide: APP_FILTER, useClass: DatabaseErrorFilter },${auth ? '\n    { provide: APP_GUARD, useClass: AuthGuard },' : ''}
   ],
 })

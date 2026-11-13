@@ -1,6 +1,9 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { FakeAIProvider } from '@caseflow-ai/ai';
 import request from 'supertest';
 import JSZip from 'jszip';
+import { E2E_TEST_PROVIDER, type E2ETestProvider } from '@caseflow-ai/integrations';
+import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import {
   DockerSandboxExecutionProvider,
@@ -11,6 +14,7 @@ import {
 import { AutoRepairService } from '../../src/construction/auto-repair.service';
 import { GenerationRunsService } from '../../src/construction/generation-runs.service';
 import { SandboxRunsService } from '../../src/construction/sandbox-runs.service';
+import { DeploymentsService } from '../../src/construction/deployments.service';
 import { SANDBOX_EXECUTION_PROVIDER } from '../../src/construction/sandbox-provider.token';
 import {
   createTestContext,
@@ -30,6 +34,7 @@ describe('Construction sandbox validation integration', () => {
   let projectId: string;
   let otherProjectId: string;
   let planVersionId: string;
+  let baselineId: string;
   const http = () => request(ctx.app.getHttpServer());
   const auth = () => ({ Authorization: `Bearer ${ctx.token}` });
 
@@ -77,7 +82,15 @@ describe('Construction sandbox validation integration', () => {
     ).body.items;
 
   beforeAll(async () => {
-    ctx = await createTestContext();
+    ctx = await createTestContext({
+      aiProvider: new FakeAIProvider({
+        provider: 'fake',
+        model: 'fixture',
+        payload: { body: 'return { confirmed: true };' },
+        latencyMs: 1,
+        usage: null,
+      }),
+    });
     generationRuns = ctx.app.get(GenerationRunsService);
     sandboxRuns = ctx.app.get(SandboxRunsService);
     sandbox = ctx.app.get(SANDBOX_EXECUTION_PROVIDER);
@@ -85,6 +98,7 @@ describe('Construction sandbox validation integration', () => {
     projectId = (await ctx.projects.create({ workspaceId: workspace.id, name: 'Tienda' })).id;
     otherProjectId = (await ctx.projects.create({ workspaceId: workspace.id, name: 'Otra' })).id;
     const { baseline } = await approvedDesignBaseline(ctx, projectId);
+    baselineId = baseline.id;
     const plan = await ctx.structuredAnalysis.create(projectId, 'IMPLEMENTATION_PLAN', 'Plan', {
       designBaselineId: baseline.id,
       authentication: { required: false, roles: [] },
@@ -178,6 +192,7 @@ describe('Construction sandbox validation integration', () => {
       ['BUILD', true],
       ['STRUCTURE', true],
       ['TRACEABILITY', true],
+      ['E2E', true],
     ]);
     const executed = sandbox.requests.at(-1)!;
     expect(executed.commands.map((c) => [c.argv.join(' '), c.network])).toEqual([
@@ -302,6 +317,239 @@ describe('Construction sandbox validation integration', () => {
     expect(
       await ctx.prisma.generatedProjectSnapshot.count({ where: { generationRunId: runId } }),
     ).toBe(0);
+  });
+
+  it('accepts recorded screen findings only with a justification, once, and keeps it immutable', async () => {
+    const run = await ctx.prisma.generationRun.create({
+      data: {
+        projectId,
+        createdByUserId: ctx.userId,
+        implementationPlanVersionId: planVersionId,
+        designBaselineId: baselineId,
+        targetTemplateIdentifier: 'CASEFLOW_WEB_TS_V1',
+        targetTemplateVersion: 2,
+        status: 'GENERATING',
+      },
+    });
+    const content = JSON.stringify({
+      routePath: '/orders',
+      findings: 'MISSING_DATA_BINDING: Falta el resumen.',
+    });
+    await ctx.prisma.generatedFile.create({
+      data: {
+        generationRunId: run.id,
+        path: 'docs/presentation-findings/' + 'a'.repeat(64) + '.json',
+        content,
+        kind: 'DOCUMENTATION',
+        origin: 'AI_ASSISTED',
+        sha256: createHash('sha256').update(content).digest('hex'),
+      },
+    });
+    // Close the run so later generations are not blocked by it.
+    await ctx.prisma.generationRun.update({
+      where: { id: run.id },
+      data: { status: 'FAILED', finishedAt: new Date() },
+    });
+    const base = `/projects/${projectId}/design-baselines/${baselineId}`;
+    const listed = await http().get(`${base}/screen-findings`).set(auth()).expect(200);
+    expect(listed.body.items).toEqual([
+      expect.objectContaining({ routePath: '/orders', exception: null }),
+    ]);
+    const { findingsSha256 } = listed.body.items[0];
+    await http()
+      .post(`${base}/screen-exceptions`)
+      .set(auth())
+      .send({
+        routePath: '/orders',
+        findingsSha256: 'b'.repeat(64),
+        justification: 'Demostración simplificada.',
+      })
+      .expect(404);
+    await http()
+      .post(`${base}/screen-exceptions`)
+      .set(auth())
+      .send({ routePath: '/orders', findingsSha256, justification: 'corta' })
+      .expect(400);
+    const created = await http()
+      .post(`${base}/screen-exceptions`)
+      .set(auth())
+      .send({ routePath: '/orders', findingsSha256, justification: 'Demostración simplificada.' })
+      .expect(201);
+    await http()
+      .post(`${base}/screen-exceptions`)
+      .set(auth())
+      .send({ routePath: '/orders', findingsSha256, justification: 'Demostración simplificada.' })
+      .expect(409);
+    const after = await http().get(`${base}/screen-findings`).set(auth()).expect(200);
+    expect(after.body.items[0].exception).toMatchObject({ id: created.body.id });
+    await expect(
+      ctx.prisma.screenDesignException.update({
+        where: { id: created.body.id },
+        data: { justification: 'Otra justificación distinta.' },
+      }),
+    ).rejects.toThrow();
+    expect(
+      await ctx.prisma.auditEvent.count({
+        where: { projectId, action: 'SCREEN_DESIGN_EXCEPTION_ACCEPTED', entityId: created.body.id },
+      }),
+    ).toBe(1);
+    // A later evaluation replaces the current findings; older ones are history.
+    const later = await ctx.prisma.generationRun.create({
+      data: {
+        projectId,
+        createdByUserId: ctx.userId,
+        implementationPlanVersionId: planVersionId,
+        designBaselineId: baselineId,
+        targetTemplateIdentifier: 'CASEFLOW_WEB_TS_V1',
+        targetTemplateVersion: 2,
+        status: 'GENERATING',
+      },
+    });
+    const laterContent = JSON.stringify({
+      routePath: '/orders/new',
+      findings: 'MISSING_FORM_BINDING: Falta un campo.',
+    });
+    await ctx.prisma.generatedFile.create({
+      data: {
+        generationRunId: later.id,
+        path: 'docs/presentation-findings/' + 'c'.repeat(64) + '.json',
+        content: laterContent,
+        kind: 'DOCUMENTATION',
+        origin: 'AI_ASSISTED',
+        sha256: createHash('sha256').update(laterContent).digest('hex'),
+      },
+    });
+    await ctx.prisma.generationRun.update({
+      where: { id: later.id },
+      data: { status: 'FAILED', finishedAt: new Date() },
+    });
+    const current = await http().get(`${base}/screen-findings`).set(auth()).expect(200);
+    expect(current.body.items.map((item: { routePath: string }) => item.routePath)).toEqual([
+      '/orders/new',
+    ]);
+  });
+
+  it('deploys a READY snapshot in the background, keeps no secret and stops it (ADR-019)', async () => {
+    const snapshot = await ctx.prisma.generatedProjectSnapshot.findFirstOrThrow({
+      where: { projectId },
+    });
+    const deployments = ctx.app.get(DeploymentsService);
+    const fake = {
+      deploy: vi.fn(async () => ({
+        publicUrl: 'https://demo.trycloudflare.com',
+        accounts: [{ role: 'ADMIN', identifier: 'demo-1-abc' }],
+      })),
+      stop: vi.fn(async () => undefined),
+      start: vi.fn(async () => ({ publicUrl: 'https://otra.trycloudflare.com' })),
+      remove: vi.fn(async () => undefined),
+    };
+    Reflect.set(deployments, 'provider', fake);
+    try {
+      const base = `/projects/${projectId}/deployments`;
+      await http()
+        .post(base)
+        .set(auth())
+        .send({ snapshotId: snapshot.id, initialPassword: 'corta' })
+        .expect(400);
+      const started = await http()
+        .post(base)
+        .set(auth())
+        .send({ snapshotId: snapshot.id, initialPassword: 'Demostracion-2026!' })
+        .expect(202);
+      expect(started.body).toMatchObject({ status: 'STARTING', tunnelMode: 'QUICK' });
+      let current = started.body;
+      for (let attempt = 0; attempt < 50 && current.status === 'STARTING'; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        current = (await http().get(base).set(auth()).expect(200)).body.items[0];
+      }
+      expect(current).toMatchObject({
+        status: 'RUNNING',
+        publicUrl: 'https://demo.trycloudflare.com',
+        accounts: [{ role: 'ADMIN', identifier: 'demo-1-abc' }],
+      });
+      // The provider received the snapshot files and the password, which is not stored.
+      const [request] = fake.deploy.mock.calls[0] as unknown as [
+        { files: { path: string }[]; initialPassword: string },
+      ];
+      expect(request.files.some((file) => file.path === 'package.json')).toBe(true);
+      expect(request.initialPassword).toBe('Demostracion-2026!');
+      const stored = await ctx.prisma.generatedProjectDeployment.findUniqueOrThrow({
+        where: { id: current.id },
+      });
+      expect(JSON.stringify(stored)).not.toContain('Demostracion-2026!');
+      const stopped = await http().post(`${base}/${current.id}/stop`).set(auth()).expect(200);
+      expect(stopped.body.status).toBe('STOPPED');
+      const resumed = await http()
+        .post(`${base}/${current.id}/start`)
+        .set(auth())
+        .send({})
+        .expect(200);
+      expect(resumed.body).toMatchObject({
+        status: 'RUNNING',
+        publicUrl: 'https://otra.trycloudflare.com',
+      });
+      expect(
+        await ctx.prisma.auditEvent.count({ where: { projectId, entityId: current.id } }),
+      ).toBe(4);
+    } finally {
+      Reflect.set(deployments, 'provider', null);
+    }
+  });
+
+  it('marks only abandoned runs as interrupted on startup, not runs another process keeps alive', async () => {
+    const started = new Date(Date.now() - 10 * 60_000);
+    const create = (heartbeatAt: Date | null) =>
+      ctx.prisma.generationRun.create({
+        data: {
+          projectId,
+          createdByUserId: ctx.userId,
+          implementationPlanVersionId: planVersionId,
+          designBaselineId: baselineId,
+          targetTemplateIdentifier: 'CASEFLOW_WEB_TS_V1',
+          targetTemplateVersion: 2,
+          status: 'GENERATING',
+          startedAt: started,
+          heartbeatAt,
+        },
+      });
+    const alive = await create(new Date());
+    const abandoned = await create(new Date(Date.now() - 5 * 60_000));
+    try {
+      await generationRuns.markInterrupted(new Date());
+      const status = async (id: string) =>
+        (await ctx.prisma.generationRun.findUniqueOrThrow({ where: { id } })).status;
+      expect(await status(alive.id)).toBe('GENERATING');
+      expect(await status(abandoned.id)).toBe('FAILED');
+    } finally {
+      await ctx.prisma.generationRun.updateMany({
+        where: { id: alive.id, status: 'GENERATING' },
+        data: { status: 'FAILED', finishedAt: new Date() },
+      });
+    }
+  });
+
+  it('never reaches READY when the generated end-to-end tests fail (DEC-159)', async () => {
+    const runId = await generatedRun();
+    const e2e = ctx.app.get<E2ETestProvider>(E2E_TEST_PROVIDER);
+    const spy = vi.spyOn(e2e, 'runE2E').mockResolvedValue({
+      passed: false,
+      output: 'Pedidos (/orders) opens without errors: API 500',
+      durationMs: 1,
+    });
+    try {
+      await validate(runId);
+      const [item] = await runs(runId);
+      expect(item).toMatchObject({
+        status: 'VALIDATION_FAILED',
+        failedStage: 'E2E',
+        snapshotId: null,
+      });
+      expect(
+        spy.mock.calls[0]![0].files.some((file) => file.path === 'apps/web/e2e/screens.spec.ts'),
+      ).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('applies at most 3 repair rounds, feeding each patch into the next attempt', async () => {

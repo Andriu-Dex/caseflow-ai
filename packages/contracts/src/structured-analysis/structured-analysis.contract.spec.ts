@@ -190,8 +190,21 @@ describe('implementation plan route actions (DEC-121)', () => {
       messages([
         { label: 'Crear pedido', operation: 'CREATE' },
         { label: 'Confirmar', endpoint: 'POST /orders/:orderId/confirm' },
+        { label: 'Ir a la página siguiente', operation: 'LIST', interaction: 'PAGINATE_NEXT' },
+        { label: 'Ir a la página anterior', operation: 'LIST', interaction: 'PAGINATE_PREVIOUS' },
+        { label: 'Consultar productos', operation: 'LIST', interaction: 'QUERY' },
+        { label: 'Reintentar consulta', operation: 'LIST', interaction: 'REFETCH' },
       ]),
     ).toEqual([]);
+  });
+
+  it('accepts structured presentation labels on entity fields', () => {
+    const custom = plan([]);
+    custom.entities[0]!.fields = [
+      { name: 'total', type: 'DECIMAL', label: 'Importe total USD' },
+      { name: 'name', type: 'STRING', label: 'Denominación del producto' },
+    ];
+    expect(implementationPlanContentSchema.safeParse(custom).success).toBe(true);
   });
 
   it('rejects unserved operations, unknown endpoints and ambiguous actions', () => {
@@ -206,6 +219,28 @@ describe('implementation plan route actions (DEC-121)', () => {
     ).toEqual([
       'La acción «Borrar» usa la operación DELETE, que la entidad de la ruta no ofrece.',
       'La acción «Pagar» usa el endpoint POST /orders/:orderId/pay, que no existe.',
+    ]);
+  });
+
+  it('validates interaction compatibility with route action operations', () => {
+    const validActions = [
+      { label: 'Siguiente', operation: 'LIST', interaction: 'PAGINATE_NEXT' },
+      { label: 'Anterior', operation: 'LIST', interaction: 'PAGINATE_PREVIOUS' },
+      { label: 'Consultar', operation: 'LIST', interaction: 'QUERY' },
+      { label: 'Reintentar', operation: 'LIST', interaction: 'REFETCH' },
+    ];
+    expect(messages(validActions)).toEqual([]);
+
+    const invalidPaginateWithCreate = [
+      { label: 'Crear', operation: 'CREATE', interaction: 'PAGINATE_NEXT' },
+    ];
+    expect(messages(invalidPaginateWithCreate)).toEqual([
+      'Las interacciones de paginación solo aplican a operaciones LIST o endpoints GET; las de consulta y recarga solo a operaciones de lectura.',
+    ]);
+
+    const invalidQueryWithCreate = [{ label: 'Crear', operation: 'CREATE', interaction: 'QUERY' }];
+    expect(messages(invalidQueryWithCreate)).toEqual([
+      'Las interacciones de paginación solo aplican a operaciones LIST o endpoints GET; las de consulta y recarga solo a operaciones de lectura.',
     ]);
   });
 });

@@ -112,7 +112,12 @@ describe('ConsistencyEngineService', () => {
         },
       }),
     ]);
-    expect((await service.generateReport('p')).issues).toEqual([]);
+    expect((await service.generateReport('p')).issues).toEqual([
+      expect.objectContaining({
+        severity: 'OBSERVATION',
+        message: expect.stringContaining('no certifica'),
+      }),
+    ]);
   });
 
   it('checks the UI blueprint against the navigation tree and use cases', async () => {
@@ -132,7 +137,15 @@ describe('ConsistencyEngineService', () => {
         structuredAnalysisDetail: {
           content: { screens: [{ localId: 'home', name: 'Inicio', purpose: 'Ver' }] },
         },
-        mockupsSourcedFromHere: [{ screens: [{ screenLocalId: 'home' }] }],
+        mockupsSourcedFromHere: [
+          {
+            artifactVersionId: 'm1',
+            generatorKind: 'STITCH',
+            svg: null,
+            screens: [{ screenLocalId: 'home' }],
+            artifactVersion: { artifact: { versions: [{ id: 'm1' }] } },
+          },
+        ],
       }),
     ]);
     const { issues } = await service.generateReport('p');
@@ -163,6 +176,76 @@ describe('ConsistencyEngineService', () => {
     expect(issues.map((issue) => issue.message)).toEqual([
       "La pantalla 'new' del plano de interfaz NEW no tiene un boceto asociado.",
     ]);
+  });
+
+  it('recognizes complete internal wireframes but ignores superseded versions and empty previews', async () => {
+    const blueprint = (mockup: Record<string, unknown>) =>
+      artifact('ui', 'UI_BLUEPRINT', {
+        structuredAnalysisDetail: {
+          content: { screens: [{ localId: 'home', name: 'Inicio', purpose: 'Consultar' }] },
+        },
+        mockupsSourcedFromHere: [mockup],
+      });
+    const mockup = {
+      artifactVersionId: 'm1',
+      generatorKind: 'INTERNAL_WIREFRAME',
+      svg: '<svg>complete</svg>',
+      screens: [],
+      artifactVersion: { artifact: { versions: [{ id: 'm1' }] } },
+    };
+    prisma.artifact.findMany.mockResolvedValue([blueprint(mockup)]);
+    expect((await service.generateReport('p')).issues).toEqual([]);
+    prisma.artifact.findMany.mockResolvedValue([blueprint({ ...mockup, svg: '' })]);
+    expect((await service.generateReport('p')).issues).toContainEqual(
+      expect.objectContaining({ rule: 'Mockup Association' }),
+    );
+    prisma.artifact.findMany.mockResolvedValue([
+      blueprint({ ...mockup, artifactVersion: { artifact: { versions: [{ id: 'm2' }] } } }),
+    ]);
+    expect((await service.generateReport('p')).issues).toContainEqual(
+      expect.objectContaining({ rule: 'Mockup Association' }),
+    );
+  });
+
+  it('blocks an explicit retention contradiction even with the correct requirement reference', async () => {
+    prisma.artifact.findMany.mockResolvedValue([
+      artifact('rnf-1', 'REQUIREMENT', {
+        requirementDetail: {
+          requirementType: 'NON_FUNCTIONAL',
+          description: 'Conservar eventos durante 365 días.',
+          actors: [],
+        },
+      }),
+    ]);
+    const content = {
+      components: [
+        {
+          localId: 'audit',
+          name: 'Auditoría',
+          relatedSourceCodes: ['RNF-1'],
+          responsibilities: ['Eliminar eventos después de 24 horas.'],
+        },
+      ],
+    };
+    await expect(service.assertCoherent('p', 'SOFTWARE_ARCHITECTURE', content)).rejects.toThrow(
+      'inferior',
+    );
+    prisma.artifact.findMany.mockResolvedValue([
+      artifact('rnf-1', 'REQUIREMENT', {
+        requirementDetail: {
+          requirementType: 'NON_FUNCTIONAL',
+          description: 'Conservar eventos durante 365 días.',
+          actors: [],
+        },
+      }),
+      artifact('sw', 'SOFTWARE_ARCHITECTURE', { structuredAnalysisDetail: { content } }),
+    ]);
+    expect((await service.generateReport('p')).issues).toContainEqual(
+      expect.objectContaining({
+        severity: 'ERROR',
+        check: expect.objectContaining({ expected: '8760 horas', observed: '24 horas' }),
+      }),
+    );
   });
 
   it('detects duplicated use case names', async () => {

@@ -5,9 +5,14 @@ import {
   Logger,
   NotFoundException,
   Optional,
+  ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import type { StorageProvider } from '@caseflow-ai/integrations';
+import {
+  DEPLOYMENT_PROVIDER,
+  type DeploymentProvider,
+  type StorageProvider,
+} from '@caseflow-ai/integrations';
 import {
   WORKFLOW_ROUTES,
   type CreateProjectRequest,
@@ -37,6 +42,10 @@ export class ProjectsService {
     @Optional() audit?: AuditService,
     // Files of a deleted project; optional so code without storage still works.
     @Optional() @Inject(STORAGE_PROVIDER) private readonly storage?: StorageProvider,
+    // Deployments of a deleted project are removed first (ADR-019).
+    @Optional()
+    @Inject(DEPLOYMENT_PROVIDER)
+    private readonly deployments?: DeploymentProvider | null,
   ) {
     this.audit = audit ?? new AuditService(prisma);
   }
@@ -267,6 +276,15 @@ export class ProjectsService {
         'El nombre escrito no coincide con el del proyecto. Escríbalo exactamente para confirmar.',
       );
     const files = await this.storedFiles(projectId);
+    const deployed = await this.prisma.generatedProjectDeployment.findMany({
+      where: { projectId, status: { not: 'FAILED' } },
+      select: { id: true },
+    });
+    if (deployed.length && !this.deployments)
+      throw new ServiceUnavailableException(
+        'No se pueden retirar los despliegues del proyecto en este entorno. Inténtelo desde la aplicación de escritorio.',
+      );
+    for (const deployment of deployed) await this.deployments!.remove(deployment.id);
 
     await this.prisma.$transaction(
       async (tx) => {
@@ -275,9 +293,16 @@ export class ProjectsService {
         await tx.$queryRaw`SELECT set_config('caseflow.project_purge', 'on', true)`;
 
         // Construction output (references design baselines and plan versions)
+        await tx.$executeRaw`DELETE FROM user_manual_captures WHERE task_id IN (SELECT t.id FROM user_manual_tasks t JOIN artifact_versions v ON v.id=t.manual_version_id WHERE v.project_id=${p})`;
+        await tx.$executeRaw`DELETE FROM user_manual_task_roles WHERE task_id IN (SELECT t.id FROM user_manual_tasks t JOIN artifact_versions v ON v.id=t.manual_version_id WHERE v.project_id=${p})`;
+        await tx.$executeRaw`DELETE FROM user_manual_steps WHERE task_id IN (SELECT t.id FROM user_manual_tasks t JOIN artifact_versions v ON v.id=t.manual_version_id WHERE v.project_id=${p})`;
+        await tx.$executeRaw`DELETE FROM user_manual_tasks WHERE manual_version_id IN (SELECT id FROM artifact_versions WHERE project_id=${p})`;
+        await tx.$executeRaw`DELETE FROM user_manual_details WHERE artifact_version_id IN (SELECT id FROM artifact_versions WHERE project_id=${p})`;
+        await tx.$executeRaw`DELETE FROM user_manual_jobs WHERE project_id=${p}`;
         await tx.$executeRaw`DELETE FROM code_trace_links WHERE generated_file_id IN (SELECT gf.id FROM generated_files gf JOIN generation_runs gr ON gr.id = gf.generation_run_id WHERE gr.project_id = ${p})`;
         await tx.$executeRaw`DELETE FROM repair_findings WHERE auto_repair_attempt_id IN (SELECT a.id FROM auto_repair_attempts a JOIN generation_runs gr ON gr.id = a.generation_run_id WHERE gr.project_id = ${p})`;
         await tx.$executeRaw`DELETE FROM repair_patches WHERE auto_repair_attempt_id IN (SELECT a.id FROM auto_repair_attempts a JOIN generation_runs gr ON gr.id = a.generation_run_id WHERE gr.project_id = ${p})`;
+        await tx.$executeRaw`DELETE FROM generated_project_deployments WHERE project_id = ${p}`;
         await tx.$executeRaw`DELETE FROM generated_project_snapshots WHERE project_id = ${p}`;
         await tx.$executeRaw`DELETE FROM auto_repair_attempts WHERE generation_run_id IN (SELECT id FROM generation_runs WHERE project_id = ${p})`;
         await tx.$executeRaw`DELETE FROM sandbox_stage_results WHERE sandbox_run_id IN (SELECT id FROM sandbox_runs WHERE project_id = ${p})`;
@@ -291,6 +316,8 @@ export class ProjectsService {
         await tx.$executeRaw`DELETE FROM structured_generation_parts WHERE job_id IN (SELECT id FROM structured_generation_jobs WHERE project_id = ${p})`;
         await tx.$executeRaw`DELETE FROM structured_generation_job_sources WHERE job_id IN (SELECT id FROM structured_generation_jobs WHERE project_id = ${p})`;
         await tx.$executeRaw`DELETE FROM structured_generation_jobs WHERE project_id = ${p}`;
+        await tx.$executeRaw`DELETE FROM screen_design_exceptions WHERE project_id = ${p}`;
+        await tx.$executeRaw`DELETE FROM screen_design_overrides WHERE project_id = ${p}`;
         await tx.$executeRaw`DELETE FROM design_baseline_entries WHERE baseline_id IN (SELECT id FROM design_baselines WHERE project_id = ${p})`;
         await tx.$executeRaw`DELETE FROM design_baselines WHERE project_id = ${p}`;
         await tx.$executeRaw`DELETE FROM project_baseline_entries WHERE baseline_id IN (SELECT id FROM project_baselines WHERE project_id = ${p})`;
@@ -431,6 +458,7 @@ export class ProjectsService {
         WHERE mockup_version_id IN (SELECT id FROM artifact_versions WHERE project_id = ${projectId})
       UNION SELECT html_storage_key FROM mockup_screen_details
         WHERE mockup_version_id IN (SELECT id FROM artifact_versions WHERE project_id = ${projectId})
+      UNION SELECT storage_key FROM user_manual_captures WHERE storage_key IS NOT NULL AND task_id IN (SELECT t.id FROM user_manual_tasks t JOIN artifact_versions v ON v.id=t.manual_version_id WHERE v.project_id=${projectId})
       UNION SELECT archive_storage_key FROM generated_project_snapshots WHERE project_id = ${projectId}`;
     return rows.map((row) => row.key);
   }

@@ -54,6 +54,10 @@ export function generatePrismaSchema(plan: ImplementationPlanContent): string {
     for (const field of entity.fields) {
       const optional = field.required ? '' : '?';
       const unique = field.unique ? ' @unique' : '';
+      const initial =
+        field.serverDefault === undefined
+          ? ''
+          : ` @default(${field.type === 'ENUM' ? field.serverDefault : JSON.stringify(field.serverDefault)})`;
       if (field.type === 'ENUM') {
         const name = enumTypeName(entity.name, field.name);
         enums.push(
@@ -62,14 +66,14 @@ export function generatePrismaSchema(plan: ImplementationPlanContent): string {
         add(entity.name, {
           name: field.name,
           type: `${name}${optional}`,
-          attributes: `${unique}${mapped(field.name)}`.trim(),
+          attributes: `${unique}${initial}${mapped(field.name)}`.trim(),
         });
       } else {
         const scalar = SCALAR[field.type];
         add(entity.name, {
           name: field.name,
           type: `${scalar.type}${optional}`,
-          attributes: [unique.trim(), mapped(field.name).trim(), scalar.native]
+          attributes: [unique.trim(), initial.trim(), mapped(field.name).trim(), scalar.native]
             .filter(Boolean)
             .join(' '),
         });
@@ -86,7 +90,9 @@ export function generatePrismaSchema(plan: ImplementationPlanContent): string {
       const sameTargetCount = entity.relations.filter(
         (r) => r.targetEntityLocalId === relation.targetEntityLocalId,
       ).length;
-      const inverseBase = lowerFirst(pluralize(entity.name));
+      const inverseBase = lowerFirst(
+        relation.kind === 'ONE_TO_ONE' ? entity.name : pluralize(entity.name),
+      );
       const inverse =
         sameTargetCount > 1 ? `${inverseBase}As${upperFirst(relation.name)}` : inverseBase;
       if (relation.kind === 'MANY_TO_MANY') {
@@ -116,7 +122,7 @@ export function generatePrismaSchema(plan: ImplementationPlanContent): string {
         attributes: `@relation("${relationName}", fields: [${fk}], references: [id], onDelete: Restrict)`,
       });
       add(target.name, {
-        name: relation.kind === 'ONE_TO_ONE' ? lowerFirst(entity.name) : inverse,
+        name: inverse,
         type: relation.kind === 'ONE_TO_ONE' ? `${entity.name}?` : `${entity.name}[]`,
         attributes: `@relation("${relationName}")`,
       });
@@ -145,7 +151,7 @@ export function generatePrismaSchema(plan: ImplementationPlanContent): string {
       )
       .join('\n');
     const doc = entity.description ? `/// ${entity.description.replace(/\s+/g, ' ')}\n` : '';
-    return `${doc}model ${entity.name} {\n${body}\n\n  @@map("${tableName(entity.name)}")\n}`;
+    return `${doc}model ${entity.name} {\n${body}\n${(entity.uniqueConstraints ?? []).map((fields) => `  @@unique([${fields.join(', ')}])`).join('\n')}\n  @@map("${tableName(entity.name)}")\n}`;
   });
 
   return [

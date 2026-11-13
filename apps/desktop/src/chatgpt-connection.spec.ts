@@ -169,6 +169,8 @@ describe('ChatGPT broker', () => {
     expect(await (await call('GET', '/token')).json()).toEqual({ accessToken: 'access-1' });
     expect((await call('POST', '/usage-limit')).status).toBe(204);
     expect((await call('GET', '/token')).status).toBe(409);
+    expect((await call('POST', '/resume')).status).toBe(204);
+    expect((await call('GET', '/token')).status).toBe(200);
   });
 });
 

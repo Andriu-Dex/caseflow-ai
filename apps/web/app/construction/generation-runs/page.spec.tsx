@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   listPlans: vi.fn(),
   listRuns: vi.fn(),
   start: vi.fn(),
+  workingCopy: vi.fn(),
   files: vi.fn(),
   file: vi.fn(),
   sandboxRuns: vi.fn(),
@@ -22,8 +23,10 @@ vi.mock('../../../lib/api', () => ({
     generationRuns: {
       list: (...args: unknown[]) => mocks.listRuns(...args),
       start: (...args: unknown[]) => mocks.start(...args),
+      workingCopy: (...args: unknown[]) => mocks.workingCopy(...args),
       files: (...args: unknown[]) => mocks.files(...args),
       file: (...args: unknown[]) => mocks.file(...args),
+      units: async () => ({ items: [] }),
       sandboxRuns: (...args: unknown[]) => mocks.sandboxRuns(...args),
       validate: (...args: unknown[]) => mocks.validate(...args),
       archive: (...args: unknown[]) => mocks.archive(...args),
@@ -96,7 +99,12 @@ describe('GenerationRunsPage', () => {
   });
 
   it('archives a run out of the list and restores it from the archived ones', async () => {
-    const archived = { ...run, id: 'run-old', archivedAt: '2026-10-02T00:00:00.000Z' };
+    const archived = {
+      ...run,
+      id: 'run-old',
+      createdAt: '2026-09-30T00:00:00.000Z',
+      archivedAt: '2026-10-02T00:00:00.000Z',
+    };
     mocks.listRuns.mockResolvedValue({ items: [run, archived] });
     mocks.archive.mockResolvedValue({});
     mocks.restore.mockResolvedValue({});
@@ -116,6 +124,8 @@ describe('GenerationRunsPage', () => {
     render(<GenerationRunsPage />, { wrapper: TestProviders });
     expect(await screen.findByText(/Confirmar pedido/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Ver archivos' }));
+    await userEvent.click(screen.getByRole('tab', { name: 'Todos los archivos' }));
+    await userEvent.click(screen.getByRole('tab', { name: 'Todos los archivos' }));
     await userEvent.click(await screen.findByRole('button', { name: /main\.ts/ }));
     expect(await screen.findByText('bootstrap();')).toBeInTheDocument();
     expect(screen.getByText(/Configura PI-001 v1/)).toBeInTheDocument();
@@ -183,6 +193,7 @@ describe('GenerationRunsPage', () => {
     render(<GenerationRunsPage />, { wrapper: TestProviders });
 
     await user.click(await screen.findByRole('button', { name: 'Ver archivos' }));
+    await user.click(screen.getByRole('tab', { name: 'Todos los archivos' }));
     expect(await screen.findByRole('button', { name: /main\.ts/ })).toBeInTheDocument();
 
     const searchInput = screen.getByLabelText('Filtrar archivos');
@@ -207,6 +218,7 @@ describe('GenerationRunsPage', () => {
       items: [
         {
           id: 'run-active',
+          implementationPlanVersionId: 'pv1',
           status: 'GENERATING',
           fileCount: 0,
           targetTemplateIdentifier: 'CASEFLOW_WEB_TS_V1',
@@ -282,4 +294,96 @@ describe('GenerationRunsPage', () => {
     expect(screen.getByText(/1\. Preparación/i)).toBeInTheDocument(); // The token example uses the first role of the plan the run came from.
     expect(screen.getAllByText(/dev-token -- "Administrador"/).length).toBeGreaterThan(0);
   });
+});
+
+it('distinguishes a working copy from a validated official delivery', async () => {
+  mocks.listRuns.mockResolvedValue({
+    items: [{ ...run, status: 'WORKING_COPY', warnings: ['Versión de trabajo incompleta.'] }],
+  });
+  render(<GenerationRunsPage />, { wrapper: TestProviders });
+  expect(await screen.findByText('Versión de trabajo · incompleta')).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Ver archivos' }));
+  await userEvent.click(screen.getByRole('tab', { name: 'Todos los archivos' }));
+  expect(await screen.findByText('apps/api/src/main.ts')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /Validar en Docker/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /Descargar ZIP/i })).not.toBeInTheDocument();
+});
+
+it('prepares a working copy through the explicit consolidation action', async () => {
+  mocks.start.mockClear();
+  mocks.workingCopy.mockResolvedValue({ ...run, id: 'copy', status: 'WORKING_COPY' });
+  render(<GenerationRunsPage />, { wrapper: TestProviders });
+  const button = await screen.findByRole('button', { name: 'Preparar versión de trabajo' });
+  await waitFor(() => expect(button).toBeEnabled());
+  await userEvent.click(button);
+  await waitFor(() => expect(mocks.workingCopy).toHaveBeenCalledWith('p1', 'pv1'));
+  expect(mocks.start).not.toHaveBeenCalled();
+});
+
+it('keeps historical generations and their validation queries closed until requested', async () => {
+  mocks.sandboxRuns.mockClear();
+  mocks.listRuns.mockResolvedValue({
+    items: [
+      { ...run, id: 'current', status: 'WORKING_COPY', createdAt: '2026-11-08T00:00:00.000Z' },
+      { ...run, id: 'historical' },
+    ],
+  });
+  render(<GenerationRunsPage />, { wrapper: TestProviders });
+  expect(await screen.findByText('Versión de trabajo · incompleta')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Validar proyecto' })).not.toBeInTheDocument();
+  expect(mocks.sandboxRuns).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByText('Historial de generaciones (1)'));
+  const details = await screen.findByRole('button', { name: /Ver detalles/ });
+  expect(details).toHaveAttribute('aria-expanded', 'false');
+  expect(mocks.sandboxRuns).not.toHaveBeenCalled();
+  await userEvent.click(details);
+  expect(await screen.findByRole('button', { name: 'Validar proyecto' })).toBeInTheDocument();
+  expect(mocks.sandboxRuns).toHaveBeenCalledWith('p1', 'historical');
+});
+
+it('preserves the attempt selector and shows only the latest validation by default', async () => {
+  mocks.sandboxRuns.mockResolvedValue({
+    items: [
+      {
+        id: 'attempt-1',
+        attemptNumber: 1,
+        status: 'FAILED',
+        currentStage: null,
+        errorMessage: null,
+        stages: [
+          {
+            stage: 'TYPECHECK',
+            passed: false,
+            exitCode: 2,
+            timedOut: false,
+            durationMs: 10,
+            output: 'historical-type-error',
+          },
+        ],
+        repair: null,
+        snapshotId: null,
+      },
+      {
+        id: 'attempt-2',
+        attemptNumber: 2,
+        status: 'READY',
+        currentStage: null,
+        errorMessage: null,
+        stages: [],
+        repair: null,
+        snapshotId: 'snapshot',
+      },
+    ],
+  });
+  render(<GenerationRunsPage />, { wrapper: TestProviders });
+  expect(await screen.findByRole('group', { name: 'Intentos de validación' })).toBeInTheDocument();
+  expect(screen.queryByText('historical-type-error')).not.toBeInTheDocument();
+  const first = screen.getByRole('button', { name: 'Intento 1' });
+  expect(first).toHaveAttribute('aria-pressed', 'false');
+  await userEvent.click(first);
+  expect(await screen.findByText('historical-type-error')).toBeInTheDocument();
+  expect(first).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByRole('button', { name: 'Ir al intento 2' })).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Ir al intento 2' }));
+  expect(screen.queryByText('historical-type-error')).not.toBeInTheDocument();
 });

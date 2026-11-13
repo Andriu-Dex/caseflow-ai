@@ -23,6 +23,7 @@ import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { StatusBadge } from '../../components/status-badge';
 import { CandidateReview } from '../../components/candidate-review';
 import { DataModelManualForm } from '../../components/data-model-manual-form';
+import { DataModelReviewNotice } from '../../components/data-model-review-notice';
 import { DiagramViewer } from '../../components/diagram-viewer';
 import { ArchivedArtifacts } from '../../components/archived-artifacts';
 import { PageHeading } from '../../components/page-heading';
@@ -246,6 +247,7 @@ function DataModelContent({ projectId }: { projectId: string }) {
         <CandidateReview
           generation={generation}
           describe={(c) => String(c.title ?? c.name ?? c.candidateId)}
+          renderDetail={(candidate) => <DataModelReviewNotice model={candidate} />}
           onAccept={async (ids) => {
             await api.dataModels.accept(projectId, generation.id, ids);
             invalidate();
@@ -267,6 +269,7 @@ function DataModelContent({ projectId }: { projectId: string }) {
                 key={m.id}
                 className="rounded-xl border border-border/80 bg-card p-5 shadow-2xs transition-shadow hover:shadow-xs"
               >
+                <DataModelReviewNotice model={m.dataModel} />
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex flex-wrap items-center gap-2.5">
                     <span className="rounded-md border border-primary/25 bg-primary/10 px-2 py-0.5 font-mono text-xs font-semibold text-primary">

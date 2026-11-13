@@ -32,23 +32,22 @@ describe('ProjectQuickstartDialog', () => {
     expect(screen.getByText(/3\. ¡A rodar!/i)).toBeInTheDocument();
 
     // Check prerequisites chips
-    expect(screen.getByText(/Node\.js/i)).toBeInTheDocument();
-    expect(screen.getByText(/pnpm ≥ 9/i)).toBeInTheDocument();
-    expect(screen.getByText(/Docker Desktop/i)).toBeInTheDocument();
+    expect(screen.getByText('Node.js')).toBeInTheDocument();
+    expect(screen.getByText('pnpm')).toBeInTheDocument();
+    expect(screen.getByText('Docker Desktop')).toBeInTheDocument();
 
     // All steps are visible in continuous stepper
-    expect(
-      screen.getByText('docker compose -f docker/docker-compose.yml up -d'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('pnpm run setup')).toBeInTheDocument();
     expect(
       screen.getByText('pnpm --filter ./apps/api run dev-token -- "ADMIN"'),
     ).toBeInTheDocument();
     expect(screen.getByText('pnpm run dev')).toBeInTheDocument();
+    expect(screen.getByText(/docker-compose.app.yml up --build/)).toBeInTheDocument();
 
     // Check copying full workflow
     const copyFullBtn = screen.getByRole('button', { name: /Copiar flujo completo/i });
     await user.click(copyFullBtn);
-    expect(writeTextSpy).toHaveBeenCalledWith(expect.stringContaining('docker compose'));
+    expect(writeTextSpy).toHaveBeenCalledWith(expect.stringContaining('pnpm run setup'));
 
     // Check closing dialog
     const closeBtn = screen.getByRole('button', { name: 'Cerrar guía' });

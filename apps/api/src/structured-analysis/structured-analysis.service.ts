@@ -29,7 +29,7 @@ import {
   designThemeContentSchema,
   designThemeContrastIssues,
   designThemeGenerationOutputSchema,
-  implementationPlanBodySchema,
+  implementationPlanAIOutputSchema,
   type StructuredAnalysisKind,
 } from '@caseflow-ai/contracts';
 import type { z } from 'zod';
@@ -286,7 +286,7 @@ const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
     promptKey: 'implementation-plan.generate',
     promptVersion: 2,
     maxOutputTokens: 32_768,
-    aiOutputSchema: implementationPlanBodySchema,
+    aiOutputSchema: implementationPlanAIOutputSchema,
   },
   CLASS_DIAGRAM: {
     promptKey: 'class-diagram.generate',
@@ -1881,7 +1881,11 @@ export class StructuredAnalysisService {
     if (!canTransitionArtifactVersionStatus(version.status, status))
       throw new UnprocessableEntityException('Transición de estado no permitida.');
     if (kind === 'DESIGN_THEME' && status === 'APPROVED') await this.assertAccessibleTheme(id);
-    if (status === 'APPROVED' && COHERENCE_KINDS.has(kind))
+    if (
+      status === 'APPROVED' &&
+      (COHERENCE_KINDS.has(kind) ||
+        ['NAVIGATION_TREE', 'SOFTWARE_ARCHITECTURE', 'SYSTEM_ARCHITECTURE'].includes(kind))
+    )
       await this.consistency.assertCoherent(
         projectId,
         kind,

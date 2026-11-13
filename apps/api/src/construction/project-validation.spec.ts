@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import JSZip from 'jszip';
-import { CASEFLOW_WEB_TS_V1 } from '@caseflow-ai/domain';
+import { CASEFLOW_WEB_TS_V1, CASEFLOW_WEB_TS_V2 } from '@caseflow-ai/domain';
+import { implementationPlanContentSchema } from '@caseflow-ai/contracts';
+import { generateProject } from '../code-generation/engine/project-generator';
 import {
   applyPatches,
   buildArchive,
   diagnosedFiles,
+  firstRunProblems,
   manifestHash,
   planCoverageProblems,
   reviewRepairPatch,
@@ -31,6 +34,27 @@ const layout = (): ProjectFile[] =>
   }));
 
 describe('structuralProblems', () => {
+  it('blocks permanently rejecting business actions even when they use a normal validation exception', () => {
+    const files: ProjectFile[] = [
+      ...layout(),
+      {
+        path: 'apps/api/src/orders/orders-actions.service.ts',
+        kind: 'SOURCE',
+        content:
+          "export class OrdersActionsService { confirm() { if(!true) throw new Error('identity'); throw new BadRequestException('Missing contract'); } }",
+      },
+    ];
+    expect(
+      structuralProblems(files, CASEFLOW_WEB_TS_V2, CASEFLOW_WEB_TS_V2.dependencies),
+    ).toContainEqual(expect.stringContaining('rechaza todos los casos'));
+    files[files.length - 1]!.content =
+      "export class OrdersActionsService { confirm(input: boolean) { if(!input) throw new Error('invalid'); return {ok:true}; } }";
+    expect(
+      structuralProblems(files, CASEFLOW_WEB_TS_V2, CASEFLOW_WEB_TS_V2.dependencies).some(
+        (problem) => problem.includes('rechaza todos los casos'),
+      ),
+    ).toBe(false);
+  });
   it('accepts the template layout with catalog dependencies', () => {
     expect(structuralProblems(layout(), CASEFLOW_WEB_TS_V1, allowed)).toEqual([]);
   });
@@ -52,6 +76,77 @@ describe('structuralProblems', () => {
         expect.stringContaining('left-pad@1.0.0'),
         expect.stringContaining('zod@^4'),
         expect.stringContaining('pnpm@'),
+      ]),
+    );
+  });
+});
+
+describe('firstRunProblems', () => {
+  const generated = (): ProjectFile[] =>
+    generateProject({
+      plan: implementationPlanContentSchema.parse({
+        designBaselineId: '11111111-1111-4111-8111-111111111111',
+        authentication: { required: true, roles: ['ADMIN'] },
+        modules: [{ localId: 'sales', name: 'Sales', description: 'Pedidos' }],
+        entities: [
+          {
+            localId: 'customer',
+            name: 'Customer',
+            moduleLocalId: 'sales',
+            fields: [{ name: 'fullName', type: 'STRING' }],
+            operations: ['LIST'],
+          },
+        ],
+        routes: [],
+        tests: [],
+      }),
+      template: CASEFLOW_WEB_TS_V1,
+      projectName: 'Tienda',
+      slug: 'tienda',
+    });
+  const change = (path: string, edit: (content: string) => string) =>
+    generated().map((f) => (f.path === path ? { ...f, content: edit(f.content) } : f));
+
+  it('accepts a freshly generated project', () => {
+    expect(firstRunProblems(generated())).toEqual([]);
+  });
+
+  it('reports a missing setup script, empty variables and a real-looking secret', () => {
+    const files = change('.env.example', (c) => `${c}\nSESSION_SECRET=\nAPI_SALT=abc`).filter(
+      (f) => f.path !== 'scripts/setup.mjs',
+    );
+    expect(firstRunProblems(files)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('scripts/setup.mjs'),
+        expect.stringContaining('SESSION_SECRET'),
+        expect.stringContaining('API_SALT'),
+      ]),
+    );
+  });
+
+  it('reports compose drift, a mismatched connection string and README commands that do not exist', () => {
+    expect(
+      firstRunProblems(
+        change('.env.example', (c) => c.replace('DEV_LOGIN=false', 'DEV_LOGIN=true')),
+      ),
+    ).toEqual([expect.stringContaining('DEV_LOGIN')]);
+    let files = change('docker/docker-compose.yml', (c) =>
+      c.replace(/^name: .*\n/m, '').replace('healthcheck:', ''),
+    );
+    files = files.map((f) =>
+      f.path === 'README.md' ? { ...f, content: `${f.content}\npnpm run nope` } : f,
+    );
+    files = files.map((f) =>
+      f.path === '.env.example'
+        ? { ...f, content: f.content.replace('@127.0.0.1:5433', '@localhost:5433') }
+        : f,
+    );
+    expect(firstRunProblems(files)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('nombre de proyecto'),
+        expect.stringContaining('healthcheck'),
+        expect.stringContaining('DATABASE_URL'),
+        expect.stringContaining('pnpm run nope'),
       ]),
     );
   });

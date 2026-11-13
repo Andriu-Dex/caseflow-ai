@@ -24,6 +24,7 @@ export const CONSTRUCTION_ARTIFACT_TYPE_CODES = [
   'GENERATION_PLAN',
   'CONCEPTUAL_DOMAIN_MODEL',
   'IMPLEMENTATION_PLAN',
+  'USER_MANUAL',
 ] as const;
 
 // Artifact codes are "<PREFIX>-<number>", e.g. RF-001 (spec §31.4).

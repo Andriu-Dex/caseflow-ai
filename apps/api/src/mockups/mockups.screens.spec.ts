@@ -34,6 +34,7 @@ const content = { screens } as never;
 
 function build(options: { tree?: unknown; approved?: boolean } = {}) {
   const prisma = {
+    artifact: { findMany: vi.fn().mockResolvedValue([]) },
     project: { findUnique: vi.fn().mockResolvedValue({ name: 'RestGuest' }) },
     structuredAnalysisDetail: {
       findUnique: vi
@@ -56,6 +57,7 @@ function build(options: { tree?: unknown; approved?: boolean } = {}) {
         appName: string;
         menu: string[];
         activeMenuByScreen: Record<string, string | null>;
+        approvedRequirements?: { description: string; contextVersionId?: string }[];
       }>;
     }
   ).appContext.bind(service);
@@ -65,6 +67,58 @@ function build(options: { tree?: unknown; approved?: boolean } = {}) {
 afterEach(() => vi.restoreAllMocks());
 
 describe('the application context of a mockup', () => {
+  it('includes linked context rules only from an approved version of the same project', async () => {
+    const { prisma, appContext } = build();
+    prisma.artifact.findMany.mockResolvedValue([
+      {
+        code: 'RF-001',
+        versions: [
+          {
+            id: 'rf-1',
+            requirementDetail: {
+              description: 'Validar antes de registrar.',
+              sourceContextVersion: { id: 'ctx-1', projectId: 'p1', status: 'APPROVED' },
+              contextLinks: [
+                {
+                  businessRule: {
+                    artifactVersionId: 'ctx-1',
+                    description: 'Como máximo tres operaciones.',
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      {
+        code: 'RF-002',
+        versions: [
+          {
+            id: 'rf-2',
+            requirementDetail: {
+              description: 'Otra operación.',
+              sourceContextVersion: { id: 'foreign-context', projectId: 'p2', status: 'APPROVED' },
+              contextLinks: [
+                {
+                  businessRule: {
+                    artifactVersionId: 'foreign-context',
+                    description: 'Regla ajena.',
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ] as never);
+    const context = await appContext('p1', content);
+    expect(context.approvedRequirements?.[0]).toMatchObject({
+      contextVersionId: 'ctx-1',
+      description: expect.stringContaining('Como máximo tres operaciones.'),
+    });
+    expect(context.approvedRequirements?.[1]?.description).not.toContain('Regla ajena');
+    expect(context.approvedRequirements?.[1]?.contextVersionId).toBeUndefined();
+  });
   it('names the application after the project and builds the menu from the approved navigation', async () => {
     const { appContext } = build({ tree });
     const context = await appContext('p1', content);

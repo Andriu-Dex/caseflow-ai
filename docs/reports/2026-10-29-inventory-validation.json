@@ -1,0 +1,405 @@
+{
+  "date": "2026-10-29",
+  "branch": "feat/visual-user-manual",
+  "committed": false,
+  "indexPreserved": true,
+  "projectId": "4584e81d-42f3-4501-b0c8-58bac5f7253c",
+  "plan": {
+    "versionId": "6cb0e78a-2af0-40b5-ac18-6e9aa919bc9a",
+    "versionNumber": 14,
+    "status": "APPROVED",
+    "baselineId": "ac298b2c-ba49-443a-a2c1-99b8d8a8ecc4",
+    "decisions": "User delegated missing business decisions; not verbatim source statements",
+    "versions": [
+      {
+        "id": "d5c1f96d-ebd4-407e-bc4c-738f63d43235",
+        "versionNumber": 11,
+        "status": "APPROVED"
+      },
+      {
+        "id": "e48c55bc-a02e-4926-b9f7-7abaff5cc32d",
+        "versionNumber": 12,
+        "status": "CHANGES_REQUESTED"
+      },
+      {
+        "id": "5c5659da-d00a-47d8-b898-0dc4de994689",
+        "versionNumber": 13,
+        "status": "CHANGES_REQUESTED"
+      },
+      {
+        "id": "6cb0e78a-2af0-40b5-ac18-6e9aa919bc9a",
+        "versionNumber": 14,
+        "status": "APPROVED"
+      }
+    ],
+    "stockOperations": ["LIST", "GET"],
+    "movementOperations": ["LIST", "GET"],
+    "stockUniqueConstraints": [["productId", "branchId"]]
+  },
+  "generation": {
+    "id": "ab3816fb-a6a5-411d-a943-cea0e313e261",
+    "projectId": "4584e81d-42f3-4501-b0c8-58bac5f7253c",
+    "status": "FAILED",
+    "startedAt": "2026-10-29T10:45:11.025Z",
+    "finishedAt": "2026-10-29T10:46:23.515Z",
+    "errorMessage": "Evaluación parcial de inventario; la entrega completa requiere generar y validar las demás acciones.",
+    "partialEvaluation": true,
+    "selected": [
+      "POST /inventory/receipts/preview",
+      "POST /inventory/receipts/confirm",
+      "POST /inventory/issues/preview",
+      "POST /inventory/issues/confirm",
+      "POST /inventory/losses/preview",
+      "POST /inventory/losses/confirm",
+      "POST /inventory/adjustments/preview",
+      "POST /inventory/adjustments/confirm",
+      "POST /inventory/branches/:branchId/products/:productId/minimum",
+      "PATCH /inventory/branches/:branchId/products/:productId/minimum"
+    ],
+    "accepted": ["POST /inventory/receipts/preview", "POST /inventory/receipts/confirm"],
+    "pending": [
+      "POST /inventory/issues/preview",
+      "POST /inventory/issues/confirm",
+      "POST /inventory/losses/preview",
+      "POST /inventory/losses/confirm",
+      "POST /inventory/adjustments/preview",
+      "POST /inventory/adjustments/confirm",
+      "POST /inventory/branches/:branchId/products/:productId/minimum",
+      "PATCH /inventory/branches/:branchId/products/:productId/minimum"
+    ],
+    "warnings": [
+      "La acción «Revisar SALIDA_ORDINARIA de inventario sin persistir cambios.» quedó sin implementar (responde 501): el servicio de IA no está disponible.",
+      "La acción «Confirmar SALIDA_ORDINARIA con saldo no negativo, auditoría e idempotencia.» quedó sin implementar (responde 501): el servicio de IA no está disponible.",
+      "La acción «Revisar MERMA de inventario sin persistir cambios.» quedó sin implementar (responde 501): el servicio de IA no está disponible.",
+      "La acción «Confirmar MERMA con saldo no negativo, auditoría e idempotencia.» quedó sin implementar (responde 501): el servicio de IA no está disponible.",
+      "La acción «Revisar AJUSTE de inventario sin persistir cambios.» quedó sin implementar (responde 501): el servicio de IA no está disponible.",
+      "La acción «Confirmar AJUSTE con saldo no negativo, auditoría e idempotencia.» quedó sin implementar (responde 501): el servicio de IA no está disponible.",
+      "La acción «Establecer mínimo inicialmente sin modificar saldo.» quedó sin implementar (responde 501): el servicio de IA no está disponible.",
+      "La acción «Modificar mínimo con revisión esperada sin modificar saldo.» quedó sin implementar (responde 501): el servicio de IA no está disponible."
+    ],
+    "providerState": "CHATGPT_USAGE_LIMIT",
+    "userPreference": "WAIT_FOR_RESET",
+    "providerSwitched": false,
+    "checkpoints": 2,
+    "newOfficialSnapshotCreated": false,
+    "newZipCreated": false,
+    "newManualCreated": false
+  },
+  "evaluation": {
+    "officialDelivery": false,
+    "generatedCodeExecutedOnlyInDocker": true,
+    "productionBusinessDataUsed": false,
+    "sourceFiles": 316,
+    "sourceManifestSha256": "c5b775aa7b083e4a61274a220a843aa8fa61a256160a482ba9665f8ff910b4fd",
+    "validation": [
+      {
+        "stage": "INSTALL",
+        "exitCode": 0,
+        "timedOut": false,
+        "durationMs": 17900
+      },
+      {
+        "stage": "LINT",
+        "exitCode": 0,
+        "timedOut": false,
+        "durationMs": 5209
+      },
+      {
+        "stage": "TYPECHECK",
+        "exitCode": 0,
+        "timedOut": false,
+        "durationMs": 9641
+      },
+      {
+        "stage": "TEST",
+        "exitCode": 0,
+        "timedOut": false,
+        "durationMs": 15567
+      },
+      {
+        "stage": "BUILD",
+        "exitCode": 0,
+        "timedOut": false,
+        "durationMs": 22856
+      }
+    ],
+    "inventoryHttpChecks": [
+      "Inventory role signs in",
+      "Inventory requires selected scope",
+      "Forged inventory scope rejected",
+      "Client balance rejected",
+      "Client inventory actor rejected",
+      "Zero receipt rejected",
+      "Negative receipt rejected",
+      "Receipt origin required",
+      "Mass-to-volume conversion rejected",
+      "Inexact conversion rejected without rounding",
+      "Future operational date rejected",
+      "Preview converts 500 g to 0.50 kg",
+      "Preview performs no persistent writes",
+      "Receipt initializes and updates stock atomically",
+      "Movement stores original units, exact change and actor",
+      "Same-key retry recovers original result without effects",
+      "Same key with changed payload rejected",
+      "Stale initial-stock review rejected",
+      "Generic stock creation closed",
+      "Generic balance editing closed",
+      "Generic movement creation closed",
+      "Foreign-scope movement is inaccessible",
+      "Second receipt reviewed",
+      "Concurrent same-key receipt has one effect",
+      "Different stale key cannot overwrite stock",
+      "Review cannot be moved to a different scope",
+      "Concurrent initial receipt recovers after unique stock conflict",
+      "Catalog unit change preserves existing stock unit",
+      "Audit failure rolls back stock, movement and idempotency safely",
+      "Past operational date allowed",
+      "Backdated receipt confirmed without rewriting old movements",
+      "Occurrence time stays server UTC despite operational date",
+      "Final stock equals sum of accepted movement deltas",
+      "Each committed receipt has one audit event",
+      "Balance and revision changes audited"
+    ],
+    "inventoryHttpEndingBalance": "0.80",
+    "salesRegressionChecks": [
+      "Test cashier signs in",
+      "Selected scope required",
+      "Forged scope rejected",
+      "Client total rejected",
+      "Client actor rejected",
+      "Zero quantity rejected",
+      "Partial create failure rolls back sale",
+      "Catalog fallback and HALF_UP 0.005 to 0.01",
+      "Draft creation audited",
+      "Sale inaccessible from another scope",
+      "Draft update increments revision and exact total",
+      "Stale draft update rejected",
+      "Failed update rolls back revision, lines and audit",
+      "Selected-branch unavailability rejected",
+      "Negative selected-branch price rejected",
+      "Uninterpreted pricing conditions rejected",
+      "Overlapping effective prices rejected",
+      "Review uses effective selected-branch price",
+      "Review does not mutate sale, lines or audit",
+      "Changed quote prevents confirmation",
+      "New review refreshes price",
+      "Concurrent same-key confirmation recovers one result",
+      "One idempotency record persisted",
+      "Retry returns original complete result",
+      "Same key with altered payload rejected",
+      "Second distinct confirmation rejected",
+      "Confirmed sale cannot be edited",
+      "Confirmed draft review rejects repricing",
+      "Historical sale remains unchanged after catalog price update",
+      "Historical line price remains unchanged after catalog price update",
+      "Internal note appended",
+      "Notes preserve earlier records",
+      "Notes do not modify historical amount",
+      "Sales do not change inventory",
+      "Field-change audit persisted"
+    ],
+    "browser": {
+      "passed": true,
+      "role": "Administrador",
+      "steps": [
+        "Select scope",
+        "Review receipt with exact conversion",
+        "Confirm using POST preview bindings",
+        "Observe expected resulting balance",
+        "Verify no page errors"
+      ]
+    },
+    "captures": [
+      {
+        "role": "Administrador",
+        "routePath": "/home",
+        "status": "CAPTURED",
+        "reason": null,
+        "width": 1440,
+        "height": 900
+      }
+    ]
+  },
+  "repository": {
+    "lint": "PASS",
+    "typecheck": "PASS",
+    "build": "PASS",
+    "format": "PASS",
+    "unitAndCoverage": {
+      "command": "pnpm run test:coverage",
+      "passed": 1029,
+      "skipped": 3,
+      "linesPercent": 77.64,
+      "branchesPercent": 74.6
+    },
+    "mainDatabaseMigrationsAdded": 0,
+    "dependenciesAdded": 0
+  },
+  "sourceReferences": {
+    "sourceCode": "SRC-001",
+    "sourceVersionId": "c33a04be-c58e-48a3-8f3e-3be3cd892ae6",
+    "requirements": [
+      "RF-135",
+      "RF-136",
+      "RF-137",
+      "RF-138",
+      "RF-139",
+      "RF-140",
+      "RF-141",
+      "RF-142",
+      "RF-143",
+      "RNF-060",
+      "RNF-061",
+      "RNF-064"
+    ]
+  },
+  "aiRuns": [
+    {
+      "id": "70acea41-cb94-4255-bdd8-3245ed96f65a",
+      "provider": "chatgpt",
+      "model": "gpt-6.1-sol",
+      "promptKey": "business-logic.generate",
+      "promptVersion": 6,
+      "status": "SUCCEEDED",
+      "errorCode": null,
+      "latencyMs": 32906,
+      "inputTokens": 21348,
+      "outputTokens": 2054,
+      "inputHash": "40f8e8f97644c41a12875068539e4d646814079f7f05ce8697d62259acf2cb0f",
+      "outputHash": "23bd667c7ecca4d07d6318cf68287c26d9b841c19b002f961254da11e9babfc6"
+    },
+    {
+      "id": "1421fcd5-1d02-4f75-8f5c-ad245317b0ad",
+      "provider": "chatgpt",
+      "model": "gpt-6.1-sol",
+      "promptKey": "business-logic.generate",
+      "promptVersion": 6,
+      "status": "SUCCEEDED",
+      "errorCode": null,
+      "latencyMs": 37324,
+      "inputTokens": 22121,
+      "outputTokens": 2840,
+      "inputHash": "2d0d42dbf39204c26b6895dbb65978e1ae910d3e5519226a1fcd8381dae0992e",
+      "outputHash": "d684e0d5bebf1fde59b7efa10178651e704b5723c728df80523967a7bfab2814"
+    },
+    {
+      "id": "c5fa55c4-b5fa-4b1a-b190-829c0432a9e3",
+      "provider": "chatgpt",
+      "model": null,
+      "promptKey": "business-logic.generate",
+      "promptVersion": 6,
+      "status": "FAILED",
+      "errorCode": "AI_RATE_LIMITED",
+      "latencyMs": 1885,
+      "inputTokens": null,
+      "outputTokens": null,
+      "inputHash": "fc28d7dd0a0cf7cb9a13700ec0dcc8fc9daec1ac46db10ea3e3ce8ad2b5f4bce",
+      "outputHash": null
+    },
+    {
+      "id": "4bc7df18-8e14-4230-9aa9-013934b6a906",
+      "provider": "chatgpt",
+      "model": null,
+      "promptKey": "business-logic.generate",
+      "promptVersion": 6,
+      "status": "FAILED",
+      "errorCode": "AI_RATE_LIMITED",
+      "latencyMs": 15,
+      "inputTokens": null,
+      "outputTokens": null,
+      "inputHash": "06077b9156578f68c2b7183e2dacf457899ec4872766c1415344cf54137742f1",
+      "outputHash": null
+    },
+    {
+      "id": "321438a7-31d5-4e25-8e2f-ece7bba181bc",
+      "provider": "chatgpt",
+      "model": null,
+      "promptKey": "business-logic.generate",
+      "promptVersion": 6,
+      "status": "FAILED",
+      "errorCode": "AI_RATE_LIMITED",
+      "latencyMs": 9,
+      "inputTokens": null,
+      "outputTokens": null,
+      "inputHash": "bc3b6fbe2b25f1bb9b90458f8d1d799936945be2421942e2189b4fb0e19568f6",
+      "outputHash": null
+    },
+    {
+      "id": "4b00fcad-ca5f-408c-9175-fe64944cfb08",
+      "provider": "chatgpt",
+      "model": null,
+      "promptKey": "business-logic.generate",
+      "promptVersion": 6,
+      "status": "FAILED",
+      "errorCode": "AI_RATE_LIMITED",
+      "latencyMs": 13,
+      "inputTokens": null,
+      "outputTokens": null,
+      "inputHash": "31934306fd1c0722617496baee070a01630622c42042723e8aa34ba33d9486c3",
+      "outputHash": null
+    },
+    {
+      "id": "11888782-23f2-42ef-949a-076b924f08aa",
+      "provider": "chatgpt",
+      "model": null,
+      "promptKey": "business-logic.generate",
+      "promptVersion": 6,
+      "status": "FAILED",
+      "errorCode": "AI_RATE_LIMITED",
+      "latencyMs": 13,
+      "inputTokens": null,
+      "outputTokens": null,
+      "inputHash": "30ae48ee7e8c00c347ecb5920f698cb5714fdf7a64e079b3da1861b88e1a5110",
+      "outputHash": null
+    },
+    {
+      "id": "dff49a58-ec01-449c-b2e3-751142e78594",
+      "provider": "chatgpt",
+      "model": null,
+      "promptKey": "business-logic.generate",
+      "promptVersion": 6,
+      "status": "FAILED",
+      "errorCode": "AI_RATE_LIMITED",
+      "latencyMs": 5,
+      "inputTokens": null,
+      "outputTokens": null,
+      "inputHash": "97158c86c40dce2ca1004866c2cc99e81001f6d0d143867c2523800bc3ac90bb",
+      "outputHash": null
+    },
+    {
+      "id": "d4474b80-0239-4c3f-a25e-dd1d40b947b7",
+      "provider": "chatgpt",
+      "model": null,
+      "promptKey": "business-logic.generate",
+      "promptVersion": 6,
+      "status": "FAILED",
+      "errorCode": "AI_RATE_LIMITED",
+      "latencyMs": 17,
+      "inputTokens": null,
+      "outputTokens": null,
+      "inputHash": "cd3601b32205b2ae2031bbea3ebe6c3ba05f52e1cf714a352c842106994ed25a",
+      "outputHash": null
+    },
+    {
+      "id": "b14531cb-2c45-4d4e-817b-cb37ae90d58b",
+      "provider": "chatgpt",
+      "model": null,
+      "promptKey": "business-logic.generate",
+      "promptVersion": 6,
+      "status": "FAILED",
+      "errorCode": "AI_RATE_LIMITED",
+      "latencyMs": 10,
+      "inputTokens": null,
+      "outputTokens": null,
+      "inputHash": "7d6b2eb72b10e950269fadf3cdb10574944373ead57c3533272f1f40b3283c99",
+      "outputHash": null
+    }
+  ],
+  "notVerified": [
+    "The remaining six issue/loss/adjustment actions and two minimum actions: generation stopped by quota",
+    "Full minimum-setting UX, history filters/pagination and stock alerts",
+    "All inventory roles and device variants",
+    "Visual equivalence with approved mockups",
+    "Official full generation, snapshot, ZIP and manual"
+  ]
+}

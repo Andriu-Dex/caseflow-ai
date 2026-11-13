@@ -59,7 +59,7 @@ beforeEach(() => {
 });
 
 describe('CoherencePage', () => {
-  it('renders the 6 coherence chains and summary KPIs when all chains are satisfied', async () => {
+  it('renders coverage chains and distinguishes limited commitment checks from certification', async () => {
     render(
       <TestProviders>
         <CoherencePage />
@@ -73,12 +73,16 @@ describe('CoherencePage', () => {
     expect(screen.getByText('Huecos Detectados')).toBeInTheDocument();
     expect(screen.getByText('Régimen de Rigor')).toBeInTheDocument();
     expect(screen.getByText('0 huecos abiertos')).toBeInTheDocument();
-    expect(screen.getByText(/de 6 \(100%\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/de 7 \(100%\)/i)).toBeInTheDocument();
 
     // Policy banner
     expect(screen.getByText(/En este proyecto la coherencia es obligatoria/i)).toBeInTheDocument();
 
-    // All 6 chains rendered
+    // Coverage and declared commitment checks are separate.
+    expect(
+      screen.getByText('Compromisos del requisito → comportamiento declarado'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Sin contradicciones detectadas')).toBeInTheDocument();
     expect(screen.getByText('Requisito no funcional → diseño')).toBeInTheDocument();
     expect(screen.getByText('Contexto → requisito')).toBeInTheDocument();
     expect(screen.getByText('Requisito → caso de uso → pantalla')).toBeInTheDocument();
@@ -152,7 +156,7 @@ describe('CoherencePage', () => {
     expect(screen.queryByText('Entidad → clase → plan de implementación')).not.toBeInTheDocument();
 
     // Click "Satisfechas"
-    const satisfiedFilterBtn = screen.getByRole('button', { name: /Satisfechas \(4\)/i });
+    const satisfiedFilterBtn = screen.getByRole('button', { name: /Satisfechas \(5\)/i });
     await user.click(satisfiedFilterBtn);
 
     expect(screen.getByText('Acción de pantalla → operación o endpoint')).toBeInTheDocument();
@@ -160,7 +164,7 @@ describe('CoherencePage', () => {
     expect(screen.queryByText('Contexto → requisito')).not.toBeInTheDocument();
 
     // Click "Todas las cadenas"
-    const allFilterBtn = screen.getByRole('button', { name: /Todas las cadenas \(6\)/i });
+    const allFilterBtn = screen.getByRole('button', { name: /Todas las cadenas \(7\)/i });
     await user.click(allFilterBtn);
 
     expect(screen.getByText('Contexto → requisito')).toBeInTheDocument();

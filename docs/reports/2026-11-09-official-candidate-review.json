@@ -1,0 +1,698 @@
+{
+  "verdict": "NOT_READY_FOR_OFFICIAL_DELIVERY",
+  "branch": "feat/construction-official-candidate",
+  "reviewedCommits": ["dc42e09", "b2ff0a1", "7b1397a"],
+  "projectId": "4584e81d-42f3-4501-b0c8-58bac5f7253c",
+  "implementationPlan": {
+    "id": "84fe4085-557e-46db-80db-9c9baf3b5092",
+    "version": 23,
+    "status": "APPROVED"
+  },
+  "workingCopy": {
+    "id": "8567a87f-f55c-4751-bc7b-385c75872140",
+    "status": "WORKING_COPY",
+    "fileCount": 353,
+    "implemented": 31,
+    "pending": 0
+  },
+  "officialAttempts": [
+    {
+      "id": "f413b0be-811f-4e26-bc7f-b46d60a66b20",
+      "status": "FAILED",
+      "implementationPlanVersionId": "0e6adaef-de51-4e74-87d7-e7d8aa71f0bb",
+      "errorMessage": "Se interrumpió porque el servidor se reinició. Puede reintentarlo.",
+      "_count": {
+        "files": 35
+      }
+    },
+    {
+      "id": "1b04d638-a4f9-4659-b40f-a6ed22863fea",
+      "status": "FAILED",
+      "implementationPlanVersionId": "0e6adaef-de51-4e74-87d7-e7d8aa71f0bb",
+      "errorMessage": "La pantalla «Alertas actuales de existencias» (/dashboard/stock-alerts) necesita completar sus enlaces funcionales. MISSING_DATA_BINDING: El instante de consulta y la zona horaria están disponibles, pero ActionResult muestra generatedAt como texto sin convertirlo a la zona horaria de la sucursal. Falta la presentación de fecha y hora local requerida por la pantalla canónica.",
+      "_count": {
+        "files": 35
+      }
+    },
+    {
+      "id": "3bea7b9c-f4e4-4b3e-b47b-d0b0d72a24ad",
+      "status": "FAILED",
+      "implementationPlanVersionId": "0e6adaef-de51-4e74-87d7-e7d8aa71f0bb",
+      "errorMessage": "La pantalla «Indicadores por sucursal y periodo» (/dashboard) necesita completar sus enlaces funcionales. UNSUPPORTED_LAYOUT: Los indicadores y los desgloses se suministran como bloques indivisibles. Se conservan sus datos, fórmulas, fuentes y estados reales, pero no pueden distribuirse en tarjetas individuales ni en tablas separadas por categoría como en la referencia. Las dos operaciones conservan sus controles y resultados dentro de su propio contexto.",
+      "_count": {
+        "files": 34
+      }
+    },
+    {
+      "id": "0cba4a3e-67c8-49c3-978a-fddd4012bbdb",
+      "status": "FAILED",
+      "implementationPlanVersionId": "343ac89c-2535-4625-b3c0-adc51c2fe9da",
+      "errorMessage": "La pantalla «Recomendaciones gerenciales explicables» (/dashboard/recommendations) necesita completar sus enlaces funcionales. MISSING_DATA_BINDING: No hay un bloque informativo disponible antes de consultar que aclare que las recomendaciones no ejecutan cambios operativos. El campo «Solo orientativas» se muestra únicamente después de obtener resultados y no sustituye ese aviso ni una aclaración general sobre correlación y causalidad. MISSING_DATA_BINDING: La respuesta no distingue entre ausencia de recomendaciones aplicables y ausencia de reglas aprobadas aplicables: ambos casos solo pueden representarse como una colección sin registros.",
+      "_count": {
+        "files": 36
+      }
+    },
+    {
+      "id": "e615b304-d3bc-4188-bdd5-9e31bf46e02e",
+      "status": "FAILED",
+      "implementationPlanVersionId": "84fe4085-557e-46db-80db-9c9baf3b5092",
+      "errorMessage": "La pantalla «Consulta de productos del catálogo» (/products) necesita completar sus enlaces funcionales. MISSING_ACTION_BINDING: Los enlaces de página siguiente y anterior apuntan a /products sin cambiar parámetros ni estado. La consulta api.listProducts() no recibe paginación ni un criterio de orden estable; falta vincular ambas acciones a una consulta paginada con orden determinista. MISSING_ACTION_BINDING: Consultar productos y Reintentar consulta solo enlazan a la misma ruta. No ejecutan una nueva consulta ni llaman a refetch o invalidan la caché, por lo que falta una vinculación explícita para consultar de nuevo y recuperarse de errores. MISSING_DATA_BINDING: El identificador del producto se utiliza únicamente como clave de fila y no se muestra. Falta su presentación como dato consultable en el listado. UNSUPPORTED_LAYOUT: El listado inmutable contiene encabezados en inglés que no pueden traducirse mediante clases del elemento exterior. Además, debe conservarse el enlace Nuevo suministrado, aunque la pantalla canónica corresponde a una consulta de solo lectura.",
+      "_count": {
+        "files": 37
+      }
+    }
+  ],
+  "providerCalls": [
+    {
+      "id": "5f66e703-c7a3-4aa7-b5ba-179e6128d316",
+      "promptKey": "frontend-design.generate",
+      "promptVersion": 7,
+      "status": "SUCCEEDED",
+      "errorCode": null,
+      "latencyMs": 20024
+    },
+    {
+      "id": "83990846-2910-4856-b872-d42ae07c4d39",
+      "promptKey": "frontend-design.generate",
+      "promptVersion": 7,
+      "status": "SUCCEEDED",
+      "errorCode": null,
+      "latencyMs": 16458
+    },
+    {
+      "id": "c94202f2-3c74-4780-b929-23fb8c98f492",
+      "promptKey": "frontend-design.generate",
+      "promptVersion": 7,
+      "status": "SUCCEEDED",
+      "errorCode": null,
+      "latencyMs": 22949
+    },
+    {
+      "id": "485a03da-20eb-4acc-86d0-bf4b4fbc7322",
+      "promptKey": "frontend-design.generate",
+      "promptVersion": 7,
+      "status": "SUCCEEDED",
+      "errorCode": null,
+      "latencyMs": 46282
+    },
+    {
+      "id": "c82039cf-0a11-4546-998f-a01204923d8e",
+      "promptKey": "frontend-design.generate",
+      "promptVersion": 7,
+      "status": "FAILED",
+      "errorCode": "AI_PROVIDER_ERROR",
+      "latencyMs": null
+    },
+    {
+      "id": "ead71204-99e0-4de0-9867-72b540ef6f69",
+      "promptKey": "frontend-design.generate",
+      "promptVersion": 7,
+      "status": "SUCCEEDED",
+      "errorCode": null,
+      "latencyMs": 29160
+    },
+    {
+      "id": "88e75f26-6d8f-46ad-afdf-073c8aecc2de",
+      "promptKey": "frontend-design.generate",
+      "promptVersion": 7,
+      "status": "SUCCEEDED",
+      "errorCode": null,
+      "latencyMs": 21136
+    },
+    {
+      "id": "29cb4734-a310-4c82-a51c-d6a2b9ca23aa",
+      "promptKey": "frontend-design.generate",
+      "promptVersion": 7,
+      "status": "SUCCEEDED",
+      "errorCode": null,
+      "latencyMs": 14042
+    },
+    {
+      "id": "e61ec708-fd92-4e23-bb39-f810c6977900",
+      "promptKey": "frontend-design.generate",
+      "promptVersion": 7,
+      "status": "SUCCEEDED",
+      "errorCode": null,
+      "latencyMs": 18889
+    },
+    {
+      "id": "99ac99cd-782e-4cbb-bfe1-ee73a09fdad3",
+      "promptKey": "frontend-design.generate",
+      "promptVersion": 7,
+      "status": "SUCCEEDED",
+      "errorCode": null,
+      "latencyMs": 50389
+    },
+    {
+      "id": "39ff8939-02f1-4ef4-a241-2e4d2e843e42",
+      "promptKey": "frontend-design.generate",
+      "promptVersion": 7,
+      "status": "SUCCEEDED",
+      "errorCode": null,
+      "latencyMs": 21859
+    },
+    {
+      "id": "7df0e50d-b358-47e4-ba31-d18000c86eb0",
+      "promptKey": "frontend-design.generate",
+      "promptVersion": 7,
+      "status": "SUCCEEDED",
+      "errorCode": null,
+      "latencyMs": 17167
+    },
+    {
+      "id": "0a045269-17ac-43b3-930e-4f146363b685",
+      "promptKey": "frontend-design.generate",
+      "promptVersion": 7,
+      "status": "SUCCEEDED",
+      "errorCode": null,
+      "latencyMs": 17536
+    },
+    {
+      "id": "e70aa283-ad3a-49fa-92b6-d35d115ab9c4",
+      "promptKey": "frontend-design.generate",
+      "promptVersion": 7,
+      "status": "SUCCEEDED",
+      "errorCode": null,
+      "latencyMs": 45125
+    },
+    {
+      "id": "e6e5b10b-f293-45e7-bfb1-abda18b3894a",
+      "promptKey": "frontend-design.generate",
+      "promptVersion": 7,
+      "status": "SUCCEEDED",
+      "errorCode": null,
+      "latencyMs": 25844
+    },
+    {
+      "id": "1218b7a0-c38e-4ea8-8c0f-d3b3121968a4",
+      "promptKey": "frontend-design.generate",
+      "promptVersion": 7,
+      "status": "SUCCEEDED",
+      "errorCode": null,
+      "latencyMs": 30392
+    },
+    {
+      "id": "f0f43e2e-eff0-4a07-892b-51f410539f99",
+      "promptKey": "frontend-design.generate",
+      "promptVersion": 7,
+      "status": "SUCCEEDED",
+      "errorCode": null,
+      "latencyMs": 20749
+    },
+    {
+      "id": "10a371bd-f228-4c30-a37a-d669fa563517",
+      "promptKey": "frontend-design.generate",
+      "promptVersion": 7,
+      "status": "SUCCEEDED",
+      "errorCode": null,
+      "latencyMs": 15553
+    },
+    {
+      "id": "cb9ebd07-8b08-4f44-b9e4-eef461e3305b",
+      "promptKey": "frontend-design.generate",
+      "promptVersion": 7,
+      "status": "SUCCEEDED",
+      "errorCode": null,
+      "latencyMs": 16754
+    },
+    {
+      "id": "36f090f9-176b-43f6-99c9-0973041ecb81",
+      "promptKey": "frontend-design.generate",
+      "promptVersion": 7,
+      "status": "SUCCEEDED",
+      "errorCode": null,
+      "latencyMs": 47549
+    },
+    {
+      "id": "544ee118-d897-4740-8c02-74aad67c893e",
+      "promptKey": "frontend-design.generate",
+      "promptVersion": 7,
+      "status": "SUCCEEDED",
+      "errorCode": null,
+      "latencyMs": 25741
+    },
+    {
+      "id": "cd04ec0c-ba23-4575-bda0-c12b9c0872dc",
+      "promptKey": "frontend-design.generate",
+      "promptVersion": 7,
+      "status": "SUCCEEDED",
+      "errorCode": null,
+      "latencyMs": 28480
+    },
+    {
+      "id": "779c5406-4c13-4ca4-b6f3-be9a792a269e",
+      "promptKey": "frontend-design.generate",
+      "promptVersion": 7,
+      "status": "SUCCEEDED",
+      "errorCode": null,
+      "latencyMs": 24851
+    }
+  ],
+  "snapshots": [
+    {
+      "id": "068daf1b-1b9b-47a9-8e54-dae7e36d59a0",
+      "generationRunId": "875eb372-16b9-4aee-a1c7-eba2028af13a",
+      "archiveSha256": "f0fa7c4152036be58549471b8ac5d64c67ada3279ca1bf191daa1fd75481fbcc"
+    }
+  ],
+  "sandboxStages": [
+    {
+      "stage": "INSTALL",
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 19890
+    },
+    {
+      "stage": "LINT",
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 5726
+    },
+    {
+      "stage": "TYPECHECK",
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 10480
+    },
+    {
+      "stage": "TEST",
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 15783
+    },
+    {
+      "stage": "BUILD",
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 24579
+    }
+  ],
+  "runtime": {
+    "suites": [
+      {
+        "name": "inventory",
+        "passed": 35,
+        "checks": [
+          "Inventory role signs in",
+          "Inventory requires selected scope",
+          "Forged inventory scope rejected",
+          "Client balance rejected",
+          "Client inventory actor rejected",
+          "Zero receipt rejected",
+          "Negative receipt rejected",
+          "Receipt origin required",
+          "Mass-to-volume conversion rejected",
+          "Inexact conversion rejected without rounding",
+          "Future operational date rejected",
+          "Preview converts 500 g to 0.50 kg",
+          "Preview performs no persistent writes",
+          "Receipt initializes and updates stock atomically",
+          "Movement stores original units, exact change and actor",
+          "Same-key retry recovers original result without effects",
+          "Same key with changed payload rejected",
+          "Stale initial-stock review rejected",
+          "Generic stock creation closed",
+          "Generic balance editing closed",
+          "Generic movement creation closed",
+          "Foreign-scope movement is inaccessible",
+          "Second receipt reviewed",
+          "Concurrent same-key receipt has one effect",
+          "Different stale key cannot overwrite stock",
+          "Review cannot be moved to a different scope",
+          "Concurrent initial receipt recovers after unique stock conflict",
+          "Catalog unit change preserves existing stock unit",
+          "Audit failure rolls back stock, movement and idempotency safely",
+          "Past operational date allowed",
+          "Backdated receipt confirmed without rewriting old movements",
+          "Occurrence time stays server UTC despite operational date",
+          "Final stock equals sum of accepted movement deltas",
+          "Each committed receipt has one audit event",
+          "Balance and revision changes audited"
+        ]
+      },
+      {
+        "name": "sales",
+        "passed": 35,
+        "checks": [
+          "Test cashier signs in",
+          "Selected scope required",
+          "Forged scope rejected",
+          "Client total rejected",
+          "Client actor rejected",
+          "Zero quantity rejected",
+          "Partial create failure rolls back sale",
+          "Catalog fallback and HALF_UP 0.005 to 0.01",
+          "Draft creation audited",
+          "Sale inaccessible from another scope",
+          "Draft update increments revision and exact total",
+          "Stale draft update rejected",
+          "Failed update rolls back revision, lines and audit",
+          "Selected-branch unavailability rejected",
+          "Negative selected-branch price rejected",
+          "Uninterpreted pricing conditions rejected",
+          "Overlapping effective prices rejected",
+          "Review uses effective selected-branch price",
+          "Review does not mutate sale, lines or audit",
+          "Changed quote prevents confirmation",
+          "New review refreshes price",
+          "Concurrent same-key confirmation recovers one result",
+          "One idempotency record persisted",
+          "Retry returns original complete result",
+          "Same key with altered payload rejected",
+          "Second distinct confirmation rejected",
+          "Confirmed sale cannot be edited",
+          "Confirmed draft review rejects repricing",
+          "Historical sale remains unchanged after catalog price update",
+          "Historical line price remains unchanged after catalog price update",
+          "Internal note appended",
+          "Notes preserve earlier records",
+          "Notes do not modify historical amount",
+          "Sales do not change inventory",
+          "Field-change audit persisted"
+        ]
+      },
+      {
+        "name": "flows",
+        "passed": 45,
+        "checks": [
+          "Inventory operator authenticated",
+          "Initial stock reviewed",
+          "Initial stock established",
+          "issues prevents negative stock",
+          "issues rejects zero",
+          "issues review succeeds",
+          "issues concurrent idempotent confirmation applies once",
+          "issues records exact signed delta",
+          "issues rejects stale review",
+          "losses prevents negative stock",
+          "losses requires a reason",
+          "losses rejects zero",
+          "losses review succeeds",
+          "losses concurrent idempotent confirmation applies once",
+          "losses records exact signed delta",
+          "losses rejects stale review",
+          "adjustments prevents negative stock",
+          "adjustments requires a reason",
+          "adjustments rejects zero",
+          "adjustments review succeeds",
+          "adjustments concurrent idempotent confirmation applies once",
+          "adjustments records exact signed delta",
+          "adjustments rejects stale review",
+          "Positive adjustment reviewed",
+          "Positive adjustment restores exact stock",
+          "Competing withdrawals cannot consume the last unit twice",
+          "Concurrent withdrawals preserve nonnegative balance",
+          "issues direct forged confirmation has no effect",
+          "losses direct forged confirmation has no effect",
+          "adjustments direct forged confirmation has no effect",
+          "Minimum modification requires existing configuration",
+          "Zero minimum is configured, not absent",
+          "Minimum cannot be established twice",
+          "Minimum modification preserves stock balance",
+          "Negative minimum rejected",
+          "Minimum cannot alter client supplied balance",
+          "Minimum changes create no movements",
+          "Path scope cannot bypass selected branch",
+          "Minimum can initialize zero stock with normalized unit",
+          "Cashier denied receipts",
+          "Cashier denied issues",
+          "Cashier denied losses",
+          "Cashier denied adjustments",
+          "Cashier denied minimum modification",
+          "Final inventory balance remains exact"
+        ]
+      },
+      {
+        "name": "adjustments",
+        "passed": 65,
+        "checks": [
+          "Cashier can review but cannot confirm cancellation",
+          "Cashier cancellation confirmation forbidden",
+          "Blank cancellation reason rejected",
+          "Unauthorized branch cannot review cancellation",
+          "Cancellation requires selected scope",
+          "Cancellation previews exact negative effect",
+          "Cancellation preview has no writes",
+          "Stale cancellation revision rejected",
+          "Forged cancellation quote rejected",
+          "Concurrent same-key cancellation returns one result",
+          "Checkout and cancellation idempotency coexist without duplicate reversals",
+          "Structured reversal links preserved original",
+          "Cancellation preserves original financial history and lines",
+          "Cancellation retry returns identical persisted response",
+          "Cancellation key cannot be reused for altered payload",
+          "Second cancellation with new key rejected",
+          "Canceled original cannot be corrected",
+          "cancellation manager cannot confirm previous operational day",
+          "cancellation historical manager confirmation blocked",
+          "cancellation administrator can review historical sale",
+          "cancellation administrator confirms historical sale",
+          "cancellation future operational date rejected",
+          "cancellation draft cannot be compensated",
+          "corrections manager cannot confirm previous operational day",
+          "corrections historical manager confirmation blocked",
+          "corrections administrator can review historical sale",
+          "corrections administrator confirms historical sale",
+          "Replacement keeps original operational date",
+          "corrections future operational date rejected",
+          "corrections draft cannot be compensated",
+          "Empty correction consultation lists numbered historical lines",
+          "Duplicate line numbers rejected",
+          "Unknown line number rejected",
+          "Negative correction quantity rejected",
+          "Excess decimal precision rejected",
+          "Correction cannot remove every line",
+          "Cashier correction preview cannot authorize confirmation",
+          "Correction uses historical prices and HALF_UP per line",
+          "Correction preview preserves original history",
+          "Stale correction quote creates no replacement",
+          "Concurrent correction recovers one replacement result",
+          "Replacement confirmed with exact total and actual actor",
+          "Only positive corrected lines copied with historical price",
+          "Correction preserves original and explicit replacement link",
+          "Correction retry returns exact saved response",
+          "Correction idempotency rejects modified quantities",
+          "Replacement can be subsequently canceled",
+          "Replacement chain supports traced reversal",
+          "Cancellation versus correction race has one winner",
+          "Audit write failure rolls back cancellation and compensation",
+          "cancellation complex historical classification rejected",
+          "cancellation protein or extras rejected without approved policy",
+          "cancellation discount rejected without approved policy",
+          "cancellation invalid branch time zone rejected",
+          "corrections complex historical classification rejected",
+          "corrections protein or extras rejected without approved policy",
+          "corrections discount rejected without approved policy",
+          "corrections invalid branch time zone rejected",
+          "Audit write failure rolls back replacement sale and all correction effects",
+          "Each field-change record has exactly one owner",
+          "Correction audit contains actor, branch, reason and structured before/after changes",
+          "Generic write bypass closed sales",
+          "Generic write bypass closed sale-lines",
+          "Generic write bypass closed sale-compensating-operations",
+          "All sales adjustments leave inventory unchanged"
+        ]
+      },
+      {
+        "name": "remaining",
+        "passed": 115,
+        "checks": [
+          "Sales report reconciles confirmed origin and excludes drafts/cancellations",
+          "Sales CSV includes exact selected scope and period",
+          "Repeating sales report does not inflate totals or use current prices",
+          "Rectified sale contributes once while original remains excluded",
+          "CSV export preserves previously consulted bytes after data changes",
+          "Export rejects manipulated alternative filters",
+          "Export cannot switch selected scope",
+          "Another account cannot export private consulted result",
+          "Unknown report export rejected",
+          "Export revalidates current permission after owner loses financial role",
+          "Inventory report is available in authorized navigation",
+          "Catering cost report is available to its operational role",
+          "Sales quantities remain structured and selections are not multiplied by lunch quantity",
+          "Dashboard exposes approved lunch, protein, extra and expense breakdowns without multiplying selections",
+          "Dashboard formulas expose reconcilable components of the same selection",
+          "Dashboard removes cancelled lunch and all its selections without affecting expense breakdowns",
+          "Expense report reconciles confirmed rows and categories",
+          "CSV neutralizes spreadsheet formulas in untrusted concepts",
+          "Expense report rejects mixed or unsupported currency",
+          "Inventory report distinguishes current balance and dated movement sources",
+          "Inventory report preserves missing minimum instead of assuming zero",
+          "Inventory operator can export own authorized inventory result",
+          "Alerts include exact equality and configured zero but exclude absent minimum",
+          "Reports and initial alerts preserve all inventory columns",
+          "Alert becomes inactive after balance exceeds threshold",
+          "Indicators use exact confirmed values, correct average and partial balance",
+          "Every indicator exposes definition and source identifiers",
+          "Dashboard rejects a global expense category carrying a branch owner",
+          "Dashboard rejects an invalid operational time zone",
+          "Recommendations apply approved rules with evidence and no causal claim",
+          "Empty activity preserves measured zero and non-applicable division",
+          "No-activity recommendation preserves absent evidence",
+          "Reverse period rejected /reports/sales",
+          "Unbounded period rejected /reports/sales",
+          "Cashier report access denied /reports/sales",
+          "Foreign operator cannot select another scope /reports/sales",
+          "Reverse period rejected /reports/expenses",
+          "Unbounded period rejected /reports/expenses",
+          "Cashier report access denied /reports/expenses",
+          "Foreign operator cannot select another scope /reports/expenses",
+          "Reverse period rejected /reports/inventory",
+          "Unbounded period rejected /reports/inventory",
+          "Cashier report access denied /reports/inventory",
+          "Foreign operator cannot select another scope /reports/inventory",
+          "Reverse period rejected /management/indicators",
+          "Unbounded period rejected /management/indicators",
+          "Cashier report access denied /management/indicators",
+          "Foreign operator cannot select another scope /management/indicators",
+          "Reverse period rejected /management/recommendations",
+          "Unbounded period rejected /management/recommendations",
+          "Cashier report access denied /management/recommendations",
+          "Foreign operator cannot select another scope /management/recommendations",
+          "Report requires verified selected scope",
+          "Branch comparison preserves independent scope totals and stock units",
+          "Non-global role cannot compare branches",
+          "Comparison requires distinct branches",
+          "Comparison rejects forged branch",
+          "Reports, indicators and recommendations do not alter inventory",
+          "Request receives server-owned initial state and revision",
+          "Generic CRUD cannot bypass request transition state",
+          "Generic CRUD cannot forge lifecycle revision",
+          "Confirmation without approved terms has no transition effect",
+          "Concurrent request confirmation is idempotent and records one history row",
+          "Request transition retry recovers original response",
+          "Transition key rejects changed payload",
+          "Event receives server-owned initial state and revision",
+          "Generic CRUD cannot directly complete an event",
+          "Invalid direct event completion rejected",
+          "Event confirms only after valid confirmed request and terms",
+          "Preparation requires consistent plan",
+          "Preparation accepts a consistent event plan",
+          "Event progress requires a still-confirmed parent request",
+          "Prepared event can be completed",
+          "Completed event can be closed",
+          "Request closes after all related events close",
+          "Reopening requires administrator",
+          "Reopening requires explanatory notes",
+          "Administrator reopens with retained history",
+          "Planned event can be canceled",
+          "Canceled event cannot be marked completed without reopening",
+          "Authorized event reopening starts from planned state",
+          "Request cannot be canceled while related events remain active",
+          "Cashier cannot transition catering records",
+          "Catering transition cannot cross branch scope",
+          "Catering history preserves each transition with unique record projection",
+          "History rejects foreign record identifiers",
+          "History requires record type with identifier",
+          "Audit failure rolls back catering status and history",
+          "Catering costs reconcile explicit shared allocations without duplicating original expense",
+          "Overallocated catering expense rejected",
+          "Shared expense cannot silently allocate full amount",
+          "Unrecorded catering costs remain no information rather than measured zero",
+          "Attachment action lists existing metadata without a file",
+          "Concurrent attachment persists one private file and recovers one response",
+          "Attaching proof never confirms or modifies the expense and does not pretend OCR",
+          "Authorized receipt retrieval returns exact original bytes",
+          "Attachment key rejects a changed filename or payload",
+          "MIME-extension mismatch rejected",
+          "Forged PDF signature rejected",
+          "Filename traversal rejected",
+          "Control characters in filename rejected",
+          "Unsupported MIME rejected",
+          "Noncanonical or invalid base64 rejected",
+          "Empty file rejected",
+          "Oversized decoded file rejected",
+          "Valid attachment larger than default Express limit is supported",
+          "Cashier attachment upload denied",
+          "Receipt download cannot cross branch boundaries",
+          "Receipt must belong to the requested expense",
+          "Generic receipt create cannot forge private storage references",
+          "Generic transition-history create bypass is closed",
+          "Storage association and content roll back if audit fails",
+          "All twelve new actions leave stock and inventory movements unchanged",
+          "Generic creation rejects forged initial lifecycle state",
+          "Generic creation applies server initial lifecycle values"
+        ]
+      }
+    ],
+    "browserPassed": true,
+    "browserChecks": [
+      "PASS: inventory browser issues",
+      "PASS: inventory browser losses",
+      "PASS: inventory browser adjustments",
+      "PASS: inventory browser minimum",
+      "PASS: inventory browser preview and confirmation with POST bindings",
+      "PASS: sales adjustments browser correction, preview invalidation and replacement navigation",
+      "PASS: sales adjustments browser cancellation and original detail navigation",
+      "PASS: remaining browser renders real metrics as cards and complete breakdowns as grouped tables",
+      "PASS: remaining browser shows branch-local timestamps while preserving canonical UTC",
+      "PASS: remaining browser discards late results after shared filters change",
+      "PASS: remaining browser shared dashboard filters, refresh selection and branch isolation",
+      "PASS: remaining browser explains advisory limits before requesting any recommendations",
+      "PASS: remaining browser report filters, structured results and CSV download",
+      "PASS: remaining browser private file selection, attachment and exact PDF download",
+      "PASS: remaining browser authorized catering transition",
+      "PASS: remaining browser mobile private attachment and exact download"
+    ],
+    "captures": [
+      {
+        "role": "Administrador",
+        "routePath": "/home",
+        "status": "CAPTURED",
+        "reason": null,
+        "width": 1440,
+        "height": 900
+      }
+    ],
+    "failure": null
+  },
+  "quality": {
+    "build": "passed",
+    "lint": "passed",
+    "typecheck": "passed",
+    "coverage": {
+      "passed": 1053,
+      "skipped": 3,
+      "statements": 77.33,
+      "branches": 75.05,
+      "functions": 77.05,
+      "lines": 77.93
+    },
+    "constructionIntegration": {
+      "passed": 6,
+      "command": "pnpm run test:integration -- apps/api/test/integration/construction-generation-runs.integration.spec.ts"
+    },
+    "formatCheck": "passed"
+  },
+  "generatedSourceHashes": [
+    {
+      "path": "apps/api/src/auth/operation-scope.ts",
+      "sha256": "3a52aac79f1e9bcfcdea96a7c38842c20b6f7c2bd0473d2d2de410ac13ec85e5"
+    },
+    {
+      "path": "apps/web/app/dashboard/page.tsx",
+      "sha256": "fe632c28b8cdc81030a9bdb498c78d715bf25dce31f917d81400f3d3df8bee08"
+    },
+    {
+      "path": "apps/web/app/dashboard/recommendations/page.tsx",
+      "sha256": "45bfaf9b322dbe19bdff82bc41428cd07d4e1d436ae9a3aa3c68024032918df8"
+    },
+    {
+      "path": "apps/web/app/products/page.tsx",
+      "sha256": "0be7e13ae01ec40baa36383925408358760855fd7bee9cee85d5e78413488b44"
+    },
+    {
+      "path": "apps/web/components/action-form.tsx",
+      "sha256": "6cce4cc29770ec5f1636aada92f1da926964c8d6d20dc7c389c511c917454b35"
+    }
+  ],
+  "limits": {
+    "unreviewedRoutes": 75,
+    "listRoutesUsingSharedGenerator": 15,
+    "fullVisualFidelityVerified": false,
+    "newManualGenerated": false,
+    "newOfficialSnapshotCreated": false,
+    "fullIntegrationSuiteRerun": false
+  },
+  "implementationCommits": ["f368b43", "a8c59b2"]
+}

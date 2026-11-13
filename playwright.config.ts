@@ -50,6 +50,9 @@ export default defineConfig({
         DIAGRAM_RENDERER: 'kroki',
         KROKI_BASE_URL: 'http://localhost:8000',
         WEB_ORIGIN: `http://localhost:${WEB_PORT}`,
+        // Sign-in limits count in memory here: a Redis shared with other runs would keep
+        // the counters of the previous one.
+        AUTH_RATE_LIMIT_STORE: 'memory',
       },
     },
     {

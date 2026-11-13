@@ -60,6 +60,8 @@ Solo se publican la web y la API; la base de datos, Redis, el almacenamiento y K
 
 Las cookies de sesión son `Secure` en producción: funcionan en `localhost`, pero desde otra máquina el navegador las rechazará salvo que sirvas la web y la API por **HTTPS** (por ejemplo con un proxy inverso como Caddy o Nginx). Pon en `PUBLIC_WEB_URL` y `PUBLIC_API_URL` las direcciones HTTPS finales y reconstruye.
 
+La API limita los intentos repetidos de inicio de sesión, registro y refresco de sesión por dirección de cliente (responde 429 con `Retry-After`). Detrás de un proxy inverso todas las solicitudes llegan desde la dirección del proxy: indícala en `TRUSTED_PROXIES` (una dirección, un rango CIDR o `loopback`) para que se cuente a cada cliente por separado. Con la variable vacía la API usa la dirección de la conexión y nadie puede cambiarla con una cabecera. Los límites son configurables (véase `.env.example` y `docs/decisions/ADR-011-limitacion-de-intentos-de-autenticacion.md`).
+
 ## Copias de seguridad, actualización y parada
 
 - **Datos:** viven en tres volúmenes de Docker: `postgres_data` (proyectos y artefactos), `seaweedfs_data` (archivos subidos) y `redis_data` (colas). Para respaldar la base de datos:

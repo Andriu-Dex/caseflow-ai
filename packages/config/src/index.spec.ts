@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadAIConfig, loadDiagramRendererConfig, loadStorageConfig } from './index';
+import { loadAIConfig, loadAIRoutes, loadDiagramRendererConfig, loadStorageConfig } from './index';
 
 describe('loadAIConfig', () => {
   // DEC-117: the desktop edition's ChatGPT plan, through the loopback broker.
@@ -185,4 +185,39 @@ describe('loadStorageConfig', () => {
     }));
   it('safely reports unconfigured storage instead of throwing', () =>
     expect(loadStorageConfig({ S3_ENDPOINT: env.S3_ENDPOINT })).toEqual({ configured: false }));
+});
+
+describe('loadAIRoutes', () => {
+  const slots = {
+    AI_PROVIDER_1_ID: 'groq',
+    AI_PROVIDER_1_BASE_URL: 'https://groq.example/v1',
+    AI_PROVIDER_1_API_KEY: 'k1',
+    AI_PROVIDER_1_MODEL: 'big',
+    AI_PROVIDER_2_ID: 'gemini',
+    AI_PROVIDER_2_BASE_URL: 'https://gemini.example/v1',
+    AI_PROVIDER_2_API_KEY: 'k2',
+    AI_PROVIDER_2_MODEL: 'flash',
+    AI_PROVIDER_2_SCHEMA_DIALECT: 'narrow',
+  };
+
+  it('routes a purpose to a numbered slot, with an optional model override', () => {
+    const routes = loadAIRoutes({
+      ...slots,
+      AI_TIMEOUT_MS: '120000',
+      AI_ROUTE_FRONTEND_PRESENTATION: 'gemini:flash-lite',
+    });
+    expect([...routes.keys()]).toEqual(['frontend_presentation']);
+    expect(routes.get('frontend_presentation')).toMatchObject({
+      id: 'gemini',
+      model: 'flash-lite',
+      apiKey: 'k2',
+      schemaDialect: 'narrow',
+      timeoutMs: 120000,
+    });
+  });
+
+  it('is empty without routes and rejects an unknown provider id', () => {
+    expect(loadAIRoutes(slots).size).toBe(0);
+    expect(() => loadAIRoutes({ ...slots, AI_ROUTE_X: 'nope' })).toThrow('unknown provider id');
+  });
 });

@@ -9,6 +9,25 @@ import {
 } from './business-logic.service';
 
 describe('reviewBusinessLogic', () => {
+  it('rejects dynamic imports and private persistence internals while keeping ordinary transactions and aggregates', () => {
+    for (const body of [
+      "return await import('../auth/operation-scope');",
+      'return this.prisma._originalClient;',
+      "return this.prisma['constructor'];",
+      'return this.prisma.$extends({});',
+    ])
+      expect(reviewBusinessLogic(body)).toMatchObject({ accepted: false });
+    expect(
+      reviewBusinessLogic(
+        'return this.prisma.$transaction(async tx => tx.order.aggregate({ _sum: { total: true } }));',
+      ),
+    ).toEqual({ accepted: true });
+  });
+  it('rejects private credential access through properties or string keys', () => {
+    for (const body of ['return row.secretDigest;', "return row['secretDigest'];"])
+      expect(reviewBusinessLogic(body, ['secretDigest'])).toMatchObject({ accepted: false });
+    expect(reviewBusinessLogic('return row.name;', ['secretDigest'])).toEqual({ accepted: true });
+  });
   it('accepts a body that only uses prisma delegates and exceptions', () => {
     expect(
       reviewBusinessLogic(
@@ -120,6 +139,37 @@ describe('BusinessLogicService.implement', () => {
       'id',
       'total: DECIMAL',
       'note: TEXT | null',
+    ]);
+  });
+
+  it('separates user-facing language from technical code names for typed actions', async () => {
+    const generateStructured = vi.fn().mockResolvedValue({ data: { body: 'return true;' } });
+    const typed = structuredClone(plan);
+    typed.entities[0]!.fields.push({
+      name: 'revision',
+      type: 'INT',
+      required: true,
+      unique: false,
+      enumValues: [],
+      readOnly: true,
+      serverDefault: 1,
+    });
+    typed.customEndpoints[0]!.contract = {
+      body: { type: 'OBJECT', properties: [] },
+      response: { type: 'BOOLEAN' },
+    };
+    await new BusinessLogicService(prisma as never, { generateStructured } as never).implement(
+      'p',
+      'r',
+      typed,
+      CASEFLOW_WEB_TS_V1,
+    );
+    const request = generateStructured.mock.calls[0]![0];
+    expect(request.promptVersion).toBe(7);
+    expect(request.language).toBeUndefined();
+    expect(JSON.parse(request.messages[0].content).userFacingLanguage).toBe('ES');
+    expect(JSON.parse(request.messages[0].content).prismaDelegates[0].serverOwnedFields).toEqual([
+      { name: 'revision', initialValue: 1 },
     ]);
   });
 
