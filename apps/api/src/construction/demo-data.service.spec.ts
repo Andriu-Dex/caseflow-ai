@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { acceptedDemoValues } from './demo-data.service';
+import { acceptedDemoValues, planCurrency } from './demo-data.service';
 
 const field = (name: string, type: string, extra: Record<string, unknown> = {}) => ({
   name,
@@ -41,5 +41,12 @@ describe('demonstration values', () => {
       ],
     });
     expect(accepted).toEqual({ Product: [{ name: 'Café de olla', price: '45.00', status: 'ACTIVE', since: '2026-03-01' }] });
+  });
+});
+
+describe('plan currency', () => {
+  it('is the ISO code the plan names most often', () => {
+    const plan = { modules: [{ description: 'Ventas en USD; gastos en USD, nunca EUR.' }] } as never;
+    expect(planCurrency(plan)).toBe('USD');
   });
 });

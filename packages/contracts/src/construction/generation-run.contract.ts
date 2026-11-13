@@ -89,6 +89,34 @@ export const generatedFileSummarySchema = z.object({
   size: z.number().int(),
 });
 export type GeneratedFileSummary = z.infer<typeof generatedFileSummarySchema>;
+
+// ADR-020: generated code grouped by construction unit.
+export const CONSTRUCTION_UNIT_KINDS = ['SCREEN', 'ACTION', 'ENTITY', 'MODULE', 'PROJECT'] as const;
+export const constructionUnitSchema = z.object({
+  id: z.string(),
+  kind: z.enum(CONSTRUCTION_UNIT_KINDS),
+  title: z.string(),
+  module: z.string().optional(),
+  summary: z.string(),
+  origins: z.object({
+    TEMPLATE: z.number().int(),
+    DETERMINISTIC: z.number().int(),
+    AI_ASSISTED: z.number().int(),
+    MANUAL: z.number().int(),
+  }),
+  traces: z.array(z.object({ code: z.string(), versionNumber: z.number().int() })),
+  files: z.array(
+    z.object({
+      id: z.uuid(),
+      path: z.string(),
+      origin: z.enum(GENERATED_FILE_ORIGINS),
+      kind: z.enum(GENERATED_FILE_KINDS),
+    }),
+  ),
+});
+export type ConstructionUnit = z.infer<typeof constructionUnitSchema>;
+export const constructionUnitListResponseSchema = z.object({ items: z.array(constructionUnitSchema) });
+export type ConstructionUnitListResponse = z.infer<typeof constructionUnitListResponseSchema>;
 export const generatedFileListResponseSchema = z.object({
   items: z.array(generatedFileSummarySchema),
 });

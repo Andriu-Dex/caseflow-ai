@@ -26,6 +26,7 @@ vi.mock('../../../lib/api', () => ({
       workingCopy: (...args: unknown[]) => mocks.workingCopy(...args),
       files: (...args: unknown[]) => mocks.files(...args),
       file: (...args: unknown[]) => mocks.file(...args),
+      units: async () => ({ items: [] }),
       sandboxRuns: (...args: unknown[]) => mocks.sandboxRuns(...args),
       validate: (...args: unknown[]) => mocks.validate(...args),
       archive: (...args: unknown[]) => mocks.archive(...args),
@@ -123,6 +124,8 @@ describe('GenerationRunsPage', () => {
     render(<GenerationRunsPage />, { wrapper: TestProviders });
     expect(await screen.findByText(/Confirmar pedido/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Ver archivos' }));
+  await userEvent.click(screen.getByRole('tab', { name: 'Todos los archivos' }));
+    await userEvent.click(screen.getByRole('tab', { name: 'Todos los archivos' }));
     await userEvent.click(await screen.findByRole('button', { name: /main\.ts/ }));
     expect(await screen.findByText('bootstrap();')).toBeInTheDocument();
     expect(screen.getByText(/Configura PI-001 v1/)).toBeInTheDocument();
@@ -190,6 +193,7 @@ describe('GenerationRunsPage', () => {
     render(<GenerationRunsPage />, { wrapper: TestProviders });
 
     await user.click(await screen.findByRole('button', { name: 'Ver archivos' }));
+    await user.click(screen.getByRole('tab', { name: 'Todos los archivos' }));
     expect(await screen.findByRole('button', { name: /main\.ts/ })).toBeInTheDocument();
 
     const searchInput = screen.getByLabelText('Filtrar archivos');
@@ -299,6 +303,7 @@ it('distinguishes a working copy from a validated official delivery', async () =
   render(<GenerationRunsPage />, { wrapper: TestProviders });
   expect(await screen.findByText('Versión de trabajo · incompleta')).toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: 'Ver archivos' }));
+  await userEvent.click(screen.getByRole('tab', { name: 'Todos los archivos' }));
   expect(await screen.findByText('apps/api/src/main.ts')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /Validar en Docker/i })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /Descargar ZIP/i })).not.toBeInTheDocument();

@@ -36,3 +36,7 @@ La lógica de una acción asistida por IA puede editarse desde su unidad. La edi
 - Las ediciones nunca sobrescriben una corrida, un snapshot ni un checkpoint existentes; crean historia nueva.
 - El resumen describe lo que el plan declara; no afirma corrección funcional no verificada.
 - Los archivos se cargan por unidad y por archivo para no transferir el proyecto completo de una vez.
+
+## Estado de implementación (2026-11-12)
+
+Implementados los puntos 1 a 4: `GET /projects/{projectId}/generation-runs/{runId}/units` agrupa los archivos de una corrida por pantalla, acción de negocio, entidad, módulo, base del proyecto y evidencias de la generación (puntos de control en `docs/`), cada archivo en su unidad más específica según `CodeTraceLink`. Cada unidad trae un resumen determinista del plan, el recuento por origen (plantilla, determinista, asistido por IA, ajuste manual) y los artefactos de los que procede. La vista de construcción muestra «Por unidades» por defecto, marca para revisar primero las unidades con código asistido por IA y abre cada archivo bajo demanda; «Todos los archivos» conserva la lista anterior. Pendientes: diferencias con la corrida anterior (punto 5), estado de revisión por unidad (punto 6) y la edición desde la unidad.

@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
+  type ConstructionUnit,
   type GenerationRunResponse,
   type ImplementationPlanContent,
   type SandboxRunResponse,
@@ -172,8 +173,167 @@ function FileViewer({
   );
 }
 
-function RunFiles({ projectId, run }: { projectId: string; run: GenerationRunResponse }) {
+const UNIT_KINDS: Record<ConstructionUnit['kind'], string> = {
+  SCREEN: 'Pantallas',
+  ACTION: 'Acciones de negocio',
+  ENTITY: 'Entidades',
+  MODULE: 'Módulos',
+  PROJECT: 'Base del proyecto',
+};
+const ORIGIN_LABELS: Record<keyof ConstructionUnit['origins'], string> = {
+  TEMPLATE: 'Plantilla',
+  DETERMINISTIC: 'Determinista',
+  AI_ASSISTED: 'Asistido por IA',
+  MANUAL: 'Ajuste manual',
+};
+
+// ADR-020: the generated code by construction unit (what was generated, its
+// origin and traceability), with each file opened on demand.
+function RunUnits({ projectId, run }: { projectId: string; run: GenerationRunResponse }) {
+  const [kind, setKind] = useState<ConstructionUnit['kind']>('SCREEN');
+  const [filter, setFilter] = useState('');
   const [fileId, setFileId] = useState<string>();
+  const units = useQuery({
+    queryKey: ['construction-units', projectId, run.id],
+    queryFn: () => api.generationRuns.units(projectId, run.id),
+  });
+  const items = units.data?.items ?? [];
+  const term = filter.trim().toLowerCase();
+  const shown = items.filter(
+    (unit) =>
+      unit.kind === kind &&
+      (!term || `${unit.title} ${unit.module ?? ''} ${unit.summary}`.toLowerCase().includes(term)),
+  );
+  return (
+    <QueryState isLoading={units.isLoading} error={units.error}>
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Tipo de unidad">
+          {(Object.keys(UNIT_KINDS) as ConstructionUnit['kind'][]).map((option) => (
+            <button
+              key={option}
+              type="button"
+              role="tab"
+              aria-selected={kind === option}
+              onClick={() => {
+                setKind(option);
+                setFileId(undefined);
+              }}
+              className={`rounded-md border px-2.5 py-1 text-xs font-medium ${
+                kind === option ? 'border-primary bg-primary/10 text-primary' : 'border-border hover:bg-muted'
+              }`}
+            >
+              {UNIT_KINDS[option]} ({items.filter((unit) => unit.kind === option).length})
+            </button>
+          ))}
+          <input
+            type="search"
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            placeholder="Buscar unidad…"
+            aria-label="Buscar unidad"
+            className="ml-auto h-8 w-56 rounded-md border border-input bg-background px-2.5 text-xs"
+          />
+        </div>
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
+          <ul className="flex max-h-[36rem] flex-col gap-2 overflow-auto pr-1">
+            {shown.map((unit) => (
+              <li key={unit.id} className="rounded-lg border border-border/80 bg-card p-3 text-xs">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <p className="text-sm font-semibold text-foreground">{unit.title}</p>
+                  {unit.origins.AI_ASSISTED && unit.kind !== 'PROJECT' ? (
+                    <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+                      Revisar primero: IA
+                    </span>
+                  ) : null}
+                </div>
+                {unit.module ? (
+                  <p className="text-[11px] text-muted-foreground">Módulo: {unit.module}</p>
+                ) : null}
+                <p className="mt-1.5 leading-relaxed text-foreground/90">{unit.summary}</p>
+                <p className="mt-1.5 flex flex-wrap gap-1">
+                  {(Object.keys(unit.origins) as (keyof ConstructionUnit['origins'])[])
+                    .filter((origin) => unit.origins[origin])
+                    .map((origin) => (
+                      <span key={origin} className="rounded bg-muted px-1.5 py-0.5 text-[10px]">
+                        {ORIGIN_LABELS[origin]}: {unit.origins[origin]}
+                      </span>
+                    ))}
+                </p>
+                {unit.traces.length ? (
+                  <p className="mt-1.5 text-[11px] text-muted-foreground">
+                    Procede de:{' '}
+                    {unit.traces
+                      .slice(0, 8)
+                      .map((trace) => `${trace.code} v${trace.versionNumber}`)
+                      .join(', ')}
+                    {unit.traces.length > 8 ? ` y ${unit.traces.length - 8} más` : ''}
+                  </p>
+                ) : null}
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-[11px] font-medium text-primary">
+                    Archivos ({unit.files.length})
+                  </summary>
+                  <ul className="mt-1 flex flex-col">
+                    {unit.files.map((file) => (
+                      <li key={file.id}>
+                        <button
+                          type="button"
+                          onClick={() => setFileId(file.id)}
+                          title={file.path}
+                          className={`w-full truncate rounded px-1.5 py-1 text-left font-mono text-[11px] ${
+                            file.id === fileId ? 'bg-primary/10 font-semibold text-primary' : 'hover:bg-muted'
+                          }`}
+                        >
+                          {file.path}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              </li>
+            ))}
+            {!shown.length ? (
+              <li className="p-3 text-center text-xs text-muted-foreground">No hay unidades que coincidan.</li>
+            ) : null}
+          </ul>
+          {fileId ? (
+            <FileViewer projectId={projectId} runId={run.id} fileId={fileId} />
+          ) : (
+            <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-border p-4 text-center">
+              <p className="text-xs text-muted-foreground">
+                Elija una unidad y abra uno de sus archivos para ver el código y su trazabilidad.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </QueryState>
+  );
+}
+
+function RunFiles({ projectId, run }: { projectId: string; run: GenerationRunResponse }) {
+  const [view, setView] = useState<'units' | 'files'>('units');
+  if (run.status !== 'GENERATED' && run.status !== 'WORKING_COPY') return null;
+  const tab = (value: 'units' | 'files') =>
+    `rounded px-2.5 py-1 ${view === value ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`;
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex gap-1 self-start rounded-md border p-0.5 text-xs" role="tablist" aria-label="Vista del código">
+        <button type="button" role="tab" aria-selected={view === 'units'} onClick={() => setView('units')} className={tab('units')}>
+          Por unidades
+        </button>
+        <button type="button" role="tab" aria-selected={view === 'files'} onClick={() => setView('files')} className={tab('files')}>
+          Todos los archivos
+        </button>
+      </div>
+      {view === 'units' ? <RunUnits projectId={projectId} run={run} /> : <RunFileList projectId={projectId} run={run} />}
+    </div>
+  );
+}
+
+function RunFileList({ projectId, run }: { projectId: string; run: GenerationRunResponse }) {
+  const [fileId, setFileId] = useState<string>();
+
   const [fileFilter, setFileFilter] = useState('');
   const files = useQuery({
     queryKey: ['generated-files', projectId, run.id],

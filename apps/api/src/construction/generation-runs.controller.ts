@@ -17,6 +17,7 @@ import type { Response } from 'express';
 import type { z } from 'zod';
 import { timingSafeEqual } from 'node:crypto';
 import {
+  constructionUnitListResponseSchema,
   generatedFileListResponseSchema,
   generatedProjectSnapshotListResponseSchema,
   generatedProjectSnapshotResponseSchema,
@@ -139,6 +140,16 @@ export class GenerationRunsController {
     @Param('runId', uuidParamPipe) runId: string,
   ) {
     return this.service.listFiles(projectId, runId);
+  }
+
+  @Get(':runId/units')
+  @ApiOperation({ operationId: 'listConstructionUnits', summary: 'Listar el código generado por unidades de construcción' })
+  @ApiZodResponse(200, 'Construction units.', constructionUnitListResponseSchema)
+  units(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('runId', uuidParamPipe) runId: string,
+  ) {
+    return this.service.units(projectId, runId);
   }
 
   @Get(':runId/files/:fileId')

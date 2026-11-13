@@ -45,7 +45,7 @@ type Entity = ReturnType<typeof demoEntities>[number];
 // The currency the plan works in: the ISO code its text names most often.
 export function planCurrency(plan: ImplementationPlanContent): string | undefined {
   const counts = new Map<string, number>();
-  for (const match of JSON.stringify(plan).matchAll(/(USD|EUR|MXN|COP|PEN|ARS|CLP|BRL|GBP|CAD|GTQ|BOB|UYU|PYG|DOP|CRC|HNL|NIO|PAB|VES)/g))
+  for (const match of JSON.stringify(plan).matchAll(/\b(USD|EUR|MXN|COP|PEN|ARS|CLP|BRL|GBP|CAD|GTQ|BOB|UYU|PYG|DOP|CRC|HNL|NIO|PAB|VES)\b/g))
     counts.set(match[1]!, (counts.get(match[1]!) ?? 0) + 1);
   return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0];
 }

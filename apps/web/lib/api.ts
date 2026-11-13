@@ -10,6 +10,7 @@ import type {
   DeploymentResponse,
   ScreenFindingsResponse,
   GeneratedFileResponse,
+  ConstructionUnit,
   GeneratedFileSummary,
   GenerationRunResponse,
   SandboxRunResponse,
@@ -986,6 +987,8 @@ export const api = {
       ),
     file: (projectId: string, runId: string, fileId: string) =>
       get<GeneratedFileResponse>(`/projects/${projectId}/generation-runs/${runId}/files/${fileId}`),
+    units: (projectId: string, runId: string) =>
+      get<{ items: ConstructionUnit[] }>(`/projects/${projectId}/generation-runs/${runId}/units`),
     sandboxRuns: (projectId: string, runId: string) =>
       get<{ items: SandboxRunResponse[] }>(
         `/projects/${projectId}/generation-runs/${runId}/sandbox-runs`,

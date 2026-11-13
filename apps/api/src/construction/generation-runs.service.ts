@@ -1,6 +1,7 @@
 import { implementationReadinessProblems } from './implementation-readiness';
 import { FrontendDesignService } from './frontend-design.service';
 import { DemoDataService } from './demo-data.service';
+import { constructionUnits } from './construction-units';
 import { assertCanGenerate } from '../common/generation-cancelled';
 import { INTERRUPTED_BY_RESTART, startHeartbeat, staleHeartbeat } from '../common/interrupted';
 import { createHash } from 'node:crypto';
@@ -24,6 +25,7 @@ import {
 import {
   designThemeContentSchema,
   implementationPlanContentSchema,
+  type ConstructionUnit,
   type GeneratedFileResponse,
   type GeneratedFileSummary,
   type GenerationRunResponse,
@@ -614,6 +616,51 @@ export class GenerationRunsService {
     });
     return {
       items: files.map(({ content, ...file }) => ({ ...file, size: Buffer.byteLength(content) })),
+    };
+  }
+
+  // ADR-020: the run's files grouped by construction unit, without contents.
+  async units(projectId: string, runId: string): Promise<{ items: ConstructionUnit[] }> {
+    const run = await this.prisma.generationRun.findFirst({
+      where: { id: runId, projectId },
+      select: { implementationPlanVersionId: true },
+    });
+    if (!run) throw new NotFoundException('Corrida de generación no encontrada.');
+    const version = await this.prisma.artifactVersion.findFirst({
+      where: { id: run.implementationPlanVersionId, projectId },
+      select: { structuredAnalysisDetail: { select: { content: true } } },
+    });
+    const plan = implementationPlanContentSchema.parse(version?.structuredAnalysisDetail?.content);
+    const files = await this.prisma.generatedFile.findMany({
+      where: { generationRunId: runId },
+      select: {
+        id: true,
+        path: true,
+        origin: true,
+        kind: true,
+        traceLinks: {
+          select: {
+            planElement: true,
+            sourceArtifactVersion: { select: { versionNumber: true, artifact: { select: { code: true } } } },
+          },
+        },
+      },
+      orderBy: { path: 'asc' },
+    });
+    return {
+      items: constructionUnits(
+        plan,
+        files.map(({ traceLinks, ...file }) => ({
+          ...file,
+          planElements: [...new Set(traceLinks.map((link) => link.planElement))],
+          traces: traceLinks
+            .filter((link) => link.sourceArtifactVersion.artifact.code)
+            .map((link) => ({
+              code: link.sourceArtifactVersion.artifact.code!,
+              versionNumber: link.sourceArtifactVersion.versionNumber,
+            })),
+        })),
+      ),
     };
   }
 
