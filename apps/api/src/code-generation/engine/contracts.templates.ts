@@ -69,6 +69,8 @@ function zodFor(entity: Entity, field: Field): string {
 export function sampleValue(entity: Entity, field: Field): unknown {
   switch (field.type) {
     case 'STRING':
+      // A time zone must be a real IANA zone: placeholder text is rejected.
+      if (/time_?zone/i.test(field.name)) return 'UTC';
       return `${upperFirst(field.name)} de ejemplo`;
     case 'TEXT':
       return 'Texto de ejemplo';
