@@ -18,6 +18,7 @@ interface DemoEntity {
     value?: string | number | boolean;
   }[];
   relations: { name: string; target: string; required: boolean; unique: boolean }[];
+  samples?: Record<string, string | number | boolean>[];
 }
 
 // DEC-159: demonstration data, deterministic and derived from the plan, so a
@@ -79,7 +80,11 @@ export function demoEntities(plan: Plan): DemoEntity[] {
 }
 
 export function demoDataFiles(ctx: GenerationContext): GeneratedProjectFile[] {
-  const entities = demoEntities(ctx.plan);
+  const entities = demoEntities(ctx.plan).map((entity) =>
+    ctx.demoValues?.[entity.model]?.length
+      ? { ...entity, samples: ctx.demoValues[entity.model] }
+      : entity,
+  );
   return [
     file(
       'apps/api/src/seed/demo-data.ts',
@@ -89,12 +94,16 @@ export function demoDataFiles(ctx: GenerationContext): GeneratedProjectFile[] {
 // creatable entity, in dependency order. An entity that already has records
 // is left as it is, so it can run again. A record that breaks a rule is skipped.
 type Field = { name: string; label: string; type: string; required: boolean; unique: boolean; enumValues: string[]; value?: string | number | boolean };
-type Entity = { model: string; delegate: string; fields: Field[]; relations: { name: string; target: string; required: boolean; unique: boolean }[] };
+type Entity = { model: string; delegate: string; fields: Field[]; relations: { name: string; target: string; required: boolean; unique: boolean }[]; samples?: Record<string, string | number | boolean>[] };
 const ENTITIES: Entity[] = ${JSON.stringify(entities, null, 1)};
 const RECORDS = 3;
 
-function value(field: Field, index: number): unknown {
+// A realistic sample value when the plan's demonstration set has one,
+// otherwise a placeholder that satisfies the field's type.
+function value(field: Field, index: number, sample?: Record<string, string | number | boolean>): unknown {
   if (field.value !== undefined) return field.value;
+  const given = sample?.[field.name];
+  if (given !== undefined) return field.type === 'DATE' || field.type === 'DATETIME' ? new Date(String(given)) : given;
   const day = new Date(Date.UTC(2026, 0, 1 + index * 3));
   switch (field.type) {
     case 'STRING': return \`\${field.label} \${index}\`.slice(0, 120);
@@ -124,9 +133,10 @@ async function main() {
       }
       if (entity.relations.some((relation) => relation.required && !targets[relation.name]!.length)) continue;
       let created = 0;
-      for (let index = 1; index <= RECORDS; index++) {
+      const count = Math.max(RECORDS, entity.samples?.length ?? 0);
+      for (let index = 1; index <= count; index++) {
         const data: Record<string, unknown> = {};
-        for (const field of entity.fields) data[field.name] = value(field, index);
+        for (const field of entity.fields) data[field.name] = value(field, index, entity.samples?.[index - 1]);
         let skip = false;
         for (const relation of entity.relations) {
           const ids = targets[relation.name]!;

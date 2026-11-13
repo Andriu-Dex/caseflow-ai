@@ -1,4 +1,5 @@
 import { FrontendDesignService } from './frontend-design.service';
+import { DemoDataService } from './demo-data.service';
 import { Inject, Module, type OnModuleDestroy } from '@nestjs/common';
 import { createJobQueue, createStorageProvider, type JobQueue } from '../common/infrastructure';
 import { CONSTRUCTION_QUEUE, type ConstructionJobPayload } from '@caseflow-ai/domain';
@@ -90,6 +91,7 @@ import { UserManualsController } from '../user-manuals/user-manuals.controller';
     DesignBaselinesService,
     BusinessLogicService,
     FrontendDesignService,
+    DemoDataService,
     GenerationRunsService,
     AutoRepairService,
     SandboxRunsService,

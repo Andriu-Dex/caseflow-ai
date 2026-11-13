@@ -1,5 +1,6 @@
 import { implementationReadinessProblems } from './implementation-readiness';
 import { FrontendDesignService } from './frontend-design.service';
+import { DemoDataService } from './demo-data.service';
 import { assertCanGenerate } from '../common/generation-cancelled';
 import { INTERRUPTED_BY_RESTART, startHeartbeat, staleHeartbeat } from '../common/interrupted';
 import { createHash } from 'node:crypto';
@@ -71,6 +72,7 @@ export class GenerationRunsService {
     @Inject(CONSTRUCTION_QUEUE_TOKEN) private readonly queue: Queue<ConstructionJobPayload>,
     @Optional() private readonly currency?: StageCurrencyService,
     @Optional() private readonly frontendDesign?: FrontendDesignService,
+    @Optional() private readonly demoData?: DemoDataService,
   ) {}
 
   async createWorkingCopy(projectId: string, userId: string, input: CreateWorkingCopyRequest) {
@@ -429,6 +431,11 @@ export class GenerationRunsService {
           );
         }
         const theme = await this.frozenTheme(projectId, run.designBaselineId);
+        const demo =
+          template.version >= 2 && this.demoData
+            ? await this.demoData.propose(projectId, run.designBaselineId, runId, run.project.name, plan)
+            : {};
+        if (demo.warning) warnings.push(demo.warning);
         let files = generateProject(
           {
             plan,
@@ -436,10 +443,11 @@ export class GenerationRunsService {
             projectName: run.project.name,
             slug: projectSlug(run.project.name),
             theme,
+            demoValues: demo.values,
           },
           implementations,
         );
-        files.push(...checkpoints);
+        files.push(...checkpoints, ...(demo.checkpoint ? [demo.checkpoint] : []));
         if (template.version >= 2) {
           if (!this.frontendDesign)
             throw new PlanGenerationError('El adaptador del diseño aprobado no está disponible.');
