@@ -8,7 +8,7 @@ import { getProjectLanguage } from '../projects/project-language';
 import { demoEntities } from '../code-generation/engine/demo-data.templates';
 import { file, json, type GeneratedProjectFile } from '../code-generation/engine/types';
 
-export const DEMO_DATA_VERSION = 1;
+export const DEMO_DATA_VERSION = 2;
 const RECORDS = 6;
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const logger = new Logger('DemoDataService');
@@ -41,6 +41,14 @@ export const demoDataSchema = z
 type Proposal = z.infer<typeof demoDataSchema>;
 type Values = Record<string, Record<string, string | number | boolean>[]>;
 type Entity = ReturnType<typeof demoEntities>[number];
+
+// The currency the plan works in: the ISO code its text names most often.
+export function planCurrency(plan: ImplementationPlanContent): string | undefined {
+  const counts = new Map<string, number>();
+  for (const match of JSON.stringify(plan).matchAll(/(USD|EUR|MXN|COP|PEN|ARS|CLP|BRL|GBP|CAD|GTQ|BOB|UYU|PYG|DOP|CRC|HNL|NIO|PAB|VES)/g))
+    counts.set(match[1]!, (counts.get(match[1]!) ?? 0) + 1);
+  return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0];
+}
 
 // Keeps only values that satisfy their field: unknown fields, wrong types,
 // enum values outside the plan and repeated unique values are dropped, so a
@@ -122,6 +130,7 @@ export class DemoDataService {
     if (!entities.length) return {};
     const request = {
       projectName,
+      currency: planCurrency(plan) ?? null,
       modules: plan.modules.map((module) => ({ name: module.name, description: module.description })),
       entities: entities.map((entity) => ({
         model: entity.model,
