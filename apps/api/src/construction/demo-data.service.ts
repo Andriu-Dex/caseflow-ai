@@ -8,7 +8,7 @@ import { getProjectLanguage } from '../projects/project-language';
 import { demoEntities } from '../code-generation/engine/demo-data.templates';
 import { file, json, type GeneratedProjectFile } from '../code-generation/engine/types';
 
-export const DEMO_DATA_VERSION = 2;
+export const DEMO_DATA_VERSION = 3;
 const RECORDS = 6;
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const logger = new Logger('DemoDataService');
@@ -127,7 +127,7 @@ export class DemoDataService {
     projectName: string,
     plan: ImplementationPlanContent,
   ): Promise<{ values?: Values; checkpoint?: GeneratedProjectFile; warning?: string }> {
-    const entities = demoEntities(plan);
+    const entities = demoEntities(plan, true);
     if (!entities.length) return {};
     const request = {
       projectName,

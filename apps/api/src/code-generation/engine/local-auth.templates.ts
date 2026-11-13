@@ -1,3 +1,4 @@
+import type { ImplementationPlanContent } from '@caseflow-ai/contracts';
 import type { GenerationContext, GeneratedProjectFile } from './types';
 import { file, SCOPE } from './types';
 import { lowerFirst, kebabCase } from '../naming';
@@ -447,7 +448,7 @@ async function main() {
   ${
     scope
       ? `await initializeAuthorization(prisma);
-  const initialScope = await prisma.${lowerFirst(scopeEntity!.name)}.create({ data: { ...${JSON.stringify(sampleInput(scopeEntity!))}, ${scope.labelField}: 'Ámbito inicial', ${scope.statusField}: ${JSON.stringify(scope.activeStatus)} } });`
+  const initialScope = await prisma.${lowerFirst(scopeEntity!.name)}.create({ data: { ...${JSON.stringify({ ...sampleInput(scopeEntity!), ...initialScopeValues(scopeEntity!, ctx.demoValues?.[scopeEntity!.name]?.[0]) })}, ${scope.labelField}: ${JSON.stringify(String(ctx.demoValues?.[scopeEntity!.name]?.[0]?.[scope.labelField] ?? `${scope.label} principal`))}, ${scope.statusField}: ${JSON.stringify(scope.activeStatus)} } });`
       : ''
   }
   const roles = ${JSON.stringify(plan.authentication.roles)} as const;
@@ -652,4 +653,19 @@ export async function initializeAuthorization(prisma: PrismaService, restore = f
       ),
     );
   return files;
+}
+
+// The first realistic demonstration record of the scope entity, without its
+// dates (the seed passes plain JSON, where Prisma expects date objects).
+function initialScopeValues(
+  entity: ImplementationPlanContent['entities'][number],
+  sample: Record<string, string | number | boolean> | undefined,
+) {
+  if (!sample) return {};
+  return Object.fromEntries(
+    Object.entries(sample).filter(([name]) => {
+      const field = entity.fields.find((item) => item.name === name);
+      return field && field.type !== 'DATE' && field.type !== 'DATETIME';
+    }),
+  );
 }

@@ -7286,6 +7286,9 @@ Cambios a estas reglas requieren decisión explícita y actualización documenta
 | DEC-158 | El código generado se revisa por unidades de construcción con resumen determinista, origen, trazabilidad y diferencias; la lógica asistida por IA se edita mediante revisiones validadas (§221.35, ADR-020) | Accepted |
 | DEC-159 | Requisitos de cierre de la versión 2: pruebas E2E del software generado, estimación de cuota, datos de ejemplo, motivos de pendientes, panel de salud, regeneración por impacto, pruebas negativas desde reglas, recorrido guiado, comparación de planes, respaldo y limpieza (§221.36) | Accepted |
 | DEC-160 | Los hallazgos del evaluador de pantallas pueden aceptarse con una justificación escrita que cubre solo esos hallazgos exactos, por pantalla y línea base de diseño; inmutable y auditada (§221.37) | Accepted |
+| DEC-161 | Pantallas ajustadas manualmente: código escrito a mano por pantalla y diseño aprobado, inmutable y auditado, que sustituye a la composición de la IA solo si conserva todos los enlaces funcionales (§221.38, ADR-021) | Accepted |
+| DEC-162 | Fidelidad visual: marco común determinista desde el árbol de navegación y el perfil de diseño, y composición v37 con textos e iconos estáticos (§221.38, ADR-021) | Accepted |
+| DEC-163 | Datos de demostración realistas propuestos por IA, validados por campo, en la moneda del plan y reutilizados como punto de control; sin IA, valores deterministas (§221.38, ADR-021) | Accepted |
 
 ---
 
@@ -7722,7 +7725,7 @@ Descriptivo del comportamiento implementado:
 
 ---
 
-# 221. Extensiones de V2 (DEC-116 a DEC-160)
+# 221. Extensiones de V2 (DEC-116 a DEC-163)
 
 > La versión 2 es la versión final del producto. Donde este documento dice «V1», sus requisitos siguen vigentes salvo que una sección de §221 o un ADR posterior los sustituya.
 
@@ -8125,3 +8128,11 @@ Orden de cierre: completar la entrega de RestGuestMateos y, después, una prueba
 Cuando el evaluador de pantallas reporta hallazgos, la persona puede aceptarlos para una pantalla con una justificación escrita (al menos 10 caracteres), como prevé la revisión humana del diseño. La excepción (`ScreenDesignException`) identifica proyecto, línea base de diseño, ruta y el hash SHA-256 de los hallazgos exactos aceptados, conserva su texto, autor y fecha, es inmutable y se registra en la auditoría (`SCREEN_DESIGN_EXCEPTION_ACCEPTED`). Solo pueden aceptarse hallazgos realmente registrados para ese diseño, y se requiere permiso de generación.
 
 En la generación, una pantalla con hallazgos cubiertos por una excepción vigente usa la composición propuesta, validada como cualquier otra, y la excepción queda en `docs/design-fidelity.json`. Si los hallazgos cambian (otro evaluador, otras entradas), la excepción deja de aplicar y debe justificarse de nuevo; así, una aceptación sobre la evaluación de desarrollo no se hereda en la evaluación final. La vista de construcción lista los hallazgos de una corrida fallida y permite aceptarlos.
+
+## 221.38 Fidelidad visual de las pantallas generadas (DEC-161 a DEC-163, ADR-021)
+
+El marco de la aplicación generada se deriva sin IA del árbol de navegación aprobado (menú agrupado por ramas de primer nivel, migas de pan, chip de sesión) y del perfil de diseño (tema claro por defecto, tipografía, radios y controles). La composición de cada pantalla (prompt v37) puede añadir títulos, descripciones e iconos estáticos del boceto; los textos no admiten cifras ni código y los iconos proceden de una lista cerrada.
+
+Una pantalla puede ajustarse manualmente (`ScreenDesignOverride`): su código, con justificación, se registra por diseño aprobado y ruta, es inmutable y se audita. La generación oficial usa la versión más reciente en lugar de la composición de la IA solo si conserva todas las marcas de acción, campos registrados y llamadas del cliente de API de la página generada; el archivo queda con origen `MANUAL` y figura en `docs/design-fidelity.json`. La validación del sandbox se aplica sin cambios. Una pantalla que el proveedor de IA no pudo evaluar registra `NOT_EVALUATED` como hallazgo y puede aceptarse con justificación (DEC-160).
+
+Los datos de demostración los propone la IA (unos seis registros por entidad, en la moneda que nombra el plan); el servidor conserva solo los valores que cumplen el tipo de su campo y fija la moneda del plan en los campos de moneda. La propuesta se guarda como punto de control y se reutiliza mientras el modelo no cambie; sin IA se usan valores deterministas con una advertencia. Al desplegar, un despliegue nuevo retira los anteriores del proyecto (estado `REMOVED`) y libera sus recursos.

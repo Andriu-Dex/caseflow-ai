@@ -25,12 +25,16 @@ interface DemoEntity {
 // deployed project does not start empty. Accounts and the operation scope
 // come from deploy-accounts; the rest of the creatable entities get a few
 // records each, in dependency order.
-export function demoEntities(plan: Plan): DemoEntity[] {
+// With includeScope the operation scope entity is described too: its values
+// name the initial scope that deploy-accounts creates, it is not seeded here.
+export function demoEntities(plan: Plan, includeScope = false): DemoEntity[] {
   const local = plan.authentication.local;
   const excluded = new Set(
-    [local?.userEntityLocalId, local?.sessionEntityLocalId, local?.scope?.entityLocalId].filter(
-      Boolean,
-    ),
+    [
+      local?.userEntityLocalId,
+      local?.sessionEntityLocalId,
+      includeScope ? undefined : local?.scope?.entityLocalId,
+    ].filter(Boolean),
   );
   const byId = new Map(plan.entities.map((entity) => [entity.localId, entity]));
   const candidates = plan.entities.filter(

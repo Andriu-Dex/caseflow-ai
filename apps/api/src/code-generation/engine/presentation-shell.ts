@@ -183,7 +183,7 @@ import { usePathname } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight, ${logout ? 'LogOut, ' : ''}UserRound } from 'lucide-react';
 import { api, accessToken } from '../lib/api';
-${scoped ? "import { OperationContextPanel } from './operation-context';\n" : ''}${themeToggle ? "import { ThemeToggle } from './theme-toggle';\n" : ''}
+${themeToggle ? "import { ThemeToggle } from './theme-toggle';\n" : ''}
 const bareRoutes: string[] = ${JSON.stringify(routes.filter((route) => route.navigation === 'NONE' && !route.routePath.includes('[')).map((route) => route.routePath))};
 const groups: { label: string; paths: string[] }[] = ${JSON.stringify(groups)};
 const menu = 'flex min-w-64 flex-col rounded-md border bg-background p-1 shadow-lg md:absolute md:z-30 md:mt-1';
@@ -230,7 +230,16 @@ function Header() {
               : '<UserRound className="h-4 w-4" aria-hidden />Mi sesión'
           }</summary>
           <div className={menu + ' right-0 min-w-80 gap-2 p-3'}>
-            ${scoped ? '<OperationContextPanel compact />' : ''}
+            ${
+              scoped
+                ? `{person ? <div className="space-y-1 rounded-md bg-muted/50 p-3 text-sm">
+              <p className="font-semibold">{person.displayName}</p>
+              <p className="text-muted-foreground">{person.roles.join(', ')}</p>
+              <p>{person.scopes.find((scope) => scope.id === person.selectedScopeId)?.label ?? 'Sin ámbito seleccionado'}</p>
+            </div> : null}
+            <Link href={${JSON.stringify(home ?? '/')}} className="rounded-md px-3 py-2 text-sm hover:bg-muted">Cambiar contexto de operación</Link>`
+                : ''
+            }
             ${logout ? `<Link href={${JSON.stringify(logout)}} className="flex items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-muted"><LogOut className="h-4 w-4" aria-hidden />Cerrar sesión</Link>` : ''}
           </div>
         </details>
