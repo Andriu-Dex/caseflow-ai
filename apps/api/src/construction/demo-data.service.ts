@@ -53,7 +53,7 @@ export function planCurrency(plan: ImplementationPlanContent): string | undefine
 // Keeps only values that satisfy their field: unknown fields, wrong types,
 // enum values outside the plan and repeated unique values are dropped, so a
 // proposal can never produce a record the model would reject for its shape.
-export function acceptedDemoValues(entities: Entity[], proposal: Proposal): Values {
+export function acceptedDemoValues(entities: Entity[], proposal: Proposal, currency?: string): Values {
   const result: Values = {};
   for (const entity of entities) {
     const proposed = proposal.entities.find((item) => item.model === entity.model);
@@ -64,7 +64,8 @@ export function acceptedDemoValues(entities: Entity[], proposal: Proposal): Valu
       for (const { field: name, value: raw } of record.values) {
         const field = entity.fields.find((item) => item.name === name);
         if (!field || field.value !== undefined) continue;
-        const text = raw.trim();
+        // A currency field always holds the plan's currency.
+        const text = currency && field.type === 'STRING' && /currency|moneda/i.test(name) ? currency : raw.trim();
         let value: string | number | boolean | undefined;
         switch (field.type) {
           case 'STRING':
@@ -182,6 +183,6 @@ export class DemoDataService {
         sha256: hash(checkpoint.content),
       },
     });
-    return { values: acceptedDemoValues(entities, proposal), checkpoint };
+    return { values: acceptedDemoValues(entities, proposal, request.currency ?? undefined), checkpoint };
   }
 }
