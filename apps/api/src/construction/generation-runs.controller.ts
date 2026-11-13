@@ -18,6 +18,9 @@ import type { z } from 'zod';
 import { timingSafeEqual } from 'node:crypto';
 import {
   constructionUnitListResponseSchema,
+  constructionUnitReviewRequestSchema,
+  constructionUnitSchema,
+  type ConstructionUnitReviewRequest,
   generatedFileListResponseSchema,
   generatedProjectSnapshotListResponseSchema,
   generatedProjectSnapshotResponseSchema,
@@ -153,6 +156,23 @@ export class GenerationRunsController {
     @Param('runId', uuidParamPipe) runId: string,
   ) {
     return this.service.units(projectId, runId);
+  }
+
+  @Post(':runId/units/review')
+  @ApiOperation({
+    operationId: 'reviewConstructionUnit',
+    summary: 'Marcar o desmarcar una unidad de construcción como revisada',
+  })
+  @ApiZodBody(constructionUnitReviewRequestSchema)
+  @ApiZodResponse(201, 'Construction unit.', constructionUnitSchema)
+  reviewUnit(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('runId', uuidParamPipe) runId: string,
+    @Request() req: AuthenticatedRequest,
+    @Body(new ZodValidationPipe(constructionUnitReviewRequestSchema))
+    body: ConstructionUnitReviewRequest,
+  ) {
+    return this.service.reviewUnit(projectId, runId, req.user.id, body);
   }
 
   @Get(':runId/files/:fileId')

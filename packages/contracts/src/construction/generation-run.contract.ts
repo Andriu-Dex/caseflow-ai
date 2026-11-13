@@ -116,9 +116,30 @@ export const constructionUnitSchema = z.object({
       path: z.string(),
       origin: z.enum(GENERATED_FILE_ORIGINS),
       kind: z.enum(GENERATED_FILE_KINDS),
+      sha256: z.string(),
+      // Against the previous run of the same plan, when there is one.
+      change: z.enum(['ADDED', 'CHANGED', 'UNCHANGED']).optional(),
     }),
   ),
+  // Hash of the unit's files (path and content): the key of its review mark.
+  contentSha256: z.string(),
+  changes: z
+    .object({
+      previousRunId: z.uuid(),
+      added: z.number().int(),
+      changed: z.number().int(),
+      removed: z.array(z.string()),
+    })
+    .nullable()
+    .optional(),
+  review: z.object({ reviewedAt: z.string(), reviewerName: z.string() }).nullable().optional(),
 });
+export const constructionUnitReviewRequestSchema = z.object({
+  unitKey: z.string().min(1).max(400),
+  contentSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  reviewed: z.boolean(),
+});
+export type ConstructionUnitReviewRequest = z.infer<typeof constructionUnitReviewRequestSchema>;
 export type ConstructionUnit = z.infer<typeof constructionUnitSchema>;
 export const constructionUnitListResponseSchema = z.object({
   items: z.array(constructionUnitSchema),

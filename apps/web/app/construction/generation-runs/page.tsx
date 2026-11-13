@@ -198,6 +198,25 @@ function RunUnits({ projectId, run }: { projectId: string; run: GenerationRunRes
     queryFn: () => api.generationRuns.units(projectId, run.id),
   });
   const items = units.data?.items ?? [];
+  const queryClient = useQueryClient();
+  const [saving, setSaving] = useState<string>();
+  async function toggleReview(unit: ConstructionUnit) {
+    setSaving(unit.id);
+    try {
+      await api.generationRuns.reviewUnit(projectId, run.id, {
+        unitKey: unit.id,
+        contentSha256: unit.contentSha256,
+        reviewed: !unit.review,
+      });
+      await queryClient.invalidateQueries({ queryKey: ['construction-units', projectId, run.id] });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo guardar la revisión.');
+    } finally {
+      setSaving(undefined);
+    }
+  }
+  const reviewable = items.filter((unit) => unit.id !== 'evidence');
+  const reviewed = reviewable.filter((unit) => unit.review).length;
   const term = filter.trim().toLowerCase();
   const shown = items.filter(
     (unit) =>
@@ -207,6 +226,11 @@ function RunUnits({ projectId, run }: { projectId: string; run: GenerationRunRes
   return (
     <QueryState isLoading={units.isLoading} error={units.error}>
       <div className="flex flex-col gap-3">
+        <p className="text-xs text-muted-foreground" role="status">
+          Revisadas {reviewed} de {reviewable.length} unidades. Marcar una unidad como revisada no
+          cambia la validación ni el estado de la entrega; la marca se conserva mientras su código
+          no cambie.
+        </p>
         <div
           className="flex flex-wrap items-center gap-2"
           role="tablist"
@@ -275,6 +299,18 @@ function RunUnits({ projectId, run }: { projectId: string; run: GenerationRunRes
                     {unit.traces.length > 8 ? ` y ${unit.traces.length - 8} más` : ''}
                   </p>
                 ) : null}
+
+                {unit.changes &&
+                (unit.changes.added || unit.changes.changed || unit.changes.removed.length) ? (
+                  <p className="mt-1 text-[11px] font-medium text-blue-700 dark:text-blue-300">
+                    Respecto a la generación anterior: {unit.changes.added} añadidos,{' '}
+                    {unit.changes.changed} cambiados, {unit.changes.removed.length} eliminados
+                  </p>
+                ) : unit.changes ? (
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Sin cambios respecto a la generación anterior.
+                  </p>
+                ) : null}
                 <details className="mt-2">
                   <summary className="cursor-pointer text-[11px] font-medium text-primary">
                     Archivos ({unit.files.length})
@@ -292,12 +328,43 @@ function RunUnits({ projectId, run }: { projectId: string; run: GenerationRunRes
                               : 'hover:bg-muted'
                           }`}
                         >
+                          {file.change && file.change !== 'UNCHANGED' ? (
+                            <span className="mr-1 rounded bg-blue-500/10 px-1 text-[10px] font-sans font-semibold text-blue-700 dark:text-blue-300">
+                              {file.change === 'ADDED' ? 'nuevo' : 'cambiado'}
+                            </span>
+                          ) : null}
                           {file.path}
                         </button>
                       </li>
                     ))}
                   </ul>
+                  {unit.changes?.removed.length ? (
+                    <ul className="mt-1 text-[11px] text-muted-foreground">
+                      {unit.changes.removed.map((path) => (
+                        <li
+                          key={path}
+                          className="truncate px-1.5 font-mono line-through"
+                          title={path}
+                        >
+                          {path}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
                 </details>
+                {unit.id !== 'evidence' ? (
+                  <label className="mt-2 flex cursor-pointer items-center gap-2 border-t pt-2 text-[11px]">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(unit.review)}
+                      disabled={saving === unit.id}
+                      onChange={() => void toggleReview(unit)}
+                    />
+                    {unit.review
+                      ? `Revisada por ${unit.review.reviewerName} el ${new Date(unit.review.reviewedAt).toLocaleString('es')}`
+                      : 'Marcar como revisada'}
+                  </label>
+                ) : null}
               </li>
             ))}
             {!shown.length ? (

@@ -26,6 +26,7 @@ import {
   designThemeContentSchema,
   implementationPlanContentSchema,
   type ConstructionUnit,
+  type ConstructionUnitReviewRequest,
   type GeneratedFileResponse,
   type GeneratedFileSummary,
   type GenerationRunResponse,
@@ -625,11 +626,13 @@ export class GenerationRunsService {
     };
   }
 
-  // ADR-020: the run's files grouped by construction unit, without contents.
+  // ADR-020: the run's files grouped by construction unit, without contents,
+  // with the changes against the previous run of the same plan and the
+  // review marks that still match each unit's content.
   async units(projectId: string, runId: string): Promise<{ items: ConstructionUnit[] }> {
     const run = await this.prisma.generationRun.findFirst({
       where: { id: runId, projectId },
-      select: { implementationPlanVersionId: true },
+      select: { implementationPlanVersionId: true, createdAt: true },
     });
     if (!run) throw new NotFoundException('Corrida de generación no encontrada.');
     const version = await this.prisma.artifactVersion.findFirst({
@@ -637,26 +640,27 @@ export class GenerationRunsService {
       select: { structuredAnalysisDetail: { select: { content: true } } },
     });
     const plan = implementationPlanContentSchema.parse(version?.structuredAnalysisDetail?.content);
-    const files = await this.prisma.generatedFile.findMany({
-      where: { generationRunId: runId },
-      select: {
-        id: true,
-        path: true,
-        origin: true,
-        kind: true,
-        traceLinks: {
-          select: {
-            planElement: true,
-            sourceArtifactVersion: {
-              select: { versionNumber: true, artifact: { select: { code: true } } },
+    const unitsOf = async (id: string) => {
+      const files = await this.prisma.generatedFile.findMany({
+        where: { generationRunId: id },
+        select: {
+          id: true,
+          path: true,
+          origin: true,
+          kind: true,
+          sha256: true,
+          traceLinks: {
+            select: {
+              planElement: true,
+              sourceArtifactVersion: {
+                select: { versionNumber: true, artifact: { select: { code: true } } },
+              },
             },
           },
         },
-      },
-      orderBy: { path: 'asc' },
-    });
-    return {
-      items: constructionUnits(
+        orderBy: { path: 'asc' },
+      });
+      return constructionUnits(
         plan,
         files.map(({ traceLinks, ...file }) => ({
           ...file,
@@ -668,8 +672,116 @@ export class GenerationRunsService {
               versionNumber: link.sourceArtifactVersion.versionNumber,
             })),
         })),
-      ),
+      );
     };
+    const items = await unitsOf(runId);
+    const previous = await this.prisma.generationRun.findFirst({
+      where: {
+        projectId,
+        implementationPlanVersionId: run.implementationPlanVersionId,
+        status: { in: ['GENERATED', 'WORKING_COPY'] },
+        createdAt: { lt: run.createdAt },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    });
+    const before = previous
+      ? new Map((await unitsOf(previous.id)).map((unit) => [unit.id, unit]))
+      : undefined;
+    const reviews = await this.prisma.constructionUnitReview.findMany({
+      where: { projectId, contentSha256: { in: items.map((unit) => unit.contentSha256) } },
+      select: {
+        unitKey: true,
+        contentSha256: true,
+        createdAt: true,
+        reviewedBy: { select: { displayName: true } },
+      },
+    });
+    return {
+      items: items.map((unit) => {
+        const review = reviews.find(
+          (item) => item.unitKey === unit.id && item.contentSha256 === unit.contentSha256,
+        );
+        const old = before?.get(unit.id);
+        const oldFiles = new Map(old?.files.map((file) => [file.path, file.sha256]) ?? []);
+        const files = unit.files.map((file) => ({
+          ...file,
+          ...(before
+            ? {
+                change: !oldFiles.has(file.path)
+                  ? ('ADDED' as const)
+                  : oldFiles.get(file.path) === file.sha256
+                    ? ('UNCHANGED' as const)
+                    : ('CHANGED' as const),
+              }
+            : {}),
+        }));
+        return {
+          ...unit,
+          files,
+          // Evidence files are process records, not code to compare.
+          changes:
+            before && unit.id !== 'evidence'
+              ? {
+                  previousRunId: previous!.id,
+                  added: files.filter((file) => file.change === 'ADDED').length,
+                  changed: files.filter((file) => file.change === 'CHANGED').length,
+                  removed: (old?.files ?? [])
+                    .map((file) => file.path)
+                    .filter((path) => !unit.files.some((file) => file.path === path)),
+                }
+              : null,
+          review: review
+            ? {
+                reviewedAt: review.createdAt.toISOString(),
+                reviewerName: review.reviewedBy.displayName,
+              }
+            : null,
+        };
+      }),
+    };
+  }
+
+  // Marks or unmarks a unit's current content as reviewed. A mark never
+  // changes READY or validation; it only records the person's review.
+  async reviewUnit(
+    projectId: string,
+    runId: string,
+    userId: string,
+    input: ConstructionUnitReviewRequest,
+  ) {
+    await assertCanGenerate(this.prisma, projectId, userId);
+    const unit = (await this.units(projectId, runId)).items.find(
+      (item) => item.id === input.unitKey,
+    );
+    if (!unit || unit.contentSha256 !== input.contentSha256)
+      throw new ConflictException(
+        'La unidad cambió o no pertenece a esta corrida. Actualice la vista.',
+      );
+    const where = { projectId, unitKey: input.unitKey, contentSha256: input.contentSha256 };
+    await this.prisma.$transaction(async (tx) => {
+      if (input.reviewed)
+        await tx.constructionUnitReview.upsert({
+          where: { projectId_unitKey_contentSha256: where },
+          update: {},
+          create: { ...where, reviewedByUserId: userId },
+        });
+      else await tx.constructionUnitReview.deleteMany({ where });
+      await this.audit.record(
+        {
+          projectId,
+          actorUserId: userId,
+          action: input.reviewed
+            ? 'CONSTRUCTION_UNIT_REVIEWED'
+            : 'CONSTRUCTION_UNIT_REVIEW_WITHDRAWN',
+          entityType: 'GENERATION_RUN',
+          entityId: runId,
+          metadata: { unitKey: input.unitKey, contentSha256: input.contentSha256 },
+        },
+        tx,
+      );
+    });
+    return (await this.units(projectId, runId)).items.find((item) => item.id === input.unitKey)!;
   }
 
   async getFile(projectId: string, runId: string, fileId: string): Promise<GeneratedFileResponse> {

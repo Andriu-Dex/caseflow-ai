@@ -47,6 +47,7 @@ const file = (
   path,
   origin,
   kind: 'SOURCE',
+  sha256: path.length.toString(16).padStart(64, '0'),
   planElements,
   traces: [{ code: 'RF-001', versionNumber: 2 }],
 });

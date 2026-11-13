@@ -247,6 +247,7 @@ model User {
   designBaselines             DesignBaseline[]
   screenDesignExceptions      ScreenDesignException[]
   screenDesignOverrides       ScreenDesignOverride[]
+  constructionUnitReviews     ConstructionUnitReview[]
   generatedProjectDeployments GeneratedProjectDeployment[]
   workflowRuns                WorkflowRun[]
   generationRuns              GenerationRun[]
@@ -376,6 +377,7 @@ model Project {
   designBaselines               DesignBaseline[]
   screenDesignExceptions        ScreenDesignException[]
   screenDesignOverrides         ScreenDesignOverride[]
+  constructionUnitReviews       ConstructionUnitReview[]
   generatedProjectDeployments   GeneratedProjectDeployment[]
   generationRuns                GenerationRun[]
   sandboxRuns                   SandboxRun[]
@@ -1685,6 +1687,24 @@ model ScreenDesignException {
   @@unique([designBaselineId, routePath, findingsSha256])
   @@index([projectId])
   @@map("screen_design_exceptions")
+}
+
+// A person's mark that a construction unit's code was reviewed (ADR-020). It
+// is keyed on the unit's content hash, so it carries over to later runs while
+// that code is unchanged; it never changes READY or validation.
+model ConstructionUnitReview {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId        String   @map("project_id") @db.Uuid
+  unitKey          String   @map("unit_key")
+  contentSha256    String   @map("content_sha256") @db.Char(64)
+  reviewedByUserId String   @map("reviewed_by_user_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project    Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  reviewedBy User    @relation(fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([projectId, unitKey, contentSha256])
+  @@map("construction_unit_reviews")
 }
 
 // A screen of a design baseline written by hand to follow its mockup (DEC-161).

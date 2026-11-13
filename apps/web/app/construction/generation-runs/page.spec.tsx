@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   validate: vi.fn(),
   archive: vi.fn(),
   restore: vi.fn(),
+  units: vi.fn(async () => ({ items: [] as unknown[] })),
+  reviewUnit: vi.fn(),
 }));
 
 vi.mock('../../../lib/api', () => ({
@@ -26,7 +28,8 @@ vi.mock('../../../lib/api', () => ({
       workingCopy: (...args: unknown[]) => mocks.workingCopy(...args),
       files: (...args: unknown[]) => mocks.files(...args),
       file: (...args: unknown[]) => mocks.file(...args),
-      units: async () => ({ items: [] }),
+      units: (...args: unknown[]) => mocks.units(...args),
+      reviewUnit: (...args: unknown[]) => mocks.reviewUnit(...args),
       sandboxRuns: (...args: unknown[]) => mocks.sandboxRuns(...args),
       validate: (...args: unknown[]) => mocks.validate(...args),
       archive: (...args: unknown[]) => mocks.archive(...args),
@@ -129,6 +132,50 @@ describe('GenerationRunsPage', () => {
     await userEvent.click(await screen.findByRole('button', { name: /main\.ts/ }));
     expect(await screen.findByText('bootstrap();')).toBeInTheDocument();
     expect(screen.getByText(/Configura PI-001 v1/)).toBeInTheDocument();
+  });
+
+  it('presents the code by construction unit and records its review', async () => {
+    const unit = {
+      id: 'route:/products/new',
+      kind: 'SCREEN',
+      title: 'Registro de producto',
+      module: 'Catálogo',
+      summary: 'Pantalla de tipo formulario en /products/new.',
+      origins: { TEMPLATE: 0, DETERMINISTIC: 0, AI_ASSISTED: 1, MANUAL: 0 },
+      traces: [{ code: 'UI-002', versionNumber: 1 }],
+      files: [
+        {
+          id: 'f-page',
+          path: 'apps/web/app/products/new/page.tsx',
+          origin: 'AI_ASSISTED',
+          kind: 'SOURCE',
+          sha256: 'b'.repeat(64),
+          change: 'CHANGED',
+        },
+      ],
+      contentSha256: 'c'.repeat(64),
+      changes: { previousRunId: 'run-old', added: 0, changed: 1, removed: [] },
+      review: null,
+    };
+    mocks.units.mockResolvedValue({ items: [unit] });
+    mocks.reviewUnit.mockResolvedValue({
+      ...unit,
+      review: { reviewedAt: new Date().toISOString(), reviewerName: 'Ana' },
+    });
+    render(<GenerationRunsPage />, { wrapper: TestProviders });
+    await userEvent.click(await screen.findByRole('button', { name: 'Ver archivos' }));
+    expect(await screen.findByText('Registro de producto')).toBeInTheDocument();
+    expect(screen.getByText('Revisar primero: IA')).toBeInTheDocument();
+    expect(screen.getByText(/0 añadidos, 1 cambiados, 0 eliminados/)).toBeInTheDocument();
+    expect(screen.getByText(/Revisadas 0 de 1 unidades/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Marcar como revisada' }));
+    await waitFor(() =>
+      expect(mocks.reviewUnit).toHaveBeenCalledWith('p1', 'run-1', {
+        unitKey: 'route:/products/new',
+        contentSha256: 'c'.repeat(64),
+        reviewed: true,
+      }),
+    );
   });
 
   it('starts the sandbox validation of a generated run', async () => {

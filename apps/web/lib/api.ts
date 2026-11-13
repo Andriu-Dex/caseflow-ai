@@ -989,6 +989,12 @@ export const api = {
       get<GeneratedFileResponse>(`/projects/${projectId}/generation-runs/${runId}/files/${fileId}`),
     units: (projectId: string, runId: string) =>
       get<{ items: ConstructionUnit[] }>(`/projects/${projectId}/generation-runs/${runId}/units`),
+    reviewUnit: (
+      projectId: string,
+      runId: string,
+      body: { unitKey: string; contentSha256: string; reviewed: boolean },
+    ) =>
+      post<ConstructionUnit>(`/projects/${projectId}/generation-runs/${runId}/units/review`, body),
     sandboxRuns: (projectId: string, runId: string) =>
       get<{ items: SandboxRunResponse[] }>(
         `/projects/${projectId}/generation-runs/${runId}/sandbox-runs`,
