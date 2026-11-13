@@ -134,6 +134,9 @@ export class FrontendDesignService {
       },
     }))
       overrides.set(item.routePath, item);
+    const projectBaselineIds = (
+      await this.prisma.designBaseline.findMany({ where: { projectId }, select: { id: true } })
+    ).map((item) => item.id);
     for (const route of plan.routes) {
       const screen = blueprint.screens.find((item) => item.localId === route.screenLocalId);
       if (!screen)
@@ -279,20 +282,30 @@ export class FrontendDesignService {
           })),
         ),
       };
-      const cacheHash = hash(
-        json({
-          version: FRONTEND_DESIGN_VERSION,
-          evaluator: screenEvaluator(process.env),
-          sourceHash,
-          htmlHash: hash(html),
-          screen,
-          bindings,
-          baselineId,
-        }),
-      );
+      // The key leaves out the baseline id, so a screen whose inputs did not
+      // change keeps its evaluated composition in a new baseline; keys written
+      // before (with an earlier baseline id last) are still found.
+      const keyFor = (withBaseline?: string) =>
+        hash(
+          json({
+            version: FRONTEND_DESIGN_VERSION,
+            evaluator: screenEvaluator(process.env),
+            sourceHash,
+            htmlHash: hash(html),
+            screen,
+            bindings,
+            ...(withBaseline === undefined ? {} : { baselineId: withBaseline }),
+          }),
+        );
+      const cacheHash = keyFor();
+      const legacyHashes = projectBaselineIds.map((id) => keyFor(id));
       const cachePath = `docs/presentations/${cacheHash}.json`;
       const cached = await this.prisma.generatedFile.findFirst({
-        where: { path: cachePath, generationRun: { projectId, designBaselineId: baselineId } },
+        where: {
+          path: { in: [cacheHash, ...legacyHashes].map((key) => `docs/presentations/${key}.json`) },
+          generationRun: { projectId },
+        },
+        orderBy: [{ generationRun: { createdAt: 'desc' } }, { id: 'desc' }],
         select: { content: true },
       });
       // An evaluation with findings is kept under the same inputs hash: the
@@ -302,8 +315,12 @@ export class FrontendDesignService {
         ? null
         : await this.prisma.generatedFile.findFirst({
             where: {
-              path: findingsPath,
-              generationRun: { projectId, designBaselineId: baselineId },
+              path: {
+                in: [cacheHash, ...legacyHashes].map(
+                  (key) => `docs/presentation-findings/${key}.json`,
+                ),
+              },
+              generationRun: { projectId },
             },
             select: { content: true },
           });

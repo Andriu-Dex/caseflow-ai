@@ -178,6 +178,12 @@ export class BusinessLogicService {
         : undefined;
     const implementations: EndpointImplementations = {};
     const checkpoints: GeneratedProjectFile[] = [];
+    // Checkpoints are reused across design baselines when an action's inputs
+    // are unchanged: the key leaves out the baseline id, and the keys written
+    // before (with each earlier baseline id in the context) are still found.
+    const baselineIds = (
+      await this.prisma.designBaseline.findMany({ where: { projectId }, select: { id: true } })
+    ).map((baseline) => baseline.id);
     for (const endpoint of plan.customEndpoints.filter(
       (item) => !item.builtin && !item.disabledReason,
     )) {
@@ -288,22 +294,37 @@ export class BusinessLogicService {
       const internalFields = plan.entities.flatMap((entity) =>
         entity.fields.filter((field) => field.internal).map((field) => field.name),
       );
-      const checkpointPath = `docs/business-logic/${createHash('sha256')
-        .update(
-          json({
-            templateVersion: template.version,
-            promptVersion,
-            context,
+      const keyed = (approvedBaselineId?: string) => {
+        // Same key order as the context: only the baseline id inside
+        // approvedContext is left out (or replaced by an earlier one).
+        const keptContext = Object.fromEntries(
+          Object.entries(context).map(([key, value]) => {
+            if (key !== 'approvedContext' || !value || typeof value !== 'object')
+              return [key, value];
+            const approved = value as Record<string, unknown>;
+            return [
+              key,
+              approvedBaselineId === undefined
+                ? Object.fromEntries(
+                    Object.entries(approved).filter(([name]) => name !== 'baselineId'),
+                  )
+                : { ...approved, baselineId: approvedBaselineId },
+            ];
           }),
-        )
-        .digest('hex')}.json`;
+        );
+        return `docs/business-logic/${createHash('sha256')
+          .update(json({ templateVersion: template.version, promptVersion, context: keptContext }))
+          .digest('hex')}.json`;
+      };
+      const checkpointPath = keyed();
+      const legacyPaths = frozenContext ? baselineIds.map((id) => keyed(id)) : [];
       try {
         const cached =
           template.version >= 2
             ? await this.prisma.generatedFile.findFirst({
                 where: {
-                  path: checkpointPath,
-                  generationRun: { projectId, designBaselineId: plan.designBaselineId },
+                  path: { in: [checkpointPath, ...legacyPaths] },
+                  generationRun: { projectId },
                 },
                 orderBy: [{ generationRun: { createdAt: 'desc' } }, { id: 'desc' }],
                 select: { content: true },

@@ -74,7 +74,10 @@ async function setup() {
   };
   const prisma = {
     generationRun: { findFirst: vi.fn().mockResolvedValue({ id }) },
-    designBaseline: { findFirst: vi.fn().mockResolvedValue(baseline) },
+    designBaseline: {
+      findFirst: vi.fn().mockResolvedValue(baseline),
+      findMany: vi.fn().mockResolvedValue([]),
+    },
     project: { findUnique: vi.fn().mockResolvedValue({ language: 'ES' }) },
     screenDesignException: { findMany: vi.fn().mockResolvedValue([]) },
     screenDesignOverride: { findMany: vi.fn().mockResolvedValue([]) },
@@ -264,7 +267,7 @@ describe('frozen design adaptation', () => {
     });
     const stored = new Map<string, string>();
     prisma.generatedFile.findFirst.mockImplementation(async ({ where }) =>
-      stored.has(where.path) ? { content: stored.get(where.path) } : null,
+      stored.has(where.path.in[0]) ? { content: stored.get(where.path.in[0]) } : null,
     );
     prisma.generatedFile.upsert.mockImplementation(async (args) => {
       stored.set(args.create.path, args.create.content);
@@ -295,7 +298,7 @@ describe('frozen design adaptation', () => {
     });
     const stored = new Map<string, string>();
     prisma.generatedFile.findFirst.mockImplementation(async ({ where }) =>
-      stored.has(where.path) ? { content: stored.get(where.path) } : null,
+      stored.has(where.path.in[0]) ? { content: stored.get(where.path.in[0]) } : null,
     );
     prisma.generatedFile.upsert.mockImplementation(async (args) => {
       stored.set(args.create.path, args.create.content);
@@ -390,7 +393,7 @@ describe('frozen design adaptation', () => {
     );
     const recorded = prisma.generatedFile.upsert.mock.calls[0]![0].create.content as string;
     prisma.generatedFile.findFirst.mockImplementation(async ({ where }) =>
-      where.path.startsWith('docs/presentation-findings/') ? { content: recorded } : null,
+      where.path.in[0].startsWith('docs/presentation-findings/') ? { content: recorded } : null,
     );
     ai.generateStructured.mockImplementation(original);
     await service.adapt(id, id, plan, files(), 'Catálogo', false, id);
@@ -403,7 +406,7 @@ describe('frozen design adaptation', () => {
     await service.adapt(id, id, plan, files(), 'Catálogo', false, id);
     // One lookup for an accepted presentation and one for recorded findings,
     // both under the current version's inputs hash.
-    const paths = prisma.generatedFile.findFirst.mock.calls.map(([args]) => args.where.path);
+    const paths = prisma.generatedFile.findFirst.mock.calls.map(([args]) => args.where.path.in[0]);
     expect(paths).toHaveLength(2);
     expect(new Set(paths.map((path: string) => path.split('/').at(-1))).size).toBe(1);
   });

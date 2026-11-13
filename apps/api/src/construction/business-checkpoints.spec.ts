@@ -26,6 +26,7 @@ describe('business checkpoint consolidation', () => {
   const prisma = {
     project: { findUnique: vi.fn() },
     generationRun: { findFirst: vi.fn() },
+    designBaseline: { findMany: vi.fn() },
     generatedFile: { findFirst: vi.fn(), upsert: vi.fn() },
   };
   const ai = { generateStructured: vi.fn() };
@@ -34,6 +35,7 @@ describe('business checkpoint consolidation', () => {
     vi.resetAllMocks();
     prisma.project.findUnique.mockResolvedValue({ language: 'ES' });
     prisma.generationRun.findFirst.mockResolvedValue({ id: 'new' });
+    prisma.designBaseline.findMany.mockResolvedValue([]);
     prisma.generatedFile.findFirst.mockResolvedValue({
       content: JSON.stringify({ body: 'return { previous: true };' }),
     });
@@ -47,7 +49,7 @@ describe('business checkpoint consolidation', () => {
     expect(prisma.generatedFile.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          generationRun: { projectId: 'project', designBaselineId: plan.designBaselineId },
+          generationRun: { projectId: 'project' },
         }),
         orderBy: [{ generationRun: { createdAt: 'desc' } }, { id: 'desc' }],
       }),

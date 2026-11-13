@@ -114,7 +114,10 @@ describe('BusinessLogicService.implement', () => {
       },
     ],
   });
-  const prisma = { project: { findUnique: vi.fn().mockResolvedValue({ language: 'ES' }) } };
+  const prisma = {
+    project: { findUnique: vi.fn().mockResolvedValue({ language: 'ES' }) },
+    designBaseline: { findMany: vi.fn().mockResolvedValue([]) },
+  };
   const implement = (generateStructured: ReturnType<typeof vi.fn>) =>
     new BusinessLogicService(prisma as never, { generateStructured } as never).implement(
       'p',
