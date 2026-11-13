@@ -51,3 +51,18 @@ En 57 de esas rutas el propio evaluador indica que la discrepancia requiere revi
 ## 5. Conclusión
 
 El proyecto genera, valida y se despliega, y la cadena de artefactos está completa. No es todavía coherente de extremo a extremo: hay pantallas inaccesibles y una brecha amplia entre lo que el plano de interfaz promete y lo que las pantallas hacen, aceptada en bloque. Cerrarla exige (a) corregir el generador para la navegación contextual y (b) reducir o ajustar el alcance aguas arriba (requisitos, plano y plan) para que lo aprobado coincida con lo construido, con una nueva versión del plan y su regeneración.
+
+## 6. Manifiesto de recorte propuesto
+
+| Funcionalidad                | Pantallas                                                              | Acciones                                      | Entidades                                                                                                        | Casos de uso            | Requisitos                     |
+| ---------------------------- | ---------------------------------------------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ----------------------- | ------------------------------ |
+| OCR de comprobantes de gasto | `/expenses/[expenseid]/receipts`, `/ocr/proposals/[proposalid]/review` | `POST /expenses/:expenseId/receipts`          | Receipt, ReceiptFile, OcrExtractionRequest, OcrProposal, OcrReviewField (y el módulo ReceiptExtractionAndReview) | CU-287 a CU-292         | Los que solo cubren esos casos |
+| Parámetros por ámbito        | `/settings/scopes/[scopetype]/[scopeid]/parameters` y su edición       | —                                             | OperationalParameter, ParameterValue                                                                             | CU-243, CU-244          | Ídem                           |
+| Exportación CSV              | `/reports/[reportid]/export`                                           | `GET /reports/:reportid/export/csv`           | —                                                                                                                | CU-299                  | Ídem                           |
+| Ciclo avanzado de catering   | planificación, transición, reapertura y resultado estimado             | `POST /catering/records/:recordid/transition` | Se conservan: el historial de catering y la idempotencia las usan                                                | CU-315 a CU-325, CU-332 | Ídem                           |
+
+Total: 9 pantallas, 3 acciones, 7 entidades, 21 casos de uso y 16 requisitos funcionales (RF-110, RF-152 a RF-158, RF-165, RF-181 a RF-186, RF-193). Se archivan, no se borran.
+
+No se recortan los descuentos: las acciones de venta que se conservan (borrador, revisión, confirmación, corrección y anulación) calculan sus totales con la entidad de descuento, y quitarla obligaría a regenerar todo el flujo de caja.
+
+Artefactos con nueva versión: requisitos y casos de uso (archivados), diagramas de casos de uso, modelo conceptual, diagrama de clases, modelo de datos, arquitecturas (si nombran el módulo OCR), árbol de navegación, plano de interfaz, plan de generación y plan de implementación (v28). Los bocetos de las pantallas conservadas no se regeneran.
