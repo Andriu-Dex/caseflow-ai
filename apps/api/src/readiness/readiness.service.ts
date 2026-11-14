@@ -32,6 +32,16 @@ function stage(
   };
 }
 
+// Construction artifacts are fixed inside Construction, so their issues must
+// not lock the planning gate that leads there.
+const CONSTRUCTION_TYPES = new Set([
+  'CONCEPTUAL_DOMAIN_MODEL',
+  'GENERATION_PLAN',
+  'IMPLEMENTATION_PLAN',
+]);
+export const blocksPlanning = (issue: { severity: string; artifactType?: string | null }) =>
+  issue.severity === 'ERROR' && !CONSTRUCTION_TYPES.has(issue.artifactType ?? '');
+
 @Injectable()
 export class ReadinessService {
   constructor(
@@ -194,9 +204,7 @@ export class ReadinessService {
     }
     const blockers = stages.flatMap((s) => s.blockers);
     const warnings = stages.flatMap((s) => s.warnings);
-    const ready =
-      stages.every((s) => s.satisfied) &&
-      !consistencyIssues.some((issue) => issue.severity === 'ERROR');
+    const ready = stages.every((s) => s.satisfied) && !consistencyIssues.some(blocksPlanning);
 
     return { ready, stages, blockers, warnings };
   }
