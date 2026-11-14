@@ -140,6 +140,24 @@ describe('frozen business context', () => {
     expect(context.useCases[0]!.alternatives[0]!.steps[0]!.action).toBe('Rechazar sin guardar.');
     expect(context.screens).toHaveLength(1);
   });
+  it('gives a hand-edited plan version the sources of its latest generated version', async () => {
+    const { prisma, baseline } = setup();
+    const planVersion = baseline.entries[0]!.artifactVersion as Record<string, unknown> & {
+      structuredAnalysisDetail: Record<string, unknown>;
+    };
+    const generation = planVersion.structuredAnalysisDetail.generation;
+    planVersion.structuredAnalysisDetail.generation = null;
+    Object.assign(planVersion, { artifactId: 'pg', versionNumber: 2 });
+    Object.assign(prisma.artifactVersion, {
+      findFirst: vi.fn().mockResolvedValue({ structuredAnalysisDetail: { generation } }),
+    });
+    const select = await loadFrozenBusinessContext(prisma as never, projectId, baselineId);
+    expect(
+      (prisma.artifactVersion as unknown as { findFirst: ReturnType<typeof vi.fn> }).findFirst.mock
+        .calls[0]![0].where,
+    ).toMatchObject({ projectId, artifactId: 'pg', versionNumber: { lt: 2 } });
+    expect(select(plan.customEndpoints[0]!, plan).useCases).toHaveLength(1);
+  });
   it('rejects another project before reading analysis', async () => {
     const { prisma, baseline } = setup();
     baseline.entries[0]!.artifactVersion.projectId = 'other-project';

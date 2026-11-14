@@ -36,10 +36,27 @@ export async function loadFrozenBusinessContext(
   const blueprint = uiBlueprintContentSchema.parse(
     blueprintEntry?.artifactVersion.structuredAnalysisDetail?.content,
   );
-  const ids =
-    planEntry?.artifactVersion.structuredAnalysisDetail?.generation?.sources.map(
-      (source) => source.artifactVersionId,
-    ) ?? [];
+  // A hand-edited plan version has no generation of its own: it keeps the
+  // analysis sources of the latest generated version of the same plan.
+  const generation =
+    planEntry?.artifactVersion.structuredAnalysisDetail?.generation ??
+    (planEntry
+      ? (
+          await prisma.artifactVersion.findFirst({
+            where: {
+              projectId,
+              artifactId: planEntry.artifactVersion.artifactId,
+              versionNumber: { lt: planEntry.artifactVersion.versionNumber },
+              structuredAnalysisDetail: { generationId: { not: null } },
+            },
+            orderBy: { versionNumber: 'desc' },
+            include: {
+              structuredAnalysisDetail: { include: { generation: { include: { sources: true } } } },
+            },
+          })
+        )?.structuredAnalysisDetail?.generation
+      : undefined);
+  const ids = generation?.sources.map((source) => source.artifactVersionId) ?? [];
   const analysis = ids.length
     ? await prisma.artifactVersion.findMany({
         where: {
