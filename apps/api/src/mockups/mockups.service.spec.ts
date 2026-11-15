@@ -9,7 +9,7 @@ import {
   type MockupProvider,
 } from '@caseflow-ai/integrations';
 import type { MockupGenerationJobPayload } from '@caseflow-ai/domain';
-import { MockupsService } from './mockups.service';
+import { MockupsService, carryOverScreens } from './mockups.service';
 
 const now = new Date('2026-01-01T00:00:00Z');
 const blueprintContent = {
@@ -1040,5 +1040,23 @@ describe('MockupsService', () => {
     await expect(
       service.transition('project', 'artifact', 'version', 'APPROVED'),
     ).resolves.toMatchObject({ status: 'APPROVED' });
+  });
+});
+
+describe('carryOverScreens', () => {
+  const screen = (localId: string, purpose = 'Consultar') => ({ localId, name: localId, purpose });
+  it('keeps unchanged and reworded screens, lists the changed ones and blocks new ones', () => {
+    const before = [screen('a'), screen('b'), screen('cut')];
+    expect(
+      carryOverScreens(before, [screen('a'), screen('b', 'Consultar sin OCR')], ['a', 'b', 'cut']),
+    ).toEqual({
+      blocked: [],
+      changedScreens: ['b'],
+    });
+    expect(
+      carryOverScreens(before, [screen('a'), screen('new')], ['a', 'b', 'cut']).blocked,
+    ).toEqual(['new']);
+    // A screen with no approved image is generated, never carried.
+    expect(carryOverScreens(before, [screen('a')], ['b']).blocked).toEqual(['a']);
   });
 });

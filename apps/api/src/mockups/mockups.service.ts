@@ -139,9 +139,8 @@ export class MockupsService {
   }
 
   // A new version of an approved Stitch mockup for a newer approved UI
-  // Blueprint whose screens are a subset of the previous one, each unchanged
-  // (a scope cut): the approved screens are carried over, nothing is
-  // regenerated. Any new or changed screen must be generated or refined.
+  // Blueprint whose screens all existed before (a scope cut or a wording
+  // fix): the approved images are carried over, nothing is regenerated.
   async carryOver(projectId: string, mockupId: string, uiBlueprintVersionId: string) {
     await this.assertApprovedBlueprint(projectId, uiBlueprintVersionId);
     const latest = (await this.findLatest(projectId, mockupId)).versions[0]!;
@@ -167,20 +166,17 @@ export class MockupsService {
       ReturnType<typeof uiBlueprintContentSchema.parse>,
       ReturnType<typeof uiBlueprintContentSchema.parse>,
     ];
-    const blocked = after.screens.filter((screen) => {
-      const previous = before.screens.find((item) => item.localId === screen.localId);
-      return (
-        !previous ||
-        JSON.stringify(previous) !== JSON.stringify(screen) ||
-        !detail.screens.some((item) => item.screenLocalId === screen.localId)
-      );
-    });
+    const { blocked, changedScreens } = carryOverScreens(
+      before.screens,
+      after.screens,
+      detail.screens.map((item) => item.screenLocalId),
+    );
     if (blocked.length)
       throw new UnprocessableEntityException(
-        `Estas pantallas son nuevas o cambiaron y deben generarse o refinarse: ${blocked.map((screen) => screen.name).join(', ')}.`,
+        `Estas pantallas son nuevas y deben generarse: ${blocked.join(', ')}.`,
       );
     const kept = new Set(after.screens.map((screen) => screen.localId));
-    return this.prisma.$transaction((tx) =>
+    const carried = await this.prisma.$transaction((tx) =>
       this.createVersionInTx(tx, projectId, mockupId, uiBlueprintVersionId, detail.deviceType, {
         kind: 'STITCH',
         designThemeVersionId: detail.designThemeVersionId,
@@ -198,6 +194,7 @@ export class MockupsService {
           })),
       }),
     );
+    return { ...carried, changedScreens };
   }
 
   // Refinement = a new version of the same mockup, regenerated from the same
@@ -1424,4 +1421,31 @@ export class MockupsService {
       createdAt: artifact.createdAt.toISOString(),
     };
   }
+}
+
+// Which screens of a newer blueprint can keep an approved mockup's images.
+// A new screen has no approved image to keep and must be generated (blocked).
+// A changed one keeps its image and is listed, so the person approving the
+// carried mockup knows which screens to check against the blueprint.
+export function carryOverScreens(
+  before: readonly { localId: string; name: string }[],
+  after: readonly { localId: string; name: string }[],
+  mockedScreenIds: readonly string[],
+) {
+  return {
+    blocked: after
+      .filter(
+        (screen) =>
+          !before.some((item) => item.localId === screen.localId) ||
+          !mockedScreenIds.includes(screen.localId),
+      )
+      .map((screen) => screen.name),
+    changedScreens: after
+      .filter(
+        (screen) =>
+          JSON.stringify(before.find((item) => item.localId === screen.localId)) !==
+          JSON.stringify(screen),
+      )
+      .map((screen) => screen.name),
+  };
 }
