@@ -66,7 +66,8 @@ export function reviewBusinessLogic(
 ): BusinessLogicReview {
   const source = ts.createSourceFile('body.ts', body, ts.ScriptTarget.Latest, true);
   let touchesInternal = false;
-  let bypassesBoundary = false;
+  // What crossed the boundary, named in the reason so a retry can avoid it.
+  let bypassesBoundary: string | null = null;
   const visit = (node: ts.Node) => {
     if ((ts.isIdentifier(node) || ts.isStringLiteral(node)) && internalFields.includes(node.text))
       touchesInternal = true;
@@ -75,7 +76,7 @@ export function reviewBusinessLogic(
       (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
         (ts.isIdentifier(node.expression) && node.expression.text === 'require'))
     )
-      bypassesBoundary = true;
+      bypassesBoundary ??= 'import/require';
     if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
       const property = ts.isPropertyAccessExpression(node)
         ? node.name.text
@@ -87,7 +88,7 @@ export function reviewBusinessLogic(
         (property.startsWith('$') && property !== '$transaction') ||
         (property.startsWith('_') && !['_sum', '_avg', '_min', '_max', '_count'].includes(property))
       )
-        bypassesBoundary = true;
+        bypassesBoundary ??= property;
     }
     ts.forEachChild(node, visit);
   };
@@ -111,7 +112,7 @@ export function reviewBusinessLogic(
   if (bypassesBoundary)
     return {
       accepted: false,
-      reason: 'intenta eludir los límites de ejecución o persistencia',
+      reason: `intenta eludir los límites de ejecución o persistencia (${bypassesBoundary})`,
       packages: [],
     };
   return { accepted: true };
@@ -351,7 +352,33 @@ export class BusinessLogicService {
                 // leave room for a long action.
                 maxOutputTokens: 8192,
               });
-        const review = reviewBusinessLogic(result.data.body, internalFields);
+        let review = reviewBusinessLogic(result.data.body, internalFields);
+        // One bounded retry of a fresh AI proposal, told exactly why the
+        // previous one was rejected; a second rejection leaves the action
+        // unimplemented as before.
+        if (!review.accepted && !cached && !revision) {
+          logger.warn(
+            `Business logic for "${endpointKey(endpoint)}" (run ${generationRunId}) rejected: ${review.reason}. Asking once more.`,
+          );
+          const retried = await this.ai.generateStructured({
+            projectId,
+            ...(endpoint.contract ? {} : { language }),
+            promptKey: 'business-logic.generate',
+            promptVersion,
+            messages: [
+              { role: 'user', content: JSON.stringify(context) },
+              {
+                role: 'user',
+                content: `La revisión estática rechazó la propuesta anterior para esta acción porque ${review.reason}. Escribe de nuevo el cuerpo completo cumpliendo todas las reglas: solo los delegados de Prisma suministrados (incluido $transaction), sin SQL directo ni propiedades que empiecen por $ o _ (salvo _sum, _avg, _min, _max y _count), sin import ni require y sin paquetes.`,
+              },
+            ],
+            outputSchema: businessLogicOutputSchema,
+            schemaName: 'business_logic_generation',
+            maxOutputTokens: 8192,
+          });
+          result.data = retried.data;
+          review = reviewBusinessLogic(result.data.body, internalFields);
+        }
         if (review.accepted) {
           implementations[endpointKey(endpoint)] = result.data.body;
           if (template.version >= 2) {

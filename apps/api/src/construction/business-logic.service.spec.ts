@@ -17,6 +17,9 @@ describe('reviewBusinessLogic', () => {
       'return this.prisma.$extends({});',
     ])
       expect(reviewBusinessLogic(body)).toMatchObject({ accepted: false });
+    expect(reviewBusinessLogic('return this.prisma._engine;')).toMatchObject({
+      reason: expect.stringContaining('(_engine)'),
+    });
     expect(
       reviewBusinessLogic(
         'return this.prisma.$transaction(async tx => tx.order.aggregate({ _sum: { total: true } }));',
@@ -176,12 +179,25 @@ describe('BusinessLogicService.implement', () => {
     ]);
   });
 
-  it('keeps the 501 stub and warns when the proposal is rejected', async () => {
-    const result = await implement(
-      vi.fn().mockResolvedValue({ data: { body: 'return process.env;' } }),
-    );
+  it('asks once more after a rejection, then keeps the 501 stub and warns', async () => {
+    const generate = vi.fn().mockResolvedValue({ data: { body: 'return process.env;' } });
+    const result = await implement(generate);
     expect(result.implementations).toEqual({});
     expect(result.warnings).toEqual([expect.stringContaining('Confirmar pedido')]);
+    // Bounded: one retry, never a third request.
+    expect(generate).toHaveBeenCalledTimes(2);
+  });
+
+  it('accepts a corrected proposal, telling the model why the first was rejected', async () => {
+    const generate = vi
+      .fn()
+      .mockResolvedValueOnce({ data: { body: 'return this.prisma._engine;' } })
+      .mockResolvedValueOnce({ data: { body: 'return this.prisma.order.findMany();' } });
+    const result = await implement(generate);
+    expect(Object.values(result.implementations)).toEqual(['return this.prisma.order.findMany();']);
+    const retry = generate.mock.calls[1]![0].messages;
+    expect(retry).toHaveLength(2);
+    expect(retry[1].content).toContain('(_engine)');
   });
 
   it('degrades gracefully when AI is unavailable', async () => {
