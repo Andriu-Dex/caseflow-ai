@@ -1,4 +1,4 @@
-// Generated-project target templates (spec §151-155, DEC-085/DEC-093/DEC-100).
+// Generated-project target templates (DEC-085, DEC-093, DEC-100).
 //
 // Templates are versioned constants in code rather than editable rows: V1 ships
 // exactly one template that no user can change, so git is the single source of
@@ -36,7 +36,7 @@ export interface CatalogDependency {
 }
 
 // argv, never a shell string: the sandbox runs these verbatim without a shell,
-// which keeps its command allowlist exact (AGENTS.md §26).
+// which keeps its command allowlist exact.
 export interface ValidationCommand {
   readonly stage: ValidationStage;
   readonly argv: readonly string[];
@@ -82,7 +82,7 @@ export interface TargetTemplateVersion {
   readonly designSystemProfile: DesignSystemProfile;
   readonly dependencies: readonly CatalogDependency[];
   readonly validationCommands: readonly ValidationCommand[];
-  // Layout every generated project must have (structural validation, AGENTS.md §7).
+  // Layout every generated project must have (structural validation).
   readonly requiredPaths: readonly string[];
   readonly toolchain: ToolchainSettings;
 }
@@ -252,6 +252,6 @@ export function findCatalogDependency(
   return template.dependencies.find((d) => d.name === name);
 }
 
-// Repair rounds allowed per validation (DEC-103, AGENTS.md §27); the database
+// Repair rounds allowed per validation (DEC-103); the database
 // enforces the same bound.
 export const MAX_AUTO_REPAIR_ROUNDS = 3;

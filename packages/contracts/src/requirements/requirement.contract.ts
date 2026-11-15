@@ -334,7 +334,7 @@ export const REQUIREMENT_QUALITY_RULES = [
   'POSSIBLE_MULTI_OBLIGATION',
   'DUPLICATE_NAME',
 ] as const;
-// Deterministic checks only, never a standards-certification claim (spec §4.3).
+// Deterministic checks only, never a standards-certification claim.
 export const requirementQualityReportResponseSchema = z.object({
   standard: z.literal('ISO/IEC/IEEE 29148:2018-aligned'),
   totalRequirements: z.number().int().nonnegative(),

@@ -27,7 +27,7 @@ export interface PutObjectInput {
 }
 
 // Product services never depend on SeaweedFS/AWS SDK details directly — only
-// on this interface (spec §35, AGENTS.md §38).
+// on this interface.
 export interface StorageProvider {
   readonly id: string;
   putObject(input: PutObjectInput): Promise<void>;

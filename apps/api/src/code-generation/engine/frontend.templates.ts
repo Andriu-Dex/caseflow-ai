@@ -28,7 +28,7 @@ type Route = Plan['routes'][number];
 // Next.js frontend following the CASEFLOW_STANDARD_WEB_V1 design profile:
 // Tailwind + shadcn-style primitives, React Hook Form + Zod (the same
 // contracts the API validates with), TanStack Query over the generated
-// OpenAPI client — never hand-written fetch calls per screen (AGENTS.md §20).
+// OpenAPI client — never hand-written fetch calls per screen.
 
 const STANDARD_GLOBALS_CSS = `@import 'tailwindcss';
 

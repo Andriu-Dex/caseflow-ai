@@ -20,7 +20,7 @@ datasource db {
   provider = "postgresql"
 }
 
-// Lifecycle of an ArtifactVersion (spec §5.2).
+// Lifecycle of an ArtifactVersion.
 enum ArtifactVersionStatus {
   DRAFT
   GENERATED
@@ -31,7 +31,7 @@ enum ArtifactVersionStatus {
   @@map("artifact_version_status")
 }
 
-// Where an ArtifactVersion came from (spec §6.3). SYSTEM_GENERATED is
+// Where an ArtifactVersion came from. SYSTEM_GENERATED is
 // deterministically derived by CASEFlow from already approved/structured CASE
 // data (e.g. a Use Case Diagram) — no manual authoring and no AI involvement.
 enum ArtifactOrigin {
@@ -305,7 +305,7 @@ model ProjectMembership {
   @@map("project_memberships")
 }
 
-// Logical team/organization that groups projects (spec §3.1).
+// Logical team/organization that groups projects.
 model Workspace {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   slug      String   @unique
@@ -320,7 +320,7 @@ model Workspace {
   @@map("workspaces")
 }
 
-// Main functional unit of the system (spec §3.2). Domain-independent.
+// Main functional unit of the system. Domain-independent.
 // DEC-116: how much of the planning a person reviews. Only upgrades.
 enum WorkflowRoute {
   FULL
@@ -348,7 +348,7 @@ model Project {
   language            ProjectLanguage @default(ES)
   createdAt           DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  // Archival (spec §87): hides the project from active use once it has
+  // Archival: hides the project from active use once it has
   // approved history and therefore can no longer be hard-deleted.
   archivedAt          DateTime?       @map("archived_at") @db.Timestamptz(6)
   // DEC-118: projects created before the theme step existed keep the
@@ -406,7 +406,7 @@ model ArtifactType {
   @@map("artifact_types")
 }
 
-// Stable logical identity of an artifact (spec §6.2, §31.1).
+// Stable logical identity of an artifact.
 // The "current state" is derived from the latest ArtifactVersion.
 model Artifact {
   id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -414,10 +414,10 @@ model Artifact {
   artifactTypeCode String    @map("artifact_type_code")
   code             String
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  // Archival (spec §87: "fuentes utilizadas → archivar antes que borrar"):
+  // Archival:
   // hides the artifact from active use without touching any ArtifactVersion
   // row, so it needs no immutability-trigger exception. The code stays
-  // reserved forever (spec §31.4), unlike a hard delete.
+  // reserved forever, unlike a hard delete.
   archivedAt       DateTime? @map("archived_at") @db.Timestamptz(6)
   // When it was last archived or restored (DEC-137), set by a trigger: an
   // artifact with approved history leaving or returning is a change of its
@@ -432,16 +432,16 @@ model Artifact {
   projectBaselineEntries               ProjectBaselineEntry[]
   useCaseRelationTargets               UseCaseRelation[]
 
-  // Project-scoped, never-reused codes (spec §31.4).
+  // Project-scoped, never-reused codes.
   @@unique([projectId, code])
   // Target of the composite foreign key that keeps versions inside the
-  // artifact's project (spec §32).
+  // artifact's project.
   @@unique([id, projectId])
   @@index([projectId, artifactTypeCode])
   @@map("artifacts")
 }
 
-// Historical state of an artifact (spec §6.2, §15). Content columns are
+// Historical state of an artifact. Content columns are
 // immutable; see the trigger in the 1A migration.
 model ArtifactVersion {
   id                String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -452,7 +452,7 @@ model ArtifactVersion {
   title             String
   status            ArtifactVersionStatus
   origin            ArtifactOrigin
-  // Auxiliary structured metadata only (spec §6.2). Never a substitute for
+  // Auxiliary structured metadata only. Never a substitute for
   // relational modeling of domain entities.
   metadataAuxiliary Json                  @default("{}") @map("metadata_auxiliary")
   createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -1211,12 +1211,12 @@ model SourceReportCandidate {
   @@map("source_report_candidates")
 }
 
-// AI-proposed pre-fill for the Project Context form (spec §5 human-in-the-loop):
+// AI-proposed pre-fill for the Project Context form:
 // never auto-persisted as the canonical context — the reviewer edits it and
 // submits it through the same manual create/createVersion path as any
 // hand-authored context. content mirrors only the fields the Context form
 // actually exposes (no scopeItems yet); sourceVersionIds records which
-// approved Project Source versions were used as input, for evidence (§36.4).
+// approved Project Source versions were used as input, for evidence.
 model ProjectContextCandidate {
   id                      String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   projectId               String   @map("project_id") @db.Uuid
@@ -1259,7 +1259,7 @@ model ContextGenerationJob {
   @@map("context_generation_jobs")
 }
 
-// Structured interpretation of a source's extracted content (spec §8):
+// Structured interpretation of a source's extracted content:
 // summary, actors, business concepts, candidate rules/constraints, needs,
 // facts, ambiguities, provenance. Immutable once created; attached to the
 // same ArtifactVersion as its SourceDetail. Never an official Requirement.
@@ -1277,7 +1277,7 @@ model SourceReportDetail {
 }
 
 // One shared candidate-first AI generation batch for Navigation/Software
-// Architecture/System Architecture/UI Blueprint (spec §13/§14/§15/§17). The
+// Architecture/System Architecture/UI Blueprint. The
 // `kind` discriminator keeps each generation scoped to exactly one artifact
 // type; content shape per kind is validated by packages/contracts, not here.
 model StructuredAnalysisGeneration {
@@ -1480,7 +1480,7 @@ model SourceProcessingJob {
   @@map("source_processing_jobs")
 }
 
-// Tracks an async mockup generation request (spec §40 job states), so the
+// Tracks an async mockup generation request, so the
 // HTTP request that creates it never blocks on Stitch's real latency.
 // existingMockupId is set only when the job regenerates a version of an
 // already-approved mockup artifact; null means a brand-new one.
@@ -1580,7 +1580,7 @@ model ProjectBaselineEntry {
   @@map("project_baseline_entries")
 }
 
-// Append-only domain/security audit trail (AGENTS.md §35). Rows are never
+// Append-only domain/security audit trail. Rows are never
 // updated or deleted: a database trigger rejects both. Distinct from logs.
 model AuditEvent {
   id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -1619,7 +1619,7 @@ enum DependencyProposalStatus {
 }
 
 // A package a generated project needs that is outside its TargetTemplate's
-// Approved Dependency Catalog (spec §155, DEC-100). An approval is an exception
+// Approved Dependency Catalog (DEC-100). An approval is an exception
 // for this project only — the shared template catalog never changes. Decided
 // once: a partial unique index allows one open-or-approved proposal per package.
 model DependencyProposal {
@@ -1663,11 +1663,11 @@ enum DesignBaselineRole {
   @@map("design_baseline_role")
 }
 
-// Approved, frozen design (spec §160, DEC-094): the exact approved versions an
+// Approved, frozen design (DEC-094): the exact approved versions an
 // official ImplementationPlan and code generation are built from. Creating
 // one is the human Design Gate approval; rows are immutable afterwards.
 // A justified acceptance of the exact findings the screen evaluator reported
-// for one screen of a design baseline (AGENTS.md §16: justify exceptions).
+// for one screen of a design baseline.
 // It covers only those findings: different findings need a new justification.
 model ScreenDesignException {
   id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -1802,8 +1802,8 @@ enum CodeTraceLinkType {
   @@map("code_trace_link_type")
 }
 
-// One official code generation from an approved Implementation Plan (spec
-// §197). A retry is a new run: finished runs and their files are history.
+// One official code generation from an approved Implementation Plan.
+// A retry is a new run: finished runs and their files are history.
 model GenerationRun {
   id                          String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   projectId                   String              @map("project_id") @db.Uuid
@@ -1906,7 +1906,7 @@ enum AutoRepairStatus {
   @@map("auto_repair_status")
 }
 
-// One validation attempt of a generation run inside the sandbox (spec §174-175).
+// One validation attempt of a generation run inside the sandbox.
 model SandboxRun {
   id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   projectId       String           @map("project_id") @db.Uuid
@@ -2001,7 +2001,7 @@ model RepairFinding {
   @@map("repair_findings")
 }
 
-// Immutable official result of a validated generation (spec §172, DEC-104/105).
+// Immutable official result of a validated generation (DEC-104, 105).
 enum DeploymentStatus {
   STARTING
   RUNNING

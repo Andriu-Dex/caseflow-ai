@@ -175,7 +175,7 @@ describe('Data Model + Diagram Engine integration', () => {
     expect(diagram.source).toContain('actor "Usuario"');
     expect(diagram.source).not.toMatch(/include|extend/);
     // A deterministic diagram derived by CASEFlow itself (no manual authoring,
-    // no AI) must be SYSTEM_GENERATED, not MANUAL (spec §6.3).
+    // no AI) must be SYSTEM_GENERATED, not MANUAL.
     const version = await ctx.prisma.artifactVersion.findUniqueOrThrow({
       where: { id: diagram.versionId },
     });

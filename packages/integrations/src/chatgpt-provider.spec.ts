@@ -42,7 +42,7 @@ function setup(response: Response) {
 }
 
 // DEC-117: contract of the ChatGPT plan provider, with simulated responses
-// (a real account is evaluated outside CI, AGENTS.md §44).
+// (a real account is evaluated outside CI).
 describe('ChatGPTProvider', () => {
   it('sends a streamed, unstored structured request and assembles the JSON', async () => {
     const { provider, fetchMock } = setup(

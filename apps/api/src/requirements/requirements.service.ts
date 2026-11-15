@@ -616,7 +616,7 @@ export class RequirementsService {
     return contextCoverage(this.prisma, projectId, { approvedOnly: false });
   }
   // Deterministic ISO/IEC/IEEE 29148:2018-aligned quality check over every
-  // current Requirement in the project (spec §4.3). Not a certification
+  // current Requirement in the project. Not a certification
   // claim; human review remains authoritative.
   async qualityReport(projectId: string) {
     const { items } = await this.list(projectId);

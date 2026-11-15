@@ -51,7 +51,7 @@ const projectContextVersionMetadataSchema = z.object({
   createdAt: z.iso.datetime(),
 });
 
-// AI-proposed pre-fill (spec §5 human-in-the-loop): mirrors only the fields
+// AI-proposed pre-fill: mirrors only the fields
 // the Context form actually exposes for editing before submission — never a
 // separate "accept" path, the reviewer edits and submits it through the same
 // projectContextRequestSchema create/createVersion endpoints as any

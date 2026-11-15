@@ -23,7 +23,7 @@ Both installable editions work without any AI provider; AI is optional in each.
 
 ## Current status
 
-This repository implements the complete **First Deliverable MVP**: Project Sources (typed intake, local text/PDF extraction, manual image/audio transcription fallback, structured interpretation/report), Project Context, ISO/IEC/IEEE 29148:2018-aligned Requirements, Use Cases, a conceptual Data Model with a deterministic ER diagram, Navigation/Software Architecture/System Architecture with deterministic diagrams, a UI Blueprint with deterministic Mockups, staleness (potential-impact) analysis, an exact-version Traceability graph, a 13-stage Readiness evaluation, and JSON/HTML Export — all with candidate-first AI generation where a provider is configured **and** a fully manual, non-AI creation path for every artifact type (CASEflow remains usable end to end with `AI_PROVIDER=disabled`). See `docs/FIRST_DELIVERABLE_MVP.md` and `docs/CASEFLOW_AI_SPEC.md` §217–§219.
+This repository implements the planning flow: Project Sources (typed intake, local text/PDF extraction, manual image/audio transcription fallback, structured interpretation/report), Project Context, ISO/IEC/IEEE 29148:2018-aligned Requirements, Use Cases, a conceptual Data Model with a deterministic ER diagram, Navigation/Software Architecture/System Architecture with deterministic diagrams, a UI Blueprint with deterministic Mockups, staleness (potential-impact) analysis, an exact-version Traceability graph, a 13-stage Readiness evaluation, and JSON/HTML Export — all with candidate-first AI generation where a provider is configured **and** a fully manual, non-AI creation path for every artifact type (CASEflow remains usable end to end with `AI_PROVIDER=disabled`). See `docs/CASEFLOW_AI_SPEC.md`.
 
 The repository also implements generation/implementation plans, a frozen design baseline,
 incremental code generation, Docker sandbox validation, immutable software snapshots,
@@ -244,11 +244,9 @@ In the web edition the same button explains how to install the desktop app.
 
 ## Architecture documentation
 
-- **`docs/CASEFLOW_AI_SPEC.md`** is the authoritative product and architecture specification.
-- **`docs/FIRST_DELIVERABLE_MVP.md`** summarizes the current delivery scope (a summary, not a second source of truth).
-- **`AGENTS.md`** is the operational contract for AI coding agents working in this repository — stricter and narrower than the spec, but must never contradict it.
-
-When the two disagree, `docs/CASEFLOW_AI_SPEC.md` wins (see `AGENTS.md`'s own instruction-priority rules).
+- **`docs/CASEFLOW_AI_SPEC.md`** describes the product as it is today, with the decision register.
+- **`docs/decisions/`** holds the architecture decision records (ADR).
+- **`AGENTS.md`** sets the working rules for anyone changing this repository.
 
 ## License
 

@@ -405,7 +405,7 @@ function download(filename: string, content: string, mime: string) {
 }
 
 // PNG is streamed from the backend (re-rendered on demand from the canonical
-// stored source, spec §4.8) rather than rasterized here client-side: Mermaid
+// stored source) rather than rasterized here client-side: Mermaid
 // always emits `<foreignObject>` for edge/attribute labels, and Chromium/
 // WebKit refuse `canvas.toBlob` for any SVG containing one, regardless of
 // origin — there is no reliable client-only fix for that.

@@ -97,7 +97,7 @@ export class MockupsService {
     @Inject(MOCKUP_QUEUE) private readonly queue: Queue<MockupGenerationJobPayload>,
   ) {}
 
-  // Creation/regeneration only enqueue the real generation (spec §40): the
+  // Creation/regeneration only enqueue the real generation: the
   // HTTP request never blocks on Stitch's real latency. The client polls
   // getJob() until it reaches COMPLETED/FAILED.
   async create(

@@ -136,7 +136,7 @@ function UseCasesContent({ projectId }: { projectId: string }) {
     queryFn: () => api.useCaseDiagrams.list(projectId),
   });
   // The list is append-only (every regeneration adds a new DIA-NNN rather
-  // than replacing one — spec §218.7), ordered oldest-first: the last item
+  // than replacing one — ), ordered oldest-first: the last item
   // is the current one to show.
   const diagram = diagrams.data?.items.at(-1) ?? null;
   const stale = useStaleArtifactIds(projectId);

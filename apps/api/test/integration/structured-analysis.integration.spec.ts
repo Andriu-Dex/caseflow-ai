@@ -196,7 +196,7 @@ describe('Structured Analysis (Navigation/Architecture/UI Blueprint) integration
       aiRunId: generation.aiRunId,
     });
     // Never auto-approved: an accepted AI candidate still starts at GENERATED,
-    // requiring an explicit human transition to APPROVED (spec §4.5/AGENTS.md §4.5).
+    // requiring an explicit human transition to APPROVED.
     expect(accepted.items[0]!.version.status).not.toBe('APPROVED');
   });
 
@@ -342,7 +342,7 @@ describe('Structured Analysis (Navigation/Architecture/UI Blueprint) integration
       'APPROVED',
     );
     // Editing an APPROVED artifact creates version 2 as a new DRAFT, leaving
-    // version 1 untouched and still APPROVED (spec §5.3 immutable history).
+    // version 1 untouched and still APPROVED.
     const v2 = await ctx.structuredAnalysis.version(
       projectId,
       'NAVIGATION_TREE',

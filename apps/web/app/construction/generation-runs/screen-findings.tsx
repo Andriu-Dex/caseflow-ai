@@ -9,7 +9,7 @@ import { api } from '../../../lib/api';
 type Finding = ScreenFindingsResponse['items'][number];
 
 // Screens the evaluator did not accept for this design, each acceptable with
-// a written justification that covers exactly those findings (AGENTS.md §16).
+// a written justification that covers exactly those findings.
 export function ScreenFindings({
   projectId,
   run,

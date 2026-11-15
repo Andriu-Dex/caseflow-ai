@@ -42,14 +42,14 @@ type NavItem = { href: string; label: string };
 // Per-viewer convenience (whether this browser keeps the sidebar folded).
 const COLLAPSED_KEY = 'caseflow.sidebarCollapsed';
 
-// The Construction group (forward engineering, AGENTS.md §10) comes after
+// The Construction group (forward engineering) comes after
 // the 12-step planning pipeline, not alongside it: collapsing it until
 // planning is done keeps the sidebar reading as one stepper instead of two
 // unrelated flows, and avoids the user clicking into a page whose every
 // action the backend would reject anyway (no approved plan yet).
 const CONSTRUCTION_GROUP_LABEL = 'Construcción';
 
-// Order matches the Construction Pipeline (AGENTS.md §10): each group is a
+// Order matches the Construction Pipeline: each group is a
 // consecutive slice of the same linear sequence, numbered (via
 // ROUTE_STEP_NUMBER) across the whole flow rather than per group, so the
 // sidebar reads as one stepper.

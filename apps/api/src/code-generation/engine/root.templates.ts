@@ -25,7 +25,7 @@ function envExampleLines(v: { name: string; description: string; required: boole
     : [`${comment} (opcional)`, `# ${v.name}=`];
 }
 
-// Workspace root of the generated project (spec §153 layout).
+// Workspace root of the generated project.
 export function rootFiles(ctx: GenerationContext): GeneratedProjectFile[] {
   const { plan, template, projectName, slug } = ctx;
   const toolchain = template.toolchain;

@@ -71,7 +71,7 @@ export interface RepairResult {
   findings: { message: string; relatedArtifactVersionId: string | null }[];
 }
 
-// One bounded repair round (spec §176): structured diagnosis in, focused
+// One bounded repair round: structured diagnosis in, focused
 // file replacements out, reviewed before anything is applied. The caller owns
 // the round limit; this never loops.
 @Injectable()

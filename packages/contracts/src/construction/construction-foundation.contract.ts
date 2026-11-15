@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-// Construction Foundation (spec §151-155). Mirrors the target-template model
+// Construction Foundation. Mirrors the target-template model
 // in @caseflow-ai/domain; this package stays dependency-free apart from zod.
 
 export const DEPENDENCY_LAYERS = ['FRONTEND', 'BACKEND', 'SHARED'] as const;

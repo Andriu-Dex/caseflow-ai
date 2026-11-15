@@ -96,7 +96,7 @@ export interface OpenAICompatibleProviderConfig {
   fetch?: typeof fetch;
   // Explicit capability flag, set from this provider slot's own config
   // (never inferred from `id`, which is a free-form label a user could set
-  // to anything — see AGENTS.md §36.2 provider-agnostic). 'narrow' selects
+  // to anything — see  provider-agnostic). 'narrow' selects
   // the reduced JSON Schema dialect a slot's own endpoint is documented to
   // require; 'strict' (default) is standard OpenAI strict json_schema mode.
   schemaDialect?: 'strict' | 'narrow';

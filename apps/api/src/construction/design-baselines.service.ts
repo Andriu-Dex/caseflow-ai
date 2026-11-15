@@ -48,7 +48,7 @@ const baselineInclude = {
   },
 } as const;
 
-// The Design Gate (spec §160, DEC-094): creating a baseline is the human
+// The Design Gate (DEC-094): creating a baseline is the human
 // approval that freezes the exact approved design an ImplementationPlan and
 // official code generation must use. Baselines are immutable history; the
 // latest one is the current design.

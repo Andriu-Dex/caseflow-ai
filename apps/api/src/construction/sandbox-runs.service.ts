@@ -90,7 +90,7 @@ interface StageRecord {
   output: string;
 }
 
-// Validation of a generated project (spec §175-§177): the TargetTemplate's own
+// Validation of a generated project: the TargetTemplate's own
 // commands run in the sandbox, then structural and traceability checks. READY
 // — and its immutable snapshot — only when every P0 stage passed.
 @Injectable()
@@ -456,7 +456,7 @@ export class SandboxRunsService {
       ...(lockfile ? [{ path: LOCKFILE, content: lockfile }] : []),
     ];
     const hash = manifestHash(projectFiles);
-    // Generation/traceability manifest (spec §177.1), shipped inside the ZIP.
+    // Generation/traceability manifest, shipped inside the ZIP.
     const manifest = {
       snapshotId,
       targetTemplate: { identifier: template.identifier, version: template.version },

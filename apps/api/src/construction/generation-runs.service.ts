@@ -62,7 +62,7 @@ type RunRow = {
   _count: { files: number };
 };
 
-// Official code generation (spec §197, DEC-111): an approved Implementation
+// Official code generation (DEC-111): an approved Implementation
 // Plan, built on an approved Design Baseline, is turned into the project's
 // files asynchronously. Every run is new history — never an overwrite.
 @Injectable()

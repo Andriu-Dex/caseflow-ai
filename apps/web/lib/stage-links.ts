@@ -1,7 +1,7 @@
 // Maps backend Readiness stage keys to their frontend route, and back. Single
 // source of truth shared by Home (readiness overview) and AppShell (sidebar
 // stepper), so both agree on where each stage of the Construction Pipeline
-// (AGENTS.md §10) actually lives.
+// actually lives.
 import { PIPELINE_ORDER } from '@caseflow-ai/contracts';
 
 export const STAGE_LINKS: Record<string, string> = {
@@ -105,7 +105,7 @@ export function computeStepState(
   return 'pending';
 }
 
-// Sequential position of each route within the 5-step Construction Pipeline (AGENTS.md §10)
+// Sequential position of each route within the 5-step Construction Pipeline
 export const CONSTRUCTION_STEP_NUMBER: Record<string, number> = {
   '/construction/generation-plan': 1,
   '/construction/conceptual-model': 2,

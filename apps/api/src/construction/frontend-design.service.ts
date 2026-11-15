@@ -108,7 +108,7 @@ export class FrontendDesignService {
     // Every screen is evaluated before failing, so one run reports all gaps;
     // accepted screens stay checkpointed for the next run.
     const incomplete: string[] = [];
-    // Justified acceptances of exact findings (AGENTS.md §16), by route and hash.
+    // Justified acceptances of exact findings, by route and hash.
     const exceptions = new Map(
       (
         await this.prisma.screenDesignException.findMany({

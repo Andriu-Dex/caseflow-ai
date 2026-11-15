@@ -6,7 +6,7 @@ import type { ImplementationPlanContent } from '@caseflow-ai/contracts';
 import { actionMarker, pagePath } from '../code-generation/engine/frontend.templates';
 import { hasOnlyThrowingPaths } from './business-flow';
 
-// Deterministic checks and packaging of a generated project (spec §175, §177).
+// Deterministic checks and packaging of a generated project.
 // Pure functions: no I/O, so every rule is unit-testable.
 
 export interface ProjectFile {
@@ -240,7 +240,7 @@ const FORBIDDEN_IN_REPAIR = [
 
 // A repair may only rewrite source files named in the diagnosis, and may not
 // bring in any module the project does not already use: no new dependencies,
-// no weakened tests, no configuration changes (AGENTS.md §27).
+// no weakened tests, no configuration changes.
 export function reviewRepairPatch(
   patch: { path: string; content: string },
   candidates: ReadonlyMap<string, ProjectFile>,

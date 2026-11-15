@@ -59,7 +59,7 @@ function compareOrdinal(a: string, b: string): number {
 }
 
 // Deterministic HTML/SVG-shaped wireframe from structured UI Blueprint data
-// (spec §18): no AI, no raster image, no external renderer. Screen/section/
+// no AI, no raster image, no external renderer. Screen/section/
 // action text is untrusted (may originate from an AI-generated blueprint),
 // so every piece of text is XML-escaped before insertion; the caller still
 // runs the result through sanitizeDiagramSvg() as the real safety boundary.

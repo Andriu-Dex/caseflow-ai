@@ -669,7 +669,7 @@ export class DataModelsService {
     if (!row || !version || !diagram) throw new NotFoundException('Diagrama ER no encontrado.');
     return this.mapDiagram(row, version, diagram);
   }
-  // Re-rendered on demand from the stored canonical source (spec §4.8), never
+  // Re-rendered on demand from the stored canonical source, never
   // persisted: PNG export via client-side canvas rasterization is unreliable
   // for Mermaid output (Chromium taints the canvas for any SVG containing
   // `<foreignObject>`, which Mermaid emits for every ER attribute label).
@@ -730,7 +730,7 @@ export class DataModelsService {
       });
       // Deterministic derivation from already-approved structured data, with
       // no manual authoring and no AI involvement — SYSTEM_GENERATED, not
-      // MANUAL (spec §6.3).
+      // MANUAL.
       const version = await tx.artifactVersion.create({
         data: {
           artifactId: artifact.id,
@@ -757,7 +757,7 @@ export class DataModelsService {
   // PlantUML text directly. Rendered/sanitized through the exact same
   // untrusted-input boundary as every other diagram (never trusted as SVG
   // directly) and stored as a new version — the auto-generated version it
-  // followed is never mutated in place (spec §4.4 immutability). Kept to
+  // followed is never mutated in place. Kept to
   // USE_CASE_DIAGRAM specifically: unlike ER/Navigation/Architecture, whose
   // diagram is embedded 1:1 in the content ArtifactVersion it was derived
   // from, this is the one diagram type with its own independent version
@@ -800,7 +800,7 @@ export class DataModelsService {
   }
 
   // Every regeneration creates a new DIA-NNN artifact rather than replacing
-  // one (spec §218.7: "regenerar... puede crear diagramas duplicados").
+  // one.
   // Without a listing, the frontend had no way to rediscover a previously
   // generated diagram after navigating away and back — it only ever learned
   // an id existed from the response of the action that just created it, kept

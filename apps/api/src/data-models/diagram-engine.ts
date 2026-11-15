@@ -331,7 +331,7 @@ export class DiagramEngine {
   }
 
   // Deterministic Mermaid flowchart from the structured Navigation Tree
-  // (spec §13.4). AI never produces this source directly. A big tree has far
+  // AI never produces this source directly. A big tree has far
   // more nodes per level than levels, so it is drawn left to right (depth
   // across, breadth down); top-down would make it many times wider than tall.
   generateNavigationFlowchart(model: NavigationDiagramModel): string {
@@ -344,8 +344,8 @@ export class DiagramEngine {
     return lines.join('\n');
   }
 
-  // Deterministic Mermaid flowchart from the Traceability graph (spec §4.8:
-  // canonical source over render — this source is derived and re-rendered on
+  // Deterministic Mermaid flowchart from the Traceability graph
+  // (canonical source over render — this source is derived and re-rendered on
   // demand, never persisted, since the graph itself is already recomputed on
   // every request). Node ids are real UUIDs, so safeId() is what keeps them
   // valid Mermaid identifiers.
@@ -400,7 +400,7 @@ export class DiagramEngine {
   }
 
   // Deterministic PlantUML component diagram from the structured Software
-  // Architecture (spec §14.3). Drawn left to right, with the dependency labels
+  // Architecture. Drawn left to right, with the dependency labels
   // broken into short lines. A component's layer is the name of the package
   // that holds it. Each component carries a short note with the quality
   // requirements (RNF) it answers; its responsibilities and other sources are
@@ -444,7 +444,7 @@ export class DiagramEngine {
   }
 
   // Deterministic PlantUML deployment representation from the structured
-  // System Architecture (spec §15). Drawn left to right, with the link labels
+  // System Architecture. Drawn left to right, with the link labels
   // and the notes broken into short lines: with few nodes, each carrying many
   // responsibilities and sources, the unbroken text made it about fourteen
   // times wider than tall. A note keeps the node's responsibilities and the

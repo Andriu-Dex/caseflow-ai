@@ -96,7 +96,7 @@ describe('generateProject', () => {
   const files = generateProject(ctx());
   const paths = byPath(files);
 
-  it('lays out the CASEFLOW_WEB_TS_V1 monorepo (spec §153)', () => {
+  it('lays out the CASEFLOW_WEB_TS_V1 monorepo', () => {
     for (const path of [
       'package.json',
       'pnpm-workspace.yaml',

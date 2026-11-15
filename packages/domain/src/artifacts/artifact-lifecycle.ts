@@ -1,4 +1,4 @@
-// Artifact lifecycle rules (spec §5.2). Framework-free.
+// Artifact lifecycle rules. Framework-free.
 
 export const ARTIFACT_VERSION_STATUSES = [
   'DRAFT',
@@ -48,7 +48,7 @@ export function initialStatusForOrigin(origin: ArtifactOrigin): ArtifactVersionS
   return origin === 'AI_GENERATED' || origin === 'SYSTEM_GENERATED' ? 'GENERATED' : 'DRAFT';
 }
 
-// Approved versions are immutable history (spec §5.3).
+// Approved versions are immutable history.
 export function isArtifactVersionFrozen(status: ArtifactVersionStatus): boolean {
   return status === 'APPROVED';
 }

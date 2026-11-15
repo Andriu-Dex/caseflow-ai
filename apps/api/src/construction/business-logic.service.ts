@@ -131,7 +131,7 @@ export function unimplementedWarning(
   return `La acción «${action}» quedó sin implementar (responde 501): la propuesta se descartó porque ${review.reason}.`;
 }
 
-// AI assistance only where interpretation is needed (AGENTS.md §18): the body
+// AI assistance only where interpretation is needed: the body
 // of business actions beyond CRUD. Everything else stays deterministic. The
 // output is untrusted — it is reviewed here, and it only ever runs inside the
 // validation sandbox; a rejected or unavailable proposal leaves the honest
@@ -381,7 +381,7 @@ export class BusinessLogicService {
         );
         warnings.push(unimplementedWarning(endpoint.summary, review, template));
       } catch (error) {
-        // Graceful degradation (AGENTS.md §56): no AI, no invented logic.
+        // Graceful degradation: no AI, no invented logic.
         if (!(error instanceof AIError)) throw error;
         logger.warn(
           `Business logic for "${endpointKey(endpoint)}" not generated: ${error.message}`,

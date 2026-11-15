@@ -288,7 +288,7 @@ export class ProjectContextService implements OnApplicationBootstrap {
     });
   }
 
-  // Explicit human approval gate (spec §5): official downstream generation
+  // Explicit human approval gate: official downstream generation
   // (Requirements) requires an APPROVED context version. AI never approves.
   async transition(
     projectId: string,
@@ -321,7 +321,7 @@ export class ProjectContextService implements OnApplicationBootstrap {
     );
   }
 
-  // AI-assisted pre-fill (spec §5): drafts a Context candidate from this
+  // AI-assisted pre-fill: drafts a Context candidate from this
   // project's approved Source knowledge, for the reviewer to edit and submit
   // through the ordinary create/createVersion path — never persisted as the
   // canonical context by itself.

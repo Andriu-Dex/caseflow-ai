@@ -4,7 +4,7 @@ import { designThemeContentSchema } from './design-theme.contract';
 import { classDiagramContentSchema } from './class-diagram.contract';
 
 // Shared "structured content + candidate-first AI generation + optional
-// deterministic diagram" family (spec §13/§14/§15/§17). Each kind has its
+// deterministic diagram" family. Each kind has its
 // own content schema below; the generic envelope (version/provenance) is
 // identical across all kinds, mirroring the existing Data Model contract.
 
@@ -244,7 +244,7 @@ export const uiBlueprintContentSchema = z
   });
 export type UiBlueprintContent = z.output<typeof uiBlueprintContentSchema>;
 
-// ---- GENERATION_PLAN (spec §156) -------------------------------------------
+// ---- GENERATION_PLAN -------------------------------------------
 // "What system are we going to build?" — reviewed and approved before any
 // official code generation (DEC-090). Conceptual only: no physical types.
 const planModuleSchema = z
@@ -348,7 +348,7 @@ export const planDetailBatchOutputSchema = z
   })
   .strict();
 
-// ---- CONCEPTUAL_DOMAIN_MODEL (spec §157) ------------------------------------
+// ---- CONCEPTUAL_DOMAIN_MODEL ------------------------------------
 // Entities and relationships only. Deliberately not the physical model: no
 // column types or keys, which are decided after the Design Gate (DEC-096).
 export const CONCEPTUAL_CARDINALITIES = ['ONE_TO_ONE', 'ONE_TO_MANY', 'MANY_TO_MANY'] as const;
@@ -416,7 +416,7 @@ export const conceptualBatchOutputSchema = z
   })
   .strict();
 
-// ---- IMPLEMENTATION_PLAN (spec §161) ----------------------------------------
+// ---- IMPLEMENTATION_PLAN ----------------------------------------
 // "How exactly will the approved system be built?" Produced after the Design
 // Gate from an approved Design Baseline (DEC-095). It is also the logical and
 // physical data model and the API contract: the Prisma schema and OpenAPI

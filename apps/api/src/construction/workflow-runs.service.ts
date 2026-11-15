@@ -404,7 +404,7 @@ export class WorkflowRunsService {
         });
       }
       case 'USE_CASE_DIAGRAM':
-        // System-generated and never approved (spec §6.3): it only has to exist.
+        // System-generated and never approved: it only has to exist.
         if (!(await this.current(pid, 'USE_CASE_DIAGRAM')).length)
           await this.dataModels.generateUseCaseDiagram(pid, await this.versionIds(pid, 'USE_CASE'));
         return;
@@ -483,7 +483,7 @@ export class WorkflowRunsService {
           where: { projectId: pid, status: 'GENERATED' },
           orderBy: { createdAt: 'desc' },
         });
-        // Validation and its bounded auto-repair run as their own jobs (§26);
+        // Validation and its bounded auto-repair run as their own jobs;
         // the result is shown with the generated project.
         if (
           !(await this.prisma.sandboxRun.findFirst({ where: { generationRunId: generation.id } }))

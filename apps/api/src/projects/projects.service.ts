@@ -145,7 +145,7 @@ export class ProjectsService {
   }
 
   // Archival is the alternative to deletion once a project has approved
-  // history (spec §87: "fuentes utilizadas → archivar antes que borrar").
+  // history.
   // Purely additive on the Project row — never touches any ArtifactVersion,
   // so it needs no immutability exception.
   async archive(projectId: string): Promise<ProjectResponse> {
@@ -247,7 +247,7 @@ export class ProjectsService {
     return toProjectResponse(updated, await this.hasApprovedArtifacts(projectId));
   }
 
-  // Permanent deletion of a whole project (DEC-134, spec §87), approved
+  // Permanent deletion of a whole project (DEC-134), approved
   // history included: only its owner or the workspace's owner or admins, and
   // only after typing its exact name, checked here and not only in the page.
   // Every relation in the schema is ON DELETE RESTRICT and the history is

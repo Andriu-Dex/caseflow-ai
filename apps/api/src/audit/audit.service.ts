@@ -70,7 +70,7 @@ export interface AuditEventInput {
   action: AuditAction;
   entityType: string;
   entityId: string;
-  // Non-sensitive context only (AGENTS.md §35): never secrets or raw payloads.
+  // Non-sensitive context only: never secrets or raw payloads.
   metadata?: Prisma.InputJsonObject;
 }
 

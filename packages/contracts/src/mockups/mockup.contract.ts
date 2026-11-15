@@ -71,7 +71,7 @@ export const MOCKUP_JOB_STATUSES = [
 export type MockupJobStatus = (typeof MOCKUP_JOB_STATUSES)[number];
 
 // The synchronous create/version calls now only enqueue the real
-// generation (spec §40 async jobs) — the client polls this until it
+// generation — the client polls this until it
 // reaches a terminal status instead of blocking the original request.
 export const mockupJobResponseSchema = z.object({
   id: z.uuid(),

@@ -860,7 +860,7 @@ function ValidationAttemptItem({
               <span>Calculando parche correctivo</span>
             </div>
             <span className="text-muted-foreground/60">·</span>
-            <span>Límite máximo: 3 rondas (AGENTS.md §27)</span>
+            <span>Límite máximo: 3 rondas</span>
           </div>
         </div>
       ) : null}
@@ -933,7 +933,7 @@ function ValidationAttemptItem({
   );
 }
 
-// Validation is a separate state from generation (AGENTS.md §25): only READY
+// Validation is a separate state from generation: only READY
 // offers the project for download.
 function RunValidation({
   projectId,

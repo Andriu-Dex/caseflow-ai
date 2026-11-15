@@ -72,7 +72,7 @@ export const projectResponseSchema = z.object({
   archivedAt: z.iso.datetime().nullable(),
   // Whether any artifact in this project ever reached APPROVED — determines
   // whether the project can still be hard-deleted or must be archived
-  // instead (spec §87).
+  // instead.
   hasApprovedArtifacts: z.boolean(),
 });
 

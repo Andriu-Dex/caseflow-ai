@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-// Design Gate (spec §160, DEC-094): the exact approved versions an official
+// Design Gate (DEC-094): the exact approved versions an official
 // ImplementationPlan and code generation are built from.
 
 export const DESIGN_BASELINE_ROLES = [
@@ -86,7 +86,7 @@ export type ImplementationPlanArtifactsResponse = z.infer<
 >;
 
 // Justified acceptance of the exact findings the screen evaluator reported for
-// one screen of a design baseline (AGENTS.md §16).
+// one screen of a design baseline.
 export const createScreenDesignExceptionRequestSchema = z
   .object({
     routePath: z.string().trim().min(1).max(200),

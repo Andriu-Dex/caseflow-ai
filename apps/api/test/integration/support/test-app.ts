@@ -68,7 +68,7 @@ import { getTestConnectionString, resetTestData } from './test-database';
 import type { CreateProjectRequest, ProjectResponse } from '@caseflow-ai/contracts';
 
 // A minimal, always-valid graphical SVG: ordinary integration tests (Postgres
-// only) must not depend on a live renderer (AGENTS.md §23/47). Real
+// only) must not depend on a live renderer (47). Real
 // Mermaid/PlantUML-via-Kroki compatibility is verified separately in
 // diagram-rendering.integration.spec.ts against a live local Kroki.
 const FAKE_DIAGRAM_SVG =

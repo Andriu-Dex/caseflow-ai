@@ -12,7 +12,7 @@ export type ArtifactVersionStatus = (typeof ARTIFACT_VERSION_STATUSES)[number];
 
 // SYSTEM_GENERATED: deterministically derived by CASEFlow from already
 // approved/structured CASE data (e.g. a Use Case Diagram) — no manual
-// authoring and no AI involvement (spec §6.3).
+// authoring and no AI involvement.
 export const ARTIFACT_ORIGINS = [
   'MANUAL',
   'AI_GENERATED',

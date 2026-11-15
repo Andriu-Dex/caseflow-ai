@@ -7,7 +7,7 @@ import { AuditService } from '../audit/audit.service';
 import { STORAGE_PROVIDER } from '../sources/storage-provider.token';
 
 // Read side of the immutable snapshots; the ZIP is a private object, streamed
-// only to project members and every download is audited (spec §178).
+// only to project members and every download is audited.
 @Injectable()
 export class GeneratedProjectSnapshotsService {
   constructor(

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-// Code generation runs (spec §197). A run is started from one exact APPROVED
+// Code generation runs. A run is started from one exact APPROVED
 // Implementation Plan version; its files are immutable once generated.
 
 export const GENERATION_RUN_STATUSES = [

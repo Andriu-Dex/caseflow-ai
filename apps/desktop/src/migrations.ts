@@ -3,7 +3,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { PGlite } from '@electric-sql/pglite';
 
-// Applies the official Prisma migrations (never rewritten, AGENTS.md §32) to
+// Applies the official Prisma migrations (never rewritten) to
 // the desktop database at startup, in order, each in its own transaction.
 // Records them in Prisma's own `_prisma_migrations` table, so the history is
 // the same one `prisma migrate deploy` keeps on the web edition.
