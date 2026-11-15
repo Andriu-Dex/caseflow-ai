@@ -156,6 +156,12 @@ describe('GenerationRunsPage', () => {
       contentSha256: 'c'.repeat(64),
       changes: { previousRunId: 'run-old', added: 0, changed: 1, removed: [] },
       review: null,
+      design: {
+        source: 'COMPOSED',
+        observations: [
+          { code: 'MISSING_FORM_BINDING', description: 'Falta el filtro de categoría.' },
+        ],
+      },
     };
     mocks.units.mockResolvedValue({ items: [unit] });
     mocks.reviewUnit.mockResolvedValue({
@@ -168,6 +174,9 @@ describe('GenerationRunsPage', () => {
     expect(screen.getByText('Revisar primero: IA')).toBeInTheDocument();
     expect(screen.getByText(/0 añadidos, 1 cambiados, 0 eliminados/)).toBeInTheDocument();
     expect(screen.getByText(/Revisadas 0 de 1 unidades/)).toBeInTheDocument();
+    expect(screen.getByText('Diseño: Compuesta desde el boceto')).toBeInTheDocument();
+    expect(screen.getByText(/1 observación de cobertura/)).toBeInTheDocument();
+    expect(screen.getByText('Falta el filtro de categoría.')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('checkbox', { name: 'Marcar como revisada' }));
     await waitFor(() =>
       expect(mocks.reviewUnit).toHaveBeenCalledWith('p1', 'run-1', {

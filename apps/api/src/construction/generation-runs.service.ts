@@ -1,7 +1,7 @@
 import { implementationReadinessProblems } from './implementation-readiness';
 import { FrontendDesignService } from './frontend-design.service';
 import { DemoDataService } from './demo-data.service';
-import { constructionUnits } from './construction-units';
+import { constructionUnits, screenDesigns } from './construction-units';
 import { assertCanGenerate } from '../common/generation-cancelled';
 import { INTERRUPTED_BY_RESTART, startHeartbeat, staleHeartbeat } from '../common/interrupted';
 import { createHash } from 'node:crypto';
@@ -675,6 +675,14 @@ export class GenerationRunsService {
       );
     };
     const items = await unitsOf(runId);
+    const design = screenDesigns(
+      (
+        await this.prisma.generatedFile.findFirst({
+          where: { generationRunId: runId, path: 'docs/design-fidelity.json' },
+          select: { content: true },
+        })
+      )?.content,
+    );
     const previous = await this.prisma.generationRun.findFirst({
       where: {
         projectId,
@@ -718,6 +726,7 @@ export class GenerationRunsService {
         }));
         return {
           ...unit,
+          ...(design.has(unit.id) ? { design: design.get(unit.id) } : {}),
           files,
           // Evidence files are process records, not code to compare.
           changes:

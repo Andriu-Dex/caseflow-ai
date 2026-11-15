@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ImplementationPlanContent } from '@caseflow-ai/contracts';
-import { constructionUnits, type UnitFile } from './construction-units';
+import { constructionUnits, screenDesigns, type UnitFile } from './construction-units';
 
 const plan = {
   modules: [{ localId: 'catalog', name: 'Catálogo', description: 'Productos y categorías.' }],
@@ -88,5 +88,41 @@ describe('construction units', () => {
       'Producto del catálogo. Tiene 2 campos (Nombre y Precio) que permite crear y listar. Incluye el modelo de datos, su contrato de validación, el servicio y la API.',
     );
     expect(units[0]!.traces).toEqual([{ code: 'RF-001', versionNumber: 2 }]);
+  });
+});
+
+describe('screen design records', () => {
+  it('reads how each screen was built and splits its observations by code', () => {
+    const designs = screenDesigns(
+      JSON.stringify({
+        records: [
+          {
+            routePath: '/items',
+            presentation: {},
+            observations:
+              'MISSING_DATA_BINDING: Falta el total: USD. UNSUPPORTED_LAYOUT: Dos columnas.',
+          },
+          { routePath: '/login', manualOverride: { id: 'x' } },
+          {
+            routePath: '/costs',
+            observations: 'INVALID_PRESENTATION: No válida.',
+            acceptedException: { justification: 'Aceptada.' },
+          },
+        ],
+      }),
+    );
+    expect(designs.get('route:/items')).toEqual({
+      source: 'COMPOSED',
+      observations: [
+        { code: 'MISSING_DATA_BINDING', description: 'Falta el total: USD.' },
+        { code: 'UNSUPPORTED_LAYOUT', description: 'Dos columnas.' },
+      ],
+    });
+    expect(designs.get('route:/login')).toEqual({ source: 'MANUAL', observations: [] });
+    expect(designs.get('route:/costs')).toMatchObject({
+      source: 'FUNCTIONAL',
+      acceptedJustification: 'Aceptada.',
+    });
+    expect(screenDesigns(undefined).size).toBe(0);
   });
 });

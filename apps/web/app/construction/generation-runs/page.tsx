@@ -189,6 +189,57 @@ const ORIGIN_LABELS: Record<keyof ConstructionUnit['origins'], string> = {
 
 // ADR-020: the generated code by construction unit (what was generated, its
 // origin and traceability), with each file opened on demand.
+const DESIGN_SOURCES: Record<NonNullable<ConstructionUnit['design']>['source'], string> = {
+  COMPOSED: 'Compuesta desde el boceto',
+  MANUAL: 'Escrita a mano',
+  FUNCTIONAL: 'Página funcional, sin el diseño del boceto',
+};
+const OBSERVATION_LABELS: Record<string, string> = {
+  MISSING_DATA_BINDING: 'Datos',
+  MISSING_ACTION_BINDING: 'Acción',
+  MISSING_FORM_BINDING: 'Formulario',
+  UNSUPPORTED_LAYOUT: 'Composición',
+  INVALID_PRESENTATION: 'Composición no válida',
+};
+
+// How a screen was built and what the approved blueprint describes that it
+// does not do (DEC-164). Observations never block: they inform a decision
+// to extend the plan, simplify the blueprint or keep the screen as it is.
+function ScreenDesign({ design }: { design: NonNullable<ConstructionUnit['design']> }) {
+  return (
+    <div className="mt-1.5 text-[11px]">
+      <p className="text-muted-foreground">Diseño: {DESIGN_SOURCES[design.source]}</p>
+      {design.observations.length ? (
+        <details className="mt-1">
+          <summary className="cursor-pointer font-medium text-amber-700 dark:text-amber-300">
+            {design.observations.length === 1
+              ? '1 observación de cobertura'
+              : `${design.observations.length} observaciones de cobertura`}{' '}
+            frente al plano de interfaz
+          </summary>
+          <p className="mt-1 text-muted-foreground">
+            Lo que el plano describe y esta pantalla no hace. No bloquea: puede ampliar el plan de
+            implementación, simplificar el plano o dejarla como está.
+          </p>
+          <ul className="mt-1 list-disc space-y-1 pl-4">
+            {design.observations.map((item, index) => (
+              <li key={index}>
+                <span className="font-medium">{OBSERVATION_LABELS[item.code] ?? item.code}:</span>{' '}
+                {item.description}
+              </li>
+            ))}
+          </ul>
+          {design.acceptedJustification ? (
+            <p className="mt-1 text-muted-foreground">
+              Aceptadas con la justificación: {design.acceptedJustification}
+            </p>
+          ) : null}
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
 function RunUnits({ projectId, run }: { projectId: string; run: GenerationRunResponse }) {
   const [kind, setKind] = useState<ConstructionUnit['kind']>('SCREEN');
   const [filter, setFilter] = useState('');
@@ -299,6 +350,7 @@ function RunUnits({ projectId, run }: { projectId: string; run: GenerationRunRes
                     {unit.traces.length > 8 ? ` y ${unit.traces.length - 8} más` : ''}
                   </p>
                 ) : null}
+                {unit.design ? <ScreenDesign design={unit.design} /> : null}
 
                 {unit.changes &&
                 (unit.changes.added || unit.changes.changed || unit.changes.removed.length) ? (

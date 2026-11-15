@@ -175,3 +175,35 @@ export function constructionUnits(plan: Plan, files: UnitFile[]): ConstructionUn
     }))
     .sort((a, b) => ORDER[a.kind] - ORDER[b.kind] || a.title.localeCompare(b.title, 'es'));
 }
+
+type ScreenDesign = NonNullable<ConstructionUnit['design']>;
+// The design record of each screen unit, read from the run's fidelity record
+// (docs/design-fidelity.json). Observations are split by their codes.
+export function screenDesigns(content: string | undefined): Map<string, ScreenDesign> {
+  const designs = new Map<string, ScreenDesign>();
+  if (!content) return designs;
+  const records = (
+    JSON.parse(content) as {
+      records?: {
+        routePath: string;
+        presentation?: unknown;
+        manualOverride?: unknown;
+        observations?: string;
+        acceptedException?: { justification: string };
+      }[];
+    }
+  ).records;
+  for (const record of records ?? [])
+    designs.set(`route:${record.routePath}`, {
+      source: record.manualOverride ? 'MANUAL' : record.presentation ? 'COMPOSED' : 'FUNCTIONAL',
+      observations: [
+        ...(record.observations ?? '').matchAll(
+          /\b([A-Z]+(?:_[A-Z]+)+): ([\s\S]*?)(?=\s[A-Z]+(?:_[A-Z]+)+: |$)/g,
+        ),
+      ].map((match) => ({ code: match[1]!, description: match[2]!.trim() })),
+      ...(record.acceptedException
+        ? { acceptedJustification: record.acceptedException.justification }
+        : {}),
+    });
+  return designs;
+}

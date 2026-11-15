@@ -133,6 +133,15 @@ export const constructionUnitSchema = z.object({
     .nullable()
     .optional(),
   review: z.object({ reviewedAt: z.string(), reviewerName: z.string() }).nullable().optional(),
+  // A screen's design record (DEC-164): how it was built and what the
+  // canonical blueprint describes that it does not do.
+  design: z
+    .object({
+      source: z.enum(['COMPOSED', 'MANUAL', 'FUNCTIONAL']),
+      observations: z.array(z.object({ code: z.string(), description: z.string() })),
+      acceptedJustification: z.string().optional(),
+    })
+    .optional(),
 });
 export const constructionUnitReviewRequestSchema = z.object({
   unitKey: z.string().min(1).max(400),
