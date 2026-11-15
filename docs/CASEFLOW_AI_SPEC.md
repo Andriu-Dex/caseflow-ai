@@ -120,7 +120,7 @@ La construcción es incremental y por etapas, nunca una generación de todo el r
    - **Marco común determinista** desde la navegación y el perfil de diseño (DEC-162).
    - **Composición de cada pantalla:** propuesta por la IA a partir del plano, el boceto y los enlaces funcionales.
    - **Pantallas escritas a mano:** sustituyen a la composición de la IA si conservan todos los enlaces funcionales (DEC-161).
-   - **Puerta de fidelidad:** las observaciones de una composición se aceptan con justificación por línea base (DEC-160). Esta puerta se está rediseñando (ver el ADR correspondiente).
+   - **Puerta determinista** (DEC-164, ADR-022): una composición se acepta si conserva todos los controles y estados funcionales y no inventa contenido. Lo que el plano describe y el plan no implementa queda como observación de cobertura, visible en la revisión por unidades. No bloquea; la persona decide si amplía el plan o simplifica el plano.
 6. **Datos de demostración** realistas, validados por campo y en la moneda del plan (DEC-163).
 7. **Plantilla única:** `CASEFLOW_WEB_TS_V1`, que produce un monolito modular con Next.js, NestJS, Prisma y PostgreSQL. Sus dependencias se limitan a un catálogo aprobado y versionado.
 8. **Validación en sandbox:** instalación, lint, comprobación de tipos, pruebas, compilación y validación estructural. Admite como máximo 3 rondas de reparación automática. Un proyecto solo es `READY` si todo pasa.
@@ -313,3 +313,4 @@ Las decisiones con «(ADR-nnn)» tienen su documento en `docs/decisions/`; los A
 | DEC-161 | Pantallas ajustadas manualmente: código escrito a mano por pantalla y diseño aprobado, inmutable y auditado, que sustituye a la composición de la IA solo si conserva todos los enlaces funcionales (ADR-021) | Accepted |
 | DEC-162 | Fidelidad visual: marco común determinista desde el árbol de navegación y el perfil de diseño, y composición v37 con textos e iconos estáticos (ADR-021) | Accepted |
 | DEC-163 | Datos de demostración realistas propuestos por IA, validados por campo, en la moneda del plan y reutilizados como punto de control; sin IA, valores deterministas (ADR-021) | Accepted |
+| DEC-164 | Puerta determinista de pantallas: lo que hace una pantalla lo define el plan de implementación; las limitaciones de la composición son observaciones de cobertura que no bloquean (ADR-022) | Accepted |

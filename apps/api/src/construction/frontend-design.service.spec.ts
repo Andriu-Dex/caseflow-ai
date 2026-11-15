@@ -251,7 +251,7 @@ describe('frozen design adaptation', () => {
     expect(ai.generateStructured).not.toHaveBeenCalled();
     expect(result.records[0]!.mockupSha256).toBeNull();
   });
-  it('reports the exact screen and missing binding without storing an accepted presentation', async () => {
+  it('ships a valid proposal with its limitations as observations, without blocking (DEC-164)', async () => {
     const { service, ai, prisma } = await setup();
     const original = ai.generateStructured.getMockImplementation()!;
     ai.generateStructured.mockImplementation(async (input) => {
@@ -273,18 +273,21 @@ describe('frozen design adaptation', () => {
       stored.set(args.create.path, args.create.content);
       return args.create;
     });
-    await expect(service.adapt(id, id, plan, files(), 'Catálogo', false, id)).rejects.toThrow(
-      'Artículos',
-    );
-    // The findings are kept, never an accepted presentation, and a second run
-    // reports them again without another evaluation.
+    const adapted = await service.adapt(id, id, plan, files(), 'Catálogo', false, id);
+    expect(adapted.records[0]).toMatchObject({
+      routePath: '/items',
+      observations: 'MISSING_DATA_BINDING: Falta el enlace de existencias.',
+      presentation: expect.objectContaining({ limitations: [] }),
+    });
+    expect(adapted.records[0]).not.toHaveProperty('acceptedException');
+    // Only the findings are kept, so a second run reuses the proposal with
+    // its observations instead of asking again.
     expect([...stored.keys()]).toEqual([expect.stringMatching(/^docs\/presentation-findings\//)]);
-    await expect(service.adapt(id, id, plan, files(), 'Catálogo', false, id)).rejects.toThrow(
-      'Falta el enlace de existencias',
-    );
+    const again = await service.adapt(id, id, plan, files(), 'Catálogo', false, id);
+    expect(again.records[0]).toMatchObject({ observations: adapted.records[0]!.observations });
     expect(ai.generateStructured).toHaveBeenCalledTimes(1);
   });
-  it('lets findings through only with a justified exception for those exact findings', async () => {
+  it('records a justified exception for the exact findings it accepts', async () => {
     const { service, ai, prisma } = await setup();
     const original = ai.generateStructured.getMockImplementation()!;
     ai.generateStructured.mockImplementation(async (input) => {
@@ -304,9 +307,7 @@ describe('frozen design adaptation', () => {
       stored.set(args.create.path, args.create.content);
       return args.create;
     });
-    await expect(service.adapt(id, id, plan, files(), 'Catálogo', false, id)).rejects.toThrow(
-      'Falta el resumen',
-    );
+    await service.adapt(id, id, plan, files(), 'Catálogo', false, id);
     const findings = JSON.parse([...stored.values()][0]!).findings as string;
     prisma.screenDesignException.findMany.mockResolvedValue([
       {
@@ -320,21 +321,9 @@ describe('frozen design adaptation', () => {
     expect(adapted.records[0]).toMatchObject({
       routePath: '/items',
       acceptedException: { id: 'exception' },
+      observations: findings,
     });
-    // The second run reused the recorded findings instead of asking again.
     expect(ai.generateStructured).toHaveBeenCalledTimes(1);
-    // An exception for different findings does not apply.
-    prisma.screenDesignException.findMany.mockResolvedValue([
-      {
-        id: 'other',
-        routePath: '/items',
-        findingsSha256: 'f'.repeat(64),
-        justification: 'x'.repeat(12),
-      },
-    ]);
-    await expect(service.adapt(id, id, plan, files(), 'Catálogo', false, id)).rejects.toThrow(
-      'Falta el resumen',
-    );
   });
 
   it('keeps the functional page of an excepted screen whose proposed layout is invalid', async () => {
@@ -404,10 +393,13 @@ describe('frozen design adaptation', () => {
     const { service, prisma } = await setup();
     prisma.generatedFile.findFirst.mockResolvedValue(null);
     await service.adapt(id, id, plan, files(), 'Catálogo', false, id);
-    // One lookup for an accepted presentation and one for recorded findings,
-    // both under the current version's inputs hash.
-    const paths = prisma.generatedFile.findFirst.mock.calls.map(([args]) => args.where.path.in[0]);
-    expect(paths).toHaveLength(2);
+    // One lookup for an accepted presentation and two for recorded findings
+    // (a real evaluation first, then an unevaluated mark), all under the
+    // current version's inputs hash.
+    const calls = prisma.generatedFile.findFirst.mock.calls.map(([args]) => args.where);
+    const paths = calls.map((where) => where.path.in[0]);
+    expect(paths).toHaveLength(3);
+    expect(calls[1].NOT).toEqual({ content: { contains: 'NOT_EVALUATED:' } });
     expect(new Set(paths.map((path: string) => path.split('/').at(-1))).size).toBe(1);
   });
 });
