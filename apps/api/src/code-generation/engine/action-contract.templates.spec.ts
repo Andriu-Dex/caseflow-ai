@@ -247,6 +247,12 @@ describe('explicit action policy and relational constraints', () => {
     ).find((file) => file.path === 'apps/web/app/orders/[orderId]/page.tsx')!.content;
     expect(page.match(/actionKey=\{"GET \/orders\/:orderId\/review"\}/g)).toHaveLength(1);
     expect(page).toContain('data-action={"Revisar operación"}');
+    // The shared form covers both actions in the structural validation.
+    const files = generateProject(
+      { plan, template: CASEFLOW_WEB_TS_V2, projectName: 'Prueba', slug: 'test' },
+      actionContractImplementations,
+    );
+    expect(planCoverageProblems(files, plan)).toEqual([]);
   });
   it('emits composite uniqueness and rejects nonexistent fields and duplicate constraints', () => {
     const input = actionContractPlan();

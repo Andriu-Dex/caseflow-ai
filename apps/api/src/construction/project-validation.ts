@@ -179,8 +179,16 @@ export function planCoverageProblems(
       problems.push(`La ruta ${route.path} del plan no tiene su página.`);
       continue;
     }
+    // Screen actions served by the same query share one form (the first
+    // names it), so that form's control covers all of them.
+    const marked = (action: (typeof route.actions)[number]) =>
+      page.includes(actionMarker(action.label)) ||
+      (action.endpoint?.startsWith('GET ') &&
+        route.actions.some(
+          (other) => other.endpoint === action.endpoint && page.includes(actionMarker(other.label)),
+        ));
     for (const action of route.actions)
-      if (!page.includes(actionMarker(action.label)))
+      if (!marked(action))
         problems.push(
           `La acción «${action.label}» de la ruta ${route.path} no tiene un control en su página.`,
         );
