@@ -260,7 +260,9 @@ describe('local authentication generation', () => {
           upsert: vi.fn().mockResolvedValue({}),
         },
         generationRun: { findFirst: vi.fn().mockResolvedValue({ id: 'r' }) },
+        artifactVersion: { findFirst: vi.fn().mockResolvedValue(null) },
         designBaseline: {
+          findMany: vi.fn().mockResolvedValue([]),
           findFirst: vi.fn().mockResolvedValue({
             entries: [
               {
@@ -297,10 +299,8 @@ describe('local authentication generation', () => {
     );
     const result = await service.implement('p', 'r', plan, CASEFLOW_WEB_TS_V2);
     expect(result.checkpoints).toHaveLength(1);
-    expect(checkpointRead.mock.calls[0]![0].where.generationRun).toEqual({
-      projectId: 'p',
-      designBaselineId: plan.designBaselineId,
-    });
+    // Checkpoints are found across the project's design baselines.
+    expect(checkpointRead.mock.calls[0]![0].where.generationRun).toEqual({ projectId: 'p' });
     checkpointRead.mockResolvedValue({ content: result.checkpoints![0]!.content });
     const retried = await service.implement('p', 'r', plan, CASEFLOW_WEB_TS_V2);
     expect(retried.implementations).toEqual(result.implementations);

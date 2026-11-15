@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
   validate: vi.fn(),
   archive: vi.fn(),
   restore: vi.fn(),
-  units: vi.fn(async () => ({ items: [] as unknown[] })),
+  units: vi.fn<(...args: unknown[]) => Promise<{ items: unknown[] }>>(async () => ({ items: [] })),
   reviewUnit: vi.fn(),
 }));
 
