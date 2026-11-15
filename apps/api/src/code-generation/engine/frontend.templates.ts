@@ -670,12 +670,40 @@ function listPage(plan: Plan, entity: Entity, route: Route): string {
       !filter.enumValues && names.find((name) => name.toLowerCase() === filter.name.toLowerCase());
     return param ? [`${filter.name}: ${param}`] : [];
   });
+  // A many-to-one relation the list query already filters by is offered as
+  // a selector of its records, except the operation scope (fixed by the
+  // operation context) and user accounts (listed only by administrators).
+  const local = plan.authentication.local;
+  const relationFilters = (entity.relations ?? []).flatMap((relation) => {
+    const target = plan.entities.find((item) => item.localId === relation.targetEntityLocalId);
+    const labelField = target?.fields.find(
+      (field) => ['STRING', 'TEXT'].includes(field.type) && !field.internal,
+    )?.name;
+    const name = `${relation.name}Id`;
+    return relation.kind === 'MANY_TO_ONE' &&
+      target &&
+      labelField &&
+      target.operations.includes('LIST') &&
+      target.localId !== local?.scope?.entityLocalId &&
+      target.localId !== local?.userEntityLocalId &&
+      !names.some((param) => param.toLowerCase() === name.toLowerCase())
+      ? [
+          {
+            name,
+            label: relation.label ?? relation.name,
+            list: `list${pluralize(target.name)}`,
+            labelField,
+          },
+        ]
+      : [];
+  });
+  const selectFilters = [...enumFilters, ...relationFilters];
   const filterArgs = [
     ...routeFilters,
-    ...enumFilters.map((filter) => `${filter.name}: filterValues.${filter.name} || undefined`),
+    ...selectFilters.map((filter) => `${filter.name}: filterValues.${filter.name} || undefined`),
   ];
   const filterKey = filterArgs.length
-    ? `, ${[...routeFilters.map((item) => item.split(': ')[1]), ...(enumFilters.length ? ['filterValues'] : [])].join(', ')}`
+    ? `, ${[...routeFilters.map((item) => item.split(': ')[1]), ...(selectFilters.length ? ['filterValues'] : [])].join(', ')}`
     : '';
 
   const columns = [...entity.fields, ...relColumns].slice(0, 8);
@@ -780,19 +808,30 @@ ${names.map((n) => `      {${n} && <div className="text-xs text-muted-foreground
       </div>\n`
           : ''
       }${
-        enumFilters.length
+        selectFilters.length
           ? `      <div className="flex flex-wrap items-end gap-3 rounded border bg-card p-3">
-${enumFilters
+${relationFilters
   .map(
     (filter) => `        <div className="flex flex-col gap-1">
+          <label htmlFor="filter-${filter.name}" className="text-xs font-medium">${text(filter.label)}</label>
+          <select id="filter-${filter.name}" className="h-8 rounded border bg-background px-2 text-xs" value={filterValues.${filter.name} ?? ''} disabled={!${filter.name}Options.data} onChange={(e) => { setFilterValues((current) => ({ ...current, ${filter.name}: e.target.value })); setPage(1); }}>
+            <option value="">Todos</option>
+            {${filter.name}Options.data?.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+          </select>
+        </div>
+`,
+  )
+  .join('')}${enumFilters
+              .map(
+                (filter) => `        <div className="flex flex-col gap-1">
           <label htmlFor="filter-${filter.name}" className="text-xs font-medium">${text(filter.label)}</label>
           <select id="filter-${filter.name}" className="h-8 rounded border bg-background px-2 text-xs" value={filterValues.${filter.name} ?? ''} onChange={(e) => { setFilterValues((current) => ({ ...current, ${filter.name}: e.target.value })); setPage(1); }}>
             <option value="">Todos</option>
 ${filter.enumValues!.map((value) => `            <option value=${JSON.stringify(value)}>${text(value)}</option>`).join('\n')}
           </select>
         </div>`,
-  )
-  .join('\n')}
+              )
+              .join('\n')}
         {Object.values(filterValues).some(Boolean) && (
           <Button type="button" variant="ghost" size="sm" onClick={() => { setFilterValues({}); setPage(1); }}>
             Limpiar filtros
@@ -864,7 +903,14 @@ ${indent(cells.join('\n'), 22)}
 ${pageImports(body, up, extraImports)}
 
 export default function ${entity.name}ListPage() {
-  const [page, setPage] = useState(1);${enumFilters.length ? '\n  const [filterValues, setFilterValues] = useState<Record<string, string>>({});' : ''}${hasDate ? "\n  const [dateFrom, setDateFrom] = useState('');\n  const [dateTo, setDateTo] = useState('');\n  const isInvalidDateRange = Boolean(dateFrom && dateTo && dateFrom > dateTo);" : ''}
+  const [page, setPage] = useState(1);${selectFilters.length ? '\n  const [filterValues, setFilterValues] = useState<Record<string, string>>({});' : ''}${relationFilters
+    .map(
+      (filter) =>
+        `\n  const ${filter.name}Options = useQuery({ queryKey: ['filter-options', ${JSON.stringify(filter.list)}], queryFn: async () => (await api.${filter.list}()).map((item) => ({ id: item.id, label: String(item.${filter.labelField}) })) });`,
+    )
+    .join(
+      '',
+    )}${hasDate ? "\n  const [dateFrom, setDateFrom] = useState('');\n  const [dateTo, setDateTo] = useState('');\n  const isInvalidDateRange = Boolean(dateFrom && dateTo && dateFrom > dateTo);" : ''}
   const limit = 20;
   const query = useQuery({
     queryKey: ['${lowerFirst(plural)}', page, limit${hasDate ? ', dateFrom, dateTo' : ''}${filterKey}],

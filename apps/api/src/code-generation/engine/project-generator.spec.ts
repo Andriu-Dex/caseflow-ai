@@ -121,6 +121,14 @@ describe('generateProject', () => {
   });
 
   // Regression: found by the real sandbox lint stage on a plan without routes.
+  it('offers the related records a list query filters by as a selector', () => {
+    const page = paths.get('apps/web/app/orders/page.tsx')!.content;
+    expect(page).toContain(
+      'customerIdOptions = useQuery({ queryKey: [\'filter-options\', "listCustomers"]',
+    );
+    expect(page).toContain('customerId: filterValues.customerId || undefined');
+    expect(page).toContain('<select id="filter-customerId"');
+  });
   it('emits a home page without unused imports when the plan has no routes', () => {
     const home = byPath(generateProject(ctx(basePlan({ routes: [] })), {})).get(
       'apps/web/app/page.tsx',
