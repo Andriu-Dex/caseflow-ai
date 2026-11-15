@@ -237,6 +237,17 @@ describe('explicit action policy and relational constraints', () => {
       files.find((file) => file.path === 'apps/api/src/orders/orders-actions.service.ts')!.content,
     ).not.toContain('postOrdersDiscounts');
   });
+  it('renders one form for several screen actions served by the same query', () => {
+    const plan = actionContractPlan();
+    const route = plan.routes.find((item) => item.path === '/orders/[orderId]')!;
+    route.actions.push({ label: 'Examinar totales', endpoint: 'GET /orders/:orderId/review' });
+    const page = generateProject(
+      { plan, template: CASEFLOW_WEB_TS_V2, projectName: 'Prueba', slug: 'test' },
+      actionContractImplementations,
+    ).find((file) => file.path === 'apps/web/app/orders/[orderId]/page.tsx')!.content;
+    expect(page.match(/actionKey=\{"GET \/orders\/:orderId\/review"\}/g)).toHaveLength(1);
+    expect(page).toContain('data-action={"Revisar operación"}');
+  });
   it('emits composite uniqueness and rejects nonexistent fields and duplicate constraints', () => {
     const input = actionContractPlan();
     input.entities[0]!.uniqueConstraints = [['name', 'active']];

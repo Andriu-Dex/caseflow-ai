@@ -599,6 +599,13 @@ const controls = (
   target: ActionTarget,
 ) =>
   actions
+    // Several blueprint actions served by the same query ("Consultar",
+    // "Examinar totales"…) are one form: the first one names it.
+    .filter(
+      (action, index) =>
+        !action.endpoint?.startsWith('GET ') ||
+        actions.findIndex((other) => other.endpoint === action.endpoint) === index,
+    )
     .map((action) => actionControl(plan, entity, action, target))
     .filter((control): control is string => control !== null);
 
