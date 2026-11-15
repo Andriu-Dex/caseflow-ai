@@ -89,6 +89,7 @@ export interface AIStatus {
     unavailableUntil?: string;
     quota?: 'MINUTE' | 'DAY';
   }[];
+  planPaused?: boolean;
 }
 
 export interface GenerationResult {
@@ -913,6 +914,7 @@ export const api = {
   },
   ai: {
     status: () => get<AIStatus>('/ai/status'),
+    resumePlan: () => post<void>('/ai/status/resume-plan'),
   },
   construction: {
     sandboxStatus: () => get<{ available: boolean }>('/construction/sandbox-status'),

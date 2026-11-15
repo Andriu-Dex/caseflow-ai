@@ -29,6 +29,10 @@ export interface ChatGPTBroker {
   reportUsageLimit(): Promise<void>;
   // The credentials were rejected: forget them and ask to reconnect.
   reportRevoked(): Promise<void>;
+  // Whether plan-funded requests are paused by a usage limit.
+  paused?(): Promise<boolean>;
+  // After checking the usage in ChatGPT, the person decides to try again.
+  resume?(): Promise<void>;
 }
 
 export interface ChatGPTProviderConfig {
@@ -50,6 +54,14 @@ export class ChatGPTProvider implements AIProvider {
   constructor(private readonly config: ChatGPTProviderConfig) {
     this.fetchImplementation = config.fetch ?? fetch;
     this.maxInputTokens = config.maxInputTokens;
+  }
+
+  // The plan's usage-limit pause, held by the broker (DEC-117).
+  planPaused(): Promise<boolean> {
+    return this.config.broker.paused?.() ?? Promise.resolve(false);
+  }
+  async resumePlan(): Promise<void> {
+    await this.config.broker.resume?.();
   }
 
   async generateStructured(request: AIProviderRequest): Promise<AIProviderResponse> {
@@ -283,6 +295,15 @@ export class HttpChatGPTBroker implements ChatGPTBroker {
   }
   async reportRevoked(): Promise<void> {
     await this.call('POST', '/revoked').catch(() => undefined);
+  }
+  async paused(): Promise<boolean> {
+    const response = await this.call('GET', '/state').catch(() => undefined);
+    return response?.ok ? ((await response.json()) as { paused: boolean }).paused : false;
+  }
+  async resume(): Promise<void> {
+    const response = await this.call('POST', '/resume');
+    if (!response.ok)
+      throw new AIError('AI_PROVIDER_UNAVAILABLE', 'La conexión con ChatGPT no está disponible.');
   }
   private call(method: string, path: string) {
     return this.fetchImplementation(`${this.baseUrl}${path}`, {

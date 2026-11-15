@@ -6,9 +6,10 @@ import { TestProviders } from '../../../lib/test-utils';
 import type { CaseflowDesktop, ChatGPTStatus } from '../../../lib/desktop';
 
 const aiStatus = vi.hoisted(() => vi.fn());
+const resumePlan = vi.hoisted(() => vi.fn());
 vi.mock('../../../lib/api', () => ({
   restoreSession: vi.fn(),
-  api: { ai: { status: () => aiStatus() } },
+  api: { ai: { status: () => aiStatus(), resumePlan: () => resumePlan() } },
 }));
 
 const status = (overrides: Partial<ChatGPTStatus> = {}): ChatGPTStatus => ({
@@ -133,5 +134,30 @@ describe('AI settings — providers (DEC-127)', () => {
     renderPage();
     expect(await screen.findByText(/intermediario de desarrollo/)).toBeInTheDocument();
     expect(screen.getByText('Plan de ChatGPT', { selector: 'li span' })).toBeInTheDocument();
+  });
+
+  it('lets a person lift the paused plan in development', async () => {
+    aiStatus.mockResolvedValue({
+      available: true,
+      providers: [{ id: 'chatgpt' }],
+      planPaused: true,
+    });
+    resumePlan.mockResolvedValue(undefined);
+    renderPage();
+    expect(
+      await screen.findByText(/las solicitudes con ChatGPT están en pausa/),
+    ).toBeInTheDocument();
+    aiStatus.mockResolvedValue({
+      available: true,
+      providers: [{ id: 'chatgpt' }],
+      planPaused: false,
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Reanudar con ChatGPT' }));
+    await waitFor(() => expect(resumePlan).toHaveBeenCalledOnce());
+    await waitFor(() =>
+      expect(
+        screen.queryByText(/las solicitudes con ChatGPT están en pausa/),
+      ).not.toBeInTheDocument(),
+    );
   });
 });

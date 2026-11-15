@@ -265,4 +265,15 @@ describe('HttpChatGPTBroker', () => {
       message: CHATGPT_MESSAGES.reconnect,
     });
   });
+  it('reads and lifts the pause through the broker', async () => {
+    await expect(broker(200, { paused: true }).broker.paused()).resolves.toBe(true);
+    await expect(broker(503).broker.paused()).resolves.toBe(false);
+    const { broker: http, fetchMock } = broker(200);
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+    await http.resume();
+    expect(fetchMock).toHaveBeenCalledWith('http://127.0.0.1:4803/resume', {
+      method: 'POST',
+      headers: { 'x-caseflow-broker-secret': 'secreto' },
+    });
+  });
 });

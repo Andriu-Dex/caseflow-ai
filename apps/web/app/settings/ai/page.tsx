@@ -231,6 +231,50 @@ function DesktopInstallAssistant() {
   );
 }
 
+// The usage-limit pause of the plan in development, lifted only by a person
+// after checking the usage in ChatGPT (DEC-117, DEC-128).
+function DevelopmentPlanPause() {
+  const queryClient = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+      <p>
+        Se alcanzó el límite de uso de su plan: las solicitudes con ChatGPT están en pausa. Revise
+        su uso en ChatGPT antes de reanudar.
+      </p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Button
+          type="button"
+          size="sm"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await api.ai.resumePlan();
+              await queryClient.invalidateQueries({ queryKey: ['ai-status'] });
+              toast.success('Solicitudes con ChatGPT reanudadas.');
+            } catch {
+              toast.error('No se pudo reanudar. Compruebe que pnpm dev sigue en ejecución.');
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          Reanudar con ChatGPT
+        </Button>
+        <a
+          href={USAGE_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center text-sm font-medium underline"
+        >
+          Revisar uso en ChatGPT
+        </a>
+      </div>
+    </div>
+  );
+}
+
 function ChatGPTConnectionCard({ desktop }: { desktop: CaseflowDesktop }) {
   const queryClient = useQueryClient();
   const status = useQuery({
@@ -481,10 +525,13 @@ export default function AISettingsPage() {
           {desktop === undefined ? null : desktop ? (
             <ChatGPTConnectionCard desktop={desktop} />
           ) : developmentPlan ? (
-            <p className="text-sm text-muted-foreground">
-              Conectado a su plan mediante el intermediario de desarrollo. La sesión se inicia en el
-              navegador al ejecutar <code className="font-mono">pnpm dev</code>.
-            </p>
+            <div className="flex flex-col gap-2">
+              <p className="text-sm text-muted-foreground">
+                Conectado a su plan mediante el intermediario de desarrollo. La sesión se inicia en
+                el navegador al ejecutar <code className="font-mono">pnpm dev</code>.
+              </p>
+              {aiStatus.data?.planPaused ? <DevelopmentPlanPause /> : null}
+            </div>
           ) : (
             <div className="flex flex-col gap-2">
               <p className="flex items-center gap-2 text-sm text-muted-foreground">
