@@ -1117,7 +1117,7 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
       ? ''
       : ", { setValueAs: (v: string) => (v === '' ? undefined : v) }";
     return `        <div className="flex flex-col gap-1">
-          <label htmlFor="${name}" className="text-sm font-medium">${labelOf(relation.name)}${relation.required ? '' : ' (opcional)'}</label>
+          <label htmlFor="${name}" className="text-sm font-medium">${text(relation.label ?? labelOf(relation.name))}${relation.required ? '' : ' (opcional)'}</label>
           ${
             target
               ? `<select id="${name}" className={input} {...register('${name}'${empty})}>

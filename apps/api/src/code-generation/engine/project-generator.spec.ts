@@ -626,7 +626,13 @@ describe('forms and pages for every field type', () => {
           field('code', 'STRING', { required: false }),
         ],
         relations: [
-          { name: 'catalog', kind: 'MANY_TO_ONE', targetEntityLocalId: 'catalog', required: false },
+          {
+            name: 'catalog',
+            label: 'Catálogo de origen',
+            kind: 'MANY_TO_ONE',
+            targetEntityLocalId: 'catalog',
+            required: false,
+          },
           { name: 'hidden', kind: 'MANY_TO_ONE', targetEntityLocalId: 'hidden', required: true },
         ],
         operations: ['LIST', 'GET', 'CREATE', 'UPDATE', 'DELETE'],
@@ -681,6 +687,8 @@ describe('forms and pages for every field type', () => {
   it('lists the related records to choose from, or asks for the identifier when it cannot', () => {
     expect(form).toContain('catalogOptions');
     expect(form).toContain('placeholder="Identificador"');
+    // The plan's label for the relation, not one derived from its code name.
+    expect(form).toContain('{"Catálogo de origen"} (opcional)</label>');
   });
 
   it('edits an existing record and offers only the form the entity needs', () => {
