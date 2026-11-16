@@ -7,6 +7,7 @@ import type {
 import type { GeneratedProjectFile } from './types';
 import { file } from './types';
 import { PlanGenerationError } from '../naming';
+import { routeAccess } from './local-auth.templates';
 
 export function applyPresentationShell(
   files: GeneratedProjectFile[],
@@ -133,6 +134,9 @@ export interface NavigationGroups {
   home?: string;
   logout?: string;
   groups: { label: string; paths: string[] }[];
+  // Who may open each screen (the server's own rule), to hide links to the
+  // screens this person may not use.
+  access?: { path: string; roles: string[]; operations?: string[] }[];
 }
 
 // The approved navigation tree groups the screens as the mockups show them:
@@ -169,14 +173,21 @@ export function navigationGroups(
     const node = branch(screen?.navigationNodeLocalId);
     if (node) groups.get(node.localId)!.paths.push(route.path);
   }
-  return { home, logout, groups: [...groups.values()].filter((group) => group.paths.length) };
+  return {
+    home,
+    logout,
+    groups: [...groups.values()].filter((group) => group.paths.length),
+    access: routeAccess(plan, Boolean(plan.authentication?.local?.scope)).map(
+      ({ path, roles, operations }) => ({ path, roles, ...(operations ? { operations } : {}) }),
+    ),
+  };
 }
 
 function headerShell(
   routes: { routePath: string; navigation: string }[],
   projectName: string,
   themeToggle: boolean,
-  { home, logout, groups }: NavigationGroups,
+  { home, logout, groups, access = [] }: NavigationGroups,
   scoped: boolean,
 ) {
   return `'use client';
@@ -198,6 +209,31 @@ export const matchesRoute = (route: string, path: string) => {
 };
 export const inGroup = (group: { paths: string[] }, path: string) => group.paths.some((route) => matchesRoute(route, path));
 const menu = 'flex min-w-64 flex-col rounded-md border bg-background p-1 shadow-lg md:absolute md:z-30 md:mt-1';
+${
+  scoped
+    ? `// Who may open each screen, as the server decides it: links to a screen this
+// person may not use are hidden, wherever a page renders them. The server
+// still refuses the screen's data on its own.
+const access: { path: string; roles: string[]; operations?: string[] }[] = ${JSON.stringify(access)};
+function useLinkGuard(person: { roles: string[]; permissions: string[] } | undefined) {
+  useEffect(() => {
+    if (!person) return;
+    const allowed = (path: string) => {
+      const route = access.find((item) => matchesRoute(item.path, path));
+      return !route || ((!route.roles.length || route.roles.some((role) => person.roles.includes(role))) && (!route.operations?.length || route.operations.some((operation) => person.permissions.includes(operation))));
+    };
+    const guard = () => {
+      for (const link of document.querySelectorAll<HTMLAnchorElement>('a[href^="/"]')) link.hidden = !allowed((link.getAttribute('href') ?? '').split(/[?#]/)[0]!);
+    };
+    guard();
+    const observer = new MutationObserver(guard);
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['href'] });
+    return () => observer.disconnect();
+  }, [person]);
+}
+`
+    : ''
+}
 
 // The application's header: its name, the approved navigation grouped by
 // module (only the options the server authorizes) and the session menu.
@@ -213,7 +249,7 @@ function Header() {
   const rest = options.filter((item) => item.path !== ${JSON.stringify(home ?? '')} && !groups.some((group) => inGroup(group, item.path)));
   if (rest.length) sections.push({ label: 'Otras opciones', items: rest });
   const trail = sections.flatMap((section) => section.items.filter((item) => item.path === pathname).map((item) => ({ section: section.label, label: item.label })))[0];
-  ${scoped ? "const person = useQuery({ queryKey: ['operation-context'], queryFn: () => api.getAuthContext(), enabled: ready && Boolean(accessToken.get()), retry: false }).data;" : ''}
+  ${scoped ? "const person = useQuery({ queryKey: ['operation-context'], queryFn: () => api.getAuthContext(), enabled: ready && Boolean(accessToken.get()), retry: false }).data;\n  useLinkGuard(person);" : ''}
   return <header className="border-b bg-background">
     <div className="mx-auto flex max-w-screen-2xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 md:px-8">
       <Link href={${JSON.stringify(home ?? '/')}} className="text-xl font-bold text-primary">{${JSON.stringify(projectName)}}</Link>

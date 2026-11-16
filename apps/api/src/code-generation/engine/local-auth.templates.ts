@@ -12,6 +12,51 @@ import {
 import { collectionPath } from '../naming';
 import { operationContextFiles } from './operation-context.templates';
 
+// Who may open each screen: its roles and, with an operation scope, the
+// operations its actions perform. The server's menu and the shell's link
+// guard read this same table, so they never disagree.
+export function routeAccess(plan: ImplementationPlanContent, scoped: boolean) {
+  return plan.routes
+    .filter(
+      (r) =>
+        !r.actions.some((a) =>
+          ['POST /auth/login', 'POST /auth/logout'].includes(a.endpoint ?? ''),
+        ),
+    )
+    .map((r) => ({
+      path: r.path,
+      label: r.screenName,
+      roles: r.roles ?? [],
+      ...(scoped
+        ? {
+            operations: r.actions.flatMap((action) =>
+              action.endpoint &&
+              !['GET /auth/options', 'GET /auth/context', 'POST /auth/context'].includes(
+                action.endpoint,
+              )
+                ? [action.endpoint]
+                : action.operation && r.entityLocalId
+                  ? [
+                      {
+                        LIST: 'GET',
+                        GET: 'GET',
+                        CREATE: 'POST',
+                        UPDATE: 'PATCH',
+                        DELETE: 'DELETE',
+                      }[action.operation] +
+                        ' ' +
+                        collectionPath(
+                          plan.entities.find((entity) => entity.localId === r.entityLocalId)!.name,
+                        ) +
+                        (['GET', 'UPDATE', 'DELETE'].includes(action.operation) ? '/:id' : ''),
+                    ]
+                  : [],
+            ),
+          }
+        : {}),
+    }));
+}
+
 export function localAuthFiles(ctx: GenerationContext): GeneratedProjectFile[] {
   const { plan } = ctx;
   const local = plan.authentication.local;
@@ -317,7 +362,7 @@ export class LocalAuthService {
     return { closed: true };
   }
   options(actor: SessionActor) {
-    const routes = ${JSON.stringify(plan.routes.filter((r) => (!r.path.includes('[') || onlyScopeParams(r.path)) && !r.actions.some((a) => ['POST /auth/login', 'POST /auth/logout'].includes(a.endpoint ?? ''))).map((r) => ({ path: r.path, label: r.screenName, roles: r.roles ?? [], ...(scope ? { operations: r.actions.flatMap((action) => (action.endpoint && !['GET /auth/options', 'GET /auth/context', 'POST /auth/context'].includes(action.endpoint) ? [action.endpoint] : action.operation && r.entityLocalId ? [{ LIST: 'GET', GET: 'GET', CREATE: 'POST', UPDATE: 'PATCH', DELETE: 'DELETE' }[action.operation] + ' ' + collectionPath(plan.entities.find((entity) => entity.localId === r.entityLocalId)!.name) + (['GET', 'UPDATE', 'DELETE'].includes(action.operation) ? '/:id' : '')] : [])) } : {}) })))};
+    const routes = ${JSON.stringify(routeAccess(plan, Boolean(scope)).filter((r) => !r.path.includes('[') || onlyScopeParams(r.path)))};
     return routes.filter(route => (!route.roles.length || route.roles.some(role => actor.roles.includes(role)))${scope ? ' && (!route.operations.length || route.operations.some(operation => actor.permissions.includes(operation)))' : ''}${scope ? " && (!route.path.includes('[') || Boolean(actor.selectedScopeId))" : ''}).map(({ path, label }) => ({ path: ${scope ? "path.replace(/\\[[a-zA-Z0-9]+\\]/g, actor.selectedScopeId ?? '')" : 'path'}, label }));
   }
   ${

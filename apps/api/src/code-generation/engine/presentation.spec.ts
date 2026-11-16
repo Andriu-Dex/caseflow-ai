@@ -294,7 +294,8 @@ describe('navigation groups', () => {
         { localId: 'audit', label: 'Auditoría', parentLocalId: 'home' },
       ],
     } as unknown as NavigationTreeContent;
-    expect(navigationGroups(plan, blueprint, tree)).toEqual({
+    const result = navigationGroups(plan, blueprint, tree);
+    expect(result).toMatchObject({
       home: '/home',
       logout: '/logout',
       groups: [
@@ -302,6 +303,10 @@ describe('navigation groups', () => {
         { label: 'Auditoría', paths: ['/audit'] },
       ],
     });
+    // Every screen carries who may open it, for the shell's link guard.
+    expect(result.access?.map((item) => item.path)).toEqual(
+      expect.arrayContaining(['/products', '/products/new', '/audit']),
+    );
   });
 });
 
