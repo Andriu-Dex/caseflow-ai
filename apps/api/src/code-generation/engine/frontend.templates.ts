@@ -387,6 +387,11 @@ function contextLinks(
     const own = entityParam(entity, routeParamNames(target.path));
     const segments = target.path.split('/');
     if (!own || segments[segments.indexOf(`[${own}]`) - 1] !== collection) return [];
+    // The parameter is another entity's id when the target screen's own
+    // entity claims it too (an audit event is not a catering event).
+    const targetEntity = plan.entities.find((item) => item.localId === target.entityLocalId);
+    if (targetEntity && targetEntity !== entity && entityParam(targetEntity, [own]) === own)
+      return [];
     let scoped = false;
     let unresolved = false;
     const href = target.path.replace(/\[([a-zA-Z0-9]+)\]/g, (_, name: string) => {
