@@ -76,7 +76,10 @@ describe('focused business method repair', () => {
       },
     });
     const service = new AutoRepairService(
-      { project: { findUnique: vi.fn().mockResolvedValue({ language: 'ES' }) } } as never,
+      {
+        project: { findUnique: vi.fn().mockResolvedValue({ language: 'ES' }) },
+        repairPatch: { findMany: vi.fn().mockResolvedValue([]) },
+      } as never,
       { generateStructured } as never,
     );
     const result = await service.repair({
