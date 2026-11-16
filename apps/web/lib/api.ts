@@ -967,6 +967,15 @@ export const api = {
       `${BASE_URL}/projects/${p}/generated-project-snapshots/${s}/user-manual/versions/${v}/download?format=${format}`,
   },
   generationRuns: {
+    manual: (projectId: string, implementationPlanVersionId: string, file: File) => {
+      const form = new FormData();
+      form.set('implementationPlanVersionId', implementationPlanVersionId);
+      form.set('file', file);
+      return request<GenerationRunResponse>(`/projects/${projectId}/generation-runs/manual`, {
+        method: 'POST',
+        body: form,
+      });
+    },
     workingCopy: (projectId: string, implementationPlanVersionId: string) =>
       post<GenerationRunResponse>(`/projects/${projectId}/generation-runs/working-copies`, {
         implementationPlanVersionId,

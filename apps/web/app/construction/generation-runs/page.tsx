@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { newestApprovedPlan, newestRunForPlan } from '../../../lib/construction-progress';
 import { WorkingCopySummary } from './working-copy-summary';
+import { ManualImplementationDialog } from './manual-implementation-dialog';
 import { ScreenFindings } from './screen-findings';
 import { DeploymentPanel } from './deployment-panel';
 import { useFailureToast } from '../../../lib/use-failure-toast';
@@ -1477,6 +1478,11 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
               <span className="font-normal opacity-90">· {run.fileCount} archivos</span>
             ) : null}
           </span>
+          {run.origin === 'MANUAL' ? (
+            <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-xs font-semibold text-sky-700 dark:text-sky-300">
+              Manual
+            </span>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
           <span className="text-xs text-muted-foreground font-mono">
@@ -1605,23 +1611,25 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
         </div>
 
         {/* Versión de trabajo secundaria */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-lg border border-border/60 bg-muted/30 p-2.5 text-xs text-muted-foreground">
-          <p className="leading-relaxed">
-            Preparar una versión de trabajo conserva el código disponible y sus pendientes, sin
-            nuevas inferencias. Generar proyecto inicia una nueva corrida; su validación se realiza
-            después.
-          </p>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs shrink-0 font-medium border-border/80 bg-background"
-            disabled={!chosenPlan || hasActiveRun || submitting}
-            onClick={() => start(true)}
-          >
-            Preparar versión de trabajo
-          </Button>
-        </div>
+        {currentRun?.origin !== 'MANUAL' ? (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-lg border border-border/60 bg-muted/30 p-2.5 text-xs text-muted-foreground">
+            <p className="leading-relaxed">
+              Preparar una versión de trabajo conserva el código disponible y sus pendientes, sin
+              nuevas inferencias. Generar proyecto inicia una nueva corrida; su validación se
+              realiza después.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs shrink-0 font-medium border-border/80 bg-background"
+              disabled={!chosenPlan || hasActiveRun || submitting}
+              onClick={() => start(true)}
+            >
+              Preparar versión de trabajo
+            </Button>
+          </div>
+        ) : null}
       </div>
 
       <DockerSetupAssistant />
@@ -1661,36 +1669,52 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
                   </select>
                 </label>
 
-                <Button
-                  type="button"
-                  className={`text-xs gap-1.5 font-semibold h-8 shrink-0 transition-all ${
-                    hasActiveRun
-                      ? 'border border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300 hover:bg-amber-500/10 cursor-not-allowed opacity-90'
-                      : ''
-                  }`}
-                  disabled={submitting || !chosenPlan || hasActiveRun}
-                  onClick={() => start()}
-                >
-                  {submitting ? (
-                    <>
-                      <Sparkles className="size-3.5 animate-spin text-primary" aria-hidden="true" />
-                      Iniciando…
-                    </>
-                  ) : hasActiveRun ? (
-                    <>
-                      <Clock
-                        className="size-3.5 animate-pulse text-amber-600 dark:text-amber-400"
-                        aria-hidden="true"
-                      />
-                      Generación en curso…
-                    </>
-                  ) : (
-                    <>
-                      <Play className="size-3.5" aria-hidden="true" />
-                      Generar proyecto
-                    </>
-                  )}
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    className={`text-xs gap-1.5 font-semibold h-8 shrink-0 transition-all ${
+                      hasActiveRun
+                        ? 'border border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300 hover:bg-amber-500/10 cursor-not-allowed opacity-90'
+                        : ''
+                    }`}
+                    disabled={submitting || !chosenPlan || hasActiveRun}
+                    onClick={() => start()}
+                  >
+                    {submitting ? (
+                      <>
+                        <Sparkles
+                          className="size-3.5 animate-spin text-primary"
+                          aria-hidden="true"
+                        />
+                        Iniciando…
+                      </>
+                    ) : hasActiveRun ? (
+                      <>
+                        <Clock
+                          className="size-3.5 animate-pulse text-amber-600 dark:text-amber-400"
+                          aria-hidden="true"
+                        />
+                        Generación en curso…
+                      </>
+                    ) : (
+                      <>
+                        <Play className="size-3.5" aria-hidden="true" />
+                        Generar proyecto
+                      </>
+                    )}
+                  </Button>
+                  <ManualImplementationDialog
+                    projectId={projectId}
+                    implementationPlanVersionId={chosenPlan}
+                    disabled={submitting || hasActiveRun}
+                    onImported={async (runId) => {
+                      setOpenRunId(runId);
+                      await queryClient.invalidateQueries({
+                        queryKey: ['generation-runs', projectId],
+                      });
+                    }}
+                  />
+                </div>
               </div>
 
               {hasActiveRun ? (
@@ -1773,7 +1797,8 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
                         }
                       >
                         <span>
-                          {STATUS_LABELS[run.status]} ·{' '}
+                          {STATUS_LABELS[run.status]}
+                          {run.origin === 'MANUAL' ? ' · Manual' : ''} ·{' '}
                           {new Date(run.createdAt).toLocaleString('es-EC')}
                           {run.implementationPlanVersionId !== chosenPlan
                             ? ' · Otro plan de implementación'
