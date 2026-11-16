@@ -59,10 +59,133 @@ ${body}
   return first ? ts.flattenDiagnosticMessageText(first.messageText, ' ') : null;
 }
 
+// Per Prisma delegate, its relations and whether each one reaches a model
+// isolated by operation scope. The generated scope guard rejects at run time
+// any query that filters, includes or selects through such a relation, so a
+// body doing it fails on every call.
+export type ScopedRelations = Readonly<
+  Record<string, Readonly<Record<string, { target: string; isolated: boolean }>>>
+>;
+
+export function scopedRelations(plan: ImplementationPlanContent): ScopedRelations {
+  const scope = plan.authentication.local?.scope;
+  if (!scope) return {};
+  const byId = new Map(plan.entities.map((entity) => [entity.localId, entity]));
+  return Object.fromEntries(
+    plan.entities.map((entity) => [
+      lowerFirst(entity.name),
+      Object.fromEntries(
+        entity.relations.map((relation) => {
+          const target = byId.get(relation.targetEntityLocalId)!;
+          return [
+            relation.name,
+            {
+              target: lowerFirst(target.name),
+              // The scope entity itself may be read through a relation by an
+              // unrestricted role; every other isolated target never.
+              isolated: !!target.operationScope && target.localId !== scope.entityLocalId,
+            },
+          ];
+        }),
+      ),
+    ]),
+  );
+}
+
+const PRISMA_METHODS = new Set([
+  'findUnique',
+  'findUniqueOrThrow',
+  'findFirst',
+  'findFirstOrThrow',
+  'findMany',
+  'count',
+  'aggregate',
+  'groupBy',
+  'create',
+  'createMany',
+  'createManyAndReturn',
+  'update',
+  'updateMany',
+  'updateManyAndReturn',
+  'delete',
+  'deleteMany',
+  'upsert',
+]);
+
+// First `delegate.relation` crossed by a literal where/include/select/orderBy
+// of a Prisma call in the body, or null. Arguments built in variables are not
+// followed: the check is a floor, not a proof.
+function isolatedRelationUse(source: ts.SourceFile, relations: ScopedRelations): string | null {
+  let found: string | null = null;
+  const property = (literal: ts.ObjectLiteralExpression, name: string) =>
+    literal.properties.find(
+      (item): item is ts.PropertyAssignment =>
+        ts.isPropertyAssignment(item) && item.name.getText(source) === name,
+    )?.initializer;
+  const filter = (delegate: string, node: ts.Expression | undefined) => {
+    if (!node || found) return;
+    if (ts.isArrayLiteralExpression(node)) {
+      for (const element of node.elements) filter(delegate, element);
+      return;
+    }
+    if (!ts.isObjectLiteralExpression(node)) return;
+    for (const item of node.properties) {
+      if (!ts.isPropertyAssignment(item) && !ts.isShorthandPropertyAssignment(item)) continue;
+      const name = item.name.getText(source).replace(/^['"]|['"]$/g, '');
+      const value = ts.isPropertyAssignment(item) ? item.initializer : undefined;
+      if (['AND', 'OR', 'NOT'].includes(name)) {
+        filter(delegate, value);
+        continue;
+      }
+      const relation = relations[delegate]?.[name];
+      if (!relation) continue;
+      if (relation.isolated) {
+        found = `${delegate}.${name}`;
+        return;
+      }
+      // Relation filters wrap the nested condition in some/every/none/is/isNot.
+      if (value && ts.isObjectLiteralExpression(value))
+        for (const nested of value.properties)
+          if (ts.isPropertyAssignment(nested)) filter(relation.target, nested.initializer);
+      filter(relation.target, value);
+    }
+  };
+  const projection = (delegate: string, node: ts.Expression | undefined) => {
+    if (!node || found || !ts.isObjectLiteralExpression(node)) return;
+    for (const item of node.properties) {
+      if (!ts.isPropertyAssignment(item)) continue;
+      const relation = relations[delegate]?.[item.name.getText(source)];
+      if (relation?.isolated) found = `${delegate}.${item.name.getText(source)}`;
+    }
+  };
+  const visit = (node: ts.Node) => {
+    if (found) return;
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      PRISMA_METHODS.has(node.expression.name.text) &&
+      ts.isPropertyAccessExpression(node.expression.expression)
+    ) {
+      const delegate = node.expression.expression.name.text;
+      const args = node.arguments[0];
+      if (relations[delegate] && args && ts.isObjectLiteralExpression(args)) {
+        filter(delegate, property(args, 'where'));
+        filter(delegate, property(args, 'orderBy'));
+        projection(delegate, property(args, 'include'));
+        projection(delegate, property(args, 'select'));
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return found;
+}
+
 // Pure check of one AI-proposed method body.
 export function reviewBusinessLogic(
   body: string,
   internalFields: readonly string[] = [],
+  relations: ScopedRelations = {},
 ): BusinessLogicReview {
   const source = ts.createSourceFile('body.ts', body, ts.ScriptTarget.Latest, true);
   let touchesInternal = false;
@@ -113,6 +236,13 @@ export function reviewBusinessLogic(
     return {
       accepted: false,
       reason: `intenta eludir los límites de ejecución o persistencia (${bypassesBoundary})`,
+      packages: [],
+    };
+  const isolated = isolatedRelationUse(source, relations);
+  if (isolated)
+    return {
+      accepted: false,
+      reason: `filtra, incluye o selecciona a través de la relación ${isolated}, que apunta a un modelo aislado por ámbito: consulte ese modelo por separado con su propio where`,
       packages: [],
     };
   return { accepted: true };
@@ -179,6 +309,7 @@ export class BusinessLogicService {
         : undefined;
     const implementations: EndpointImplementations = {};
     const checkpoints: GeneratedProjectFile[] = [];
+    const relations = scopedRelations(plan);
     // Checkpoints are reused across design baselines when an action's inputs
     // are unchanged: the key leaves out the baseline id, and the keys written
     // before (with each earlier baseline id in the context) are still found.
@@ -336,48 +467,55 @@ export class BusinessLogicService {
           warnings.push(`La acción «${endpointKey(endpoint)}» está pendiente de implementación.`);
           continue;
         }
-        const result = revision
-          ? { data: businessLogicOutputSchema.parse({ body: revision }) }
-          : cached
-            ? { data: businessLogicOutputSchema.parse(JSON.parse(cached.content)) }
-            : await this.ai.generateStructured({
-                projectId,
-                ...(endpoint.contract ? {} : { language }),
-                promptKey: 'business-logic.generate',
-                promptVersion,
-                messages: [{ role: 'user', content: JSON.stringify(context) }],
-                outputSchema: businessLogicOutputSchema,
-                schemaName: 'business_logic_generation',
-                // The schema's length limit cuts an answer where it falls, so both
-                // leave room for a long action.
-                maxOutputTokens: 8192,
-              });
-        let review = reviewBusinessLogic(result.data.body, internalFields);
-        // One bounded retry of a fresh AI proposal, told exactly why the
-        // previous one was rejected; a second rejection leaves the action
-        // unimplemented as before.
-        if (!review.accepted && !cached && !revision) {
-          logger.warn(
-            `Business logic for "${endpointKey(endpoint)}" (run ${generationRunId}) rejected: ${review.reason}. Asking once more.`,
-          );
-          const retried = await this.ai.generateStructured({
+        const generate = (rejection?: string) =>
+          this.ai.generateStructured({
             projectId,
             ...(endpoint.contract ? {} : { language }),
             promptKey: 'business-logic.generate',
             promptVersion,
             messages: [
               { role: 'user', content: JSON.stringify(context) },
-              {
-                role: 'user',
-                content: `La revisión estática rechazó la propuesta anterior para esta acción porque ${review.reason}. Escribe de nuevo el cuerpo completo cumpliendo todas las reglas: solo los delegados de Prisma suministrados (incluido $transaction), sin SQL directo ni propiedades que empiecen por $ o _ (salvo _sum, _avg, _min, _max y _count), sin import ni require y sin paquetes.`,
-              },
+              ...(rejection
+                ? [
+                    {
+                      role: 'user' as const,
+                      content: `La revisión estática rechazó la propuesta anterior para esta acción porque ${rejection}. Escribe de nuevo el cuerpo completo cumpliendo todas las reglas: solo los delegados de Prisma suministrados (incluido $transaction), sin SQL directo ni propiedades que empiecen por $ o _ (salvo _sum, _avg, _min, _max y _count), sin import ni require y sin paquetes.`,
+                    },
+                  ]
+                : []),
             ],
             outputSchema: businessLogicOutputSchema,
             schemaName: 'business_logic_generation',
+            // The schema's length limit cuts an answer where it falls, so both
+            // leave room for a long action.
             maxOutputTokens: 8192,
           });
-          result.data = retried.data;
-          review = reviewBusinessLogic(result.data.body, internalFields);
+        let fresh = !cached && !revision;
+        const result = revision
+          ? { data: businessLogicOutputSchema.parse({ body: revision }) }
+          : cached
+            ? { data: businessLogicOutputSchema.parse(JSON.parse(cached.content)) }
+            : await generate();
+        let review = reviewBusinessLogic(result.data.body, internalFields, relations);
+        // A checkpoint written before a check existed is not trusted past it:
+        // it is proposed again instead of leaving the action unimplemented.
+        if (!review.accepted && cached && !revision && !options.cacheOnly) {
+          logger.warn(
+            `Cached business logic for "${endpointKey(endpoint)}" (run ${generationRunId}) no longer passes review: ${review.reason}. Proposing it again.`,
+          );
+          result.data = (await generate()).data;
+          fresh = true;
+          review = reviewBusinessLogic(result.data.body, internalFields, relations);
+        }
+        // One bounded retry of a fresh AI proposal, told exactly why the
+        // previous one was rejected; a second rejection leaves the action
+        // unimplemented as before.
+        if (!review.accepted && fresh) {
+          logger.warn(
+            `Business logic for "${endpointKey(endpoint)}" (run ${generationRunId}) rejected: ${review.reason}. Asking once more.`,
+          );
+          result.data = (await generate(review.reason)).data;
+          review = reviewBusinessLogic(result.data.body, internalFields, relations);
         }
         if (review.accepted) {
           implementations[endpointKey(endpoint)] = result.data.body;

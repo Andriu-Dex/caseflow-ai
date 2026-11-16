@@ -5,6 +5,7 @@ import { implementationPlanContentSchema } from '@caseflow-ai/contracts';
 import {
   BusinessLogicService,
   reviewBusinessLogic,
+  scopedRelations,
   unimplementedWarning,
 } from './business-logic.service';
 
@@ -49,6 +50,55 @@ describe('reviewBusinessLogic', () => {
     ['return globalThis;', 'accede al ámbito global', []],
   ])('rejects %j', (body, reason, packages) => {
     expect(reviewBusinessLogic(body)).toEqual({ accepted: false, reason, packages });
+  });
+});
+
+describe('isolated relation filters', () => {
+  // Only what scopedRelations reads: the scope entity and each relation's target.
+  const plan = {
+    authentication: { local: { scope: { entityLocalId: 'branch' } } },
+    entities: [
+      { localId: 'branch', name: 'Branch', relations: [], operationScope: { paths: [] } },
+      {
+        localId: 'menu',
+        name: 'DailyMenu',
+        relations: [{ name: 'branch', targetEntityLocalId: 'branch' }],
+        operationScope: { paths: [['branch']] },
+      },
+      {
+        localId: 'version',
+        name: 'MenuVersion',
+        relations: [{ name: 'dailyMenu', targetEntityLocalId: 'menu' }],
+        operationScope: { paths: [['dailyMenu', 'branch']] },
+      },
+    ],
+  };
+  const relations = scopedRelations(plan as never);
+
+  it('rejects a filter, include or select through a relation to a scope-isolated model', () => {
+    for (const body of [
+      'return tx.menuVersion.findFirst({ where: { id: versionid, dailyMenu: { branchId } } });',
+      'return this.prisma.menuVersion.updateMany({ where: { AND: [{ dailyMenu: { is: { branchId } } }] }, data: {} });',
+      'return this.prisma.menuVersion.findMany({ include: { dailyMenu: true } });',
+    ])
+      expect(reviewBusinessLogic(body, [], relations)).toMatchObject({
+        accepted: false,
+        reason: expect.stringContaining('menuVersion.dailyMenu'),
+      });
+  });
+
+  it('accepts separate queries with their own where, and the scope entity itself', () => {
+    expect(
+      reviewBusinessLogic(
+        [
+          'const menu = await tx.dailyMenu.findFirst({ where: { id: menuId, branchId } });',
+          'const version = await tx.menuVersion.findFirst({ where: { id: versionid, dailyMenuId: menu.id } });',
+          'return tx.dailyMenu.findMany({ where: { branch: { status: "ACTIVE" } } });',
+        ].join('\n'),
+        [],
+        relations,
+      ),
+    ).toEqual({ accepted: true });
   });
 });
 
