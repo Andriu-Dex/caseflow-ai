@@ -633,6 +633,9 @@ function pageImports(body: string, up: string, extra: string[] = []): string {
   const lines = [
     body.includes('<Link') ? "import Link from 'next/link';" : '',
     body.includes('<ScopeLink') ? `import { ScopeLink } from '${up}components/scope-link';` : '',
+    body.includes('<RecordLabel')
+      ? `import { RecordLabel } from '${up}components/record-label';`
+      : '',
     ...extra,
     body.includes('<Button') ? `import { Button } from '${up}components/ui/button';` : '',
     body.includes('<Input') ? `import { Input } from '${up}components/ui/input';` : '',
@@ -744,10 +747,34 @@ function listPage(plan: Plan, entity: Entity, route: Route): string {
   rowControls.push(...contextLinks(plan, entity, route, names, 'row.id', collectionOf(route.path)));
   const detailHref = detail ? recordHref(detail.path, entity, names, 'row.id') : undefined;
   const idCell = detailHref
-    ? `<td className="px-3 py-2 font-mono text-xs">\n  <Link className="text-primary underline" href=${detailHref}>\n    {row.id}\n  </Link>\n</td>`
-    : `<td className="px-3 py-2 font-mono text-xs">{row.id}</td>`;
+    ? `<td className="px-3 py-2 font-mono text-xs">\n  <Link className="text-primary underline" href=${detailHref} title={row.id}>\n    {row.id.slice(0, 8)}\n  </Link>\n</td>`
+    : `<td className="px-3 py-2 font-mono text-xs" title={row.id}>{row.id.slice(0, 8)}</td>`;
+  // Relation columns show the related record's name where this screen may
+  // read it (the operation scope from its context), a short id otherwise.
+  const relationSource = new Map<string, string>(
+    inputRelations(entity).map((rel) => {
+      const target = plan.entities.find((item) => item.localId === rel.targetEntityLocalId);
+      const field = target?.fields.find(
+        (item) => ['STRING', 'TEXT'].includes(item.type) && !item.internal,
+      )?.name;
+      const readable =
+        target?.operations.includes('LIST') &&
+        field &&
+        (!target.readRoles?.length ||
+          (route.roles ?? []).every((role) => target.readRoles!.includes(role)));
+      const source =
+        target && target.localId === plan.authentication.local?.scope?.entityLocalId
+          ? `source="scope"`
+          : readable
+            ? `source=${JSON.stringify(`list${pluralize(target!.name)}`)} field=${JSON.stringify(field)}`
+            : '';
+      return [`${rel.name}Id`, source] as const;
+    }),
+  );
   const dataCells = columns.map((f, i) => {
-    const expr = display(f, `row.${f.name}`);
+    const expr = relationSource.has(f.name)
+      ? `<RecordLabel id={row.${f.name}} ${relationSource.get(f.name)} />`
+      : display(f, `row.${f.name}`);
     return i === 0 && detailHref
       ? `<td className="px-3 py-2">\n  <Link className="text-primary underline" href=${detailHref}>\n    {${expr}}\n  </Link>\n</td>`
       : `<td className="px-3 py-2">{${expr}}</td>`;
@@ -1759,6 +1786,38 @@ describe('PasswordInput', () => {
     expect(field.getAttribute('type')).toBe('password');
   });
 });
+`,
+    ),
+    file(
+      'apps/web/components/record-label.tsx',
+      `'use client';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../lib/api';
+
+type Labels = Record<string, string>;
+const sources = api as unknown as Record<string, () => Promise<Record<string, unknown>[]>> & {
+  getAuthContext?: () => Promise<{ scopes: { id: string; label: string }[] }>;
+};
+
+// A related record by its name: from the operation context for the scope,
+// or from a list this screen's roles may read. Otherwise a short identifier,
+// with the full one on hover.
+export function RecordLabel({ id, source, field }: { id?: string | null; source?: string; field?: string }) {
+  const query = useQuery({
+    queryKey: ['record-labels', source],
+    enabled: Boolean(source && id),
+    staleTime: 60_000,
+    retry: false,
+    queryFn: async (): Promise<Labels> => {
+      if (source === 'scope')
+        return Object.fromEntries(((await sources.getAuthContext?.())?.scopes ?? []).map((scope) => [scope.id, scope.label]));
+      const rows = await sources[source!]!();
+      return Object.fromEntries(rows.map((row) => [String(row.id), String(row[field ?? 'id'] ?? row.id)]));
+    },
+  });
+  if (!id) return <>—</>;
+  return <span title={id}>{query.data?.[id] ?? id.slice(0, 8)}</span>;
+}
 `,
     ),
     file(

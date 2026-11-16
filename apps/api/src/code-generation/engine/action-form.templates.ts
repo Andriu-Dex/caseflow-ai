@@ -58,7 +58,9 @@ const NavigationContext=createContext<Navigation[]>([]);
 function NavigationLinks({data,definitions}:{data:Record<string,unknown>;definitions:Navigation[]}){return <>{definitions.map((navigation,index)=>typeof data[navigation.idField]==='string'?<a key={index} data-action={navigation.label} className="text-primary underline" href={navigation.routePath.replace(/\\[[a-z][a-zA-Z0-9]*\\]/,encodeURIComponent(String(data[navigation.idField])))}>{navigation.label}</a>:null)}</>;}
 function Result({value,shape,timeZone,fieldName}:{value:unknown;shape:Shape;timeZone?:string;fieldName?:string}):ReactNode {
  const navigation=useContext(NavigationContext).filter(item=>item.collectionField===fieldName&&fieldName!==undefined);
+ const references=useContext(ReferenceContext);
  if(value===null||value===undefined)return <span>Sin información</span>;
+ if(shape.type==='UUID'&&typeof value==='string'){const label=shape.referenceEntityLocalId?references[shape.referenceEntityLocalId]?.find(option=>option.id===value)?.label:undefined;return <span title={value}>{label??value.slice(0,8)}</span>;}
  if(shape.type==='FILE')return <FileDownload value={value}/>;
  const zone=typeof record(value).timeZone==='string'?String(record(value).timeZone):timeZone;
  if(Array.isArray(value)&&navigation.length)return <ul className="space-y-3">{value.map((item,index)=><li key={index}><Result value={item} shape={shape.items??{type:'STRING'}} timeZone={timeZone}/><NavigationLinks data={record(item)} definitions={navigation}/></li>)}</ul>;
