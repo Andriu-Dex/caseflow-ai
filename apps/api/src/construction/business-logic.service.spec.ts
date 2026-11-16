@@ -76,14 +76,28 @@ describe('isolated relation filters', () => {
   const relations = scopedRelations(plan as never);
 
   it('rejects a filter, include or select through a relation to a scope-isolated model', () => {
-    for (const body of [
-      'return tx.menuVersion.findFirst({ where: { id: versionid, dailyMenu: { branchId } } });',
-      'return this.prisma.menuVersion.updateMany({ where: { AND: [{ dailyMenu: { is: { branchId } } }] }, data: {} });',
-      'return this.prisma.menuVersion.findMany({ include: { dailyMenu: true } });',
+    for (const [body, relation] of [
+      [
+        'return tx.menuVersion.findFirst({ where: { id: versionid, dailyMenu: { branchId } } });',
+        'menuVersion.dailyMenu',
+      ],
+      [
+        'return this.prisma.menuVersion.updateMany({ where: { AND: [{ dailyMenu: { is: { branchId } } }] }, data: {} });',
+        'menuVersion.dailyMenu',
+      ],
+      [
+        'return this.prisma.menuVersion.findMany({ include: { dailyMenu: true } });',
+        'menuVersion.dailyMenu',
+      ],
+      // The guard has no exception for filtering by the scope entity itself.
+      [
+        'return tx.dailyMenu.findMany({ where: { branch: { status: "ACTIVE" } } });',
+        'dailyMenu.branch',
+      ],
     ])
-      expect(reviewBusinessLogic(body, [], relations)).toMatchObject({
+      expect(reviewBusinessLogic(body!, [], relations)).toMatchObject({
         accepted: false,
-        reason: expect.stringContaining('menuVersion.dailyMenu'),
+        reason: expect.stringContaining(relation!),
       });
   });
 
@@ -93,7 +107,7 @@ describe('isolated relation filters', () => {
         [
           'const menu = await tx.dailyMenu.findFirst({ where: { id: menuId, branchId } });',
           'const version = await tx.menuVersion.findFirst({ where: { id: versionid, dailyMenuId: menu.id } });',
-          'return tx.dailyMenu.findMany({ where: { branch: { status: "ACTIVE" } } });',
+          'return tx.dailyMenu.findMany({ include: { branch: true } });',
         ].join('\n'),
         [],
         relations,
