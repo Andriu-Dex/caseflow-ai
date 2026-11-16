@@ -89,6 +89,9 @@ describe('isolated relation filters', () => {
         'return this.prisma.menuVersion.findMany({ include: { dailyMenu: true } });',
         'menuVersion.dailyMenu',
       ],
+      // Only an unrestricted role may project the scope entity, and the review
+      // does not know who calls: it is asked for in a query of its own.
+      ['return tx.dailyMenu.findMany({ include: { branch: true } });', 'dailyMenu.branch'],
       // The guard has no exception for filtering by the scope entity itself.
       [
         'return tx.dailyMenu.findMany({ where: { branch: { status: "ACTIVE" } } });',
@@ -101,13 +104,13 @@ describe('isolated relation filters', () => {
       });
   });
 
-  it('accepts separate queries with their own where, and the scope entity itself', () => {
+  it('accepts separate queries with their own where', () => {
     expect(
       reviewBusinessLogic(
         [
           'const menu = await tx.dailyMenu.findFirst({ where: { id: menuId, branchId } });',
           'const version = await tx.menuVersion.findFirst({ where: { id: versionid, dailyMenuId: menu.id } });',
-          'return tx.dailyMenu.findMany({ include: { branch: true } });',
+          'return tx.branch.findFirst({ where: { id: menu.branchId } });',
         ].join('\n'),
         [],
         relations,

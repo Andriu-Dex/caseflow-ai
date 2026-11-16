@@ -64,10 +64,7 @@ ${body}
 // any query that filters, includes or selects through such a relation, so a
 // body doing it fails on every call.
 export type ScopedRelations = Readonly<
-  Record<
-    string,
-    Readonly<Record<string, { target: string; isolated: boolean; scopeEntity: boolean }>>
-  >
+  Record<string, Readonly<Record<string, { target: string; isolated: boolean }>>>
 >;
 
 export function scopedRelations(plan: ImplementationPlanContent): ScopedRelations {
@@ -85,9 +82,6 @@ export function scopedRelations(plan: ImplementationPlanContent): ScopedRelation
             {
               target: lowerFirst(target.name),
               isolated: !!target.operationScope,
-              // The guard lets an unrestricted role include or select the scope
-              // entity through a relation, but never filter by it.
-              scopeEntity: target.localId === scope.entityLocalId,
             },
           ];
         }),
@@ -159,8 +153,7 @@ function isolatedRelationUse(source: ts.SourceFile, relations: ScopedRelations):
     for (const item of node.properties) {
       if (!ts.isPropertyAssignment(item)) continue;
       const relation = relations[delegate]?.[item.name.getText(source)];
-      if (relation?.isolated && !relation.scopeEntity)
-        found = `${delegate}.${item.name.getText(source)}`;
+      if (relation?.isolated) found = `${delegate}.${item.name.getText(source)}`;
     }
   };
   const visit = (node: ts.Node) => {
