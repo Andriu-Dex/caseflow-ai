@@ -15,7 +15,10 @@ const input = (overrides: Partial<RepairInput> = {}): RepairInput => ({
   ...overrides,
 });
 
-const prisma = { project: { findUnique: vi.fn().mockResolvedValue({ language: 'ES' }) } };
+const prisma = {
+  project: { findUnique: vi.fn().mockResolvedValue({ language: 'ES' }) },
+  repairPatch: { findMany: vi.fn().mockResolvedValue([]) },
+};
 const service = (generateStructured: ReturnType<typeof vi.fn>) =>
   new AutoRepairService(prisma as never, { generateStructured } as never);
 const proposing = (data: unknown) => vi.fn().mockResolvedValue({ data });
@@ -38,6 +41,26 @@ describe('AutoRepairService', () => {
     expect(result.findings).toEqual([
       { message: 'RF-001 no define el valor.', relatedArtifactVersionId: 'version-rf-1' },
     ]);
+  });
+
+  it('reuses a repair already applied to the same code, without asking the AI', async () => {
+    const fixed = original.replace('x = y;', 'x = 1;');
+    const { createHash } = await import('node:crypto');
+    const previousSha256 = createHash('sha256').update(original).digest('hex');
+    prisma.repairPatch.findMany.mockResolvedValueOnce([
+      { path: SERVICE, previousSha256, content: fixed, sha256: 'f'.repeat(64) },
+    ]);
+    const ai = vi.fn();
+    const result = await service(ai).repair(input());
+    expect(ai).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      status: 'PATCHED',
+      patches: [{ path: SERVICE, content: fixed }],
+    });
+    expect(prisma.repairPatch.findMany.mock.calls.at(-1)![0].where.attempt).toEqual({
+      status: 'PATCHED',
+      generationRun: { projectId: 'p' },
+    });
   });
 
   it('rejects the whole proposal when one file adds a new module', async () => {

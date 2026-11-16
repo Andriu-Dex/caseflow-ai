@@ -93,6 +93,29 @@ export class AutoRepairService {
     const candidates = diagnosedFiles(input.files, input.output);
     if (!candidates.length)
       return none('El diagnóstico no señala archivos fuente que se puedan reparar.');
+    // A diagnosed file whose exact content was already repaired in this
+    // project gets that reviewed repair again, without asking the AI: the
+    // same generated code fails the same way in every generation.
+    const known = await this.prisma.repairPatch.findMany({
+      where: {
+        OR: candidates.map((f) => ({ path: f.path, previousSha256: sha256(f.content) })),
+        attempt: { status: 'PATCHED', generationRun: { projectId: input.projectId } },
+      },
+      orderBy: { attempt: { createdAt: 'desc' } },
+      select: { path: true, previousSha256: true, content: true, sha256: true },
+    });
+    const reused = candidates.flatMap((f) => {
+      const patch = known.find((p) => p.path === f.path && p.previousSha256 === sha256(f.content));
+      return patch ? [patch] : [];
+    });
+    if (reused.length)
+      return {
+        status: 'PATCHED',
+        explanation:
+          'Se reutilizó la reparación ya aplicada a este mismo código en una generación anterior del proyecto.',
+        patches: reused,
+        findings: [],
+      };
 
     let proposal: z.infer<typeof repairOutputSchema>;
     try {
