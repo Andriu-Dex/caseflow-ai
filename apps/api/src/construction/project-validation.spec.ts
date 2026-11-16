@@ -55,6 +55,33 @@ describe('structuralProblems', () => {
       ),
     ).toBe(false);
   });
+  it('does not ask a hand-written project for the design fidelity record, but still for its actions', () => {
+    const fidelity = (problems: string[]) =>
+      problems.filter((problem) => problem.includes('manifiesto de fidelidad'));
+    const files = [
+      {
+        path: 'apps/api/src/orders/orders-actions.service.ts',
+        kind: 'SOURCE' as const,
+        content:
+          'export class OrdersActionsService { confirm() { throw new NotImplementedException(); } }',
+      },
+    ];
+    const generated = structuralProblems(
+      files,
+      CASEFLOW_WEB_TS_V2,
+      CASEFLOW_WEB_TS_V2.dependencies,
+    );
+    const manual = structuralProblems(
+      files,
+      CASEFLOW_WEB_TS_V2,
+      CASEFLOW_WEB_TS_V2.dependencies,
+      undefined,
+      { manual: true },
+    );
+    expect(fidelity(generated)).toHaveLength(1);
+    expect(fidelity(manual)).toHaveLength(0);
+    expect(manual).toContainEqual(expect.stringContaining('sin implementar'));
+  });
   it('accepts the template layout with catalog dependencies', () => {
     expect(structuralProblems(layout(), CASEFLOW_WEB_TS_V1, allowed)).toEqual([]);
   });

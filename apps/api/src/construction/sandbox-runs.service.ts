@@ -341,6 +341,7 @@ export class SandboxRunsService {
       const generation = await this.prisma.generationRun.findUniqueOrThrow({
         where: { id: generationRunId },
         select: {
+          origin: true,
           implementationPlanVersion: { select: { structuredAnalysisDetail: true } },
         },
       });
@@ -348,7 +349,9 @@ export class SandboxRunsService {
         ?.content as unknown as ImplementationPlanContent;
       stages.push(
         check('STRUCTURE', [
-          ...structuralProblems(files, template, allowed, plan),
+          ...structuralProblems(files, template, allowed, plan, {
+            manual: generation.origin === 'MANUAL',
+          }),
           ...firstRunProblems(files),
           ...planCoverageProblems(files, plan),
         ]),
@@ -563,6 +566,20 @@ export class SandboxRunsService {
         status: 'VALIDATION_FAILED',
         failedStage: failed.stage,
         errorMessage: `La etapa ${failed.stage} sigue fallando tras ${MAX_AUTO_REPAIR_ROUNDS} rondas de reparación. Requiere revisión humana.`,
+      });
+      return;
+    }
+    // ADR-023: hand-written code is corrected by its authors. A patch applied
+    // here would be missing from their working folder and lost on the next import.
+    const { origin } = await this.prisma.generationRun.findUniqueOrThrow({
+      where: { id: run.generationRunId },
+      select: { origin: true },
+    });
+    if (origin === 'MANUAL') {
+      await this.finish(run.id, run.projectId, {
+        status: 'VALIDATION_FAILED',
+        failedStage: failed.stage,
+        errorMessage: `La etapa ${failed.stage} falló. Corrija el código e impórtelo de nuevo.`,
       });
       return;
     }

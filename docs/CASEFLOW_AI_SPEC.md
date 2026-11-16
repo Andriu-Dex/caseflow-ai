@@ -126,6 +126,7 @@ La construcción es incremental y por etapas, nunca una generación de todo el r
 8. **Validación en sandbox:** instalación, lint, comprobación de tipos, pruebas, compilación y validación estructural. Admite como máximo 3 rondas de reparación automática. Un proyecto solo es `READY` si todo pasa.
 9. **Snapshot inmutable** de cada generación oficial, con exportación ZIP reproducible y primera ejecución con `pnpm run setup` (DEC-151).
 10. **Copias de trabajo** (ADR-018): integran correcciones revisadas sin crear un snapshot oficial.
+    - **Implementación manual** (DEC-165, ADR-023): una persona puede importar el código completo de un proyecto en lugar de generarlo. Se valida en el sandbox con las mismas etapas, sin reparación automática ni comprobación del registro de fidelidad, y no se mezcla con los puntos de control de la IA.
 11. **Revisión por unidades de construcción** (DEC-158, ADR-020): módulo, entidad, acción, pantalla, pruebas y evidencias, con diferencias respecto a la generación anterior y marca de revisado.
 12. **Despliegue** (DEC-157, ADR-019): un snapshot `READY` se ejecuta en Docker local y se publica con Cloudflare Tunnel, aislado y sin secretos de CASEFlow.
 13. **Manual de usuario** del software generado, con capturas reales (DEC-152, DEC-153).
@@ -314,3 +315,4 @@ Las decisiones con «(ADR-nnn)» tienen su documento en `docs/decisions/`; los A
 | DEC-162 | Fidelidad visual: marco común determinista desde el árbol de navegación y el perfil de diseño, y composición v37 con textos e iconos estáticos (ADR-021) | Accepted |
 | DEC-163 | Datos de demostración realistas propuestos por IA, validados por campo, en la moneda del plan y reutilizados como punto de control; sin IA, valores deterministas (ADR-021) | Accepted |
 | DEC-164 | Puerta determinista de pantallas: lo que hace una pantalla lo define el plan de implementación; las limitaciones de la composición son observaciones de cobertura que no bloquean (ADR-022) | Accepted |
+| DEC-165 | Implementación manual: una corrida de construcción puede importar código escrito por personas, validado en el sandbox sin reparación automática y sin mezclarse con los puntos de control de la IA (ADR-023) | Accepted |

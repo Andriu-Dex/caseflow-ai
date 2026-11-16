@@ -62,6 +62,10 @@ export const workingCopyManifestSummarySchema = z
   );
 export type WorkingCopyManifestSummary = z.infer<typeof workingCopyManifestSummarySchema>;
 
+// GENERATED: templates, deterministic generation and AI. MANUAL: a project
+// written by people and imported (ADR-023).
+export const GENERATION_RUN_ORIGINS = ['GENERATED', 'MANUAL'] as const;
+
 export const generationRunResponseSchema = z.object({
   id: z.uuid(),
   projectId: z.uuid(),
@@ -70,6 +74,7 @@ export const generationRunResponseSchema = z.object({
   targetTemplateIdentifier: z.string(),
   targetTemplateVersion: z.number().int(),
   status: z.enum(GENERATION_RUN_STATUSES),
+  origin: z.enum(GENERATION_RUN_ORIGINS),
   errorMessage: z.string().nullable(),
   warnings: z.array(z.string()),
   fileCount: z.number().int(),
@@ -81,6 +86,10 @@ export const generationRunResponseSchema = z.object({
   archivedAt: z.iso.datetime().nullable(),
 });
 export type GenerationRunResponse = z.infer<typeof generationRunResponseSchema>;
+export const importManualImplementationRequestSchema = z
+  .object({ implementationPlanVersionId: z.uuid() })
+  .strict();
+
 export const generationRunListResponseSchema = z.object({
   items: z.array(generationRunResponseSchema),
 });

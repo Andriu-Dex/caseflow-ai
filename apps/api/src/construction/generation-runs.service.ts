@@ -30,6 +30,7 @@ import {
   type GeneratedFileResponse,
   type GeneratedFileSummary,
   type GenerationRunResponse,
+  type ConstructionPreviewResponse,
   type CreateWorkingCopyRequest,
 } from '@caseflow-ai/contracts';
 import { PrismaService } from '../database/prisma.service';
@@ -40,6 +41,10 @@ import { planTraceLinks } from '../code-generation/engine/trace-links';
 import { BusinessLogicService, reviewBusinessLogic } from './business-logic.service';
 import { DesignBaselinesService } from './design-baselines.service';
 import { CONSTRUCTION_QUEUE_TOKEN } from './construction-queue.token';
+import { ManualImportError, readManualArchive } from './manual-import';
+import { constructionPreview } from './construction-preview';
+import { endpointKey } from '../code-generation/engine/backend.templates';
+import type { GeneratedProjectFile } from '../code-generation/engine/types';
 
 const TEMPLATE_IDENTIFIER = 'CASEFLOW_WEB_TS_V1';
 const logger = new Logger('GenerationRunsService');
@@ -52,6 +57,7 @@ type RunRow = {
   targetTemplateIdentifier: string;
   targetTemplateVersion: number;
   status: GenerationRunResponse['status'];
+  origin: GenerationRunResponse['origin'];
   errorMessage: string | null;
   warnings: string[];
   createdByUserId: string;
@@ -284,6 +290,166 @@ export class GenerationRunsService {
       });
       throw error;
     }
+  }
+
+  // What a plan version will produce, before it is approved or generated: the
+  // deterministic generator runs without AI and only paths and purposes leave.
+  async preview(projectId: string, versionId: string): Promise<ConstructionPreviewResponse> {
+    const version = await this.prisma.artifactVersion.findFirst({
+      where: { id: versionId, projectId, artifact: { artifactTypeCode: 'IMPLEMENTATION_PLAN' } },
+      select: { structuredAnalysisDetail: { select: { content: true } } },
+    });
+    if (!version?.structuredAnalysisDetail)
+      throw new NotFoundException('Plan de implementación no encontrado.');
+    const project = await this.prisma.project.findUniqueOrThrow({
+      where: { id: projectId },
+      select: { name: true },
+    });
+    const plan = implementationPlanContentSchema.parse(version.structuredAnalysisDetail.content);
+    try {
+      const files = generateProject({
+        plan,
+        template: findTargetTemplate(TEMPLATE_IDENTIFIER)!,
+        projectName: project.name,
+        slug: projectSlug(project.name),
+      });
+      return { implementationPlanVersionId: versionId, ...constructionPreview(plan, files) };
+    } catch (error) {
+      if (error instanceof PlanGenerationError)
+        throw new UnprocessableEntityException(error.message);
+      throw error;
+    }
+  }
+
+  // ADR-023: a project written by people comes in as a run of its own, with the
+  // same preconditions as a generation and no AI. It is stored, never executed
+  // here: validation happens in the sandbox like for any other run.
+  async importManual(
+    projectId: string,
+    userId: string,
+    implementationPlanVersionId: string,
+    archive: Buffer | undefined,
+  ): Promise<GenerationRunResponse> {
+    await assertCanGenerate(this.prisma, projectId, userId);
+    await this.currency?.assertCurrent(projectId);
+    if (!archive?.length)
+      throw new UnprocessableEntityException('Adjunte el ZIP del proyecto que desea importar.');
+    const plan = await this.approvedPlan(projectId, implementationPlanVersionId);
+    await this.designBaselines.assertApproved(projectId, plan.designBaselineId);
+    const template = findTargetTemplate(TEMPLATE_IDENTIFIER)!;
+    const problems = implementationReadinessProblems(plan);
+    if (problems.length) throw new UnprocessableEntityException(problems.join(' '));
+    let imported: Awaited<ReturnType<typeof readManualArchive>>;
+    try {
+      imported = await readManualArchive(archive);
+    } catch (error) {
+      if (error instanceof ManualImportError) throw new UnprocessableEntityException(error.message);
+      throw error;
+    }
+    const frozen = await this.frozenVersionsByCode(projectId, plan.designBaselineId);
+    // The archive's manifest is untrusted: only elements the approved plan
+    // defines, or sources frozen in its baseline, are kept.
+    const known = new Set([
+      'project',
+      ...plan.modules.map((item) => `module:${item.localId}`),
+      ...plan.entities.map((item) => `entity:${item.localId}`),
+      ...plan.routes.map((item) => `route:${item.path}`),
+      ...plan.customEndpoints.map((item) => `endpoint:${endpointKey(item)}`),
+      ...[...frozen.values()].map((id) => `design-source:${id}`),
+    ]);
+    // A file identical to the latest run of the same design keeps its origin
+    // and kind, so only what a person changed or added is marked as manual.
+    const base = await this.prisma.generationRun.findFirst({
+      where: {
+        projectId,
+        designBaselineId: plan.designBaselineId,
+        status: { in: ['GENERATED', 'WORKING_COPY'] },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { files: { select: { path: true, sha256: true, origin: true, kind: true } } },
+    });
+    const previous = new Map(base?.files.map((file) => [file.path, file]) ?? []);
+    let unchanged = 0;
+    const files = imported.files.map((file): GeneratedProjectFile & { sha256: string } => {
+      const sha256 = createHash('sha256').update(file.content).digest('hex');
+      const before = previous.get(file.path);
+      const same = before?.sha256 === sha256;
+      if (same) unchanged++;
+      return {
+        path: file.path,
+        content: file.content,
+        sha256,
+        kind: before?.kind ?? file.kind,
+        origin: same ? before.origin : 'MANUAL',
+        planElements: (imported.declaredElements.get(file.path) ?? []).filter((element) =>
+          known.has(element),
+        ),
+      };
+    });
+    const links = planTraceLinks(files, plan, implementationPlanVersionId, frozen);
+    const run = await this.prisma.$transaction(
+      async (tx) => {
+        const now = new Date();
+        const created = await tx.generationRun.create({
+          data: {
+            projectId,
+            implementationPlanVersionId,
+            designBaselineId: plan.designBaselineId,
+            targetTemplateIdentifier: template.identifier,
+            targetTemplateVersion: template.version,
+            createdByUserId: userId,
+            origin: 'MANUAL',
+            // The database only accepts files while a run is generating.
+            status: 'GENERATING',
+            startedAt: now,
+            warnings: [
+              `Implementación manual: ${files.length} archivos importados, ${files.length - unchanged} nuevos o modificados respecto a la corrida anterior. La fidelidad visual no se comprueba automáticamente.`,
+            ],
+          },
+        });
+        const stored = await tx.generatedFile.createManyAndReturn({
+          data: files.map(({ path, content, kind, origin, sha256 }) => ({
+            generationRunId: created.id,
+            path,
+            content,
+            kind,
+            origin,
+            sha256,
+          })),
+          select: { id: true, path: true },
+        });
+        const ids = new Map(stored.map((file) => [file.path, file.id]));
+        await tx.codeTraceLink.createMany({
+          data: links.map(({ path, ...link }) => ({ ...link, generatedFileId: ids.get(path)! })),
+        });
+        await tx.generationRun.update({
+          where: { id: created.id },
+          data: { status: 'GENERATED', finishedAt: new Date() },
+        });
+        await this.audit.record(
+          {
+            projectId,
+            actorUserId: userId,
+            action: 'GENERATION_RUN_FINISHED',
+            entityType: 'GENERATION_RUN',
+            entityId: created.id,
+            metadata: {
+              status: 'GENERATED',
+              origin: 'MANUAL',
+              implementationPlanVersionId,
+              designBaselineId: plan.designBaselineId,
+              files: files.length,
+              changed: files.length - unchanged,
+              skipped: imported.skipped,
+            },
+          },
+          tx,
+        );
+        return created;
+      },
+      { timeout: 60_000 },
+    );
+    return this.get(projectId, run.id);
   }
 
   async start(
@@ -868,6 +1034,7 @@ export class GenerationRunsService {
       targetTemplateIdentifier: row.targetTemplateIdentifier,
       targetTemplateVersion: row.targetTemplateVersion,
       status: row.status,
+      origin: row.origin,
       errorMessage: row.errorMessage,
       warnings: row.warnings,
       fileCount: row._count.files,

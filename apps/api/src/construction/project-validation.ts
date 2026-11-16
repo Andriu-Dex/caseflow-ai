@@ -36,6 +36,8 @@ export function structuralProblems(
   template: TargetTemplateVersion,
   allowed: readonly { name: string; version: string }[],
   plan?: ImplementationPlanContent,
+  // A hand-written project (ADR-023) has no registered composition to compare.
+  options: { manual?: boolean } = {},
 ): string[] {
   const problems: string[] = [];
   const byPath = new Map(files.map((f) => [f.path, f]));
@@ -67,8 +69,9 @@ export function structuralProblems(
   }
   if (template.version >= 2) {
     const manifest = byPath.get('docs/design-fidelity.json');
-    if (!manifest) problems.push('Falta el manifiesto de fidelidad del diseño aprobado.');
-    else {
+    if (options.manual || !manifest) {
+      if (!options.manual) problems.push('Falta el manifiesto de fidelidad del diseño aprobado.');
+    } else {
       try {
         const value = JSON.parse(manifest.content) as {
           records?: { routePath: string; outputSha256: string }[];

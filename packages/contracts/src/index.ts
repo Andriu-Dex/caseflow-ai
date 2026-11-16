@@ -70,6 +70,7 @@ export * from './construction/construction-foundation.contract';
 export * from './construction/design-baseline.contract';
 export * from './construction/deployment.contract';
 export * from './construction/generation-run.contract';
+export * from './construction/construction-preview.contract';
 export * from './construction/sandbox-run.contract';
 export * from './construction/workflow-run.contract';
 

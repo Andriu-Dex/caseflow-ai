@@ -10,9 +10,12 @@ import {
   Request,
   Res,
   UnauthorizedException,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import type { z } from 'zod';
 import { timingSafeEqual } from 'node:crypto';
@@ -31,6 +34,8 @@ import {
   sandboxRunResponseSchema,
   startGenerationRunRequestSchema,
   createWorkingCopyRequestSchema,
+  importManualImplementationRequestSchema,
+  constructionPreviewResponseSchema,
 } from '@caseflow-ai/contracts';
 import { CONSTRUCTION_JOB_TYPES, type ConstructionJobType } from '@caseflow-ai/domain';
 import { JwtAuthGuard } from '../identity/jwt-auth.guard';
@@ -43,6 +48,7 @@ import { GenerationRunsService } from './generation-runs.service';
 import { SandboxRunsService } from './sandbox-runs.service';
 import { WorkflowRunsService } from './workflow-runs.service';
 import { UserManualsService } from '../user-manuals/user-manuals.service';
+import { MANUAL_IMPORT_LIMITS } from './manual-import';
 
 interface AuthenticatedRequest {
   user: { id: string };
@@ -72,6 +78,55 @@ export class GenerationRunsController {
     @Request() req: AuthenticatedRequest,
   ) {
     return this.service.createWorkingCopy(projectId, req.user.id, body);
+  }
+
+  @Get('preview/:implementationPlanVersionId')
+  @ApiOperation({
+    operationId: 'previewConstruction',
+    summary: 'Consultar los contenedores y archivos que producirá un plan de implementación',
+  })
+  @ApiZodResponse(200, 'Construction preview.', constructionPreviewResponseSchema)
+  preview(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('implementationPlanVersionId', uuidParamPipe) versionId: string,
+  ) {
+    return this.service.preview(projectId, versionId);
+  }
+
+  @Post('manual')
+  @HttpCode(201)
+  @ApiOperation({
+    operationId: 'importManualImplementation',
+    summary: 'Importar el código de un proyecto escrito a mano como una corrida de construcción',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file', 'implementationPlanVersionId'],
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        implementationPlanVersionId: { type: 'string', format: 'uuid' },
+      },
+    },
+  })
+  @ApiZodResponse(201, 'Generation run.', generationRunResponseSchema)
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: MANUAL_IMPORT_LIMITS.archiveBytes } }),
+  )
+  importManual(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body(new ZodValidationPipe(importManualImplementationRequestSchema))
+    body: z.output<typeof importManualImplementationRequestSchema>,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.service.importManual(
+      projectId,
+      req.user.id,
+      body.implementationPlanVersionId,
+      file?.buffer,
+    );
   }
 
   @Post()

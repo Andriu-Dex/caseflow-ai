@@ -25,6 +25,7 @@ const run: GenerationRunResponse = {
   implementationPlanVersionId: versionId,
   designBaselineId: baselineId,
   status: 'WORKING_COPY',
+  origin: 'GENERATED',
   targetTemplateIdentifier: 'CASEFLOW_WEB_TS_V1',
   targetTemplateVersion: 2,
   errorMessage: null,

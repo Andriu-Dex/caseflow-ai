@@ -34,6 +34,13 @@ export const DEPLOYMENT_PROVIDER = Symbol('DEPLOYMENT_PROVIDER');
 export const CLOUDFLARED_IMAGE = 'cloudflare/cloudflared:2026.10.7';
 const NODE_IMAGE = 'caseflow-runtime-capture-node:24-pnpm11.27.0-v1';
 const POSTGRES_IMAGE = 'postgres:17';
+// What deploy() starts, for describing a deployment before it exists. Keep in
+// step with the docker arguments below.
+export const DEPLOYMENT_CONTAINERS = {
+  application: { image: NODE_IMAGE, memory: '2 GB', cpus: 2, webPort: 3000, apiPort: 3001 },
+  database: { image: POSTGRES_IMAGE, memory: '512 MB', cpus: 1, port: 5432 },
+  tunnel: { image: CLOUDFLARED_IMAGE },
+} as const;
 const QUICK_TUNNEL_URL = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/;
 
 type Runner = (args: string[], timeoutMs: number) => Promise<string>;

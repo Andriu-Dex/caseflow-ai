@@ -1804,6 +1804,15 @@ enum CodeTraceLinkType {
 
 // One official code generation from an approved Implementation Plan.
 // A retry is a new run: finished runs and their files are history.
+// GENERATED: templates, deterministic generation and AI. MANUAL: written by
+// people and imported (ADR-023).
+enum GenerationRunOrigin {
+  GENERATED
+  MANUAL
+
+  @@map("generation_run_origin")
+}
+
 model GenerationRun {
   id                          String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   projectId                   String              @map("project_id") @db.Uuid
@@ -1812,6 +1821,7 @@ model GenerationRun {
   targetTemplateIdentifier    String              @map("target_template_identifier")
   targetTemplateVersion       Int                 @map("target_template_version")
   status                      GenerationRunStatus @default(QUEUED)
+  origin                      GenerationRunOrigin @default(GENERATED)
   errorMessage                String?             @map("error_message")
   // Non-fatal outcomes a reviewer must see (e.g. an action left unimplemented).
   warnings                    String[]            @default([])
