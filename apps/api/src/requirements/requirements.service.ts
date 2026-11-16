@@ -5,6 +5,7 @@ import {
   NotFoundException,
   UnprocessableEntityException,
   ServiceUnavailableException,
+  Optional,
 } from '@nestjs/common';
 import { AIError, AIOrchestrator, estimateTokens } from '@caseflow-ai/ai';
 import { canTransitionArtifactVersionStatus, formatArtifactCode } from '@caseflow-ai/domain';
@@ -47,6 +48,7 @@ import {
   type CompleteOutput,
 } from './requirement-batches';
 import type { z } from 'zod';
+import { StageCurrencyService } from '../readiness/stage-currency';
 
 export interface RequirementGenerationProgress {
   jobId: string;
@@ -78,6 +80,7 @@ export class RequirementsService {
     private readonly prisma: PrismaService,
     private readonly ai: AIOrchestrator,
     @Inject(KnowledgeBaseService) private readonly knowledgeBase: KnowledgeBaseService,
+    @Optional() private readonly currency?: StageCurrencyService,
   ) {}
   create(projectId: string, input: RequirementDraft) {
     return this.prisma.$transaction((tx) => this.createInTx(tx, projectId, input, 'MANUAL'));
@@ -656,6 +659,8 @@ export class RequirementsService {
           'Indique el origen del requisito antes de aprobarlo: los elementos del contexto que atiende o por qué se incluye.',
         );
     }
+    if (status === 'APPROVED')
+      await this.currency?.assertEarlierStagesSatisfied(projectId, 'REQUIREMENT');
     return provenanceGuard(
       this.prisma.artifactVersion.update({
         where: { id },

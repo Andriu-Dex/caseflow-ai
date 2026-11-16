@@ -1880,6 +1880,7 @@ export class StructuredAnalysisService {
     if (!version) throw new NotFoundException('Versión no encontrada.');
     if (!canTransitionArtifactVersionStatus(version.status, status))
       throw new UnprocessableEntityException('Transición de estado no permitida.');
+    if (status === 'APPROVED') await this.currency?.assertEarlierStagesSatisfied(projectId, kind);
     if (kind === 'DESIGN_THEME' && status === 'APPROVED') await this.assertAccessibleTheme(id);
     if (
       status === 'APPROVED' &&

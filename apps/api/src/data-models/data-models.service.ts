@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
+  Optional,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { AIError, AIOrchestrator } from '@caseflow-ai/ai';
@@ -47,6 +48,7 @@ import {
 import { DiagramEngine } from './diagram-engine';
 import { DIAGRAM_PROVIDER } from './diagram-provider.token';
 import { sanitizeDiagramSvg } from './svg-sanitizer';
+import { StageCurrencyService } from '../readiness/stage-currency';
 
 type Tx = Prisma.TransactionClient;
 type SourceRow = {
@@ -149,6 +151,7 @@ export class DataModelsService {
     private readonly ai: AIOrchestrator,
     private readonly diagrams: DiagramEngine,
     @Inject(DIAGRAM_PROVIDER) private readonly diagramProvider: DiagramProvider,
+    @Optional() private readonly currency?: StageCurrencyService,
   ) {}
 
   async create(projectId: string, input: DataModelInput) {
@@ -246,6 +249,8 @@ export class DataModelsService {
     if (!version) throw new NotFoundException('Versión no encontrada.');
     if (!canTransitionArtifactVersionStatus(version.status, status))
       throw new UnprocessableEntityException('Transición de estado no permitida.');
+    if (status === 'APPROVED')
+      await this.currency?.assertEarlierStagesSatisfied(projectId, 'DATA_MODEL');
     return provenanceGuard(
       this.prisma.artifactVersion.update({
         where: { id: versionId },

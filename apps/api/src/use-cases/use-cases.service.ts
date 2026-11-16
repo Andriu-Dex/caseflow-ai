@@ -4,6 +4,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
   UnprocessableEntityException,
+  Optional,
 } from '@nestjs/common';
 import { AIError, AIOrchestrator } from '@caseflow-ai/ai';
 import { canTransitionArtifactVersionStatus, formatArtifactCode } from '@caseflow-ai/domain';
@@ -19,6 +20,7 @@ import { PrismaService } from '../database/prisma.service';
 import { getProjectLanguage } from '../projects/project-language';
 import type { Prisma } from '../generated/prisma/client';
 import type { z } from 'zod';
+import { StageCurrencyService } from '../readiness/stage-currency';
 
 type Tx = Prisma.TransactionClient;
 const detailInclude = {
@@ -45,6 +47,7 @@ export class UseCasesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ai: AIOrchestrator,
+    @Optional() private readonly currency?: StageCurrencyService,
   ) {}
 
   create(projectId: string, input: UseCaseInput) {
@@ -477,6 +480,8 @@ export class UseCasesService {
     if (!version) throw new NotFoundException('Versión no encontrada.');
     if (!canTransitionArtifactVersionStatus(version.status, status))
       throw new UnprocessableEntityException('Transición de estado no permitida.');
+    if (status === 'APPROVED')
+      await this.currency?.assertEarlierStagesSatisfied(projectId, 'USE_CASE');
     return provenanceGuard(
       this.prisma.artifactVersion.update({
         where: { id },

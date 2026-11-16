@@ -11,9 +11,10 @@ import { DataModelsService } from './data-models.service';
 import { DiagramEngine } from './diagram-engine';
 import { DIAGRAM_PROVIDER } from './diagram-provider.token';
 import { AIModule } from '../ai/ai.module';
+import { StageCurrencyModule } from '../readiness/stage-currency';
 
 @Module({
-  imports: [AIModule],
+  imports: [AIModule, StageCurrencyModule],
   controllers: [DataModelsController, UseCaseDiagramsController],
   providers: [
     DataModelsService,

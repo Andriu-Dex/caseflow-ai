@@ -71,4 +71,43 @@ describe('stage currency', () => {
       await expect(service.assertCurrent('project-2')).rejects.toThrow('pasos por rehacer');
     });
   });
+
+  it('refuses approval at the first incomplete earlier planning stage', async () => {
+    const readiness = {
+      evaluate: vi.fn().mockResolvedValue({
+        stages: [
+          { key: 'SOURCES', label: 'Fuentes', satisfied: true },
+          { key: 'CONTEXT', label: 'Contexto del proyecto', satisfied: true },
+          { key: 'REQUIREMENTS', label: 'Requisitos', satisfied: false },
+          { key: 'USE_CASES', label: 'Casos de uso', satisfied: false },
+          { key: 'IMPACT', label: 'Impacto potencial', satisfied: false },
+        ],
+      }),
+    };
+    const service = new StageCurrencyService(
+      {} as PrismaService,
+      { get: () => readiness } as never,
+    );
+
+    await expect(service.assertEarlierStagesSatisfied('project-1', 'DATA_MODEL')).rejects.toThrow(
+      'falta completar Requisitos',
+    );
+    await expect(
+      service.assertEarlierStagesSatisfied('project-1', 'REQUIREMENT'),
+    ).resolves.toBeUndefined();
+
+    readiness.evaluate.mockResolvedValue({
+      stages: [
+        { key: 'SOURCES', label: 'Fuentes', satisfied: true },
+        { key: 'CONTEXT', label: 'Contexto del proyecto', satisfied: true },
+        { key: 'REQUIREMENTS', label: 'Requisitos', satisfied: true },
+        { key: 'USE_CASES', label: 'Casos de uso', satisfied: true },
+        { key: 'USE_CASE_DIAGRAM', label: 'Diagrama de casos de uso', satisfied: true },
+        { key: 'IMPACT', label: 'Impacto potencial', satisfied: false },
+      ],
+    });
+    await expect(
+      service.assertEarlierStagesSatisfied('project-1', 'DATA_MODEL'),
+    ).resolves.toBeUndefined();
+  });
 });

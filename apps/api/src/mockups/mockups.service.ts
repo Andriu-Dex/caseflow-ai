@@ -10,6 +10,7 @@ import {
   PayloadTooLargeException,
   ServiceUnavailableException,
   UnprocessableEntityException,
+  Optional,
 } from '@nestjs/common';
 import type { Queue } from 'bullmq';
 import {
@@ -46,6 +47,7 @@ import { MOCKUP_PROVIDER } from './mockup-provider.token';
 import { MOCKUP_QUEUE } from './mockup-queue.token';
 import { STORAGE_PROVIDER } from './storage-provider.token';
 import { reviewMockupHtml } from './mockup-fidelity';
+import { StageCurrencyService } from '../readiness/stage-currency';
 
 type Tx = Prisma.TransactionClient;
 const MOCKUP_CODE_PREFIX = 'MCK';
@@ -95,6 +97,7 @@ export class MockupsService {
     @Inject(MOCKUP_PROVIDER) private readonly mockupProvider: MockupProvider,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
     @Inject(MOCKUP_QUEUE) private readonly queue: Queue<MockupGenerationJobPayload>,
+    @Optional() private readonly currency?: StageCurrencyService,
   ) {}
 
   // Creation/regeneration only enqueue the real generation: the
@@ -767,6 +770,7 @@ export class MockupsService {
     if (!canTransitionArtifactVersionStatus(version.status, status))
       throw new UnprocessableEntityException('Transición de estado no permitida.');
     if (status === 'APPROVED') {
+      await this.currency?.assertEarlierStagesSatisfied(projectId, 'MOCKUP');
       const detail = await this.prisma.mockupDetail.findUnique({
         where: { artifactVersionId: versionId },
         include: { screens: true },

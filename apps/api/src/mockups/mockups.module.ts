@@ -11,10 +11,12 @@ import { StitchMockupProvider } from './stitch-mockup-provider';
 import { MOCKUP_PROVIDER } from './mockup-provider.token';
 import { MOCKUP_QUEUE } from './mockup-queue.token';
 import { STORAGE_PROVIDER } from './storage-provider.token';
+import { StageCurrencyModule } from '../readiness/stage-currency';
 
 const logger = new Logger('MockupsModule');
 
 @Module({
+  imports: [StageCurrencyModule],
   controllers: [MockupsController, InternalMockupJobsController],
   providers: [
     MockupsService,
