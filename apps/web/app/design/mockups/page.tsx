@@ -295,6 +295,7 @@ function MockupPreview({
   onRefineScreen: (screenId: string, prompt: string) => Promise<boolean>;
 }) {
   const [selectedScreenIndex, setSelectedScreenIndex] = useState<number | null>(null);
+  const [comparing, setComparing] = useState(false);
   const [editingScreen, setEditingScreen] = useState<MockupScreen | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const preview = useQuery({
@@ -635,10 +636,13 @@ function MockupPreview({
             )
           }
         >
-          <AuthedImage
-            url={api.mockups.screenImageUrl(projectId, mockupId, screens[selectedScreenIndex]!.id)}
-            alt={screens[selectedScreenIndex]!.screenName}
-            className="h-auto w-full object-contain"
+          <ScreenComparison
+            projectId={projectId}
+            mockupId={mockupId}
+            screen={screens[selectedScreenIndex]!}
+            previousVersion={preview.data.previousVersion ?? null}
+            comparing={comparing}
+            onComparingChange={setComparing}
           />
         </MockupScreenDialog>
       ) : null}
@@ -680,6 +684,74 @@ function MockupPreview({
         onClose={() => setEditingScreen(null)}
         onRefine={(prompt) => onRefineScreen(editingScreen!.id, prompt)}
       />
+    </div>
+  );
+}
+
+// The screen as it is now and, on request, next to the same screen in the
+// previous version of the mockup, to see what an edit or a new generator changed.
+function ScreenComparison({
+  projectId,
+  mockupId,
+  screen,
+  previousVersion,
+  comparing,
+  onComparingChange,
+}: {
+  projectId: string;
+  mockupId: string;
+  screen: MockupScreen;
+  previousVersion: MockupPreviewResponse['previousVersion'] | null;
+  comparing: boolean;
+  onComparingChange: (comparing: boolean) => void;
+}) {
+  const before = previousVersion?.screens.find(
+    (item) => item.screenLocalId === screen.screenLocalId,
+  );
+  const current = (
+    <AuthedImage
+      url={api.mockups.screenImageUrl(projectId, mockupId, screen.id)}
+      alt={screen.screenName}
+      className="h-auto w-full object-contain"
+    />
+  );
+  if (!before || !previousVersion) return current;
+  return (
+    <div className="flex flex-col gap-3">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="self-start"
+        aria-pressed={comparing}
+        onClick={() => onComparingChange(!comparing)}
+      >
+        {comparing
+          ? 'Ver solo la versión actual'
+          : `Comparar con la versión ${previousVersion.versionNumber}`}
+      </Button>
+      {comparing ? (
+        <div className="grid gap-3 md:grid-cols-2">
+          <figure className="flex flex-col gap-1.5">
+            <figcaption className="text-xs font-medium text-muted-foreground">
+              Versión {previousVersion.versionNumber}
+            </figcaption>
+            <AuthedImage
+              url={api.mockups.screenImageUrl(projectId, mockupId, before.id)}
+              alt={`${screen.screenName}, versión ${previousVersion.versionNumber}`}
+              className="h-auto w-full rounded border object-contain"
+            />
+          </figure>
+          <figure className="flex flex-col gap-1.5">
+            <figcaption className="text-xs font-medium text-muted-foreground">
+              Versión actual
+            </figcaption>
+            {current}
+          </figure>
+        </div>
+      ) : (
+        current
+      )}
     </div>
   );
 }
@@ -840,7 +912,8 @@ function MockupScreenDialog({
           ref={viewportRef}
           className="flex min-h-0 cursor-grab touch-none items-start justify-center overflow-hidden rounded-md bg-muted/30 p-2 active:cursor-grabbing md:p-4"
           onPointerDown={(event) => {
-            if (event.button !== 0) return;
+            // Pressing a control inside the viewer, such as the comparison toggle, is not a drag.
+            if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return;
             dragStart.current = {
               x: event.clientX,
               y: event.clientY,

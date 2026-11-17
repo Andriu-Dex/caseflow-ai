@@ -112,7 +112,7 @@ Cada módulo se cierra con sus pruebas, una revisión del otro responsable y una
 | ID  | Tarea                                                                                                                                                                             | Resp. |
 | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
 | 7.1 | Hecho (DEC-167). Proveedor de bocetos que genera HTML y CSS con el tema, los colores y los componentes aprobados del proyecto, detrás de la interfaz `ScreenGenerator` existente. | A     |
-| 7.2 | Vista previa y comparación de bocetos en la pantalla de Bocetos.                                                                                                                  | B     |
+| 7.2 | Hecho. Vista previa y comparación de bocetos en la pantalla de Bocetos: cada pantalla se compara con la misma pantalla de la versión anterior.                                    | B     |
 | 7.3 | Alternativa manual: importar bocetos hechos por una persona (HTML y CSS con su imagen PNG, DEC-166).                                                                              | B     |
 
 ## Fase 8. Mejoras adicionales (backlog, por prioridad)

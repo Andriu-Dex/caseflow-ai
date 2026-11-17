@@ -725,7 +725,29 @@ export class MockupsService {
       ...(hasScreens(detail.generatorKind)
         ? { fidelityReview: await this.fidelityReview(projectId, detail) }
         : {}),
+      previousVersion: await this.previousVersionWithScreens(row.id, version.versionNumber),
     };
+  }
+
+  private async previousVersionWithScreens(mockupId: string, versionNumber: number) {
+    const previous = await this.prisma.artifactVersion.findFirst({
+      where: {
+        artifactId: mockupId,
+        versionNumber: { lt: versionNumber },
+        mockupDetail: { generatorKind: { not: 'INTERNAL_WIREFRAME' } },
+      },
+      orderBy: { versionNumber: 'desc' },
+      include: {
+        mockupDetail: { include: { screens: { select: { id: true, screenLocalId: true } } } },
+      },
+    });
+    return previous?.mockupDetail
+      ? {
+          versionNumber: previous.versionNumber,
+          generatorKind: previous.mockupDetail.generatorKind,
+          screens: previous.mockupDetail.screens,
+        }
+      : null;
   }
 
   private async approvedRequirements(projectId: string) {

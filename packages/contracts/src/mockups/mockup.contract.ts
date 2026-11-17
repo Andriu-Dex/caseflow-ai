@@ -151,5 +151,14 @@ export const mockupPreviewResponseSchema = z.object({
   refinementPrompt: z.string().nullable(),
   createdAt: z.iso.datetime(),
   fidelityReview: mockupFidelityReviewSchema.optional(),
+  // The latest earlier version with screens, to compare a screen with what it was.
+  previousVersion: z
+    .object({
+      versionNumber: z.number().int().positive(),
+      generatorKind: z.enum(MOCKUP_GENERATOR_KINDS),
+      screens: z.array(z.object({ id: z.uuid(), screenLocalId: z.string() })),
+    })
+    .nullable()
+    .optional(),
 });
 export type MockupPreviewResponse = z.infer<typeof mockupPreviewResponseSchema>;

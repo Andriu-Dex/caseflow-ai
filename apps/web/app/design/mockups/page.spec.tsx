@@ -289,6 +289,49 @@ describe('MockupsPage refinement', () => {
 });
 
 describe('MockupsPage screen gallery', () => {
+  it('compares a screen with the same screen of the previous version', async () => {
+    const user = userEvent.setup();
+    mocks.getPreview.mockResolvedValue({
+      id: 'mockup-1',
+      projectId: 'p1',
+      code: 'MCK-001',
+      versionId: 'mockup-version-2',
+      uiBlueprintVersionId: 'blueprint-version-1',
+      deviceType: 'DESKTOP',
+      generatorKind: 'MANUAL',
+      svg: null,
+      screens: [
+        stitchScreen('screen-1', 'Inicio', false),
+        stitchScreen('screen-2', 'Catálogo', false),
+      ],
+      refinementPrompt: null,
+      createdAt: new Date().toISOString(),
+      previousVersion: {
+        versionNumber: 3,
+        generatorKind: 'STITCH',
+        screens: [{ id: 'old-screen-1', screenLocalId: 'screen-1' }],
+      },
+    });
+    render(
+      <TestProviders>
+        <MockupsPage />
+      </TestProviders>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Ampliar pantalla Inicio' }));
+    const dialog = screen.getByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Comparar con la versión 3' }));
+    expect(
+      await within(dialog).findByRole('img', { name: 'Inicio, versión 3' }),
+    ).toBeInTheDocument();
+    expect(mocks.screenImageUrl).toHaveBeenCalledWith('p1', 'mockup-1', 'old-screen-1');
+    expect(within(dialog).getByRole('img', { name: 'Inicio' })).toBeInTheDocument();
+    // A screen that did not exist before has nothing to compare with.
+    await user.click(within(dialog).getByRole('button', { name: /siguiente/i }));
+    expect(
+      within(screen.getByRole('dialog')).queryByRole('button', { name: /Comparar con la versión/ }),
+    ).not.toBeInTheDocument();
+  });
+
   it('opens a large screen viewer and navigates with buttons and keyboard arrows', async () => {
     const user = userEvent.setup();
     render(

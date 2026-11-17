@@ -284,6 +284,9 @@ describe('Mockups drawn screen by screen', () => {
     expect(next.screens!.find((screen) => screen.screenLocalId === 'b')!.refinementPrompt).toBe(
       'Agrega un filtro por fecha',
     );
+    // The new version can be compared with the one it came from.
+    expect(next.previousVersion).toMatchObject({ versionNumber: 1, generatorKind: 'HTML_CSS' });
+    expect(next.previousVersion!.screens).toHaveLength(5);
     expect(renderer.rendered).toHaveLength(6);
   });
 
