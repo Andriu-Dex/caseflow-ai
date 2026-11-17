@@ -119,9 +119,17 @@ Cada módulo se cierra con sus pruebas, una revisión del otro responsable y una
 
 1. Hecho (DEC-168). Estimación de llamadas de IA antes de lanzar una generación, con lo que se reutiliza y lo que se regenera.
 2. Hecho. Panel de la demostración desplegada: cuentas con nombre y rol, copiar, acceso directo y estado de los contenedores.
-3. Indicador de progreso de la planificación con el motivo de cada bloqueo.
+3. Hecho. Indicador de progreso de la planificación con el motivo de cada bloqueo: «Siguiente paso» en Inicio, con sus motivos pendientes y el estado de la construcción y la demostración.
 4. Hecho. Enlace de despliegue estable con un túnel con nombre de Cloudflare (requiere cuenta): token y dirección fija en el panel de despliegue.
-5. Asistente para dividir un proyecto grande en entregas cuando supera la capacidad de la IA.
+5. Aplazado. Asistente para dividir un proyecto grande en entregas cuando supera la capacidad de la IA. La estimación previa (DEC-168) ya muestra el costo antes de generar, y la implementación manual (ADR-023) cubre los proyectos que no caben; se retomará si un proyecto real lo necesita.
+
+Mejoras de experiencia añadidas tras revisar las pantallas con datos reales:
+
+- Tarjetas de proyecto con el avance de la planificación y la demostración en línea.
+- Coherencia resumida por gravedad: las observaciones ya no aparecen como incidencias.
+- Página 404 en español con salida a Inicio y Proyectos; `/settings` abre los ajustes de IA.
+- Las ayudas de primer uso no se salen de la ventana; textos sin jerga interna y menú con iconos propios.
+- Bocetos: comparación de cada pantalla con su versión anterior.
 
 ## Fase 9. Proyecto del cine
 
