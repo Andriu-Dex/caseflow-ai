@@ -1,5 +1,6 @@
 'use client';
 
+import { ProjectCardProgress } from '../../components/project-card-progress';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -472,6 +473,7 @@ function ProjectCard({ project, onDeleted }: { project: ProjectResponse; onDelet
               })}
             </span>
           </div>
+          <ProjectCardProgress projectId={project.id} />
         </div>
       </div>
 
