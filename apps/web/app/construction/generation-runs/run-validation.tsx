@@ -242,11 +242,11 @@ function ValidationAttemptItem({
         <DeploymentPanel projectId={projectId} snapshotId={attempt.snapshotId} />
       ) : null}
 
-      {/* Pipeline de Validación de 7 Etapas (Siempre visible) */}
+      {/* Validation stages, always visible */}
       <div className="mt-3 flex flex-col gap-2">
         <div className="flex flex-wrap items-center justify-between gap-1 text-[11px]">
           <span className="font-semibold uppercase tracking-wider text-muted-foreground">
-            Pipeline de Validación (7 etapas):
+            Etapas de validación:
           </span>
           <span className="font-mono text-muted-foreground text-[10px]">
             {attempt.status === 'READY'

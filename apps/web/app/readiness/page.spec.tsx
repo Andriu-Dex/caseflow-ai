@@ -225,11 +225,38 @@ describe('ReadinessPage', () => {
       </TestProviders>,
     );
 
-    expect(await screen.findByText('¡Fase de Construcción Desbloqueada!')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Ir a Plan de Generación/i })).toHaveAttribute(
+    expect(await screen.findByText('La construcción está disponible')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Ir al plan de generación/i })).toHaveAttribute(
       'href',
       '/construction/generation-plan',
     );
+  });
+
+  it('shows coherence by severity and does not alarm about observations alone', async () => {
+    getConsistency.mockResolvedValueOnce({
+      totalArtifacts: 10,
+      issues: [
+        {
+          rule: 'Compromiso',
+          severity: 'OBSERVATION',
+          message: 'Revise RNF-001.',
+          affectedArtifactIds: [],
+        },
+        {
+          rule: 'Compromiso',
+          severity: 'OBSERVATION',
+          message: 'Revise RNF-002.',
+          affectedArtifactIds: [],
+        },
+      ],
+    });
+    render(
+      <TestProviders>
+        <ReadinessPage />
+      </TestProviders>,
+    );
+    expect(await screen.findByText('Sin errores')).toBeInTheDocument();
+    expect(screen.getByText('2 observaciones para revisar')).toBeInTheDocument();
   });
 
   it('manages sessionStorage celebration key on ready state changes', async () => {
@@ -239,7 +266,7 @@ describe('ReadinessPage', () => {
       </TestProviders>,
     );
 
-    expect(await screen.findByText('¡Fase de Construcción Desbloqueada!')).toBeInTheDocument();
+    expect(await screen.findByText('La construcción está disponible')).toBeInTheDocument();
     expect(sessionStorage.getItem('caseflow.celebrated-readiness.p1')).toBe('true');
 
     getReadiness.mockResolvedValueOnce({

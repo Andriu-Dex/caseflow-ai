@@ -64,4 +64,14 @@ describe('DismissibleHint (E3)', () => {
       'baselines-intro',
     ]);
   });
+
+  it('opens toward the left when the icon is near the right edge of the window', async () => {
+    const rect = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue({ left: window.innerWidth - 40 } as DOMRect);
+    render(hint);
+    const note = await screen.findByRole('note');
+    expect(note.className).toContain('right-0');
+    rect.mockRestore();
+  });
 });

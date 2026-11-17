@@ -217,7 +217,7 @@ describe('AppShell — Entregables group', () => {
     await screen.findByRole('link', { name: /Trazabilidad/ });
     expect(screen.getByText('Entregables')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Preparación / Exportar' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Líneas Base' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Líneas base' })).toBeInTheDocument();
   });
 });
 

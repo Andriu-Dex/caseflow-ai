@@ -104,6 +104,12 @@ function ReadinessContent({ projectId }: { projectId: string }) {
   }
 
   const issues = consistency.data?.issues ?? [];
+  // Observations are notes for the reviewer, not problems: only errors and
+  // warnings make the coherence card ask for attention.
+  const errors = issues.filter((issue) => issue.severity === 'ERROR').length;
+  const warnings = issues.filter((issue) => issue.severity === 'WARNING').length;
+  const observations = issues.length - errors - warnings;
+  const needsAttention = errors + warnings > 0;
 
   return (
     <div className="flex flex-col gap-6 relative">
@@ -131,7 +137,7 @@ function ReadinessContent({ projectId }: { projectId: string }) {
               ) : (
                 <Layers className="size-3.5 text-blue-600" />
               )}
-              {isReady ? 'Listo para construcción' : 'Pipeline en curso'}
+              {isReady ? 'Listo para construcción' : 'Planificación en curso'}
             </span>
           </div>
         ) : null}
@@ -144,7 +150,7 @@ function ReadinessContent({ projectId }: { projectId: string }) {
             <CheckCircle2 className="size-5" />
           </div>
           <div>
-            <p className="text-xs text-muted-foreground font-medium">Etapas Completadas</p>
+            <p className="text-xs text-muted-foreground font-medium">Etapas completas</p>
             <p className="text-lg font-bold text-foreground">
               {done} <span className="text-xs font-normal text-muted-foreground">de {total}</span>
             </p>
@@ -156,42 +162,44 @@ function ReadinessContent({ projectId }: { projectId: string }) {
             <Sparkles className="size-5" />
           </div>
           <div>
-            <p className="text-xs text-muted-foreground font-medium">Progreso Global</p>
-            <p className="text-lg font-bold text-foreground">
-              {percentage}%{' '}
-              <span className="text-xs font-normal text-muted-foreground">de pipeline</span>
-            </p>
+            <p className="text-xs text-muted-foreground font-medium">Avance de la planificación</p>
+            <p className="text-lg font-bold text-foreground">{percentage}%</p>
           </div>
         </div>
 
         <div className="flex items-center gap-3 rounded-xl border border-border/80 bg-card p-3.5 shadow-2xs">
           <div
             className={`flex size-10 shrink-0 items-center justify-center rounded-lg border ${
-              issues.length > 0
+              needsAttention
                 ? 'bg-amber-500/10 text-amber-600 border-amber-500/20'
                 : 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
             }`}
           >
-            {issues.length > 0 ? (
+            {needsAttention ? (
               <ShieldAlert className="size-5" />
             ) : (
               <ShieldCheck className="size-5" />
             )}
           </div>
           <div>
-            <p className="text-xs text-muted-foreground font-medium">Consistencia Formal</p>
+            <p className="text-xs text-muted-foreground font-medium">Coherencia</p>
             <p className="text-lg font-bold text-foreground">
-              {issues.length === 0 ? (
-                '0 incidencias'
-              ) : (
-                <>
-                  {issues.length}{' '}
-                  <span className="text-xs font-normal text-muted-foreground">
-                    {issues.length === 1 ? 'incidencia' : 'incidencias'}
-                  </span>
-                </>
-              )}
+              {needsAttention
+                ? [
+                    errors ? `${errors} ${errors === 1 ? 'error' : 'errores'}` : null,
+                    warnings
+                      ? `${warnings} ${warnings === 1 ? 'advertencia' : 'advertencias'}`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')
+                : 'Sin errores'}
             </p>
+            {observations ? (
+              <p className="text-xs text-muted-foreground">
+                {observations} {observations === 1 ? 'observación' : 'observaciones'} para revisar
+              </p>
+            ) : null}
           </div>
         </div>
       </div>
@@ -208,16 +216,15 @@ function ReadinessContent({ projectId }: { projectId: string }) {
                 <div className="flex items-center gap-2">
                   <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-xs font-semibold text-emerald-800 dark:text-emerald-300 border border-emerald-500/30">
                     <ShieldCheck className="size-3.5" />
-                    Planificación Completada (13 de 13)
+                    Planificación completa
                   </span>
                 </div>
                 <h2 className="text-base font-bold text-foreground">
-                  ¡Fase de Construcción Desbloqueada!
+                  La construcción está disponible
                 </h2>
                 <p className="text-xs text-muted-foreground leading-relaxed max-w-2xl">
-                  Se han completado y aprobado todas las etapas del pipeline de planificación. Ahora
-                  puede avanzar al primer paso de la fase de construcción para formular el plan de
-                  generación y generar el software.
+                  Todas las etapas de planificación están aprobadas. El primer paso de la
+                  construcción es el plan de generación.
                 </p>
               </div>
             </div>
@@ -225,7 +232,7 @@ function ReadinessContent({ projectId }: { projectId: string }) {
               href="/construction/generation-plan"
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-xs hover:bg-primary/90 transition-colors shrink-0"
             >
-              <span>Ir a Plan de Generación</span>
+              <span>Ir al plan de generación</span>
               <ArrowRight className="size-3.5" />
             </Link>
           </div>

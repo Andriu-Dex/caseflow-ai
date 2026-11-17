@@ -8,8 +8,10 @@ import {
   ClipboardCheck,
   Check,
   FolderKanban,
+  Grid3x3,
   Hammer,
   Home,
+  Layers,
   Lock,
   RefreshCw,
   PanelLeftClose,
@@ -103,7 +105,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     items: [
       { href: '/readiness', label: 'Preparación / Exportar' },
       { href: '/coherence', label: 'Matriz de coherencia' },
-      { href: '/baselines', label: 'Líneas Base' },
+      { href: '/baselines', label: 'Líneas base' },
     ],
   },
   {
@@ -446,6 +448,10 @@ export function AppShell({ children }: { children: ReactNode }) {
                             <FolderKanban className="size-4 shrink-0" aria-hidden="true" />
                           ) : item.href === '/readiness' ? (
                             <ClipboardCheck className="size-4 shrink-0" aria-hidden="true" />
+                          ) : item.href === '/coherence' ? (
+                            <Grid3x3 className="size-4 shrink-0" aria-hidden="true" />
+                          ) : item.href === '/baselines' ? (
+                            <Layers className="size-4 shrink-0" aria-hidden="true" />
                           ) : item.href.startsWith('/construction/') ||
                             item.href === '/build' ||
                             item.href === '/express' ? (
