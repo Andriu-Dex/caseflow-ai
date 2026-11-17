@@ -1,6 +1,6 @@
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
-import { ManualImportError, readManualArchive } from './manual-import';
+import { MANUAL_IMPORT_LIMITS, ManualImportError, readManualArchive } from './manual-import';
 
 const archive = async (entries: Record<string, string | Uint8Array>) => {
   const zip = new JSZip();
@@ -63,6 +63,15 @@ describe('readManualArchive', () => {
     expect(result.declaredElements).toEqual(
       new Map([['package.json', ['project', 'module:sales']]]),
     );
+  });
+
+  it('stops inflating a file that passes the size limit', async () => {
+    const zip = new JSZip();
+    zip.file('package.json', '{}');
+    zip.file('apps/api/src/big.ts', 'x'.repeat(MANUAL_IMPORT_LIMITS.fileBytes + 1));
+    await expect(
+      readManualArchive(await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })),
+    ).rejects.toThrow('supera el tamaño máximo');
   });
 
   it('rejects unsafe paths, binary content and archives that are not a ZIP', async () => {

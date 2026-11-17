@@ -1,8 +1,10 @@
+import type { Readable } from 'node:stream';
 import JSZip from 'jszip';
 import type { ProjectFile } from './project-validation';
 
 export const MANUAL_IMPORT_LIMITS = {
   archiveBytes: 30 * 1024 * 1024,
+  entries: 100_000,
   files: 3000,
   fileBytes: 1024 * 1024,
   totalBytes: 40 * 1024 * 1024,
@@ -68,6 +70,9 @@ export async function readManualArchive(archive: Buffer): Promise<ManualImport> 
     throw new ManualImportError('El archivo no es un ZIP válido.');
   }
   const entries = Object.values(zip.files).filter((entry) => !entry.dir);
+  // Counted before anything is inflated; folders that are left out also count.
+  if (entries.length > MANUAL_IMPORT_LIMITS.entries)
+    throw new ManualImportError('El archivo contiene demasiadas entradas.');
   const normalized = entries.map((entry) => {
     const path = entry.name.replace(/\\/g, '/');
     const segments = path.split('/');
@@ -108,10 +113,8 @@ export async function readManualArchive(archive: Buffer): Promise<ManualImport> 
       skipped++;
       continue;
     }
-    const bytes = await entry.async('uint8array');
+    const bytes = await inflate(entry, path, MANUAL_IMPORT_LIMITS.totalBytes - total);
     total += bytes.length;
-    if (bytes.length > MANUAL_IMPORT_LIMITS.fileBytes || total > MANUAL_IMPORT_LIMITS.totalBytes)
-      throw new ManualImportError(`«${path}» supera el tamaño máximo permitido.`);
     let content: string;
     try {
       content = decoder.decode(bytes);
@@ -133,6 +136,30 @@ export async function readManualArchive(archive: Buffer): Promise<ManualImport> 
   }
   if (!files.length) throw new ManualImportError('El archivo no contiene archivos de proyecto.');
   return { files: files.sort((a, b) => a.path.localeCompare(b.path)), declaredElements, skipped };
+}
+
+// Inflates one entry without trusting its declared size: the stream is cut as
+// soon as it passes the limit, so a decompression bomb is never held in memory.
+function inflate(entry: JSZip.JSZipObject, path: string, remaining: number): Promise<Buffer> {
+  const limit = Math.min(MANUAL_IMPORT_LIMITS.fileBytes, remaining);
+  const tooLarge = () => new ManualImportError(`«${path}» supera el tamaño máximo permitido.`);
+  const declared = (entry as unknown as { _data?: { uncompressedSize?: number } })._data
+    ?.uncompressedSize;
+  if (typeof declared === 'number' && declared > limit) return Promise.reject(tooLarge());
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    const stream = entry.nodeStream('nodebuffer') as unknown as Readable;
+    stream.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > limit) {
+        stream.destroy();
+        reject(tooLarge());
+      } else chunks.push(chunk);
+    });
+    stream.on('error', () => reject(new ManualImportError(`«${path}» no se pudo leer.`)));
+    stream.on('end', () => resolve(Buffer.concat(chunks)));
+  });
 }
 
 function manifestElements(content: string): Map<string, string[]> {
