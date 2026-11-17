@@ -24,6 +24,7 @@ import { ArtifactsService } from '../../../src/artifacts/artifacts.service';
 import { DatabaseModule } from '../../../src/database/database.module';
 import { PrismaService } from '../../../src/database/prisma.service';
 import { ProjectsModule } from '../../../src/projects/projects.module';
+import { StageCurrencyService } from '../../../src/readiness/stage-currency';
 import { ProjectsService } from '../../../src/projects/projects.service';
 import { ProjectContextModule } from '../../../src/project-context/project-context.module';
 import { ProjectContextService } from '../../../src/project-context/project-context.service';
@@ -106,10 +107,17 @@ export interface TestContext {
   close: () => Promise<void>;
 }
 
+// Most scenarios approve a single step of a fixture project without building
+// every earlier one; the order of approvals is exercised only where a test
+// asks for it with `enforceStageOrder`.
+class UnorderedStageCurrencyService extends StageCurrencyService {
+  override async assertEarlierStagesSatisfied() {}
+}
+
 // Boots the real Nest modules against the isolated test database.
 // `aiProvider` replaces the configured AI provider (e.g. a scripted fake).
 export async function createTestContext(
-  options: { aiProvider?: AIProvider } = {},
+  options: { aiProvider?: AIProvider; enforceStageOrder?: boolean } = {},
 ): Promise<TestContext> {
   const connectionString = getTestConnectionString();
 
@@ -147,6 +155,8 @@ export async function createTestContext(
       ConstructionModule,
     ],
   })
+    .overrideProvider(StageCurrencyService)
+    .useClass(options.enforceStageOrder ? StageCurrencyService : UnorderedStageCurrencyService)
     .overrideProvider(DIAGRAM_PROVIDER)
     .useValue(new FakeDiagramProvider({ svg: FAKE_DIAGRAM_SVG }))
     .overrideProvider(STORAGE_PROVIDER)
