@@ -502,7 +502,7 @@ describe('MockupsPage background generation (DEC-146)', () => {
     expect(await screen.findByText(/76 de 77/)).toBeInTheDocument();
     expect(screen.getByText(/Faltan 1 de 77 pantallas/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Continuar la generación' }));
-    expect(mocks.create).toHaveBeenCalledWith('p1', 'blueprint-version-1', 'DESKTOP');
+    expect(mocks.create).toHaveBeenCalledWith('p1', 'blueprint-version-1', 'DESKTOP', 'STITCH');
   });
 
   it('scrolls a screen with the wheel and zooms it only with Ctrl + wheel, in the dialog', async () => {
@@ -564,7 +564,41 @@ describe('MockupsPage background generation (DEC-146)', () => {
     await user.click(
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'Generar boceto' }),
     );
-    await waitFor(() => expect(mocks.create).toHaveBeenCalledWith('p1', 'bp-version-1', 'DESKTOP'));
+    await waitFor(() =>
+      expect(mocks.create).toHaveBeenCalledWith('p1', 'bp-version-1', 'DESKTOP', 'STITCH'),
+    );
+  });
+
+  it('generates the mockup in HTML and CSS with the AI when chosen, saying the requests it uses (DEC-167)', async () => {
+    const user = userEvent.setup();
+    mocks.listBlueprints.mockResolvedValue({
+      items: [
+        {
+          id: 'bp-1',
+          code: 'UI-002',
+          version: { id: 'bp-version-1', status: 'APPROVED' },
+          content: { screens: Array.from({ length: 77 }, (_, i) => ({ localId: `s${i}` })) },
+        },
+      ],
+    });
+    mocks.create.mockResolvedValue({ id: 'job-1', status: 'QUEUED' });
+    mocks.getJob.mockResolvedValue({ id: 'job-1', status: 'COMPLETED' });
+    render(
+      <TestProviders>
+        <MockupsPage />
+      </TestProviders>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Generar un boceto nuevo' }));
+    await user.click(await screen.findByRole('button', { name: /Generar boceto/ }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('radio', { name: /HTML y CSS con IA/ }));
+    expect(within(dialog).getByText('77 solicitudes')).toBeInTheDocument();
+    expect(within(dialog).getByText(/unos 20 minutos/)).toBeInTheDocument();
+    expect(within(dialog).queryByText(/créditos de Stitch/)).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Generar boceto' }));
+    await waitFor(() =>
+      expect(mocks.create).toHaveBeenCalledWith('p1', 'bp-version-1', 'DESKTOP', 'HTML_CSS'),
+    );
   });
 
   it('cancels a running generation after asking, and offers to continue what was drawn', async () => {

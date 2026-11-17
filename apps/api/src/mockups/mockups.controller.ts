@@ -54,7 +54,12 @@ export class MockupsController {
     @Body(new ZodValidationPipe(createMockupRequestSchema))
     body: z.output<typeof createMockupRequestSchema>,
   ) {
-    return this.service.create(projectId, body.uiBlueprintVersionId, body.deviceType);
+    return this.service.create(
+      projectId,
+      body.uiBlueprintVersionId,
+      body.deviceType,
+      body.generator,
+    );
   }
 
   @Post('manual')
@@ -223,7 +228,13 @@ export class MockupsController {
     @Body(new ZodValidationPipe(createMockupRequestSchema))
     body: z.output<typeof createMockupRequestSchema>,
   ) {
-    return this.service.version(projectId, mockupId, body.uiBlueprintVersionId, body.deviceType);
+    return this.service.version(
+      projectId,
+      mockupId,
+      body.uiBlueprintVersionId,
+      body.deviceType,
+      body.generator,
+    );
   }
 
   @Post(':mockupId/carry-over')

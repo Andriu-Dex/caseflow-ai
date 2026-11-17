@@ -20,6 +20,7 @@ import type {
   DiagramResponse,
   FirstDeliverableExport,
   MockupDeviceType,
+  MockupGenerator,
   MockupJobResponse,
   MockupPreviewResponse,
   MockupResponse,
@@ -824,10 +825,16 @@ export const api = {
     list: (projectId: string) => get<{ items: MockupResponse[] }>(`/projects/${projectId}/mockups`),
     getPreview: (projectId: string, id: string) =>
       get<MockupPreviewResponse>(`/projects/${projectId}/mockups/${id}/preview`),
-    create: (projectId: string, uiBlueprintVersionId: string, deviceType: MockupDeviceType) =>
+    create: (
+      projectId: string,
+      uiBlueprintVersionId: string,
+      deviceType: MockupDeviceType,
+      generator: MockupGenerator = 'STITCH',
+    ) =>
       post<MockupJobResponse>(`/projects/${projectId}/mockups`, {
         uiBlueprintVersionId,
         deviceType,
+        generator,
       }),
     // DEC-166: a mockup written by people, one HTML page and one PNG per screen.
     importManual: (

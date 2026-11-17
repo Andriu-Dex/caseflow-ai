@@ -6,10 +6,16 @@ export type MockupDeviceType = (typeof MOCKUP_DEVICE_TYPES)[number];
 
 // A Mockup derives from an exact APPROVED UI_BLUEPRINT version. Stitch can
 // generate screen assets; the internal deterministic wireframe is the fallback.
+// DEC-167: who draws the screens. STITCH is the image provider; HTML_CSS has
+// the project's AI write each screen as HTML on CASEFlow's own page.
+export const MOCKUP_GENERATORS = ['STITCH', 'HTML_CSS'] as const;
+export type MockupGenerator = (typeof MOCKUP_GENERATORS)[number];
+
 export const createMockupRequestSchema = z
   .object({
     uiBlueprintVersionId: z.uuid(),
     deviceType: z.enum(MOCKUP_DEVICE_TYPES).default('DESKTOP'),
+    generator: z.enum(MOCKUP_GENERATORS).default('STITCH'),
   })
   .strict();
 export type CreateMockupRequest = z.output<typeof createMockupRequestSchema>;
@@ -35,7 +41,12 @@ export const refineMockupRequestSchema = z
   .strict();
 export type RefineMockupRequest = z.output<typeof refineMockupRequestSchema>;
 
-export const MOCKUP_GENERATOR_KINDS = ['INTERNAL_WIREFRAME', 'STITCH', 'MANUAL'] as const;
+export const MOCKUP_GENERATOR_KINDS = [
+  'INTERNAL_WIREFRAME',
+  'STITCH',
+  'MANUAL',
+  'HTML_CSS',
+] as const;
 export type MockupGeneratorKind = (typeof MOCKUP_GENERATOR_KINDS)[number];
 
 const mockupScreenSchema = z.object({
@@ -95,6 +106,8 @@ export const mockupJobResponseSchema = z.object({
   // What the job was asked to generate, so a stopped one can be resumed.
   uiBlueprintVersionId: z.uuid().optional(),
   deviceType: z.enum(['DESKTOP', 'MOBILE']).optional(),
+  // DEC-167: who draws the screens; a stopped job is resumed with the same one.
+  generator: z.enum(MOCKUP_GENERATORS).optional(),
   completedScreens: z.number().int().nonnegative().default(0),
   totalScreens: z.number().int().nonnegative().default(0),
   createdAt: z.iso.datetime(),

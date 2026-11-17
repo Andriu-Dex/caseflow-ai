@@ -193,6 +193,14 @@ function storedPage(document: DefaultTreeAdapterMap['document'], css: string): s
   return serialize(document);
 }
 
+// A page that did not come from CASEFlow itself, checked like an imported one
+// and ready to store (DEC-166, DEC-167).
+export function checkedMockupPage(html: string): { page: string } | { problem: string } {
+  const document = parse(html);
+  const problem = pageProblem(document);
+  return problem ? { problem } : { page: storedPage(document, '') };
+}
+
 // Reads a ZIP with one `<screen id>.html` and one `<screen id>.png` for every
 // screen of the blueprint, and an optional shared `styles.css` that is placed
 // inside each page so every stored HTML stands alone.

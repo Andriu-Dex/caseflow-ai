@@ -2,7 +2,13 @@ import { Inject, Logger, Module, type OnModuleDestroy } from '@nestjs/common';
 import { createJobQueue, createStorageProvider, type JobQueue } from '../common/infrastructure';
 import { MOCKUP_GENERATION_QUEUE, type MockupGenerationJobPayload } from '@caseflow-ai/domain';
 import { loadMockupConfig, loadStorageConfig } from '@caseflow-ai/config';
-import { FallbackMockupProvider, type MockupProvider } from '@caseflow-ai/integrations';
+import {
+  DockerHtmlScreenRenderer,
+  FallbackMockupProvider,
+  HTML_SCREEN_RENDERER,
+  type MockupProvider,
+} from '@caseflow-ai/integrations';
+import { AIModule } from '../ai/ai.module';
 import { InternalWireframeMockupProvider, MockupRenderer } from './mockup-renderer';
 import { MockupsController } from './mockups.controller';
 import { InternalMockupJobsController } from './internal-mockup-jobs.controller';
@@ -16,7 +22,7 @@ import { StageCurrencyModule } from '../readiness/stage-currency';
 const logger = new Logger('MockupsModule');
 
 @Module({
-  imports: [StageCurrencyModule],
+  imports: [StageCurrencyModule, AIModule],
   controllers: [MockupsController, InternalMockupJobsController],
   providers: [
     MockupsService,
@@ -48,6 +54,8 @@ const logger = new Logger('MockupsModule');
       provide: STORAGE_PROVIDER,
       useFactory: createStorageProvider,
     },
+    // DEC-167: HTML and CSS screens are drawn in the isolated capture browser.
+    { provide: HTML_SCREEN_RENDERER, useFactory: () => new DockerHtmlScreenRenderer() },
     {
       provide: MOCKUP_QUEUE,
       useFactory: () =>

@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  FakeHtmlScreenRenderer,
   FakeStorageProvider,
   MockupProviderError,
   type BlueprintScreen,
@@ -218,6 +219,72 @@ describe('Mockups drawn screen by screen', () => {
     expect(active('venta')).toBe('Ventas');
     expect(active('existencias')).toBe('Inventario');
     expect(active('acceso')).toBeNull();
+  });
+
+  it('draws an HTML and CSS mockup screen by screen with the AI and edits one screen from its previous body (DEC-167)', async () => {
+    const requests: {
+      screen: { localId: string; name: string };
+      refinement?: string;
+      previousBody?: string;
+    }[] = [];
+    const ai = {
+      generateStructured: async ({ messages }: { messages: { content: string }[] }) => {
+        const request = JSON.parse(messages[0]!.content);
+        requests.push(request);
+        return {
+          data: {
+            body: `<div class="page-header"><h1>${request.screen.name}</h1></div><p>${request.refinement ?? 'Contenido de la pantalla'}</p>`,
+          },
+        };
+      },
+    };
+    const renderer = new FakeHtmlScreenRenderer();
+    const htmlCss = new MockupsService(
+      ctx.prisma,
+      provider,
+      new FakeStorageProvider(),
+      { add: async () => undefined } as never,
+      undefined,
+      ai as never,
+      renderer,
+    );
+    const asking = asked.length;
+    const job = await htmlCss.create(projectId, blueprintVersionId, 'DESKTOP', 'HTML_CSS');
+    expect(
+      (await ctx.prisma.mockupGenerationJob.findUniqueOrThrow({ where: { id: job.id } }))
+        .generatorKind,
+    ).toBe('HTML_CSS');
+    await htmlCss.runJob(job.id);
+    const done = await htmlCss.getJob(projectId, job.id);
+    expect(done.status).toBe('COMPLETED');
+    const mockupId = done.resultArtifactId!;
+    const preview = await htmlCss.getPreview(projectId, mockupId);
+    expect(preview.generatorKind).toBe('HTML_CSS');
+    expect(preview.screens).toHaveLength(5);
+    expect(preview.screens!.every((screen) => screen.editable)).toBe(true);
+    expect(renderer.rendered).toHaveLength(5);
+    // Stitch was never asked.
+    expect(asked.length).toBe(asking);
+
+    const target = preview.screens!.find((screen) => screen.screenLocalId === 'b')!;
+    const edit = await htmlCss.refineScreen(
+      projectId,
+      mockupId,
+      target.id,
+      'Agrega un filtro por fecha',
+    );
+    await htmlCss.runJob(edit.id);
+    expect((await htmlCss.getJob(projectId, edit.id)).status).toBe('COMPLETED');
+    expect(requests.at(-1)).toMatchObject({
+      screen: { localId: 'b' },
+      refinement: 'Agrega un filtro por fecha',
+      previousBody: expect.stringContaining('Pantalla b'),
+    });
+    const next = await htmlCss.getPreview(projectId, mockupId);
+    expect(next.screens!.find((screen) => screen.screenLocalId === 'b')!.refinementPrompt).toBe(
+      'Agrega un filtro por fecha',
+    );
+    expect(renderer.rendered).toHaveLength(6);
   });
 
   it('imports a hand-written HTML and CSS mockup and its next version, without the provider (DEC-166)', async () => {

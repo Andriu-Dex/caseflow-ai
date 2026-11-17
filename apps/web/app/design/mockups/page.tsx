@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   MOCKUP_REFINEMENT_PROMPT_MAX_LENGTH,
   type MockupDeviceType,
+  type MockupGenerator,
   type MockupJobResponse,
   type MockupPreviewResponse,
   type MockupResponse,
@@ -1005,10 +1006,10 @@ function MockupsContent({ projectId }: { projectId: string }) {
     queryClient.invalidateQueries({ queryKey: ['archived-artifacts', projectId] });
   }
 
-  function createMockup(uiBlueprintVersionId: string) {
+  function createMockup(uiBlueprintVersionId: string, generator: MockupGenerator) {
     const deviceType = deviceTypes[uiBlueprintVersionId] ?? 'DESKTOP';
     return runMockupJob(uiBlueprintVersionId, () =>
-      api.mockups.create(projectId, uiBlueprintVersionId, deviceType),
+      api.mockups.create(projectId, uiBlueprintVersionId, deviceType, generator),
     );
   }
 
@@ -1313,10 +1314,10 @@ function MockupsContent({ projectId }: { projectId: string }) {
         screens={confirming?.screens ?? null}
         device={confirming ? (deviceTypes[confirming.id] ?? 'DESKTOP') : 'DESKTOP'}
         onCancel={() => setConfirming(null)}
-        onConfirm={() => {
+        onConfirm={(generator) => {
           const id = confirming!.id;
           setConfirming(null);
-          void createMockup(id);
+          void createMockup(id, generator);
         }}
       />
 
@@ -1344,6 +1345,7 @@ function MockupsContent({ projectId }: { projectId: string }) {
                     projectId,
                     job.uiBlueprintVersionId!,
                     job.deviceType ?? 'DESKTOP',
+                    job.generator ?? 'STITCH',
                   ),
                 );
               }}
