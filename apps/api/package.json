@@ -37,6 +37,7 @@
     "jszip": "3.10.2",
     "mammoth": "1.11.0",
     "multer": "2.4.0",
+    "parse5": "7.3.0",
     "passport-jwt": "^4.0.1",
     "pdfjs-dist": "6.1.200",
     "pdfkit": "0.20.2",
