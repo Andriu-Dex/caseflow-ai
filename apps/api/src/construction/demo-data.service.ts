@@ -8,7 +8,7 @@ import { getProjectLanguage } from '../projects/project-language';
 import { demoEntities } from '../code-generation/engine/demo-data.templates';
 import { file, json, type GeneratedProjectFile } from '../code-generation/engine/types';
 
-export const DEMO_DATA_VERSION = 3;
+export const DEMO_DATA_VERSION = 4;
 const RECORDS = 6;
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const logger = new Logger('DemoDataService');
@@ -56,6 +56,26 @@ export function planCurrency(plan: ImplementationPlanContent): string | undefine
   return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0];
 }
 
+// Text that reads as filler rather than as a business record: words such as
+// "demo" or "ejemplo", codes like CLI-DEMO-006, bare hexadecimal ids or
+// "Producto 3". A demonstration shown to a client must look real.
+const FILLER = [
+  /\b(demo|demos|test|testing|prueba|pruebas|ejemplo|example|sample|muestra|placeholder|lorem|ipsum|dummy|ficticio|ficticia|foo|bar|xxx+)\b/i,
+  /^[0-9a-f]{8,}$/i,
+  /^[0-9a-f]{8}-[0-9a-f]{4}-/i,
+  /^(producto|cliente|usuario|item|registro|categor[ií]a|sucursal|proveedor|empleado|evento|record|product|customer|user)\s*\d+$/i,
+];
+export const isFiller = (text: string) => FILLER.some((pattern) => pattern.test(text.trim()));
+
+// The texts of a proposal that read as filler, for one bounded retry.
+export function fillerValues(proposal: Proposal): string[] {
+  return proposal.entities.flatMap((entity) =>
+    entity.records.flatMap((record) =>
+      record.values.filter((item) => isFiller(item.value)).map((item) => item.value),
+    ),
+  );
+}
+
 // Keeps only values that satisfy their field: unknown fields, wrong types,
 // enum values outside the plan and repeated unique values are dropped, so a
 // proposal can never produce a record the model would reject for its shape.
@@ -82,10 +102,10 @@ export function acceptedDemoValues(
         let value: string | number | boolean | undefined;
         switch (field.type) {
           case 'STRING':
-            value = text && text.length <= 120 ? text : undefined;
+            value = text && text.length <= 120 && !isFiller(text) ? text : undefined;
             break;
           case 'TEXT':
-            value = text || undefined;
+            value = text && !isFiller(text) ? text : undefined;
             break;
           case 'INT':
             value = /^-?\d{1,9}$/.test(text) ? Number(text) : undefined;
@@ -179,17 +199,36 @@ export class DemoDataService {
     if (cached) proposal = demoDataSchema.parse(JSON.parse(cached.content));
     else {
       try {
-        const result = await this.ai.generateStructured({
-          projectId,
-          language: await getProjectLanguage(this.prisma, projectId),
-          promptKey: 'demo-data.generate',
-          promptVersion: DEMO_DATA_VERSION,
-          messages: [{ role: 'user', content: json(request) }],
-          outputSchema: demoDataSchema,
-          schemaName: 'demo_data',
-          maxOutputTokens: 16000,
-        });
-        proposal = demoDataSchema.parse(result.data);
+        const language = await getProjectLanguage(this.prisma, projectId);
+        const ask = async (filler: string[]) =>
+          demoDataSchema.parse(
+            (
+              await this.ai.generateStructured({
+                projectId,
+                language,
+                promptKey: 'demo-data.generate',
+                promptVersion: DEMO_DATA_VERSION,
+                messages: [
+                  { role: 'user', content: json(request) },
+                  ...(filler.length
+                    ? [
+                        {
+                          role: 'user' as const,
+                          content: `Estos valores parecen de relleno y no de un negocio real: ${filler.slice(0, 12).join(' | ')}. Propón de nuevo todos los datos con nombres, códigos y textos verosímiles.`,
+                        },
+                      ]
+                    : []),
+                ],
+                outputSchema: demoDataSchema,
+                schemaName: 'demo_data',
+                maxOutputTokens: 16000,
+              })
+            ).data,
+          );
+        proposal = await ask([]);
+        // One bounded retry when the proposal reads as filler.
+        const filler = fillerValues(proposal);
+        if (filler.length) proposal = await ask(filler);
       } catch (error) {
         if (!(error instanceof AIError)) throw error;
         logger.warn(`Demo data proposal unavailable: ${error.message}`);
