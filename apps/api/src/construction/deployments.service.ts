@@ -9,10 +9,12 @@ import {
 } from '@nestjs/common';
 import {
   DEPLOYMENT_PROVIDER,
+  type DeploymentAccount,
   type DeploymentProvider,
   type StorageProvider,
 } from '@caseflow-ai/integrations';
 import type {
+  DeploymentHealthResponse,
   DeploymentResponse,
   ResumeDeploymentRequest,
   StartDeploymentRequest,
@@ -132,7 +134,7 @@ export class DeploymentsService {
       const { publicUrl } = await this.requireProvider().start(id, input.tunnelToken);
       return this.finish(row, userId, 'DEPLOYMENT_RESUMED', {
         status: 'RUNNING',
-        publicUrl,
+        publicUrl: publicUrl ?? input.tunnelUrl ?? null,
         tunnelMode: input.tunnelToken ? 'NAMED' : 'QUICK',
         errorMessage: null,
       });
@@ -140,6 +142,16 @@ export class DeploymentsService {
       logger.warn(`Deployment "${id}" did not resume: ${describe(error)}`);
       throw new ServiceUnavailableException(DEPLOY_FAILED);
     }
+  }
+
+  // What Docker reports now for the demonstration's containers, so the panel can
+  // tell a running demonstration from one whose computer was restarted.
+  async health(projectId: string, id: string): Promise<DeploymentHealthResponse> {
+    await this.find(projectId, id);
+    return {
+      containers: await this.requireProvider().inspect(id),
+      checkedAt: new Date().toISOString(),
+    };
   }
 
   // A deployment being prepared when the API stopped was cut off; whatever it
@@ -182,7 +194,8 @@ export class DeploymentsService {
       });
       await this.finish(row, userId, 'DEPLOYMENT_RUNNING', {
         status: 'RUNNING',
-        publicUrl: result.publicUrl,
+        // A named tunnel's address is set in the person's account, not read here.
+        publicUrl: result.publicUrl ?? input.tunnelUrl ?? null,
         accounts: result.accounts,
       });
     } catch (error) {
@@ -209,7 +222,7 @@ export class DeploymentsService {
     data: {
       status: 'RUNNING' | 'STOPPED' | 'FAILED' | 'REMOVED';
       publicUrl?: string | null;
-      accounts?: { role: string; identifier: string }[];
+      accounts?: DeploymentAccount[];
       errorMessage?: string | null;
       tunnelMode?: 'QUICK' | 'NAMED';
     },
@@ -256,7 +269,7 @@ function map(row: Row): DeploymentResponse {
     status: row.status,
     tunnelMode: row.tunnelMode,
     publicUrl: row.publicUrl,
-    accounts: row.accounts as { role: string; identifier: string }[],
+    accounts: row.accounts as DeploymentAccount[],
     errorMessage: row.errorMessage,
     createdByUserId: row.createdByUserId,
     createdAt: row.createdAt.toISOString(),

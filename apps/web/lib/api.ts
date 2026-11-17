@@ -7,6 +7,7 @@ import type {
   DataModelInput,
   DesignBaselineResponse,
   ScreenDesignExceptionResponse,
+  DeploymentHealthResponse,
   DeploymentResponse,
   ScreenFindingsResponse,
   GeneratedFileResponse,
@@ -929,12 +930,22 @@ export const api = {
       get<{ items: DeploymentResponse[] }>(`/projects/${projectId}/deployments`),
     start: (
       projectId: string,
-      data: { snapshotId: string; initialPassword: string; tunnelToken?: string },
+      data: {
+        snapshotId: string;
+        initialPassword: string;
+        tunnelToken?: string;
+        tunnelUrl?: string;
+      },
     ) => post<DeploymentResponse>(`/projects/${projectId}/deployments`, data),
     stop: (projectId: string, id: string) =>
       post<DeploymentResponse>(`/projects/${projectId}/deployments/${id}/stop`),
-    resume: (projectId: string, id: string, data: { tunnelToken?: string } = {}) =>
-      post<DeploymentResponse>(`/projects/${projectId}/deployments/${id}/start`, data),
+    resume: (
+      projectId: string,
+      id: string,
+      data: { tunnelToken?: string; tunnelUrl?: string } = {},
+    ) => post<DeploymentResponse>(`/projects/${projectId}/deployments/${id}/start`, data),
+    health: (projectId: string, id: string) =>
+      get<DeploymentHealthResponse>(`/projects/${projectId}/deployments/${id}/health`),
   },
   ai: {
     status: () => get<AIStatus>('/ai/status'),

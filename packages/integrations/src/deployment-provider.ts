@@ -17,10 +17,20 @@ export interface DeploymentRequest {
   // without it a quick tunnel gives a random trycloudflare.com URL.
   tunnelToken?: string;
 }
+// name: the person the account belongs to, when the project prints it.
+export type DeploymentAccount = {
+  role: string;
+  identifier: string;
+  name?: string;
+};
 export interface DeploymentResult {
   publicUrl: string | null;
-  accounts: { role: string; identifier: string }[];
+  accounts: DeploymentAccount[];
 }
+export type DeploymentContainerState = {
+  role: 'APPLICATION' | 'DATABASE' | 'TUNNEL';
+  state: 'RUNNING' | 'STOPPED' | 'MISSING';
+};
 export interface DeploymentProvider {
   deploy(request: DeploymentRequest): Promise<DeploymentResult>;
   stop(deploymentId: string): Promise<void>;
@@ -28,6 +38,28 @@ export interface DeploymentProvider {
   start(deploymentId: string, tunnelToken?: string): Promise<{ publicUrl: string | null }>;
   // Removes every container, volume and network of the deployment.
   remove(deploymentId: string): Promise<void>;
+  // What Docker reports now for the containers a demonstration needs.
+  inspect(deploymentId: string): Promise<DeploymentContainerState[]>;
+}
+
+// Only the account fields the panel shows, so the generated project cannot put
+// anything else (or anything long) in CASEFlow's records.
+export function deploymentAccounts(output: string): DeploymentAccount[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output.trim().split('\n').at(-1) ?? '[]');
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const text = (value: unknown) =>
+    typeof value === 'string' && value.trim() && value.length <= 120 ? value.trim() : undefined;
+  return parsed.slice(0, 50).flatMap((item: Record<string, unknown> | null) => {
+    const role = text(item?.role);
+    const identifier = text(item?.identifier);
+    const name = text(item?.name);
+    return role && identifier ? [{ role, identifier, ...(name ? { name } : {}) }] : [];
+  });
 }
 export const DEPLOYMENT_PROVIDER = Symbol('DEPLOYMENT_PROVIDER');
 
@@ -301,24 +333,19 @@ export class DockerTunnelDeploymentProvider implements DeploymentProvider {
       const accounts = request.files.some(
         (file) => file.path === 'apps/api/src/auth/deploy-accounts.ts',
       )
-        ? (JSON.parse(
-            (
-              await this.docker(
-                [
-                  'exec',
-                  '--env-file',
-                  accountSecrets,
-                  names.app,
-                  'node',
-                  'apps/api/dist/auth/deploy-accounts.js',
-                ],
-                120_000,
-              )
-            )
-              .trim()
-              .split('\n')
-              .at(-1) ?? '[]',
-          ) as { role: string; identifier: string }[])
+        ? deploymentAccounts(
+            await this.docker(
+              [
+                'exec',
+                '--env-file',
+                accountSecrets,
+                names.app,
+                'node',
+                'apps/api/dist/auth/deploy-accounts.js',
+              ],
+              120_000,
+            ),
+          )
         : [];
       // Demonstration records (DEC-159), after the accounts and their scope.
       if (request.files.some((file) => file.path === 'apps/api/src/seed/demo-data.ts'))
@@ -366,6 +393,30 @@ export class DockerTunnelDeploymentProvider implements DeploymentProvider {
     } finally {
       await rm(scratch, { recursive: true, force: true });
     }
+  }
+
+  async inspect(deploymentId: string): Promise<DeploymentContainerState[]> {
+    const names = deploymentNames(deploymentId);
+    const containers = [
+      ['APPLICATION', names.app],
+      ['DATABASE', names.database],
+      ['TUNNEL', names.tunnel],
+    ] as const;
+    return Promise.all(
+      containers.map(async ([role, name]): Promise<DeploymentContainerState> => {
+        const status = await this.docker(
+          ['inspect', '--format', '{{.State.Status}}', name],
+          15_000,
+        ).then(
+          (output) => output.trim(),
+          () => null,
+        );
+        return {
+          role,
+          state: status === null ? 'MISSING' : status === 'running' ? 'RUNNING' : 'STOPPED',
+        };
+      }),
+    );
   }
 
   async remove(deploymentId: string): Promise<void> {

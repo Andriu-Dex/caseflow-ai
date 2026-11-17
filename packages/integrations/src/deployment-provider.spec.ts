@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DockerTunnelDeploymentProvider, deploymentNames } from './deployment-provider';
+import {
+  DockerTunnelDeploymentProvider,
+  deploymentAccounts,
+  deploymentNames,
+} from './deployment-provider';
 
 const deploymentId = 'd43bf111-87c8-4838-9277-109541d28f9d';
 const files = [
@@ -88,5 +92,45 @@ describe('DockerTunnelDeploymentProvider', () => {
       }),
     ).rejects.toThrow('12 characters');
     expect(run).not.toHaveBeenCalled();
+  });
+});
+
+describe('deploymentAccounts', () => {
+  it('keeps the role, sign-in name and person of each account from the last printed line', () => {
+    const output = [
+      'Prisma schema loaded',
+      JSON.stringify([
+        { role: 'Cajero', identifier: 'carlos.mena', name: 'Carlos Mena Ortiz', password: 'x' },
+        { role: 'Administrador', identifier: 'andrea.salazar' },
+        { role: 'Bodega', identifier: 7 },
+        { role: 'Gerencia', identifier: 'g', name: 'x'.repeat(200) },
+      ]),
+    ].join(String.fromCharCode(10));
+    expect(deploymentAccounts(output)).toEqual([
+      { role: 'Cajero', identifier: 'carlos.mena', name: 'Carlos Mena Ortiz' },
+      { role: 'Administrador', identifier: 'andrea.salazar' },
+      { role: 'Gerencia', identifier: 'g' },
+    ]);
+  });
+
+  it('returns no accounts when the output is not a list', () => {
+    expect(deploymentAccounts('not json')).toEqual([]);
+    expect(deploymentAccounts('{"role":"Cajero"}')).toEqual([]);
+  });
+});
+
+describe('DockerTunnelDeploymentProvider.inspect', () => {
+  it('reports each container of the demonstration as Docker sees it', async () => {
+    const names = deploymentNames(deploymentId);
+    const run = vi.fn(async (args: string[]) => {
+      if (args.at(-1) === names.app) return 'running';
+      if (args.at(-1) === names.database) return 'exited';
+      throw new Error('No such container');
+    });
+    await expect(new DockerTunnelDeploymentProvider(run).inspect(deploymentId)).resolves.toEqual([
+      { role: 'APPLICATION', state: 'RUNNING' },
+      { role: 'DATABASE', state: 'STOPPED' },
+      { role: 'TUNNEL', state: 'MISSING' },
+    ]);
   });
 });

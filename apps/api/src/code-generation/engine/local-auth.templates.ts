@@ -512,7 +512,7 @@ ${scope ? "import { initializeAuthorization } from './initialize-authorization';
 // never printed. Only the identifiers are reported.
 async function main() {
  const prisma = new PrismaService();
- const accounts: { role: string; identifier: string }[] = [];
+ const accounts: { role: string; identifier: string; name: string }[] = [];
  const password = process.env.INITIAL_PASSWORD ?? '';
  if (password.length < 12) throw new Error('INITIAL_PASSWORD must have at least 12 characters.');
  try {
@@ -539,7 +539,7 @@ async function main() {
      .join(
        ' ',
      )} ${local.loginField}: identifier, password, roleNames: [role]${scope ? `, ${scope.accountRelation}Ids: [initialScope.id]` : ''} });
-   accounts.push({ role, identifier });
+   accounts.push({ role, identifier, name: person });
   }
   console.log(JSON.stringify(accounts));
  } finally { await prisma.$disconnect(); }
