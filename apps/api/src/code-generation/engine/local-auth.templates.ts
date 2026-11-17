@@ -15,6 +15,19 @@ import { operationContextFiles } from './operation-context.templates';
 // Who may open each screen: its roles and, with an operation scope, the
 // operations its actions perform. The server's menu and the shell's link
 // guard read this same table, so they never disagree.
+// Names of the demonstration accounts of a deployed project: people, not
+// codes, so a demonstration reads like a real business.
+export const DEMO_PEOPLE = [
+  'Andrea Salazar',
+  'Carlos Mena',
+  'Paola Vinueza',
+  'Diego Toapanta',
+  'Gabriela Andrade',
+  'Luis Herrera',
+  'Mónica Castro',
+  'Javier Ortega',
+];
+
 export function routeAccess(plan: ImplementationPlanContent, scoped: boolean) {
   return plan.routes
     .filter(
@@ -491,8 +504,7 @@ void main().catch(() => { console.error('Capture accounts could not be prepared.
   files.push(
     file(
       'apps/api/src/auth/deploy-accounts.ts',
-      `import { randomBytes } from 'node:crypto';
-import { PrismaService } from '../prisma/prisma.service';
+      `import { PrismaService } from '../prisma/prisma.service';
 import { ${account.name}Service } from '../${kebabCase(plan.modules.find((m) => m.localId === account.moduleLocalId)!.name)}/${kebabCase(account.name)}.service';
 ${scope ? "import { initializeAuthorization } from './initialize-authorization';" : ''}
 // Invoked once by the fixed command of a deployment: one initial account per
@@ -512,13 +524,16 @@ async function main() {
       : ''
   }
   const roles = ${JSON.stringify(plan.authentication.roles)} as const;
+  // A person per role, with a name and a readable sign-in name.
+  const people = ${JSON.stringify(DEMO_PEOPLE)};
   for (const [index, role] of roles.entries()) {
-   const identifier = 'demo-' + (index + 1) + '-' + randomBytes(3).toString('hex');
+   const person = people[index % people.length]! + (index >= people.length ? ' ' + (index + 1) : '');
+   const identifier = person.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().split(' ').slice(0, 2).join('.') + (index >= people.length ? '.' + (index + 1) : '');
    await new ${account.name}Service(prisma).create({ ...${JSON.stringify(createInput)}, ${account.fields
      .filter((field) => field.unique && field.name !== local.loginField && field.type === 'STRING')
      .map((field) =>
        field.name === scope?.displayNameField
-         ? `${field.name}: role + ' (demostración)',`
+         ? `${field.name}: person,`
          : `${field.name}: identifier + ${JSON.stringify('-' + field.name)},`,
      )
      .join(

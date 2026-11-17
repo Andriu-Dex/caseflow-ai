@@ -146,6 +146,23 @@ describe('local authentication generation', () => {
     expect(e2e).toContain('the application opens on its login without a session');
   });
 
+  it('names the demonstration accounts after people, with readable sign-in names', () => {
+    const files = generateProject({
+      plan: implementationPlanContentSchema.parse(planInput()),
+      template: CASEFLOW_WEB_TS_V2,
+      projectName: 'Biblioteca',
+      slug: 'library',
+    });
+    const accounts = files.find(
+      (file) => file.path === 'apps/api/src/auth/deploy-accounts.ts',
+    )!.content;
+    expect(accounts).toContain('"Andrea Salazar"');
+    // The accent range reaches the generated code as escapes, not as characters.
+    expect(accounts).toMatch(/normalize\('NFD'\)\.replace\(\/\[\\u0300-\\u036f\]\/g/);
+    expect(accounts).not.toContain("'demo-'");
+    expect(accounts).not.toContain('(demostración)');
+  });
+
   it('rejects creating an account as the implementation of deactivating that account', () => {
     const input = planInput();
     input.routes.push({
