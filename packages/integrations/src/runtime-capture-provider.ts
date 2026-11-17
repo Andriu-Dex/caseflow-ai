@@ -75,8 +75,25 @@ export function createCaptureSessionToken(role: string, secret: string, now = Da
   return `${content}.${createHmac('sha256', secret).update(content).digest('base64url')}`;
 }
 
-type Runner = (args: string[], timeoutMs: number, signal?: AbortSignal) => Promise<string>;
-const runDocker: Runner = (args, timeoutMs, signal) =>
+// The browser image screenshots and mockup pages are rendered in (DEC-152, DEC-167).
+export const CAPTURE_BROWSER_IMAGE = 'caseflow-runtime-capture-browser:1.55.0-v2';
+export const CAPTURE_BROWSER_DOCKERFILE =
+  'FROM mcr.microsoft.com/playwright:v1.55.0-noble\nWORKDIR /opt/capture\nRUN npm install --ignore-scripts --no-audit --no-fund @playwright/test@1.55.0 && mkdir /opt/capture/run && chown pwuser /opt/capture/run\n';
+export const CAPTURE_HARDENING = [
+  '--cap-drop=ALL',
+  '--security-opt=no-new-privileges',
+  '--pids-limit=256',
+  '--memory=3g',
+  '--cpus=2',
+];
+
+export type DockerRunner = (
+  args: string[],
+  timeoutMs: number,
+  signal?: AbortSignal,
+) => Promise<string>;
+type Runner = DockerRunner;
+export const runDocker: Runner = (args, timeoutMs, signal) =>
   new Promise((resolve, reject) => {
     const child = spawn('docker', args, {
       windowsHide: true,
@@ -261,15 +278,9 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider, E2E
       if (remaining <= 0) throw new Error('Capture deadline exceeded.');
       return this.docker(args, Math.min(timeout, remaining), request.signal);
     };
-    const hardened = [
-      '--cap-drop=ALL',
-      '--security-opt=no-new-privileges',
-      '--pids-limit=256',
-      '--memory=3g',
-      '--cpus=2',
-    ];
+    const hardened = CAPTURE_HARDENING;
     const nodeImage = 'caseflow-runtime-capture-node:24-pnpm11.27.0-v1';
-    const browserImage = 'caseflow-runtime-capture-browser:1.55.0-v2';
+    const browserImage = CAPTURE_BROWSER_IMAGE;
     try {
       await command(['info', '--format', '{{.ServerVersion}}'], 10_000);
       await Promise.all([mkdir(source), mkdir(dependencies), mkdir(controller), mkdir(output)]);
@@ -295,10 +306,7 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider, E2E
         join(controller, 'Dockerfile.node'),
         'FROM node:24-bookworm\nRUN npm install --global pnpm@11.27.0\nWORKDIR /app\n',
       );
-      await writeFile(
-        join(controller, 'Dockerfile.browser'),
-        'FROM mcr.microsoft.com/playwright:v1.55.0-noble\nWORKDIR /opt/capture\nRUN npm install --ignore-scripts --no-audit --no-fund @playwright/test@1.55.0 && mkdir /opt/capture/run && chown pwuser /opt/capture/run\n',
-      );
+      await writeFile(join(controller, 'Dockerfile.browser'), CAPTURE_BROWSER_DOCKERFILE);
       // Like sandbox validation, reuse the versioned controller toolchain.
       // No generated code is ever included in the image build context.
       for (const [tag, dockerfile, timeout] of [
