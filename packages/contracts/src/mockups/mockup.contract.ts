@@ -14,6 +14,17 @@ export const createMockupRequestSchema = z
   .strict();
 export type CreateMockupRequest = z.output<typeof createMockupRequestSchema>;
 
+// DEC-166: a mockup written by people as HTML and CSS, sent as a ZIP (multipart)
+// with these fields. With mockupId it becomes the next version of that mockup.
+export const importManualMockupRequestSchema = z
+  .object({
+    uiBlueprintVersionId: z.uuid(),
+    deviceType: z.enum(MOCKUP_DEVICE_TYPES).default('DESKTOP'),
+    mockupId: z.uuid().optional(),
+  })
+  .strict();
+export type ImportManualMockupRequest = z.output<typeof importManualMockupRequestSchema>;
+
 // Refinement produces a new mockup version from a free-text instruction and
 // never overwrites: either the whole mockup is regenerated from the same
 // approved UI Blueprint, or one screen is edited in place at Stitch while the
@@ -24,7 +35,7 @@ export const refineMockupRequestSchema = z
   .strict();
 export type RefineMockupRequest = z.output<typeof refineMockupRequestSchema>;
 
-export const MOCKUP_GENERATOR_KINDS = ['INTERNAL_WIREFRAME', 'STITCH'] as const;
+export const MOCKUP_GENERATOR_KINDS = ['INTERNAL_WIREFRAME', 'STITCH', 'MANUAL'] as const;
 export type MockupGeneratorKind = (typeof MOCKUP_GENERATOR_KINDS)[number];
 
 const mockupScreenSchema = z.object({

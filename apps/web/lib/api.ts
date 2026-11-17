@@ -829,6 +829,22 @@ export const api = {
         uiBlueprintVersionId,
         deviceType,
       }),
+    // DEC-166: a mockup written by people, one HTML page and one PNG per screen.
+    importManual: (
+      projectId: string,
+      input: { uiBlueprintVersionId: string; deviceType: MockupDeviceType; mockupId?: string },
+      file: File,
+    ) => {
+      const form = new FormData();
+      form.set('uiBlueprintVersionId', input.uiBlueprintVersionId);
+      form.set('deviceType', input.deviceType);
+      if (input.mockupId) form.set('mockupId', input.mockupId);
+      form.set('file', file);
+      return request<MockupResponse>(`/projects/${projectId}/mockups/manual`, {
+        method: 'POST',
+        body: form,
+      });
+    },
     refine: (projectId: string, id: string, prompt: string) =>
       post<MockupJobResponse>(`/projects/${projectId}/mockups/${id}/refine`, { prompt }),
     refineScreen: (projectId: string, id: string, screenId: string, prompt: string) =>

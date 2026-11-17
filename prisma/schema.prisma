@@ -1347,6 +1347,8 @@ model StructuredAnalysisDetail {
 enum MockupGeneratorKind {
   INTERNAL_WIREFRAME
   STITCH
+  // HTML and CSS written by people and imported (DEC-166).
+  MANUAL
 
   @@map("mockup_generator_kind")
 }

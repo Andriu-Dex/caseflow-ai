@@ -113,7 +113,7 @@ Cada módulo se cierra con sus pruebas, una revisión del otro responsable y una
 | --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
 | 7.1 | Proveedor de bocetos que genera HTML y CSS con el tema, los colores y los componentes aprobados del proyecto, detrás de la interfaz `ScreenGenerator` existente. | A     |
 | 7.2 | Vista previa y comparación de bocetos en la pantalla de Bocetos.                                                                                                 | B     |
-| 7.3 | Alternativa manual: importar bocetos hechos por una persona (HTML o imágenes).                                                                                   | B     |
+| 7.3 | Alternativa manual: importar bocetos hechos por una persona (HTML y CSS con su imagen PNG, DEC-166).                                                             | B     |
 
 ## Fase 8. Mejoras adicionales (backlog, por prioridad)
 

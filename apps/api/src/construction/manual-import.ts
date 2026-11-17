@@ -113,7 +113,11 @@ export async function readManualArchive(archive: Buffer): Promise<ManualImport> 
       skipped++;
       continue;
     }
-    const bytes = await inflate(entry, path, MANUAL_IMPORT_LIMITS.totalBytes - total);
+    const bytes = await inflate(
+      entry,
+      path,
+      Math.min(MANUAL_IMPORT_LIMITS.fileBytes, MANUAL_IMPORT_LIMITS.totalBytes - total),
+    );
     total += bytes.length;
     let content: string;
     try {
@@ -140,8 +144,7 @@ export async function readManualArchive(archive: Buffer): Promise<ManualImport> 
 
 // Inflates one entry without trusting its declared size: the stream is cut as
 // soon as it passes the limit, so a decompression bomb is never held in memory.
-function inflate(entry: JSZip.JSZipObject, path: string, remaining: number): Promise<Buffer> {
-  const limit = Math.min(MANUAL_IMPORT_LIMITS.fileBytes, remaining);
+export function inflate(entry: JSZip.JSZipObject, path: string, limit: number): Promise<Buffer> {
   const tooLarge = () => new ManualImportError(`«${path}» supera el tamaño máximo permitido.`);
   const declared = (entry as unknown as { _data?: { uncompressedSize?: number } })._data
     ?.uncompressedSize;

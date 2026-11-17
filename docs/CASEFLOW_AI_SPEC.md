@@ -87,7 +87,7 @@ Pasos, en orden (`PIPELINE_ORDER`): Fuentes, Contexto, Requisitos, Casos de uso,
 - **Árbol de navegación** y **arquitecturas de software y de sistema**.
 - **Plano de interfaz** (`UI_BLUEPRINT`): describe cada pantalla con su propósito, formularios, estados, secciones, datos, acciones y actores.
 - **Tema y colores** (DEC-118): paleta de tokens con contraste WCAG AA.
-- **Bocetos:** Stitch por pantalla, con un renderizador interno como alternativa (DEC-146). Si una versión nueva del plano conserva sin cambios las pantallas de un boceto aprobado, ese boceto se traslada sin regenerar.
+- **Bocetos:** Stitch por pantalla, con un renderizador interno como alternativa (DEC-146). Si una versión nueva del plano conserva sin cambios las pantallas de un boceto aprobado, ese boceto se traslada sin regenerar. También se puede importar un boceto hecho a mano en HTML y CSS, con una página y una imagen PNG por pantalla del plano, sin IA (DEC-166).
 - **Línea base de diseño:** congela las versiones aprobadas que usará la construcción.
 
 ## 7. Trazabilidad, impacto y coherencia
@@ -316,3 +316,4 @@ Las decisiones con «(ADR-nnn)» tienen su documento en `docs/decisions/`; los A
 | DEC-163 | Datos de demostración realistas propuestos por IA, validados por campo, en la moneda del plan y reutilizados como punto de control; sin IA, valores deterministas (ADR-021) | Accepted |
 | DEC-164 | Puerta determinista de pantallas: lo que hace una pantalla lo define el plan de implementación; las limitaciones de la composición son observaciones de cobertura que no bloquean (ADR-022) | Accepted |
 | DEC-165 | Implementación manual: una corrida de construcción puede importar código escrito por personas, validado en el sandbox sin reparación automática y sin mezclarse con los puntos de control de la IA (ADR-023) | Accepted |
+| DEC-166 | Bocetos hechos a mano: un ZIP con `id.html` e `id.png` por cada pantalla del plano y un `styles.css` común opcional se importa como boceto `MANUAL` (origen manual, empieza en borrador). El HTML es contenido no confiable: se rechazan scripts, manejadores de eventos, enlaces `javascript:` y recursos externos. Se revisa la fidelidad como un boceto de Stitch y se cambia importando una versión nueva | Accepted |

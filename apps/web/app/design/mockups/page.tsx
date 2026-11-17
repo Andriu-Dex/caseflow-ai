@@ -8,6 +8,7 @@ import {
   type MockupPreviewResponse,
   type MockupResponse,
 } from '@caseflow-ai/contracts';
+import { ManualMockupDialog } from './manual-mockup-dialog';
 import { useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
@@ -641,27 +642,34 @@ function MockupPreview({
         </MockupScreenDialog>
       ) : null}
 
-      {screens.some((screen) => !screen.editable) ? (
+      {preview.data.generatorKind === 'STITCH' && screens.some((screen) => !screen.editable) ? (
         <p className="text-xs text-muted-foreground">
           Algunas pantallas se generaron antes de habilitar la edición individual. Regenere el
           boceto completo una vez para poder editarlas una por una.
         </p>
       ) : null}
-      <Accordion type="single" collapsible className="rounded-lg border border-border px-3">
-        <AccordionItem value="refine" className="border-b-0">
-          <AccordionTrigger className="text-sm">Cambios para todo el boceto</AccordionTrigger>
-          <AccordionContent className="flex flex-col gap-3">
-            <MockupRefineForm
-              busy={busy}
-              onRefine={onRefine}
-              label="Editar todas las pantallas"
-              hint={`Para cambios que afectan a todo el boceto (p. ej., la paleta de colores); regenera todas las pantallas. ${REFINE_HINT}`}
-              placeholder="Ej.: usa una paleta verde y una tipografía más grande en todas las pantallas."
-              suggestions={GLOBAL_REFINEMENT_SUGGESTIONS}
-            />
-          </AccordionContent>
-        </AccordionItem>
-      </Accordion>
+      {/* A hand-written mockup changes by importing its next version, not by AI. */}
+      {preview.data.generatorKind === 'MANUAL' ? (
+        <p className="text-xs text-muted-foreground">
+          Boceto hecho a mano en HTML y CSS. Para cambiarlo, importe una nueva versión.
+        </p>
+      ) : (
+        <Accordion type="single" collapsible className="rounded-lg border border-border px-3">
+          <AccordionItem value="refine" className="border-b-0">
+            <AccordionTrigger className="text-sm">Cambios para todo el boceto</AccordionTrigger>
+            <AccordionContent className="flex flex-col gap-3">
+              <MockupRefineForm
+                busy={busy}
+                onRefine={onRefine}
+                label="Editar todas las pantallas"
+                hint={`Para cambios que afectan a todo el boceto (p. ej., la paleta de colores); regenera todas las pantallas. ${REFINE_HINT}`}
+                placeholder="Ej.: usa una paleta verde y una tipografía más grande en todas las pantallas."
+                suggestions={GLOBAL_REFINEMENT_SUGGESTIONS}
+              />
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      )}
       <ScreenEditDialog
         screen={editingScreen}
         imageUrl={
@@ -1245,6 +1253,14 @@ function MockupsContent({ projectId }: { projectId: string }) {
                     </>
                   )}
                 </Button>
+                <ManualMockupDialog
+                  projectId={projectId}
+                  uiBlueprintVersionId={b.version.id}
+                  deviceType={currentDevice}
+                  mockups={items.map((m) => ({ id: m.id, code: m.code }))}
+                  disabled={creatingVersionId !== null}
+                  onImported={invalidate}
+                />
               </div>
             </li>
           );

@@ -186,6 +186,59 @@ describe('MockupsService', () => {
     });
   });
 
+  it('imports a hand-written HTML and CSS mockup as a MANUAL draft without AI', async () => {
+    const provider = new FakeMockupProvider();
+    const generate = vi.spyOn(provider, 'generate');
+    const { service, prisma, tx, storage } = setup(provider);
+    prisma.structuredAnalysisDetail.findUniqueOrThrow.mockResolvedValue({
+      content: blueprintContent,
+    });
+    const zip = new JSZip();
+    zip.file('home.html', '<html><head></head><body><h1>Inicio</h1></body></html>');
+    zip.file('home.png', Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0]));
+    zip.file('styles.css', 'h1 { color: navy; }');
+    await service.importManual(
+      'project',
+      'blueprint-version',
+      'DESKTOP',
+      undefined,
+      await zip.generateAsync({ type: 'nodebuffer' }),
+    );
+    expect(generate).not.toHaveBeenCalled();
+    expect(tx.artifactVersion.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ origin: 'MANUAL', status: 'DRAFT' }),
+    });
+    const detail = tx.mockupDetail.create.mock.calls[0]![0].data;
+    expect(detail).toMatchObject({
+      generatorKind: 'MANUAL',
+      generatorVersion: 'manual-html-css-v1',
+      svg: null,
+    });
+    const [screen] = detail.screens.create;
+    expect(screen).toMatchObject({ screenLocalId: 'home', screenName: 'Inicio' });
+    const stored = (await storage.getObject(screen.htmlStorageKey)).toString('utf8');
+    expect(stored).toContain('<style>\nh1 { color: navy; }');
+  });
+
+  it('refuses a manual mockup that misses a screen of the blueprint', async () => {
+    const { service, prisma, tx } = setup();
+    prisma.structuredAnalysisDetail.findUniqueOrThrow.mockResolvedValue({
+      content: blueprintContent,
+    });
+    const zip = new JSZip();
+    zip.file('home.html', '<p>Inicio</p>');
+    await expect(
+      service.importManual(
+        'project',
+        'blueprint-version',
+        'DESKTOP',
+        undefined,
+        await zip.generateAsync({ type: 'nodebuffer' }),
+      ),
+    ).rejects.toThrow('Faltan el HTML o la imagen PNG de 1 pantallas: home.');
+    expect(tx.artifactVersion.create).not.toHaveBeenCalled();
+  });
+
   it('forwards the requested deviceType to the provider and stores it on the mockup', async () => {
     const generate = vi.fn().mockResolvedValue({ kind: 'INTERNAL_WIREFRAME', svg: '<svg/>' });
     const provider: MockupProvider = { id: 'spy', generate };

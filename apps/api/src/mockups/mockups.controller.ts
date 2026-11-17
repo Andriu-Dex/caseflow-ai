@@ -2,11 +2,24 @@ import { UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../identity/jwt-auth.guard';
 import { ProjectMembershipGuard } from '../identity/project-membership.guard';
 
-import { Body, Controller, Get, HttpCode, Param, Post, Request, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  Post,
+  Request,
+  Res,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   createMockupRequestSchema,
+  importManualMockupRequestSchema,
   mockupJobResponseSchema,
   mockupListResponseSchema,
   mockupPreviewResponseSchema,
@@ -20,6 +33,7 @@ import { uuidParamPipe } from '../common/uuid-param.pipe';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ApiZodBody, ApiZodResponse } from '../openapi/zod-openapi';
 import { MockupsService } from './mockups.service';
+import { MANUAL_MOCKUP_LIMITS } from './manual-mockup-archive';
 
 @ApiTags('mockups')
 @UseGuards(JwtAuthGuard, ProjectMembershipGuard)
@@ -41,6 +55,44 @@ export class MockupsController {
     body: z.output<typeof createMockupRequestSchema>,
   ) {
     return this.service.create(projectId, body.uiBlueprintVersionId, body.deviceType);
+  }
+
+  @Post('manual')
+  @HttpCode(201)
+  @ApiOperation({
+    operationId: 'importManualMockup',
+    summary: 'Importar un boceto escrito a mano en HTML y CSS, con una imagen por pantalla',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file', 'uiBlueprintVersionId'],
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        uiBlueprintVersionId: { type: 'string', format: 'uuid' },
+        deviceType: { type: 'string', enum: ['DESKTOP', 'MOBILE'] },
+        mockupId: { type: 'string', format: 'uuid' },
+      },
+    },
+  })
+  @ApiZodResponse(201, 'Mockup.', mockupResponseSchema)
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: MANUAL_MOCKUP_LIMITS.archiveBytes } }),
+  )
+  importManual(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body(new ZodValidationPipe(importManualMockupRequestSchema))
+    body: z.output<typeof importManualMockupRequestSchema>,
+  ) {
+    return this.service.importManual(
+      projectId,
+      body.uiBlueprintVersionId,
+      body.deviceType,
+      body.mockupId,
+      file?.buffer,
+    );
   }
 
   // Declared before 'jobs/:jobId' so "latest" is not read as an identifier.

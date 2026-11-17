@@ -1,3 +1,4 @@
+import JSZip from 'jszip';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   FakeStorageProvider,
@@ -217,5 +218,38 @@ describe('Mockups drawn screen by screen', () => {
     expect(active('venta')).toBe('Ventas');
     expect(active('existencias')).toBe('Inventario');
     expect(active('acceso')).toBeNull();
+  });
+
+  it('imports a hand-written HTML and CSS mockup and its next version, without the provider (DEC-166)', async () => {
+    const zip = new JSZip();
+    for (const id of ['a', 'b', 'c', 'd', 'e']) {
+      zip.file(`${id}.html`, `<html><head></head><body><h1>Pantalla ${id}</h1></body></html>`);
+      zip.file(`${id}.png`, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0]));
+    }
+    zip.file('styles.css', 'h1 { font-size: 1.5rem; }');
+    const archive = await zip.generateAsync({ type: 'nodebuffer' });
+    const asking = asked.length;
+    const mockup = await service.importManual(
+      projectId,
+      blueprintVersionId,
+      'DESKTOP',
+      undefined,
+      archive,
+    );
+    expect(mockup.version).toMatchObject({ versionNumber: 1, status: 'DRAFT', origin: 'MANUAL' });
+    const preview = await service.getPreview(projectId, mockup.id);
+    expect(preview.generatorKind).toBe('MANUAL');
+    expect(preview.screens?.map((screen) => screen.screenName)).toHaveLength(5);
+    expect(preview.screens?.every((screen) => !screen.editable)).toBe(true);
+    const next = await service.importManual(
+      projectId,
+      blueprintVersionId,
+      'DESKTOP',
+      mockup.id,
+      archive,
+    );
+    expect(next.id).toBe(mockup.id);
+    expect(next.version.versionNumber).toBe(2);
+    expect(asked.length).toBe(asking);
   });
 });

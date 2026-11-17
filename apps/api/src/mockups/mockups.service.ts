@@ -48,6 +48,13 @@ import { MOCKUP_QUEUE } from './mockup-queue.token';
 import { STORAGE_PROVIDER } from './storage-provider.token';
 import { reviewMockupHtml } from './mockup-fidelity';
 import { StageCurrencyService } from '../readiness/stage-currency';
+import { ManualImportError } from '../construction/manual-import';
+import { readManualMockupArchive } from './manual-mockup-archive';
+
+// Stitch and hand-written mockups are a set of screen images with their HTML;
+// the internal wireframe is a single drawing.
+const hasScreens = (kind: string) => kind !== 'INTERNAL_WIREFRAME';
+const MANUAL_GENERATOR_VERSION = 'manual-html-css-v1';
 
 type Tx = Prisma.TransactionClient;
 const MOCKUP_CODE_PREFIX = 'MCK';
@@ -83,7 +90,8 @@ type StoredScreen = {
   refinementPrompt: string | null;
 };
 type StoredGeneration = (
-  { kind: 'INTERNAL_WIREFRAME'; svg: string } | { kind: 'STITCH'; screens: StoredScreen[] }
+  | { kind: 'INTERNAL_WIREFRAME'; svg: string }
+  | { kind: 'STITCH' | 'MANUAL'; screens: StoredScreen[] }
 ) & {
   designThemeVersionId: string | null;
   // Shown with the result: why it is the internal wireframe instead of Stitch.
@@ -123,6 +131,65 @@ export class MockupsService {
     });
     await this.runJob(job.id);
     return this.getJob(projectId, job.id);
+  }
+
+  // DEC-166: a mockup written by people as HTML and CSS, one page and one PNG
+  // image per blueprint screen. No AI is involved; it starts as a draft that a
+  // person reviews and approves like any other mockup.
+  async importManual(
+    projectId: string,
+    uiBlueprintVersionId: string,
+    deviceType: MockupDeviceType,
+    mockupId: string | undefined,
+    archive: Buffer | undefined,
+  ) {
+    if (!archive?.length) throw new UnprocessableEntityException('Adjunte un archivo ZIP.');
+    await this.assertApprovedBlueprint(projectId, uiBlueprintVersionId);
+    const detail = await this.prisma.structuredAnalysisDetail.findUniqueOrThrow({
+      where: { artifactVersionId: uiBlueprintVersionId },
+    });
+    const content = uiBlueprintContentSchema.parse(detail.content);
+    let pages: Awaited<ReturnType<typeof readManualMockupArchive>>;
+    try {
+      pages = await readManualMockupArchive(
+        archive,
+        content.screens.map((screen) => screen.localId),
+      );
+    } catch (error) {
+      if (error instanceof ManualImportError) throw new UnprocessableEntityException(error.message);
+      throw error;
+    }
+    const theme = await this.currentTheme(projectId);
+    const generated: StoredGeneration = {
+      kind: 'MANUAL',
+      designThemeVersionId: theme?.versionId ?? null,
+      screens: [],
+    };
+    for (const screen of content.screens) {
+      const page = pages.get(screen.localId)!;
+      generated.screens.push({
+        screenLocalId: screen.localId,
+        screenName: screen.name,
+        ...(await this.storeScreenAssets(projectId, page.image, page.html)),
+        stitchProjectId: null,
+        stitchScreenId: null,
+        refinementPrompt: null,
+      });
+    }
+    return this.prisma.$transaction((tx) =>
+      mockupId
+        ? this.createVersionInTx(
+            tx,
+            projectId,
+            mockupId,
+            uiBlueprintVersionId,
+            deviceType,
+            generated,
+            null,
+            'MANUAL',
+          )
+        : this.createInTx(tx, projectId, uiBlueprintVersionId, deviceType, generated, 'MANUAL'),
+    );
   }
 
   async version(
@@ -574,10 +641,9 @@ export class MockupsService {
           deviceType: detail.deviceType,
           svg: detail.svg,
           generatorKind: detail.generatorKind,
-          screens:
-            detail.generatorKind === 'STITCH'
-              ? this.screenLinks(projectId, row.id, detail.screens)
-              : null,
+          screens: hasScreens(detail.generatorKind)
+            ? this.screenLinks(projectId, row.id, detail.screens)
+            : null,
           refinementPrompt: detail.refinementPrompt,
           createdAt: version.createdAt.toISOString(),
         };
@@ -597,13 +663,12 @@ export class MockupsService {
       deviceType: detail.deviceType,
       generatorKind: detail.generatorKind,
       svg: detail.svg,
-      screens:
-        detail.generatorKind === 'STITCH'
-          ? this.screenLinks(projectId, row.id, detail.screens)
-          : null,
+      screens: hasScreens(detail.generatorKind)
+        ? this.screenLinks(projectId, row.id, detail.screens)
+        : null,
       refinementPrompt: detail.refinementPrompt,
       createdAt: version.createdAt.toISOString(),
-      ...(detail.generatorKind === 'STITCH'
+      ...(hasScreens(detail.generatorKind)
         ? { fidelityReview: await this.fidelityReview(projectId, detail) }
         : {}),
     };
@@ -725,6 +790,7 @@ export class MockupsService {
     deviceType: MockupDeviceType,
     generated: StoredGeneration,
     refinementPrompt: string | null = null,
+    origin: 'SYSTEM_GENERATED' | 'MANUAL' = 'SYSTEM_GENERATED',
   ) {
     const locked = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM artifacts WHERE id=${mockupId}::uuid AND project_id=${projectId}::uuid AND artifact_type_code='MOCKUP' FOR NO KEY UPDATE`;
@@ -739,8 +805,8 @@ export class MockupsService {
         projectId,
         versionNumber: latest.versionNumber + 1,
         title: latest.title,
-        status: initialStatusForOrigin('SYSTEM_GENERATED'),
-        origin: 'SYSTEM_GENERATED',
+        status: initialStatusForOrigin(origin),
+        origin,
       },
     });
     await this.saveDetail(
@@ -777,7 +843,7 @@ export class MockupsService {
       });
       if (!detail)
         throw new UnprocessableEntityException('No se encontró el contenido del boceto.');
-      if (detail.generatorKind === 'STITCH') {
+      if (hasScreens(detail.generatorKind)) {
         const review = await this.fidelityReview(projectId, detail);
         if (review.findings.some((finding) => finding.severity === 'ERROR'))
           throw new UnprocessableEntityException({
@@ -1223,6 +1289,7 @@ export class MockupsService {
     uiBlueprintVersionId: string,
     deviceType: MockupDeviceType,
     generated: StoredGeneration,
+    origin: 'SYSTEM_GENERATED' | 'MANUAL' = 'SYSTEM_GENERATED',
   ) {
     if (!(await tx.project.findUnique({ where: { id: projectId } })))
       throw new NotFoundException('Proyecto no encontrado.');
@@ -1242,8 +1309,8 @@ export class MockupsService {
         projectId,
         versionNumber: 1,
         title: 'Boceto',
-        status: initialStatusForOrigin('SYSTEM_GENERATED'),
-        origin: 'SYSTEM_GENERATED',
+        status: initialStatusForOrigin(origin),
+        origin,
       },
     });
     await this.saveDetail(tx, version.id, uiBlueprintVersionId, deviceType, generated);
@@ -1289,9 +1356,15 @@ export class MockupsService {
         designThemeVersionId: generated.designThemeVersionId,
         generatorKind: generated.kind,
         generatorVersion:
-          generated.kind === 'STITCH' ? 'stitch-sdk-0.3.5' : MOCKUP_GENERATOR_VERSION,
+          generated.kind === 'STITCH'
+            ? 'stitch-sdk-0.3.5'
+            : generated.kind === 'MANUAL'
+              ? MANUAL_GENERATOR_VERSION
+              : MOCKUP_GENERATOR_VERSION,
         svg: generated.kind === 'INTERNAL_WIREFRAME' ? generated.svg : null,
-        ...(generated.kind === 'STITCH' ? { screens: { create: generated.screens } } : {}),
+        ...(generated.kind !== 'INTERNAL_WIREFRAME'
+          ? { screens: { create: generated.screens } }
+          : {}),
       },
     });
   }
@@ -1354,7 +1427,7 @@ export class MockupsService {
   async downloadMockupScreensZip(projectId: string, mockupId: string) {
     const mockup = await this.findLatest(projectId, mockupId);
     const detail = mockup.versions[0]!.mockupDetail!;
-    const screens = detail.generatorKind === 'STITCH' ? detail.screens : [];
+    const screens = hasScreens(detail.generatorKind) ? detail.screens : [];
     if (screens.length === 0) throw new NotFoundException('No hay imágenes para descargar.');
 
     const zip = new JSZip();
