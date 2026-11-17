@@ -310,6 +310,20 @@ describe('planCoverageProblems (DEC-121)', () => {
     ]);
   });
 
+  it('accepts the action marker with single quotes or as a plain attribute', () => {
+    const formatted = [
+      files[0],
+      {
+        path: 'apps/web/app/orders/page.tsx',
+        content: '<a data-action={\'Nuevo\'} /><button data-action="Borrar" />',
+        kind: 'SOURCE',
+      },
+    ] as const;
+    expect(
+      planCoverageProblems(formatted, plan).some((problem) => problem.includes('/orders')),
+    ).toBe(false);
+  });
+
   it('counts controls of a component the page imports from its route folders', () => {
     const shared = [
       files[0],

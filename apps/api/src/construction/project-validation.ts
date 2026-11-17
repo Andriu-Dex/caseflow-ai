@@ -162,6 +162,14 @@ export function structuralProblems(
   return problems;
 }
 
+// The generator writes data-action={"label"}; code formatted by hand or by a
+// formatter may use single quotes or a plain attribute instead.
+const hasMarker = (page: string, label: string) =>
+  page.includes(actionMarker(label)) ||
+  [`data-action={'${label.replace(/'/g, "\\'")}'}`, `data-action="${label}"`].some((marker) =>
+    page.includes(marker),
+  );
+
 // Files a page imports with a relative path that stays inside the web app's
 // route folders, resolved as the bundler would (.tsx, .ts or an index file).
 function localImports(pagePath: string, content: string): string[] {
@@ -207,10 +215,10 @@ export function planCoverageProblems(
     // Screen actions served by the same query share one form (the first
     // names it), so that form's control covers all of them.
     const marked = (action: (typeof route.actions)[number]) =>
-      page.includes(actionMarker(action.label)) ||
+      hasMarker(page, action.label) ||
       (action.endpoint?.startsWith('GET ') &&
         route.actions.some(
-          (other) => other.endpoint === action.endpoint && page.includes(actionMarker(other.label)),
+          (other) => other.endpoint === action.endpoint && hasMarker(page, other.label),
         ));
     for (const action of route.actions)
       if (!marked(action))
