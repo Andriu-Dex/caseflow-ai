@@ -974,16 +974,14 @@ function TraceabilityContent({ projectId }: { projectId: string }) {
                       <div className="flex items-center gap-2">
                         <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                           <ShieldCheck className="size-3.5" />
-                          Planificación Completada (13/13)
+                          Planificación completa (13/13)
                         </span>
                       </div>
                       <h2 className="mt-1.5 text-lg font-bold text-foreground">
-                        ¡Fase de Planificación Completada con Éxito!
+                        Planificación completa
                       </h2>
                       <p className="mt-1 max-w-2xl text-sm text-muted-foreground leading-relaxed">
-                        Todos los artefactos de análisis, diseño y trazabilidad están aprobados y
-                        coherentes. La sección de <strong>Construcción</strong> en el menú lateral
-                        ha sido desbloqueada. Puede avanzar ahora al primer paso de construcción:{' '}
+                        Ya puede pasar al primer paso de construcción:{' '}
                         <strong>Plan de generación</strong>.
                       </p>
                     </div>
@@ -993,7 +991,7 @@ function TraceabilityContent({ projectId }: { projectId: string }) {
                     <Link href="/construction/generation-plan">
                       <Button size="lg" className="w-full sm:w-auto shadow-sm gap-2 font-semibold">
                         <Hammer className="size-4" />
-                        Iniciar Fase de Construcción
+                        Iniciar la construcción
                         <ArrowRight className="size-4" />
                       </Button>
                     </Link>
@@ -1008,16 +1006,14 @@ function TraceabilityContent({ projectId }: { projectId: string }) {
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground border border-border">
-                          Fase 2: Construcción (Bloqueada)
+                          Construcción bloqueada
                         </span>
                       </div>
                       <h2 className="mt-1.5 text-lg font-semibold text-foreground">
-                        Siguiente fase: Construcción de Software
+                        Siguiente fase: construcción
                       </h2>
                       <p className="mt-1 max-w-2xl text-sm text-muted-foreground leading-relaxed">
-                        La fase de construcción (generación guiada del software, modelo conceptual y
-                        sandbox) se habilitará en el menú lateral automáticamente cuando todos los
-                        pasos de planificación estén satisfechos y aprobados.
+                        Se habilita cuando todos los pasos de planificación estén aprobados.
                       </p>
                     </div>
                   </div>
@@ -1026,12 +1022,12 @@ function TraceabilityContent({ projectId }: { projectId: string }) {
                     <Link href="/readiness">
                       <Button variant="outline" size="sm" className="gap-2 text-xs">
                         <ClipboardCheck className="size-3.5" />
-                        Revisar Preparación
+                        Revisar preparación
                       </Button>
                     </Link>
                     <Button disabled size="sm" className="gap-2 text-xs opacity-60">
                       <Lock className="size-3.5" />
-                      Construcción Bloqueada
+                      No disponible
                     </Button>
                   </div>
                 </div>
