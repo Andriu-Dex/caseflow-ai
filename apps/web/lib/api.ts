@@ -11,6 +11,7 @@ import type {
   ScreenFindingsResponse,
   GeneratedFileResponse,
   ConstructionUnit,
+  ConstructionPreviewResponse,
   GeneratedFileSummary,
   GenerationRunResponse,
   SandboxRunResponse,
@@ -967,6 +968,10 @@ export const api = {
       `${BASE_URL}/projects/${p}/generated-project-snapshots/${s}/user-manual/versions/${v}/download?format=${format}`,
   },
   generationRuns: {
+    preview: (projectId: string, implementationPlanVersionId: string) =>
+      get<ConstructionPreviewResponse>(
+        `/projects/${projectId}/generation-runs/preview/${implementationPlanVersionId}`,
+      ),
     manual: (projectId: string, implementationPlanVersionId: string, file: File) => {
       const form = new FormData();
       form.set('implementationPlanVersionId', implementationPlanVersionId);

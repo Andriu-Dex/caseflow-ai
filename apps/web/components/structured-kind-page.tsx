@@ -1674,7 +1674,12 @@ function UiBlueprintDetail({ content }: { content: UiBlueprintContent }) {
   );
 }
 
-function renderContentDetail(kind: StructuredAnalysisKind, content: unknown) {
+function renderContentDetail(
+  kind: StructuredAnalysisKind,
+  content: unknown,
+  projectId?: string,
+  implementationPlanVersionId?: string,
+) {
   switch (kind) {
     case 'NAVIGATION_TREE': {
       return <NavigationTreeDetail content={content as NavigationTreeContent} />;
@@ -1917,7 +1922,13 @@ function renderContentDetail(kind: StructuredAnalysisKind, content: unknown) {
     case 'DESIGN_THEME':
       return <DesignThemePreview content={content as DesignThemeContent} />;
     case 'IMPLEMENTATION_PLAN':
-      return <ImplementationPlanDetail content={content as ImplementationPlanContent} />;
+      return (
+        <ImplementationPlanDetail
+          content={content as ImplementationPlanContent}
+          projectId={projectId}
+          implementationPlanVersionId={implementationPlanVersionId}
+        />
+      );
     case 'CONCEPTUAL_DOMAIN_MODEL':
       return <ConceptualModelDetail content={content as ConceptualDomainModelContent} />;
   }
@@ -2497,7 +2508,9 @@ export function StructuredKindPage({
 
                       {/* A theme is judged by looking at it: its preview is always shown. */}
                       {expandedId === item.id || isTheme ? (
-                        <div className="mt-3">{renderContentDetail(kind, item.content)}</div>
+                        <div className="mt-3">
+                          {renderContentDetail(kind, item.content, projectId, item.version.id)}
+                        </div>
                       ) : null}
                       {expandedId === item.id && kind === 'IMPLEMENTATION_PLAN' ? (
                         <ImplementationPlanArtifacts projectId={projectId} planId={item.id} />

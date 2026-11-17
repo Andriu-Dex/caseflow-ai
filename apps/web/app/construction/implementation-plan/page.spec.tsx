@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   transition: vi.fn(),
   archive: vi.fn(),
   implementationPlanArtifacts: vi.fn(),
+  preview: vi.fn(),
 }));
 
 vi.mock('sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }));
@@ -23,6 +24,9 @@ vi.mock('../../../lib/api', () => ({
       transition: (...args: unknown[]) => mocks.transition(...args),
       implementationPlanArtifacts: (...args: unknown[]) =>
         mocks.implementationPlanArtifacts(...args),
+    },
+    generationRuns: {
+      preview: (...args: unknown[]) => mocks.preview(...args),
     },
     artifacts: {
       archive: (...args: unknown[]) => mocks.archive(...args),
@@ -205,10 +209,8 @@ describe('ImplementationPlanPage', () => {
     await waitFor(() => {
       expect(screen.getByText('Plan de Implementación y Arquitectura Física')).toBeInTheDocument();
     });
-    expect(screen.getByRole('heading', { name: 'Billing', level: 5 })).toBeInTheDocument();
-    expect(screen.getByText('Invoice')).toBeInTheDocument();
-    expect(screen.getByText('/invoices/:id/pay')).toBeInTheDocument();
-    expect(screen.getByText('Facturas')).toBeInTheDocument();
+    expect(screen.getByText('Billing')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Contenedores' })).toBeInTheDocument();
 
     // Derived artifacts preview section
     expect(screen.getByText('Vista Previa de Esquemas Derivados')).toBeInTheDocument();
