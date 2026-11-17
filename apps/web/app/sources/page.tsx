@@ -6,7 +6,6 @@ import {
   Archive,
   ArchiveRestore,
   Check,
-  ChevronRight,
   Columns2,
   Download,
   FileText,
@@ -52,6 +51,10 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
   Textarea,
 } from '@caseflow-ai/ui';
 import { api, ApiError, downloadFile } from '../../lib/api';
@@ -582,35 +585,6 @@ function SourceCard({
             </div>
           ) : null}
 
-          <dl className="flex flex-wrap gap-x-8 gap-y-2 rounded-md bg-muted/40 px-3 py-2">
-            <div>
-              <dt className="text-xs text-muted-foreground">Propósito</dt>
-              <dd className="text-foreground/90">{source.source.purpose}</dd>
-            </div>
-            {source.source.businessArea ? (
-              <div>
-                <dt className="text-xs text-muted-foreground">Área de negocio</dt>
-                <dd className="text-foreground/90">{source.source.businessArea}</dd>
-              </div>
-            ) : null}
-            <div>
-              <dt className="text-xs text-muted-foreground">Archivo</dt>
-              <dd className="text-foreground/90">
-                {hasFile && source.source.sizeBytes != null
-                  ? `${source.source.originalFilename} · ${Math.ceil(source.source.sizeBytes / 1024)} KB`
-                  : 'Sin archivo — contenido escrito'}
-              </dd>
-            </div>
-            {hasFile && source.source.description ? (
-              <div className="basis-full">
-                <dt className="text-xs text-muted-foreground">Contexto</dt>
-                <dd className="whitespace-pre-line text-foreground/90">
-                  {source.source.description}
-                </dd>
-              </div>
-            ) : null}
-          </dl>
-
           <div className="flex flex-wrap items-center gap-2">
             {hasFile ? (
               <Button type="button" variant="outline" size="sm" onClick={() => setView('compare')}>
@@ -708,76 +682,65 @@ function SourceCard({
               onOpenChange={(open) => (open ? undefined : setView('read'))}
             />
           ) : null}
-          {view === 'edit' || (hasFile && !source.source.hasExtractedText) ? (
-            <ExtractedTextPanel
-              projectId={projectId}
-              source={source}
-              text={extractedText.data?.text}
-              loading={source.source.hasExtractedText && extractedText.isLoading}
-              onSaved={invalidate}
-              startEditing={view === 'edit'}
-              onExit={() => setView('read')}
-            />
-          ) : readingText ? (
-            <ReadableText text={readingText} label="el texto de la fuente" />
-          ) : (
-            <p className="text-muted-foreground">Cargando texto…</p>
-          )}
 
-          {editing ? (
-            <EditSourceForm
-              projectId={projectId}
-              source={source}
-              onSaved={() => {
-                invalidate();
-                setEditing(false);
-              }}
-              onCancel={() => setEditing(false)}
-            />
-          ) : null}
-
-          {confirming ? (
-            confirming === 'archive' ? (
-              <ArchiveSourceDialog
-                projectId={projectId}
-                source={source}
-                onOpenChange={(open) => setConfirming(open ? 'archive' : null)}
-                onArchived={() => {
-                  queryClient.invalidateQueries({ queryKey: ['sources', projectId] });
-                  queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
-                  queryClient.invalidateQueries({ queryKey: ['staleness', projectId] });
-                }}
-              />
-            ) : (
-              <DeleteSourceDialog
-                projectId={projectId}
-                source={source}
-                onOpenChange={(open) => setConfirming(open ? 'delete' : null)}
-                onDeleted={() => {
-                  queryClient.invalidateQueries({ queryKey: ['sources', projectId] });
-                  queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
-                  queryClient.invalidateQueries({ queryKey: ['staleness', projectId] });
-                }}
-              />
-            )
-          ) : null}
-
-          <details className="group rounded-md border border-border">
-            <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 font-medium text-foreground select-none">
-              <ChevronRight
-                className="size-4 text-muted-foreground transition-transform group-open:rotate-90"
-                aria-hidden="true"
-              />
-              Reporte de la fuente
-              <span className="text-xs font-normal text-muted-foreground">
-                {source.source.hasReport ? '· Registrado' : '· Opcional'}
-              </span>
-            </summary>
-            <div className="border-t border-border px-3 py-3">
-              <p className="mb-2 text-xs text-muted-foreground">
-                Opcional: no es necesario para aprobar la fuente. Si lo registra, la generación del
-                contexto del proyecto lo usa como guía; el texto de la fuente sigue siendo la
-                referencia.
+          <Tabs defaultValue="content">
+            <TabsList className="h-auto w-full flex-wrap justify-start">
+              <TabsTrigger value="content">Contenido</TabsTrigger>
+              <TabsTrigger value="data">Datos</TabsTrigger>
+              <TabsTrigger value="report">
+                Reporte {source.source.hasReport ? '· Registrado' : '· Opcional'}
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="content">
+              {view === 'edit' || (hasFile && !source.source.hasExtractedText) ? (
+                <ExtractedTextPanel
+                  projectId={projectId}
+                  source={source}
+                  text={extractedText.data?.text}
+                  loading={source.source.hasExtractedText && extractedText.isLoading}
+                  onSaved={invalidate}
+                  startEditing={view === 'edit'}
+                  onExit={() => setView('read')}
+                />
+              ) : readingText ? (
+                <ReadableText text={readingText} label="el texto de la fuente" />
+              ) : (
+                <p className="text-muted-foreground">Cargando texto…</p>
+              )}
+            </TabsContent>
+            <TabsContent value="data">
+              <dl className="flex flex-wrap gap-x-8 gap-y-2 rounded-md bg-muted/40 px-3 py-2">
+                <div>
+                  <dt className="text-xs text-muted-foreground">Propósito</dt>
+                  <dd className="text-foreground/90">{source.source.purpose}</dd>
+                </div>
+                {source.source.businessArea ? (
+                  <div>
+                    <dt className="text-xs text-muted-foreground">Área de negocio</dt>
+                    <dd className="text-foreground/90">{source.source.businessArea}</dd>
+                  </div>
+                ) : null}
+                <div>
+                  <dt className="text-xs text-muted-foreground">Archivo</dt>
+                  <dd className="text-foreground/90">
+                    {hasFile && source.source.sizeBytes != null
+                      ? `${source.source.originalFilename} · ${Math.ceil(source.source.sizeBytes / 1024)} KB`
+                      : 'Sin archivo — contenido escrito'}
+                  </dd>
+                </div>
+                {hasFile && source.source.description ? (
+                  <div className="basis-full">
+                    <dt className="text-xs text-muted-foreground">Contexto</dt>
+                    <dd className="whitespace-pre-line text-foreground/90">
+                      {source.source.description}
+                    </dd>
+                  </div>
+                ) : null}
+              </dl>
+            </TabsContent>
+            <TabsContent value="report" className="flex flex-col gap-2">
+              <p className="text-xs text-muted-foreground">
+                No es necesario para aprobar; si existe, guía la generación del contexto.
               </p>
               {source.source.hasReport ? (
                 <QueryState isLoading={report.isLoading} error={null}>
@@ -908,8 +871,46 @@ function SourceCard({
               ) : (
                 <p className="text-muted-foreground">Guarde primero la transcripción manual.</p>
               )}
-            </div>
-          </details>
+            </TabsContent>
+          </Tabs>
+
+          {editing ? (
+            <EditSourceForm
+              projectId={projectId}
+              source={source}
+              onSaved={() => {
+                invalidate();
+                setEditing(false);
+              }}
+              onCancel={() => setEditing(false)}
+            />
+          ) : null}
+
+          {confirming ? (
+            confirming === 'archive' ? (
+              <ArchiveSourceDialog
+                projectId={projectId}
+                source={source}
+                onOpenChange={(open) => setConfirming(open ? 'archive' : null)}
+                onArchived={() => {
+                  queryClient.invalidateQueries({ queryKey: ['sources', projectId] });
+                  queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
+                  queryClient.invalidateQueries({ queryKey: ['staleness', projectId] });
+                }}
+              />
+            ) : (
+              <DeleteSourceDialog
+                projectId={projectId}
+                source={source}
+                onOpenChange={(open) => setConfirming(open ? 'delete' : null)}
+                onDeleted={() => {
+                  queryClient.invalidateQueries({ queryKey: ['sources', projectId] });
+                  queryClient.invalidateQueries({ queryKey: ['readiness', projectId] });
+                  queryClient.invalidateQueries({ queryKey: ['staleness', projectId] });
+                }}
+              />
+            )
+          ) : null}
 
           <div className="flex flex-wrap gap-2 border-t border-border pt-2">
             {source.version.status === 'DRAFT' || source.version.status === 'GENERATED' ? (

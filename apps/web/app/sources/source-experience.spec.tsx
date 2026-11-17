@@ -234,7 +234,7 @@ describe('Sources — the report of a long source (DEC-127)', () => {
     mocks.list.mockResolvedValue({ items: [pdfSource()] });
     renderPage();
     await user.click(await screen.findByRole('button', { name: 'Ver detalle' }));
-    await user.click(screen.getByText('Reporte de la fuente'));
+    await user.click(screen.getByRole('tab', { name: /Reporte/ }));
   }
 
   it('starts the report in the background and shows its progress by parts', async () => {
