@@ -309,4 +309,40 @@ describe('planCoverageProblems (DEC-121)', () => {
       'La ruta /invoices del plan no tiene su página.',
     ]);
   });
+
+  it('counts controls of a component the page imports from its route folders', () => {
+    const shared = [
+      files[0],
+      {
+        path: 'apps/web/app/orders/page.tsx',
+        content: "import { OrderEditor } from './[orderid]/order-editor';\n<OrderEditor />",
+        kind: 'SOURCE',
+      },
+      {
+        path: 'apps/web/app/orders/[orderid]/order-editor.tsx',
+        content: '<button data-action={"Nuevo"} /><button data-action={"Borrar"} />',
+        kind: 'SOURCE',
+      },
+      {
+        path: 'apps/web/components/elsewhere.tsx',
+        content: '<button data-action={"Borrar"} />',
+        kind: 'SOURCE',
+      },
+    ] as const;
+    expect(planCoverageProblems(shared, plan).some((problem) => problem.includes('Borrar'))).toBe(
+      false,
+    );
+    const outside = [
+      files[0],
+      {
+        path: 'apps/web/app/orders/page.tsx',
+        content: 'import { X } from \'../../components/elsewhere\';\n<X data-action={"Nuevo"} />',
+        kind: 'SOURCE',
+      },
+      shared[3],
+    ] as const;
+    expect(planCoverageProblems(outside, plan)).toContainEqual(
+      'La acción «Borrar» de la ruta /orders no tiene un control en su página.',
+    );
+  });
 });

@@ -162,6 +162,24 @@ export function structuralProblems(
   return problems;
 }
 
+// Files a page imports with a relative path that stays inside the web app's
+// route folders, resolved as the bundler would (.tsx, .ts or an index file).
+function localImports(pagePath: string, content: string): string[] {
+  const folder = pagePath.split('/').slice(0, -1);
+  const found: string[] = [];
+  for (const [, specifier] of content.matchAll(/from\s+['"](\.{1,2}\/[^'"]+)['"]/g)) {
+    const parts = [...folder];
+    for (const segment of specifier!.split('/')) {
+      if (segment === '..') parts.pop();
+      else if (segment !== '.') parts.push(segment);
+    }
+    const base = parts.join('/');
+    if (!base.startsWith('apps/web/app/')) continue;
+    found.push(...['.tsx', '.ts', '/index.tsx', '/index.ts'].map((extension) => base + extension));
+  }
+  return found;
+}
+
 // Plan coverage (DEC-121): every planned entity has its Prisma model, every
 // route its page and every screen action its control, also after auto-repair.
 export function planCoverageProblems(
@@ -177,11 +195,15 @@ export function planCoverageProblems(
         `La entidad «${entity.name}» del plan no tiene su modelo en el esquema de Prisma.`,
       );
   for (const route of plan.routes) {
-    const page = byPath.get(pagePath(route.path));
-    if (page === undefined) {
+    const path = pagePath(route.path);
+    const own = byPath.get(path);
+    if (own === undefined) {
       problems.push(`La ruta ${route.path} del plan no tiene su página.`);
       continue;
     }
+    // A screen may compose its controls from components it imports from its
+    // own route folder or a parent one (shared by sibling screens).
+    const page = [own, ...localImports(path, own).map((file) => byPath.get(file) ?? '')].join('\n');
     // Screen actions served by the same query share one form (the first
     // names it), so that form's control covers all of them.
     const marked = (action: (typeof route.actions)[number]) =>
