@@ -13,6 +13,7 @@ import type {
   GeneratedFileResponse,
   ConstructionUnit,
   ConstructionPreviewResponse,
+  GenerationEstimateResponse,
   GeneratedFileSummary,
   GenerationRunResponse,
   SandboxRunResponse,
@@ -1005,6 +1006,10 @@ export const api = {
     preview: (projectId: string, implementationPlanVersionId: string) =>
       get<ConstructionPreviewResponse>(
         `/projects/${projectId}/generation-runs/preview/${implementationPlanVersionId}`,
+      ),
+    estimate: (projectId: string, implementationPlanVersionId: string) =>
+      get<GenerationEstimateResponse>(
+        `/projects/${projectId}/generation-runs/estimate/${implementationPlanVersionId}`,
       ),
     manual: (projectId: string, implementationPlanVersionId: string, file: File) => {
       const form = new FormData();

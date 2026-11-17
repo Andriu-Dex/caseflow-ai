@@ -5,6 +5,7 @@ import GenerationRunsPage from './page';
 import { TestProviders } from '../../../lib/test-utils';
 
 const mocks = vi.hoisted(() => ({
+  estimate: vi.fn(),
   listPlans: vi.fn(),
   listRuns: vi.fn(),
   start: vi.fn(),
@@ -24,6 +25,7 @@ vi.mock('../../../lib/api', () => ({
     structuredAnalysis: { list: (...args: unknown[]) => mocks.listPlans(...args) },
     generationRuns: {
       list: (...args: unknown[]) => mocks.listRuns(...args),
+      estimate: (...args: unknown[]) => mocks.estimate(...args),
       start: (...args: unknown[]) => mocks.start(...args),
       workingCopy: (...args: unknown[]) => mocks.workingCopy(...args),
       files: (...args: unknown[]) => mocks.files(...args),
@@ -185,6 +187,26 @@ describe('GenerationRunsPage', () => {
         reviewed: true,
       }),
     );
+  });
+
+  it('says how many AI requests generating would make before starting (DEC-168)', async () => {
+    mocks.estimate.mockResolvedValue({
+      implementationPlanVersionId: 'pv1',
+      businessActions: { total: 12, reused: 9 },
+      demoData: 'REUSED',
+      screens: { atMost: 5 },
+      requests: { atLeast: 3, atMost: 8 },
+    });
+    render(<GenerationRunsPage />, { wrapper: TestProviders });
+    expect(
+      await screen.findByText('Uso de IA previsto: entre 3 y 8 solicitudes.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/9 de 12 acciones se reutilizan; 3 se piden a la IA/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Datos de demostración: se reutilizan/)).toBeInTheDocument();
+    expect(screen.getByText(/hasta 5 se revisan con la IA/)).toBeInTheDocument();
+    expect(mocks.estimate).toHaveBeenCalledWith('p1', 'pv1');
   });
 
   it('starts the sandbox validation of a generated run', async () => {

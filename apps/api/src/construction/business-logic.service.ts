@@ -272,6 +272,191 @@ export class BusinessLogicService {
     private readonly ai: AIOrchestrator,
   ) {}
 
+  // The context an action is implemented from and the checkpoint keys it is
+  // found under: shared by the generation and its estimate (DEC-168), so both
+  // always agree on what is reused.
+  private endpointCheckpoint(
+    plan: ImplementationPlanContent,
+    endpoint: ImplementationPlanContent['customEndpoints'][number],
+    template: TargetTemplateVersion,
+    language: Awaited<ReturnType<typeof getProjectLanguage>>,
+    frozenContext: Awaited<ReturnType<typeof loadFrozenBusinessContext>> | undefined,
+    baselineIds: string[],
+  ) {
+    const promptVersion = endpoint.contract
+      ? 7
+      : plan.authentication.local?.scope
+        ? 5
+        : plan.authentication.local
+          ? 4
+          : 3;
+    const module = plan.modules.find((m) => m.localId === endpoint.moduleLocalId)!;
+    const params = [...endpoint.path.matchAll(/:([a-zA-Z0-9]+)/g)].map((m) => m[1]!);
+    const hasBody = ['POST', 'PATCH', 'PUT'].includes(endpoint.method);
+    const context = {
+      ...(endpoint.contract ? { userFacingLanguage: language } : {}),
+      ...(plan.authentication.local?.scope
+        ? {
+            scopeProfile: {
+              ...plan.authentication.local.scope,
+              model: plan.entities.find(
+                (entity) => entity.localId === plan.authentication.local!.scope!.entityLocalId,
+              )!.name,
+            },
+          }
+        : {}),
+      ...(frozenContext ? { approvedContext: frozenContext(endpoint, plan) } : {}),
+      action: {
+        ...(endpoint.rules ? { rules: endpoint.rules } : {}),
+        ...(endpoint.contract ? { contract: endpoint.contract } : {}),
+        roles: endpoint.roles,
+        ...(plan.authentication.local?.scope
+          ? { scopeAccess: endpoint.scopeAccess ?? 'SELECTED', dataAccess: endpoint.dataAccess }
+          : {}),
+        summary: endpoint.summary,
+        method: endpoint.method,
+        path: endpoint.path,
+        methodName: actionMethodName(endpoint),
+        parameters: [
+          ...params.map((p) => ({ name: p, type: 'string (path parameter)' })),
+          ...(hasBody
+            ? [
+                {
+                  name: 'body',
+                  type: endpoint.contract?.body
+                    ? 'Validated input matching action.contract.body'
+                    : 'Record<string, unknown> (request body)',
+                },
+              ]
+            : []),
+          ...(endpoint.contract?.query
+            ? [{ name: 'query', type: 'Validated filters matching action.contract.query' }]
+            : []),
+          ...(plan.authentication.local
+            ? [
+                {
+                  name: 'actor',
+                  type: plan.authentication.local.scope
+                    ? '{ userId: string; sessionId: string; roles: string[]; selectedScopeId?: string; scopeIds: string[]; permissions: string[] } (immutable verified server context)'
+                    : '{ userId: string; sessionId: string; roles: string[] } (verified server session)',
+                },
+              ]
+            : []),
+        ],
+        mainEntity: plan.entities.find((e) => e.localId === endpoint.entityLocalId)?.name ?? null,
+      },
+      module: { name: module.name, description: module.description },
+      prismaDelegates: plan.entities
+        .filter(
+          (entity) =>
+            !plan.authentication.local?.scope ||
+            endpoint.dataAccess?.some((access) => access.entityLocalId === entity.localId),
+        )
+        .map((e) => ({
+          delegate: `this.prisma.${lowerFirst(e.name)}`,
+          model: e.name,
+          ...(e.fields.some((field) => field.readOnly)
+            ? {
+                serverOwnedFields: e.fields
+                  .filter((field) => field.readOnly)
+                  .map((field) => ({
+                    name: field.name,
+                    ...(field.serverDefault !== undefined
+                      ? { initialValue: field.serverDefault }
+                      : {}),
+                  })),
+              }
+            : {}),
+          ...(e.uniqueConstraints ? { uniqueConstraints: e.uniqueConstraints } : {}),
+          fields: [
+            'id',
+            ...e.fields
+              .filter((field) => !field.internal)
+              .map(
+                // An optional field may be null: said so, the body checks it
+                // instead of failing the generated project's typecheck.
+                (f) =>
+                  `${f.name}: ${f.type}${f.type === 'ENUM' ? ` (${f.enumValues.join('|')})` : ''}${f.required ? '' : ' | null'}`,
+              ),
+            ...e.relations.map((r) =>
+              r.kind === 'MANY_TO_MANY'
+                ? `${r.name}: relation[]`
+                : `${r.name}Id: string${r.required ? '' : ' | null'}`,
+            ),
+          ],
+        })),
+      availableExceptions: HTTP_EXCEPTIONS,
+    };
+    const keyed = (approvedBaselineId?: string) => {
+      // Same key order as the context: only the baseline id inside
+      // approvedContext is left out (or replaced by an earlier one).
+      const keptContext = Object.fromEntries(
+        Object.entries(context).map(([key, value]) => {
+          if (key !== 'approvedContext' || !value || typeof value !== 'object') return [key, value];
+          const approved = value as Record<string, unknown>;
+          return [
+            key,
+            approvedBaselineId === undefined
+              ? Object.fromEntries(
+                  Object.entries(approved).filter(([name]) => name !== 'baselineId'),
+                )
+              : { ...approved, baselineId: approvedBaselineId },
+          ];
+        }),
+      );
+      return `docs/business-logic/${createHash('sha256')
+        .update(json({ templateVersion: template.version, promptVersion, context: keptContext }))
+        .digest('hex')}.json`;
+    };
+    const checkpointPath = keyed();
+    const legacyPaths = frozenContext ? baselineIds.map((id) => keyed(id)) : [];
+    return { context, promptVersion, checkpointPath, legacyPaths };
+  }
+
+  // DEC-168: of the actions a generation from this plan implements, how many
+  // already have a checkpoint under the same inputs (reused without the AI).
+  async estimate(
+    projectId: string,
+    plan: ImplementationPlanContent,
+    template: TargetTemplateVersion,
+  ): Promise<{ total: number; reused: number }> {
+    const endpoints = plan.customEndpoints.filter((item) => !item.builtin && !item.disabledReason);
+    if (!endpoints.length || template.version < 2) return { total: endpoints.length, reused: 0 };
+    const language = await getProjectLanguage(this.prisma, projectId);
+    const frozenContext = await loadFrozenBusinessContext(
+      this.prisma,
+      projectId,
+      plan.designBaselineId,
+    );
+    const baselineIds = (
+      await this.prisma.designBaseline.findMany({ where: { projectId }, select: { id: true } })
+    ).map((baseline) => baseline.id);
+    const keys = endpoints.map((endpoint) => {
+      const { checkpointPath, legacyPaths } = this.endpointCheckpoint(
+        plan,
+        endpoint,
+        template,
+        language,
+        frozenContext,
+        baselineIds,
+      );
+      return [checkpointPath, ...legacyPaths];
+    });
+    const found = new Set(
+      (
+        await this.prisma.generatedFile.findMany({
+          where: { path: { in: keys.flat() }, generationRun: { projectId } },
+          select: { path: true },
+          distinct: ['path'],
+        })
+      ).map((item) => item.path),
+    );
+    return {
+      total: endpoints.length,
+      reused: keys.filter((paths) => paths.some((path) => found.has(path))).length,
+    };
+  }
+
   async implement(
     projectId: string,
     generationRunId: string,
@@ -317,137 +502,17 @@ export class BusinessLogicService {
     for (const endpoint of plan.customEndpoints.filter(
       (item) => !item.builtin && !item.disabledReason,
     )) {
-      const promptVersion = endpoint.contract
-        ? 7
-        : plan.authentication.local?.scope
-          ? 5
-          : plan.authentication.local
-            ? 4
-            : 3;
-      const module = plan.modules.find((m) => m.localId === endpoint.moduleLocalId)!;
-      const params = [...endpoint.path.matchAll(/:([a-zA-Z0-9]+)/g)].map((m) => m[1]!);
-      const hasBody = ['POST', 'PATCH', 'PUT'].includes(endpoint.method);
-      const context = {
-        ...(endpoint.contract ? { userFacingLanguage: language } : {}),
-        ...(plan.authentication.local?.scope
-          ? {
-              scopeProfile: {
-                ...plan.authentication.local.scope,
-                model: plan.entities.find(
-                  (entity) => entity.localId === plan.authentication.local!.scope!.entityLocalId,
-                )!.name,
-              },
-            }
-          : {}),
-        ...(frozenContext ? { approvedContext: frozenContext(endpoint, plan) } : {}),
-        action: {
-          ...(endpoint.rules ? { rules: endpoint.rules } : {}),
-          ...(endpoint.contract ? { contract: endpoint.contract } : {}),
-          roles: endpoint.roles,
-          ...(plan.authentication.local?.scope
-            ? { scopeAccess: endpoint.scopeAccess ?? 'SELECTED', dataAccess: endpoint.dataAccess }
-            : {}),
-          summary: endpoint.summary,
-          method: endpoint.method,
-          path: endpoint.path,
-          methodName: actionMethodName(endpoint),
-          parameters: [
-            ...params.map((p) => ({ name: p, type: 'string (path parameter)' })),
-            ...(hasBody
-              ? [
-                  {
-                    name: 'body',
-                    type: endpoint.contract?.body
-                      ? 'Validated input matching action.contract.body'
-                      : 'Record<string, unknown> (request body)',
-                  },
-                ]
-              : []),
-            ...(endpoint.contract?.query
-              ? [{ name: 'query', type: 'Validated filters matching action.contract.query' }]
-              : []),
-            ...(plan.authentication.local
-              ? [
-                  {
-                    name: 'actor',
-                    type: plan.authentication.local.scope
-                      ? '{ userId: string; sessionId: string; roles: string[]; selectedScopeId?: string; scopeIds: string[]; permissions: string[] } (immutable verified server context)'
-                      : '{ userId: string; sessionId: string; roles: string[] } (verified server session)',
-                  },
-                ]
-              : []),
-          ],
-          mainEntity: plan.entities.find((e) => e.localId === endpoint.entityLocalId)?.name ?? null,
-        },
-        module: { name: module.name, description: module.description },
-        prismaDelegates: plan.entities
-          .filter(
-            (entity) =>
-              !plan.authentication.local?.scope ||
-              endpoint.dataAccess?.some((access) => access.entityLocalId === entity.localId),
-          )
-          .map((e) => ({
-            delegate: `this.prisma.${lowerFirst(e.name)}`,
-            model: e.name,
-            ...(e.fields.some((field) => field.readOnly)
-              ? {
-                  serverOwnedFields: e.fields
-                    .filter((field) => field.readOnly)
-                    .map((field) => ({
-                      name: field.name,
-                      ...(field.serverDefault !== undefined
-                        ? { initialValue: field.serverDefault }
-                        : {}),
-                    })),
-                }
-              : {}),
-            ...(e.uniqueConstraints ? { uniqueConstraints: e.uniqueConstraints } : {}),
-            fields: [
-              'id',
-              ...e.fields
-                .filter((field) => !field.internal)
-                .map(
-                  // An optional field may be null: said so, the body checks it
-                  // instead of failing the generated project's typecheck.
-                  (f) =>
-                    `${f.name}: ${f.type}${f.type === 'ENUM' ? ` (${f.enumValues.join('|')})` : ''}${f.required ? '' : ' | null'}`,
-                ),
-              ...e.relations.map((r) =>
-                r.kind === 'MANY_TO_MANY'
-                  ? `${r.name}: relation[]`
-                  : `${r.name}Id: string${r.required ? '' : ' | null'}`,
-              ),
-            ],
-          })),
-        availableExceptions: HTTP_EXCEPTIONS,
-      };
+      const { context, promptVersion, checkpointPath, legacyPaths } = this.endpointCheckpoint(
+        plan,
+        endpoint,
+        template,
+        language,
+        frozenContext,
+        baselineIds,
+      );
       const internalFields = plan.entities.flatMap((entity) =>
         entity.fields.filter((field) => field.internal).map((field) => field.name),
       );
-      const keyed = (approvedBaselineId?: string) => {
-        // Same key order as the context: only the baseline id inside
-        // approvedContext is left out (or replaced by an earlier one).
-        const keptContext = Object.fromEntries(
-          Object.entries(context).map(([key, value]) => {
-            if (key !== 'approvedContext' || !value || typeof value !== 'object')
-              return [key, value];
-            const approved = value as Record<string, unknown>;
-            return [
-              key,
-              approvedBaselineId === undefined
-                ? Object.fromEntries(
-                    Object.entries(approved).filter(([name]) => name !== 'baselineId'),
-                  )
-                : { ...approved, baselineId: approvedBaselineId },
-            ];
-          }),
-        );
-        return `docs/business-logic/${createHash('sha256')
-          .update(json({ templateVersion: template.version, promptVersion, context: keptContext }))
-          .digest('hex')}.json`;
-      };
-      const checkpointPath = keyed();
-      const legacyPaths = frozenContext ? baselineIds.map((id) => keyed(id)) : [];
       try {
         const cached =
           template.version >= 2

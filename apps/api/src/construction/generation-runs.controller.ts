@@ -36,6 +36,7 @@ import {
   createWorkingCopyRequestSchema,
   importManualImplementationRequestSchema,
   constructionPreviewResponseSchema,
+  generationEstimateResponseSchema,
 } from '@caseflow-ai/contracts';
 import { CONSTRUCTION_JOB_TYPES, type ConstructionJobType } from '@caseflow-ai/domain';
 import { JwtAuthGuard } from '../identity/jwt-auth.guard';
@@ -91,6 +92,19 @@ export class GenerationRunsController {
     @Param('implementationPlanVersionId', uuidParamPipe) versionId: string,
   ) {
     return this.service.preview(projectId, versionId);
+  }
+
+  @Get('estimate/:implementationPlanVersionId')
+  @ApiOperation({
+    operationId: 'estimateGeneration',
+    summary: 'Estimar las solicitudes a la IA que haría una generación desde un plan',
+  })
+  @ApiZodResponse(200, 'Generation estimate.', generationEstimateResponseSchema)
+  estimate(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('implementationPlanVersionId', uuidParamPipe) versionId: string,
+  ) {
+    return this.service.estimate(projectId, versionId);
   }
 
   @Post('manual')

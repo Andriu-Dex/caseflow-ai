@@ -149,6 +149,38 @@ export function acceptedDemoValues(
   return result;
 }
 
+// The request a plan's demonstration data is proposed from and the checkpoint
+// it is kept under; null when the plan has nothing to seed. Shared by the
+// generation and its estimate (DEC-168).
+export function demoDataRequest(projectName: string, plan: ImplementationPlanContent) {
+  const entities = demoEntities(plan, true);
+  if (!entities.length) return null;
+  const request = {
+    projectName,
+    currency: planCurrency(plan) ?? null,
+    modules: plan.modules.map((module) => ({
+      name: module.name,
+      description: module.description,
+    })),
+    entities: entities.map((entity) => ({
+      model: entity.model,
+      fields: entity.fields
+        .filter((field) => field.value === undefined)
+        .map(({ name, label, type, required, unique, enumValues }) => ({
+          name,
+          label,
+          type,
+          required,
+          unique,
+          enumValues,
+        })),
+    })),
+    recordsPerEntity: RECORDS,
+  };
+  const path = `docs/demo-data/${hash(json({ version: DEMO_DATA_VERSION, request }))}.json`;
+  return { entities, request, path };
+}
+
 // Realistic demonstration values for a plan (DEC-159), proposed by AI once per
 // data model and kept as a checkpoint. Without AI the deterministic
 // placeholders remain: the project is still seeded and deployable.
@@ -159,6 +191,24 @@ export class DemoDataService {
     private readonly ai: AIOrchestrator,
   ) {}
 
+  // DEC-168: whether a generation from this plan reuses its demonstration data
+  // (true), asks the AI for them (false), or has nothing to seed (null).
+  async isCached(
+    projectId: string,
+    designBaselineId: string,
+    projectName: string,
+    plan: ImplementationPlanContent,
+  ): Promise<boolean | null> {
+    const planned = demoDataRequest(projectName, plan);
+    if (!planned) return null;
+    return Boolean(
+      await this.prisma.generatedFile.findFirst({
+        where: { path: planned.path, generationRun: { projectId, designBaselineId } },
+        select: { id: true },
+      }),
+    );
+  }
+
   async propose(
     projectId: string,
     designBaselineId: string,
@@ -166,31 +216,9 @@ export class DemoDataService {
     projectName: string,
     plan: ImplementationPlanContent,
   ): Promise<{ values?: Values; checkpoint?: GeneratedProjectFile; warning?: string }> {
-    const entities = demoEntities(plan, true);
-    if (!entities.length) return {};
-    const request = {
-      projectName,
-      currency: planCurrency(plan) ?? null,
-      modules: plan.modules.map((module) => ({
-        name: module.name,
-        description: module.description,
-      })),
-      entities: entities.map((entity) => ({
-        model: entity.model,
-        fields: entity.fields
-          .filter((field) => field.value === undefined)
-          .map(({ name, label, type, required, unique, enumValues }) => ({
-            name,
-            label,
-            type,
-            required,
-            unique,
-            enumValues,
-          })),
-      })),
-      recordsPerEntity: RECORDS,
-    };
-    const path = `docs/demo-data/${hash(json({ version: DEMO_DATA_VERSION, request }))}.json`;
+    const planned = demoDataRequest(projectName, plan);
+    if (!planned) return {};
+    const { entities, request, path } = planned;
     const cached = await this.prisma.generatedFile.findFirst({
       where: { path, generationRun: { projectId, designBaselineId } },
       select: { content: true },

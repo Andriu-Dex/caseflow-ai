@@ -31,6 +31,8 @@ import {
   type GeneratedFileSummary,
   type GenerationRunResponse,
   type ConstructionPreviewResponse,
+  type GenerationEstimateResponse,
+  type ImplementationPlanContent,
   type CreateWorkingCopyRequest,
 } from '@caseflow-ai/contracts';
 import { PrismaService } from '../database/prisma.service';
@@ -319,6 +321,61 @@ export class GenerationRunsService {
         throw new UnprocessableEntityException(error.message);
       throw error;
     }
+  }
+
+  // DEC-168: what a generation from this plan would ask the AI for, before it
+  // starts. Actions and demonstration data are exact: what has a checkpoint
+  // under the same inputs is reused. Screens are an upper bound, every screen the
+  // AI composes from the approved mockup; one whose inputs did not change is
+  // reused, but that is only known once the actions it calls are implemented.
+  async estimate(projectId: string, versionId: string): Promise<GenerationEstimateResponse> {
+    const version = await this.prisma.artifactVersion.findFirst({
+      where: { id: versionId, projectId, artifact: { artifactTypeCode: 'IMPLEMENTATION_PLAN' } },
+      select: { structuredAnalysisDetail: { select: { content: true } } },
+    });
+    if (!version?.structuredAnalysisDetail)
+      throw new NotFoundException('Plan de implementación no encontrado.');
+    const project = await this.prisma.project.findUniqueOrThrow({
+      where: { id: projectId },
+      select: { name: true },
+    });
+    const plan = implementationPlanContentSchema.parse(version.structuredAnalysisDetail.content);
+    const template = findTargetTemplate(TEMPLATE_IDENTIFIER)!;
+    const actions = await this.businessLogic.estimate(projectId, plan, template);
+    const demo =
+      template.version >= 2 && this.demoData
+        ? await this.demoData.isCached(projectId, plan.designBaselineId, project.name, plan)
+        : null;
+    const screens = template.version >= 2 ? await this.composedScreens(projectId, plan) : 0;
+    const atLeast = actions.total - actions.reused + (demo === false ? 1 : 0);
+    return {
+      implementationPlanVersionId: versionId,
+      businessActions: actions,
+      demoData: demo === null ? 'NONE' : demo ? 'REUSED' : 'REQUESTED',
+      screens: { atMost: screens },
+      requests: { atLeast, atMost: atLeast + screens },
+    };
+  }
+
+  // The routes whose screen the AI composes: none with an internal wireframe,
+  // and never one replaced by a hand-written screen (DEC-161).
+  private async composedScreens(projectId: string, plan: ImplementationPlanContent) {
+    const mockup = await this.prisma.designBaselineEntry.findFirst({
+      where: { baselineId: plan.designBaselineId, role: 'MOCKUP', baseline: { projectId } },
+      select: {
+        artifactVersion: { select: { mockupDetail: { select: { generatorKind: true } } } },
+      },
+    });
+    if (mockup?.artifactVersion.mockupDetail?.generatorKind === 'INTERNAL_WIREFRAME') return 0;
+    const overridden = new Set(
+      (
+        await this.prisma.screenDesignOverride.findMany({
+          where: { projectId, designBaselineId: plan.designBaselineId },
+          select: { routePath: true },
+        })
+      ).map((item) => item.routePath),
+    );
+    return plan.routes.filter((route) => !overridden.has(route.path)).length;
   }
 
   // ADR-023: a project written by people comes in as a run of its own, with the

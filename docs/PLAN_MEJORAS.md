@@ -117,10 +117,10 @@ Cada módulo se cierra con sus pruebas, una revisión del otro responsable y una
 
 ## Fase 8. Mejoras adicionales (backlog, por prioridad)
 
-1. Estimación de llamadas de IA antes de lanzar una generación, con lo que se reutiliza y lo que se regenera.
-2. Panel de la demostración desplegada: cuentas con nombre y rol, copiar, acceso directo y estado de los contenedores.
+1. Hecho (DEC-168). Estimación de llamadas de IA antes de lanzar una generación, con lo que se reutiliza y lo que se regenera.
+2. Hecho. Panel de la demostración desplegada: cuentas con nombre y rol, copiar, acceso directo y estado de los contenedores.
 3. Indicador de progreso de la planificación con el motivo de cada bloqueo.
-4. Enlace de despliegue estable con un túnel con nombre de Cloudflare (requiere cuenta).
+4. Hecho. Enlace de despliegue estable con un túnel con nombre de Cloudflare (requiere cuenta): token y dirección fija en el panel de despliegue.
 5. Asistente para dividir un proyecto grande en entregas cuando supera la capacidad de la IA.
 
 ## Fase 9. Proyecto del cine

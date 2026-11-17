@@ -51,3 +51,21 @@ export const constructionPreviewResponseSchema = z.object({
   files: z.array(previewFileSchema),
 });
 export type ConstructionPreviewResponse = z.infer<typeof constructionPreviewResponseSchema>;
+
+// DEC-168: what a generation from a plan would ask the AI for, before it starts.
+// Screens are an upper bound: one whose inputs did not change is reused, which is
+// only known once the actions it calls are implemented.
+export const generationEstimateResponseSchema = z.object({
+  implementationPlanVersionId: z.uuid(),
+  businessActions: z.object({
+    total: z.number().int().nonnegative(),
+    reused: z.number().int().nonnegative(),
+  }),
+  demoData: z.enum(['NONE', 'REUSED', 'REQUESTED']),
+  screens: z.object({ atMost: z.number().int().nonnegative() }),
+  requests: z.object({
+    atLeast: z.number().int().nonnegative(),
+    atMost: z.number().int().nonnegative(),
+  }),
+});
+export type GenerationEstimateResponse = z.infer<typeof generationEstimateResponseSchema>;

@@ -279,6 +279,14 @@ describe('Construction generation runs integration', () => {
           newPlan.version.id,
           status,
         );
+      // DEC-168: the unchanged plan reuses its action; the changed rule would be asked for.
+      expect(await runs.estimate(projectId, planVersionId)).toMatchObject({
+        businessActions: { total: 1, reused: 1 },
+      });
+      const estimate = await runs.estimate(projectId, newPlan.version.id);
+      expect(estimate.businessActions).toEqual({ total: 1, reused: 0 });
+      expect(estimate.requests.atLeast).toBeGreaterThanOrEqual(1);
+      expect(estimate.requests.atMost).toBeGreaterThanOrEqual(estimate.requests.atLeast);
       const run = await runs.start(projectId, ctx.userId, newPlan.version.id);
       await runs.runJob(projectId, run.id);
       expect(await runs.get(projectId, run.id)).toMatchObject({
