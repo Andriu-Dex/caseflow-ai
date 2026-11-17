@@ -34,6 +34,10 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
   Button,
   Dialog,
   DialogClose,
@@ -643,15 +647,21 @@ function MockupPreview({
           boceto completo una vez para poder editarlas una por una.
         </p>
       ) : null}
-
-      <MockupRefineForm
-        busy={busy}
-        onRefine={onRefine}
-        label="Editar todas las pantallas"
-        hint={`Para cambios que afectan a todo el boceto (p. ej., la paleta de colores); regenera todas las pantallas. ${REFINE_HINT}`}
-        placeholder="Ej.: usa una paleta verde y una tipografía más grande en todas las pantallas."
-        suggestions={GLOBAL_REFINEMENT_SUGGESTIONS}
-      />
+      <Accordion type="single" collapsible className="rounded-lg border border-border px-3">
+        <AccordionItem value="refine" className="border-b-0">
+          <AccordionTrigger className="text-sm">Cambios para todo el boceto</AccordionTrigger>
+          <AccordionContent className="flex flex-col gap-3">
+            <MockupRefineForm
+              busy={busy}
+              onRefine={onRefine}
+              label="Editar todas las pantallas"
+              hint={`Para cambios que afectan a todo el boceto (p. ej., la paleta de colores); regenera todas las pantallas. ${REFINE_HINT}`}
+              placeholder="Ej.: usa una paleta verde y una tipografía más grande en todas las pantallas."
+              suggestions={GLOBAL_REFINEMENT_SUGGESTIONS}
+            />
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
       <ScreenEditDialog
         screen={editingScreen}
         imageUrl={
@@ -1124,12 +1134,129 @@ function MockupsContent({ projectId }: { projectId: string }) {
   const items = mockups.data?.items ?? [];
   const pending = items.filter((m) => isPendingApproval(m.version.status));
 
+  // The approved blueprints a sketch can be generated from.
+  const blueprintList =
+    approvedBlueprints.length === 0 ? (
+      <div className="rounded-lg border border-dashed border-border/80 bg-muted/20 p-4 text-center text-sm text-muted-foreground">
+        Cuando tenga un Plano de interfaz aprobado podrá generar aquí su boceto.
+      </div>
+    ) : (
+      <ul className="flex flex-col gap-2.5 text-sm">
+        {approvedBlueprints.map((b) => {
+          const screensCount = 'screens' in b.content ? b.content.screens.length : null;
+          const currentDevice = deviceTypes[b.version.id] ?? 'DESKTOP';
+          return (
+            <li
+              key={b.id}
+              className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-border/70 bg-muted/20 p-3 transition-colors hover:bg-muted/30"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 shrink-0">
+                  {b.code}
+                </span>
+                <span className="font-medium text-foreground truncate" title={b.title}>
+                  {b.title}
+                </span>
+                {screensCount !== null && screensCount > 0 ? (
+                  <span className="hidden md:inline-flex items-center rounded-md border border-border/60 bg-background px-2 py-0.5 text-xs text-muted-foreground shrink-0">
+                    {screensCount} {screensCount === 1 ? 'pantalla' : 'pantallas'}
+                  </span>
+                ) : null}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <div
+                  role="radiogroup"
+                  aria-label="Dispositivo de destino"
+                  className="inline-flex rounded-lg border border-border/80 bg-muted/40 p-0.5"
+                >
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={currentDevice === 'DESKTOP'}
+                    disabled={creatingVersionId === b.version.id}
+                    onClick={() =>
+                      setDeviceTypes((prev) => ({
+                        ...prev,
+                        [b.version.id]: 'DESKTOP',
+                      }))
+                    }
+                    className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+                      currentDevice === 'DESKTOP'
+                        ? 'bg-background text-foreground shadow-xs'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <Monitor className="size-3.5" />
+                    <span>Escritorio</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={currentDevice === 'MOBILE'}
+                    disabled={creatingVersionId === b.version.id}
+                    onClick={() =>
+                      setDeviceTypes((prev) => ({
+                        ...prev,
+                        [b.version.id]: 'MOBILE',
+                      }))
+                    }
+                    className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+                      currentDevice === 'MOBILE'
+                        ? 'bg-background text-foreground shadow-xs'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <Smartphone className="size-3.5" />
+                    <span>Móvil</span>
+                  </button>
+                </div>
+                {/* Accessible fallback select */}
+                <select
+                  aria-label="Formato del boceto"
+                  className="sr-only"
+                  value={currentDevice}
+                  disabled={creatingVersionId === b.version.id}
+                  onChange={(e) =>
+                    setDeviceTypes((prev) => ({
+                      ...prev,
+                      [b.version.id]: e.target.value as MockupDeviceType,
+                    }))
+                  }
+                >
+                  <option value="DESKTOP">Escritorio</option>
+                  <option value="MOBILE">Móvil</option>
+                </select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={creatingVersionId === b.version.id}
+                  onClick={() => setConfirming({ id: b.version.id, screens: screensCount })}
+                  className="border-primary/40 hover:bg-primary/5 hover:text-primary"
+                >
+                  {creatingVersionId === b.version.id ? (
+                    <>
+                      <Loader2 aria-hidden="true" className="size-4 animate-spin" /> Generando…
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles aria-hidden="true" className="size-3.5 text-primary mr-1" />
+                      Generar boceto
+                    </>
+                  )}
+                </Button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    );
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeading title="Bocetos" projectId={projectId} />
       <p className="text-sm text-muted-foreground">
-        Cada boceto se genera a partir de un Plano de interfaz aprobado y muestra cómo se
-        organizarán las pantallas. Si cambia el plano de interfaz, genere un boceto nuevo.
+        Cómo se verán las pantallas de un Plano de interfaz aprobado.
       </p>
 
       <section className="rounded-xl border border-border bg-card p-5 shadow-2xs">
@@ -1152,120 +1279,16 @@ function MockupsContent({ projectId }: { projectId: string }) {
             onDone={invalidate}
           />
         </div>
-        {approvedBlueprints.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border/80 bg-muted/20 p-4 text-center text-sm text-muted-foreground">
-            Cuando tenga un Plano de interfaz aprobado podrá generar aquí su boceto.
-          </div>
+        {items.length ? (
+          // With sketches already made, generating another is the less common step.
+          <Accordion type="single" collapsible>
+            <AccordionItem value="generate" className="border-b-0">
+              <AccordionTrigger className="py-1 text-sm">Generar un boceto nuevo</AccordionTrigger>
+              <AccordionContent>{blueprintList}</AccordionContent>
+            </AccordionItem>
+          </Accordion>
         ) : (
-          <ul className="flex flex-col gap-2.5 text-sm">
-            {approvedBlueprints.map((b) => {
-              const screensCount = 'screens' in b.content ? b.content.screens.length : null;
-              const currentDevice = deviceTypes[b.version.id] ?? 'DESKTOP';
-              return (
-                <li
-                  key={b.id}
-                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-border/70 bg-muted/20 p-3 transition-colors hover:bg-muted/30"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 shrink-0">
-                      {b.code}
-                    </span>
-                    <span className="font-medium text-foreground truncate" title={b.title}>
-                      {b.title}
-                    </span>
-                    {screensCount !== null && screensCount > 0 ? (
-                      <span className="hidden md:inline-flex items-center rounded-md border border-border/60 bg-background px-2 py-0.5 text-xs text-muted-foreground shrink-0">
-                        {screensCount} {screensCount === 1 ? 'pantalla' : 'pantallas'}
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <div
-                      role="radiogroup"
-                      aria-label="Dispositivo de destino"
-                      className="inline-flex rounded-lg border border-border/80 bg-muted/40 p-0.5"
-                    >
-                      <button
-                        type="button"
-                        role="radio"
-                        aria-checked={currentDevice === 'DESKTOP'}
-                        disabled={creatingVersionId === b.version.id}
-                        onClick={() =>
-                          setDeviceTypes((prev) => ({
-                            ...prev,
-                            [b.version.id]: 'DESKTOP',
-                          }))
-                        }
-                        className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
-                          currentDevice === 'DESKTOP'
-                            ? 'bg-background text-foreground shadow-xs'
-                            : 'text-muted-foreground hover:text-foreground'
-                        }`}
-                      >
-                        <Monitor className="size-3.5" />
-                        <span>Escritorio</span>
-                      </button>
-                      <button
-                        type="button"
-                        role="radio"
-                        aria-checked={currentDevice === 'MOBILE'}
-                        disabled={creatingVersionId === b.version.id}
-                        onClick={() =>
-                          setDeviceTypes((prev) => ({
-                            ...prev,
-                            [b.version.id]: 'MOBILE',
-                          }))
-                        }
-                        className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
-                          currentDevice === 'MOBILE'
-                            ? 'bg-background text-foreground shadow-xs'
-                            : 'text-muted-foreground hover:text-foreground'
-                        }`}
-                      >
-                        <Smartphone className="size-3.5" />
-                        <span>Móvil</span>
-                      </button>
-                    </div>
-                    {/* Accessible fallback select */}
-                    <select
-                      aria-label="Formato del boceto"
-                      className="sr-only"
-                      value={currentDevice}
-                      disabled={creatingVersionId === b.version.id}
-                      onChange={(e) =>
-                        setDeviceTypes((prev) => ({
-                          ...prev,
-                          [b.version.id]: e.target.value as MockupDeviceType,
-                        }))
-                      }
-                    >
-                      <option value="DESKTOP">Escritorio</option>
-                      <option value="MOBILE">Móvil</option>
-                    </select>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={creatingVersionId === b.version.id}
-                      onClick={() => setConfirming({ id: b.version.id, screens: screensCount })}
-                      className="border-primary/40 hover:bg-primary/5 hover:text-primary"
-                    >
-                      {creatingVersionId === b.version.id ? (
-                        <>
-                          <Loader2 aria-hidden="true" className="size-4 animate-spin" /> Generando…
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles aria-hidden="true" className="size-3.5 text-primary mr-1" />
-                          Generar boceto
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+          blueprintList
         )}
       </section>
 

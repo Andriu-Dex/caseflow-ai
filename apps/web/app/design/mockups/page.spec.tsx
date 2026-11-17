@@ -227,6 +227,7 @@ describe('MockupsPage refinement', () => {
         <MockupsPage />
       </TestProviders>,
     );
+    await user.click(await screen.findByRole('button', { name: 'Cambios para todo el boceto' }));
     const input = await screen.findByLabelText('Editar todas las pantallas');
     const submit = screen.getByRole('button', { name: /aplicar cambios/i });
     expect(submit).toBeDisabled();
@@ -383,6 +384,7 @@ describe('MockupsPage refinement suggestions and options', () => {
       </TestProviders>,
     );
 
+    await user.click(await screen.findByRole('button', { name: 'Cambios para todo el boceto' }));
     const input = await screen.findByLabelText('Editar todas las pantallas');
     expect(input).toHaveValue('');
 
@@ -423,6 +425,8 @@ describe('MockupsPage generation and badges', () => {
       </TestProviders>,
     );
 
+    // With a sketch already made, the generator is folded until opened.
+    fireEvent.click(await screen.findByRole('button', { name: 'Generar un boceto nuevo' }));
     expect(await screen.findByText('UI-001')).toBeInTheDocument();
     expect(screen.getByText('Plano Principal')).toBeInTheDocument();
     expect(screen.getByText('2 pantallas')).toBeInTheDocument();
@@ -544,6 +548,7 @@ describe('MockupsPage background generation (DEC-146)', () => {
         <MockupsPage />
       </TestProviders>,
     );
+    await user.click(await screen.findByRole('button', { name: 'Generar un boceto nuevo' }));
     await user.click(await screen.findByRole('button', { name: /Generar boceto/ }));
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText(/77 pantallas de escritorio/)).toBeInTheDocument();
@@ -601,6 +606,7 @@ describe('MockupsPage background generation (DEC-146)', () => {
         <MockupsPage />
       </TestProviders>,
     );
+    await user.click(await screen.findByRole('button', { name: 'Generar un boceto nuevo' }));
     await user.click(await screen.findByRole('button', { name: /Generar boceto/ }));
     await user.click(
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'Generar boceto' }),
