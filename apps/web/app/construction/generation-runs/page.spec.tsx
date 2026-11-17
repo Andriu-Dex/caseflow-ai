@@ -113,7 +113,7 @@ describe('GenerationRunsPage', () => {
     mocks.restore.mockResolvedValue({});
     render(<GenerationRunsPage />, { wrapper: TestProviders });
     // Only the visible run is counted and shown with its button.
-    expect(await screen.findByText(/Generaciones Realizadas \(1\)/)).toBeInTheDocument();
+    expect(await screen.findByText(/Generaciones \(1\)/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Archivar' }));
     const dialog = await screen.findByRole('dialog', { name: /Archivar generación de código/i });
     await userEvent.click(within(dialog).getByRole('button', { name: 'Archivar' }));
@@ -126,7 +126,7 @@ describe('GenerationRunsPage', () => {
   it('shows warnings, files and their traceability', async () => {
     render(<GenerationRunsPage />, { wrapper: TestProviders });
     expect(await screen.findByText(/Confirmar pedido/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Ver archivos' }));
+    await userEvent.click(screen.getByRole('tab', { name: /Código/ }));
     await userEvent.click(screen.getByRole('tab', { name: 'Todos los archivos' }));
     await userEvent.click(screen.getByRole('tab', { name: 'Todos los archivos' }));
     await userEvent.click(await screen.findByRole('button', { name: /main\.ts/ }));
@@ -169,7 +169,7 @@ describe('GenerationRunsPage', () => {
       review: { reviewedAt: new Date().toISOString(), reviewerName: 'Ana' },
     });
     render(<GenerationRunsPage />, { wrapper: TestProviders });
-    await userEvent.click(await screen.findByRole('button', { name: 'Ver archivos' }));
+    await userEvent.click(await screen.findByRole('tab', { name: /Código/ }));
     expect(await screen.findByText('Registro de producto')).toBeInTheDocument();
     expect(screen.getByText('Revisar primero: IA')).toBeInTheDocument();
     expect(screen.getByText(/0 añadidos, 1 cambiados, 0 eliminados/)).toBeInTheDocument();
@@ -230,10 +230,17 @@ describe('GenerationRunsPage', () => {
     expect(screen.queryByRole('button', { name: /Validar proyecto/ })).not.toBeInTheDocument();
   });
 
-  it('renders executive header banner', async () => {
+  it('keeps the run summary in view and the technical detail in tabs and a closed panel', async () => {
     render(<GenerationRunsPage />, { wrapper: TestProviders });
-    expect(await screen.findByText('Generación de Código Fuente y Sandbox')).toBeInTheDocument();
-    expect(screen.getAllByText(/Fase de Construcción · Paso 5 de 5/i).length).toBeGreaterThan(0);
+    // Validation is the next step of a generated run, so its tab opens first.
+    expect(await screen.findByRole('tab', { name: 'Validación y despliegue' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(screen.getByRole('tab', { name: /Código \(\d+ archivos\)/ })).toBeInTheDocument();
+    expect(screen.queryByText(/sin nuevas inferencias/)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Más información' }));
+    expect(await screen.findByText(/sin nuevas inferencias/)).toBeInTheDocument();
   });
 
   it('filters generated files with search input and copies code', async () => {
@@ -248,7 +255,7 @@ describe('GenerationRunsPage', () => {
 
     render(<GenerationRunsPage />, { wrapper: TestProviders });
 
-    await user.click(await screen.findByRole('button', { name: 'Ver archivos' }));
+    await user.click(await screen.findByRole('tab', { name: /Código/ }));
     await user.click(screen.getByRole('tab', { name: 'Todos los archivos' }));
     expect(await screen.findByRole('button', { name: /main\.ts/ })).toBeInTheDocument();
 
@@ -358,7 +365,7 @@ it('distinguishes a working copy from a validated official delivery', async () =
   });
   render(<GenerationRunsPage />, { wrapper: TestProviders });
   expect(await screen.findByText('Versión de trabajo · incompleta')).toBeInTheDocument();
-  await userEvent.click(screen.getByRole('button', { name: 'Ver archivos' }));
+  await userEvent.click(screen.getByRole('tab', { name: /Código/ }));
   await userEvent.click(screen.getByRole('tab', { name: 'Todos los archivos' }));
   expect(await screen.findByText('apps/api/src/main.ts')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /Validar en Docker/i })).not.toBeInTheDocument();
