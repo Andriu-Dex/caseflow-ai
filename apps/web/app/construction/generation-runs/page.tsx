@@ -53,6 +53,7 @@ import { ActiveGenerationProgress } from '../../../components/active-generation-
 import { RunFiles } from './run-files';
 import { RunValidation } from './run-validation';
 import { GenerationEstimate } from './generation-estimate';
+import { ReleaseNotes } from './release-notes';
 import { DeliveryPlanPanel, useDeliveryPlan } from './delivery-plan-panel';
 
 const STATUS_LABELS: Record<GenerationRunResponse['status'], string> = {
@@ -413,6 +414,9 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
               <TabsTrigger value="validation">Validación y despliegue</TabsTrigger>
             ) : null}
             <TabsTrigger value="code">Código ({run.fileCount} archivos)</TabsTrigger>
+            {run.status === 'GENERATED' ? (
+              <TabsTrigger value="notes">Notas de entrega</TabsTrigger>
+            ) : null}
           </TabsList>
           {run.status === 'GENERATED' ? (
             // Mounted while hidden: validation keeps polling and notifying from any tab.
@@ -423,6 +427,11 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
           <TabsContent value="code">
             <RunFiles projectId={projectId} run={run} />
           </TabsContent>
+          {run.status === 'GENERATED' ? (
+            <TabsContent value="notes">
+              <ReleaseNotes projectId={projectId} runId={run.id} />
+            </TabsContent>
+          ) : null}
         </Tabs>
       ) : null}
     </li>
