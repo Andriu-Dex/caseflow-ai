@@ -131,6 +131,13 @@ Prisma y PostgreSQL, con arquitectura de monolito modular.
    controles obligatorios aprobados; crear archivos o compilar no basta.
 7. Descarga el ZIP correspondiente y sigue su README en un entorno separado.
 
+### Entrega técnica
+
+Junto a **Descargar ZIP** de una construcción validada está **Entrega técnica**: un ZIP
+con el código y una carpeta `documentacion/` para quien vaya a mantener el sistema:
+instalación, tecnologías y versiones, API, arquitectura con sus diagramas, roles y
+cuentas de prueba (sin contraseñas) y notas de entrega.
+
 ### Notas de cada entrega
 
 En cada construcción, la pestaña **Notas de entrega** resume para quien la va a usar
