@@ -14,7 +14,7 @@ La validación comprueba que el proyecto se instala, compila, pasa sus pruebas y
 
 Cada caso de uso aprobado que el plan realiza produce sus criterios de aceptación **sin IA**:
 
-- **Flujos:** uno por el flujo principal y uno por cada flujo alternativo, con código estable `CA-<caso>-<n>`.
+- **Uno por caso de uso,** con código estable `CA-<caso>`. Sus flujos alternativos se nombran en el criterio. Todos comparten la misma comprobación ejecutable (punto 2), así que no se cuentan como pruebas aparte.
 - **Redacción:** «dado / cuando / entonces».
   - **Dado:** las precondiciones y que el actor primario inició sesión.
   - **Cuando:** los pasos del flujo, resumidos.
@@ -27,7 +27,7 @@ Cada criterio se comprueba con una prueba de extremo a extremo generada de forma
 
 - **Sesión:** se abre la sesión con el rol que corresponde al actor. Es el rol de la pantalla que coincide con el nombre del actor o, si no coincide ninguno, el primer rol autorizado de la pantalla.
 - **Pantallas:** se abre cada pantalla del plan que realiza el caso de uso, sin errores del navegador ni de la API.
-- **Acciones:** se comprueba que cada acción de esas pantallas está visible y habilitada para ese rol.
+- **Acciones:** se comprueba que está visible cada acción de esas pantallas que no depende de un registro concreto. La validación usa una base de datos vacía, así que las acciones de cada fila (editar, anular, ver detalle), la paginación y los enlaces a un registro no se exigen.
 
 Las pantallas de detalle (con un parámetro en la ruta) quedan fuera, igual que en las pruebas actuales, porque necesitan un registro concreto.
 
