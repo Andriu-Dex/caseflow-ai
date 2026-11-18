@@ -1,18 +1,15 @@
 import { Controller, Get, Param, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { implementationTraceResponseSchema } from '@caseflow-ai/contracts';
+import {
+  implementationTraceCodeSchema,
+  implementationTraceResponseSchema,
+} from '@caseflow-ai/contracts';
 import { JwtAuthGuard } from '../identity/jwt-auth.guard';
 import { ProjectMembershipGuard } from '../identity/project-membership.guard';
 import { uuidParamPipe } from '../common/uuid-param.pipe';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ApiErrorResponse, ApiUuidParam, ApiZodResponse } from '../openapi/zod-openapi';
-import { z } from 'zod';
 import { ImplementationTraceService } from './implementation-trace.service';
-
-const artifactCode = z
-  .string()
-  .trim()
-  .regex(/^[A-Z]{1,8}-\d{1,6}$/, 'Código no válido.');
 
 @ApiTags('construction')
 @UseGuards(JwtAuthGuard, ProjectMembershipGuard)
@@ -38,7 +35,7 @@ export class ImplementationTraceController {
   @ApiErrorResponse(404, 'No approved requirement or use case has that code.')
   trace(
     @Param('projectId', uuidParamPipe) projectId: string,
-    @Param('code', new ZodValidationPipe(artifactCode)) code: string,
+    @Param('code', new ZodValidationPipe(implementationTraceCodeSchema)) code: string,
   ) {
     return this.service.trace(projectId, code);
   }

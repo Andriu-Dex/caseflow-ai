@@ -2,6 +2,12 @@ import { z } from 'zod';
 
 // DEC-172: where a requirement or use case is implemented, and how its latest
 // construction left it.
+// A requirement or use case code, such as RF-001 or CU-003.
+export const implementationTraceCodeSchema = z
+  .string()
+  .trim()
+  .regex(/^[A-Z]{1,8}-\d{1,6}$/, 'Código no válido.');
+
 export const implementationTraceResponseSchema = z.object({
   code: z.string(),
   title: z.string(),
