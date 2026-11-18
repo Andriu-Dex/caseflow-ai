@@ -50,6 +50,7 @@ import type {
   UseCaseGenerationJob,
   ArchivedArtifactsResponse,
   ArtifactSearchResponse,
+  ImplementationTraceResponse,
   AcceptanceReportResponse,
   DeliveryPlanResponse,
   TargetTemplateListResponse,
@@ -1015,6 +1016,11 @@ export const api = {
     downloadUrl: (p: string, s: string, v: string, format: 'html' | 'pdf' | 'zip') =>
       `${BASE_URL}/projects/${p}/generated-project-snapshots/${s}/user-manual/versions/${v}/download?format=${format}`,
   },
+  // DEC-172: where a requirement or use case is implemented.
+  implementationTrace: (projectId: string, code: string) =>
+    get<ImplementationTraceResponse>(
+      `/projects/${projectId}/implementation-trace/${encodeURIComponent(code)}`,
+    ),
   // ADR-024: the plan of deliveries of an approved implementation plan version.
   deliveries: {
     get: (projectId: string, versionId: string) =>
