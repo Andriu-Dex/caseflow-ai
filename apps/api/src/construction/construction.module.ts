@@ -20,6 +20,8 @@ import { DeploymentsController } from './deployments.controller';
 import { DeliveriesController } from './deliveries.controller';
 import { AcceptanceController } from './acceptance.controller';
 import { AcceptanceService } from './acceptance.service';
+import { ImplementationTraceController } from './implementation-trace.controller';
+import { ImplementationTraceService } from './implementation-trace.service';
 import { DeliveriesService } from './deliveries.service';
 import { DeploymentsService } from './deployments.service';
 import {
@@ -84,6 +86,7 @@ import { UserManualsController } from '../user-manuals/user-manuals.controller';
     DeploymentsController,
     DeliveriesController,
     AcceptanceController,
+    ImplementationTraceController,
   ],
   providers: [
     { provide: RUNTIME_CAPTURE_PROVIDER, useFactory: () => new DockerRuntimeCaptureProvider() },
@@ -92,6 +95,7 @@ import { UserManualsController } from '../user-manuals/user-manuals.controller';
     DeploymentsService,
     DeliveriesService,
     AcceptanceService,
+    ImplementationTraceService,
     InterruptedJobsRecovery,
     UserManualsService,
     DependencyCatalogService,

@@ -203,6 +203,28 @@ export function acceptanceResults(
   return results;
 }
 
+// The interface blueprint screens a design baseline froze, with the use
+// cases each one realizes.
+export async function blueprintScreens(
+  prisma: PrismaService,
+  projectId: string,
+  designBaselineId: string,
+): Promise<{ localId: string; relatedUseCaseCodes?: string[] }[]> {
+  const entry = await prisma.designBaselineEntry.findFirst({
+    where: { baselineId: designBaselineId, role: 'UI_BLUEPRINT', baseline: { projectId } },
+    select: {
+      artifactVersion: { select: { structuredAnalysisDetail: { select: { content: true } } } },
+    },
+  });
+  return (
+    (
+      entry?.artifactVersion.structuredAnalysisDetail?.content as {
+        screens?: { localId: string; relatedUseCaseCodes?: string[] }[];
+      } | null
+    )?.screens ?? []
+  );
+}
+
 // The criteria of a run: its plan, the screens frozen in its design baseline
 // and the approved use cases they cite.
 export async function loadCriteria(
@@ -211,18 +233,7 @@ export async function loadCriteria(
   plan: Plan,
   designBaselineId: string,
 ): Promise<AcceptanceCriterion[]> {
-  const entry = await prisma.designBaselineEntry.findFirst({
-    where: { baselineId: designBaselineId, role: 'UI_BLUEPRINT', baseline: { projectId } },
-    select: {
-      artifactVersion: { select: { structuredAnalysisDetail: { select: { content: true } } } },
-    },
-  });
-  const screens =
-    (
-      entry?.artifactVersion.structuredAnalysisDetail?.content as {
-        screens?: { localId: string; relatedUseCaseCodes?: string[] }[];
-      } | null
-    )?.screens ?? [];
+  const screens = await blueprintScreens(prisma, projectId, designBaselineId);
   const codes = [...new Set(screens.flatMap((screen) => screen.relatedUseCaseCodes ?? []))];
   if (!codes.length) return [];
   const versions = await prisma.artifactVersion.findMany({

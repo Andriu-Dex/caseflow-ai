@@ -73,6 +73,7 @@ export * from './construction/design-baseline.contract';
 export * from './construction/deployment.contract';
 export * from './construction/delivery-plan.contract';
 export * from './construction/acceptance.contract';
+export * from './construction/implementation-trace.contract';
 export * from './construction/generation-run.contract';
 export * from './construction/construction-preview.contract';
 export * from './construction/sandbox-run.contract';

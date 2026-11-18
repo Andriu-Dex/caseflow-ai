@@ -236,4 +236,31 @@ describe('Acceptance tests per use case (ADR-025)', () => {
     });
     expect(latest.status).not.toBe('READY');
   });
+
+  it('traces a requirement and its use case to screens, actions, files and results (DEC-172)', async () => {
+    const trace = async (code: string) =>
+      (
+        await http()
+          .get(`/projects/${projectId}/implementation-trace/${code}`)
+          .set(auth())
+          .expect(200)
+      ).body;
+    const requirement = await trace(requirementCode);
+    expect(requirement).toMatchObject({
+      code: requirementCode,
+      type: 'REQUIREMENT',
+      useCases: [{ code: useCaseCode, name: 'Confirmar pedido' }],
+      run: { id: runId },
+      screens: [{ path: '/orders', screenName: 'Inicio' }],
+      actions: [{ key: 'POST /orders/:orderId/confirm', summary: 'Confirmar pedido' }],
+      acceptance: [{ key: `CA-${useCaseCode}`, result: { passed: false } }],
+    });
+    expect(requirement.files.map((file: { path: string }) => file.path)).toContain(
+      'apps/web/app/orders/page.tsx',
+    );
+    const useCase = await trace(useCaseCode);
+    expect(useCase).toMatchObject({ type: 'USE_CASE', screens: requirement.screens });
+    await http().get(`/projects/${projectId}/implementation-trace/RF-999`).set(auth()).expect(404);
+    await http().get(`/projects/${projectId}/implementation-trace/x`).set(auth()).expect(400);
+  });
 });
