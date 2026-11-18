@@ -1,4 +1,5 @@
 import { loadApprovedPlan } from './approved-plan';
+import { DeliveriesService } from './deliveries.service';
 import { deferredPages, deliveryScope, planForRun, scopePlan } from './delivery-scope';
 import { getProjectLanguage } from '../projects/project-language';
 import { implementationReadinessProblems } from './implementation-readiness';
@@ -88,6 +89,7 @@ export class GenerationRunsService {
     @Optional() private readonly currency?: StageCurrencyService,
     @Optional() private readonly frontendDesign?: FrontendDesignService,
     @Optional() private readonly demoData?: DemoDataService,
+    @Optional() private readonly deliveries?: DeliveriesService,
   ) {}
 
   async createWorkingCopy(projectId: string, userId: string, input: CreateWorkingCopyRequest) {
@@ -1088,27 +1090,16 @@ export class GenerationRunsService {
   }
 
   // ADR-024: the plan a run builds. A delivery is built from its scoped plan,
-  // only when every earlier delivery is approved and it is not approved yet.
+  // only on approved earlier deliveries, none of them affected.
   private async buildablePlan(projectId: string, versionId: string, deliveryId?: string) {
     const full = await this.approvedPlan(projectId, versionId);
     if (!deliveryId) return { plan: full };
     const scope = await deliveryScope(this.prisma, projectId, deliveryId);
     if (scope.implementationPlanVersionId !== versionId)
       throw new UnprocessableEntityException('La entrega pertenece a otro plan de implementación.');
-    const approved = new Set(
-      (
-        await this.prisma.deliveryApproval.findMany({
-          where: { deliveryId: { in: [...scope.earlierDeliveryIds, scope.deliveryId] } },
-          select: { deliveryId: true },
-        })
-      ).map((approval) => approval.deliveryId),
-    );
-    if (approved.has(scope.deliveryId))
-      throw new ConflictException('Esta entrega ya está aprobada.');
-    if (scope.earlierDeliveryIds.some((id) => !approved.has(id)))
-      throw new UnprocessableEntityException(
-        'Apruebe primero las entregas anteriores; cada entrega se construye sobre las aprobadas.',
-      );
+    if (!this.deliveries)
+      throw new ServiceUnavailableException('La construcción por entregas no está disponible.');
+    await this.deliveries.assertCanBuild(projectId, versionId, deliveryId);
     return { plan: scopePlan(full, scope.modules) };
   }
 

@@ -2,6 +2,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { AIOrchestrator, FakeAIProvider } from '@caseflow-ai/ai';
 import { GenerationRunsService } from '../../src/construction/generation-runs.service';
+import { SandboxRunsService } from '../../src/construction/sandbox-runs.service';
 import { createTestContext, createWorkspaceWithOwner, type TestContext } from './support/test-app';
 import { approvedDesignBaseline } from './support/construction-fixtures';
 
@@ -120,11 +121,13 @@ describe('Construction by deliveries (ADR-024)', () => {
     const created = await http().post(path(projectId, planVersionId)).set(auth()).send({});
     expect(created.status).toBe(201);
     expect(modulesOf(created.body)).toEqual([['reports'], ['catalog'], ['sales']]);
+    // Named in Spanish from each module's description, not its internal name.
     expect(created.body.deliveries.map((d: { name: string }) => d.name)).toEqual([
-      'Reports',
-      'Catalog',
-      'Sales',
+      'Reportes',
+      'Catálogo',
+      'Ventas',
     ]);
+    expect(created.body.deliveries[0].modules[0].name).toBe('Reportes');
     expect(created.body.deliveries.every((d: { status: string }) => d.status === 'PENDING')).toBe(
       true,
     );
@@ -240,10 +243,35 @@ describe('Construction by deliveries (ADR-024)', () => {
     let version: string;
     let deliveries: { id: string; modules: { localId: string }[] }[];
     const runs = () => ctx.app.get(GenerationRunsService);
-    const approve = (deliveryId: string, generationRunId: string) =>
-      ctx.prisma.deliveryApproval.create({
-        data: { deliveryId, generationRunId, approvedByUserId: ctx.userId },
+    const validate = async (runId: string) => {
+      await http()
+        .post(`/projects/${shop}/generation-runs/${runId}/sandbox-runs`)
+        .set(auth())
+        .expect(202);
+      // The queue is a no-op in tests: drain every attempt the service enqueues.
+      for (;;) {
+        const next = await ctx.prisma.sandboxRun.findFirst({
+          where: { generationRunId: runId, status: 'QUEUED' },
+        });
+        if (!next) break;
+        await ctx.app.get(SandboxRunsService).runJob(shop, next.id);
+      }
+      const last = await ctx.prisma.sandboxRun.findFirstOrThrow({
+        where: { generationRunId: runId },
+        orderBy: { createdAt: 'desc' },
       });
+      expect(last.status).toBe('READY');
+    };
+    const approval = (deliveryId: string, generationRunId: string) =>
+      http()
+        .post(`${path(shop, version)}/deliveries/${deliveryId}/approval`)
+        .set(auth())
+        .send({ generationRunId });
+    const approve = async (deliveryId: string, generationRunId: string) => {
+      await validate(generationRunId);
+      const approved = await approval(deliveryId, generationRunId).expect(201);
+      return approved.body.deliveries.find((d: { id: string }) => d.id === deliveryId);
+    };
     const build = async (deliveryId?: string) => {
       const run = await runs().start(shop, ctx.userId, version, deliveryId);
       await runs().runJob(shop, run.id);
@@ -272,10 +300,21 @@ describe('Construction by deliveries (ADR-024)', () => {
       expect((await fileOf(first.id, 'apps/web/app/orders/page.tsx'))?.content).toContain(
         'Esta sección llegará en una próxima entrega.',
       );
-      await approve(reports!.id, first.id);
+      // Only a validated run is approved.
+      expect((await approval(reports!.id, first.id)).status).toBe(422);
+      expect(await approve(reports!.id, first.id)).toMatchObject({
+        status: 'APPROVED',
+        approval: { generationRunId: first.id, approvedByUserId: ctx.userId },
+      });
+      expect((await approval(reports!.id, first.id)).status).toBe(409);
       await expect(runs().start(shop, ctx.userId, version, reports!.id)).rejects.toThrow(
         'Esta entrega ya está aprobada.',
       );
+      expect(
+        await ctx.prisma.auditEvent.count({
+          where: { projectId: shop, action: 'DELIVERY_APPROVED', entityId: reports!.id },
+        }),
+      ).toBe(1);
 
       const ai = vi.spyOn(ctx.app.get(AIOrchestrator), 'generateStructured');
       try {
@@ -302,6 +341,72 @@ describe('Construction by deliveries (ADR-024)', () => {
       } finally {
         ai.mockRestore();
       }
+    });
+
+    it('marks an approved delivery affected when a later run changes its files', async () => {
+      const [, catalog, sales] = deliveries;
+      const approvedRun = (
+        await ctx.prisma.deliveryApproval.findFirstOrThrow({ where: { deliveryId: catalog!.id } })
+      ).generationRunId;
+      // A file of the catalog's action and of nothing else.
+      const files = await ctx.prisma.generatedFile.findMany({
+        where: { generationRunId: approvedRun },
+        include: { traceLinks: true },
+      });
+      const own = files.find((file) => {
+        const elements = file.traceLinks.map((link) => link.planElement);
+        return (
+          elements.includes('endpoint:POST /orders/:orderId/confirm') &&
+          !elements.some((element) => element.startsWith('route:'))
+        );
+      })!;
+      expect(own).toBeDefined();
+      // A later run of the sales delivery whose copy of that file changed.
+      const approvedRow = await ctx.prisma.generationRun.findUniqueOrThrow({
+        where: { id: approvedRun },
+      });
+      const later = await ctx.prisma.generationRun.create({
+        data: {
+          projectId: shop,
+          implementationPlanVersionId: version,
+          designBaselineId: approvedRow.designBaselineId,
+          targetTemplateIdentifier: approvedRow.targetTemplateIdentifier,
+          targetTemplateVersion: approvedRow.targetTemplateVersion,
+          createdByUserId: ctx.userId,
+          status: 'GENERATING',
+          deliveryId: sales!.id,
+        },
+      });
+      const changed = await ctx.prisma.generatedFile.create({
+        data: {
+          generationRunId: later.id,
+          path: own.path,
+          content: `${own.content}\n// changed`,
+          sha256: 'f'.repeat(64),
+          origin: own.origin,
+          kind: own.kind,
+        },
+      });
+      await ctx.prisma.codeTraceLink.createMany({
+        data: own.traceLinks.map((link) => ({
+          generatedFileId: changed.id,
+          sourceArtifactVersionId: link.sourceArtifactVersionId,
+          planElement: link.planElement,
+          linkType: link.linkType,
+        })),
+      });
+      await ctx.prisma.generationRun.update({
+        where: { id: later.id },
+        data: { status: 'GENERATED', finishedAt: new Date() },
+      });
+      const plan = (await http().get(path(shop, version)).set(auth()).expect(200)).body;
+      expect(plan.deliveries.map((d: { status: string }) => d.status)).toEqual([
+        'APPROVED',
+        'AFFECTED',
+        'APPROVED',
+      ]);
+      // It is approved again only with a validated run that includes it.
+      expect((await approval(catalog!.id, later.id)).status).toBe(422);
     });
 
     it('checks the delivery belongs to the plan', async () => {

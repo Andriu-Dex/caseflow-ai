@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Put, Request, UseGuards } from '@ne
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { z } from 'zod';
 import {
+  approveDeliveryRequestSchema,
   createDeliveryPlanRequestSchema,
   deliveryPlanResponseSchema,
   saveDeliveryPlanRequestSchema,
@@ -77,5 +78,31 @@ export class DeliveriesController {
     @Request() req: AuthenticatedRequest,
   ) {
     return this.service.save(projectId, req.user.id, versionId, body);
+  }
+
+  @Post('deliveries/:deliveryId/approval')
+  @ApiOperation({
+    operationId: 'approveDelivery',
+    summary: 'Approve a validated run of a delivery, after the earlier ones',
+  })
+  @ApiUuidParam('projectId', 'Project identifier.')
+  @ApiUuidParam('versionId', 'Approved implementation plan version.')
+  @ApiUuidParam('deliveryId', 'Delivery to approve.')
+  @ApiZodBody(approveDeliveryRequestSchema)
+  @ApiZodResponse(201, 'The plan of deliveries.', deliveryPlanResponseSchema)
+  @ApiErrorResponse(409, 'The delivery is already approved.')
+  @ApiErrorResponse(
+    422,
+    'The run is not validated, does not build it, or an earlier one is pending.',
+  )
+  approve(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('versionId', uuidParamPipe) versionId: string,
+    @Param('deliveryId', uuidParamPipe) deliveryId: string,
+    @Body(new ZodValidationPipe(approveDeliveryRequestSchema))
+    body: z.output<typeof approveDeliveryRequestSchema>,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.service.approve(projectId, req.user.id, versionId, deliveryId, body);
   }
 }

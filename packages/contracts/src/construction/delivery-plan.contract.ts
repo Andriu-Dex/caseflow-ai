@@ -21,6 +21,13 @@ export type SaveDeliveryPlanRequest = z.infer<typeof saveDeliveryPlanRequestSche
 export const createDeliveryPlanRequestSchema = saveDeliveryPlanRequestSchema.partial().strict();
 export type CreateDeliveryPlanRequest = z.infer<typeof createDeliveryPlanRequestSchema>;
 
+// A person approves a validated run of the delivery (or, for an affected one,
+// of a later delivery that includes it).
+export const approveDeliveryRequestSchema = z
+  .object({ generationRunId: z.uuid(), note: z.string().trim().max(1000).optional() })
+  .strict();
+export type ApproveDeliveryRequest = z.infer<typeof approveDeliveryRequestSchema>;
+
 export const deliveryResponseSchema = z.object({
   id: z.uuid(),
   position: z.number().int().min(0),
@@ -29,6 +36,15 @@ export const deliveryResponseSchema = z.object({
   // Generated or approved: its modules and place no longer change.
   locked: z.boolean(),
   modules: z.array(z.object({ localId: z.string(), name: z.string(), description: z.string() })),
+  // The latest approval: the run it froze, who and when.
+  approval: z
+    .object({
+      generationRunId: z.uuid(),
+      approvedByUserId: z.uuid(),
+      approvedAt: z.iso.datetime(),
+      note: z.string().nullable(),
+    })
+    .nullable(),
 });
 export type DeliveryResponse = z.infer<typeof deliveryResponseSchema>;
 

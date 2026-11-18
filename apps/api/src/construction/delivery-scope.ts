@@ -13,12 +13,14 @@ type Plan = ImplementationPlanContent;
 // modules. Route actions are kept as they are: a screen's reuse key depends
 // on its generated page, so dropping a link would regenerate an approved
 // screen when the linked one is delivered.
+// Validation reads the stored plan as it was saved, where lists left empty
+// may be absent, so each one is read defensively.
 export function scopePlan(plan: Plan, modules: ReadonlySet<string>): Plan {
   return {
     ...plan,
-    customEndpoints: plan.customEndpoints.filter((e) => modules.has(e.moduleLocalId)),
-    routes: plan.routes.filter((route) => modules.has(route.moduleLocalId)),
-    tests: plan.tests.filter((test) => modules.has(test.moduleLocalId)),
+    customEndpoints: (plan.customEndpoints ?? []).filter((e) => modules.has(e.moduleLocalId)),
+    routes: (plan.routes ?? []).filter((route) => modules.has(route.moduleLocalId)),
+    tests: (plan.tests ?? []).filter((test) => modules.has(test.moduleLocalId)),
   };
 }
 
