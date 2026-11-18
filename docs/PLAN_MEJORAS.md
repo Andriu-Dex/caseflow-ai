@@ -136,6 +136,17 @@ Mejoras de experiencia añadidas tras revisar las pantallas con datos reales:
 
 Comprobar el flujo genérico completo con IA en un proyecto pequeño, ya con las fases 3, 4, 5 y 7 terminadas.
 
+## Correcciones previas a la fase 10
+
+Acordadas el 2026-11-17. Se hacen antes de la fase 10 porque corrigen lo que el cliente ya vio.
+
+| ID  | Tarea                                                                                                                                                                                                                                                                                                                                                                                  | Criterio de aceptación                                                                                        |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| C.1 | Tarjeta «Tecnologías del proyecto» en el plan de generación: frontend, backend, base de datos y ORM, autenticación, infraestructura (Docker y túnel) y pruebas, con versión y una línea de para qué sirve cada una. Se calcula sin IA a partir de la plantilla y su catálogo de dependencias aprobadas; también se usará en la entrega técnica (10.6).                                 | Lo mostrado coincide con las dependencias que la plantilla genera; prueba de componente.                      |
+| C.2 | Revisión de todos los diagramas generados (casos de uso, entidad-relación, clases, navegación, arquitectura de software, arquitectura de sistema, contenedores y plano de interfaz) con los datos de RestGuestMateos: elementos que no corresponden al tipo de diagrama (por ejemplo, tablas o pantallas en una arquitectura), tarjetas con exceso de detalle y errores de relaciones. | Informe con cada hallazgo y su «antes / después» propuesto, aprobado por la persona responsable antes de C.3. |
+| C.3 | Reglas por tipo de diagrama: qué elementos admite cada uno y cuánto detalle lleva cada tarjeta. Se aplican en tres sitios: las instrucciones genéricas de generación, una comprobación determinista que avisa o rechaza lo que no corresponde y el dibujo, que muestra la vista esencial con «Ver detalle completo» para el resto.                                                     | Pruebas por tipo de diagrama con casos que deben rechazarse; ningún detalle se pierde, solo se pliega.        |
+| C.4 | Corrección de los diagramas de RestGuestMateos según el informe de C.2, a mano (sin generaciones con IA) y aprobados de nuevo.                                                                                                                                                                                                                                                         | Todos los diagramas pasan la comprobación de C.3; las etapas de preparación siguen completas y vigentes.      |
+
 ## Fase 10. Mejoras de construcción aceptadas
 
 Aceptadas el 2026-11-17. Cada mejora es genérica: lo propio de un proyecto va en sus datos, nunca en el núcleo.
@@ -161,6 +172,7 @@ Aceptadas el 2026-11-17. Cada mejora es genérica: lo propio de un proyecto va e
 
 ### Orden
 
+0. **Correcciones previas** (C.1 a C.4).
 1. **10.1 Dos modos de construcción.** Es la base: introduce la «entrega», que usan 10.2, 10.3, 10.4 y 10.6. Partes: modelo de entregas y orden propuesto; generación limitada a una entrega reutilizando lo aprobado; validación con regresión; aprobación y congelado; selector de modo en la pantalla de construcción.
 2. **10.2 Pruebas de aceptación.** Se conectan como condición de aprobación de cada entrega y como resultado por requisito.
 3. **Fase 9 (proyecto del cine).** Primera prueba real con IA del modo por módulos y de las pruebas de aceptación, en un proyecto pequeño. Lo que falle aquí se corrige antes de seguir.
@@ -170,6 +182,6 @@ Aceptadas el 2026-11-17. Cada mejora es genérica: lo propio de un proyecto va e
 
 ## Orden y dependencias
 
-1 → 2 → (3 y 4 en paralelo) → 5 → 6 → 7 → 9. La fase 8 se toma por partes cuando haya hueco. La fase 10 sigue su propio orden (arriba), con la fase 9 entre 10.2 y 10.3.
+1 → 2 → (3 y 4 en paralelo) → 5 → 6 → 7 → 9. La fase 8 se toma por partes cuando haya hueco. Después vienen las correcciones previas (C.1 a C.4) y la fase 10 en su propio orden (arriba), con la fase 9 entre 10.2 y 10.3.
 
 Dentro de la fase 6, las tareas 6.1 y 6.2 van primero. Después A (6.3, 6.4, 6.10) y B (6.5 a 6.9 y 6.11) avanzan en paralelo.
