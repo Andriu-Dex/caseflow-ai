@@ -131,6 +131,16 @@ Prisma y PostgreSQL, con arquitectura de monolito modular.
    controles obligatorios aprobados; crear archivos o compilar no basta.
 7. Descarga el ZIP correspondiente y sigue su README en un entorno separado.
 
+### Pruebas de aceptación
+
+Cada caso de uso aprobado que tiene pantallas en el plan produce un criterio de
+aceptación «dado / cuando / entonces». Al validar una construcción, CASEFlow comprueba
+que el actor llega a esas pantallas sin errores y encuentra sus acciones. En la
+validación verás cuántos requisitos funcionales quedan **cumplidos**, **fallidos**,
+**sin ejecutar** o **sin criterio**, y el detalle de cada criterio. La comprobación no
+completa formularios ni ejecuta la operación de principio a fin; revisa en la
+demostración lo que dependa de datos concretos.
+
 ### Construir por entregas
 
 En **Generación de código** puedes elegir entre construir **todo de una vez** o
