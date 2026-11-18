@@ -1,6 +1,6 @@
 # Plan de mejoras tras la reunión con el cliente
 
-Estado: planificado, sin ejecutar. Fecha: 2026-11-16.
+Estado: fases 1 a 8 hechas (la 8.5 la sustituye la 10.1); fases 9 y 10 pendientes. Creado: 2026-11-16. Actualizado: 2026-11-17.
 
 ## Decisiones tomadas
 
@@ -121,7 +121,7 @@ Cada módulo se cierra con sus pruebas, una revisión del otro responsable y una
 2. Hecho. Panel de la demostración desplegada: cuentas con nombre y rol, copiar, acceso directo y estado de los contenedores.
 3. Hecho. Indicador de progreso de la planificación con el motivo de cada bloqueo: «Siguiente paso» en Inicio, con sus motivos pendientes y el estado de la construcción y la demostración.
 4. Hecho. Enlace de despliegue estable con un túnel con nombre de Cloudflare (requiere cuenta): token y dirección fija en el panel de despliegue.
-5. Aplazado. Asistente para dividir un proyecto grande en entregas cuando supera la capacidad de la IA. La estimación previa (DEC-168) ya muestra el costo antes de generar, y la implementación manual (ADR-023) cubre los proyectos que no caben; se retomará si un proyecto real lo necesita.
+5. Sustituido por la mejora 10.1 (construcción por módulos). Asistente para dividir un proyecto grande en entregas cuando supera la capacidad de la IA. La estimación previa (DEC-168) ya muestra el costo antes de generar, y la implementación manual (ADR-023) cubre los proyectos que no caben; se retomará si un proyecto real lo necesita.
 
 Mejoras de experiencia añadidas tras revisar las pantallas con datos reales:
 
@@ -136,8 +136,40 @@ Mejoras de experiencia añadidas tras revisar las pantallas con datos reales:
 
 Comprobar el flujo genérico completo con IA en un proyecto pequeño, ya con las fases 3, 4, 5 y 7 terminadas.
 
+## Fase 10. Mejoras de construcción aceptadas
+
+Aceptadas el 2026-11-17. Cada mejora es genérica: lo propio de un proyecto va en sus datos, nunca en el núcleo.
+
+| #    | Mejora                                | Qué hace                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Depende de       |
+| ---- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| 10.1 | Dos modos de construcción             | **Todo de una vez** (el actual) o **por módulos**. Por módulos: la entrega 0 es la base (inicio de sesión, roles, estructura con el menú y el esquema completo de la base de datos); después, un módulo funcional por entrega con sus pantallas, lógica, datos y pruebas. Cada entrega se estima, genera, valida (también con las pruebas de las entregas anteriores) y aprueba; lo aprobado queda fijo y se reutiliza. CASEFlow propone el orden por dependencias y el usuario puede cambiarlo. Se puede pasar de un modo a otro. | —                |
+| 10.2 | Pruebas de aceptación por caso de uso | Criterios «dado / cuando / entonces» a partir de los flujos de cada caso de uso, aprobados por el usuario, ejecutados en la validación, con resultado por requisito. En el modo por módulos son la condición para aprobar una entrega.                                                                                                                                                                                                                                                                                             | 10.1             |
+| 10.3 | «¿Dónde está implementado?»           | Desde un requisito o caso de uso: pantallas, endpoints, archivos generados y pruebas que lo cubren, con el resultado de la última validación.                                                                                                                                                                                                                                                                                                                                                                                      | 10.1, 10.2       |
+| 10.4 | Notas de cada entrega                 | Resumen en lenguaje sencillo al aprobar una entrega o una construcción completa: qué se puede hacer, qué requisitos se cumplen, con qué cuentas probarlo y qué cambió desde la anterior.                                                                                                                                                                                                                                                                                                                                           | 10.1, 10.2, 10.3 |
+| 10.5 | Prototipo navegable                   | Bocetos aprobados unidos por el árbol de navegación, recorribles con clics y por rol antes de construir.                                                                                                                                                                                                                                                                                                                                                                                                                           | —                |
+| 10.6 | Entrega técnica del proyecto          | Paquete para quien mantendrá el sistema: código, guía de instalación y despliegue, documentación de la API, diagrama de arquitectura, cuentas de ejemplo y las notas de entrega.                                                                                                                                                                                                                                                                                                                                                   | 10.4             |
+| 10.7 | Partir de un proyecto parecido        | Biblioteca de puntos de partida (por ejemplo, inicio de sesión con roles, auditoría, inventario, reservas) con requisitos, casos de uso y entidades que el usuario adapta. Se pueden crear desde un proyecto propio («Guardar como punto de partida»); el contenido son datos, no código del núcleo.                                                                                                                                                                                                                               | —                |
+
+### Cómo se trabaja cada mejora
+
+1. **Decisión:** DEC en la especificación, y ADR si toca una regla de integridad (10.1 y 10.2 cambian qué se aprueba y cuándo una corrida está lista).
+2. **Datos:** migración de Prisma; nunca `db push` ni reescribir migraciones aplicadas.
+3. **API:** contrato en `@caseflow-ai/contracts`, OpenAPI, autorización por pertenencia al proyecto; el trabajo largo, en trabajos idempotentes.
+4. **Web:** textos en español, avisos con sonner, sin emojis; accesible con teclado.
+5. **Pruebas:** unitarias, de la web, de integración y E2E cuando cambia el flujo. Lo que usa IA se prueba con el proveedor simulado; antes de gastar cuota real se presenta la estimación.
+6. **Cierre:** lint, formato, tipos, pruebas y build; documentación actualizada; un commit por parte coherente en una rama propia.
+
+### Orden
+
+1. **10.1 Dos modos de construcción.** Es la base: introduce la «entrega», que usan 10.2, 10.3, 10.4 y 10.6. Partes: modelo de entregas y orden propuesto; generación limitada a una entrega reutilizando lo aprobado; validación con regresión; aprobación y congelado; selector de modo en la pantalla de construcción.
+2. **10.2 Pruebas de aceptación.** Se conectan como condición de aprobación de cada entrega y como resultado por requisito.
+3. **Fase 9 (proyecto del cine).** Primera prueba real con IA del modo por módulos y de las pruebas de aceptación, en un proyecto pequeño. Lo que falle aquí se corrige antes de seguir.
+4. **10.3 «¿Dónde está implementado?».** Usa los archivos de cada entrega y los resultados de 10.2.
+5. **10.4 Notas de cada entrega** y después **10.6 Entrega técnica**, que las incluye.
+6. **10.5 Prototipo navegable** y **10.7 Partir de un proyecto parecido.** No dependen de las demás: pertenecen a la planificación y pueden adelantarse si hace falta para una presentación.
+
 ## Orden y dependencias
 
-1 → 2 → (3 y 4 en paralelo) → 5 → 6 → 7 → 9. La fase 8 se toma por partes cuando haya hueco.
+1 → 2 → (3 y 4 en paralelo) → 5 → 6 → 7 → 9. La fase 8 se toma por partes cuando haya hueco. La fase 10 sigue su propio orden (arriba), con la fase 9 entre 10.2 y 10.3.
 
 Dentro de la fase 6, las tareas 6.1 y 6.2 van primero. Después A (6.3, 6.4, 6.10) y B (6.5 a 6.9 y 6.11) avanzan en paralelo.
