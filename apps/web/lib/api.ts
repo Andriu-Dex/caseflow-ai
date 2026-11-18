@@ -50,6 +50,7 @@ import type {
   UseCaseGenerationJob,
   ArchivedArtifactsResponse,
   ArtifactSearchResponse,
+  DeliveryPlanResponse,
   TargetTemplateListResponse,
   RestoreArtifactResponse,
   DataModelGenerationJob,
@@ -349,6 +350,8 @@ const post = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
 const patch = <T>(path: string, body: unknown) =>
   request<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
+const put = <T>(path: string, body: unknown) =>
+  request<T>(path, { method: 'PUT', body: JSON.stringify(body) });
 const del = <T>(path: string, body?: unknown) =>
   request<T>(path, {
     method: 'DELETE',
@@ -1011,14 +1014,39 @@ export const api = {
     downloadUrl: (p: string, s: string, v: string, format: 'html' | 'pdf' | 'zip') =>
       `${BASE_URL}/projects/${p}/generated-project-snapshots/${s}/user-manual/versions/${v}/download?format=${format}`,
   },
+  // ADR-024: the plan of deliveries of an approved implementation plan version.
+  deliveries: {
+    get: (projectId: string, versionId: string) =>
+      get<DeliveryPlanResponse>(
+        `/projects/${projectId}/implementation-plans/${versionId}/delivery-plan`,
+      ),
+    create: (projectId: string, versionId: string) =>
+      post<DeliveryPlanResponse>(
+        `/projects/${projectId}/implementation-plans/${versionId}/delivery-plan`,
+        {},
+      ),
+    save: (projectId: string, versionId: string, deliveries: { modules: string[] }[]) =>
+      put<DeliveryPlanResponse>(
+        `/projects/${projectId}/implementation-plans/${versionId}/delivery-plan`,
+        { deliveries },
+      ),
+    approve: (projectId: string, versionId: string, deliveryId: string, generationRunId: string) =>
+      post<DeliveryPlanResponse>(
+        `/projects/${projectId}/implementation-plans/${versionId}/delivery-plan/deliveries/${deliveryId}/approval`,
+        { generationRunId },
+      ),
+  },
   generationRuns: {
     preview: (projectId: string, implementationPlanVersionId: string) =>
       get<ConstructionPreviewResponse>(
         `/projects/${projectId}/generation-runs/preview/${implementationPlanVersionId}`,
       ),
-    estimate: (projectId: string, implementationPlanVersionId: string) =>
+    // With a delivery, what building that delivery would ask the AI for (ADR-024).
+    estimate: (projectId: string, implementationPlanVersionId: string, deliveryId?: string) =>
       get<GenerationEstimateResponse>(
-        `/projects/${projectId}/generation-runs/estimate/${implementationPlanVersionId}`,
+        `/projects/${projectId}/generation-runs/estimate/${implementationPlanVersionId}${
+          deliveryId ? `?deliveryId=${deliveryId}` : ''
+        }`,
       ),
     manual: (projectId: string, implementationPlanVersionId: string, file: File) => {
       const form = new FormData();
@@ -1037,9 +1065,10 @@ export const api = {
       }),
     list: (projectId: string) =>
       get<{ items: GenerationRunResponse[] }>(`/projects/${projectId}/generation-runs`),
-    start: (projectId: string, implementationPlanVersionId: string) =>
+    start: (projectId: string, implementationPlanVersionId: string, deliveryId?: string) =>
       post<GenerationRunResponse>(`/projects/${projectId}/generation-runs`, {
         implementationPlanVersionId,
+        ...(deliveryId ? { deliveryId } : {}),
       }),
     archive: (projectId: string, runId: string) =>
       post<GenerationRunResponse>(`/projects/${projectId}/generation-runs/${runId}/archive`),

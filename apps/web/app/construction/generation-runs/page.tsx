@@ -27,11 +27,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import {
-  type GenerationEstimateResponse,
-  type GenerationRunResponse,
-  type ImplementationPlanContent,
-} from '@caseflow-ai/contracts';
+import { type GenerationRunResponse, type ImplementationPlanContent } from '@caseflow-ai/contracts';
 import {
   Accordion,
   AccordionContent,
@@ -56,6 +52,8 @@ import { EmptyState } from '../../../components/artifact-actions';
 import { ActiveGenerationProgress } from '../../../components/active-generation-progress';
 import { RunFiles } from './run-files';
 import { RunValidation } from './run-validation';
+import { GenerationEstimate } from './generation-estimate';
+import { DeliveryPlanPanel, useDeliveryPlan } from './delivery-plan-panel';
 
 const STATUS_LABELS: Record<GenerationRunResponse['status'], string> = {
   QUEUED: 'En cola',
@@ -227,11 +225,18 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
       : undefined;
   };
   const hasActiveRun = (runs.data?.items ?? []).some(isActive);
+  // ADR-024: all at once or in deliveries; a plan that already has a plan of
+  // deliveries opens in deliveries.
+  const deliveryPlan = useDeliveryPlan(projectId, chosenPlan);
+  const [modeChoice, setMode] = useState<'all' | 'deliveries'>();
+  const mode = modeChoice ?? (deliveryPlan.data ? 'deliveries' : 'all');
+  const deliveryOf = (run: GenerationRunResponse) =>
+    deliveryPlan.data?.deliveries.find((delivery) => delivery.id === run.deliveryId);
   // DEC-168: what generating would ask the AI for, before the person decides.
   const estimate = useQuery({
     queryKey: ['generation-estimate', projectId, chosenPlan, runs.data?.items.length],
     queryFn: () => api.generationRuns.estimate(projectId, chosenPlan!),
-    enabled: Boolean(chosenPlan),
+    enabled: Boolean(chosenPlan) && mode === 'all',
     retry: false,
   });
   // Archived runs leave the list but stay as history, and can be restored.
@@ -373,6 +378,11 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
               Manual
             </span>
           ) : null}
+          {run.deliveryId ? (
+            <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+              {deliveryOf(run) ? `Entrega ${deliveryOf(run)!.position}` : 'Entrega'}
+            </span>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
           <span className="text-xs text-muted-foreground font-mono">
@@ -459,65 +469,83 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
                   </select>
                 </label>
 
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    className={`text-xs gap-1.5 font-semibold h-8 shrink-0 transition-all ${
-                      hasActiveRun
-                        ? 'border border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300 hover:bg-amber-500/10 cursor-not-allowed opacity-90'
-                        : ''
-                    }`}
-                    disabled={submitting || !chosenPlan || hasActiveRun}
-                    onClick={() => start()}
-                  >
-                    {submitting ? (
-                      <>
-                        <Sparkles
-                          className="size-3.5 animate-spin text-primary"
-                          aria-hidden="true"
-                        />
-                        Iniciando…
-                      </>
-                    ) : hasActiveRun ? (
-                      <>
-                        <Clock
-                          className="size-3.5 animate-pulse text-amber-600 dark:text-amber-400"
-                          aria-hidden="true"
-                        />
-                        Generación en curso…
-                      </>
-                    ) : (
-                      <>
-                        <Play className="size-3.5" aria-hidden="true" />
-                        Generar proyecto
-                      </>
-                    )}
-                  </Button>
-                  {currentRun?.origin !== 'MANUAL' ? (
+                {mode === 'all' ? (
+                  <div className="flex flex-wrap gap-2">
                     <Button
                       type="button"
-                      variant="outline"
-                      className="h-8 text-xs"
-                      disabled={!chosenPlan || hasActiveRun || submitting}
-                      onClick={() => start(true)}
+                      className={`text-xs gap-1.5 font-semibold h-8 shrink-0 transition-all ${
+                        hasActiveRun
+                          ? 'border border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300 hover:bg-amber-500/10 cursor-not-allowed opacity-90'
+                          : ''
+                      }`}
+                      disabled={submitting || !chosenPlan || hasActiveRun}
+                      onClick={() => start()}
                     >
-                      Preparar versión de trabajo
+                      {submitting ? (
+                        <>
+                          <Sparkles
+                            className="size-3.5 animate-spin text-primary"
+                            aria-hidden="true"
+                          />
+                          Iniciando…
+                        </>
+                      ) : hasActiveRun ? (
+                        <>
+                          <Clock
+                            className="size-3.5 animate-pulse text-amber-600 dark:text-amber-400"
+                            aria-hidden="true"
+                          />
+                          Generación en curso…
+                        </>
+                      ) : (
+                        <>
+                          <Play className="size-3.5" aria-hidden="true" />
+                          Generar proyecto
+                        </>
+                      )}
                     </Button>
-                  ) : null}
-                  <ManualImplementationDialog
-                    projectId={projectId}
-                    implementationPlanVersionId={chosenPlan}
-                    disabled={submitting || hasActiveRun}
-                    onImported={async () => {
-                      await queryClient.invalidateQueries({
-                        queryKey: ['generation-runs', projectId],
-                      });
-                    }}
-                  />
-                </div>
+                    {currentRun?.origin !== 'MANUAL' ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-8 text-xs"
+                        disabled={!chosenPlan || hasActiveRun || submitting}
+                        onClick={() => start(true)}
+                      >
+                        Preparar versión de trabajo
+                      </Button>
+                    ) : null}
+                    <ManualImplementationDialog
+                      projectId={projectId}
+                      implementationPlanVersionId={chosenPlan}
+                      disabled={submitting || hasActiveRun}
+                      onImported={async () => {
+                        await queryClient.invalidateQueries({
+                          queryKey: ['generation-runs', projectId],
+                        });
+                      }}
+                    />
+                  </div>
+                ) : null}
               </div>
 
-              {estimate.data ? <GenerationEstimate estimate={estimate.data} /> : null}
+              <Tabs value={mode} onValueChange={(value) => setMode(value as 'all' | 'deliveries')}>
+                <TabsList aria-label="Modo de construcción">
+                  <TabsTrigger value="all">Todo de una vez</TabsTrigger>
+                  <TabsTrigger value="deliveries">Por entregas</TabsTrigger>
+                </TabsList>
+              </Tabs>
+              {mode === 'deliveries' && chosenPlan ? (
+                <DeliveryPlanPanel
+                  projectId={projectId}
+                  planVersionId={chosenPlan}
+                  runs={runs.data?.items ?? []}
+                  hasActiveRun={hasActiveRun}
+                />
+              ) : null}
+              {mode === 'all' && estimate.data ? (
+                <GenerationEstimate estimate={estimate.data} />
+              ) : null}
               <Accordion type="single" collapsible>
                 <AccordionItem value="info" className="border-b-0">
                   <AccordionTrigger className="py-1 text-xs text-muted-foreground">
@@ -741,50 +769,6 @@ function GenerationRunsContent({ projectId }: { projectId: string }) {
           </section>
         ) : null}
       </section>
-    </div>
-  );
-}
-
-// What a generation would ask the AI for: exact for the actions and the
-// demonstration data, an upper bound for the screens (DEC-168).
-function GenerationEstimate({ estimate }: { estimate: GenerationEstimateResponse }) {
-  const { businessActions: actions, demoData, screens, requests } = estimate;
-  const newActions = actions.total - actions.reused;
-  return (
-    <div className="rounded-lg border border-border/70 bg-muted/30 p-3 text-xs" role="note">
-      <p className="font-medium text-foreground">
-        {requests.atMost === 0
-          ? 'Generar no hará solicitudes a la IA: todo se reutiliza.'
-          : requests.atLeast === requests.atMost
-            ? `Uso de IA previsto: ${requests.atMost} ${requests.atMost === 1 ? 'solicitud' : 'solicitudes'}.`
-            : `Uso de IA previsto: entre ${requests.atLeast} y ${requests.atMost} solicitudes.`}
-      </p>
-      <ul className="mt-1.5 flex flex-col gap-0.5 text-muted-foreground">
-        {actions.total ? (
-          <li>
-            Lógica de negocio: {actions.reused} de {actions.total}{' '}
-            {actions.total === 1 ? 'acción se reutiliza' : 'acciones se reutilizan'}
-            {newActions
-              ? `; ${newActions} ${newActions === 1 ? 'se pide' : 'se piden'} a la IA.`
-              : '.'}
-          </li>
-        ) : null}
-        {demoData !== 'NONE' ? (
-          <li>
-            Datos de demostración:{' '}
-            {demoData === 'REUSED' ? 'se reutilizan.' : 'se piden a la IA (una solicitud).'}
-          </li>
-        ) : null}
-        {screens.atMost ? (
-          <li>
-            Pantallas: hasta {screens.atMost} se revisan con la IA; las que no cambiaron se
-            reutilizan.
-          </li>
-        ) : null}
-      </ul>
-      <p className="mt-1.5 text-muted-foreground">
-        Una respuesta que no pasa la revisión se pide una vez más.
-      </p>
     </div>
   );
 }
