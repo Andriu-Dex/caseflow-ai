@@ -33,7 +33,9 @@ import {
   X,
   ZoomIn,
   ZoomOut,
+  MousePointerClick,
 } from 'lucide-react';
+import { PrototypeDialog } from '../../../components/prototype-dialog';
 import { toast } from 'sonner';
 import {
   Accordion,
@@ -298,6 +300,7 @@ function MockupPreview({
   const [comparing, setComparing] = useState(false);
   const [editingScreen, setEditingScreen] = useState<MockupScreen | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [prototypeOpen, setPrototypeOpen] = useState(false);
   const preview = useQuery({
     queryKey: ['mockup-preview', projectId, mockupId],
     queryFn: () => api.mockups.getPreview(projectId, mockupId),
@@ -433,6 +436,29 @@ function MockupPreview({
         </div>
       ) : null}
 
+      {screens.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-primary/30 bg-primary/5 p-3 text-xs">
+          <p className="text-muted-foreground">
+            Recorra las pantallas por el árbol de navegación, como las verá cada rol, antes de
+            construir.
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => setPrototypeOpen(true)}
+          >
+            <MousePointerClick className="size-3.5" aria-hidden="true" />
+            Recorrer como prototipo
+          </Button>
+          <PrototypeDialog
+            open={prototypeOpen}
+            onOpenChange={setPrototypeOpen}
+            projectId={projectId}
+            mockup={preview.data}
+          />
+        </div>
+      ) : null}
       {screens.length > 0 ? (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-border/70 bg-muted/20 p-3">
           <div className="relative flex-1 max-w-sm">
