@@ -7,6 +7,7 @@ import {
   NotFoundException,
   Param,
   Post,
+  Query,
   Request,
   Res,
   UnauthorizedException,
@@ -20,6 +21,7 @@ import type { Response } from 'express';
 import type { z } from 'zod';
 import { timingSafeEqual } from 'node:crypto';
 import {
+  deliveryQuerySchema,
   constructionUnitListResponseSchema,
   constructionUnitReviewRequestSchema,
   constructionUnitSchema,
@@ -90,8 +92,10 @@ export class GenerationRunsController {
   preview(
     @Param('projectId', uuidParamPipe) projectId: string,
     @Param('implementationPlanVersionId', uuidParamPipe) versionId: string,
+    @Query(new ZodValidationPipe(deliveryQuerySchema))
+    query: z.output<typeof deliveryQuerySchema>,
   ) {
-    return this.service.preview(projectId, versionId);
+    return this.service.preview(projectId, versionId, query.deliveryId);
   }
 
   @Get('estimate/:implementationPlanVersionId')
@@ -103,8 +107,10 @@ export class GenerationRunsController {
   estimate(
     @Param('projectId', uuidParamPipe) projectId: string,
     @Param('implementationPlanVersionId', uuidParamPipe) versionId: string,
+    @Query(new ZodValidationPipe(deliveryQuerySchema))
+    query: z.output<typeof deliveryQuerySchema>,
   ) {
-    return this.service.estimate(projectId, versionId);
+    return this.service.estimate(projectId, versionId, query.deliveryId);
   }
 
   @Post('manual')
@@ -121,6 +127,7 @@ export class GenerationRunsController {
       properties: {
         file: { type: 'string', format: 'binary' },
         implementationPlanVersionId: { type: 'string', format: 'uuid' },
+        deliveryId: { type: 'string', format: 'uuid' },
       },
     },
   })
@@ -140,6 +147,7 @@ export class GenerationRunsController {
       req.user.id,
       body.implementationPlanVersionId,
       file?.buffer,
+      body.deliveryId,
     );
   }
 
@@ -157,7 +165,12 @@ export class GenerationRunsController {
     body: z.output<typeof startGenerationRunRequestSchema>,
     @Request() req: AuthenticatedRequest,
   ) {
-    return this.service.start(projectId, req.user.id, body.implementationPlanVersionId);
+    return this.service.start(
+      projectId,
+      req.user.id,
+      body.implementationPlanVersionId,
+      body.deliveryId,
+    );
   }
 
   @Get()

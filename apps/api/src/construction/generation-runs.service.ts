@@ -1,4 +1,6 @@
 import { loadApprovedPlan } from './approved-plan';
+import { deferredPages, deliveryScope, planForRun, scopePlan } from './delivery-scope';
+import { getProjectLanguage } from '../projects/project-language';
 import { implementationReadinessProblems } from './implementation-readiness';
 import { FrontendDesignService } from './frontend-design.service';
 import { DemoDataService } from './demo-data.service';
@@ -56,6 +58,7 @@ type RunRow = {
   id: string;
   projectId: string;
   implementationPlanVersionId: string;
+  deliveryId: string | null;
   designBaselineId: string;
   targetTemplateIdentifier: string;
   targetTemplateVersion: number;
@@ -297,7 +300,11 @@ export class GenerationRunsService {
 
   // What a plan version will produce, before it is approved or generated: the
   // deterministic generator runs without AI and only paths and purposes leave.
-  async preview(projectId: string, versionId: string): Promise<ConstructionPreviewResponse> {
+  async preview(
+    projectId: string,
+    versionId: string,
+    deliveryId?: string,
+  ): Promise<ConstructionPreviewResponse> {
     const version = await this.prisma.artifactVersion.findFirst({
       where: { id: versionId, projectId, artifact: { artifactTypeCode: 'IMPLEMENTATION_PLAN' } },
       select: { structuredAnalysisDetail: { select: { content: true } } },
@@ -308,7 +315,12 @@ export class GenerationRunsService {
       where: { id: projectId },
       select: { name: true },
     });
-    const plan = implementationPlanContentSchema.parse(version.structuredAnalysisDetail.content);
+    const plan = await this.deliveryView(
+      projectId,
+      versionId,
+      implementationPlanContentSchema.parse(version.structuredAnalysisDetail.content),
+      deliveryId,
+    );
     try {
       const files = generateProject({
         plan,
@@ -329,7 +341,11 @@ export class GenerationRunsService {
   // under the same inputs is reused. Screens are an upper bound, every screen the
   // AI composes from the approved mockup; one whose inputs did not change is
   // reused, but that is only known once the actions it calls are implemented.
-  async estimate(projectId: string, versionId: string): Promise<GenerationEstimateResponse> {
+  async estimate(
+    projectId: string,
+    versionId: string,
+    deliveryId?: string,
+  ): Promise<GenerationEstimateResponse> {
     const version = await this.prisma.artifactVersion.findFirst({
       where: { id: versionId, projectId, artifact: { artifactTypeCode: 'IMPLEMENTATION_PLAN' } },
       select: { structuredAnalysisDetail: { select: { content: true } } },
@@ -340,9 +356,12 @@ export class GenerationRunsService {
       where: { id: projectId },
       select: { name: true },
     });
-    const plan = implementationPlanContentSchema.parse(version.structuredAnalysisDetail.content);
+    const fullPlan = implementationPlanContentSchema.parse(
+      version.structuredAnalysisDetail.content,
+    );
+    const plan = await this.deliveryView(projectId, versionId, fullPlan, deliveryId);
     const template = findTargetTemplate(TEMPLATE_IDENTIFIER)!;
-    const actions = await this.businessLogic.estimate(projectId, plan, template);
+    const actions = await this.businessLogic.estimate(projectId, plan, template, fullPlan);
     const demo =
       template.version >= 2 && this.demoData
         ? await this.demoData.isCached(projectId, plan.designBaselineId, project.name, plan)
@@ -387,12 +406,13 @@ export class GenerationRunsService {
     userId: string,
     implementationPlanVersionId: string,
     archive: Buffer | undefined,
+    deliveryId?: string,
   ): Promise<GenerationRunResponse> {
     await assertCanGenerate(this.prisma, projectId, userId);
     await this.currency?.assertCurrent(projectId);
     if (!archive?.length)
       throw new UnprocessableEntityException('Adjunte el ZIP del proyecto que desea importar.');
-    const plan = await this.approvedPlan(projectId, implementationPlanVersionId);
+    const { plan } = await this.buildablePlan(projectId, implementationPlanVersionId, deliveryId);
     await this.designBaselines.assertApproved(projectId, plan.designBaselineId);
     const template = findTargetTemplate(TEMPLATE_IDENTIFIER)!;
     const problems = implementationReadinessProblems(plan);
@@ -514,6 +534,7 @@ export class GenerationRunsService {
     projectId: string,
     userId: string,
     implementationPlanVersionId: string,
+    deliveryId?: string,
   ): Promise<GenerationRunResponse> {
     await this.currency?.assertCurrent(projectId);
     const active = await this.prisma.generationRun.findFirst({
@@ -524,7 +545,7 @@ export class GenerationRunsService {
         'Ya existe una generación de código en curso para este proyecto. Espere a que finalice.',
       );
     }
-    const plan = await this.approvedPlan(projectId, implementationPlanVersionId);
+    const { plan } = await this.buildablePlan(projectId, implementationPlanVersionId, deliveryId);
     await this.designBaselines.assertApproved(projectId, plan.designBaselineId);
     const template = findTargetTemplate(TEMPLATE_IDENTIFIER)!;
     if (template.version >= 2) {
@@ -536,6 +557,7 @@ export class GenerationRunsService {
         data: {
           projectId,
           implementationPlanVersionId,
+          deliveryId: deliveryId ?? null,
           designBaselineId: plan.designBaselineId,
           targetTemplateIdentifier: template.identifier,
           targetTemplateVersion: template.version,
@@ -550,7 +572,11 @@ export class GenerationRunsService {
           action: 'GENERATION_RUN_STARTED',
           entityType: 'GENERATION_RUN',
           entityId: created.id,
-          metadata: { implementationPlanVersionId, designBaselineId: plan.designBaselineId },
+          metadata: {
+            implementationPlanVersionId,
+            designBaselineId: plan.designBaselineId,
+            ...(deliveryId ? { deliveryId } : {}),
+          },
         },
         tx,
       );
@@ -635,7 +661,11 @@ export class GenerationRunsService {
     );
     try {
       try {
-        const plan = await this.approvedPlan(projectId, run.implementationPlanVersionId);
+        const fullPlan = await this.approvedPlan(projectId, run.implementationPlanVersionId);
+        const scope = run.deliveryId
+          ? await deliveryScope(this.prisma, projectId, run.deliveryId)
+          : null;
+        const plan = scope ? scopePlan(fullPlan, scope.modules) : fullPlan;
         const template = findTargetTemplate(
           run.targetTemplateIdentifier,
           run.targetTemplateVersion,
@@ -650,7 +680,9 @@ export class GenerationRunsService {
           implementations,
           warnings,
           checkpoints = [],
-        } = await this.businessLogic.implement(projectId, runId, plan, template);
+        } = await this.businessLogic.implement(projectId, runId, plan, template, {
+          contextPlan: fullPlan,
+        });
         if (template.version >= 2 && warnings.length) {
           await this.prisma.generationRun.update({ where: { id: runId }, data: { warnings } });
           throw new PlanGenerationError(
@@ -696,6 +728,15 @@ export class GenerationRunsService {
           files = adapted.files;
           warnings.push(
             'La composición conserva los controles y usa el boceto aprobado. Revise la fidelidad visual en la aplicación; la comprobación estructural no sustituye esa revisión.',
+          );
+        }
+        if (scope) {
+          const present = new Set(files.map((file) => file.path));
+          const language = await getProjectLanguage(this.prisma, projectId);
+          files.push(
+            ...deferredPages(fullPlan, scope.modules, language).filter(
+              (file) => !present.has(file.path),
+            ),
           );
         }
         const frozen = await this.frozenVersionsByCode(projectId, run.designBaselineId);
@@ -856,14 +897,10 @@ export class GenerationRunsService {
   async units(projectId: string, runId: string): Promise<{ items: ConstructionUnit[] }> {
     const run = await this.prisma.generationRun.findFirst({
       where: { id: runId, projectId },
-      select: { implementationPlanVersionId: true, createdAt: true },
+      select: { implementationPlanVersionId: true, deliveryId: true, createdAt: true },
     });
     if (!run) throw new NotFoundException('Corrida de generación no encontrada.');
-    const version = await this.prisma.artifactVersion.findFirst({
-      where: { id: run.implementationPlanVersionId, projectId },
-      select: { structuredAnalysisDetail: { select: { content: true } } },
-    });
-    const plan = implementationPlanContentSchema.parse(version?.structuredAnalysisDetail?.content);
+    const plan = await planForRun(this.prisma, projectId, run);
     const unitsOf = async (id: string) => {
       const files = await this.prisma.generatedFile.findMany({
         where: { generationRunId: id },
@@ -1050,6 +1087,45 @@ export class GenerationRunsService {
     };
   }
 
+  // ADR-024: the plan a run builds. A delivery is built from its scoped plan,
+  // only when every earlier delivery is approved and it is not approved yet.
+  private async buildablePlan(projectId: string, versionId: string, deliveryId?: string) {
+    const full = await this.approvedPlan(projectId, versionId);
+    if (!deliveryId) return { plan: full };
+    const scope = await deliveryScope(this.prisma, projectId, deliveryId);
+    if (scope.implementationPlanVersionId !== versionId)
+      throw new UnprocessableEntityException('La entrega pertenece a otro plan de implementación.');
+    const approved = new Set(
+      (
+        await this.prisma.deliveryApproval.findMany({
+          where: { deliveryId: { in: [...scope.earlierDeliveryIds, scope.deliveryId] } },
+          select: { deliveryId: true },
+        })
+      ).map((approval) => approval.deliveryId),
+    );
+    if (approved.has(scope.deliveryId))
+      throw new ConflictException('Esta entrega ya está aprobada.');
+    if (scope.earlierDeliveryIds.some((id) => !approved.has(id)))
+      throw new UnprocessableEntityException(
+        'Apruebe primero las entregas anteriores; cada entrega se construye sobre las aprobadas.',
+      );
+    return { plan: scopePlan(full, scope.modules) };
+  }
+
+  // A delivery's view of a plan version, for the preview and the estimate.
+  private async deliveryView(
+    projectId: string,
+    versionId: string,
+    plan: ImplementationPlanContent,
+    deliveryId?: string,
+  ) {
+    if (!deliveryId) return plan;
+    const scope = await deliveryScope(this.prisma, projectId, deliveryId);
+    if (scope.implementationPlanVersionId !== versionId)
+      throw new UnprocessableEntityException('La entrega pertenece a otro plan de implementación.');
+    return scopePlan(plan, scope.modules);
+  }
+
   private approvedPlan(projectId: string, versionId: string) {
     return loadApprovedPlan(this.prisma, projectId, versionId);
   }
@@ -1075,6 +1151,7 @@ export class GenerationRunsService {
       id: row.id,
       projectId: row.projectId,
       implementationPlanVersionId: row.implementationPlanVersionId,
+      deliveryId: row.deliveryId,
       designBaselineId: row.designBaselineId,
       targetTemplateIdentifier: row.targetTemplateIdentifier,
       targetTemplateVersion: row.targetTemplateVersion,

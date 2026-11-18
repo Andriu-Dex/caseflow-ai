@@ -19,9 +19,11 @@ export const GENERATED_FILE_ORIGINS = [
 export const GENERATED_FILE_KINDS = ['SOURCE', 'TEST', 'CONFIG', 'DOCUMENTATION'] as const;
 export const CODE_TRACE_LINK_TYPES = ['IMPLEMENTS', 'TESTS', 'CONFIGURES'] as const;
 
+// ADR-024: with deliveryId, the run builds that delivery of the plan.
 export const startGenerationRunRequestSchema = z
-  .object({ implementationPlanVersionId: z.uuid() })
+  .object({ implementationPlanVersionId: z.uuid(), deliveryId: z.uuid().optional() })
   .strict();
+export const deliveryQuerySchema = z.object({ deliveryId: z.uuid().optional() }).strict();
 export type StartGenerationRunRequest = z.output<typeof startGenerationRunRequestSchema>;
 
 export const createWorkingCopyRequestSchema = z
@@ -70,6 +72,8 @@ export const generationRunResponseSchema = z.object({
   id: z.uuid(),
   projectId: z.uuid(),
   implementationPlanVersionId: z.uuid(),
+  // The delivery the run builds; null when built all at once (ADR-024).
+  deliveryId: z.uuid().nullable(),
   designBaselineId: z.uuid(),
   targetTemplateIdentifier: z.string(),
   targetTemplateVersion: z.number().int(),
@@ -87,7 +91,7 @@ export const generationRunResponseSchema = z.object({
 });
 export type GenerationRunResponse = z.infer<typeof generationRunResponseSchema>;
 export const importManualImplementationRequestSchema = z
-  .object({ implementationPlanVersionId: z.uuid() })
+  .object({ implementationPlanVersionId: z.uuid(), deliveryId: z.uuid().optional() })
   .strict();
 
 export const generationRunListResponseSchema = z.object({

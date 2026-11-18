@@ -415,10 +415,14 @@ export class BusinessLogicService {
 
   // DEC-168: of the actions a generation from this plan implements, how many
   // already have a checkpoint under the same inputs (reused without the AI).
+  // A delivery (ADR-024) implements the actions of its scoped plan, keyed on
+  // the whole plan: an action's context (the screens that use it) must not
+  // change when a later delivery adds those screens.
   async estimate(
     projectId: string,
     plan: ImplementationPlanContent,
     template: TargetTemplateVersion,
+    contextPlan: ImplementationPlanContent = plan,
   ): Promise<{ total: number; reused: number }> {
     const endpoints = plan.customEndpoints.filter((item) => !item.builtin && !item.disabledReason);
     if (!endpoints.length || template.version < 2) return { total: endpoints.length, reused: 0 };
@@ -433,7 +437,7 @@ export class BusinessLogicService {
     ).map((baseline) => baseline.id);
     const keys = endpoints.map((endpoint) => {
       const { checkpointPath, legacyPaths } = this.endpointCheckpoint(
-        plan,
+        contextPlan,
         endpoint,
         template,
         language,
@@ -462,7 +466,12 @@ export class BusinessLogicService {
     generationRunId: string,
     plan: ImplementationPlanContent,
     template: TargetTemplateVersion,
-    options: { cacheOnly?: boolean; revisions?: ReadonlyMap<string, string> } = {},
+    options: {
+      cacheOnly?: boolean;
+      revisions?: ReadonlyMap<string, string>;
+      // The whole plan when `plan` is a delivery's scoped plan (ADR-024).
+      contextPlan?: ImplementationPlanContent;
+    } = {},
   ): Promise<{
     implementations: EndpointImplementations;
     warnings: string[];
@@ -503,7 +512,7 @@ export class BusinessLogicService {
       (item) => !item.builtin && !item.disabledReason,
     )) {
       const { context, promptVersion, checkpointPath, legacyPaths } = this.endpointCheckpoint(
-        plan,
+        options.contextPlan ?? plan,
         endpoint,
         template,
         language,

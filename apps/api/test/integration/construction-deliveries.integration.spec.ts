@@ -1,5 +1,7 @@
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { AIOrchestrator, FakeAIProvider } from '@caseflow-ai/ai';
+import { GenerationRunsService } from '../../src/construction/generation-runs.service';
 import { createTestContext, createWorkspaceWithOwner, type TestContext } from './support/test-app';
 import { approvedDesignBaseline } from './support/construction-fixtures';
 
@@ -60,35 +62,55 @@ describe('Construction by deliveries (ADR-024)', () => {
   const modulesOf = (body: { deliveries: { modules: { localId: string }[] }[] }) =>
     body.deliveries.map((delivery) => delivery.modules.map((module) => module.localId));
 
-  beforeAll(async () => {
-    ctx = await createTestContext();
-    const workspace = await createWorkspaceWithOwner(ctx, 'Deliveries');
-    projectId = (await ctx.projects.create({ workspaceId: workspace.id, name: 'Tienda' })).id;
-    otherProjectId = (await ctx.projects.create({ workspaceId: workspace.id, name: 'Otra' })).id;
-    const { baseline, versions } = await approvedDesignBaseline(ctx, projectId);
-    baselineId = baseline.id;
+  let workspaceId: string;
+  const approvedPlanFor = async (project: string) => {
+    const { baseline, versions } = await approvedDesignBaseline(ctx, project);
     const ui = await ctx.prisma.artifactVersion.findUniqueOrThrow({
       where: { id: versions.UI_BLUEPRINT },
       select: { artifact: { select: { code: true } } },
     });
     const content = planBody(baseline.id, ui.artifact.code);
     const plan = await ctx.structuredAnalysis.create(
-      projectId,
+      project,
       'IMPLEMENTATION_PLAN',
       'Plan',
       content,
     );
     for (const status of ['IN_REVIEW', 'APPROVED'] as const)
       await ctx.structuredAnalysis.transition(
-        projectId,
+        project,
         'IMPLEMENTATION_PLAN',
         plan.id,
         plan.version.id,
         status,
       );
-    planVersionId = plan.version.id;
+    return { baselineId: baseline.id, planVersionId: plan.version.id, content };
+  };
+
+  beforeAll(async () => {
+    ctx = await createTestContext({
+      aiProvider: new FakeAIProvider({
+        provider: 'fake',
+        model: 'fixture',
+        payload: { body: 'return { confirmed: true };' },
+        latencyMs: 1,
+        usage: null,
+      }),
+    });
+    const workspace = await createWorkspaceWithOwner(ctx, 'Deliveries');
+    workspaceId = workspace.id;
+    projectId = (await ctx.projects.create({ workspaceId, name: 'Tienda' })).id;
+    otherProjectId = (await ctx.projects.create({ workspaceId, name: 'Otra' })).id;
+    const approvedPlan = await approvedPlanFor(projectId);
+    baselineId = approvedPlan.baselineId;
+    planVersionId = approvedPlan.planVersionId;
     draftPlanVersionId = (
-      await ctx.structuredAnalysis.create(projectId, 'IMPLEMENTATION_PLAN', 'Borrador', content)
+      await ctx.structuredAnalysis.create(
+        projectId,
+        'IMPLEMENTATION_PLAN',
+        'Borrador',
+        approvedPlan.content,
+      )
     ).version.id;
   });
   afterAll(async () => ctx.close());
@@ -206,5 +228,88 @@ describe('Construction by deliveries (ADR-024)', () => {
     expect(
       (await http().get(path(projectId, planVersionId)).set(auth())).body.deliveries[0].status,
     ).toBe('APPROVED');
+  });
+
+  describe('building by deliveries', () => {
+    const DEMO_DATA_PROMPT = 'demo-data.generate';
+    const actionCalls = (spy: { mock: { calls: unknown[][] } }) =>
+      spy.mock.calls.filter(
+        ([call]) => (call as { promptKey?: string }).promptKey !== DEMO_DATA_PROMPT,
+      ).length;
+    let shop: string;
+    let version: string;
+    let deliveries: { id: string; modules: { localId: string }[] }[];
+    const runs = () => ctx.app.get(GenerationRunsService);
+    const approve = (deliveryId: string, generationRunId: string) =>
+      ctx.prisma.deliveryApproval.create({
+        data: { deliveryId, generationRunId, approvedByUserId: ctx.userId },
+      });
+    const build = async (deliveryId?: string) => {
+      const run = await runs().start(shop, ctx.userId, version, deliveryId);
+      await runs().runJob(shop, run.id);
+      const done = await runs().get(shop, run.id);
+      expect(done.status).toBe('GENERATED');
+      return done;
+    };
+    const fileOf = (runId: string, path: string) =>
+      ctx.prisma.generatedFile.findFirst({ where: { generationRunId: runId, path } });
+
+    beforeAll(async () => {
+      shop = (await ctx.projects.create({ workspaceId, name: 'Tienda por entregas' })).id;
+      version = (await approvedPlanFor(shop)).planVersionId;
+      deliveries = (await http().post(path(shop, version)).set(auth()).send({}).expect(201)).body
+        .deliveries;
+    });
+
+    it('builds one delivery at a time, in order, each on the approved ones', async () => {
+      const [reports, catalog, sales] = deliveries;
+      await expect(runs().start(shop, ctx.userId, version, catalog!.id)).rejects.toThrow(
+        'Apruebe primero las entregas anteriores',
+      );
+      const first = await build(reports!.id);
+      expect(first.deliveryId).toBe(reports!.id);
+      // Screens of later deliveries open a notice instead of an error.
+      expect((await fileOf(first.id, 'apps/web/app/orders/page.tsx'))?.content).toContain(
+        'Esta sección llegará en una próxima entrega.',
+      );
+      await approve(reports!.id, first.id);
+      await expect(runs().start(shop, ctx.userId, version, reports!.id)).rejects.toThrow(
+        'Esta entrega ya está aprobada.',
+      );
+
+      const ai = vi.spyOn(ctx.app.get(AIOrchestrator), 'generateStructured');
+      try {
+        const second = await build(catalog!.id);
+        expect(actionCalls(ai)).toBe(1);
+        await approve(catalog!.id, second.id);
+
+        const estimate = await runs().estimate(shop, version, sales!.id);
+        expect(estimate.businessActions).toEqual({ total: 1, reused: 1 });
+        ai.mockClear();
+        const third = await build(sales!.id);
+        // The catalog's action was implemented in the previous delivery.
+        expect(actionCalls(ai)).toBe(0);
+        expect((await fileOf(third.id, 'apps/web/app/orders/page.tsx'))?.content).not.toContain(
+          'Esta sección llegará',
+        );
+        await approve(sales!.id, third.id);
+
+        ai.mockClear();
+        // Building everything at once reuses what the deliveries built.
+        const whole = await build();
+        expect(whole.deliveryId).toBeNull();
+        expect(actionCalls(ai)).toBe(0);
+      } finally {
+        ai.mockRestore();
+      }
+    });
+
+    it('checks the delivery belongs to the plan', async () => {
+      const other = await approvedPlanFor(shop);
+      await expect(
+        runs().start(shop, ctx.userId, other.planVersionId, deliveries[0]!.id),
+      ).rejects.toThrow('La entrega pertenece a otro plan de implementación.');
+      await expect(runs().estimate(otherProjectId, version, deliveries[0]!.id)).rejects.toThrow();
+    });
   });
 });

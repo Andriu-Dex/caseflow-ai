@@ -1,3 +1,4 @@
+import { deliveryScope, scopePlan } from './delivery-scope';
 import { INTERRUPTED_BY_RESTART, startHeartbeat, staleHeartbeat } from '../common/interrupted';
 import { randomUUID } from 'node:crypto';
 import {
@@ -342,11 +343,19 @@ export class SandboxRunsService {
         where: { id: generationRunId },
         select: {
           origin: true,
+          deliveryId: true,
           implementationPlanVersion: { select: { structuredAnalysisDetail: true } },
         },
       });
-      const plan = generation.implementationPlanVersion.structuredAnalysisDetail
+      // A delivery is checked against what it builds (ADR-024).
+      const fullPlan = generation.implementationPlanVersion.structuredAnalysisDetail
         ?.content as unknown as ImplementationPlanContent;
+      const plan = generation.deliveryId
+        ? scopePlan(
+            fullPlan,
+            (await deliveryScope(this.prisma, projectId, generation.deliveryId)).modules,
+          )
+        : fullPlan;
       stages.push(
         check('STRUCTURE', [
           ...structuralProblems(files, template, allowed, plan, {
