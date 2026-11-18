@@ -51,6 +51,11 @@ function shownWithoutRecord(action: RouteAction): boolean {
 const sentence = (items: string[], fallback: string) =>
   items.length ? items.map((item) => item.replace(/[.\s]+$/, '')).join('; ') : fallback;
 
+// The sign-in screen: the built-in one or the screen that signs in.
+const isSignIn = (route: Plan['routes'][number]) =>
+  route.builtinView === 'ACCOUNT_ACCESS' ||
+  route.actions.some((action) => action.endpoint === 'POST /auth/login');
+
 // One criterion per approved use case the plan's screens realize (a screen
 // realizes the use cases its interface blueprint screen cites).
 export function deriveCriteria(
@@ -69,9 +74,10 @@ export function deriveCriteria(
       if (!realizing.length) return [];
       // Signing in is checked without a session (one would redirect away from
       // it), and signing out ends the session, so it goes last.
-      const signIn = realizing.filter((route) => route.builtinView === 'ACCOUNT_ACCESS');
-      const signedIn = realizing.filter((route) => route.builtinView !== 'ACCOUNT_ACCESS');
-      const anonymous = !plan.authentication.required || !signedIn.length;
+      const signIn = realizing.filter(isSignIn);
+      const signedIn = realizing.filter((route) => !isSignIn(route));
+      // A use case with the sign-in screen is about access: that screen, signed out.
+      const anonymous = !plan.authentication.required || signIn.length > 0;
       const roles = [...new Set(signedIn.flatMap((route) => route.roles ?? []))];
       const role = anonymous
         ? ''

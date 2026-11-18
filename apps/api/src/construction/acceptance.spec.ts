@@ -122,8 +122,8 @@ describe('acceptance criteria (ADR-025)', () => {
       access,
       [
         { localId: 'login', relatedUseCaseCodes: ['CU-001'] },
+        { localId: 'home', relatedUseCaseCodes: ['CU-001', 'CU-002'] },
         { localId: 'logout', relatedUseCaseCodes: ['CU-002'] },
-        { localId: 'home', relatedUseCaseCodes: ['CU-002'] },
       ],
       [
         useCase('CU-001', {
