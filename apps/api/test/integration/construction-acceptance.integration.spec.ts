@@ -1,3 +1,4 @@
+import JSZip from 'jszip';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { FakeAIProvider } from '@caseflow-ai/ai';
@@ -284,5 +285,36 @@ describe('Acceptance tests per use case (ADR-025)', () => {
     expect(notes.markdown).toContain('## Qué se puede hacer');
     expect(notes.markdown).toContain('- Confirmar pedido');
     expect(notes.markdown).toContain('Esta construcción no tiene una demostración en línea.');
+  });
+
+  it('packages the validated code with its technical documentation (DEC-174)', async () => {
+    const snapshot = await ctx.prisma.generatedProjectSnapshot.findFirstOrThrow({
+      where: { projectId },
+    });
+    const response = await http()
+      .get(`/projects/${projectId}/generated-project-snapshots/${snapshot.id}/handover`)
+      .set(auth())
+      .buffer(true)
+      .parse((res, done) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => done(null, Buffer.concat(chunks)));
+      })
+      .expect(200);
+    expect(response.headers['content-type']).toContain('application/zip');
+    const zip = await JSZip.loadAsync(response.body as Buffer);
+    const text = (path: string) => zip.file(`documentacion/${path}`)!.async('string');
+    expect(Object.keys(zip.files).some((path) => path.startsWith('codigo/'))).toBe(true);
+    expect(await text('LEEME.md')).toContain('# Entrega técnica: Tienda');
+    expect(await text('INSTALACION.md')).toContain('pnpm run setup');
+    expect(await text('API.md')).toContain('`POST /orders/:orderId/confirm`: Confirmar pedido');
+    expect(await text('CUENTAS.md')).toContain('La aplicación no requiere iniciar sesión.');
+    expect(await text('NOTAS-DE-ENTREGA.md')).toContain('## Qué se puede hacer');
+    expect(await text('TECNOLOGIAS.md')).toContain('| next |');
+    expect(
+      await ctx.prisma.auditEvent.count({
+        where: { projectId, action: 'TECHNICAL_HANDOVER_DOWNLOADED', entityId: snapshot.id },
+      }),
+    ).toBe(1);
   });
 });

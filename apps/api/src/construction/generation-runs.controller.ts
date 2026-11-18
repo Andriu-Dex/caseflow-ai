@@ -1,3 +1,4 @@
+import { TechnicalHandoverService } from './technical-handover.service';
 import {
   Body,
   Controller,
@@ -298,7 +299,10 @@ export class GenerationRunsController {
 @UseGuards(JwtAuthGuard, ProjectMembershipGuard)
 @Controller('projects/:projectId/generated-project-snapshots')
 export class GeneratedProjectSnapshotsController {
-  constructor(private readonly service: GeneratedProjectSnapshotsService) {}
+  constructor(
+    private readonly service: GeneratedProjectSnapshotsService,
+    private readonly handoverService: TechnicalHandoverService,
+  ) {}
 
   @Get()
   @ApiOperation({
@@ -332,6 +336,29 @@ export class GeneratedProjectSnapshotsController {
     @Res() res: Response,
   ) {
     const { body, filename } = await this.service.archive(projectId, snapshotId, req.user.id);
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.send(body);
+  }
+
+  // DEC-174: the code with the documentation for whoever maintains it.
+  @Get(':snapshotId/handover')
+  @ApiOperation({
+    operationId: 'downloadTechnicalHandover',
+    summary: 'Descargar la entrega técnica del proyecto validado',
+  })
+  async handover(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('snapshotId', uuidParamPipe) snapshotId: string,
+    @Request() req: AuthenticatedRequest,
+    @Res() res: Response,
+  ) {
+    const { body, filename } = await this.handoverService.package(
+      projectId,
+      snapshotId,
+      req.user.id,
+    );
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('X-Content-Type-Options', 'nosniff');

@@ -24,6 +24,7 @@ import { ImplementationTraceController } from './implementation-trace.controller
 import { ImplementationTraceService } from './implementation-trace.service';
 import { ReleaseNotesController } from './release-notes.controller';
 import { ReleaseNotesService } from './release-notes.service';
+import { TechnicalHandoverService } from './technical-handover.service';
 import { DeliveriesService } from './deliveries.service';
 import { DeploymentsService } from './deployments.service';
 import {
@@ -100,6 +101,7 @@ import { UserManualsController } from '../user-manuals/user-manuals.controller';
     AcceptanceService,
     ImplementationTraceService,
     ReleaseNotesService,
+    TechnicalHandoverService,
     InterruptedJobsRecovery,
     UserManualsService,
     DependencyCatalogService,
