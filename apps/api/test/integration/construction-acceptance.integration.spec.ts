@@ -263,4 +263,26 @@ describe('Acceptance tests per use case (ADR-025)', () => {
     await http().get(`/projects/${projectId}/implementation-trace/RF-999`).set(auth()).expect(404);
     await http().get(`/projects/${projectId}/implementation-trace/x`).set(auth()).expect(400);
   });
+
+  it('writes plain-language notes of a construction (DEC-173)', async () => {
+    const notes = (
+      await http()
+        .get(`/projects/${projectId}/generation-runs/${runId}/release-notes`)
+        .set(auth())
+        .expect(200)
+    ).body;
+    expect(notes).toMatchObject({
+      delivery: null,
+      canDo: [{ role: 'Sin iniciar sesión', useCases: ['Confirmar pedido'] }],
+      requirements: { passed: [], failed: 1, notRun: 0, withoutCriteria: 0 },
+      demo: null,
+      // Compared with the first construction, which had the same screen.
+      changes: { newScreens: [], newUseCases: [] },
+    });
+    expect(notes.title).toMatch(/^Tienda: construcción del /);
+    expect(notes.changes.since).toMatch(/^la construcción del /);
+    expect(notes.markdown).toContain('## Qué se puede hacer');
+    expect(notes.markdown).toContain('- Confirmar pedido');
+    expect(notes.markdown).toContain('Esta construcción no tiene una demostración en línea.');
+  });
 });

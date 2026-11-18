@@ -362,6 +362,20 @@ describe('Construction by deliveries (ADR-024)', () => {
           'Esta sección llegará',
         );
         await approve(sales!.id, third.id);
+        // Its notes compare it with the earlier delivery (DEC-173).
+        const notes = (
+          await http()
+            .get(`/projects/${shop}/generation-runs/${third.id}/release-notes`)
+            .set(auth())
+            .expect(200)
+        ).body;
+        expect(notes.delivery).toEqual({ position: 2, name: 'Ventas' });
+        expect(notes.title).toBe('Tienda por entregas: entrega 2, Ventas');
+        expect(notes.changes).toEqual({
+          since: 'la entrega 1',
+          newScreens: ['Inicio'],
+          newUseCases: [],
+        });
 
         ai.mockClear();
         // Building everything at once reuses what the deliveries built.
