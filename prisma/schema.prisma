@@ -1949,12 +1949,13 @@ model SandboxRun {
   heartbeatAt     DateTime?        @map("heartbeat_at") @db.Timestamptz(6)
   finishedAt      DateTime?        @map("finished_at") @db.Timestamptz(6)
 
-  project       Project                   @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  generationRun GenerationRun             @relation(fields: [generationRunId], references: [id], onDelete: Restrict)
-  createdBy     User                      @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
-  stageResults  SandboxStageResult[]
-  repairAttempt AutoRepairAttempt?
-  snapshot      GeneratedProjectSnapshot?
+  project           Project                   @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  generationRun     GenerationRun             @relation(fields: [generationRunId], references: [id], onDelete: Restrict)
+  createdBy         User                      @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  stageResults      SandboxStageResult[]
+  acceptanceResults AcceptanceResult[]
+  repairAttempt     AutoRepairAttempt?
+  snapshot          GeneratedProjectSnapshot?
 
   @@index([generationRunId, createdAt])
   @@map("sandbox_runs")
@@ -2475,4 +2476,20 @@ model DeliveryApproval {
 
   @@index([deliveryId, approvedAt])
   @@map("delivery_approvals")
+}
+
+// ADR-025: the result of each acceptance criterion in a validation.
+model AcceptanceResult {
+  sandboxRunId String   @map("sandbox_run_id") @db.Uuid
+  // CA-<use case code>
+  criterionKey String   @map("criterion_key")
+  useCaseCode  String   @map("use_case_code")
+  passed       Boolean
+  message      String?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  sandboxRun SandboxRun @relation(fields: [sandboxRunId], references: [id], onDelete: Restrict)
+
+  @@id([sandboxRunId, criterionKey])
+  @@map("acceptance_results")
 }

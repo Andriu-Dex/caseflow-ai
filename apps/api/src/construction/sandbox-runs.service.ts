@@ -1,3 +1,10 @@
+import {
+  ACCEPTANCE_SPEC_PATH,
+  acceptanceResults,
+  acceptanceSpec,
+  loadCriteria,
+  type AcceptanceCriterion,
+} from './acceptance';
 import { deliveryScope, scopePlan } from './delivery-scope';
 import { INTERRUPTED_BY_RESTART, startHeartbeat, staleHeartbeat } from '../common/interrupted';
 import { randomUUID } from 'node:crypto';
@@ -344,6 +351,7 @@ export class SandboxRunsService {
         select: {
           origin: true,
           deliveryId: true,
+          designBaselineId: true,
           implementationPlanVersion: { select: { structuredAnalysisDetail: true } },
         },
       });
@@ -373,7 +381,16 @@ export class SandboxRunsService {
           ),
         );
       if (stages.at(-1)!.passed)
-        stages.push(await this.endToEnd(sandboxRunId, files, plan, result.collected[LOCKFILE]));
+        stages.push(
+          await this.endToEnd(
+            sandboxRunId,
+            files,
+            plan,
+            result.collected[LOCKFILE],
+            // ADR-025: the acceptance criteria of what this run builds.
+            await loadCriteria(this.prisma, projectId, plan, generation.designBaselineId),
+          ),
+        );
     }
     await this.prisma.sandboxRun.updateMany({
       where: { id: sandboxRunId, status: 'RUNNING' },
@@ -392,6 +409,7 @@ export class SandboxRunsService {
     files: ProjectFile[],
     plan: ImplementationPlanContent,
     lockfile: string | undefined,
+    criteria: AcceptanceCriterion[] = [],
   ): Promise<StageRecord> {
     await this.prisma.sandboxRun.updateMany({
       where: { id: sandboxRunId, status: 'RUNNING' },
@@ -411,12 +429,35 @@ export class SandboxRunsService {
       const result = await this.e2e.runE2E({
         files: [
           ...files
-            .filter((file) => file.path !== LOCKFILE)
+            .filter((file) => file.path !== LOCKFILE && file.path !== ACCEPTANCE_SPEC_PATH)
             .map(({ path, content }) => ({ path, content })),
+          ...(criteria.length
+            ? [{ path: ACCEPTANCE_SPEC_PATH, content: acceptanceSpec(criteria) }]
+            : []),
           { path: LOCKFILE, content: lockfile },
         ],
-        roles: e2eScreens(plan).map((screen) => screen.role),
+        roles: [
+          ...new Set([
+            ...e2eScreens(plan).map((screen) => screen.role),
+            ...criteria.map((criterion) => criterion.role),
+          ]),
+        ],
       });
+      const accepted = acceptanceResults(
+        result.output,
+        criteria.map((criterion) => criterion.key),
+        result.passed,
+      );
+      if (criteria.length)
+        await this.prisma.acceptanceResult.createMany({
+          data: criteria.map((criterion) => ({
+            sandboxRunId,
+            criterionKey: criterion.key,
+            useCaseCode: criterion.useCaseCode,
+            ...accepted.get(criterion.key)!,
+          })),
+          skipDuplicates: true,
+        });
       return {
         stage: 'E2E',
         passed: result.passed,

@@ -18,6 +18,8 @@ import { AutoRepairService } from './auto-repair.service';
 import { BusinessLogicService } from './business-logic.service';
 import { DeploymentsController } from './deployments.controller';
 import { DeliveriesController } from './deliveries.controller';
+import { AcceptanceController } from './acceptance.controller';
+import { AcceptanceService } from './acceptance.service';
 import { DeliveriesService } from './deliveries.service';
 import { DeploymentsService } from './deployments.service';
 import {
@@ -81,6 +83,7 @@ import { UserManualsController } from '../user-manuals/user-manuals.controller';
     UserManualsController,
     DeploymentsController,
     DeliveriesController,
+    AcceptanceController,
   ],
   providers: [
     { provide: RUNTIME_CAPTURE_PROVIDER, useFactory: () => new DockerRuntimeCaptureProvider() },
@@ -88,6 +91,7 @@ import { UserManualsController } from '../user-manuals/user-manuals.controller';
     { provide: DEPLOYMENT_PROVIDER, useFactory: () => new DockerTunnelDeploymentProvider() },
     DeploymentsService,
     DeliveriesService,
+    AcceptanceService,
     InterruptedJobsRecovery,
     UserManualsService,
     DependencyCatalogService,

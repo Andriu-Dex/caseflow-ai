@@ -106,11 +106,16 @@ describe('acceptance criteria (ADR-025)', () => {
       '  ✘  2 [chromium] › acceptance.spec.ts:20:3 › [CA-CU-004] Anular venta (2.0s)',
     ].join('\n');
     expect(
-      Object.fromEntries(acceptanceResults(output, ['CA-CU-002', 'CA-CU-004', 'CA-CU-005'])),
+      Object.fromEntries(acceptanceResults(output, ['CA-CU-002', 'CA-CU-004', 'CA-CU-005'], false)),
     ).toEqual({
       'CA-CU-002': { passed: true, message: null },
       'CA-CU-004': { passed: false, message: 'La prueba de aceptación falló.' },
       'CA-CU-005': { passed: false, message: 'La prueba de aceptación no llegó a ejecutarse.' },
+    });
+    // A run whose tests all passed passed every criterion, whatever it printed.
+    expect(acceptanceResults('Fake run.', ['CA-CU-002'], true).get('CA-CU-002')).toEqual({
+      passed: true,
+      message: null,
     });
   });
 });

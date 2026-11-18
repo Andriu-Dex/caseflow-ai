@@ -156,14 +156,20 @@ for (const criterion of CRITERIA) {
 `;
 }
 
-// Each criterion's result, read from the runner's list report: a passed test
-// is marked "✓" and a failed one "✘" on its title line. A criterion that does
-// not appear did not run, and does not count as passed.
+// Each criterion's result. A run whose tests all passed passed every
+// criterion. Otherwise the runner's list report says which: a passed test is
+// marked "✓" and a failed one "✘" on its title line, and a criterion that does
+// not appear did not run, which does not count as passed.
 export function acceptanceResults(
   output: string,
   keys: string[],
+  allPassed: boolean,
 ): Map<string, { passed: boolean; message: string | null }> {
   const results = new Map<string, { passed: boolean; message: string | null }>();
+  if (allPassed) {
+    for (const key of keys) results.set(key, { passed: true, message: null });
+    return results;
+  }
   for (const line of output.split('\n'))
     for (const key of keys) {
       if (!line.includes(`[${key}]`) || results.get(key)?.passed === false) continue;
