@@ -50,6 +50,7 @@ import type {
   UseCaseGenerationJob,
   ArchivedArtifactsResponse,
   ArtifactSearchResponse,
+  TargetTemplateListResponse,
   RestoreArtifactResponse,
   DataModelGenerationJob,
   StructuredGenerationJob,
@@ -419,6 +420,9 @@ export const api = {
       get<ArtifactSearchResponse>(
         `/projects/${projectId}/artifacts/search?q=${encodeURIComponent(text)}`,
       ),
+  },
+  targetTemplates: {
+    list: () => get<TargetTemplateListResponse>('/target-templates'),
   },
   readiness: {
     get: (projectId: string) => get<ReadinessResponse>(`/projects/${projectId}/readiness`),

@@ -64,7 +64,7 @@ import {
   SunMoon,
   Users,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { Button, Card, CardContent, CardHeader, CardTitle } from '@caseflow-ai/ui';
 import { api, ApiError, type ArtifactVersionStatus, type GenerationResult } from '../lib/api';
@@ -1949,10 +1949,13 @@ export function StructuredKindPage({
   kind,
   title,
   projectId,
+  intro,
 }: {
   kind: StructuredAnalysisKind;
   title: string;
   projectId: string;
+  // Shown under the heading, before the generation card.
+  intro?: ReactNode;
 }) {
   const queryClient = useQueryClient();
   const list = useQuery({
@@ -2097,6 +2100,7 @@ export function StructuredKindPage({
   return (
     <div className="flex flex-col gap-6">
       <PageHeading title={title} projectId={projectId} />
+      {intro}
 
       <Card className="rounded-xl border border-border/80 bg-card shadow-2xs">
         <CardHeader>

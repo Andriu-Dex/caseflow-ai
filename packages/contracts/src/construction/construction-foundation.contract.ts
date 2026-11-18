@@ -59,6 +59,7 @@ export type TargetTemplateResponse = z.infer<typeof targetTemplateResponseSchema
 export const targetTemplateListResponseSchema = z.object({
   items: z.array(targetTemplateResponseSchema),
 });
+export type TargetTemplateListResponse = z.infer<typeof targetTemplateListResponseSchema>;
 
 // npm package name rules (lowercase, optional @scope/, url-safe characters).
 const NPM_PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/;
