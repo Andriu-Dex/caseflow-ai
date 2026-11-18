@@ -1,5 +1,6 @@
 'use client';
 
+import { AcceptanceReport } from './acceptance-report';
 import Link from 'next/link';
 import { DeploymentPanel } from './deployment-panel';
 import { useFailureToast } from '../../../lib/use-failure-toast';
@@ -690,6 +691,11 @@ export function RunValidation({
           </div>
         )}
       </QueryState>
+      <AcceptanceReport
+        projectId={projectId}
+        runId={run.id}
+        refreshKey={`${last?.id ?? 'none'}-${last?.status ?? ''}`}
+      />
     </div>
   );
 }

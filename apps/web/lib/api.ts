@@ -50,6 +50,7 @@ import type {
   UseCaseGenerationJob,
   ArchivedArtifactsResponse,
   ArtifactSearchResponse,
+  AcceptanceReportResponse,
   DeliveryPlanResponse,
   TargetTemplateListResponse,
   RestoreArtifactResponse,
@@ -1065,6 +1066,9 @@ export const api = {
       }),
     list: (projectId: string) =>
       get<{ items: GenerationRunResponse[] }>(`/projects/${projectId}/generation-runs`),
+    // ADR-025: the run's acceptance criteria and each requirement's result.
+    acceptance: (projectId: string, runId: string) =>
+      get<AcceptanceReportResponse>(`/projects/${projectId}/generation-runs/${runId}/acceptance`),
     start: (projectId: string, implementationPlanVersionId: string, deliveryId?: string) =>
       post<GenerationRunResponse>(`/projects/${projectId}/generation-runs`, {
         implementationPlanVersionId,
