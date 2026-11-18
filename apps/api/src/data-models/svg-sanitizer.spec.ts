@@ -130,6 +130,13 @@ describe('sanitizeDiagramSvg', () => {
     );
   });
 
+  it('lets Mermaid label boxes overflow, so a bold title is not cut off', () => {
+    const output = sanitizeDiagramSvg(
+      '<svg xmlns="http://www.w3.org/2000/svg"><foreignObject width="20" height="20"><div xmlns="http://www.w3.org/1999/xhtml"><p>Evento de acceso</p></div></foreignObject></svg>',
+    );
+    expect(output).toMatch(/^<svg[^>]*><style>foreignObject\{overflow:visible\}<\/style>/);
+  });
+
   it('rejects unparseable XML', () => {
     expect(() => sanitizeDiagramSvg('<svg><g></svg>')).toThrow(SvgSanitizationError);
   });

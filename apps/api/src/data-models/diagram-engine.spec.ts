@@ -314,10 +314,16 @@ describe('DiagramEngine', () => {
     expect(first(5)).toBe('flowchart TD');
   });
 
-  it('generates a deterministic PlantUML component diagram, with and without a dependency description', () => {
+  it('draws one plain arrow per dependent pair, with no labels or notes', () => {
+    const long = Array.from({ length: 30 }, (_, i) => `palabra${i}`).join(' ');
     const source = engine.generateSoftwareComponentDiagram({
       components: [
-        { localId: 'api', name: 'API' },
+        {
+          localId: 'api',
+          name: 'API',
+          responsibilities: [long],
+          relatedSourceCodes: ['RF-001', 'RNF-002'],
+        },
         { localId: 'web', name: 'Web' },
       ],
       dependencies: [
@@ -326,34 +332,12 @@ describe('DiagramEngine', () => {
       ],
     });
     expect(source).toContain('component "API" as api');
-    expect(source).toContain('web --> api : "calls"');
-    expect(source).toContain('web --> api\n');
-    expect(() => engine.validate('PLANTUML_COMPONENT', source)).not.toThrow();
-  });
-
-  it('breaks long dependency labels into short lines and draws no notes', () => {
-    const long = Array.from({ length: 30 }, (_, i) => `palabra${i}`).join(' ');
-    const source = engine.generateSoftwareComponentDiagram({
-      components: [
-        { localId: 'api', name: 'API', responsibilities: [long], relatedSourceCodes: ['RF-001'] },
-        { localId: 'web', name: 'Web' },
-      ],
-      dependencies: [{ fromLocalId: 'web', toLocalId: 'api', description: long }],
-    });
-    const label = source.split('\n').find((line) => line.startsWith('web --> api'))!;
-    for (const piece of label.split('\\n')) expect(piece.length).toBeLessThan(80);
-    expect(label.split('\\n').length).toBeGreaterThan(3);
-    // Responsibilities and plain sources stay in the stored content, not in the drawing.
-    expect(source).not.toContain('note ');
-    expect(source).not.toContain('RF-001');
-    const quality = engine.generateSoftwareComponentDiagram({
-      components: [
-        { localId: 'api', name: 'API', relatedSourceCodes: ['RF-001', 'RNF-002', 'RNF-003'] },
-      ],
-      dependencies: [],
-    });
-    expect(quality).toContain('note right of api : Calidad: RNF-002, RNF-003');
-    expect(quality).not.toContain('RF-001');
+    expect(source.split('\n').filter((line) => line.startsWith('web --> api'))).toEqual([
+      'web --> api',
+    ]);
+    // Descriptions, responsibilities and sources stay in each component's card.
+    for (const detail of ['calls', 'note ', 'palabra', 'RF-001', 'RNF-002'])
+      expect(source).not.toContain(detail);
     expect(() => engine.validate('PLANTUML_COMPONENT', source)).not.toThrow();
   });
 
@@ -382,64 +366,36 @@ describe('DiagramEngine', () => {
     );
   });
 
-  it('labels each link with its protocol and description', () => {
-    const source = engine.generateSystemDeploymentDiagram({
-      nodes: [
-        { localId: 'api', name: 'API', kind: 'RUNTIME' },
-        { localId: 'db', name: 'DB', kind: 'DATABASE' },
-        { localId: 'ocr', name: 'OCR', kind: 'EXTERNAL_SERVICE' },
-      ],
-      links: [
-        { fromLocalId: 'api', toLocalId: 'db', protocol: 'TCP', description: 'Consultas' },
-        { fromLocalId: 'api', toLocalId: 'ocr', protocol: 'HTTPS' },
-      ],
-    });
-    expect(source).toContain('api --> db : "TCP — Consultas"');
-    expect(source).toContain('api --> ocr : "HTTPS"');
-  });
-
-  it('draws the deployment diagram left to right with short link labels and notes, keeping responsibilities and quality codes only', () => {
+  it('labels each link with its protocol only and draws no notes', () => {
     const long = Array.from({ length: 30 }, (_, i) => `palabra${i}`).join(' ');
     const source = engine.generateSystemDeploymentDiagram({
       nodes: [
         {
-          localId: 'server',
-          name: 'Server',
+          localId: 'api',
+          name: 'API',
           kind: 'RUNTIME',
           responsibilities: [long],
-          relatedSourceCodes: ['RF-001', 'RNF-002'],
+          relatedSourceCodes: ['RNF-002'],
         },
-        { localId: 'db', name: 'Database', kind: 'DATABASE' },
-      ],
-      links: [{ fromLocalId: 'server', toLocalId: 'db', protocol: 'TCP', description: long }],
-    });
-    const lines = source.split('\n');
-    expect(lines[1]).toBe('left to right direction');
-    const label = lines.find((line) => line.startsWith('server --> db'))!;
-    const note = lines.find((line) => line.startsWith('note right of server'))!;
-    for (const text of [label, note])
-      for (const piece of text.split('\\n')) expect(piece.length).toBeLessThan(80);
-    expect(note).toContain('Calidad: RNF-002');
-    expect(note).not.toContain('RF-001');
-    expect(() => engine.validate('PLANTUML_DEPLOYMENT', source)).not.toThrow();
-  });
-
-  it('generates a deterministic PlantUML deployment diagram, with and without a link description', () => {
-    const source = engine.generateSystemDeploymentDiagram({
-      nodes: [
-        { localId: 'server', name: 'Server', kind: 'RUNTIME' },
-        { localId: 'db', name: 'Database', kind: 'DATABASE' },
+        { localId: 'db', name: 'DB', kind: 'DATABASE' },
+        { localId: 'ocr', name: 'OCR', kind: 'EXTERNAL_SERVICE' },
         { localId: 'other', name: 'Other', kind: 'UNKNOWN_KIND' },
       ],
       links: [
-        { fromLocalId: 'server', toLocalId: 'db', description: 'reads/writes' },
-        { fromLocalId: 'server', toLocalId: 'other' },
+        { fromLocalId: 'api', toLocalId: 'db', protocol: 'TCP', description: 'Consultas' },
+        { fromLocalId: 'api', toLocalId: 'ocr', protocol: 'HTTPS' },
+        { fromLocalId: 'api', toLocalId: 'other', description: 'reads' },
       ],
     });
-    expect(source).toContain('server --> db : "reads/writes"');
-    expect(source).toContain('server --> other\n');
+    const lines = source.split('\n');
+    expect(lines[1]).toBe('left to right direction');
+    expect(lines).toContain('api --> db : "TCP"');
+    expect(lines).toContain('api --> ocr : "HTTPS"');
+    expect(lines).toContain('api --> other');
     // An unrecognized kind falls back to the generic 'node' keyword.
     expect(source).toContain('node "Other" as other');
+    for (const detail of ['Consultas', 'reads', 'note ', 'palabra', 'RNF-002'])
+      expect(source).not.toContain(detail);
     expect(() => engine.validate('PLANTUML_DEPLOYMENT', source)).not.toThrow();
   });
 });
@@ -485,11 +441,40 @@ describe('DiagramEngine class diagram', () => {
     expect(() => engine.validate('MERMAID_CLASS', source)).not.toThrow();
     expect(source).toContain('class order["Pedido de compra"] {');
     expect(source).toContain('+List~Item~ items');
-    expect(source).toContain('+pay(number amount) void');
+    expect(source).toContain('+pay()');
+    expect(source).not.toContain('amount');
     expect(source).toContain('<<abstract>>');
     expect(source).toContain('-string email');
     expect(source).toContain('client "1" --> "*" order : realiza');
     expect(source).toContain('person <|-- client');
+  });
+
+  it('leaves out technical identifiers and shows an enumeration as its values', () => {
+    const source = engine.generateClassDiagram({
+      classes: [
+        {
+          localId: 'sale',
+          name: 'Venta',
+          attributes: [
+            { name: 'Identificador', type: 'UUID' },
+            { name: 'Total', type: 'Decimal' },
+          ],
+          methods: [],
+        },
+        {
+          localId: 'state',
+          name: 'Estado de venta',
+          stereotype: 'ENUMERATION',
+          attributes: [{ name: 'Confirmada', type: 'Estado de venta' }],
+          methods: [],
+        },
+      ],
+      relationships: [],
+    });
+    expect(source).not.toContain('Identificador');
+    expect(source).toContain('-Decimal Total');
+    expect(source.split('\n')).toContain('    Confirmada');
+    expect(source).not.toContain('Estado de venta Confirmada');
   });
 
   it('keeps braces and semicolons out of the source', () => {
