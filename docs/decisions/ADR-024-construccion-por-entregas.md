@@ -1,6 +1,6 @@
 # ADR-024 — Construcción por entregas
 
-- **Estado:** Propuesto; pendiente de aprobación.
+- **Estado:** Aprobado por el usuario el 2026-11-18.
 - **Decisión:** DEC-170.
 - **Modifica:** la sección 9 de la especificación («Construcción») gana un segundo modo de construir. No modifica ninguna regla de integridad y seguridad de la sección 2: las entregas se aprueban por una persona, el código solo se ejecuta en el sandbox y el historial sigue siendo inmutable.
 

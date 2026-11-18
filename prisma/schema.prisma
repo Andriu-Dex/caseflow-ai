@@ -245,6 +245,8 @@ model User {
   requestedProposals          DependencyProposal[]         @relation("DependencyProposalRequester")
   decidedProposals            DependencyProposal[]         @relation("DependencyProposalDecider")
   designBaselines             DesignBaseline[]
+  deliveryPlans               DeliveryPlan[]
+  deliveryApprovals           DeliveryApproval[]
   screenDesignExceptions      ScreenDesignException[]
   screenDesignOverrides       ScreenDesignOverride[]
   constructionUnitReviews     ConstructionUnitReview[]
@@ -375,6 +377,7 @@ model Project {
   auditEvents                   AuditEvent[]
   dependencyProposals           DependencyProposal[]
   designBaselines               DesignBaseline[]
+  deliveryPlans                 DeliveryPlan[]
   screenDesignExceptions        ScreenDesignException[]
   screenDesignOverrides         ScreenDesignOverride[]
   constructionUnitReviews       ConstructionUnitReview[]
@@ -495,6 +498,7 @@ model ArtifactVersion {
   snapshotsAsGenerationPlan           GeneratedProjectSnapshot[]           @relation("SnapshotGenerationPlan")
   snapshotsAsImplementationPlan       GeneratedProjectSnapshot[]           @relation("SnapshotImplementationPlan")
   userManualDetail                    UserManualDetail?
+  deliveryPlans                       DeliveryPlan[]
 
   @@unique([artifactId, versionNumber])
   @@unique([id, projectId])
@@ -1848,6 +1852,10 @@ model GenerationRun {
   sandboxRuns               SandboxRun[]
   repairAttempts            AutoRepairAttempt[]
   snapshot                  GeneratedProjectSnapshot?
+  // ADR-024: the delivery this run builds; empty when built all at once.
+  deliveryId                String?                   @map("delivery_id") @db.Uuid
+  delivery                  Delivery?                 @relation(fields: [deliveryId], references: [id], onDelete: Restrict)
+  deliveryApprovals         DeliveryApproval[]
 
   @@index([projectId, createdAt])
   @@map("generation_runs")
@@ -2400,4 +2408,71 @@ model DataModelGenerationPart {
 
   @@id([jobId, position])
   @@map("data_model_generation_parts")
+}
+
+// ADR-024: construction by deliveries. The plan of deliveries of one approved
+// implementation plan version; each delivery adds modules to the approved ones.
+model DeliveryPlan {
+  id                          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId                   String   @map("project_id") @db.Uuid
+  implementationPlanVersionId String   @unique @map("implementation_plan_version_id") @db.Uuid
+  createdByUserId             String   @map("created_by_user_id") @db.Uuid
+  createdAt                   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project                   Project          @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  implementationPlanVersion ArtifactVersion  @relation(fields: [implementationPlanVersionId], references: [id], onDelete: Restrict)
+  createdBy                 User             @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  deliveries                Delivery[]
+  modules                   DeliveryModule[]
+
+  @@index([projectId, createdAt])
+  @@map("delivery_plans")
+}
+
+model Delivery {
+  id             String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  deliveryPlanId String @map("delivery_plan_id") @db.Uuid
+  // 0 is the base (sign-in, users, roles and the application frame).
+  position       Int
+  name           String
+
+  deliveryPlan   DeliveryPlan       @relation(fields: [deliveryPlanId], references: [id], onDelete: Restrict)
+  modules        DeliveryModule[]
+  generationRuns GenerationRun[]
+  approvals      DeliveryApproval[]
+
+  @@unique([deliveryPlanId, position])
+  @@map("deliveries")
+}
+
+model DeliveryModule {
+  deliveryPlanId String @map("delivery_plan_id") @db.Uuid
+  deliveryId     String @map("delivery_id") @db.Uuid
+  // The implementation plan module (its localId) this delivery builds.
+  moduleLocalId  String @map("module_local_id")
+
+  deliveryPlan DeliveryPlan @relation(fields: [deliveryPlanId], references: [id], onDelete: Restrict)
+  delivery     Delivery     @relation(fields: [deliveryId], references: [id], onDelete: Restrict)
+
+  // A module belongs to one delivery of the plan.
+  @@id([deliveryPlanId, moduleLocalId])
+  @@index([deliveryId])
+  @@map("delivery_modules")
+}
+
+// Append-only (enforced by a trigger): who approved which run of a delivery.
+model DeliveryApproval {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  deliveryId       String   @map("delivery_id") @db.Uuid
+  generationRunId  String   @map("generation_run_id") @db.Uuid
+  approvedByUserId String   @map("approved_by_user_id") @db.Uuid
+  note             String?
+  approvedAt       DateTime @default(now()) @map("approved_at") @db.Timestamptz(6)
+
+  delivery      Delivery      @relation(fields: [deliveryId], references: [id], onDelete: Restrict)
+  generationRun GenerationRun @relation(fields: [generationRunId], references: [id], onDelete: Restrict)
+  approvedBy    User          @relation(fields: [approvedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([deliveryId, approvedAt])
+  @@map("delivery_approvals")
 }

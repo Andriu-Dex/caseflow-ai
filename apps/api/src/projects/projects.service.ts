@@ -308,7 +308,11 @@ export class ProjectsService {
         await tx.$executeRaw`DELETE FROM sandbox_stage_results WHERE sandbox_run_id IN (SELECT id FROM sandbox_runs WHERE project_id = ${p})`;
         await tx.$executeRaw`DELETE FROM sandbox_runs WHERE project_id = ${p}`;
         await tx.$executeRaw`DELETE FROM generated_files WHERE generation_run_id IN (SELECT id FROM generation_runs WHERE project_id = ${p})`;
+        await tx.$executeRaw`DELETE FROM delivery_approvals WHERE delivery_id IN (SELECT d.id FROM deliveries d JOIN delivery_plans dp ON dp.id = d.delivery_plan_id WHERE dp.project_id = ${p})`;
         await tx.$executeRaw`DELETE FROM generation_runs WHERE project_id = ${p}`;
+        await tx.$executeRaw`DELETE FROM delivery_modules WHERE delivery_plan_id IN (SELECT id FROM delivery_plans WHERE project_id = ${p})`;
+        await tx.$executeRaw`DELETE FROM deliveries WHERE delivery_plan_id IN (SELECT id FROM delivery_plans WHERE project_id = ${p})`;
+        await tx.$executeRaw`DELETE FROM delivery_plans WHERE project_id = ${p}`;
         await tx.$executeRaw`DELETE FROM dependency_proposals WHERE project_id = ${p}`;
 
         // Baselines

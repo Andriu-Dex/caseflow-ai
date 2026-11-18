@@ -1,3 +1,4 @@
+import { loadApprovedPlan } from './approved-plan';
 import { implementationReadinessProblems } from './implementation-readiness';
 import { FrontendDesignService } from './frontend-design.service';
 import { DemoDataService } from './demo-data.service';
@@ -1049,21 +1050,8 @@ export class GenerationRunsService {
     };
   }
 
-  private async approvedPlan(projectId: string, versionId: string) {
-    const version = await this.prisma.artifactVersion.findFirst({
-      where: {
-        id: versionId,
-        projectId,
-        status: 'APPROVED',
-        artifact: { artifactTypeCode: 'IMPLEMENTATION_PLAN' },
-      },
-      include: { structuredAnalysisDetail: true },
-    });
-    if (!version?.structuredAnalysisDetail)
-      throw new UnprocessableEntityException(
-        'Solo se puede generar código desde un plan de implementación aprobado del proyecto.',
-      );
-    return implementationPlanContentSchema.parse(version.structuredAnalysisDetail.content);
+  private approvedPlan(projectId: string, versionId: string) {
+    return loadApprovedPlan(this.prisma, projectId, versionId);
   }
 
   // DEC-118: the frontend is painted with the exact theme the baseline froze.
