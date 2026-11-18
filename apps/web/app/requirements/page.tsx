@@ -24,6 +24,7 @@ import {
 import { QueryState, RequireActiveProject } from '../../components/query-state';
 import { ArchivedArtifacts } from '../../components/archived-artifacts';
 import { PageHeading } from '../../components/page-heading';
+import { StartingPointsDialog } from '../../components/starting-points-dialog';
 import { CandidateReview } from '../../components/candidate-review';
 import {
   RequirementCandidateCard,
@@ -165,6 +166,7 @@ function RequirementsContent({ projectId }: { projectId: string }) {
   return (
     <div className="flex flex-col gap-6">
       <PageHeading title="Requisitos" projectId={projectId} />
+      <StartingPointsDialog projectId={projectId} />
 
       <section className="flex flex-col gap-3">
         <RequirementGenerationPanel

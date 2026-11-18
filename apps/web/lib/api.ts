@@ -50,6 +50,9 @@ import type {
   UseCaseGenerationJob,
   ArchivedArtifactsResponse,
   ArtifactSearchResponse,
+  ApplyStartingPointResponse,
+  StartingPoint,
+  StartingPointListResponse,
   ReleaseNotesResponse,
   ImplementationTraceResponse,
   AcceptanceReportResponse,
@@ -1016,6 +1019,17 @@ export const api = {
       ),
     downloadUrl: (p: string, s: string, v: string, format: 'html' | 'pdf' | 'zip') =>
       `${BASE_URL}/projects/${p}/generated-project-snapshots/${s}/user-manual/versions/${v}/download?format=${format}`,
+  },
+  // DEC-176: starting a project from a similar one.
+  startingPoints: {
+    list: (projectId: string) =>
+      get<StartingPointListResponse>(`/projects/${projectId}/starting-points`),
+    save: (projectId: string, input: { name: string; description: string }) =>
+      post<StartingPoint>(`/projects/${projectId}/starting-points`, input),
+    apply: (projectId: string, id: string) =>
+      post<ApplyStartingPointResponse>(`/projects/${projectId}/starting-points/${id}/apply`),
+    remove: (projectId: string, id: string) =>
+      del<void>(`/projects/${projectId}/starting-points/${id}`),
   },
   // DEC-172: where a requirement or use case is implemented.
   implementationTrace: (projectId: string, code: string) =>

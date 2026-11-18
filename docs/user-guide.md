@@ -123,6 +123,15 @@ persona: el árbol a un lado, la pantalla con su propósito y acciones principal
 botones para ir a la anterior, la siguiente y las pantallas vecinas. Sirve para que el
 cliente valide el flujo antes de construir.
 
+### Partir de un proyecto parecido
+
+En **Requisitos**, **Partir de un proyecto parecido** ofrece puntos de partida: uno
+incluido (acceso, usuarios, roles y auditoría) y los que se hayan guardado en el espacio
+de trabajo. **Usar en este proyecto** copia sus requisitos, casos de uso y modelo de
+datos como borradores, enlazados entre sí, para adaptarlos y aprobarlos. Desde la misma
+ventana, **Guardar este proyecto como punto de partida** guarda lo aprobado del proyecto
+actual para reutilizarlo en otros.
+
 ## Construir software
 
 La construcción utiliza el TargetTemplate soportado: TypeScript, Next.js, NestJS,
