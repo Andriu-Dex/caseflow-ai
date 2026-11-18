@@ -91,6 +91,59 @@ describe('acceptance criteria (ADR-025)', () => {
     expect(criterion!.screens.map((s) => s.path)).toEqual(['/sales', '/products']);
   });
 
+  it('checks signing in without a session and signing out last', () => {
+    const access = {
+      ...plan,
+      routes: [
+        {
+          path: '/login',
+          screenName: 'Acceso',
+          screenLocalId: 'login',
+          builtinView: 'ACCOUNT_ACCESS',
+          actions: [{ label: 'Iniciar sesión', endpoint: 'POST /auth/login' }],
+        },
+        {
+          path: '/logout',
+          screenName: 'Salir',
+          screenLocalId: 'logout',
+          roles: ['Cajero'],
+          actions: [{ label: 'Cerrar sesión', endpoint: 'POST /auth/logout' }],
+        },
+        {
+          path: '/home',
+          screenName: 'Inicio',
+          screenLocalId: 'home',
+          roles: ['Cajero'],
+          actions: [],
+        },
+      ],
+    } as unknown as ImplementationPlanContent;
+    const [signIn, session] = deriveCriteria(
+      access,
+      [
+        { localId: 'login', relatedUseCaseCodes: ['CU-001'] },
+        { localId: 'logout', relatedUseCaseCodes: ['CU-002'] },
+        { localId: 'home', relatedUseCaseCodes: ['CU-002'] },
+      ],
+      [
+        useCase('CU-001', {
+          name: 'Iniciar sesión',
+          primaryActor: 'Usuario',
+          mainFlow: [{ actor: 'Usuario', action: 'Introduce sus credenciales' }],
+        }),
+        useCase('CU-002', { name: 'Cerrar sesión' }),
+      ],
+    );
+    expect(signIn).toMatchObject({
+      role: '',
+      given: 'Hay una caja abierta',
+      when: 'Usuario introduce sus credenciales',
+      screens: [{ path: '/login' }],
+    });
+    expect(session!.role).toBe('Cajero');
+    expect(session!.screens.map((s) => s.path)).toEqual(['/home', '/logout']);
+  });
+
   it('writes a test per criterion and reads each result from the runner report', () => {
     const spec = acceptanceSpec(
       deriveCriteria(

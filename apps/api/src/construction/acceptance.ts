@@ -67,15 +67,23 @@ export function deriveCriteria(
         (casesOf.get(route.screenLocalId ?? '') ?? []).includes(useCase.code),
       );
       if (!realizing.length) return [];
-      const roles = [...new Set(realizing.flatMap((route) => route.roles ?? []))];
-      const role = !plan.authentication.required
+      // Signing in is checked without a session (one would redirect away from
+      // it), and signing out ends the session, so it goes last.
+      const signIn = realizing.filter((route) => route.builtinView === 'ACCOUNT_ACCESS');
+      const signedIn = realizing.filter((route) => route.builtinView !== 'ACCOUNT_ACCESS');
+      const anonymous = !plan.authentication.required || !signedIn.length;
+      const roles = [...new Set(signedIn.flatMap((route) => route.roles ?? []))];
+      const role = anonymous
         ? ''
         : (roles.find((r) => fold(r) === fold(useCase.primaryActor)) ??
           roles[0] ??
           plan.authentication.roles[0] ??
           '');
-      const screens = realizing
+      const signsOut = (route: (typeof routes)[number]) =>
+        route.actions.some((action) => action.endpoint === 'POST /auth/logout');
+      const screens = (anonymous ? (signIn.length ? signIn : realizing) : signedIn)
         .filter((route) => !role || !route.roles?.length || route.roles.includes(role))
+        .sort((a, b) => Number(signsOut(a)) - Number(signsOut(b)))
         .map((route) => ({
           path: route.path,
           screenName: route.screenName,
@@ -85,13 +93,16 @@ export function deriveCriteria(
       const steps = useCase.mainFlow.filter(
         (step) => fold(step.actor) === fold(useCase.primaryActor),
       );
-      const shown = (steps.length ? steps : useCase.mainFlow).map((step) => step.action);
+      const shown = (steps.length ? steps : useCase.mainFlow).map(
+        (step) => step.action.charAt(0).toLowerCase() + step.action.slice(1),
+      );
+      const preconditions = sentence(useCase.preconditions, 'el sistema está disponible');
       return [
         {
           key: `CA-${useCase.code}`,
           useCaseCode: useCase.code,
           useCaseName: useCase.name,
-          given: `${sentence(useCase.preconditions, 'el sistema está disponible')}; y ${useCase.primaryActor} inició sesión`,
+          given: role ? `${preconditions}; y ${useCase.primaryActor} inició sesión` : preconditions,
           when: `${useCase.primaryActor} ${sentence(shown.slice(0, 3), useCase.name.toLowerCase())}${shown.length > 3 ? '…' : ''}`,
           then: sentence(useCase.postconditions, 'el caso de uso termina sin errores'),
           alternativeFlows: useCase.alternativeFlows,

@@ -180,7 +180,8 @@ describe('Acceptance tests per use case (ADR-025)', () => {
     expect(body.criteria).toEqual([
       expect.objectContaining({
         key: `CA-${useCaseCode}`,
-        given: 'Hay un pedido pendiente; y Usuario inició sesión',
+        // The plan needs no session, so nobody signs in.
+        given: 'Hay un pedido pendiente',
         when: 'Usuario confirma el pedido',
         then: 'El pedido queda confirmado',
         requirementCodes: [requirementCode],
