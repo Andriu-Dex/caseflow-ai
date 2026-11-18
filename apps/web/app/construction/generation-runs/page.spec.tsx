@@ -37,6 +37,7 @@ vi.mock('../../../lib/api', () => ({
       archive: (...args: unknown[]) => mocks.archive(...args),
       restore: (...args: unknown[]) => mocks.restore(...args),
       snapshotArchiveUrl: (p: string, s: string) => `/api/${p}/${s}.zip`,
+      technicalHandoverUrl: (p: string, s: string) => `/api/${p}/${s}-handover.zip`,
     },
     readiness: { get: vi.fn(async () => ({ stages: [] })) },
   },
@@ -369,6 +370,7 @@ describe('GenerationRunsPage', () => {
 
     // Both "Descargar ZIP" and "Cómo probarlo" should appear
     expect(await screen.findByRole('button', { name: /Descargar ZIP/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Entrega técnica/ })).toBeInTheDocument();
     const quickstartBtn = screen.getByRole('button', { name: /Cómo probarlo/i });
     expect(quickstartBtn).toBeInTheDocument();
 

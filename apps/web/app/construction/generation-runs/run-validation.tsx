@@ -13,6 +13,7 @@ import {
   Clock,
   Copy,
   Download,
+  PackageCheck,
   Loader2,
   RefreshCw,
   ShieldCheck,
@@ -225,6 +226,15 @@ function ValidationAttemptItem({
             >
               <Download className="size-4" aria-hidden="true" />
               Descargar ZIP
+            </AuthedDownloadButton>
+            <AuthedDownloadButton
+              url={api.generationRuns.technicalHandoverUrl(projectId, attempt.snapshotId)}
+              filename={`entrega-tecnica-${attempt.snapshotId}.zip`}
+              title="El código con la guía de instalación, tecnologías, API, arquitectura, cuentas y notas de entrega"
+              className="inline-flex items-center gap-1.5 h-8 rounded-lg border border-border/80 bg-background px-3 text-xs font-semibold text-foreground shadow-2xs hover:border-primary/40 hover:bg-primary/5 hover:text-primary transition-all duration-150 disabled:opacity-50"
+            >
+              <PackageCheck className="size-3.5" aria-hidden="true" />
+              Entrega técnica
             </AuthedDownloadButton>
             <Link
               href={`/construction/user-manual?snapshotId=${attempt.snapshotId}`}

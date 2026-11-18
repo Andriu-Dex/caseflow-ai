@@ -1110,5 +1110,8 @@ export const api = {
       post<SandboxRunResponse>(`/projects/${projectId}/generation-runs/${runId}/sandbox-runs`),
     snapshotArchiveUrl: (projectId: string, snapshotId: string) =>
       `${BASE_URL}/projects/${projectId}/generated-project-snapshots/${snapshotId}/archive`,
+    // DEC-174: the code with its technical documentation.
+    technicalHandoverUrl: (projectId: string, snapshotId: string) =>
+      `${BASE_URL}/projects/${projectId}/generated-project-snapshots/${snapshotId}/handover`,
   },
 };
