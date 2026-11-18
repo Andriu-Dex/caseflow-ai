@@ -13,6 +13,7 @@ import type {
   SaveDeliveryPlanRequest,
 } from '@caseflow-ai/contracts';
 import { AuditService } from '../audit/audit.service';
+import { assertCanGenerate } from '../common/generation-cancelled';
 import { PrismaService } from '../database/prisma.service';
 import type { Prisma } from '../generated/prisma/client';
 import { loadApprovedPlan } from './approved-plan';
@@ -69,6 +70,7 @@ export class DeliveriesService {
     deliveryId: string,
     input: ApproveDeliveryRequest,
   ): Promise<DeliveryPlanResponse> {
+    await assertCanGenerate(this.prisma, projectId, userId);
     const { stored, plan, affected } = await this.state(projectId, planVersionId);
     const delivery = stored.deliveries.find((item) => item.id === deliveryId);
     if (!delivery) throw new NotFoundException('Entrega no encontrada.');
@@ -232,6 +234,8 @@ export class DeliveriesService {
     planVersionId: string,
     input: CreateDeliveryPlanRequest = {},
   ): Promise<DeliveryPlanResponse> {
+    // Planning, building and approving deliveries: the roles that generate.
+    await assertCanGenerate(this.prisma, projectId, userId);
     const plan = await loadApprovedPlan(this.prisma, projectId, planVersionId);
     const order = input.deliveries?.map((delivery) => delivery.modules) ?? proposeDeliveries(plan);
     this.assertBuildable(plan, order);
@@ -268,6 +272,7 @@ export class DeliveriesService {
     planVersionId: string,
     input: SaveDeliveryPlanRequest,
   ): Promise<DeliveryPlanResponse> {
+    await assertCanGenerate(this.prisma, projectId, userId);
     const plan = await loadApprovedPlan(this.prisma, projectId, planVersionId);
     const order = input.deliveries.map((delivery) => delivery.modules);
     this.assertBuildable(plan, order);

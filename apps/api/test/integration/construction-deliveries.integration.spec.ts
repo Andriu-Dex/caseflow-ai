@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { AIOrchestrator, FakeAIProvider } from '@caseflow-ai/ai';
 import { GenerationRunsService } from '../../src/construction/generation-runs.service';
 import { SandboxRunsService } from '../../src/construction/sandbox-runs.service';
+import { DeliveriesService } from '../../src/construction/deliveries.service';
 import { createTestContext, createWorkspaceWithOwner, type TestContext } from './support/test-app';
 import { approvedDesignBaseline } from './support/construction-fixtures';
 
@@ -198,6 +199,35 @@ describe('Construction by deliveries (ADR-024)', () => {
       locked: true,
     });
     expect(kept.body.deliveries[1].locked).toBe(false);
+  });
+
+  it('lets only the roles that generate plan, reorder and approve deliveries', async () => {
+    const viewer = await ctx.prisma.user.create({
+      data: {
+        email: `viewer-${Date.now()}@example.com`,
+        passwordHash: 'x',
+        displayName: 'Lectura',
+      },
+    });
+    await ctx.prisma.projectMembership.create({
+      data: { projectId, userId: viewer.id, role: 'VIEWER' },
+    });
+    const service = ctx.app.get(DeliveriesService);
+    const plan = await service.get(projectId, planVersionId);
+    const order = {
+      deliveries: plan.deliveries.map((d) => ({ modules: d.modules.map((m) => m.localId) })),
+    };
+    await expect(service.create(otherProjectId, viewer.id, planVersionId)).rejects.toThrow(
+      'No tiene permisos',
+    );
+    await expect(service.save(projectId, viewer.id, planVersionId, order)).rejects.toThrow(
+      'No tiene permisos',
+    );
+    await expect(
+      service.approve(projectId, viewer.id, planVersionId, plan.deliveries[0]!.id, {
+        generationRunId: plan.deliveries[0]!.id,
+      }),
+    ).rejects.toThrow('No tiene permisos');
   });
 
   it('requires an approved plan of the project', async () => {
