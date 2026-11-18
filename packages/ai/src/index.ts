@@ -562,7 +562,14 @@ function toStrictJsonSchema(node: unknown): unknown {
     schema.required = Object.keys(properties);
   }
   if (schema.items !== undefined) schema.items = toStrictJsonSchema(schema.items);
-  for (const key of ['anyOf', 'oneOf', 'allOf'] as const) {
+  // Strict json_schema rejects oneOf (z.discriminatedUnion emits it). anyOf is
+  // equivalent here: the branches are exclusive by their discriminator and the
+  // answer is still validated against the Zod schema.
+  if (Array.isArray(schema.oneOf)) {
+    schema.anyOf = schema.oneOf;
+    delete schema.oneOf;
+  }
+  for (const key of ['anyOf', 'allOf'] as const) {
     if (Array.isArray(schema[key]))
       schema[key] = (schema[key] as unknown[]).map(toStrictJsonSchema);
   }

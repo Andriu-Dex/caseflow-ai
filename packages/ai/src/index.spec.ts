@@ -116,6 +116,32 @@ describe('AIOrchestrator', () => {
     expect(sent.properties.value?.type).toBe('string');
   });
 
+  it('sends discriminated unions as anyOf, since strict json_schema rejects oneOf', async () => {
+    const provider = new FakeAIProvider({ ...response, payload: { value: 'ok', items: [] } });
+    await new AIOrchestrator(provider, new PromptRegistry([prompt]), recorder()).generateStructured(
+      {
+        ...input(),
+        outputSchema: z.object({
+          value: z.string(),
+          items: z.array(
+            z.discriminatedUnion('kind', [
+              z.object({ kind: z.literal('A'), a: z.string() }),
+              z.object({ kind: z.literal('B') }),
+            ]),
+          ),
+        }),
+      },
+    );
+    const sent = JSON.stringify(provider.lastRequest?.outputSchema);
+    expect(sent).not.toContain('"oneOf"');
+    const items = (
+      provider.lastRequest?.outputSchema as {
+        properties: { items: { items: { anyOf: { required: string[] }[] } } };
+      }
+    ).properties.items.items;
+    expect(items.anyOf.map((branch) => branch.required)).toEqual([['kind', 'a'], ['kind']]);
+  });
+
   it('treats an explicit null from a strict provider as an absent optional field', async () => {
     const audit = recorder();
     const result = await new AIOrchestrator(
