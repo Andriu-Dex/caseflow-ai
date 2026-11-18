@@ -131,6 +131,14 @@ Prisma y PostgreSQL, con arquitectura de monolito modular.
    controles obligatorios aprobados; crear archivos o compilar no basta.
 7. Descarga el ZIP correspondiente y sigue su README en un entorno separado.
 
+### Notas de cada entrega
+
+En cada construcción, la pestaña **Notas de entrega** resume para quien la va a usar
+qué puede hacer cada rol, cuántos requisitos están cumplidos, cómo probarla (el enlace
+y las cuentas de la demostración, si está desplegada) y qué hay de nuevo respecto de
+la entrega o construcción anterior. Puedes copiarlas o descargarlas en Markdown para
+enviarlas. La contraseña de las cuentas nunca se incluye.
+
 ### ¿Dónde está implementado?
 
 Al abrir un requisito o un caso de uso, la sección **¿Dónde está implementado?** muestra
