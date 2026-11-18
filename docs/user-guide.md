@@ -115,6 +115,14 @@ o continuación antes de comenzar otra generación.
    del análisis es una instantánea documental; no es el ZIP de código ni el manual
    de la aplicación construida.
 
+### Recorrer el prototipo
+
+En **Bocetos**, **Recorrer como prototipo** muestra las pantallas aprobadas unidas por el
+árbol de navegación. Elige un rol en **Ver como** para recorrerlas como las verá esa
+persona: el árbol a un lado, la pantalla con su propósito y acciones principales, y
+botones para ir a la anterior, la siguiente y las pantallas vecinas. Sirve para que el
+cliente valide el flujo antes de construir.
+
 ## Construir software
 
 La construcción utiliza el TargetTemplate soportado: TypeScript, Next.js, NestJS,
