@@ -247,6 +247,7 @@ model User {
   designBaselines             DesignBaseline[]
   deliveryPlans               DeliveryPlan[]
   deliveryApprovals           DeliveryApproval[]
+  startingPoints              StartingPoint[]
   screenDesignExceptions      ScreenDesignException[]
   screenDesignOverrides       ScreenDesignOverride[]
   constructionUnitReviews     ConstructionUnitReview[]
@@ -316,6 +317,7 @@ model Workspace {
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   projects         Project[]
+  startingPoints   StartingPoint[]
   memberships      WorkspaceMembership[]
   projectDeletions ProjectDeletion[]
 
@@ -2492,4 +2494,25 @@ model AcceptanceResult {
 
   @@id([sandboxRunId, criterionKey])
   @@map("acceptance_results")
+}
+
+// DEC-176: requirements, use cases and a data model saved from a project of
+// the workspace, for another project to copy as drafts. The content is a
+// package of creation requests, kept whole and never queried by its parts.
+model StartingPoint {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId     String   @map("workspace_id") @db.Uuid
+  name            String
+  description     String   @default("")
+  content         Json
+  // The project it was saved from; kept when that project is deleted.
+  sourceProjectId String?  @map("source_project_id") @db.Uuid
+  createdByUserId String   @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  createdBy User      @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, createdAt])
+  @@map("starting_points")
 }

@@ -1,3 +1,4 @@
+import { StartingPointsModule } from '../../../src/starting-points/starting-points.module';
 import { IdentityModule } from '../../../src/identity/identity.module';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { configureBodyLimits } from '../../../src/common/body-limits';
@@ -153,6 +154,7 @@ export async function createTestContext(
       BaselinesModule,
       AuditModule,
       ConstructionModule,
+      StartingPointsModule,
     ],
   })
     .overrideProvider(StageCurrencyService)
