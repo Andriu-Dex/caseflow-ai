@@ -131,6 +131,14 @@ Prisma y PostgreSQL, con arquitectura de monolito modular.
    controles obligatorios aprobados; crear archivos o compilar no basta.
 7. Descarga el ZIP correspondiente y sigue su README en un entorno separado.
 
+### ¿Dónde está implementado?
+
+Al abrir un requisito o un caso de uso, la sección **¿Dónde está implementado?** muestra
+sus casos de uso, las pantallas que los realizan, las acciones del servidor, los
+elementos del diseño que lo atienden (útil para los requisitos no funcionales), sus
+pruebas de aceptación y los archivos de la última construcción. Antes de construir,
+muestra lo que prevé el plan de implementación.
+
 ### Pruebas de aceptación
 
 Cada caso de uso aprobado que tiene pantallas en el plan produce un criterio de
