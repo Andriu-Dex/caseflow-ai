@@ -131,6 +131,27 @@ Prisma y PostgreSQL, con arquitectura de monolito modular.
    controles obligatorios aprobados; crear archivos o compilar no basta.
 7. Descarga el ZIP correspondiente y sigue su README en un entorno separado.
 
+### Construir por entregas
+
+En **Generación de código** puedes elegir entre construir **todo de una vez** o
+**por entregas**. Por entregas, el proyecto avanza en partes que se aprueban una a una:
+
+1. Pulsa **Proponer plan de entregas**. La entrega 0 es la base (acceso, usuarios
+   y roles); después va un módulo por entrega. El orden respeta las dependencias:
+   «¿Por qué este orden?» explica qué módulo necesita a cuál. Puedes adelantar o
+   atrasar las entregas que aún no se construyeron.
+2. En la entrega en curso verás el uso de IA previsto. Pulsa **Construir la entrega**.
+   Solo se pide a la IA lo nuevo; lo de las entregas aprobadas se reutiliza.
+3. Valida la construcción en la lista de construcciones. Si quieres, despliégala para
+   mostrarla. Las pantallas que llegan en entregas posteriores muestran un aviso.
+4. Pulsa **Aprobar la entrega**. La siguiente solo se construye cuando las anteriores
+   están aprobadas.
+
+Si una construcción posterior cambia algo de una entrega ya aprobada, esa entrega
+aparece como **Cambió: revisar**: valida la construcción más reciente y apruébala de
+nuevo antes de seguir. En cualquier momento puedes pasar a **Todo de una vez** para
+construir lo que falta; también reutiliza lo aprobado.
+
 Una ejecución fallida debe investigarse a partir de sus resultados. No suprimas
 pruebas para obtener READY. Las reparaciones automáticas están limitadas y no
 reemplazan la revisión. Exportar no despliega el sistema; el CI de CASEFlow tampoco
