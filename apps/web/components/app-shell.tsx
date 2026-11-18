@@ -14,6 +14,7 @@ import {
   Layers,
   Lock,
   RefreshCw,
+  Search,
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
@@ -38,6 +39,7 @@ import {
 import { useConstructionState } from '../lib/use-construction-state';
 import { StageOutdatedBanner } from './stage-outdated-banner';
 import { ProjectSwitcher } from './project-switcher';
+import { OPEN_QUICK_SEARCH_EVENT, QuickSearch } from './quick-search';
 
 type NavItem = { href: string; label: string };
 
@@ -314,6 +316,23 @@ export function AppShell({ children }: { children: ReactNode }) {
             )}
           </button>
         </div>
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new Event(OPEN_QUICK_SEARCH_EVENT))}
+          title="Buscar (Ctrl+K)"
+          className={`mb-5 flex w-full items-center gap-2 rounded-md border border-sidebar-border px-2.5 py-1.5 text-sm text-sidebar-foreground/60 transition-colors hover:bg-white/5 hover:text-white ${
+            collapsed ? 'md:justify-center md:px-0' : ''
+          }`}
+        >
+          <Search className="size-4 shrink-0" aria-hidden="true" />
+          <span className={label}>Buscar</span>
+          <kbd
+            className={`ml-auto rounded border border-sidebar-border px-1 text-[10px] ${collapsed ? 'md:hidden' : ''}`}
+          >
+            Ctrl K
+          </kbd>
+        </button>
+        <QuickSearch projectId={projectId} pages={groups.flatMap((group) => group.items)} />
         <div className="flex flex-col gap-5">
           {firstOutdated ? (
             <Link

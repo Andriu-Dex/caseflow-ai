@@ -190,6 +190,55 @@ export class ArtifactsService {
     };
   }
 
+  // Matches the code or the current title, ignoring case and accents; exact
+  // and leading code matches come first (RF-001 before RF-0010).
+  // ponytail: filters in memory, fine for a few thousand artifacts per project;
+  // move to a trigram index if projects grow far beyond that.
+  async search(projectId: string, text: string, limit = 20) {
+    const fold = (value: string) =>
+      value
+        .normalize('NFD')
+        .replace(/\p{Diacritic}/gu, '')
+        .toLowerCase();
+    const query = fold(text.trim());
+    const rows = await this.prisma.artifact.findMany({
+      where: { projectId, archivedAt: null },
+      select: {
+        id: true,
+        artifactTypeCode: true,
+        code: true,
+        versions: {
+          orderBy: { versionNumber: 'desc' },
+          take: 1,
+          select: { title: true, status: true },
+        },
+      },
+    });
+    const rank = (code: string) => (code === query ? 0 : code.startsWith(query) ? 1 : 2);
+    return {
+      items: rows
+        .flatMap((row) => {
+          const version = row.versions[0];
+          if (!version) return [];
+          const code = fold(row.code);
+          if (!code.includes(query) && !fold(version.title).includes(query)) return [];
+          return [{ row, version, rank: rank(code) }];
+        })
+        .sort(
+          (a, b) =>
+            a.rank - b.rank || a.row.code.localeCompare(b.row.code, 'es', { numeric: true }),
+        )
+        .slice(0, limit)
+        .map(({ row, version }) => ({
+          id: row.id,
+          type: row.artifactTypeCode,
+          code: row.code,
+          title: version.title,
+          status: version.status,
+        })),
+    };
+  }
+
   // Brings an archived artifact back to active work. It is never refused for
   // what changed while it was away: the stage currency (DEC-137) counts the
   // restore as a change and marks what depends on it. When it now competes with

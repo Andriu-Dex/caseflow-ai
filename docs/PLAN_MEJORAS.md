@@ -130,6 +130,7 @@ Mejoras de experiencia añadidas tras revisar las pantallas con datos reales:
 - Página 404 en español con salida a Inicio y Proyectos; `/settings` abre los ajustes de IA.
 - Las ayudas de primer uso no se salen de la ventana; textos sin jerga interna y menú con iconos propios.
 - Bocetos: comparación de cada pantalla con su versión anterior.
+- Búsqueda rápida (Ctrl+K o «Buscar» en el menú): abre una página o un artefacto del proyecto activo por su código (RF-001, CU-003…) o por su título, sin distinguir tildes ni mayúsculas. En requisitos y casos de uso, el artefacto elegido queda filtrado y abierto. API: `GET /projects/:projectId/artifacts/search?q=`.
 
 ## Fase 9. Proyecto del cine
 

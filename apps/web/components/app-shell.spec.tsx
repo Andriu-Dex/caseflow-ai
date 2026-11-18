@@ -15,7 +15,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('sonner', () => ({ toast: { warning: (...args: unknown[]) => mocks.warning(...args) } }));
 
-vi.mock('next/navigation', () => ({ usePathname: () => '/' }));
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/',
+  useRouter: () => ({ push: vi.fn() }),
+}));
 
 vi.mock('../lib/api', () => ({
   api: {

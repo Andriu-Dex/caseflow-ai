@@ -40,6 +40,8 @@ export {
   archivedArtifactSchema,
   archivedArtifactsResponseSchema,
   listArchivedArtifactsQuerySchema,
+  searchArtifactsQuerySchema,
+  artifactSearchResponseSchema,
   restoreArtifactResponseSchema,
   artifactResponseSchema,
   artifactVersionResponseSchema,
@@ -96,6 +98,8 @@ export type {
 export type {
   ArchivedArtifact,
   ArchivedArtifactsResponse,
+  ArtifactSearchResult,
+  ArtifactSearchResponse,
   RestoreArtifactResponse,
   ArtifactOrigin,
   ArtifactResponse,

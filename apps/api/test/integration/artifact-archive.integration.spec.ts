@@ -161,4 +161,31 @@ describe('Artifact archive integration', () => {
       ).toEqual([]);
     });
   });
+
+  it('finds active artifacts by code or accent-free title, best code match first', async () => {
+    const searched = await ctx.requirements.create(projectId, requirement('Gestión de reservas'));
+    const archived = await ctx.requirements.create(projectId, requirement('Reservas antiguas'));
+    await request(ctx.app.getHttpServer())
+      .post(`/projects/${projectId}/artifacts/${archived.id}/archive`)
+      .set('Authorization', `Bearer ${ctx.token}`)
+      .expect(201);
+    const search = (q: string, project = projectId) =>
+      request(ctx.app.getHttpServer())
+        .get(`/projects/${project}/artifacts/search?q=${encodeURIComponent(q)}`)
+        .set('Authorization', `Bearer ${ctx.token}`);
+
+    const byTitle = await search('gestion de RESERVAS');
+    expect(byTitle.status).toBe(200);
+    expect(byTitle.body.items).toEqual([
+      expect.objectContaining({ id: searched.id, type: 'REQUIREMENT', code: searched.code }),
+    ]);
+    const byCode = await search(searched.code.toLowerCase());
+    expect(byCode.body.items[0].id).toBe(searched.id);
+    expect((await search('antiguas')).body.items).toEqual([]);
+    expect((await search('')).status).toBe(400);
+
+    const w = await createWorkspaceWithOwner(ctx, 'Search other');
+    const other = (await ctx.projects.create({ workspaceId: w.id, name: 'Other' })).id;
+    expect((await search('reservas', other)).body.items).toEqual([]);
+  });
 });

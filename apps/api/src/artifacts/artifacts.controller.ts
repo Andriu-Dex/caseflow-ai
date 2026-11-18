@@ -12,6 +12,8 @@ import {
   createArtifactVersionRequestSchema,
   listArchivedArtifactsQuerySchema,
   restoreArtifactResponseSchema,
+  artifactSearchResponseSchema,
+  searchArtifactsQuerySchema,
   type ArtifactResponse,
   type ArtifactVersionResponse,
 } from '@caseflow-ai/contracts';
@@ -62,6 +64,27 @@ export class ArtifactsController {
     query: z.output<typeof listArchivedArtifactsQuerySchema>,
   ) {
     return this.artifacts.listArchived(projectId, query.types);
+  }
+
+  // Declared before ':artifactId' for the same reason.
+  @Get('search')
+  @ApiOperation({
+    operationId: 'searchArtifacts',
+    summary: 'Find active artifacts by code or current title',
+  })
+  @ApiUuidParam('projectId', 'Project identifier.')
+  @ApiZodResponse(
+    200,
+    'Up to 20 matching artifacts, best matches first.',
+    artifactSearchResponseSchema,
+  )
+  @ApiErrorResponse(400, 'The search text is missing or too long.')
+  search(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Query(new ZodValidationPipe(searchArtifactsQuerySchema))
+    query: z.output<typeof searchArtifactsQuerySchema>,
+  ) {
+    return this.artifacts.search(projectId, query.q);
   }
 
   @Get(':artifactId')

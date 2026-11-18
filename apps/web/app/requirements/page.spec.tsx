@@ -175,6 +175,18 @@ describe('Requirements list', () => {
     expect(screen.getByRole('img', { name: '1 sugerencia de calidad' })).toBeInTheDocument();
   });
 
+  it('shows and opens the requirement quick search links to', async () => {
+    window.history.pushState({}, '', '/requirements?q=RF-002');
+    try {
+      renderPage();
+      expect(await screen.findByRole('button', { name: 'Indicar el origen' })).toBeInTheDocument();
+      expect(screen.getByRole('searchbox', { name: 'Buscar requisitos' })).toHaveValue('RF-002');
+      expect(screen.queryByText('Registrar pedido')).not.toBeInTheDocument();
+    } finally {
+      window.history.pushState({}, '', '/');
+    }
+  });
+
   it('approves a pending requirement and archives one after confirming', async () => {
     const user = userEvent.setup();
     renderPage();

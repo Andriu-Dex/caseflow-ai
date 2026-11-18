@@ -48,6 +48,7 @@ import { DetailBlock, ItemList, Tile } from './requirement-list';
 import { AlternativeFlows, FlowSteps } from './use-case-flow';
 import { UseCaseRelationChips } from './use-case-relations';
 import { PaginationNav } from './pagination-nav';
+import { useLinkedArtifact } from '../lib/linked-artifact';
 
 // The project's use cases at a glance: a summary with how the approved
 // functional requirements are realised, search and status filter, and
@@ -458,6 +459,13 @@ export function UseCaseList({
     'APPROVE'
   > | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
+
+  // Quick search: show and open the artifact it was asked for.
+  useLinkedArtifact((code) => {
+    setSearch(code);
+    setPage(0);
+    setOpen(items.find((item) => item.code === code)?.id ?? null);
+  });
 
   useEffect(() => {
     try {

@@ -49,6 +49,7 @@ import type {
   UseCaseBulkAction,
   UseCaseGenerationJob,
   ArchivedArtifactsResponse,
+  ArtifactSearchResponse,
   RestoreArtifactResponse,
   DataModelGenerationJob,
   StructuredGenerationJob,
@@ -414,6 +415,10 @@ export const api = {
       ),
     restore: (projectId: string, artifactId: string) =>
       post<RestoreArtifactResponse>(`/projects/${projectId}/artifacts/${artifactId}/restore`),
+    search: (projectId: string, text: string) =>
+      get<ArtifactSearchResponse>(
+        `/projects/${projectId}/artifacts/search?q=${encodeURIComponent(text)}`,
+      ),
   },
   readiness: {
     get: (projectId: string) => get<ReadinessResponse>(`/projects/${projectId}/readiness`),
