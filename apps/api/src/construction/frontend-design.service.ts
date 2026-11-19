@@ -140,14 +140,35 @@ export class FrontendDesignService {
     const projectBaselineIds = (
       await this.prisma.designBaseline.findMany({ where: { projectId }, select: { id: true } })
     ).map((item) => item.id);
+    // ADR-026: a page that only runs built-in access operations (such as the
+    // sign-out the server adds) is the template's own, with no screen to compose.
+    const builtins = new Set(
+      (plan.customEndpoints ?? []).flatMap((e) => (e.builtin ? [`${e.method} ${e.path}`] : [])),
+    );
     for (const route of plan.routes) {
       const screen = blueprint.screens.find((item) => item.localId === route.screenLocalId);
+      const path = `apps/web/app${route.path === '/' ? '' : route.path}/page.tsx`;
+      const target = output.find((item) => item.path === path);
+      if (
+        !screen &&
+        target &&
+        route.actions.length &&
+        route.actions.every((action) => action.endpoint && builtins.has(action.endpoint))
+      ) {
+        records.push({
+          routePath: route.path,
+          screenLocalId: '',
+          mockupSha256: null,
+          sourceSha256: hash(target.content),
+          outputSha256: hash(target.content),
+          navigation: 'SIDE',
+        });
+        continue;
+      }
       if (!screen)
         throw new UnprocessableEntityException(
           `La ruta ${route.path} no identifica una pantalla del plano aprobado.`,
         );
-      const path = `apps/web/app${route.path === '/' ? '' : route.path}/page.tsx`;
-      const target = output.find((item) => item.path === path);
       if (!target)
         throw new UnprocessableEntityException(`No se generó la pantalla ${route.path}.`);
       if (mockup.generatorKind === 'INTERNAL_WIREFRAME') {

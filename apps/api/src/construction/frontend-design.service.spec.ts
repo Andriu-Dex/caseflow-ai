@@ -251,6 +251,48 @@ describe('frozen design adaptation', () => {
     expect(ai.generateStructured).not.toHaveBeenCalled();
     expect(result.records[0]!.mockupSha256).toBeNull();
   });
+  it('keeps a built-in access page with no screen as the template made it (ADR-026)', async () => {
+    const { service, ai } = await setup();
+    const signOut = file('apps/web/app/logout/page.tsx', 'export default function LogoutPage() {}');
+    const withSignOut = {
+      ...plan,
+      customEndpoints: [
+        {
+          moduleLocalId: 'catalog',
+          method: 'POST',
+          path: '/auth/logout',
+          summary: 'Salir',
+          builtin: 'LOGOUT',
+          roles: [],
+        },
+      ],
+      routes: [
+        ...plan.routes,
+        {
+          path: '/logout',
+          screenName: 'Cerrar sesión',
+          moduleLocalId: 'catalog',
+          kind: 'CUSTOM',
+          actions: [{ label: 'Cerrar sesión', endpoint: 'POST /auth/logout' }],
+        },
+      ],
+    };
+    const result = await service.adapt(
+      id,
+      id,
+      withSignOut as never,
+      [...files(), signOut],
+      'Catálogo',
+      false,
+      id,
+    );
+    expect(ai.generateStructured).toHaveBeenCalledTimes(1);
+    expect(result.records.find((record) => record.routePath === '/logout')).toMatchObject({
+      mockupSha256: null,
+      outputSha256: createHash('sha256').update(signOut.content).digest('hex'),
+    });
+    expect(result.files.find((item) => item.path === signOut.path)!.content).toBe(signOut.content);
+  });
   it('ships a valid proposal with its limitations as observations, without blocking (DEC-164)', async () => {
     const { service, ai, prisma } = await setup();
     const original = ai.generateStructured.getMockImplementation()!;

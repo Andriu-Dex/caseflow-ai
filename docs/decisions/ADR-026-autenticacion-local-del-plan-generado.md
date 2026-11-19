@@ -37,13 +37,13 @@ Las rutas se piden después con esas operaciones como endpoints existentes. Las 
 
 - el acceso, en la página de acceso;
 - las opciones, en el inicio;
-- el cierre, en una página propia, para que las tres queden en páginas distintas.
+- el cierre, en una página propia, para que las tres queden en páginas distintas. Una ruta con una operación integrada se convierte en la página de la plantilla, así que el cierre no puede ir en otra pantalla sin reemplazarla.
 
 Las marcas de operación integrada que el modelo ponga en un lote se ignoran.
 
 ### 2. Lo que añade la autenticación no es una brecha de cobertura
 
-La sesión, el catálogo de roles, la página de cierre y las acciones integradas no provienen del diagrama de clases ni del plano de interfaz. La coherencia del plan las reconoce por su vínculo con `authentication.local` y no exige que nombren una clase o pantalla.
+La sesión, el catálogo de roles, la página de cierre y las acciones integradas no provienen del diagrama de clases ni del plano de interfaz. La coherencia del plan las reconoce por su vínculo con `authentication.local` y no exige que nombren una clase o pantalla. La adaptación del diseño tampoco compone una página que solo ejecuta operaciones integradas: la conserva como la genera la plantilla y la registra sin boceto en el manifiesto de fidelidad.
 
 ### 3. Referencias entre lotes
 
