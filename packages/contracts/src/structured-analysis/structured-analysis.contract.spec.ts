@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { aiImplementationActionContractSchema } from './action-contract';
 import {
   implementationActionsOutputSchema,
   implementationPlanAIOutputSchema,
@@ -265,5 +266,41 @@ describe('implementation plan schemas sent to the AI', () => {
     ['actions batch', implementationActionsOutputSchema],
   ])('keeps the %s within 10 levels of objects', (_, schema) => {
     expect(objectDepth(z.toJSONSchema(schema))).toBeLessThanOrEqual(10);
+  });
+});
+
+// A strict answer lists every key; what a value's type cannot use is dropped.
+describe('AI answers for action contracts and navigation', () => {
+  it('drops keys a value type cannot use instead of rejecting the answer', () => {
+    const parsed = aiImplementationActionContractSchema.parse({
+      body: {
+        type: 'OBJECT',
+        minLength: 0,
+        collectionLayout: 'TABLE',
+        properties: [{ name: 'reason', value: { type: 'STRING', maxLength: 200, minItems: 1 } }],
+      },
+      response: {
+        type: 'ARRAY',
+        collectionLayout: 'TABLE',
+        items: { type: 'OBJECT', properties: [{ name: 'total', value: { type: 'DECIMAL' } }] },
+      },
+    });
+    expect(parsed.body).toEqual({
+      type: 'OBJECT',
+      properties: [{ name: 'reason', value: { type: 'STRING', maxLength: 200 } }],
+    });
+    expect(parsed.response.collectionLayout).toBe('TABLE');
+  });
+
+  it('keeps a plain navigation and drops the identifier it cannot read', () => {
+    const batch = implementationActionsOutputSchema.parse({
+      routes: [
+        {
+          screenLocalId: 'sales',
+          actions: [{ label: 'Ver venta', navigation: { routePath: '/sales/:id', idField: 'id' } }],
+        },
+      ],
+    });
+    expect(batch.routes[0]!.actions[0]!.navigation).toEqual({ routePath: '/sales/:id' });
   });
 });

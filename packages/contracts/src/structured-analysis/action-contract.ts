@@ -73,7 +73,39 @@ const base = z
   })
   .strict();
 
-function boundedValue(depth: number): z.ZodType<ActionValueDefinition> {
+// The keys each value type can carry. A strict json_schema answer lists every
+// key, and a model may fill one that its type cannot use (a table layout on a
+// text, a length on an object) instead of leaving it null.
+const KEYS_BY_TYPE: Record<string, readonly string[]> = {
+  minLength: ['STRING'],
+  maxLength: ['STRING'],
+  minimum: ['INT'],
+  maximum: ['INT'],
+  enumValues: ['ENUM'],
+  referenceEntityLocalId: ['UUID'],
+  properties: ['OBJECT'],
+  items: ['ARRAY'],
+  minItems: ['ARRAY'],
+  maxItems: ['ARRAY'],
+  maxBytes: ['FILE'],
+  mimeTypes: ['FILE'],
+};
+export function withoutInapplicableKeys(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const item = { ...(value as Record<string, unknown>) };
+  const type = item.type;
+  if (typeof type !== 'string') return value;
+  for (const [key, types] of Object.entries(KEYS_BY_TYPE))
+    if (!types.includes(type)) delete item[key];
+  const items = item.items as { type?: unknown } | undefined;
+  if (type !== 'ARRAY' || items?.type !== 'OBJECT') {
+    delete item.collectionLayout;
+    delete item.groupBy;
+  }
+  return item;
+}
+
+function boundedValue(depth: number, forAI = false): z.ZodType<ActionValueDefinition> {
   const schema = depth
     ? base
         .extend({
@@ -86,17 +118,17 @@ function boundedValue(depth: number): z.ZodType<ActionValueDefinition> {
                     .regex(/^[a-z][a-zA-Z0-9]*$/)
                     .max(60),
                   required: z.boolean().optional(),
-                  value: boundedValue(depth - 1),
+                  value: boundedValue(depth - 1, forAI),
                 })
                 .strict(),
             )
             .max(50)
             .optional(),
-          items: boundedValue(depth - 1).optional(),
+          items: boundedValue(depth - 1, forAI).optional(),
         })
         .strict()
     : base;
-  return schema.superRefine((value, ctx) => {
+  const refined = schema.superRefine((value, ctx) => {
     const item = value as ActionValueDefinition;
     const fail = (message: string) => ctx.addIssue({ code: 'custom', message });
     if (
@@ -155,6 +187,12 @@ function boundedValue(depth: number): z.ZodType<ActionValueDefinition> {
       if (min !== undefined && max !== undefined && min > max)
         fail('El límite mínimo no puede superar al máximo.');
   });
+  return forAI
+    ? (z.preprocess(
+        withoutInapplicableKeys,
+        refined,
+      ) as unknown as z.ZodType<ActionValueDefinition>)
+    : refined;
 }
 
 export const actionValueDefinitionSchema = boundedValue(4);
@@ -235,4 +273,4 @@ export const implementationActionContractSchema = actionContract(actionValueDefi
 // endpoint of a plan answer, four levels of values reach 12. What the AI is
 // asked for is one level shallower; what it returns still validates against
 // the canonical contract.
-export const aiImplementationActionContractSchema = actionContract(boundedValue(3));
+export const aiImplementationActionContractSchema = actionContract(boundedValue(3, true));

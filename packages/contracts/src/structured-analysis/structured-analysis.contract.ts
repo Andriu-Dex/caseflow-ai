@@ -812,7 +812,19 @@ const looseRouteActionSchema = z
     label: text(200),
     operation: z.enum(IMPLEMENTATION_CRUD_OPERATIONS).optional(),
     endpoint: text(220).optional(),
-    navigation: routeNavigationSchema.optional(),
+    // Plain navigation only opens routePath: an identifier or collection
+    // field with no query to read them from has no use, and is dropped.
+    navigation: z
+      .preprocess(
+        (value) =>
+          value &&
+          typeof value === 'object' &&
+          !(value as { sourceEndpoint?: unknown }).sourceEndpoint
+            ? { ...value, idField: undefined, collectionField: undefined }
+            : value,
+        routeNavigationSchema,
+      )
+      .optional(),
     interaction: z.enum(IMPLEMENTATION_ROUTE_ACTION_INTERACTIONS).optional(),
   })
   .strict();
