@@ -292,6 +292,24 @@ describe('AI answers for action contracts and navigation', () => {
     expect(parsed.response.collectionLayout).toBe('TABLE');
   });
 
+  it('offers no list or object where nothing can be nested', () => {
+    const innermost = {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        properties: [{ name: 'tags', value: { type: 'ARRAY', items: { type: 'STRING' } } }],
+      },
+    };
+    const contract = {
+      response: { type: 'OBJECT', properties: [{ name: 'rows', value: innermost }] },
+    };
+    expect(aiImplementationActionContractSchema.safeParse(contract).success).toBe(false);
+    const schema = JSON.stringify(z.toJSONSchema(aiImplementationActionContractSchema));
+    expect(schema).toContain(
+      '"enum":["STRING","UUID","DECIMAL","INT","BOOLEAN","DATE","DATETIME","ENUM","FILE"]',
+    );
+  });
+
   it('keeps a plain navigation and drops the identifier it cannot read', () => {
     const batch = implementationActionsOutputSchema.parse({
       routes: [

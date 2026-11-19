@@ -127,7 +127,11 @@ function boundedValue(depth: number, forAI = false): z.ZodType<ActionValueDefini
           items: boundedValue(depth - 1, forAI).optional(),
         })
         .strict()
-    : base;
+    : forAI
+      ? // At the last level a list or an object has no room for its contents:
+        // the AI is offered only the types that need none.
+        base.extend({ type: base.shape.type.exclude(['OBJECT', 'ARRAY']) })
+      : base;
   const refined = schema.superRefine((value, ctx) => {
     const item = value as ActionValueDefinition;
     const fail = (message: string) => ctx.addIssue({ code: 'custom', message });
