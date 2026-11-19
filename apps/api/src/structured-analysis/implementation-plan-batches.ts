@@ -9,6 +9,7 @@ import {
   type UiBlueprintContent,
 } from '@caseflow-ai/contracts';
 import { conceptualCardinality, entityClasses } from './conceptual-model-batches';
+import { bindAuthenticationActions } from './implementation-plan-authentication';
 
 // DEC-144: entity classes and screens per batch; an entity or a route carries
 // its fields or actions, so a batch of this size fits one response.
@@ -299,11 +300,85 @@ const endpointKey = (endpoint: Pick<IpEndpoint, 'method' | 'path'>) =>
 // camelCase names, so a trailing "id" is capitalised.
 export const camelParams = (value: string) =>
   value.replace(/([:[])([a-z][a-z0-9]*[a-z0-9])id(?![A-Za-z0-9])/g, '$1$2Id');
+const camelAction = <A extends LooseImplementationRoute['actions'][number]>(action: A): A => ({
+  ...action,
+  ...(action.endpoint ? { endpoint: camelParams(action.endpoint) } : {}),
+  ...(action.navigation
+    ? {
+        navigation: {
+          ...action.navigation,
+          routePath: camelParams(action.navigation.routePath),
+          ...(action.navigation.sourceEndpoint
+            ? { sourceEndpoint: camelParams(action.navigation.sourceEndpoint) }
+            : {}),
+        },
+      }
+    : {}),
+});
+
+// A batch may refer to what another batch was to define. Once all are in, a
+// context query that is no GET endpoint with a contract is dropped, and so is
+// a navigation to a route nobody drew (its action is then settled like any
+// unserved one); a navigation whose result query cannot give the identifier
+// becomes a plain one.
+function dropDanglingReferences(accumulated: RoutesAccumulated): RoutesAccumulated {
+  const queries = new Map(
+    accumulated.customEndpoints
+      .filter((endpoint) => endpoint.method === 'GET' && endpoint.contract)
+      .map((endpoint) => [endpointKey(endpoint), endpoint]),
+  );
+  const paths = new Set(accumulated.routes.map((route) => route.path));
+  const gives = (navigation: NonNullable<IpRoute['actions'][number]['navigation']>) => {
+    const response = queries.get(navigation.sourceEndpoint ?? '')?.contract?.response;
+    const shape = navigation.collectionField
+      ? response?.properties?.find((field) => field.name === navigation.collectionField)?.value
+          .items
+      : response;
+    const id = shape?.properties?.find((field) => field.name === navigation.idField);
+    return (
+      id?.value.type === 'UUID' &&
+      id.required !== false &&
+      !id.value.nullable &&
+      navigation.routePath.split('[').length === 2
+    );
+  };
+  return {
+    ...accumulated,
+    routes: accumulated.routes.map((route) => {
+      const contextQueries = route.contextQueries?.filter((query) => queries.has(query));
+      const read = new Set([
+        ...(contextQueries ?? []),
+        ...route.actions.flatMap((action) => (action.endpoint ? [action.endpoint] : [])),
+      ]);
+      return {
+        ...route,
+        contextQueries: contextQueries?.length ? contextQueries : undefined,
+        actions: route.actions.flatMap((action): IpRoute['actions'] => {
+          const navigation = action.navigation;
+          if (!navigation) return [action];
+          if (!paths.has(navigation.routePath)) return [];
+          if (
+            navigation.sourceEndpoint &&
+            !(read.has(navigation.sourceEndpoint) && gives(navigation))
+          )
+            return [{ label: action.label, navigation: { routePath: navigation.routePath } }];
+          return [action];
+        }),
+      };
+    }),
+  };
+}
 
 // What serves an action: the operation when the entity offers it, else the
-// endpoint when it exists; null when neither does.
+// endpoint when it exists, else the route it opens (finishRoutes checks the
+// route exists once every batch is in); null when none does.
 function serveAction(
-  action: { label: string; operation?: IpEntity['operations'][number]; endpoint?: string },
+  action: {
+    label: string;
+    operation?: IpEntity['operations'][number];
+    endpoint?: string;
+    navigation?: IpRoute['actions'][number]['navigation'];
+  },
   entity: IpEntity | undefined,
   endpointKeys: Set<string>,
 ): IpRoute['actions'][number] | null {
@@ -311,6 +386,8 @@ function serveAction(
     return { label: action.label, operation: action.operation };
   if (action.endpoint && endpointKeys.has(action.endpoint))
     return { label: action.label, endpoint: action.endpoint };
+  if (action.navigation && !action.operation && !action.endpoint)
+    return { label: action.label, navigation: action.navigation };
   return null;
 }
 
@@ -326,10 +403,8 @@ export function mergeRouteBatch(
     routes: output.routes.map((route) => ({
       ...route,
       path: camelParams(route.path),
-      actions: route.actions.map((action) => ({
-        ...action,
-        ...(action.endpoint ? { endpoint: camelParams(action.endpoint) } : {}),
-      })),
+      ...(route.contextQueries ? { contextQueries: route.contextQueries.map(camelParams) } : {}),
+      actions: route.actions.map(camelAction),
     })),
     customEndpoints: output.customEndpoints.map((endpoint) => ({
       ...endpoint,
@@ -447,13 +522,7 @@ export function mergeActionBatch(
   const screenById = new Map(screens.map((screen) => [screen.localId, screen]));
   output = {
     ...output,
-    routes: output.routes.map((route) => ({
-      ...route,
-      actions: route.actions.map((action) => ({
-        ...action,
-        ...(action.endpoint ? { endpoint: camelParams(action.endpoint) } : {}),
-      })),
-    })),
+    routes: output.routes.map((route) => ({ ...route, actions: route.actions.map(camelAction) })),
   };
   const withEndpoints = mergeRouteBatch(
     accumulated,
@@ -534,6 +603,7 @@ export function finishRoutes(
   entities: IpEntity[],
   roles: string[] = [],
 ): RoutesAccumulated {
+  accumulated = dropDanglingReferences(bindAuthenticationActions(accumulated));
   const entityById = new Map(entities.map((entity) => [entity.localId, entity]));
   const screenById = new Map(screens.map((screen) => [screen.localId, screen]));
   const routes = accumulated.routes.map((route) => {
@@ -590,7 +660,13 @@ export function finishRoutes(
     }
     return extra.length ? { ...route, actions: [...route.actions, ...extra] } : route;
   });
-  const used = new Set(served.flatMap((route) => route.actions.map((a) => a.endpoint)));
+  // An endpoint is kept when an action, a context query or a navigation reads it.
+  const used = new Set(
+    served.flatMap((route) => [
+      ...(route.contextQueries ?? []),
+      ...route.actions.flatMap((a) => [a.endpoint, a.navigation?.sourceEndpoint]),
+    ]),
+  );
   return {
     routes: served,
     customEndpoints: endpoints.filter((endpoint) => used.has(endpointKey(endpoint))),

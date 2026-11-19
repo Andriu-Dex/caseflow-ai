@@ -83,6 +83,7 @@ import {
   type PlanContext,
   type RoutesAccumulated,
 } from './implementation-plan-batches';
+import { completeLocalAuthentication } from './implementation-plan-authentication';
 import {
   PLAN_BATCH_ATTEMPTS,
   cleanOutline,
@@ -1617,8 +1618,11 @@ export class StructuredAnalysisService {
         progress?.update(2 + position, total, 0);
       }
       entities = addRelations(entities, classRelationships);
+      const authentication = completeLocalAuthentication(skeleton, entities);
+      skeleton = authentication.skeleton;
+      entities = authentication.entities;
 
-      let routes: RoutesAccumulated = { routes: [], customEndpoints: [] };
+      let routes: RoutesAccumulated = { routes: [], customEndpoints: authentication.endpoints };
       const allScreenIds = new Set(screens.map((screen) => screen.localId));
       const routeBase = 1 + entityBatches.length * IP_BATCH_ATTEMPTS;
       for (const [position, batch] of routeBatches.entries()) {
@@ -1628,7 +1632,7 @@ export class StructuredAnalysisService {
             routeBase + position * IP_BATCH_ATTEMPTS + attempt,
             {
               promptKey: 'implementation-plan.routes',
-              promptVersion: 2,
+              promptVersion: 3,
               payload: {
                 targetScreens: remaining.map((screen) => ({
                   localId: screen.localId,
@@ -1652,6 +1656,7 @@ export class StructuredAnalysisService {
                 existingEndpoints: routes.customEndpoints.map(
                   (endpoint) => `${endpoint.method} ${endpoint.path}`,
                 ),
+                existingRoutes: routes.routes.map((route) => route.path),
               },
               schema: implementationRoutesBatchOutputSchema,
               schemaName: 'implementation_plan_routes',
@@ -1676,7 +1681,7 @@ export class StructuredAnalysisService {
               attempt,
             {
               promptKey: 'implementation-plan.actions',
-              promptVersion: 1,
+              promptVersion: 2,
               payload: {
                 routes: pending,
                 entities: entities.map((entity) => ({
@@ -1693,6 +1698,7 @@ export class StructuredAnalysisService {
                 existingEndpoints: routes.customEndpoints.map(
                   (endpoint) => `${endpoint.method} ${endpoint.path}`,
                 ),
+                existingRoutes: routes.routes.map((route) => route.path),
               },
               schema: implementationActionsOutputSchema,
               schemaName: 'implementation_plan_actions',

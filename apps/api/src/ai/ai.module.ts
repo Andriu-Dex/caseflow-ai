@@ -528,14 +528,14 @@ function defaultProvider(): AIProvider {
           },
           {
             key: 'implementation-plan.actions',
-            version: 1,
+            version: 2,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'implementation_plan_generation',
             systemInstructions: IP_ACTIONS_PROMPT,
           },
           {
             key: 'implementation-plan.routes',
-            version: 2,
+            version: 3,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'implementation_plan_generation',
             systemInstructions: IP_ROUTES_PROMPT,

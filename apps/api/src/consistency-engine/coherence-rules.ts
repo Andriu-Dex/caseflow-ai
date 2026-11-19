@@ -157,7 +157,25 @@ export function coherenceGaps(
         );
   } else if (kind === 'IMPLEMENTATION_PLAN') {
     const plan = implementationPlanContentSchema.parse(content);
-    checkClassCoverage(plan.entities, 'una entidad persistente', {
+    // ADR-026: the session, the role catalogue, the sign-out page and the
+    // built-in access actions belong to local authentication, not to the
+    // design, so they name no class or screen.
+    const local = plan.authentication.local;
+    const builtins = new Set(
+      plan.customEndpoints.flatMap((e) => (e.builtin ? [`${e.method} ${e.path}`] : [])),
+    );
+    const isBuiltin = (action: { endpoint?: string }) =>
+      Boolean(action.endpoint && builtins.has(action.endpoint));
+    const authEntities = new Set([
+      local?.sessionEntityLocalId,
+      plan.entities
+        .find((entity) => entity.localId === local?.userEntityLocalId)
+        ?.relations.find((relation) => relation.name === local?.roleRelation)?.targetEntityLocalId,
+    ]);
+    const designEntities = plan.entities.filter(
+      (entity) => entity.classLocalId || !authEntities.has(entity.localId),
+    );
+    checkClassCoverage(designEntities, 'una entidad persistente', {
       in: 'el plan de implementación',
       of: 'del plan de implementación',
     });
@@ -181,7 +199,9 @@ export function coherenceGaps(
             );
       }
       for (const route of plan.routes)
-        if (!route.screenLocalId)
+        if (!route.screenLocalId && route.actions.length && route.actions.every(isBuiltin))
+          continue;
+        else if (!route.screenLocalId)
           gap(
             'NAVIGATION_SCREEN_ROUTE',
             `La ruta ${route.path} no indica qué pantalla del plano de interfaz muestra.`,
@@ -195,7 +215,7 @@ export function coherenceGaps(
           const screen = upstream.screens.find((s) => s.localId === route.screenLocalId)!;
           const actions = new Set([...screen.primaryActions, ...screen.secondaryActions]);
           for (const action of route.actions)
-            if (!actions.has(action.label))
+            if (!actions.has(action.label) && !isBuiltin(action))
               gap(
                 'ACTION_ENDPOINT',
                 `La ruta ${route.path} atiende la acción «${action.label}», que la pantalla «${screen.name}» no tiene.`,
