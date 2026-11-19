@@ -440,7 +440,9 @@ export function mergeRouteBatch(
   const done = new Set(routes.map((route) => route.screenLocalId));
   for (const route of output.routes) {
     const screen = route.screenLocalId ? screens.get(route.screenLocalId) : undefined;
-    if (!route.screenLocalId) invalid('Una ruta no indica la pantalla del plano que muestra.');
+    // A route of no screen (often one the model adds, such as sign-out) is
+    // skipped; a screen it left without a route is asked for again.
+    if (!route.screenLocalId) continue;
     if (!screen) {
       if (allScreenIds.has(route.screenLocalId!) && done.has(route.screenLocalId)) continue;
       invalid('Una ruta muestra una pantalla que no es de este lote.');

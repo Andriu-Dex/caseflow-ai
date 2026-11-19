@@ -256,10 +256,9 @@ describe('routes', () => {
     expect(merged.customEndpoints[0]!.builtin).toBeUndefined();
   });
 
-  it('refuses a route with no screen and skips the route of a screen already drawn', () => {
-    expect(() => merge(base, [route({ screenLocalId: undefined })])).toThrow(
-      'no indica la pantalla',
-    );
+  it('skips a route with no screen and the route of a screen already drawn', () => {
+    const merged = merge(base, [route({ screenLocalId: undefined }), route({ path: '/home' })]);
+    expect(merged.routes.map((item) => item.path)).toEqual(['/home']);
     const earlier = { routes: [route({ screenLocalId: 'other' })], customEndpoints: [] };
     expect(merge(earlier, [route({ screenLocalId: 'other', path: '/x' })]).routes).toHaveLength(1);
   });
