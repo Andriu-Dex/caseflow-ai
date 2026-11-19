@@ -409,3 +409,50 @@ describe('action contracts once every batch is in', () => {
     expect(read!.contract).toEqual({ response });
   });
 });
+
+describe('records only a business action creates', () => {
+  const skeleton = {
+    authentication: { required: false, roles: [] },
+    modules: [{ localId: 'sales', name: 'Sales', description: 'Ventas' }],
+    envVars: [],
+  };
+  const sale = {
+    localId: 'sale',
+    name: 'Sale',
+    moduleLocalId: 'sales',
+    fields: [
+      {
+        name: 'total',
+        type: 'DECIMAL',
+        readOnly: true,
+        required: true,
+        unique: false,
+        enumValues: [],
+      },
+    ],
+    relations: [],
+    operations: ['LIST', 'GET', 'CREATE'],
+    readRoles: [],
+    writeRoles: [],
+  };
+  const route = (operation: string) => ({
+    path: '/sales',
+    screenName: 'Ventas',
+    moduleLocalId: 'sales',
+    kind: 'LIST',
+    entityLocalId: 'sale',
+    actions: [{ label: 'Acción', operation }],
+  });
+  const build = (operation: string) =>
+    finishImplementationPlan(
+      skeleton as never,
+      [sale] as never,
+      { routes: [route(operation)], customEndpoints: [] } as never,
+      '11111111-1111-4111-8111-111111111111',
+    ).entities[0]!.operations;
+
+  it('withdraws a CREATE no screen uses when it could not fill a computed field', () => {
+    expect(build('LIST')).toEqual(['LIST', 'GET']);
+    expect(build('CREATE')).toEqual(['LIST', 'GET', 'CREATE']);
+  });
+});

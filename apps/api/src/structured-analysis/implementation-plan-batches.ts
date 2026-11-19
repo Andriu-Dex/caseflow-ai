@@ -770,6 +770,26 @@ export function finishImplementationPlan(
   routes: RoutesAccumulated,
   designBaselineId: string,
 ): ImplementationPlanBody {
+  // A record with a required read-only field the server gives no value (an
+  // amount or a date its business action computes) is created only by that
+  // action: a generic CREATE no screen uses could not fill it, and is withdrawn.
+  const created = new Set(
+    routes.routes.flatMap((route) =>
+      route.entityLocalId && route.actions.some((action) => action.operation === 'CREATE')
+        ? [route.entityLocalId]
+        : [],
+    ),
+  );
+  entities = entities.map((entity) =>
+    entity.operations.includes('CREATE') &&
+    !created.has(entity.localId) &&
+    entity.localId !== skeleton.authentication.local?.userEntityLocalId &&
+    entity.fields.some(
+      (field) => field.readOnly && field.required && field.serverDefault === undefined,
+    )
+      ? { ...entity, operations: entity.operations.filter((operation) => operation !== 'CREATE') }
+      : entity,
+  );
   const body = {
     ...skeleton,
     entities,
