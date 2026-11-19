@@ -230,6 +230,8 @@ describe('local authentication generation', () => {
     expect(get('apps/api/src/auth/safe-response.interceptor.ts')).toContain('secretDigest');
     expect(get('apps/api/src/app.module.ts')).not.toContain('DevLoginController');
     expect(files.some((file) => file.path.includes('/auth/dev-'))).toBe(false);
+    // Without an operation scope, lib/api exports no operationScope to link with.
+    expect(files.some((file) => file.path === 'apps/web/components/scope-link.tsx')).toBe(false);
     const doc = generateOpenApi(plan, 'Biblioteca') as {
       paths: Record<string, Record<string, { security?: unknown[] }>>;
       components: { schemas: Record<string, unknown> };

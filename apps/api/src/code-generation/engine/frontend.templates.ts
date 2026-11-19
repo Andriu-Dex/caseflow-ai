@@ -1825,9 +1825,12 @@ export function RecordLabel({ id, source, field }: { id?: string | null; source?
 }
 `,
     ),
-    file(
-      'apps/web/components/scope-link.tsx',
-      `'use client';
+    // Only a plan with an operation scope exports operationScope from lib/api.
+    ...(plan.authentication.local?.scope
+      ? [
+          file(
+            'apps/web/components/scope-link.tsx',
+            `'use client';
 import Link from 'next/link';
 import { useEffect, useState, type ReactNode } from 'react';
 import { operationScope } from '../lib/api';
@@ -1851,7 +1854,9 @@ export function ScopeLink({ href, children }: { href: string; children: ReactNod
   );
 }
 `,
-    ),
+          ),
+        ]
+      : []),
     file(
       'apps/web/components/field-error.tsx',
       `export function FieldError({ message }: { message?: string }) {
