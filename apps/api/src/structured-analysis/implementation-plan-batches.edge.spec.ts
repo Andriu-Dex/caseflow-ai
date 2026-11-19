@@ -244,6 +244,18 @@ describe('routes', () => {
     expect(kept.customEndpoints[0]).toMatchObject({ moduleLocalId: 'stock', entityLocalId: 'o' });
   });
 
+  it('drops built-in markers a batch cannot define and keeps repeated parameter paths valid', () => {
+    const earlier = { routes: [route({ screenLocalId: 'other', path: '/orders/[orderId]' })] };
+    const merged = merge(
+      { ...earlier, customEndpoints: [] },
+      [route({ path: '/orders/[orderId]', builtinView: 'ACCOUNT_ACCESS' })],
+      [endpoint({ builtin: 'AUTH_CONTEXT' })],
+    );
+    expect(merged.routes[1]).toMatchObject({ path: '/orders/[orderId]/2' });
+    expect(merged.routes[1]!.builtinView).toBeUndefined();
+    expect(merged.customEndpoints[0]!.builtin).toBeUndefined();
+  });
+
   it('refuses a route with no screen and skips the route of a screen already drawn', () => {
     expect(() => merge(base, [route({ screenLocalId: undefined })])).toThrow(
       'no indica la pantalla',

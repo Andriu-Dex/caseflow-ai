@@ -347,6 +347,9 @@ export function mergeRouteBatch(
     endpointKeys.add(endpointKey(endpoint));
     endpoints.push({
       ...endpoint,
+      // Built-in operations and views belong to local authentication, which a
+      // batch does not define; a strict answer fills these keys anyway.
+      builtin: undefined,
       moduleLocalId: context.moduleIds.has(endpoint.moduleLocalId)
         ? endpoint.moduleLocalId
         : firstModule,
@@ -382,7 +385,9 @@ export function mergeRouteBatch(
     }
     routes.push({
       ...route,
-      path: unique(route.path, paths, '-'),
+      builtinView: undefined,
+      // A path ending in a parameter takes the suffix as its own segment.
+      path: unique(route.path, paths, route.path.endsWith(']') ? '/' : '-'),
       moduleLocalId: context.moduleIds.has(route.moduleLocalId)
         ? route.moduleLocalId
         : (entity?.moduleLocalId ?? firstModule),
