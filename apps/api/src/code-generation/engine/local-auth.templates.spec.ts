@@ -162,7 +162,10 @@ describe('local authentication generation', () => {
     expect(page).toContain('data-action={"Consultar opciones"}');
     expect(page).toContain('href={"/members/new"} data-action={"Registrar persona"}');
     // Opened without a session, the home screen sends the person to sign in.
-    expect(page).toContain('if (!accessToken.get()) router.replace("/signin")');
+    expect(page).toContain(
+      'if (!accessToken.get()) router.replace("/signin"); else setReady(true);',
+    );
+    expect(page).not.toContain('typeof window');
   });
 
   it('names the demonstration accounts after people, with readable sign-in names', () => {

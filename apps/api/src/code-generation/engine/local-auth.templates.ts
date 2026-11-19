@@ -617,17 +617,19 @@ export default function LoginPage() {
           pagePath(route.path),
           `'use client';
 import Link from 'next/link';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { api, accessToken } from '${up}lib/api';
 import { PageState } from '${up}components/page-state';
 ${scope ? `import { OperationContextPanel } from '${up}components/operation-context';` : ''}
 export default function OperationHome() {
- // The home screen is where the application opens: without a session it signs in first.
+ // The home screen is where the application opens: without a session it signs
+ // in first. The session is read once mounted, so server and browser render alike.
  const router = useRouter();
- useEffect(() => { if (!accessToken.get()) router.replace(${JSON.stringify(loginRoute?.path ?? '/access')}); }, [router]);
- const query = useQuery({ queryKey: ['authorized-options'], queryFn: () => api.getAuthOptions(), enabled: typeof window !== 'undefined' && Boolean(accessToken.get()) });
+ const [ready, setReady] = useState(false);
+ useEffect(() => { if (!accessToken.get()) router.replace(${JSON.stringify(loginRoute?.path ?? '/access')}); else setReady(true); }, [router]);
+ const query = useQuery({ queryKey: ['authorized-options'], queryFn: () => api.getAuthOptions(), enabled: ready });
  return <section className="space-y-6"><h1 className="text-2xl font-semibold" ${marker}>{${JSON.stringify(route.screenName)}}</h1>${scope ? `<section ${route.actions.find((action) => action.endpoint === 'GET /auth/context') ? actionMarker(route.actions.find((action) => action.endpoint === 'GET /auth/context')!.label) : ''}><OperationContextPanel ${route.actions.find((action) => action.endpoint === 'POST /auth/context') ? actionMarker(route.actions.find((action) => action.endpoint === 'POST /auth/context')!.label) : ''} /></section>` : ''}<PageState query={query}>{options => <ul className="grid gap-4 md:grid-cols-3">{options.filter(option => option.path !== ${JSON.stringify(route.path)}).map(option => <li key={option.path}><Link className="block rounded-xl border p-6 hover:bg-muted" href={option.path}>{option.label}</Link></li>)}</ul>}</PageState>${links ? `<nav className="flex flex-wrap gap-4">${links}</nav>` : ''}${scope ? `<Link href={${JSON.stringify(plan.routes.find((item) => item.actions.some((action) => action.endpoint === 'POST /auth/logout'))!.path)}}>Ir al cierre de sesión</Link>` : ''}</section>;
 }
 `,
