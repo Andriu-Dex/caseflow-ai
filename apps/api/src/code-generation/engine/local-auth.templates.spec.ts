@@ -149,8 +149,8 @@ describe('local authentication generation', () => {
   it('marks the built-in action of a page that lists another action first', () => {
     const input = planInput();
     const home = input.routes.find((route) => route.path === '/home')!;
-    home.actions = [
-      { label: 'Registrar persona', navigation: { routePath: '/members/new' } } as never,
+    (home as { actions: unknown[] }).actions = [
+      { label: 'Registrar persona', navigation: { routePath: '/members/new' } },
       ...home.actions,
     ];
     const page = generateProject({
@@ -161,6 +161,8 @@ describe('local authentication generation', () => {
     }).find((file) => file.path === 'apps/web/app/home/page.tsx')!.content;
     expect(page).toContain('data-action={"Consultar opciones"}');
     expect(page).toContain('href={"/members/new"} data-action={"Registrar persona"}');
+    // Opened without a session, the home screen sends the person to sign in.
+    expect(page).toContain('if (!accessToken.get()) router.replace("/signin")');
   });
 
   it('names the demonstration accounts after people, with readable sign-in names', () => {
