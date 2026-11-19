@@ -146,6 +146,23 @@ describe('local authentication generation', () => {
     expect(e2e).toContain('the application opens on its login without a session');
   });
 
+  it('marks the built-in action of a page that lists another action first', () => {
+    const input = planInput();
+    const home = input.routes.find((route) => route.path === '/home')!;
+    home.actions = [
+      { label: 'Registrar persona', navigation: { routePath: '/members/new' } } as never,
+      ...home.actions,
+    ];
+    const page = generateProject({
+      plan: implementationPlanContentSchema.parse(input),
+      template: CASEFLOW_WEB_TS_V2,
+      projectName: 'Biblioteca',
+      slug: 'library',
+    }).find((file) => file.path === 'apps/web/app/home/page.tsx')!.content;
+    expect(page).toContain('data-action={"Consultar opciones"}');
+    expect(page).toContain('href={"/members/new"} data-action={"Registrar persona"}');
+  });
+
   it('names the demonstration accounts after people, with readable sign-in names', () => {
     const files = generateProject({
       plan: implementationPlanContentSchema.parse(planInput()),

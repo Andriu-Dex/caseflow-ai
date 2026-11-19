@@ -554,7 +554,23 @@ void main().catch(() => { console.error('Initial accounts could not be prepared.
       .map((a) => plan.customEndpoints.find((e) => `${e.method} ${e.path}` === a.endpoint)?.builtin)
       .find(Boolean);
     const up = toWebRoot(route.path);
-    const marker = route.actions[0] ? actionMarker(route.actions[0].label) : '';
+    // The marker goes on the action the built-in page serves, wherever the
+    // route lists it among its other actions.
+    const served = route.actions.find((a) =>
+      plan.customEndpoints.some((e) => e.builtin && `${e.method} ${e.path}` === a.endpoint),
+    );
+    const marker = served ? actionMarker(served.label) : '';
+    // Plain navigations of the route, rendered as links next to the built-in content.
+    const links = route.actions
+      .filter(
+        (a) =>
+          a.navigation && !a.navigation.sourceEndpoint && !a.navigation.routePath.includes('['),
+      )
+      .map(
+        (a) =>
+          `<Link className="text-primary underline" href={${JSON.stringify(a.navigation!.routePath)}} ${actionMarker(a.label)}>{${JSON.stringify(a.label)}}</Link>`,
+      )
+      .join('');
     if (builtin === 'LOGIN')
       files.push(
         file(
@@ -607,7 +623,7 @@ import { PageState } from '${up}components/page-state';
 ${scope ? `import { OperationContextPanel } from '${up}components/operation-context';` : ''}
 export default function OperationHome() {
  const query = useQuery({ queryKey: ['authorized-options'], queryFn: () => api.getAuthOptions() });
- return <section className="space-y-6"><h1 className="text-2xl font-semibold" ${marker}>{${JSON.stringify(route.screenName)}}</h1>${scope ? `<section ${route.actions.find((action) => action.endpoint === 'GET /auth/context') ? actionMarker(route.actions.find((action) => action.endpoint === 'GET /auth/context')!.label) : ''}><OperationContextPanel ${route.actions.find((action) => action.endpoint === 'POST /auth/context') ? actionMarker(route.actions.find((action) => action.endpoint === 'POST /auth/context')!.label) : ''} /></section>` : ''}<PageState query={query}>{options => <ul className="grid gap-4 md:grid-cols-3">{options.filter(option => option.path !== ${JSON.stringify(route.path)}).map(option => <li key={option.path}><Link className="block rounded-xl border p-6 hover:bg-muted" href={option.path}>{option.label}</Link></li>)}</ul>}</PageState>${scope ? `<Link href={${JSON.stringify(plan.routes.find((item) => item.actions.some((action) => action.endpoint === 'POST /auth/logout'))!.path)}}>Ir al cierre de sesión</Link>` : ''}</section>;
+ return <section className="space-y-6"><h1 className="text-2xl font-semibold" ${marker}>{${JSON.stringify(route.screenName)}}</h1>${scope ? `<section ${route.actions.find((action) => action.endpoint === 'GET /auth/context') ? actionMarker(route.actions.find((action) => action.endpoint === 'GET /auth/context')!.label) : ''}><OperationContextPanel ${route.actions.find((action) => action.endpoint === 'POST /auth/context') ? actionMarker(route.actions.find((action) => action.endpoint === 'POST /auth/context')!.label) : ''} /></section>` : ''}<PageState query={query}>{options => <ul className="grid gap-4 md:grid-cols-3">{options.filter(option => option.path !== ${JSON.stringify(route.path)}).map(option => <li key={option.path}><Link className="block rounded-xl border p-6 hover:bg-muted" href={option.path}>{option.label}</Link></li>)}</ul>}</PageState>${links ? `<nav className="flex flex-wrap gap-4">${links}</nav>` : ''}${scope ? `<Link href={${JSON.stringify(plan.routes.find((item) => item.actions.some((action) => action.endpoint === 'POST /auth/logout'))!.path)}}>Ir al cierre de sesión</Link>` : ''}</section>;
 }
 `,
           { origin: 'DETERMINISTIC', planElements: [`route:${route.path}`, ...elements] },
