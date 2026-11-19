@@ -521,7 +521,7 @@ function defaultProvider(): AIProvider {
           },
           {
             key: 'implementation-plan.entities',
-            version: 1,
+            version: 2,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'implementation_plan_generation',
             systemInstructions: IP_ENTITY_PROMPT,
