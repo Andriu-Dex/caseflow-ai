@@ -361,3 +361,51 @@ describe('finishing the plan', () => {
     ).toThrow('inválidos');
   });
 });
+
+describe('action contracts once every batch is in', () => {
+  it('gives a write its input object, a read none, and drops a success page that cannot open', () => {
+    const response = { type: 'OBJECT', properties: [{ name: 'id', value: { type: 'UUID' } }] };
+    const done = finishRoutes(
+      {
+        routes: [
+          {
+            path: '/orders',
+            screenName: 'Pedidos',
+            moduleLocalId: 'orders',
+            kind: 'CUSTOM',
+            actions: [
+              { label: 'Confirmar', endpoint: 'POST /orders/confirm' },
+              { label: 'Consultar', endpoint: 'GET /orders/summary' },
+            ],
+          },
+        ],
+        customEndpoints: [
+          {
+            moduleLocalId: 'orders',
+            method: 'POST',
+            path: '/orders/confirm',
+            summary: 'Confirmar',
+            roles: [],
+            contract: {
+              response,
+              successNavigation: { routePath: '/orders/[orderId]', idField: 'id' },
+            },
+          },
+          {
+            moduleLocalId: 'orders',
+            method: 'GET',
+            path: '/orders/summary',
+            summary: 'Consultar',
+            roles: [],
+            contract: { response, body: { type: 'OBJECT', properties: [] } },
+          },
+        ],
+      } as never,
+      [],
+      [],
+    );
+    const [write, read] = done.customEndpoints;
+    expect(write!.contract).toEqual({ response, body: { type: 'OBJECT', properties: [] } });
+    expect(read!.contract).toEqual({ response });
+  });
+});

@@ -343,7 +343,33 @@ function dropDanglingReferences(accumulated: RoutesAccumulated): RoutesAccumulat
     );
   };
   return {
-    ...accumulated,
+    // A write takes an input object and a read none, and the page a write
+    // opens on success must exist and get its identifier from the response.
+    customEndpoints: accumulated.customEndpoints.map((endpoint) => {
+      const contract = endpoint.contract;
+      if (!contract) return endpoint;
+      const writes = ['POST', 'PATCH', 'PUT'].includes(endpoint.method);
+      const next = contract.successNavigation;
+      const id = contract.response.properties?.find((field) => field.name === next?.idField);
+      const opens =
+        next &&
+        next.routePath.split('[').length === 2 &&
+        paths.has(next.routePath) &&
+        id &&
+        id.required !== false &&
+        !id.value.nullable &&
+        ['STRING', 'UUID'].includes(id.value.type);
+      const { body, successNavigation: _next, ...rest } = contract;
+      void _next;
+      return {
+        ...endpoint,
+        contract: {
+          ...rest,
+          ...(writes ? { body: body ?? { type: 'OBJECT' as const, properties: [] } } : {}),
+          ...(opens ? { successNavigation: next } : {}),
+        },
+      };
+    }),
     routes: accumulated.routes.map((route) => {
       const contextQueries = route.contextQueries?.filter((query) => queries.has(query));
       const read = new Set([
