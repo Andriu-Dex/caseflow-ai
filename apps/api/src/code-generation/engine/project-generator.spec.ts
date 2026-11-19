@@ -96,6 +96,15 @@ describe('generateProject', () => {
   const files = generateProject(ctx());
   const paths = byPath(files);
 
+  it('puts a list navigation to one record on each row, with that row as the parameter', () => {
+    const plan = basePlan();
+    plan.routes[0]!.actions = [
+      { label: 'Ver pedido', navigation: { routePath: '/orders/[orderId]' } },
+    ];
+    const page = byPath(generateProject(ctx(plan))).get('apps/web/app/orders/page.tsx')!.content;
+    expect(page).toMatch(/href=\{`\/orders\/\$\{[a-zA-Z.]+\}`\} data-action=\{"Ver pedido"\}/);
+  });
+
   it('lays out the CASEFLOW_WEB_TS_V1 monorepo', () => {
     for (const path of [
       'package.json',

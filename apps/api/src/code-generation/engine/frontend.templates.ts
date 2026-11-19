@@ -317,8 +317,14 @@ const entityRoute = (plan: Plan, entity: Entity, kind: Route['kind']) =>
       (kind !== 'DETAIL' || Boolean(dynamicParam(r.path))),
   );
 
-// Actions that need one record: they live on list rows and detail pages.
-function isItemAction(plan: Plan, action: Action): boolean {
+// Actions that need one record: they live on list rows and detail pages. A
+// navigation does when its target needs a parameter the page does not have.
+function isItemAction(plan: Plan, action: Action, pageParams: string[] = []): boolean {
+  if (action.navigation)
+    return (
+      !action.navigation.sourceEndpoint &&
+      routeParamNames(action.navigation.routePath).some((name) => !pageParams.includes(name))
+    );
   if (action.operation) return ['GET', 'UPDATE', 'DELETE'].includes(action.operation);
   const endpoint = customEndpoint(plan, action);
   return Boolean(endpoint && pathParams(endpoint.path).length);
@@ -453,7 +459,10 @@ function actionControl(
   const { idExpr } = target;
   if (action.navigation) {
     if (action.navigation.sourceEndpoint) return null;
-    return linkControl(label, routeHref(action.navigation.routePath, target.routeParams ?? []));
+    return linkControl(
+      label,
+      routeHref(action.navigation.routePath, target.routeParams ?? [], idExpr),
+    );
   }
   if (action.operation) {
     if (!entity || !entity.operations.includes(action.operation)) return null;
@@ -718,11 +727,11 @@ function listPage(plan: Plan, entity: Entity, route: Route): string {
   const refresh = `() => queryClient.invalidateQueries({ queryKey: ${baseKey} })`;
   const pageActions = route.actions.filter(
     (a) =>
-      !isItemAction(plan, a) &&
+      !isItemAction(plan, a, names) &&
       a.interaction !== 'PAGINATE_NEXT' &&
       a.interaction !== 'PAGINATE_PREVIOUS',
   );
-  const itemActions = route.actions.filter((a) => isItemAction(plan, a));
+  const itemActions = route.actions.filter((a) => isItemAction(plan, a, names));
   // The pager buttons realise the plan's own paging actions, by their labels.
   const nextLabel =
     route.actions.find((a) => a.interaction === 'PAGINATE_NEXT')?.label ??
