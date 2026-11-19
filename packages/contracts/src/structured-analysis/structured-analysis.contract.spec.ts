@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import {
+  implementationActionsOutputSchema,
+  implementationPlanAIOutputSchema,
+  implementationRoutesBatchOutputSchema,
   implementationPlanContentSchema,
   navigationTreeContentSchema,
   softwareArchitectureContentSchema,
@@ -242,5 +246,24 @@ describe('implementation plan route actions (DEC-121)', () => {
     expect(messages(invalidQueryWithCreate)).toEqual([
       'Las interacciones de paginación solo aplican a operaciones LIST o endpoints GET; las de consulta y recarga solo a operaciones de lectura.',
     ]);
+  });
+});
+
+// Strict json_schema rejects answers nested more than 10 objects deep.
+describe('implementation plan schemas sent to the AI', () => {
+  const objectDepth = (node: unknown): number => {
+    if (Array.isArray(node)) return Math.max(0, ...node.map(objectDepth));
+    if (!node || typeof node !== 'object') return 0;
+    const schema = node as Record<string, unknown>;
+    const own = [schema.type].flat().includes('object') ? 1 : 0;
+    return own + Math.max(0, ...Object.values(schema).map(objectDepth));
+  };
+
+  it.each([
+    ['plan', implementationPlanAIOutputSchema],
+    ['routes batch', implementationRoutesBatchOutputSchema],
+    ['actions batch', implementationActionsOutputSchema],
+  ])('keeps the %s within 10 levels of objects', (_, schema) => {
+    expect(objectDepth(z.toJSONSchema(schema))).toBeLessThanOrEqual(10);
   });
 });

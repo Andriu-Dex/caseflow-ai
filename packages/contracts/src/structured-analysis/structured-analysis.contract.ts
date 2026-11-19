@@ -1,5 +1,8 @@
 import { z } from 'zod';
-import { implementationActionContractSchema } from './action-contract';
+import {
+  aiImplementationActionContractSchema,
+  implementationActionContractSchema,
+} from './action-contract';
 import { designThemeContentSchema } from './design-theme.contract';
 import { classDiagramContentSchema } from './class-diagram.contract';
 
@@ -772,11 +775,13 @@ export const implementationPlanBodySchema = z
   .strict();
 
 export type ImplementationPlanBody = z.output<typeof implementationPlanBodySchema>;
+// What the AI is asked for: no disabledReason, and a contract it can answer
+// in strict mode.
+const aiImplementationEndpointSchema = implementationEndpointSchema
+  .omit({ disabledReason: true })
+  .extend({ contract: aiImplementationActionContractSchema.optional() });
 export const implementationPlanAIOutputSchema = implementationPlanBodySchema.extend({
-  customEndpoints: z
-    .array(implementationEndpointSchema.omit({ disabledReason: true }))
-    .max(100)
-    .default([]),
+  customEndpoints: z.array(aiImplementationEndpointSchema).max(100).default([]),
 });
 
 // DEC-144: the plan is drawn in stages. The skeleton gives the roles, modules
@@ -830,19 +835,13 @@ export const implementationActionsOutputSchema = z
       )
       .min(1)
       .max(40),
-    customEndpoints: z
-      .array(implementationEndpointSchema.omit({ disabledReason: true }))
-      .max(40)
-      .default([]),
+    customEndpoints: z.array(aiImplementationEndpointSchema).max(40).default([]),
   })
   .strict();
 export const implementationRoutesBatchOutputSchema = z
   .object({
     routes: z.array(looseRouteSchema).min(1).max(40),
-    customEndpoints: z
-      .array(implementationEndpointSchema.omit({ disabledReason: true }))
-      .max(40)
-      .default([]),
+    customEndpoints: z.array(aiImplementationEndpointSchema).max(40).default([]),
   })
   .strict();
 
