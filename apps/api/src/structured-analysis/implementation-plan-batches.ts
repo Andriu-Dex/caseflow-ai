@@ -369,9 +369,11 @@ function dropDanglingReferences(accumulated: RoutesAccumulated): RoutesAccumulat
   };
 }
 
-// What serves an action: the operation when the entity offers it, else the
-// endpoint when it exists, else the route it opens (finishRoutes checks the
-// route exists once every batch is in); null when none does.
+// What serves an action: the endpoint when it exists, else the route it opens
+// (finishRoutes checks the route exists once every batch is in), else the
+// operation when the entity offers it; null when none does. A strict answer
+// fills every key, so an operation next to an endpoint or a navigation is
+// usually filler: the more specific choice wins.
 function serveAction(
   action: {
     label: string;
@@ -382,12 +384,11 @@ function serveAction(
   entity: IpEntity | undefined,
   endpointKeys: Set<string>,
 ): IpRoute['actions'][number] | null {
-  if (action.operation && entity?.operations.includes(action.operation))
-    return { label: action.label, operation: action.operation };
   if (action.endpoint && endpointKeys.has(action.endpoint))
     return { label: action.label, endpoint: action.endpoint };
-  if (action.navigation && !action.operation && !action.endpoint)
-    return { label: action.label, navigation: action.navigation };
+  if (action.navigation) return { label: action.label, navigation: action.navigation };
+  if (action.operation && entity?.operations.includes(action.operation))
+    return { label: action.label, operation: action.operation };
   return null;
 }
 

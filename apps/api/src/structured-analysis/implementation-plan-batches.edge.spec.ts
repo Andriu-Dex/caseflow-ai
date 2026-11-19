@@ -256,6 +256,27 @@ describe('routes', () => {
     expect(merged.customEndpoints[0]!.builtin).toBeUndefined();
   });
 
+  it('serves an action by its endpoint or navigation before a filler operation', () => {
+    const served = (action: Record<string, unknown>, endpoints: unknown[] = []) =>
+      merge(
+        base,
+        [route({ entityLocalId: 'o', actions: [{ label: 'Nuevo', ...action }] })],
+        endpoints,
+      ).routes[0]!.actions[0];
+    expect(served({ operation: 'LIST', endpoint: 'POST /orders/:id/x' }, [endpoint()])).toEqual({
+      label: 'Nuevo',
+      endpoint: 'POST /orders/:id/x',
+    });
+    expect(served({ operation: 'CREATE', navigation: { routePath: '/orders/new' } })).toEqual({
+      label: 'Nuevo',
+      navigation: { routePath: '/orders/new' },
+    });
+    expect(served({ operation: 'CREATE', endpoint: 'POST /missing' })).toEqual({
+      label: 'Nuevo',
+      operation: 'CREATE',
+    });
+  });
+
   it('skips a route with no screen and the route of a screen already drawn', () => {
     const merged = merge(base, [route({ screenLocalId: undefined }), route({ path: '/home' })]);
     expect(merged.routes.map((item) => item.path)).toEqual(['/home']);
