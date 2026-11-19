@@ -37,13 +37,13 @@ Las rutas se piden después con esas operaciones como endpoints existentes. Las 
 
 - el acceso, en la página de acceso;
 - las opciones, en el inicio;
-- el cierre, en su propia pantalla si el plano la tiene o, si no, en otra pantalla distinta de las dos anteriores, porque cada ruta muestra una pantalla del plano aprobado.
+- el cierre, en una página propia, para que las tres queden en páginas distintas.
 
 Las marcas de operación integrada que el modelo ponga en un lote se ignoran.
 
 ### 2. Lo que añade la autenticación no es una brecha de cobertura
 
-La sesión, el catálogo de roles y las acciones integradas no provienen del diagrama de clases ni del plano de interfaz. La coherencia del plan las reconoce por su vínculo con `authentication.local` y no exige que nombren una clase o pantalla.
+La sesión, el catálogo de roles, la página de cierre y las acciones integradas no provienen del diagrama de clases ni del plano de interfaz. La coherencia del plan las reconoce por su vínculo con `authentication.local` y no exige que nombren una clase o pantalla.
 
 ### 3. Referencias entre lotes
 

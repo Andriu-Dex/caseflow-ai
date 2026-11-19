@@ -104,12 +104,6 @@ describe('local authentication of an AI plan (ADR-026)', () => {
       actions: [{ label: 'Iniciar sesión', endpoint: 'POST /auth/login' }],
     });
     expect(routes.routes[2]!.contextQueries).toBeUndefined();
-    // No screen signs out: it goes on another screen, not a route of its own.
-    expect(routes.routes.map((item) => item.path)).toEqual(['/login', '/home', '/accounts']);
-    expect(routes.routes[2]!.actions).toContainEqual({
-      label: 'Cerrar sesión',
-      endpoint: 'POST /auth/logout',
-    });
 
     const plan = finishImplementationPlan(done.skeleton, done.entities, routes, BASELINE);
     expect(implementationReadinessProblems(plan as never)).toEqual([]);
@@ -132,7 +126,9 @@ describe('local authentication of an AI plan (ADR-026)', () => {
     const drawn = {
       ...plan,
       designBaselineId: BASELINE,
-      routes: plan.routes.map((item) => ({ ...item, screenLocalId: item.path.slice(1) })),
+      routes: plan.routes.map((item) =>
+        item.path === '/logout' ? item : { ...item, screenLocalId: item.path.slice(1) },
+      ),
     };
     const classes = [
       {

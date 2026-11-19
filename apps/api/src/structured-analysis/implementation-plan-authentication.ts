@@ -206,8 +206,7 @@ export function completeLocalAuthentication(
 // The actions that sign in, sign out or list the role's options use the
 // built-in operations, whatever the model chose for them. One the screens do
 // not offer is added where it belongs: sign-in on the access page, the options
-// on the home page and sign-out on its own page or another one, so the three
-// stay apart.
+// on the home page and sign-out on a page of its own, so the three stay apart.
 export function bindAuthenticationActions(accumulated: RoutesAccumulated): RoutesAccumulated {
   const builtins = new Set(
     accumulated.customEndpoints.flatMap((endpoint) => (endpoint.builtin ? [endpoint.builtin] : [])),
@@ -240,10 +239,19 @@ export function bindAuthenticationActions(accumulated: RoutesAccumulated): Route
   };
   place('LOGIN', 'Iniciar sesión', /^\/(login|signin|sign-in|acceso|ingreso)$/);
   place('AUTHORIZED_OPTIONS', 'Consultar opciones', /^\/(home|inicio|dashboard)?$/);
-  place('LOGOUT', 'Cerrar sesión', /^\/(logout|signout|sign-out|salir)$/);
-  // With no screen of its own, sign-out goes on the first other screen: every
-  // route renders a screen of the approved blueprint.
-  place('LOGOUT', 'Cerrar sesión', /^\//);
+  if (!pageOf.has('LOGOUT')) {
+    const paths = new Set(routes.map((route) => route.path));
+    const account = accumulated.customEndpoints.find((endpoint) => endpoint.builtin === 'LOGOUT')!;
+    const path = ['/logout', '/signout', '/sign-out'].find((item) => !paths.has(item));
+    if (path)
+      routes.push({
+        path,
+        screenName: 'Cerrar sesión',
+        moduleLocalId: account.moduleLocalId,
+        kind: 'CUSTOM',
+        actions: [{ label: 'Cerrar sesión', endpoint: AUTH_ENDPOINTS.LOGOUT }],
+      });
+  }
   // The access page signs in; it does not show or edit the account records.
   routes = routes.map((route) =>
     route.path === pageOf.get('LOGIN') && !route.actions.some((action) => action.operation)
