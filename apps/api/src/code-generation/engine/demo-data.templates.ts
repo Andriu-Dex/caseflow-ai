@@ -104,11 +104,31 @@ const RECORDS = 3;
 
 // A realistic sample value when the plan's demonstration set has one,
 // otherwise a placeholder that satisfies the field's type.
-function value(field: Field, index: number, sample?: Record<string, string | number | boolean>): unknown {
+const DAY = 86_400_000;
+const today = (() => { const now = new Date(); return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()); })();
+
+// Dates of the demonstration move to the present, so a schedule shows today's
+// records whenever the data is loaded: the samples of a date field that span a
+// month at most shift by whole days until the earliest falls on today, keeping
+// their times and spacing. Wider spans (birth dates) are left as they are.
+function shifts(entity: Entity): Record<string, number> {
+  const result: Record<string, number> = {};
+  for (const field of entity.fields) {
+    if (field.type !== 'DATE' && field.type !== 'DATETIME') continue;
+    const days = (entity.samples ?? [])
+      .map((sample) => new Date(String(sample[field.name] ?? '')))
+      .filter((date) => Number.isFinite(date.getTime()))
+      .map((date) => Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+    if (days.length && Math.max(...days) - Math.min(...days) <= 31 * DAY) result[field.name] = today - Math.min(...days);
+  }
+  return result;
+}
+
+function value(field: Field, index: number, sample?: Record<string, string | number | boolean>, shift: Record<string, number> = {}): unknown {
   if (field.value !== undefined) return field.value;
   const given = sample?.[field.name];
-  if (given !== undefined) return field.type === 'DATE' || field.type === 'DATETIME' ? new Date(String(given)) : given;
-  const day = new Date(Date.UTC(2026, 0, 1 + index * 3));
+  if (given !== undefined) return field.type === 'DATE' || field.type === 'DATETIME' ? new Date(new Date(String(given)).getTime() + (shift[field.name] ?? 0)) : given;
+  const day = new Date(today + (index - 1) * DAY);
   switch (field.type) {
     case 'STRING': return \`\${field.label} \${index}\`.slice(0, 120);
     case 'TEXT': return \`\${field.label}: registro de demostración \${index}.\`;
@@ -116,7 +136,7 @@ function value(field: Field, index: number, sample?: Record<string, string | num
     case 'DECIMAL': return (index * 12.5).toFixed(2);
     case 'BOOLEAN': return index % 2 === 1;
     case 'DATE': return day;
-    case 'DATETIME': return new Date(day.getTime() + index * 3_600_000);
+    case 'DATETIME': return new Date(day.getTime() + (17 + index) * 3_600_000);
     case 'ENUM': return field.enumValues[(index - 1) % field.enumValues.length];
   }
   return null;
@@ -138,9 +158,10 @@ async function main() {
       if (entity.relations.some((relation) => relation.required && !targets[relation.name]!.length)) continue;
       let created = 0;
       const count = Math.max(RECORDS, entity.samples?.length ?? 0);
+      const shift = shifts(entity);
       for (let index = 1; index <= count; index++) {
         const data: Record<string, unknown> = {};
-        for (const field of entity.fields) data[field.name] = value(field, index, entity.samples?.[index - 1]);
+        for (const field of entity.fields) data[field.name] = value(field, index, entity.samples?.[index - 1], shift);
         let skip = false;
         for (const relation of entity.relations) {
           const ids = targets[relation.name]!;

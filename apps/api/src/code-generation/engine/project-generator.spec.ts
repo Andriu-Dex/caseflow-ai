@@ -2,6 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { CASEFLOW_WEB_TS_V1, findCatalogDependency } from '@caseflow-ai/domain';
 import {
@@ -854,6 +855,43 @@ describe('demonstration data (DEC-159)', () => {
     expect(orderEntity.relations).toEqual([
       { name: 'customer', target: 'Customer', required: true, unique: false },
     ]);
+  });
+
+  it('moves a schedule of samples to the present, keeping its times and spacing', () => {
+    const seed = byPath(
+      generateProject({
+        ...ctx(),
+        demoValues: {
+          Order: [
+            { status: 'DRAFT', orderedOn: '2025-03-03' },
+            { status: 'CONFIRMED', orderedOn: '2025-03-05' },
+          ],
+        },
+      }),
+    ).get('apps/api/src/seed/demo-data.ts')!.content;
+    // The script's own functions, without its database access.
+    const source = seed
+      .replace(/^import .*$/m, '')
+      .replace(/^void main\(\).*$/m, 'module.exports = { ENTITIES, shifts, value, today, DAY };');
+    const run = new Function(
+      'module',
+      ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } })
+        .outputText,
+    );
+    const loaded = { exports: {} as Record<string, unknown> };
+    run(loaded);
+    const { ENTITIES, shifts, value, today, DAY } = loaded.exports as {
+      ENTITIES: { model: string; fields: { name: string }[]; samples: Record<string, string>[] }[];
+      shifts: (entity: unknown) => Record<string, number>;
+      value: (field: unknown, index: number, sample: unknown, shift: unknown) => Date;
+      today: number;
+      DAY: number;
+    };
+    const order = ENTITIES.find((entity) => entity.model === 'Order')!;
+    const field = order.fields.find((item) => item.name === 'orderedOn')!;
+    const shift = shifts(order);
+    expect(value(field, 1, order.samples[0], shift).getTime()).toBe(today);
+    expect(value(field, 2, order.samples[1], shift).getTime()).toBe(today + 2 * DAY);
   });
 
   it('emits a runnable seed script and its command', () => {
