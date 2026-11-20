@@ -10,7 +10,7 @@ import {
   type ImplementationPlanContent,
 } from '@caseflow-ai/contracts';
 import { generateProject, projectSlug } from './project-generator';
-import { pruneUnusedParams } from './frontend.templates';
+import { pruneUnusedParams, technicalIdentifiers } from './frontend.templates';
 import { demoEntities } from './demo-data.templates';
 import { catalogVersion, type GenerationContext } from './types';
 
@@ -716,8 +716,11 @@ describe('forms and pages for every field type', () => {
     expect(web.devDependencies['@playwright/test']).toBeDefined();
     const screens = without.get('apps/web/e2e/screens.spec.ts')!.content;
     expect(screens).toContain('"path": "/');
-    expect(screens).not.toContain('/[');
+    expect(screens).not.toMatch(/"path": "[^"]*\[/);
     expect(screens).toContain("locator('h1')");
+    // ADR-028: the visible text is checked for model names and UUIDs.
+    expect(screens).toContain('const IDENTIFIERS = new Set<string>(');
+    expect(screens).toContain('The screen must not show technical identifiers');
   });
 });
 
@@ -778,11 +781,11 @@ describe('shared list generator and pagination (DEC-121)', () => {
     expect(list).not.toContain('<Link href="/products"');
   });
 
-  it('renders a visible Identificador column and structured field labels safely escaped', () => {
-    expect(list).toContain('<th className="px-3 py-2 font-medium">{"Identificador"}</th>');
+  it('renders field labels safely escaped and no identifier column (ADR-028)', () => {
+    expect(list).not.toContain('{"Identificador"}');
+    expect(list).not.toContain('row.id.slice(0, 8)');
     expect(list).toContain('<th className="px-3 py-2 font-medium">{"Nombre comercial"}</th>');
     expect(list).toContain('<th className="px-3 py-2 font-medium">{"Precio unitario"}</th>');
-    expect(list).toContain('{row.id}');
     expect(list).toContain(
       'hasNextPage = items.length === limit && Boolean(nextPageQuery.data && nextPageQuery.data.length > 0)',
     );
@@ -944,5 +947,26 @@ describe('contextual navigation', () => {
       '<Link href={`/orders/${row.id}/edit`} className="text-primary underline">{"Editar pedido"}</Link>',
     );
     expect(list).toContain('/archive/orders/${row.id}/edit');
+  });
+});
+
+describe('technical identifiers (ADR-028)', () => {
+  it('lists the model names that read as code, not ordinary words', () => {
+    const plan = {
+      entities: [
+        {
+          localId: 'event',
+          name: 'CateringEvent',
+          moduleLocalId: 'sales',
+          fields: [
+            { name: 'operationalDate', type: 'DATE' },
+            { name: 'email', type: 'STRING' },
+          ],
+          relations: [{ name: 'ticket', kind: 'MANY_TO_ONE', targetEntityLocalId: 'event' }],
+          operations: ['LIST'],
+        },
+      ],
+    } as unknown as Parameters<typeof technicalIdentifiers>[0];
+    expect(technicalIdentifiers(plan)).toEqual(['CateringEvent', 'operationalDate']);
   });
 });

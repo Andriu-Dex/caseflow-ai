@@ -829,7 +829,9 @@ function listPage(plan: Plan, entity: Entity, route: Route): string {
       ? `<td className="px-3 py-2">\n  <Link className="text-primary underline" href=${detailHref}>\n    {${expr}}\n  </Link>\n</td>`
       : `<td className="px-3 py-2">{${expr}}</td>`;
   });
-  const cells = [idCell, ...dataCells];
+  // ADR-028: no identifier column; the first data column opens the record.
+  // An entity with nothing else to show keeps it as the only way in.
+  const cells = columns.length ? dataCells : [idCell];
   if (rowControls.length)
     cells.push(
       `<td className="px-3 py-2">\n  <div className="flex flex-wrap gap-2">\n${indent(rowControls.join('\n'), 4)}\n  </div>\n</td>`,
@@ -839,7 +841,16 @@ function listPage(plan: Plan, entity: Entity, route: Route): string {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-semibold">${route.screenName.replace(/[<>{}]/g, '')}</h1>
 ${header.length ? `        <div className="flex flex-wrap gap-2">\n${indent(header.join('\n'), 10)}\n        </div>\n` : ''}      </div>
-${names.map((n) => `      {${n} && <div className="text-xs text-muted-foreground"><span className="font-semibold">${text(labelOf(n.replace(/id$/i, '')))}:</span> {${n}}</div>}`).join('\n')}
+${names
+  .flatMap((n) => {
+    const source = [...relationSource].find(([key]) => key.toLowerCase() === n.toLowerCase())?.[1];
+    return source
+      ? [
+          `      {${n} && <div className="text-xs text-muted-foreground"><span className="font-semibold">${text(labelOf(n.replace(/id$/i, '')))}:</span> <RecordLabel id={${n}} ${source} /></div>}`,
+        ]
+      : [];
+  })
+  .join('\n')}
       <div className="rounded border bg-card p-3 text-xs text-muted-foreground flex flex-col gap-1.5" role="status">
         <div className="flex items-center justify-between">
           <span className="font-semibold text-foreground">${text('Criterios de consulta y ámbito operativo:')}</span>
@@ -925,8 +936,7 @@ ${filter.enumValues!.map((value) => `            <option value=${JSON.stringify(
               <table className="w-full text-sm">
                 <thead className="bg-muted text-left">
                   <tr>
-                    <th className="px-3 py-2 font-medium">${text('Identificador')}</th>
-${columns.map((f) => `                    <th className="px-3 py-2 font-medium">${text(f.label ?? labelOf(f.name))}</th>`).join('\n')}${rowControls.length ? `\n                    <th className="px-3 py-2 font-medium">${text('Acciones')}</th>` : ''}
+${columns.length ? '' : `                    <th className="px-3 py-2 font-medium">${text('Identificador')}</th>\n`}${columns.map((f) => `                    <th className="px-3 py-2 font-medium">${text(f.label ?? labelOf(f.name))}</th>`).join('\n')}${rowControls.length ? `\n                    <th className="px-3 py-2 font-medium">${text('Acciones')}</th>` : ''}
                   </tr>
                 </thead>
                 <tbody>
@@ -2269,6 +2279,9 @@ ${plannedE2E.map((t) => `// Planned: ${t.description.replace(/\n/g, ' ')}`).join
 type Session = { token: string | null; scopeId: string | null };
 
 const SCREENS: { path: string; screenName: string; role: string }[] = ${JSON.stringify(screens, null, 2)};
+// ADR-028: names of the data model that must never reach the visible text.
+const IDENTIFIERS = new Set<string>(${JSON.stringify(technicalIdentifiers(plan))});
+const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 ${
   entry
     ? `
@@ -2305,6 +2318,15 @@ for (const screen of SCREENS) {
     expect(new URL(page.url()).pathname, 'The screen must not redirect').toBe(screen.path);
     await expect(page.locator('h1').first()).toBeVisible();
     expect(errors).toEqual([]);
+    // Folded technical data (a closed <details>) is not part of the visible text.
+    const text = await page.locator('body').innerText();
+    const shown = [
+      ...new Set([
+        ...text.split(/[^A-Za-z0-9_]+/).filter((word) => IDENTIFIERS.has(word)),
+        ...(text.match(UUID) ?? []),
+      ]),
+    ];
+    expect(shown, 'The screen must not show technical identifiers').toEqual([]);
   });
 }
 `,
@@ -2319,6 +2341,18 @@ for (const screen of SCREENS) {
     ),
   );
   return files;
+}
+
+// ADR-028: entity, field and relation names of the plan that read as code
+// (an inner capital: operationalDate, CateringEvent, branchId). One-word names
+// such as Ticket or email can be ordinary words and are not listed.
+export function technicalIdentifiers(plan: ImplementationPlanContent) {
+  const names = plan.entities.flatMap((entity) => [
+    entity.name,
+    ...entity.fields.map((field) => field.name),
+    ...entity.relations.map((relation) => relation.name),
+  ]);
+  return [...new Set(names.filter((name) => /[a-z][A-Z]/.test(name)))].sort();
 }
 
 // DEC-159: every static screen opens with one authorized role. Detail routes

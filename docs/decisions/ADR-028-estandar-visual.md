@@ -46,11 +46,12 @@ Todo sale de la paleta del tema del proyecto, para que combine en cualquier proy
 
 1. Marco y tonos derivados en la plantilla (`presentation-shell.ts`, `globals.css`).
 2. Instrucciones de los bocetos y de la composición de pantallas con este estándar.
-3. Comprobación de identificadores técnicos visibles en la validación.
+3. Comprobación de identificadores técnicos visibles en la validación. La prueba de extremo a extremo de cada pantalla falla si el texto visible muestra un UUID o un nombre del modelo de datos escrito como código (con una mayúscula interior, como `operationalDate`). Los datos técnicos plegados no cuentan. Las listas ya no tienen columna de identificador: la primera columna abre el registro, y el registro de un parámetro de ruta se muestra por su nombre.
 4. Chat por pantalla en bocetos y en código.
 
 ## Consecuencias
 
 - Los proyectos ya construidos cambian de marco en su siguiente construcción.
+- Quitar la columna de identificador cambia el código de las listas: al construir de nuevo un proyecto ya construido, sus pantallas de lista se vuelven a componer con IA.
 - **Coste de IA:** la composición de pantallas pasa a la versión 39 de sus instrucciones. Al construir de nuevo un proyecto, sus pantallas se vuelven a componer con IA, una solicitud por pantalla. Hay que estimarlo antes de construir.
 - El acento del tema pasa a tener un uso fijo. Un tema con un acento poco visible da una acción principal poco visible, así que el tema generado debe elegir un acento que contraste con el primario.
