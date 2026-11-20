@@ -136,6 +136,40 @@ Mejoras de experiencia añadidas tras revisar las pantallas con datos reales:
 
 Comprobar el flujo genérico completo con IA en un proyecto pequeño, ya con las fases 3, 4, 5 y 7 terminadas.
 
+Hecho el 2026-11-19 con Cine Aurora (taquilla de un cine con dos roles):
+
+- **Análisis y diseño:** todas las etapas generadas con IA, revisadas y aprobadas.
+- **Construcción por entregas:** las 7 entregas están validadas y aprobadas, de la base a los reportes.
+- **Aceptación:** los 20 criterios de aceptación se cumplen, uno por caso de uso.
+- **Gasto de IA:** 171 solicitudes en total, contando las fallidas.
+
+La prueba sacó a la luz fallos que impedían construir cualquier proyecto generado con IA. Se corrigieron en CASEFlow con pruebas de regresión:
+
+- **Esquemas para la IA en modo estricto:** uniones como `anyOf`, profundidad máxima de 10 niveles, se descartan las claves que el tipo de un valor no admite y en el último nivel solo hay tipos simples.
+- **Plan de implementación:**
+  - el servidor completa la autenticación local (ADR-026, DEC-177);
+  - se conservan las navegaciones;
+  - una acción la atiende antes un endpoint o una navegación que una operación de relleno;
+  - se descartan las referencias que no existen;
+  - las escrituras reciben su cuerpo de entrada;
+  - se retira la operación CRUD que no puede rellenar campos calculados o que choca con un endpoint de negocio;
+  - una acción que crea un registro recibe los campos que introduce la persona, con los valores de su enumeración.
+- **Plantilla generada:**
+  - la página de cierre de sesión es la de la plantilla, sin pantalla de diseño;
+  - el enlace por ámbito solo existe con ámbito;
+  - la acción integrada lleva su marca;
+  - el inicio abre el acceso cuando no hay sesión y lee la sesión una vez montado;
+  - se puede abrir un registro desde su fila;
+  - el cuerpo sin campos no usa `{}`;
+  - cada página importa solo lo que dibuja;
+  - las listas muestran sus consultas de contexto.
+- **Entregas (ADR-024):** un intento fallido de una entrega ya no impide volver a construirla.
+
+Pendiente:
+
+- **Despliegue:** se hace desde la web, porque requiere la contraseña inicial que elige la persona.
+- **Moneda:** los importes se muestran sin símbolo. El plan no nombra la moneda, así que para ver USD hay que indicarla en las etiquetas de los campos de importe.
+
 ## Correcciones previas a la fase 10
 
 Acordadas el 2026-11-17. Se hacen antes de la fase 10 porque corrigen lo que el cliente ya vio.
