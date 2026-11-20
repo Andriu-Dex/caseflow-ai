@@ -214,6 +214,66 @@ describe('acceptance criteria (ADR-025)', () => {
     });
   });
 
+  it('opens a record of the demonstration data when the write is on its screen', () => {
+    const sales = {
+      ...plan,
+      entities: [
+        { localId: 'sale', name: 'Sale', operations: ['LIST', 'GET'] },
+        { localId: 'note', name: 'Note', operations: [] },
+      ],
+      routes: [
+        {
+          path: '/sales',
+          screenName: 'Ventas',
+          screenLocalId: 'sales',
+          roles: ['Cajero'],
+          entityLocalId: 'sale',
+          actions: [{ label: 'Ver', navigation: { routePath: '/sales/[saleId]' } }],
+        },
+        {
+          path: '/sales/[saleId]/cancel',
+          screenName: 'Anular',
+          screenLocalId: 'cancel',
+          roles: ['Cajero'],
+          entityLocalId: 'sale',
+          actions: [{ label: 'Confirmar anulación', endpoint: 'POST /sales/:saleId/cancel' }],
+        },
+        {
+          path: '/notes/[noteId]',
+          screenName: 'Nota',
+          screenLocalId: 'note',
+          roles: ['Cajero'],
+          entityLocalId: 'note',
+          actions: [{ label: 'Guardar', operation: 'UPDATE' }],
+        },
+      ],
+    } as unknown as ImplementationPlanContent;
+    const screens = [
+      { localId: 'sales', relatedUseCaseCodes: ['CU-017'] },
+      { localId: 'cancel', relatedUseCaseCodes: ['CU-017'] },
+      { localId: 'note', relatedUseCaseCodes: ['CU-018'] },
+    ];
+    const [cancel, note] = deriveCriteria(sales, screens, [useCase('CU-017'), useCase('CU-018')]);
+    expect(cancel!.operation).toEqual({
+      screenPath: '/sales/[saleId]/cancel',
+      label: 'Confirmar anulación',
+      method: 'POST',
+      apiPath: '/sales/:saleId/cancel',
+      business: true,
+      params: [{ name: 'saleId', apiPath: '/sales' }],
+    });
+    // A record no role can list cannot be opened: no operation.
+    expect(note?.operation).toBeUndefined();
+    const results = acceptanceResults(
+      'ACCEPTANCE {"key":"CA-CU-017","label":"Confirmar anulación","skipped":true}',
+      ['CA-CU-017'],
+      true,
+    );
+    expect(results.get('CA-CU-017')!.message).toBe(
+      'No había registros con los que ejecutar «Confirmar anulación».',
+    );
+  });
+
   it('writes a test that carries out the operation and says what it did', () => {
     const spec = acceptanceSpec(
       deriveCriteria(

@@ -42,6 +42,9 @@ export type AcceptanceOperation = {
   method: 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   apiPath: string;
   business: boolean;
+  // The record a screen with parameters opens: each parameter is the first
+  // record the role may list at that collection.
+  params?: { name: string; apiPath: string }[];
 };
 
 const fold = (value: string) =>
@@ -70,28 +73,71 @@ const isSignIn = (route: Plan['routes'][number]) =>
   route.builtinView === 'ACCOUNT_ACCESS' ||
   route.actions.some((action) => action.endpoint === 'POST /auth/login');
 
-// The first write the screens offer without a record: a generic create, or a
-// business action whose path needs no record. Signing in and out are the
-// template's own and are checked by opening their screens.
+// The record each parameter of a screen opens: the entity named by the
+// parameter ([screeningId] is a Screening), or the screen's own entity for its
+// only parameter, when the role can list it. Undefined when one cannot be found.
+function screenParams(plan: Plan, route: Plan['routes'][number]) {
+  const names = [...route.path.matchAll(/\[([A-Za-z0-9]+)\]/g)].map((match) => match[1]!);
+  const params = names.map((name) => {
+    const entity =
+      plan.entities?.find(
+        (item) => `${item.name.charAt(0).toLowerCase()}${item.name.slice(1)}Id` === name,
+      ) ??
+      (names.length === 1
+        ? plan.entities?.find((item) => item.localId === route.entityLocalId)
+        : undefined);
+    return entity?.operations.includes('LIST')
+      ? { name, apiPath: collectionPath(entity.name) }
+      : undefined;
+  });
+  return params.every(Boolean) ? (params as { name: string; apiPath: string }[]) : undefined;
+}
+
+// The first write the screens offer: a generic create, update or delete of the
+// screen's entity, or a business action. Signing in and out are the template's
+// own and are checked by opening their screens. A generic create or update
+// must complete; a delete or a business action may be refused.
 function mainOperation(plan: Plan, screens: Plan['routes']): AcceptanceOperation | undefined {
-  for (const route of screens)
+  for (const route of screens) {
+    const params = route.path.includes('[') ? screenParams(plan, route) : [];
+    if (!params) continue;
+    const located = params.length ? { params } : {};
+    const entity = plan.entities?.find((item) => item.localId === route.entityLocalId);
     for (const action of route.actions) {
-      if (action.operation === 'CREATE') {
-        const entity = plan.entities?.find((item) => item.localId === route.entityLocalId);
-        if (entity)
-          return {
-            screenPath: route.path,
-            label: action.label,
-            method: 'POST',
-            apiPath: collectionPath(entity.name),
-            business: false,
-          };
-      }
+      const collection = entity ? collectionPath(entity.name) : undefined;
+      // A generic update or delete needs the record its screen shows.
+      if (collection && action.operation === 'CREATE')
+        return {
+          screenPath: route.path,
+          label: action.label,
+          method: 'POST',
+          apiPath: collection,
+          business: false,
+          ...located,
+        };
+      if (collection && params.length && action.operation === 'UPDATE')
+        return {
+          screenPath: route.path,
+          label: action.label,
+          method: 'PATCH',
+          apiPath: `${collection}/:id`,
+          business: false,
+          ...located,
+        };
+      if (collection && params.length && action.operation === 'DELETE')
+        return {
+          screenPath: route.path,
+          label: action.label,
+          method: 'DELETE',
+          apiPath: `${collection}/:id`,
+          business: true,
+          ...located,
+        };
       const [method, path] = action.endpoint?.split(' ') ?? [];
       if (
         (method === 'POST' || method === 'PATCH' || method === 'PUT' || method === 'DELETE') &&
         path &&
-        !path.includes(':') &&
+        (!path.includes(':') || params.length) &&
         !path.startsWith('/auth/')
       )
         return {
@@ -100,8 +146,10 @@ function mainOperation(plan: Plan, screens: Plan['routes']): AcceptanceOperation
           method,
           apiPath: path,
           business: true,
+          ...located,
         };
     }
+  }
   return undefined;
 }
 
@@ -139,7 +187,17 @@ export function deriveCriteria(
       const opened = (anonymous ? (signIn.length ? signIn : realizing) : signedIn)
         .filter((route) => !role || !route.roles?.length || route.roles.includes(role))
         .sort((a, b) => Number(signsOut(a)) - Number(signsOut(b)));
-      const operation = anonymous ? undefined : mainOperation(plan, opened);
+      // A write of a screen that needs no record first; else one of a record's
+      // screen of the same use case, opened on a record of the demonstration data.
+      const ofRecords = plan.routes.filter(
+        (route) =>
+          route.path.includes('[') &&
+          (casesOf.get(route.screenLocalId ?? '') ?? []).includes(useCase.code) &&
+          (!role || !route.roles?.length || route.roles.includes(role)),
+      );
+      const operation = anonymous
+        ? undefined
+        : (mainOperation(plan, opened) ?? mainOperation(plan, ofRecords));
       const screens = opened.map((route) => ({
         path: route.path,
         screenName: route.screenName,
@@ -190,7 +248,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 
 // Acceptance criteria (ADR-025, ADR-027), derived from the approved use cases.
 type Session = { token: string | null; scopeId: string | null };
-type Operation = { screenPath: string; label: string; method: string; apiPath: string; business: boolean };
+type Operation = { screenPath: string; label: string; method: string; apiPath: string; business: boolean; params?: { name: string; apiPath: string }[] };
 const CRITERIA: { key: string; title: string; role: string; screens: { path: string; screenName: string; actions: string[] }[]; operation?: Operation }[] = ${JSON.stringify(cases, null, 2)};
 const API_URL = process.env.E2E_API_URL ?? 'http://localhost:3001';
 const sessions: Record<string, Session> = process.env.E2E_SESSIONS
@@ -249,9 +307,27 @@ async function fill(form: Locator, mark: string): Promise<void> {
   }
 }
 
+// The screen of the operation, each parameter being the first record the
+// role lists at its collection; null when there is none to open.
+async function locate(operation: Operation, session?: Session): Promise<string | null> {
+  let path = operation.screenPath;
+  for (const param of operation.params ?? []) {
+    const headers: Record<string, string> = {};
+    if (session?.token) headers.authorization = \`Bearer \${session.token}\`;
+    if (session?.scopeId) headers['x-operation-scope'] = session.scopeId;
+    const response = await fetch(\`\${API_URL}\${param.apiPath}?limit=1\`, { headers });
+    if (!response.ok) return null;
+    const body = (await response.json()) as { id?: string }[] | { items?: { id?: string }[] };
+    const id = (Array.isArray(body) ? body : (body.items ?? []))[0]?.id;
+    if (!id) return null;
+    path = path.replace(\`[\${param.name}]\`, id);
+  }
+  return path;
+}
+
 // Sends the operation and waits for its answer; a confirmation it asks for is accepted.
-async function carryOut(page: Page, operation: Operation, mark: string) {
-  await page.goto(operation.screenPath, { waitUntil: 'networkidle' });
+async function carryOut(page: Page, operation: Operation, path: string, mark: string) {
+  await page.goto(path, { waitUntil: 'networkidle' });
   const action = page.locator(\`[data-action=\${JSON.stringify(operation.label)}]\`).first();
   await expect(action, \`The action «\${operation.label}» must be offered\`).toBeVisible();
   // Its fields: the form around it, a form inside it, or (an action form
@@ -313,8 +389,11 @@ for (const criterion of CRITERIA) {
           \`\${screen.screenName}: the action «\${action}» must be offered\`,
         ).toBeVisible();
     }
-    if (operation) {
-      const answer = await carryOut(page, operation, Date.now().toString(36));
+    const path = operation ? await locate(operation, session) : null;
+    if (operation && !path)
+      console.log('ACCEPTANCE ' + JSON.stringify({ key: criterion.key, label: operation.label, skipped: true }));
+    if (operation && path) {
+      const answer = await carryOut(page, operation, path, Date.now().toString(36));
       expect(answer, \`«\${operation.label}» must send its request\`).not.toBeNull();
       const status = answer!.status();
       expect(status, \`«\${operation.label}» must not fail on the server\`).toBeLessThan(500);
@@ -347,12 +426,19 @@ export function acceptanceResults(
   const done = new Map<string, string>();
   for (const match of output.matchAll(/ACCEPTANCE (\{.*\})/g)) {
     try {
-      const line = JSON.parse(match[1]!) as { key: string; label: string; status: number };
+      const line = JSON.parse(match[1]!) as {
+        key: string;
+        label: string;
+        status?: number;
+        skipped?: boolean;
+      };
       done.set(
         line.key,
-        line.status < 400
-          ? `Se completó «${line.label}».`
-          : `«${line.label}» se rechazó con un aviso a la persona (HTTP ${line.status}).`,
+        line.skipped
+          ? `No había registros con los que ejecutar «${line.label}».`
+          : line.status! < 400
+            ? `Se completó «${line.label}».`
+            : `«${line.label}» se rechazó con un aviso a la persona (HTTP ${line.status}).`,
       );
     } catch {
       // A line cut by the report is not a result.

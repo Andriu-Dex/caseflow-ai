@@ -23,13 +23,14 @@ Antes de las pruebas de extremo a extremo, la validación carga los datos de dem
 
 ### 2. Operación principal de cada criterio
 
-Cada criterio lleva su operación principal, calculada sin IA: la primera escritura que ofrecen sus pantallas sin depender de un registro concreto.
+Cada criterio lleva su operación principal, calculada sin IA: la primera escritura que ofrecen sus pantallas. Primero se buscan las pantallas que no dependen de un registro; si no hay ninguna escritura, las pantallas de un registro del mismo caso de uso.
 
 - **Creación genérica:** una operación `CREATE` de la entidad de la pantalla.
-- **Acción de negocio:** un endpoint `POST`, `PATCH`, `PUT` o `DELETE` cuya ruta no tiene parámetros.
+- **Actualización o borrado genérico:** una operación `UPDATE` o `DELETE` en la pantalla de un registro.
+- **Acción de negocio:** un endpoint `POST`, `PATCH`, `PUT` o `DELETE`.
+- **Pantallas de un registro:** cada parámetro de la ruta (`[screeningId]`) se resuelve con la entidad que nombra o con la entidad de la pantalla. La prueba abre el primer registro que el rol puede listar en esa colección, que viene de los datos de demostración. Si no lo hay, la operación no se ejecuta y el criterio lo dice; no falla.
 - **Exclusiones:**
   - Iniciar y cerrar sesión no cuentan; ya se comprueban al abrir sus pantallas.
-  - Las acciones sobre un registro concreto, con parámetro en la ruta, quedan fuera por ahora.
 
 ### 3. Cómo se ejecuta
 
@@ -43,8 +44,8 @@ Después pulsa el botón de la acción, acepta una confirmación si la pide y es
 
 ### 4. Cuándo pasa
 
-- **Creación genérica:** debe completarse (respuesta 2xx).
-- **Acción de negocio:** puede completarse o rechazarse (4xx), siempre que la pantalla muestre el motivo en un aviso. Los datos inventados no siempre cumplen una regla de negocio; por ejemplo, unos asientos de otra sala.
+- **Creación o actualización genérica:** debe completarse (respuesta 2xx).
+- **Borrado genérico o acción de negocio:** puede completarse o rechazarse (4xx), siempre que la pantalla muestre el motivo en un aviso. Los datos inventados no siempre cumplen una regla de negocio; por ejemplo, unos asientos de otra sala.
 - **Falla en cualquier caso:**
   - un error del servidor (5xx);
   - que la acción no envíe su petición;
@@ -58,5 +59,5 @@ El resultado de cada criterio guarda qué hizo su operación: «Se completó …
 
 - Una construcción solo llega a `READY` si las operaciones principales funcionan contra la base de datos real del sandbox.
 - **Límite:** la prueba no comprueba que el resultado sea el correcto para el negocio, como el importe de un total o qué asientos quedan ocupados. Eso sigue en las pruebas generadas y en la revisión de la persona.
-- Las acciones sobre un registro concreto (anular una venta, editar una película) no se ejecutan todavía.
+- Una acción sobre un registro solo se ejecuta si los datos de demostración tienen un registro que el rol pueda listar.
 - Rellenar a partir de los controles depende de que la pantalla use controles nativos. Un control propio sin elemento nativo puede quedar vacío y hacer fallar una creación.
