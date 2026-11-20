@@ -26,6 +26,7 @@ import type {
   MockupJobResponse,
   MockupPreviewResponse,
   MockupResponse,
+  MockupScreenHistoryResponse,
   ProjectContextCandidate,
   ProjectContextGenerationJob,
   RequirementGenerationJob,
@@ -850,12 +851,28 @@ export const api = {
       uiBlueprintVersionId: string,
       deviceType: MockupDeviceType,
       generator: MockupGenerator = 'STITCH',
+      screenLocalIds?: string[],
     ) =>
       post<MockupJobResponse>(`/projects/${projectId}/mockups`, {
         uiBlueprintVersionId,
         deviceType,
         generator,
+        ...(screenLocalIds ? { screenLocalIds } : {}),
       }),
+    // ADR-029: screen by screen, with each screen's conversation.
+    generateScreens: (projectId: string, id: string, screenLocalIds: string[]) =>
+      post<MockupJobResponse>(`/projects/${projectId}/mockups/${id}/screens/generate`, {
+        screenLocalIds,
+      }),
+    screenHistory: (projectId: string, id: string, screenLocalId: string) =>
+      get<MockupScreenHistoryResponse>(
+        `/projects/${projectId}/mockups/${id}/screen-history/${encodeURIComponent(screenLocalId)}`,
+      ),
+    restoreScreen: (projectId: string, id: string, screenLocalId: string, screenId: string) =>
+      post<MockupResponse>(
+        `/projects/${projectId}/mockups/${id}/screen-history/${encodeURIComponent(screenLocalId)}/restore`,
+        { screenId },
+      ),
     // DEC-166: a mockup written by people, one HTML page and one PNG per screen.
     importManual: (
       projectId: string,

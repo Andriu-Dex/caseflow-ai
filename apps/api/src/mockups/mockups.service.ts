@@ -175,7 +175,7 @@ export class MockupsService {
     );
   }
 
-  private async blueprintScreenIds(projectId: string, uiBlueprintVersionId: string) {
+  private async blueprintScreens(projectId: string, uiBlueprintVersionId: string) {
     const blueprint = await this.prisma.artifactVersion.findFirst({
       where: {
         id: uiBlueprintVersionId,
@@ -185,7 +185,9 @@ export class MockupsService {
       include: { structuredAnalysisDetail: true },
     });
     const parsed = uiBlueprintContentSchema.safeParse(blueprint?.structuredAnalysisDetail?.content);
-    return parsed.success ? parsed.data.screens.map((screen) => screen.localId) : [];
+    return parsed.success
+      ? parsed.data.screens.map((screen) => ({ localId: screen.localId, name: screen.name }))
+      : [];
   }
 
   private async assertBlueprintScreens(
@@ -193,7 +195,11 @@ export class MockupsService {
     uiBlueprintVersionId: string,
     screenLocalIds: string[],
   ) {
-    const known = new Set(await this.blueprintScreenIds(projectId, uiBlueprintVersionId));
+    const known = new Set(
+      (await this.blueprintScreens(projectId, uiBlueprintVersionId)).map(
+        (screen) => screen.localId,
+      ),
+    );
     if (screenLocalIds.some((id) => !known.has(id)))
       throw new UnprocessableEntityException(
         'Alguna pantalla elegida no está en el plano de interfaz del boceto.',
@@ -903,6 +909,12 @@ export class MockupsService {
         ? { fidelityReview: await this.fidelityReview(projectId, detail) }
         : {}),
       previousVersion: await this.previousVersionWithScreens(row.id, version.versionNumber),
+      // ADR-029: screens of the blueprint not drawn yet, to generate them one by one.
+      missingScreens: hasScreens(detail.generatorKind)
+        ? (await this.blueprintScreens(projectId, detail.uiBlueprintVersionId)).filter(
+            (screen) => !detail.screens.some((item) => item.screenLocalId === screen.localId),
+          )
+        : [],
     };
   }
 
@@ -1100,8 +1112,8 @@ export class MockupsService {
         // ADR-029: a mockup drawn screen by screen is approved once complete.
         const drawn = new Set(detail.screens.map((screen) => screen.screenLocalId));
         const missing = (
-          await this.blueprintScreenIds(projectId, detail.uiBlueprintVersionId)
-        ).filter((id) => !drawn.has(id)).length;
+          await this.blueprintScreens(projectId, detail.uiBlueprintVersionId)
+        ).filter((screen) => !drawn.has(screen.localId)).length;
         if (missing)
           throw new UnprocessableEntityException(
             `Faltan ${missing} pantallas del plano de interfaz por generar. Genérelas antes de aprobar el boceto.`,

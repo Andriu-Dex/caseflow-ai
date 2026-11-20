@@ -470,6 +470,7 @@ describe('MockupsService', () => {
       imageUrl: '/projects/project/mockups/artifact/screens/screen-id/image',
       htmlUrl: '/projects/project/mockups/artifact/screens/screen-id/html',
     });
+    expect(preview.missingScreens).toEqual([]);
   });
 
   it('falls back to an internal wireframe when Stitch fails', async () => {

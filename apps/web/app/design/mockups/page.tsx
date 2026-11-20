@@ -26,6 +26,7 @@ import {
   Minimize2,
   Monitor,
   Pencil,
+  RotateCcw,
   Search,
   Smartphone,
   Sparkles,
@@ -208,18 +209,47 @@ type MockupScreen = NonNullable<MockupPreviewResponse['screens']>[number];
 
 // Edits one screen at Stitch; the other screens are carried over unchanged.
 function ScreenEditDialog({
+  projectId,
+  mockupId,
   screen,
   imageUrl,
   busy,
   onClose,
   onRefine,
 }: {
+  projectId: string;
+  mockupId: string;
   screen: MockupScreen | null;
   imageUrl: string | null;
   busy: boolean;
   onClose: () => void;
   onRefine: (prompt: string) => Promise<boolean>;
 }) {
+  const queryClient = useQueryClient();
+  const [restoring, setRestoring] = useState<string | null>(null);
+  const screenLocalId = screen?.screenLocalId ?? null;
+  // ADR-029: the screen's conversation, each change with what was asked.
+  const history = useQuery({
+    queryKey: ['mockup-screen-history', projectId, mockupId, screenLocalId],
+    queryFn: () => api.mockups.screenHistory(projectId, mockupId, screenLocalId!),
+    enabled: screenLocalId !== null,
+  });
+  async function restore(screenId: string, versionNumber: number) {
+    setRestoring(screenId);
+    try {
+      await api.mockups.restoreScreen(projectId, mockupId, screenLocalId!, screenId);
+      toast.success(`Pantalla restaurada a la versión ${versionNumber}.`);
+      queryClient.invalidateQueries({ queryKey: ['mockups', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['mockup-preview', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['mockup-screen-history', projectId, mockupId] });
+      onClose();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo restaurar la pantalla.');
+    } finally {
+      setRestoring(null);
+    }
+  }
+  const items = history.data?.items ?? [];
   return (
     <Dialog open={screen !== null} onOpenChange={(open) => (!open && !busy ? onClose() : null)}>
       <DialogContent className="sm:max-w-lg p-6 gap-5">
@@ -258,7 +288,45 @@ function ScreenEditDialog({
           </div>
         ) : null}
 
-        {screen?.refinementPrompt ? (
+        {items.length > 1 ? (
+          <div className="flex flex-col gap-1.5">
+            <p className="text-sm font-medium text-foreground">Conversación de esta pantalla</p>
+            <ol className="flex max-h-48 flex-col gap-1.5 overflow-y-auto">
+              {items.map((item) => (
+                <li
+                  key={item.screenId}
+                  className="flex items-start justify-between gap-3 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs"
+                >
+                  <span className="min-w-0">
+                    <span className="font-semibold text-foreground">
+                      Versión {item.versionNumber}
+                    </span>
+                    <span className="block text-muted-foreground">
+                      {item.instruction ?? 'Primera versión de la pantalla.'}
+                    </span>
+                  </span>
+                  {item.current ? (
+                    <span className="shrink-0 rounded-md bg-primary/10 px-1.5 py-0.5 font-medium text-primary">
+                      Actual
+                    </span>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 shrink-0 gap-1 text-xs"
+                      disabled={busy || restoring !== null}
+                      onClick={() => void restore(item.screenId, item.versionNumber)}
+                    >
+                      <RotateCcw aria-hidden="true" className="size-3.5" />
+                      {restoring === item.screenId ? 'Restaurando…' : 'Restaurar'}
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </div>
+        ) : screen?.refinementPrompt ? (
           <div className="rounded-xl border border-border/60 bg-muted/30 px-3.5 py-2.5 text-xs text-muted-foreground">
             <span className="font-semibold text-foreground">Última edición:</span>{' '}
             {screen.refinementPrompt}
@@ -289,13 +357,16 @@ function MockupPreview({
   busy,
   onRefine,
   onRefineScreen,
+  onGenerateScreens,
 }: {
   mockupId: string;
   projectId: string;
   busy: boolean;
   onRefine: (prompt: string) => Promise<boolean>;
   onRefineScreen: (screenId: string, prompt: string) => Promise<boolean>;
+  onGenerateScreens: (screenLocalIds: string[]) => Promise<boolean>;
 }) {
+  const [chosenMissing, setChosenMissing] = useState<Set<string>>(new Set());
   const [selectedScreenIndex, setSelectedScreenIndex] = useState<number | null>(null);
   const [comparing, setComparing] = useState(false);
   const [editingScreen, setEditingScreen] = useState<MockupScreen | null>(null);
@@ -679,6 +750,20 @@ function MockupPreview({
           boceto completo una vez para poder editarlas una por una.
         </p>
       ) : null}
+      {preview.data.missingScreens?.length ? (
+        <MissingScreens
+          screens={preview.data.missingScreens}
+          chosen={chosenMissing}
+          onChosen={setChosenMissing}
+          busy={busy}
+          onGenerate={async () => {
+            const ids = preview.data
+              .missingScreens!.map((screen) => screen.localId)
+              .filter((id) => chosenMissing.has(id));
+            if (await onGenerateScreens(ids)) setChosenMissing(new Set());
+          }}
+        />
+      ) : null}
       {/* A hand-written mockup changes by importing its next version, not by AI. */}
       {preview.data.generatorKind === 'MANUAL' ? (
         <p className="text-xs text-muted-foreground">
@@ -702,6 +787,8 @@ function MockupPreview({
         </Accordion>
       )}
       <ScreenEditDialog
+        projectId={projectId}
+        mockupId={mockupId}
         screen={editingScreen}
         imageUrl={
           editingScreen ? api.mockups.screenImageUrl(projectId, mockupId, editingScreen.id) : null
@@ -711,6 +798,62 @@ function MockupPreview({
         onRefine={(prompt) => onRefineScreen(editingScreen!.id, prompt)}
       />
     </div>
+  );
+}
+
+// ADR-029: blueprint screens the mockup has not drawn yet, generated on request.
+function MissingScreens({
+  screens,
+  chosen,
+  onChosen,
+  busy,
+  onGenerate,
+}: {
+  screens: { localId: string; name: string }[];
+  chosen: Set<string>;
+  onChosen: (next: Set<string>) => void;
+  busy: boolean;
+  onGenerate: () => Promise<void>;
+}) {
+  return (
+    <section className="flex flex-col gap-2 rounded-lg border border-dashed border-border p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium text-foreground">
+          Pantallas por generar ({screens.length})
+        </p>
+        <Button
+          type="button"
+          size="sm"
+          className="gap-1.5"
+          disabled={busy || chosen.size === 0}
+          onClick={() => void onGenerate()}
+        >
+          <Sparkles aria-hidden="true" className="size-4" />
+          {chosen.size ? `Generar seleccionadas (${chosen.size})` : 'Generar seleccionadas'}
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        El boceto se aprueba cuando tiene todas las pantallas del plano de interfaz.
+      </p>
+      <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+        {screens.map((screen) => (
+          <label key={screen.localId} className="flex cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              disabled={busy}
+              checked={chosen.has(screen.localId)}
+              onChange={(event) => {
+                const next = new Set(chosen);
+                if (event.target.checked) next.add(screen.localId);
+                else next.delete(screen.localId);
+                onChosen(next);
+              }}
+            />
+            {screen.name}
+          </label>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -1084,7 +1227,10 @@ function MockupsContent({ projectId }: { projectId: string }) {
   const [creatingVersionId, setCreatingVersionId] = useState<string | null>(null);
   const [creatingJobStatus, setCreatingJobStatus] = useState<MockupUiStatus | null>(null);
   // The generation waiting for the person to confirm it (it is long and costs credits).
-  const [confirming, setConfirming] = useState<{ id: string; screens: number | null } | null>(null);
+  const [confirming, setConfirming] = useState<{
+    id: string;
+    screens: { localId: string; name: string }[] | null;
+  } | null>(null);
   // A generation that stopped with screens already drawn, to offer to continue it.
   const [stopped, setStopped] = useState<MockupJobResponse | null>(null);
   // Screens drawn so far, when the provider draws them one by one.
@@ -1105,10 +1251,14 @@ function MockupsContent({ projectId }: { projectId: string }) {
     queryClient.invalidateQueries({ queryKey: ['archived-artifacts', projectId] });
   }
 
-  function createMockup(uiBlueprintVersionId: string, generator: MockupGenerator) {
+  function createMockup(
+    uiBlueprintVersionId: string,
+    generator: MockupGenerator,
+    screenLocalIds?: string[],
+  ) {
     const deviceType = deviceTypes[uiBlueprintVersionId] ?? 'DESKTOP';
     return runMockupJob(uiBlueprintVersionId, () =>
-      api.mockups.create(projectId, uiBlueprintVersionId, deviceType, generator),
+      api.mockups.create(projectId, uiBlueprintVersionId, deviceType, generator, screenLocalIds),
     );
   }
 
@@ -1339,7 +1489,19 @@ function MockupsContent({ projectId }: { projectId: string }) {
                   variant="outline"
                   size="sm"
                   disabled={creatingVersionId === b.version.id}
-                  onClick={() => setConfirming({ id: b.version.id, screens: screensCount })}
+                  onClick={() =>
+                    setConfirming({
+                      id: b.version.id,
+                      screens:
+                        'screens' in b.content
+                          ? b.content.screens.flatMap((screen) =>
+                              'localId' in screen
+                                ? [{ localId: screen.localId, name: screen.name }]
+                                : [],
+                            )
+                          : null,
+                    })
+                  }
                   className="border-primary/40 hover:bg-primary/5 hover:text-primary"
                 >
                   {creatingVersionId === b.version.id ? (
@@ -1410,13 +1572,13 @@ function MockupsContent({ projectId }: { projectId: string }) {
 
       <MockupGenerationConfirm
         open={confirming !== null}
-        screens={confirming?.screens ?? null}
+        blueprintScreens={confirming?.screens ?? null}
         device={confirming ? (deviceTypes[confirming.id] ?? 'DESKTOP') : 'DESKTOP'}
         onCancel={() => setConfirming(null)}
-        onConfirm={(generator) => {
+        onConfirm={(generator, screenLocalIds) => {
           const id = confirming!.id;
           setConfirming(null);
-          void createMockup(id, generator);
+          void createMockup(id, generator, screenLocalIds);
         }}
       />
 
@@ -1683,6 +1845,11 @@ function MockupsContent({ projectId }: { projectId: string }) {
                     onRefineScreen={(screenId, prompt) =>
                       runMockupJob(m.id, () =>
                         api.mockups.refineScreen(projectId, m.id, screenId, prompt),
+                      )
+                    }
+                    onGenerateScreens={(screenLocalIds) =>
+                      runMockupJob(m.id, () =>
+                        api.mockups.generateScreens(projectId, m.id, screenLocalIds),
                       )
                     }
                   />

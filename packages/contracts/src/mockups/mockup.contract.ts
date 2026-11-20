@@ -192,5 +192,7 @@ export const mockupPreviewResponseSchema = z.object({
     })
     .nullable()
     .optional(),
+  // ADR-029: blueprint screens the mockup has not drawn yet.
+  missingScreens: z.array(z.object({ localId: z.string(), name: z.string() })).optional(),
 });
 export type MockupPreviewResponse = z.infer<typeof mockupPreviewResponseSchema>;
