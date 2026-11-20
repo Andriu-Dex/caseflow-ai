@@ -741,12 +741,32 @@ function listPage(plan: Plan, entity: Entity, route: Route): string {
   const previousLabel =
     route.actions.find((a) => a.interaction === 'PAGINATE_PREVIOUS')?.label ??
     'Ir a la página anterior';
-  const header = controls(plan, entity, pageActions, {
-    isListPage: true,
-    routeParams: names,
-    onDone: refresh,
-    hasDate,
-  });
+  // The screen's context queries, with the navigations that open a record of
+  // their results (as on any other screen).
+  const navigations = route.actions.flatMap((action) =>
+    action.navigation?.sourceEndpoint
+      ? [{ ...action.navigation, label: action.label, idField: action.navigation.idField! }]
+      : [],
+  );
+  const contextControls = (route.contextQueries ?? [])
+    .map((endpoint) =>
+      actionControl(
+        plan,
+        entity,
+        { label: 'Información de la pantalla', endpoint },
+        { autoLoad: true, navigations, routeParams: names },
+      ),
+    )
+    .filter((value): value is string => value !== null);
+  const header = [
+    ...contextControls,
+    ...controls(plan, entity, pageActions, {
+      isListPage: true,
+      routeParams: names,
+      onDone: refresh,
+      hasDate,
+    }),
+  ];
   const rowControls = controls(plan, entity, itemActions, {
     idExpr: 'row.id',
     routeParams: names,

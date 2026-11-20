@@ -351,6 +351,36 @@ describe('explicit action policy and relational constraints', () => {
   });
 });
 
+describe('a list screen with a context query', () => {
+  it('renders the query and the navigation that opens a record of its result', () => {
+    const plan = actionContractPlan();
+    plan.routes.push({
+      path: '/orders',
+      screenName: 'Operaciones',
+      moduleLocalId: 'orders',
+      kind: 'LIST',
+      entityLocalId: 'order',
+      contextQueries: ['GET /orders/invalid-response'],
+      actions: [
+        {
+          label: 'Abrir operación',
+          navigation: {
+            routePath: '/orders/[orderId]',
+            sourceEndpoint: 'GET /orders/invalid-response',
+            idField: 'id',
+          },
+        },
+      ],
+    } as never);
+    const page = generateProject(
+      { plan, template: CASEFLOW_WEB_TS_V2, projectName: 'Prueba', slug: 'test' },
+      actionContractImplementations,
+    ).find((file) => file.path === 'apps/web/app/orders/page.tsx')!.content;
+    expect(page).toContain('actionKey={"GET /orders/invalid-response"}');
+    expect(page).toContain('data-action={"Abrir operación"}');
+  });
+});
+
 describe('an action whose answer is only technical', () => {
   it('imports no result slot it does not render', () => {
     const plan = actionContractPlan();
