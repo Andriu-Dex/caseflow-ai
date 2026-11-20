@@ -373,5 +373,12 @@ describe('readable static nodes', () => {
       'rounded-full bg-accent px-3 text-xs font-semibold text-accent-foreground',
     );
     expect(readable('bg-primary/10 text-primary')).toBe('bg-primary/10 text-primary');
+    // A key-figure band and its tiles (ADR-028) take the band's foreground.
+    expect(readable('rounded-2xl bg-band p-6 text-primary')).toBe(
+      'rounded-2xl bg-band p-6 text-band-foreground',
+    );
+    expect(readable('rounded-xl bg-band-tile p-4')).toBe(
+      'rounded-xl bg-band-tile p-4 text-band-foreground',
+    );
   });
 });

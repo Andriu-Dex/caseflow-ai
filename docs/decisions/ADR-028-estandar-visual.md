@@ -51,5 +51,6 @@ Todo sale de la paleta del tema del proyecto, para que combine en cualquier proy
 
 ## Consecuencias
 
-- Los proyectos ya construidos cambian de marco en su siguiente construcción. Las pantallas compuestas no cambian hasta que se vuelvan a componer.
+- Los proyectos ya construidos cambian de marco en su siguiente construcción.
+- **Coste de IA:** la composición de pantallas pasa a la versión 39 de sus instrucciones. Al construir de nuevo un proyecto, sus pantallas se vuelven a componer con IA, una solicitud por pantalla. Hay que estimarlo antes de construir.
 - El acento del tema pasa a tener un uso fijo. Un tema con un acento poco visible da una acción principal poco visible, así que el tema generado debe elegir un acento que contraste con el primario.
