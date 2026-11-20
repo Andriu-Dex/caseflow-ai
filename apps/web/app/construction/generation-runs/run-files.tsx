@@ -8,6 +8,7 @@ import { type ConstructionUnit, type GenerationRunResponse } from '@caseflow-ai/
 import { Button } from '@caseflow-ai/ui';
 import { api } from '../../../lib/api';
 import { QueryState } from '../../../components/query-state';
+import { ScreenConversation } from './screen-conversation';
 
 const LINK_LABELS = { IMPLEMENTS: 'Implementa', TESTS: 'Prueba', CONFIGURES: 'Configura' };
 
@@ -280,6 +281,13 @@ function RunUnits({ projectId, run }: { projectId: string; run: GenerationRunRes
                   </p>
                 ) : null}
                 {unit.design ? <ScreenDesign design={unit.design} /> : null}
+                {unit.kind === 'SCREEN' && unit.design && unit.design.source !== 'MANUAL' ? (
+                  <ScreenConversation
+                    projectId={projectId}
+                    routePath={unit.id.slice('route:'.length)}
+                    title={unit.title}
+                  />
+                ) : null}
 
                 {unit.changes &&
                 (unit.changes.added || unit.changes.changed || unit.changes.removed.length) ? (

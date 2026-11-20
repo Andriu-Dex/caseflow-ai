@@ -250,6 +250,7 @@ model User {
   startingPoints              StartingPoint[]
   screenDesignExceptions      ScreenDesignException[]
   screenDesignOverrides       ScreenDesignOverride[]
+  screenDesignRequests        ScreenDesignRequest[]
   constructionUnitReviews     ConstructionUnitReview[]
   generatedProjectDeployments GeneratedProjectDeployment[]
   workflowRuns                WorkflowRun[]
@@ -382,6 +383,7 @@ model Project {
   deliveryPlans                 DeliveryPlan[]
   screenDesignExceptions        ScreenDesignException[]
   screenDesignOverrides         ScreenDesignOverride[]
+  screenDesignRequests          ScreenDesignRequest[]
   constructionUnitReviews       ConstructionUnitReview[]
   generatedProjectDeployments   GeneratedProjectDeployment[]
   generationRuns                GenerationRun[]
@@ -1744,6 +1746,26 @@ model ScreenDesignOverride {
   @@index([designBaselineId, routePath, createdAt])
   @@index([projectId])
   @@map("screen_design_overrides")
+}
+
+// A person's requests about how one generated screen looks (ADR-030). Each row
+// holds the whole set in force, so the conversation is immutable and going back
+// copies an earlier set; the latest row of a route is the one applied.
+model ScreenDesignRequest {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId       String   @map("project_id") @db.Uuid
+  routePath       String   @map("route_path")
+  instructions    String[]
+  // What this row changed: the new request, or the version it went back to.
+  note            String
+  createdByUserId String   @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  createdBy User    @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, routePath, createdAt])
+  @@map("screen_design_requests")
 }
 
 model DesignBaseline {

@@ -10,7 +10,9 @@ import { StageCurrencyService } from '../readiness/stage-currency';
 import {
   DESIGN_BASELINE_ROLES,
   type CreateDesignBaselineRequest,
+  SCREEN_DESIGN_REQUESTS_MAX,
   type CreateScreenDesignExceptionRequest,
+  type ScreenDesignConversationResponse,
   type ScreenDesignExceptionResponse,
   type ScreenFindingsResponse,
   type DesignBaselineResponse,
@@ -310,6 +312,105 @@ export class DesignBaselinesService {
       );
       return { id: row.id, contentSha256 };
     });
+  }
+
+  // ADR-030: the conversation of one generated screen, oldest first.
+  async screenConversation(
+    projectId: string,
+    routePath: string,
+  ): Promise<ScreenDesignConversationResponse> {
+    const rows = await this.prisma.screenDesignRequest.findMany({
+      where: { projectId, routePath },
+      orderBy: { createdAt: 'asc' },
+      include: { createdBy: { select: { displayName: true } } },
+    });
+    return {
+      items: rows.map((row, index) => ({
+        id: row.id,
+        instructions: row.instructions,
+        note: row.note,
+        authorName: row.createdBy.displayName,
+        createdAt: row.createdAt.toISOString(),
+        current: index === rows.length - 1,
+      })),
+    };
+  }
+
+  // A new request joins the set in force; the next construction recomposes
+  // only this screen with it.
+  async addScreenRequest(
+    projectId: string,
+    userId: string,
+    input: { routePath: string; instruction: string },
+  ) {
+    await assertCanGenerate(this.prisma, projectId, userId);
+    const current = await this.latestScreenRequest(projectId, input.routePath);
+    const instructions = [...(current?.instructions ?? []), input.instruction];
+    if (instructions.length > SCREEN_DESIGN_REQUESTS_MAX)
+      throw new UnprocessableEntityException(
+        `Una pantalla admite hasta ${SCREEN_DESIGN_REQUESTS_MAX} peticiones. Vuelva a una versión anterior o reúna las peticiones en una sola.`,
+      );
+    return this.recordScreenRequest(
+      projectId,
+      userId,
+      input.routePath,
+      instructions,
+      input.instruction,
+    );
+  }
+
+  // Going back copies an earlier set as the newest row, so nothing is erased;
+  // null goes back to the screen composed from its mockup alone.
+  async restoreScreenRequest(
+    projectId: string,
+    userId: string,
+    input: { routePath: string; requestId: string | null },
+  ) {
+    await assertCanGenerate(this.prisma, projectId, userId);
+    const conversation = (await this.screenConversation(projectId, input.routePath)).items;
+    const index = conversation.findIndex((item) => item.id === input.requestId);
+    if (input.requestId !== null && index < 0)
+      throw new NotFoundException('No se encontró esa versión de la pantalla.');
+    return this.recordScreenRequest(
+      projectId,
+      userId,
+      input.routePath,
+      index < 0 ? [] : conversation[index]!.instructions,
+      index < 0 ? 'Vuelta al diseño del boceto.' : `Vuelta a la versión ${index + 1}.`,
+    );
+  }
+
+  private latestScreenRequest(projectId: string, routePath: string) {
+    return this.prisma.screenDesignRequest.findFirst({
+      where: { projectId, routePath },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  private async recordScreenRequest(
+    projectId: string,
+    userId: string,
+    routePath: string,
+    instructions: string[],
+    note: string,
+  ) {
+    await this.prisma.$transaction(async (tx) => {
+      const row = await tx.screenDesignRequest.create({
+        data: { projectId, routePath, instructions, note, createdByUserId: userId },
+      });
+      await this.audit.record(
+        {
+          projectId,
+          actorUserId: userId,
+          action: 'SCREEN_DESIGN_REQUEST_RECORDED',
+          entityType: 'SCREEN_DESIGN_REQUEST',
+          entityId: row.id,
+          metadata: { routePath, requests: instructions.length },
+        },
+        tx,
+      );
+    });
+    return this.screenConversation(projectId, routePath);
   }
 
   async createScreenException(

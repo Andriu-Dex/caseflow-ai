@@ -81,6 +81,7 @@ async function setup() {
     project: { findUnique: vi.fn().mockResolvedValue({ language: 'ES' }) },
     screenDesignException: { findMany: vi.fn().mockResolvedValue([]) },
     screenDesignOverride: { findMany: vi.fn().mockResolvedValue([]) },
+    screenDesignRequest: { findMany: vi.fn().mockResolvedValue([]) },
     generatedFile: {
       findFirst: vi.fn().mockResolvedValue(null),
       upsert: vi.fn(async (args) => {
@@ -168,7 +169,7 @@ describe('frozen design adaptation', () => {
         projectId: id,
         sourceArtifactVersionId: mockupId,
         promptKey: 'frontend-design.generate',
-        promptVersion: 39,
+        promptVersion: 40,
       }),
     );
     const sent = JSON.parse(ai.generateStructured.mock.calls[0]![0].messages[0].content);
@@ -205,6 +206,29 @@ describe('frozen design adaptation', () => {
     expect(
       structuralProblems(modified, CASEFLOW_WEB_TS_V2, CASEFLOW_WEB_TS_V2.dependencies),
     ).toContainEqual(expect.stringContaining('no coincide'));
+  });
+  // ADR-030: a person's requests reach the AI and recompose only their screen.
+  it('sends the requests in force for a screen and keys its composition on them', async () => {
+    const { service, ai, prisma } = await setup();
+    const keys = () =>
+      prisma.generatedFile.findFirst.mock.calls
+        .map(([args]) => args.where.path.in[0] as string)
+        .filter((path) => path.startsWith('docs/presentations/'));
+    await service.adapt(id, id, plan, files(), 'Catálogo', false, id);
+    const plain = keys().at(-1);
+    prisma.screenDesignRequest.findMany.mockResolvedValue([
+      { routePath: '/items', instructions: ['Pon la tabla antes del buscador'] },
+    ]);
+    prisma.generatedFile.findFirst.mockResolvedValue(null);
+    await service.adapt(id, id, plan, files(), 'Catálogo', false, id);
+    const sent = JSON.parse(ai.generateStructured.mock.calls.at(-1)![0].messages[0].content);
+    expect(sent.personRequests).toEqual(['Pon la tabla antes del buscador']);
+    expect(keys().at(-1)).not.toBe(plain);
+    prisma.screenDesignRequest.findMany.mockResolvedValue([
+      { routePath: '/items', instructions: [] },
+    ]);
+    await service.adapt(id, id, plan, files(), 'Catálogo', false, id);
+    expect(keys().at(-1)).toBe(plain);
   });
   it('does not silently fall back to generic templates when approved HTML is unavailable, cross-project or not mapped', async () => {
     const { service, mockup, storage, ai, baseline } = await setup();

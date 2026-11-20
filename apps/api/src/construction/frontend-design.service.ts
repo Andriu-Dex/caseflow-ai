@@ -28,6 +28,10 @@ import { kebabCase } from '../code-generation/naming';
 import { actionMethodName } from '../code-generation/engine/backend.templates';
 
 const FRONTEND_DESIGN_VERSION = 39;
+// The prompt can move ahead of the cache version when it only adds rules for
+// inputs that older keys never had (ADR-030: a person's requests), so screens
+// without them keep their composition.
+const FRONTEND_DESIGN_PROMPT_VERSION = 40;
 const NOT_EVALUATED = 'NOT_EVALUATED:';
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 
@@ -137,6 +141,14 @@ export class FrontendDesignService {
       },
     }))
       overrides.set(item.routePath, item);
+    // ADR-030: the requests in force for each screen, from its latest row.
+    const requests = new Map<string, string[]>();
+    for (const item of await this.prisma.screenDesignRequest.findMany({
+      where: { projectId },
+      orderBy: { createdAt: 'asc' },
+      select: { routePath: true, instructions: true },
+    }))
+      requests.set(item.routePath, item.instructions);
     const projectBaselineIds = (
       await this.prisma.designBaseline.findMany({ where: { projectId }, select: { id: true } })
     ).map((item) => item.id);
@@ -309,6 +321,7 @@ export class FrontendDesignService {
       // The key leaves out the baseline id, so a screen whose inputs did not
       // change keeps its evaluated composition in a new baseline; keys written
       // before (with an earlier baseline id last) are still found.
+      const personRequests = requests.get(route.path) ?? [];
       const keyFor = (withBaseline?: string) =>
         hash(
           json({
@@ -318,6 +331,8 @@ export class FrontendDesignService {
             htmlHash: hash(html),
             screen,
             bindings,
+            // Only present when there are requests, so other keys stay the same.
+            ...(personRequests.length ? { personRequests } : {}),
             ...(withBaseline === undefined ? {} : { baselineId: withBaseline }),
           }),
         );
@@ -423,11 +438,17 @@ export class FrontendDesignService {
             language,
             sourceArtifactVersionId: entry!.artifactVersionId,
             promptKey: 'frontend-design.generate',
-            promptVersion: FRONTEND_DESIGN_VERSION,
+            promptVersion: FRONTEND_DESIGN_PROMPT_VERSION,
             messages: [
               {
                 role: 'user',
-                content: json({ screen, bindings, sources, referenceHtml: html.toString('utf8') }),
+                content: json({
+                  screen,
+                  bindings,
+                  sources,
+                  referenceHtml: html.toString('utf8'),
+                  ...(personRequests.length ? { personRequests } : {}),
+                }),
               },
             ],
             outputSchema: presentationSchema,

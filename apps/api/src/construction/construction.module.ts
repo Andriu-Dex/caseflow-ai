@@ -34,7 +34,10 @@ import {
 import { CONSTRUCTION_QUEUE_TOKEN } from './construction-queue.token';
 import { DependencyCatalogService } from './dependency-catalog.service';
 import { DependencyProposalsService } from './dependency-proposals.service';
-import { DesignBaselinesController } from './design-baselines.controller';
+import {
+  DesignBaselinesController,
+  ScreenDesignRequestsController,
+} from './design-baselines.controller';
 import { DesignBaselinesService } from './design-baselines.service';
 import { GeneratedProjectSnapshotsService } from './generated-project-snapshots.service';
 import {
@@ -80,6 +83,7 @@ import { UserManualsController } from '../user-manuals/user-manuals.controller';
     TargetTemplatesController,
     DependencyProposalsController,
     DesignBaselinesController,
+    ScreenDesignRequestsController,
     GenerationRunsController,
     GeneratedProjectSnapshotsController,
     InternalConstructionJobsController,

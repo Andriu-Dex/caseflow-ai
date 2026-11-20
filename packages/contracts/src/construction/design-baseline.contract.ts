@@ -126,3 +126,36 @@ export const screenFindingsResponseSchema = z.object({
   ),
 });
 export type ScreenFindingsResponse = z.infer<typeof screenFindingsResponseSchema>;
+
+// ADR-030: a conversation per generated screen. A request adds to the set in
+// force; going back restores an earlier set (null: the screen as composed
+// from its mockup alone).
+export const SCREEN_DESIGN_REQUEST_MAX_LENGTH = 1000;
+export const SCREEN_DESIGN_REQUESTS_MAX = 20;
+const screenRoutePath = z.string().trim().startsWith('/').max(200);
+export const createScreenDesignRequestSchema = z
+  .object({
+    routePath: screenRoutePath,
+    instruction: z.string().trim().min(3).max(SCREEN_DESIGN_REQUEST_MAX_LENGTH),
+  })
+  .strict();
+export type CreateScreenDesignRequest = z.output<typeof createScreenDesignRequestSchema>;
+export const restoreScreenDesignRequestSchema = z
+  .object({ routePath: screenRoutePath, requestId: z.uuid().nullable() })
+  .strict();
+export type RestoreScreenDesignRequest = z.output<typeof restoreScreenDesignRequestSchema>;
+export const screenDesignConversationResponseSchema = z.object({
+  items: z.array(
+    z.object({
+      id: z.uuid(),
+      instructions: z.array(z.string()),
+      note: z.string(),
+      authorName: z.string(),
+      createdAt: z.string(),
+      current: z.boolean(),
+    }),
+  ),
+});
+export type ScreenDesignConversationResponse = z.infer<
+  typeof screenDesignConversationResponseSchema
+>;

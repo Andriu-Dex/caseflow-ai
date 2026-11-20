@@ -1,9 +1,12 @@
-import { Body, Controller, Get, Param, Post, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { z } from 'zod';
 import {
   createDesignBaselineRequestSchema,
   createScreenDesignExceptionRequestSchema,
+  createScreenDesignRequestSchema,
+  restoreScreenDesignRequestSchema,
+  screenDesignConversationResponseSchema,
   designBaselineListResponseSchema,
   designBaselineResponseSchema,
   screenDesignExceptionResponseSchema,
@@ -87,5 +90,58 @@ export class DesignBaselinesController {
     @Request() req: AuthenticatedRequest,
   ) {
     return this.service.createScreenException(projectId, id, req.user.id, body);
+  }
+}
+
+// ADR-030: the conversation of each generated screen, by its route.
+@ApiTags('construction')
+@UseGuards(JwtAuthGuard, ProjectMembershipGuard)
+@Controller('projects/:projectId/screen-design-requests')
+export class ScreenDesignRequestsController {
+  constructor(private readonly service: DesignBaselinesService) {}
+
+  @Get()
+  @ApiOperation({
+    operationId: 'getScreenDesignConversation',
+    summary: 'Consultar la conversación de una pantalla generada',
+  })
+  @ApiZodResponse(200, 'Screen conversation.', screenDesignConversationResponseSchema)
+  conversation(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Query('routePath') routePath: string,
+  ) {
+    return this.service.screenConversation(projectId, String(routePath ?? '').slice(0, 200));
+  }
+
+  @Post()
+  @ApiOperation({
+    operationId: 'addScreenDesignRequest',
+    summary: 'Pedir un cambio en una pantalla generada',
+  })
+  @ApiZodBody(createScreenDesignRequestSchema)
+  @ApiZodResponse(201, 'Screen conversation.', screenDesignConversationResponseSchema)
+  add(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Body(new ZodValidationPipe(createScreenDesignRequestSchema))
+    body: z.output<typeof createScreenDesignRequestSchema>,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.service.addScreenRequest(projectId, req.user.id, body);
+  }
+
+  @Post('restore')
+  @ApiOperation({
+    operationId: 'restoreScreenDesignRequest',
+    summary: 'Volver a una versión anterior de una pantalla generada',
+  })
+  @ApiZodBody(restoreScreenDesignRequestSchema)
+  @ApiZodResponse(201, 'Screen conversation.', screenDesignConversationResponseSchema)
+  restore(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Body(new ZodValidationPipe(restoreScreenDesignRequestSchema))
+    body: z.output<typeof restoreScreenDesignRequestSchema>,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.service.restoreScreenRequest(projectId, req.user.id, body);
   }
 }

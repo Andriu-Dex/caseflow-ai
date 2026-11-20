@@ -7,6 +7,7 @@ import type {
   DataModelInput,
   DesignBaselineResponse,
   ScreenDesignExceptionResponse,
+  ScreenDesignConversationResponse,
   DeploymentHealthResponse,
   DeploymentResponse,
   ScreenFindingsResponse,
@@ -958,6 +959,21 @@ export const api = {
       post<ScreenDesignExceptionResponse>(
         `/projects/${projectId}/design-baselines/${baselineId}/screen-exceptions`,
         data,
+      ),
+    // ADR-030: the conversation of a generated screen, by its route.
+    screenConversation: (projectId: string, routePath: string) =>
+      get<ScreenDesignConversationResponse>(
+        `/projects/${projectId}/screen-design-requests?routePath=${encodeURIComponent(routePath)}`,
+      ),
+    addScreenRequest: (projectId: string, routePath: string, instruction: string) =>
+      post<ScreenDesignConversationResponse>(`/projects/${projectId}/screen-design-requests`, {
+        routePath,
+        instruction,
+      }),
+    restoreScreenRequest: (projectId: string, routePath: string, requestId: string | null) =>
+      post<ScreenDesignConversationResponse>(
+        `/projects/${projectId}/screen-design-requests/restore`,
+        { routePath, requestId },
       ),
   },
   // ADR-019: a READY snapshot running locally behind Cloudflare Tunnel.
