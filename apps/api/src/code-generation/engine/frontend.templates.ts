@@ -631,10 +631,12 @@ const indent = (block: string, spaces: number) =>
 
 // Imports a page needs, read from the JSX it renders.
 function pageImports(body: string, up: string, extra: string[] = []): string {
+  // A response whose fields are all technical shows no result slot.
+  const actionParts = ['ActionForm', 'ActionControls', 'ActionFeedback', 'ActionResult'].filter(
+    (name) => body.includes(`<${name}`),
+  );
   if (body.includes('<ActionForm'))
-    extra.push(
-      `import { ActionForm, ActionControls, ActionFeedback, ActionResult } from '${up}components/action-form';`,
-    );
+    extra.push(`import { ${actionParts.join(', ')} } from '${up}components/action-form';`);
   const actionSchemas = [
     ...new Set(
       [...body.matchAll(/\b([a-z][a-zA-Z0-9]*(?:Body|Query)Schema)\.parse\(/g)].map(

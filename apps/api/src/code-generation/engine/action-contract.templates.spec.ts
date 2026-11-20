@@ -351,6 +351,25 @@ describe('explicit action policy and relational constraints', () => {
   });
 });
 
+describe('an action whose answer is only technical', () => {
+  it('imports no result slot it does not render', () => {
+    const plan = actionContractPlan();
+    for (const endpoint of plan.customEndpoints)
+      if (endpoint.contract?.response.type === 'OBJECT')
+        endpoint.contract.response = {
+          type: 'OBJECT',
+          properties: [{ name: 'id', value: { type: 'UUID', technical: true } }],
+        };
+    const pages = generateProject(
+      { plan, template: CASEFLOW_WEB_TS_V2, projectName: 'Prueba', slug: 'test' },
+      actionContractImplementations,
+    ).filter((file) => file.path.endsWith('/page.tsx') && file.content.includes('<ActionForm'));
+    expect(pages.length).toBeGreaterThan(0);
+    for (const page of pages)
+      expect(page.content.includes('ActionResult')).toBe(page.content.includes('<ActionResult'));
+  });
+});
+
 describe('an action with no input fields', () => {
   it('types its empty body as an object with no keys, not `{}`', () => {
     const plan = actionContractPlan();
