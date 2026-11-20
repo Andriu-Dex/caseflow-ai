@@ -73,7 +73,7 @@ export function findPrimaryDateResolution(
       label: validityDate.label ?? validityDate.name,
     };
   }
-  // 3. Parent relation domain operational dates (e.g. dailyMenu.operationalDate)
+  // 3. An operational date of a parent record (order.operationalDate for an order line)
   if (plan) {
     for (const rel of entity.relations.filter((r) => r.kind === 'MANY_TO_ONE')) {
       const target = plan.entities.find((e) => e.localId === rel.targetEntityLocalId);
@@ -85,7 +85,7 @@ export function findPrimaryDateResolution(
         if (parentDomainDate) {
           return {
             name: parentDomainDate.name,
-            label: `Fecha operativa de ${rel.name === 'dailyMenu' ? 'menú diario' : rel.name}`,
+            label: `Fecha operativa de ${rel.name}`,
             relationName: rel.name,
           };
         }

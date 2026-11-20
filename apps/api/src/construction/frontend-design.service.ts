@@ -31,7 +31,8 @@ const FRONTEND_DESIGN_VERSION = 39;
 // The prompt can move ahead of the cache version when it only adds rules for
 // inputs that older keys never had (ADR-030: a person's requests), so screens
 // without them keep their composition.
-const FRONTEND_DESIGN_PROMPT_VERSION = 40;
+// v41 only rewords v40 in generic terms, so the cache version stays.
+const FRONTEND_DESIGN_PROMPT_VERSION = 41;
 const NOT_EVALUATED = 'NOT_EVALUATED:';
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 

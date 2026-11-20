@@ -222,7 +222,6 @@ const SPANISH_LABELS: Record<string, string> = {
   concept: 'Concepto',
   currency: 'Moneda',
   balance: 'Saldo',
-  dailymenu: 'Menú diario',
   versionlabel: 'Versión',
   creationdate: 'Fecha de creación',
   publicationdate: 'Fecha de publicación',
@@ -240,8 +239,6 @@ const SPANISH_LABELS: Record<string, string> = {
   unitprice: 'Precio unitario',
   discount: 'Descuento',
   componenttype: 'Tipo de componente',
-  menuversioncomponent: 'Componente de versión de menú',
-  menuversion: 'Versión de menú',
 };
 
 export const labelOf = (name: string) => {
@@ -262,7 +259,7 @@ const routeParamNames = (routePath: string) =>
   [...routePath.matchAll(/\[([a-zA-Z0-9]+)\]/g)].map((m) => m[1]!);
 // The URL parameter that identifies a record of this entity on the page, if
 // any: [id], or [<name>Id] where <name> ends the entity name ([eventId] for
-// CateringEvent).
+// CalendarEvent).
 const entityParam = (entity: Entity | undefined, names: string[]) =>
   entity
     ? names.find((name) => {
@@ -411,7 +408,7 @@ function contextLinks(
     const segments = target.path.split('/');
     if (!own || segments[segments.indexOf(`[${own}]`) - 1] !== collection) return [];
     // The parameter is another entity's id when the target screen's own
-    // entity claims it too (an audit event is not a catering event).
+    // entity claims it too (an audit event is not a calendar event).
     const targetEntity = plan.entities.find((item) => item.localId === target.entityLocalId);
     if (targetEntity && targetEntity !== entity && entityParam(targetEntity, [own]) === own)
       return [];
