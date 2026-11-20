@@ -350,3 +350,19 @@ describe('explicit action policy and relational constraints', () => {
     ).not.toContain('Texto */');
   });
 });
+
+describe('an action with no input fields', () => {
+  it('types its empty body as an object with no keys, not `{}`', () => {
+    const plan = actionContractPlan();
+    const write = plan.customEndpoints.find(
+      (endpoint) => endpoint.method === 'POST' && endpoint.contract,
+    )!;
+    write.contract = { ...write.contract!, body: { type: 'OBJECT', properties: [] }, bindings: [] };
+    const client = generateProject(
+      { plan, template: CASEFLOW_WEB_TS_V2, projectName: 'Prueba', slug: 'test' },
+      actionContractImplementations,
+    ).find((file) => file.path === 'packages/api-client/src/index.ts')!.content;
+    expect(client).toContain('Record<string, never>');
+    expect(client).not.toMatch(/[:=<(,]\s*\{\s*\}/);
+  });
+});
