@@ -287,6 +287,8 @@ describe('acceptance criteria (ADR-025)', () => {
     expect(spec).toContain('must not fail on the server');
     // A list in the form gets one item before it is filled.
     expect(spec).toContain("hasText: 'Agregar elemento'");
+    // Each record operation takes a record no earlier operation touched.
+    expect(spec).toContain('!touched.has(row.id)');
     // An action form without a form element is found by its mark.
     expect(spec).toContain('ancestor-or-self::*[@data-action-form][1]');
     // Generated regular expressions keep their escapes.

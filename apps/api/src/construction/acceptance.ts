@@ -320,17 +320,24 @@ async function fill(form: Locator, mark: string): Promise<void> {
 
 // The screen of the operation, each parameter being the first record the
 // role lists at its collection; null when there is none to open.
+// Records an earlier operation already worked on (cancelled, withdrawn…):
+// each operation takes one no other has touched, so tests do not depend on order.
+const touched = new Set<string>();
+
 async function locate(operation: Operation, session?: Session): Promise<string | null> {
   let path = operation.screenPath;
   for (const param of operation.params ?? []) {
     const headers: Record<string, string> = {};
     if (session?.token) headers.authorization = \`Bearer \${session.token}\`;
     if (session?.scopeId) headers['x-operation-scope'] = session.scopeId;
-    const response = await fetch(\`\${API_URL}\${param.apiPath}?limit=1\`, { headers });
+    const response = await fetch(\`\${API_URL}\${param.apiPath}?limit=20\`, { headers });
     if (!response.ok) return null;
     const body = (await response.json()) as { id?: string }[] | { items?: { id?: string }[] };
-    const id = (Array.isArray(body) ? body : (body.items ?? []))[0]?.id;
+    const id = (Array.isArray(body) ? body : (body.items ?? [])).find(
+      (row) => row.id && !touched.has(row.id),
+    )?.id;
     if (!id) return null;
+    touched.add(id);
     path = path.replace(\`[\${param.name}]\`, id);
   }
   return path;
