@@ -267,8 +267,9 @@ export class RequirementsService {
           sourceArtifactVersionId: sourceContextVersionId,
           promptKey: 'requirements.generate',
           // ISO/IEC/IEEE 29148:2018-aligned, citing the coded context items
-          // and proposing optional ideas (DEC-126).
-          promptVersion: 3,
+          // and proposing optional ideas (DEC-126); rules stay inside the
+          // requirement they condition (DEC-182).
+          promptVersion: 8,
           messages: [
             {
               role: 'user',
@@ -437,7 +438,8 @@ export class RequirementsService {
         position,
         requirementBatchOutputSchema,
         'requirements.generate',
-        6,
+        // DEC-182: rules fold into the requirement they condition.
+        7,
         input,
         (data, runId) => {
           if (position !== plan.length - 1 && data.suggestions.length)
