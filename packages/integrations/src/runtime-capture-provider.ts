@@ -256,6 +256,14 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider, E2E
         file.path === 'docs/auth-profile.json' &&
         JSON.parse(file.content).profile === 'LOCAL_AUTH_SESSION_V1',
     );
+    // ADR-027: the demonstration data the deployment loads, so the screens and
+    // the acceptance operations work on real records. Records that break a
+    // rule are skipped by the script itself; a failure does not stop the run.
+    const seedDemoData = request.files.some(
+      (file) => file.path === 'apps/api/src/seed/demo-data.ts',
+    )
+      ? "node apps/api/dist/seed/demo-data.js || echo 'Demo data could not be loaded.'; "
+      : '';
     const prefix = `caseflow-capture-${randomUUID()}`;
     const jwtSecret = randomUUID();
     const network = `${prefix}-net`;
@@ -457,7 +465,7 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider, E2E
         String(timeouts.runtimeSeconds),
         'sh',
         '-ec',
-        `pnpm --filter ./apps/api exec prisma db push; ${localSessions ? 'node apps/api/dist/auth/capture-fixtures.js > /app/.capture-sessions.json; ' : ''}node apps/api/dist/main.js & pnpm --filter ./apps/web start & wait`,
+        `pnpm --filter ./apps/api exec prisma db push; ${localSessions ? 'node apps/api/dist/auth/capture-fixtures.js > /app/.capture-sessions.json; ' : ''}${seedDemoData}node apps/api/dist/main.js & pnpm --filter ./apps/web start & wait`,
       ]);
       let sessionTokens: Record<string, string> = {};
       if (localSessions) {

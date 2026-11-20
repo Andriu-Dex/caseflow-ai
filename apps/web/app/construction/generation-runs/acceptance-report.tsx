@@ -81,8 +81,10 @@ export function AcceptanceReport({
         </p>
       )}
       <p className="text-muted-foreground">
-        Cada criterio comprueba que el actor llega a las pantallas de su caso de uso sin errores y
-        encuentra sus acciones. No completa formularios ni ejecuta la operación de principio a fin.
+        Cada criterio comprueba que el actor llega a las pantallas de su caso de uso sin errores,
+        encuentra sus acciones y realiza su operación principal con los datos de demostración: una
+        creación debe completarse y una acción de negocio puede rechazarse si explica el motivo. No
+        comprueba que el resultado sea el correcto para el negocio, como el importe de un total.
       </p>
       {data.criteria.length ? (
         <details className="rounded-lg border p-2.5">
@@ -123,9 +125,13 @@ export function AcceptanceReport({
                     : ''}
                 </p>
                 {criterion.result?.message ? (
-                  <p className="text-destructive" role="alert">
-                    {criterion.result.message}
-                  </p>
+                  criterion.result.passed ? (
+                    <p className="text-muted-foreground">{criterion.result.message}</p>
+                  ) : (
+                    <p className="text-destructive" role="alert">
+                      {criterion.result.message}
+                    </p>
+                  )
                 ) : null}
               </li>
             ))}

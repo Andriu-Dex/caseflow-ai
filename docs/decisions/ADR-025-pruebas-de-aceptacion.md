@@ -31,7 +31,7 @@ Cada criterio se comprueba con una prueba de extremo a extremo generada de forma
 
 Las pantallas de detalle (con un parámetro en la ruta) quedan fuera, igual que en las pruebas actuales, porque necesitan un registro concreto.
 
-**Límite explícito:** la prueba confirma que el actor puede llegar a su caso de uso y operar sus acciones. No completa formularios ni ejecuta la operación de negocio de principio a fin; eso queda para una mejora posterior con los datos de demostración.
+**Límite explícito:** la prueba confirma que el actor puede llegar a su caso de uso y operar sus acciones. No completa formularios ni ejecuta la operación de negocio de principio a fin; eso queda para una mejora posterior con los datos de demostración. ADR-027 añade esa mejora: la validación carga los datos de demostración y cada criterio ejecuta su operación principal.
 
 ### 3. Dónde se ejecuta
 

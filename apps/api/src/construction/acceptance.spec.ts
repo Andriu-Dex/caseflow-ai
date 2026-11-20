@@ -1,3 +1,4 @@
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import type { ImplementationPlanContent } from '@caseflow-ai/contracts';
 import {
@@ -74,8 +75,49 @@ describe('acceptance criteria (ADR-025)', () => {
         role: 'Cajero',
         // The detail screen needs a record; row actions and paging are left out.
         screens: [{ path: '/sales', screenName: 'Ventas', actions: ['Registrar venta', 'Nuevo'] }],
+        // ADR-027: its first write that needs no record.
+        operation: {
+          screenPath: '/sales',
+          label: 'Registrar venta',
+          method: 'POST',
+          apiPath: '/sales',
+          business: true,
+        },
       },
     ]);
+  });
+
+  it('carries out a generic create at its collection, never a write that needs a record', () => {
+    const catalog = {
+      ...plan,
+      entities: [{ localId: 'product', name: 'Product' }],
+      routes: [
+        {
+          path: '/products/new',
+          screenName: 'Nuevo producto',
+          screenLocalId: 'products',
+          roles: ['Administrador'],
+          entityLocalId: 'product',
+          actions: [
+            { label: 'Anular', endpoint: 'POST /products/:productId/void' },
+            { label: 'Salir', endpoint: 'POST /auth/logout' },
+            { label: 'Guardar', operation: 'CREATE' },
+          ],
+        },
+      ],
+    } as unknown as ImplementationPlanContent;
+    const [criterion] = deriveCriteria(
+      catalog,
+      [{ localId: 'products', relatedUseCaseCodes: ['CU-003'] }],
+      [useCase('CU-003', { primaryActor: 'Administrador' })],
+    );
+    expect(criterion!.operation).toEqual({
+      screenPath: '/products/new',
+      label: 'Guardar',
+      method: 'POST',
+      apiPath: '/products',
+      business: false,
+    });
   });
 
   it('uses the screen role when no role matches the actor, and only screens it may open', () => {
@@ -170,5 +212,31 @@ describe('acceptance criteria (ADR-025)', () => {
       passed: true,
       message: null,
     });
+  });
+
+  it('writes a test that carries out the operation and says what it did', () => {
+    const spec = acceptanceSpec(
+      deriveCriteria(
+        plan,
+        [{ localId: 'sales', relatedUseCaseCodes: ['CU-002'] }],
+        [useCase('CU-002')],
+      ),
+    );
+    expect(spec).toContain('"apiPath": "/sales"');
+    expect(spec).toContain('await carryOut(page, operation');
+    expect(spec).toContain('must not fail on the server');
+    // The generated file is valid TypeScript.
+    const parsed = ts.createSourceFile('acceptance.spec.ts', spec, ts.ScriptTarget.Latest, true);
+    expect((parsed as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics).toEqual([]);
+    const output = [
+      'ACCEPTANCE {"key":"CA-CU-002","label":"Registrar venta","status":201}',
+      'ACCEPTANCE {"key":"CA-CU-004","label":"Anular venta","status":409}',
+    ].join('\n');
+    const results = acceptanceResults(output, ['CA-CU-002', 'CA-CU-004', 'CA-CU-005'], true);
+    expect(results.get('CA-CU-002')!.message).toBe('Se completó «Registrar venta».');
+    expect(results.get('CA-CU-004')!.message).toBe(
+      '«Anular venta» se rechazó con un aviso a la persona (HTTP 409).',
+    );
+    expect(results.get('CA-CU-005')!.message).toBeNull();
   });
 });

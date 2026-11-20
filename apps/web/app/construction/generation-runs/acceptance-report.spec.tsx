@@ -34,7 +34,7 @@ describe('AcceptanceReport', () => {
       generationRunId: 'r1',
       sandboxRunId: 's1',
       criteria: [
-        criterion('CA-CU-001', { passed: true, message: null }),
+        criterion('CA-CU-001', { passed: true, message: 'Se completó «Registrar venta».' }),
         criterion('CA-CU-002', { passed: false, message: 'La prueba de aceptación falló.' }),
       ],
       requirements: [
@@ -48,11 +48,13 @@ describe('AcceptanceReport', () => {
     expect(
       await screen.findByText(/0 cumplidos · 1 fallidos · 0 sin ejecutar · 1 sin criterio/),
     ).toBeInTheDocument();
-    expect(screen.getByText(/No completa formularios/)).toBeInTheDocument();
+    expect(screen.getByText(/realiza su operación principal/)).toBeInTheDocument();
     await userEvent.click(screen.getByText('Criterios de aceptación (2)'));
     expect(screen.getByText('CA-CU-002 · Registrar venta')).toBeInTheDocument();
     expect(screen.getAllByText('Falló')).toHaveLength(1);
     expect(screen.getByRole('alert')).toHaveTextContent('La prueba de aceptación falló.');
+    // What a passed criterion's operation did is information, not an alert.
+    expect(screen.getByText('Se completó «Registrar venta».')).not.toHaveAttribute('role');
     expect(screen.getAllByText(/También cubre: Producto agotado/)).toHaveLength(2);
   });
 

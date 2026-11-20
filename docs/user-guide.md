@@ -174,12 +174,17 @@ muestra lo que prevé el plan de implementación.
 ### Pruebas de aceptación
 
 Cada caso de uso aprobado que tiene pantallas en el plan produce un criterio de
-aceptación «dado / cuando / entonces». Al validar una construcción, CASEFlow comprueba
-que el actor llega a esas pantallas sin errores y encuentra sus acciones. En la
-validación verás cuántos requisitos funcionales quedan **cumplidos**, **fallidos**,
-**sin ejecutar** o **sin criterio**, y el detalle de cada criterio. La comprobación no
-completa formularios ni ejecuta la operación de principio a fin; revisa en la
-demostración lo que dependa de datos concretos.
+aceptación «dado / cuando / entonces». Al validar una construcción, CASEFlow carga los
+datos de demostración y comprueba que el actor llega a esas pantallas sin errores,
+encuentra sus acciones y realiza la operación principal del caso de uso:
+
+- **Creación:** debe completarse.
+- **Acción de negocio:** puede rechazarse si la pantalla explica el motivo.
+
+En la validación verás cuántos requisitos funcionales quedan **cumplidos**,
+**fallidos**, **sin ejecutar** o **sin criterio**, y qué hizo la operación de cada
+criterio. La comprobación no verifica que el resultado sea el correcto para el negocio
+(por ejemplo, el importe de un total); revísalo en la demostración.
 
 ### Construir por entregas
 
@@ -215,7 +220,7 @@ publica automáticamente las aplicaciones generadas.
 3. Revisa las tareas por pantalla y rol. Completa las instrucciones genéricas con
    los pasos reales de negocio y comprueba los resultados en la aplicación.
 4. Consulta las capturas disponibles. El perfil inicial captura vistas de escritorio
-   con una base vacía: no completa formularios ni demuestra transacciones de negocio.
+   con los datos de demostración del proyecto: no completa formularios ni demuestra transacciones de negocio.
    Un esquema numerado no es una captura real. Las rutas que no se pudieron capturar
    deben conservar su limitación explícita.
 5. Guarda tus cambios y marca cada tarea como comprobada solo después de verificarla.
