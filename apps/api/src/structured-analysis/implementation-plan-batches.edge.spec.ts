@@ -451,6 +451,7 @@ describe('an action that creates records', () => {
             path: '/shows/schedule',
             summary: 'Programar',
             roles: [],
+            entityLocalId: 'screening',
             dataAccess: [{ entityLocalId: 'screening', operations: ['CREATE'] }],
             contract: {
               body: {
@@ -469,6 +470,51 @@ describe('an action that creates records', () => {
       'startsAt',
       'ticketPrice',
     ]);
+  });
+
+  it('leaves alone records an action derives from its input', () => {
+    const seat = {
+      localId: 'seat',
+      name: 'Seat',
+      moduleLocalId: 'rooms',
+      fields: [{ name: 'row', type: 'STRING', required: true, unique: false, enumValues: [] }],
+      relations: [],
+      operations: ['LIST'],
+    };
+    const layout = {
+      type: 'OBJECT',
+      properties: [
+        { name: 'rows', required: true, value: { type: 'ARRAY', items: { type: 'STRING' } } },
+      ],
+    };
+    const done = finishRoutes(
+      {
+        routes: [
+          {
+            path: '/rooms',
+            screenName: 'Salas',
+            moduleLocalId: 'rooms',
+            kind: 'CUSTOM',
+            actions: [{ label: 'Guardar', endpoint: 'PUT /rooms/:roomId/seating' }],
+          },
+        ],
+        customEndpoints: [
+          {
+            moduleLocalId: 'rooms',
+            method: 'PUT',
+            path: '/rooms/:roomId/seating',
+            summary: 'Guardar distribución',
+            roles: [],
+            entityLocalId: 'room',
+            dataAccess: [{ entityLocalId: 'seat', operations: ['CREATE'] }],
+            contract: { body: layout, response: { type: 'OBJECT', properties: [] } },
+          },
+        ],
+      } as never,
+      [],
+      [seat] as never,
+    );
+    expect(done.customEndpoints[0]!.contract!.body).toEqual(layout);
   });
 });
 

@@ -317,19 +317,24 @@ const camelAction = <A extends LooseImplementationRoute['actions'][number]>(acti
     : {}),
 });
 
-// An action that creates records of an entity receives the fields a person
-// enters for them: required, neither read-only, internal nor given by the
-// server. A model may leave one out (a price), and nothing could fill it.
+// An action that creates a record of its own entity (POST) receives the
+// fields a person enters for it: required, neither read-only, internal nor
+// given by the server. A model may leave one out (a price), and nothing could
+// fill it. Records an action derives from its input (seats from a layout) are
+// left alone.
 function withCreatedFields(accumulated: RoutesAccumulated, entities: IpEntity[]) {
   const byId = new Map(entities.map((entity) => [entity.localId, entity]));
   return {
     ...accumulated,
     customEndpoints: accumulated.customEndpoints.map((endpoint) => {
       const body = endpoint.contract?.body;
-      if (!body || body.type !== 'OBJECT') return endpoint;
+      if (!body || body.type !== 'OBJECT' || endpoint.method !== 'POST') return endpoint;
       const names = new Set((body.properties ?? []).map((property) => property.name));
       const missing = (endpoint.dataAccess ?? [])
-        .filter((access) => access.operations.includes('CREATE'))
+        .filter(
+          (access) =>
+            access.entityLocalId === endpoint.entityLocalId && access.operations.includes('CREATE'),
+        )
         .flatMap((access) => byId.get(access.entityLocalId)?.fields ?? [])
         .filter(
           (field) =>
