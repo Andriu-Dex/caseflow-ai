@@ -273,7 +273,7 @@ async function fill(form: Locator, mark: string): Promise<void> {
     // Pressed through its handle: once marked, the locator no longer finds it.
     const button = await add.elementHandle();
     await button!.evaluate((element) => element.setAttribute('data-acceptance-added', ''));
-    await button!.click();
+    await button!.click({ timeout: 5_000 });
   }
   const radios = new Set<string>();
   for (const control of await form.locator('input, select, textarea').all()) {
@@ -370,10 +370,11 @@ async function carryOut(page: Page, operation: Operation, path: string, mark: st
   page.once('dialog', (dialog) => void dialog.accept());
   const answer = page
     .waitForResponse((response) => matches(operation, response.request().method(), response.url()), {
-      timeout: 20_000,
+      timeout: 10_000,
     })
     .catch(() => null);
-  await submit.click();
+  // Short waits: a broken operation must not spend the stage's time budget.
+  await submit.click({ timeout: 5_000 });
   const confirm = page.getByRole('alertdialog').getByRole('button').last();
   if (await confirm.isVisible({ timeout: 1_500 }).catch(() => false)) await confirm.click();
   return answer;

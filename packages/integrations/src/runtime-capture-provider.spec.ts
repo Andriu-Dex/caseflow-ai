@@ -134,8 +134,8 @@ describe('Docker runtime capture boundary', () => {
   it('validates timeout units and refuses values that disable or overflow the capture boundary', async () => {
     expect(captureTimeouts({})).toEqual({
       buildMs: 600_000,
-      runtimeSeconds: 240,
-      browserMs: 180_000,
+      runtimeSeconds: 420,
+      browserMs: 360_000,
     });
     expect(
       captureTimeouts({

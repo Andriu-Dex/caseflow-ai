@@ -63,8 +63,9 @@ export function captureTimeouts(environment: Record<string, string | undefined>)
   };
   return {
     buildMs: bounded('CASEFLOW_BUILD_TIMEOUT', 600_000, 1_000, 600_000),
-    runtimeSeconds: bounded('CASEFLOW_CAPTURE_TIMEOUT', 240, 1, 720),
-    browserMs: bounded('CASEFLOW_BROWSER_TIMEOUT', 180_000, 1_000, 600_000),
+    // ADR-027: the application also loads demo data and runs each acceptance operation.
+    runtimeSeconds: bounded('CASEFLOW_CAPTURE_TIMEOUT', 420, 1, 720),
+    browserMs: bounded('CASEFLOW_BROWSER_TIMEOUT', 360_000, 1_000, 600_000),
   };
 }
 

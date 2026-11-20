@@ -58,6 +58,7 @@ El resultado de cada criterio guarda qué hizo su operación: «Se completó …
 ## Consecuencias
 
 - Una construcción solo llega a `READY` si las operaciones principales funcionan contra la base de datos real del sandbox.
+- **Tiempo:** la validación de extremo a extremo tarda más. Los plazos predeterminados del navegador y de la aplicación del sandbox pasan a 360 000 ms y 420 s (ADR-014). Cada paso de una operación espera como mucho entre 5 y 10 segundos, para que una operación rota falle pronto y no agote el plazo de la etapa.
 - **Límite:** la prueba no comprueba que el resultado sea el correcto para el negocio, como el importe de un total o qué asientos quedan ocupados. Eso sigue en las pruebas generadas y en la revisión de la persona.
 - Una acción sobre un registro solo se ejecuta si los datos de demostración tienen un registro que el rol pueda listar.
 - Rellenar a partir de los controles depende de que la pantalla use controles nativos. Un control propio sin elemento nativo puede quedar vacío y hacer fallar una creación.
