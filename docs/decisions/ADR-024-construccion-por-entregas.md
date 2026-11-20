@@ -57,7 +57,7 @@ La corrida de una entrega se valida en el sandbox con las mismas etapas que una 
 - **Registro:** la aprobación es inmutable y auditada. Queda unida a la corrida y al snapshot aprobados.
 - **Congelado:** una entrega aprobada queda congelada. Las entregas siguientes reutilizan sus acciones y pantallas.
 - **Entrega afectada:** si una corrida posterior no puede reutilizar alguno de los puntos de control de una entrega aprobada, esa entrega pasa a **afectada**. Ocurre, por ejemplo, porque cambió una entidad que usa. La persona ve qué cambió y debe aprobarla de nuevo; no se rompe en silencio.
-- **Entregas posteriores:** la siguiente entrega solo se puede generar cuando las anteriores están aprobadas y ninguna está afectada.
+- **Entregas posteriores:** la siguiente entrega solo se puede generar cuando las anteriores están aprobadas y ninguna está afectada. Para generar una entrega no cuentan las corridas anteriores de esa misma entrega ni de las siguientes: la nueva corrida las sustituye, así que un intento que no se validó no impide volver a generarla. Las entregas que esa nueva corrida cambie se aprueban de nuevo antes que ella.
 
 ### 6. Cambio del plan de implementación
 

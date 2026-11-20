@@ -451,6 +451,16 @@ describe('Construction by deliveries (ADR-024)', () => {
       ]);
       // It is approved again only with a validated run that includes it.
       expect((await approval(catalog!.id, later.id)).status).toBe(422);
+      // Building the sales delivery again replaces that run: an attempt that
+      // never validated does not keep it from being rebuilt.
+      const state = (building?: number) =>
+        (
+          ctx.app.get(DeliveriesService) as unknown as {
+            state: (p: string, v: string, b?: number) => Promise<{ affected: Set<string> }>;
+          }
+        ).state(shop, version, building);
+      expect((await state()).affected.has(catalog!.id)).toBe(true);
+      expect((await state(2)).affected.has(catalog!.id)).toBe(false);
     });
 
     it('checks the delivery belongs to the plan', async () => {

@@ -116,7 +116,15 @@ export class DeliveriesService {
   // A delivery is built on the approved ones: none of the earlier deliveries
   // may be pending or affected, and an approved one is not built again.
   async assertCanBuild(projectId: string, planVersionId: string, deliveryId: string) {
-    const { stored, plan, affected } = await this.state(projectId, planVersionId);
+    const position = (
+      await this.prisma.delivery.findFirst({
+        where: { id: deliveryId },
+        select: { position: true },
+      })
+    )?.position;
+    // Earlier runs of this delivery, or of a later one, are what this build
+    // replaces: a failed attempt must not keep it from being built again.
+    const { stored, plan, affected } = await this.state(projectId, planVersionId, position);
     const delivery = stored.deliveries.find((item) => item.id === deliveryId);
     if (!delivery) throw new NotFoundException('Entrega no encontrada.');
     if (delivery.approvals.length && !affected.has(delivery.id))
@@ -143,7 +151,7 @@ export class DeliveriesService {
     }
   }
 
-  private async state(projectId: string, planVersionId: string) {
+  private async state(projectId: string, planVersionId: string, building?: number) {
     const stored = await this.prisma.deliveryPlan.findFirst({
       where: { projectId, implementationPlanVersionId: planVersionId },
       include: withDeliveries,
@@ -153,7 +161,7 @@ export class DeliveriesService {
         'Aún no hay un plan de entregas para este plan de implementación.',
       );
     const plan = await loadApprovedPlan(this.prisma, projectId, planVersionId);
-    return { stored, plan, affected: await this.affected(stored, plan) };
+    return { stored, plan, affected: await this.affected(stored, plan, building) };
   }
 
   // ADR-024: an approved delivery is affected when a later run of the plan
@@ -163,6 +171,7 @@ export class DeliveriesService {
   private async affected(
     stored: StoredPlan,
     plan: ImplementationPlanContent,
+    building?: number,
   ): Promise<Set<string>> {
     const affected = new Set<string>();
     const approved = stored.deliveries.filter((delivery) => delivery.approvals.length);
@@ -192,7 +201,9 @@ export class DeliveriesService {
         (run) =>
           run.id !== approval.generationRunId &&
           run.createdAt > approval.approvedAt &&
-          (run.deliveryId === null || positionOf.get(run.deliveryId)! > delivery.position),
+          (run.deliveryId === null || positionOf.get(run.deliveryId)! > delivery.position) &&
+          (building === undefined ||
+            (run.deliveryId !== null && positionOf.get(run.deliveryId)! < building)),
       );
       if (!later) continue;
       const own = elementsOf(new Set(delivery.modules.map((module) => module.moduleLocalId)));
