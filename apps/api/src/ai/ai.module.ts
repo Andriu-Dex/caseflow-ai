@@ -50,7 +50,7 @@ import {
 import { UI_BLUEPRINT_BATCH_PROMPT } from '../structured-analysis/ui-blueprint-prompt';
 import {
   MOCKUP_HTML_SCREEN_PROMPT,
-  MOCKUP_HTML_SCREEN_PROMPT_V1,
+  MOCKUP_HTML_SCREEN_PROMPT_V2,
 } from '../mockups/html-css-prompt';
 import {
   CONCEPTUAL_BATCH_PROMPT,
@@ -963,7 +963,7 @@ function defaultProvider(): AIProvider {
             version: MOCKUP_HTML_SCREEN_PROMPT.version,
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'mockup_generation',
-            systemInstructions: MOCKUP_HTML_SCREEN_PROMPT_V1,
+            systemInstructions: MOCKUP_HTML_SCREEN_PROMPT_V2,
           },
           {
             key: 'frontend-design.generate',

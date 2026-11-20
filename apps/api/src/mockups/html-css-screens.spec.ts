@@ -73,7 +73,10 @@ describe('mockupDocument', () => {
       body: '<h1>Ventas</h1>',
       theme,
     });
-    expect(page).toContain('<span class="app-name">Mateos &amp; Cía</span>');
+    // ADR-028: a dark sidebar with the application's mark and name.
+    expect(page).toContain(
+      '<aside class="app-side"><span class="app-name"><span class="app-mark">MC</span>Mateos &amp; Cía</span>',
+    );
     expect(page).toContain('<span class="active">Ventas</span>');
     expect(page).toContain('--primary: #3730a3;');
     expect(page).toContain('<main><h1>Ventas</h1></main>');
@@ -108,7 +111,7 @@ describe('HtmlCssScreenGenerator', () => {
     expect(generateStructured).toHaveBeenCalledWith(
       expect.objectContaining({
         promptKey: 'mockup.html-screen',
-        promptVersion: 1,
+        promptVersion: 2,
         projectId: 'project',
       }),
     );
