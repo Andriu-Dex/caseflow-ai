@@ -10,6 +10,7 @@ import {
 } from '@caseflow-ai/contracts';
 import { conceptualCardinality, entityClasses } from './conceptual-model-batches';
 import { bindAuthenticationActions } from './implementation-plan-authentication';
+import { collectionPath } from '../code-generation/naming';
 
 // DEC-144: entity classes and screens per batch; an entity or a route carries
 // its fields or actions, so a batch of this size fits one response.
@@ -770,26 +771,49 @@ export function finishImplementationPlan(
   routes: RoutesAccumulated,
   designBaselineId: string,
 ): ImplementationPlanBody {
-  // A record with a required read-only field the server gives no value (an
-  // amount or a date its business action computes) is created only by that
-  // action: a generic CREATE no screen uses could not fill it, and is withdrawn.
-  const created = new Set(
+  // The CRUD operations some screen uses, as `entity:operation`.
+  const used = new Set(
     routes.routes.flatMap((route) =>
-      route.entityLocalId && route.actions.some((action) => action.operation === 'CREATE')
-        ? [route.entityLocalId]
-        : [],
+      route.actions.flatMap((action) =>
+        route.entityLocalId && action.operation
+          ? [`${route.entityLocalId}:${action.operation}`]
+          : [],
+      ),
     ),
   );
-  entities = entities.map((entity) =>
-    entity.operations.includes('CREATE') &&
-    !created.has(entity.localId) &&
-    entity.localId !== skeleton.authentication.local?.userEntityLocalId &&
-    entity.fields.some(
-      (field) => field.readOnly && field.required && field.serverDefault === undefined,
-    )
-      ? { ...entity, operations: entity.operations.filter((operation) => operation !== 'CREATE') }
-      : entity,
-  );
+  // Where each CRUD operation is served, as the generated API exposes it.
+  const crud: Record<IpEntity['operations'][number], [string, boolean]> = {
+    LIST: ['GET', false],
+    CREATE: ['POST', false],
+    GET: ['GET', true],
+    UPDATE: ['PATCH', true],
+    DELETE: ['DELETE', true],
+  };
+  const signature = (method: string, path: string) =>
+    `${method} ${path.replace(/:[a-zA-Z0-9]+/g, '{}')}`;
+  const custom = new Set(routes.customEndpoints.map((e) => signature(e.method, e.path)));
+  entities = entities.map((entity) => {
+    const base = collectionPath(entity.name);
+    const operations = entity.operations.filter((operation) => {
+      if (used.has(`${entity.localId}:${operation}`)) return true;
+      // A record with a required read-only field the server gives no value (an
+      // amount or a date its business action computes) is created only by that
+      // action: a generic CREATE no screen uses could not fill it.
+      if (
+        operation === 'CREATE' &&
+        entity.localId !== skeleton.authentication.local?.userEntityLocalId &&
+        entity.fields.some(
+          (field) => field.readOnly && field.required && field.serverDefault === undefined,
+        )
+      )
+        return false;
+      // A business endpoint at the same method and path (a delete with its own
+      // rule) replaces the generic operation no screen uses.
+      const [method, item] = crud[operation];
+      return !custom.has(signature(method, item ? `${base}/:id` : base));
+    });
+    return operations.length === entity.operations.length ? entity : { ...entity, operations };
+  });
   const body = {
     ...skeleton,
     entities,

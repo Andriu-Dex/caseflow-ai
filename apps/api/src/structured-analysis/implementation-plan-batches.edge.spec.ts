@@ -455,4 +455,34 @@ describe('records only a business action creates', () => {
     expect(build('LIST')).toEqual(['LIST', 'GET']);
     expect(build('CREATE')).toEqual(['LIST', 'GET', 'CREATE']);
   });
+
+  it('withdraws a CRUD operation a business endpoint replaces at its method and path', () => {
+    const voidable = { ...sale, fields: [], operations: ['LIST', 'GET', 'DELETE'] };
+    voidable.fields = [
+      { name: 'note', type: 'STRING', required: true, unique: false, enumValues: [] },
+    ] as never;
+    const endpoint = {
+      moduleLocalId: 'sales',
+      method: 'DELETE',
+      path: '/sales/:saleId',
+      summary: 'Eliminar sin entradas',
+      roles: [],
+    };
+    const operations = (operation: string) =>
+      finishImplementationPlan(
+        skeleton as never,
+        [voidable] as never,
+        {
+          routes: [
+            {
+              ...route(operation),
+              actions: [{ label: 'Eliminar', endpoint: 'DELETE /sales/:saleId' }],
+            },
+          ],
+          customEndpoints: [endpoint],
+        } as never,
+        '11111111-1111-4111-8111-111111111111',
+      ).entities[0]!.operations;
+    expect(operations('LIST')).toEqual(['LIST', 'GET']);
+  });
 });
