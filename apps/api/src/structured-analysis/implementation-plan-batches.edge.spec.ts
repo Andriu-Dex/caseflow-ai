@@ -410,6 +410,68 @@ describe('action contracts once every batch is in', () => {
   });
 });
 
+describe('an action that creates records', () => {
+  it('receives the required fields a person enters, and only those', () => {
+    const screening = {
+      localId: 'screening',
+      name: 'Screening',
+      moduleLocalId: 'shows',
+      fields: [
+        { name: 'startsAt', type: 'DATETIME', required: true, unique: false, enumValues: [] },
+        { name: 'ticketPrice', type: 'DECIMAL', required: true, unique: false, enumValues: [] },
+        { name: 'note', type: 'TEXT', required: false, unique: false, enumValues: [] },
+        {
+          name: 'cancelled',
+          type: 'BOOLEAN',
+          required: true,
+          readOnly: true,
+          serverDefault: false,
+          unique: false,
+          enumValues: [],
+        },
+      ],
+      relations: [],
+      operations: ['LIST'],
+    };
+    const done = finishRoutes(
+      {
+        routes: [
+          {
+            path: '/shows/new',
+            screenName: 'Programar',
+            moduleLocalId: 'shows',
+            kind: 'FORM',
+            actions: [{ label: 'Programar', endpoint: 'POST /shows/schedule' }],
+          },
+        ],
+        customEndpoints: [
+          {
+            moduleLocalId: 'shows',
+            method: 'POST',
+            path: '/shows/schedule',
+            summary: 'Programar',
+            roles: [],
+            dataAccess: [{ entityLocalId: 'screening', operations: ['CREATE'] }],
+            contract: {
+              body: {
+                type: 'OBJECT',
+                properties: [{ name: 'startsAt', required: true, value: { type: 'DATETIME' } }],
+              },
+              response: { type: 'OBJECT', properties: [] },
+            },
+          },
+        ],
+      } as never,
+      [],
+      [screening] as never,
+    );
+    expect(done.customEndpoints[0]!.contract!.body!.properties!.map((p) => p.name)).toEqual([
+      'startsAt',
+      'ticketPrice',
+    ]);
+  });
+});
+
 describe('records only a business action creates', () => {
   const skeleton = {
     authentication: { required: false, roles: [] },

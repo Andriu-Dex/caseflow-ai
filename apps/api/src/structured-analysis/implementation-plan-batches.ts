@@ -317,6 +317,55 @@ const camelAction = <A extends LooseImplementationRoute['actions'][number]>(acti
     : {}),
 });
 
+// An action that creates records of an entity receives the fields a person
+// enters for them: required, neither read-only, internal nor given by the
+// server. A model may leave one out (a price), and nothing could fill it.
+function withCreatedFields(accumulated: RoutesAccumulated, entities: IpEntity[]) {
+  const byId = new Map(entities.map((entity) => [entity.localId, entity]));
+  return {
+    ...accumulated,
+    customEndpoints: accumulated.customEndpoints.map((endpoint) => {
+      const body = endpoint.contract?.body;
+      if (!body || body.type !== 'OBJECT') return endpoint;
+      const names = new Set((body.properties ?? []).map((property) => property.name));
+      const missing = (endpoint.dataAccess ?? [])
+        .filter((access) => access.operations.includes('CREATE'))
+        .flatMap((access) => byId.get(access.entityLocalId)?.fields ?? [])
+        .filter(
+          (field) =>
+            field.required &&
+            !field.readOnly &&
+            !field.internal &&
+            field.serverDefault === undefined &&
+            !names.has(field.name) &&
+            (names.add(field.name), true),
+        );
+      if (!missing.length) return endpoint;
+      return {
+        ...endpoint,
+        contract: {
+          ...endpoint.contract!,
+          body: {
+            ...body,
+            properties: [
+              ...(body.properties ?? []),
+              ...missing.map((field) => ({
+                name: field.name,
+                required: true,
+                value: {
+                  type: field.type === 'TEXT' ? ('STRING' as const) : field.type,
+                  ...(field.description ? { description: field.description } : {}),
+                  ...(field.type === 'ENUM' ? { enumValues: field.enumValues } : {}),
+                },
+              })),
+            ],
+          },
+        },
+      };
+    }),
+  };
+}
+
 // A batch may refer to what another batch was to define. Once all are in, a
 // context query that is no GET endpoint with a contract is dropped, and so is
 // a navigation to a route nobody drew (its action is then settled like any
@@ -633,7 +682,10 @@ export function finishRoutes(
   entities: IpEntity[],
   roles: string[] = [],
 ): RoutesAccumulated {
-  accumulated = dropDanglingReferences(bindAuthenticationActions(accumulated));
+  accumulated = withCreatedFields(
+    dropDanglingReferences(bindAuthenticationActions(accumulated)),
+    entities,
+  );
   const entityById = new Map(entities.map((entity) => [entity.localId, entity]));
   const screenById = new Map(screens.map((screen) => [screen.localId, screen]));
   const routes = accumulated.routes.map((route) => {
