@@ -337,23 +337,20 @@ async function locate(operation: Operation, session?: Session): Promise<string |
 }
 
 // Sends the operation and waits for its answer; a confirmation it asks for is accepted.
-async function carryOut(page: Page, operation: Operation, path: string, mark: string) {
+async function carryOut(page: Page, operation: Operation, path: string, mark: string, errors: string[]) {
   await page.goto(path, { waitUntil: 'networkidle' });
   const action = page.locator(\`[data-action=\${JSON.stringify(operation.label)}]\`).first();
   await expect(action, \`The action «\${operation.label}» must be offered\`).toBeVisible();
-  // Its fields: the form around it, a form inside it, or (an action form
-  // without a form element) the closest container of the button with controls.
+  // Its fields: the form around it, a form inside it, or the action form
+  // (marked data-action-form) whose button it is.
   const enclosing = action.locator('xpath=ancestor-or-self::form[1]');
   const inner = action.locator('form');
-  // An empty list has no control yet, only its fieldset with the add button.
-  const around = action.locator(
-    'xpath=ancestor::*[.//input or .//select or .//textarea or .//fieldset][1]',
-  );
+  const actionForm = action.locator('xpath=ancestor-or-self::*[@data-action-form][1]');
   const form = (await enclosing.count())
     ? enclosing.first()
     : (await inner.count())
       ? inner.first()
-      : around.first();
+      : actionForm.first();
   const hasForm = (await form.count()) > 0;
   if (hasForm) await fill(form, mark);
   const submit = (await action.evaluate((element) => element.tagName === 'BUTTON'))
@@ -362,7 +359,9 @@ async function carryOut(page: Page, operation: Operation, path: string, mark: st
       ? form.locator('button[type=submit]').first()
       : action.locator('button').first();
   // When it does not, what the form shows says why (a missing value, a query that failed).
-  const shown = (await form.innerText().catch(() => '')).replace(/\\s+/g, ' ').slice(0, 400);
+  const shown =
+    (await form.innerText().catch(() => '')).replace(/\\s+/g, ' ').slice(0, 300) +
+    (errors.length ? \` Errors so far: \${errors.join('; ').slice(0, 300)}\` : '');
   await expect(
     submit,
     \`«\${operation.label}» must accept the data it was given. The form shows: \${shown}\`,
@@ -413,7 +412,7 @@ for (const criterion of CRITERIA) {
     if (operation && !path)
       console.log('ACCEPTANCE ' + JSON.stringify({ key: criterion.key, label: operation.label, skipped: true }));
     if (operation && path) {
-      const answer = await carryOut(page, operation, path, Date.now().toString(36));
+      const answer = await carryOut(page, operation, path, Date.now().toString(36), errors);
       expect(answer, \`«\${operation.label}» must send its request\`).not.toBeNull();
       const status = answer!.status();
       expect(status, \`«\${operation.label}» must not fail on the server\`).toBeLessThan(500);

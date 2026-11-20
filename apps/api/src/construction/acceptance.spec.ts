@@ -287,7 +287,8 @@ describe('acceptance criteria (ADR-025)', () => {
     expect(spec).toContain('must not fail on the server');
     // A list in the form gets one item before it is filled.
     expect(spec).toContain("hasText: 'Agregar elemento'");
-    expect(spec).toContain('.//textarea or .//fieldset][1]');
+    // An action form without a form element is found by its mark.
+    expect(spec).toContain('ancestor-or-self::*[@data-action-form][1]');
     // Generated regular expressions keep their escapes.
     expect(spec).toContain(".replace(/\\s+/g, ' ')");
     // The generated file is valid TypeScript.
