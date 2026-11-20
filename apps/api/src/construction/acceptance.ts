@@ -323,6 +323,16 @@ async function fill(form: Locator, mark: string): Promise<void> {
 // Records an earlier operation already worked on (cancelled, withdrawn…):
 // each operation takes one no other has touched, so tests do not depend on order.
 const touched = new Set<string>();
+// The accounts the test sessions belong to are never worked on: changing one
+// would end the session of the criteria that follow.
+for (const session of Object.values(sessions)) {
+  try {
+    const claims = JSON.parse(Buffer.from((session.token ?? '').split('.')[1] ?? '', 'base64url').toString()) as { sub?: string };
+    if (claims.sub) touched.add(claims.sub);
+  } catch {
+    // A session without a readable token protects no account.
+  }
+}
 
 async function locate(operation: Operation, session?: Session): Promise<string | null> {
   let path = operation.screenPath;
