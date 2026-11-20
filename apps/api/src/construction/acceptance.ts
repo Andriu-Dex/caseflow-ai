@@ -343,7 +343,10 @@ async function carryOut(page: Page, operation: Operation, path: string, mark: st
   // without a form element) the closest container of the button with controls.
   const enclosing = action.locator('xpath=ancestor-or-self::form[1]');
   const inner = action.locator('form');
-  const around = action.locator('xpath=ancestor::*[.//input or .//select or .//textarea][1]');
+  // An empty list has no control yet, only its fieldset with the add button.
+  const around = action.locator(
+    'xpath=ancestor::*[.//input or .//select or .//textarea or .//fieldset][1]',
+  );
   const form = (await enclosing.count())
     ? enclosing.first()
     : (await inner.count())
