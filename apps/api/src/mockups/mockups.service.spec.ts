@@ -124,6 +124,7 @@ function setup(provider: MockupProvider = new FakeMockupProvider()) {
       projectId: 'project',
       uiBlueprintVersionId,
       existingMockupId: null,
+      screenLocalIds: [],
       deviceType,
     });
     await service.runJob(job.id);
@@ -323,6 +324,7 @@ describe('MockupsService', () => {
       projectId: 'project',
       uiBlueprintVersionId: 'blueprint-version',
       existingMockupId: null,
+      screenLocalIds: [],
     });
     await expect(service.runJob(job.id)).resolves.toBeUndefined();
     expect(prisma.mockupGenerationJob.updateMany).toHaveBeenLastCalledWith({
@@ -811,6 +813,7 @@ describe('MockupsService', () => {
       projectId: 'project',
       uiBlueprintVersionId: 'blueprint-version',
       existingMockupId: 'artifact',
+      screenLocalIds: [],
       deviceType: 'DESKTOP',
       refinementPrompt: 'Usa tonos verdes',
     });
@@ -906,6 +909,7 @@ describe('MockupsService', () => {
       projectId: 'project',
       uiBlueprintVersionId: 'blueprint-version',
       existingMockupId: 'artifact',
+      screenLocalIds: [],
       deviceType: 'DESKTOP',
       refinementPrompt: 'Agrega un buscador',
       screenLocalId: 'list',
@@ -944,6 +948,135 @@ describe('MockupsService', () => {
     });
   });
 
+  // ADR-029: screen by screen, a conversation per screen and going back.
+  it('enqueues the chosen screens of an existing mockup and refuses screens not in its blueprint', async () => {
+    const { service, prisma } = setup();
+    prisma.artifact.findFirst.mockResolvedValue(twoScreenLatest());
+    await service.generateScreens('project', 'artifact', ['home', 'home']);
+    expect(prisma.mockupGenerationJob.create).toHaveBeenCalledWith({
+      data: {
+        projectId: 'project',
+        uiBlueprintVersionId: 'blueprint-version',
+        existingMockupId: 'artifact',
+        deviceType: 'DESKTOP',
+        refinementPrompt: null,
+        screenLocalIds: ['home'],
+      },
+    });
+    await expect(service.generateScreens('project', 'artifact', ['nope'])).rejects.toThrow(
+      'no está en el plano',
+    );
+  });
+
+  it('draws only the chosen screens and keeps the others of the mockup', async () => {
+    const generateScreen = vi.fn().mockResolvedValue({
+      screenName: 'Inicio',
+      image: { body: Buffer.from('new'), contentType: 'image/png' },
+      html: '<html>new</html>',
+      providerRef: { projectId: 'stitch-project', screenId: 'stitch-home-v2' },
+    });
+    const provider = {
+      id: 'stitch',
+      generate: vi.fn(),
+      screens: { createProject: vi.fn().mockResolvedValue('stitch-project'), generateScreen },
+    } as unknown as MockupProvider;
+    const { service, tx, prisma } = setup(provider);
+    const parts = vi.fn(async ({ data }: { data: object }) => data);
+    Object.assign(prisma, { mockupGenerationPart: { create: parts } });
+    Object.assign(prisma.mockupGenerationJob, { count: vi.fn().mockResolvedValue(0) });
+    prisma.artifact.findFirst.mockResolvedValue(twoScreenLatest());
+    tx.$queryRaw.mockResolvedValueOnce([{ id: 'artifact' }]);
+    prisma.mockupGenerationJob.findUniqueOrThrow.mockResolvedValue({
+      id: 'job-1',
+      projectId: 'project',
+      uiBlueprintVersionId: 'blueprint-version',
+      existingMockupId: 'artifact',
+      screenLocalIds: ['home'],
+      deviceType: 'DESKTOP',
+      refinementPrompt: null,
+      screenLocalId: null,
+      stitchProjectId: null,
+      parts: [],
+    });
+    await service.runJob('job-1');
+    expect(generateScreen).toHaveBeenCalledTimes(1);
+    const [home, list] = tx.mockupDetail.create.mock.calls[0]![0].data.screens.create;
+    expect(home).toMatchObject({ screenLocalId: 'home', stitchScreenId: 'stitch-home-v2' });
+    expect(list).toMatchObject({ screenLocalId: 'list', imageStorageKey: 'list.png' });
+  });
+
+  it('tells the conversation of a screen: each change with its instruction', async () => {
+    const { service, prisma } = setup();
+    const at = (
+      versionNumber: number,
+      htmlStorageKey: string,
+      refinementPrompt: string | null,
+    ) => ({
+      versionNumber,
+      createdAt: now,
+      mockupDetail: {
+        screens: [{ id: `s${versionNumber}`, htmlStorageKey, refinementPrompt }],
+      },
+    });
+    Object.assign(prisma.artifactVersion, {
+      findMany: vi
+        .fn()
+        .mockResolvedValue([at(1, 'a', null), at(2, 'a', null), at(3, 'b', 'Más aire')]),
+    });
+    const { items } = await service.screenHistory('project', 'artifact', 'home');
+    expect(items.map((item) => [item.versionNumber, item.instruction, item.current])).toEqual([
+      [1, null, false],
+      [3, 'Más aire', true],
+    ]);
+  });
+
+  it('restores an earlier drawing of a screen as a new version, keeping the others', async () => {
+    const { service, tx, prisma } = setup();
+    prisma.artifact.findFirst.mockResolvedValue(twoScreenLatest());
+    tx.$queryRaw.mockResolvedValueOnce([{ id: 'artifact' }]);
+    prisma.mockupScreenDetail.findFirst.mockResolvedValue({
+      ...stitchScreen('old', 'list', true),
+      imageStorageKey: 'list-v1.png',
+      htmlStorageKey: 'list-v1.html',
+      mockup: { artifactVersion: { versionNumber: 1 } },
+    });
+    await service.restoreScreen('project', 'artifact', 'list', 'old');
+    const [home, list] = tx.mockupDetail.create.mock.calls[0]![0].data.screens.create;
+    expect(home).toMatchObject({ screenLocalId: 'home', imageStorageKey: 'home.png' });
+    expect(list).toMatchObject({
+      imageStorageKey: 'list-v1.png',
+      refinementPrompt: 'Restaurada la versión 1.',
+    });
+  });
+
+  it('approves a mockup only once it has every screen of its blueprint', async () => {
+    const { service, prisma } = setup();
+    Object.assign(prisma.artifactVersion, {
+      findFirst: vi
+        .fn()
+        .mockResolvedValueOnce({ id: 'version', status: 'IN_REVIEW' })
+        .mockResolvedValue({
+          id: 'blueprint-version',
+          structuredAnalysisDetail: {
+            content: {
+              screens: [
+                blueprintContent.screens[0],
+                { ...blueprintContent.screens[0], localId: 'list' },
+              ],
+            },
+          },
+        }),
+    });
+    prisma.mockupDetail.findUnique.mockResolvedValue({
+      ...mockupDetail,
+      generatorKind: 'STITCH',
+      screens: [stitchScreen('s-home', 'home', true)],
+    });
+    await expect(service.transition('project', 'artifact', 'version', 'APPROVED')).rejects.toThrow(
+      'Faltan 1 pantallas',
+    );
+  });
+
   it('fails a single-screen edit safely when the provider cannot edit', async () => {
     const { service, tx, prisma } = setup(new FakeMockupProvider());
     prisma.artifact.findFirst.mockResolvedValue(twoScreenLatest());
@@ -952,6 +1085,7 @@ describe('MockupsService', () => {
       projectId: 'project',
       uiBlueprintVersionId: 'blueprint-version',
       existingMockupId: 'artifact',
+      screenLocalIds: [],
       deviceType: 'DESKTOP',
       refinementPrompt: 'Agrega un buscador',
       screenLocalId: 'list',
@@ -974,6 +1108,7 @@ describe('MockupsService', () => {
       projectId: 'project',
       uiBlueprintVersionId: 'blueprint-version',
       existingMockupId: 'artifact',
+      screenLocalIds: [],
       deviceType: 'DESKTOP',
       refinementPrompt: 'Usa tonos verdes',
     });
@@ -1000,6 +1135,7 @@ describe('MockupsService', () => {
       projectId: 'project',
       uiBlueprintVersionId: 'blueprint-version-2',
       existingMockupId: 'artifact',
+      screenLocalIds: [],
     });
     await service.runJob(job.id);
     expect(tx.artifactVersion.create).toHaveBeenCalledWith(
@@ -1016,6 +1152,7 @@ describe('MockupsService', () => {
       projectId: 'project',
       uiBlueprintVersionId: 'blueprint-version',
       existingMockupId: 'artifact',
+      screenLocalIds: [],
     });
     tx.$queryRaw.mockResolvedValueOnce([]);
     await service.runJob(job.id);

@@ -1503,6 +1503,9 @@ model MockupGenerationJob {
   refinementPrompt     String?              @map("refinement_prompt")
   // Set only for a single-screen edit: the blueprint localId of the screen to edit.
   screenLocalId        String?              @map("screen_local_id")
+  // Screen-by-screen generation (ADR-029): the blueprint screens this job draws;
+  // empty = every screen.
+  screenLocalIds       String[]             @default([]) @map("screen_local_ids")
   status               MockupJobStatus      @default(QUEUED)
   resultArtifactId     String?              @map("result_artifact_id") @db.Uuid
   errorMessage         String?              @map("error_message")

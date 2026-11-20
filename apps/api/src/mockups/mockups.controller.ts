@@ -19,7 +19,10 @@ import type { Response } from 'express';
 import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   createMockupRequestSchema,
+  generateMockupScreensRequestSchema,
   importManualMockupRequestSchema,
+  mockupScreenHistoryResponseSchema,
+  restoreMockupScreenRequestSchema,
   mockupJobResponseSchema,
   mockupListResponseSchema,
   mockupPreviewResponseSchema,
@@ -59,6 +62,7 @@ export class MockupsController {
       body.uiBlueprintVersionId,
       body.deviceType,
       body.generator,
+      body.screenLocalIds ?? [],
     );
   }
 
@@ -268,6 +272,59 @@ export class MockupsController {
     body: z.output<typeof refineMockupRequestSchema>,
   ) {
     return this.service.refine(projectId, mockupId, body.prompt);
+  }
+
+  @Post(':mockupId/screens/generate')
+  @HttpCode(202)
+  @ApiOperation({
+    operationId: 'generateMockupScreens',
+    summary: 'Encolar la generación de algunas pantallas del boceto (ADR-029)',
+  })
+  @ApiZodBody(generateMockupScreensRequestSchema)
+  @ApiZodResponse(202, 'Mockup generation job.', mockupJobResponseSchema)
+  generateScreens(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('mockupId', uuidParamPipe) mockupId: string,
+    @Body(new ZodValidationPipe(generateMockupScreensRequestSchema))
+    body: z.output<typeof generateMockupScreensRequestSchema>,
+  ) {
+    return this.service.generateScreens(projectId, mockupId, body.screenLocalIds);
+  }
+
+  @Get(':mockupId/screen-history/:screenLocalId')
+  @ApiOperation({
+    operationId: 'getMockupScreenHistory',
+    summary: 'Consultar la conversación de una pantalla del boceto (ADR-029)',
+  })
+  @ApiZodResponse(200, 'Screen history.', mockupScreenHistoryResponseSchema)
+  screenHistory(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('mockupId', uuidParamPipe) mockupId: string,
+    @Param('screenLocalId') screenLocalId: string,
+  ) {
+    return this.service.screenHistory(projectId, mockupId, screenLocalId.slice(0, 100));
+  }
+
+  @Post(':mockupId/screen-history/:screenLocalId/restore')
+  @ApiOperation({
+    operationId: 'restoreMockupScreen',
+    summary: 'Restaurar una versión anterior de una pantalla del boceto (ADR-029)',
+  })
+  @ApiZodBody(restoreMockupScreenRequestSchema)
+  @ApiZodResponse(201, 'Mockup.', mockupResponseSchema)
+  restoreScreen(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('mockupId', uuidParamPipe) mockupId: string,
+    @Param('screenLocalId') screenLocalId: string,
+    @Body(new ZodValidationPipe(restoreMockupScreenRequestSchema))
+    body: z.output<typeof restoreMockupScreenRequestSchema>,
+  ) {
+    return this.service.restoreScreen(
+      projectId,
+      mockupId,
+      screenLocalId.slice(0, 100),
+      body.screenId,
+    );
   }
 
   @Post(':mockupId/screens/:screenId/refine')

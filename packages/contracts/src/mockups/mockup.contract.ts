@@ -16,9 +16,41 @@ export const createMockupRequestSchema = z
     uiBlueprintVersionId: z.uuid(),
     deviceType: z.enum(MOCKUP_DEVICE_TYPES).default('DESKTOP'),
     generator: z.enum(MOCKUP_GENERATORS).default('STITCH'),
+    // ADR-029: draw only these blueprint screens; absent = every screen.
+    screenLocalIds: z.array(z.string().min(1).max(100)).min(1).max(200).optional(),
   })
   .strict();
 export type CreateMockupRequest = z.output<typeof createMockupRequestSchema>;
+
+// ADR-029: screen by screen. The chosen screens of the blueprint are drawn (or
+// drawn again) into the next version; the others are kept as they are.
+export const generateMockupScreensRequestSchema = z
+  .object({ screenLocalIds: z.array(z.string().min(1).max(100)).min(1).max(200) })
+  .strict();
+export type GenerateMockupScreensRequest = z.output<typeof generateMockupScreensRequestSchema>;
+
+// A screen's conversation: each version of the mockup in which it changed, with
+// the instruction that produced it (none for its first drawing).
+export const mockupScreenHistoryResponseSchema = z
+  .object({
+    items: z.array(
+      z
+        .object({
+          screenId: z.uuid(),
+          versionNumber: z.number().int(),
+          instruction: z.string().nullable(),
+          createdAt: z.string(),
+          current: z.boolean(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+export type MockupScreenHistoryResponse = z.output<typeof mockupScreenHistoryResponseSchema>;
+
+// Going back to an earlier drawing of a screen: a new version with that drawing.
+export const restoreMockupScreenRequestSchema = z.object({ screenId: z.uuid() }).strict();
+export type RestoreMockupScreenRequest = z.output<typeof restoreMockupScreenRequestSchema>;
 
 // DEC-166: a mockup written by people as HTML and CSS, sent as a ZIP (multipart)
 // with these fields. With mockupId it becomes the next version of that mockup.
