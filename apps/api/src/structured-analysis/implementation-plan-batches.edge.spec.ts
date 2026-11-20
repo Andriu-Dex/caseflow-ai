@@ -420,6 +420,7 @@ describe('an action that creates records', () => {
         { name: 'startsAt', type: 'DATETIME', required: true, unique: false, enumValues: [] },
         { name: 'ticketPrice', type: 'DECIMAL', required: true, unique: false, enumValues: [] },
         { name: 'note', type: 'TEXT', required: false, unique: false, enumValues: [] },
+        { name: 'format', type: 'ENUM', required: true, unique: false, enumValues: ['2D', '3D'] },
         {
           name: 'cancelled',
           type: 'BOOLEAN',
@@ -456,7 +457,10 @@ describe('an action that creates records', () => {
             contract: {
               body: {
                 type: 'OBJECT',
-                properties: [{ name: 'startsAt', required: true, value: { type: 'DATETIME' } }],
+                properties: [
+                  { name: 'startsAt', required: true, value: { type: 'DATETIME' } },
+                  { name: 'format', required: true, value: { type: 'STRING' } },
+                ],
               },
               response: { type: 'OBJECT', properties: [] },
             },
@@ -466,10 +470,9 @@ describe('an action that creates records', () => {
       [],
       [screening] as never,
     );
-    expect(done.customEndpoints[0]!.contract!.body!.properties!.map((p) => p.name)).toEqual([
-      'startsAt',
-      'ticketPrice',
-    ]);
+    const properties = done.customEndpoints[0]!.contract!.body!.properties!;
+    expect(properties.map((p) => p.name)).toEqual(['startsAt', 'format', 'ticketPrice']);
+    expect(properties[1]!.value).toMatchObject({ type: 'ENUM', enumValues: ['2D', '3D'] });
   });
 
   it('leaves alone records an action derives from its input', () => {

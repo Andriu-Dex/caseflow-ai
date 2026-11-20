@@ -330,22 +330,37 @@ function withCreatedFields(accumulated: RoutesAccumulated, entities: IpEntity[])
       const body = endpoint.contract?.body;
       if (!body || body.type !== 'OBJECT' || endpoint.method !== 'POST') return endpoint;
       const names = new Set((body.properties ?? []).map((property) => property.name));
-      const missing = (endpoint.dataAccess ?? [])
+      const fields = (endpoint.dataAccess ?? [])
         .filter(
           (access) =>
             access.entityLocalId === endpoint.entityLocalId && access.operations.includes('CREATE'),
         )
-        .flatMap((access) => byId.get(access.entityLocalId)?.fields ?? [])
-        .filter(
-          (field) =>
-            field.required &&
-            !field.readOnly &&
-            !field.internal &&
-            field.serverDefault === undefined &&
-            !names.has(field.name) &&
-            (names.add(field.name), true),
-        );
-      if (!missing.length) return endpoint;
+        .flatMap((access) => byId.get(access.entityLocalId)?.fields ?? []);
+      // An input the record stores as one of a set of values takes that set
+      // (a payment method given as free text would not fit the column).
+      const enums = new Map(
+        fields.filter((field) => field.type === 'ENUM').map((field) => [field.name, field]),
+      );
+      const properties = (body.properties ?? []).map((property) => {
+        const field = enums.get(property.name);
+        return field && property.value.type === 'STRING'
+          ? {
+              ...property,
+              value: { ...property.value, type: 'ENUM' as const, enumValues: field.enumValues },
+            }
+          : property;
+      });
+      const aligned = properties.some((property, index) => property !== body.properties![index]);
+      const missing = fields.filter(
+        (field) =>
+          field.required &&
+          !field.readOnly &&
+          !field.internal &&
+          field.serverDefault === undefined &&
+          !names.has(field.name) &&
+          (names.add(field.name), true),
+      );
+      if (!missing.length && !aligned) return endpoint;
       return {
         ...endpoint,
         contract: {
@@ -353,7 +368,7 @@ function withCreatedFields(accumulated: RoutesAccumulated, entities: IpEntity[])
           body: {
             ...body,
             properties: [
-              ...(body.properties ?? []),
+              ...properties,
               ...missing.map((field) => ({
                 name: field.name,
                 required: true,
