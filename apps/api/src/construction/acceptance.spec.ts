@@ -285,6 +285,8 @@ describe('acceptance criteria (ADR-025)', () => {
     expect(spec).toContain('"apiPath": "/sales"');
     expect(spec).toContain('await carryOut(page, operation');
     expect(spec).toContain('must not fail on the server');
+    // A list in the form gets one item before it is filled.
+    expect(spec).toContain("hasText: 'Agregar elemento'");
     // The generated file is valid TypeScript.
     const parsed = ts.createSourceFile('acceptance.spec.ts', spec, ts.ScriptTarget.Latest, true);
     expect((parsed as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics).toEqual([]);

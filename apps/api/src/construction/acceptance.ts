@@ -264,6 +264,15 @@ const matches = (operation: Operation, method: string, url: string) =>
 // A value each control accepts, read from the control itself. Texts carry a
 // mark of this run so they never repeat a unique value of the demo data.
 async function fill(form: Locator, mark: string): Promise<void> {
+  // A list gets one item, a list inside it too: each add button is pressed once.
+  for (let round = 0; round < 10; round++) {
+    const add = form
+      .locator('button:not([data-acceptance-added])', { hasText: 'Agregar elemento' })
+      .first();
+    if (!(await add.count()) || !(await add.isEnabled())) break;
+    await add.evaluate((element) => element.setAttribute('data-acceptance-added', ''));
+    await add.click();
+  }
   const radios = new Set<string>();
   for (const control of await form.locator('input, select, textarea').all()) {
     if (!(await control.isVisible()) || !(await control.isEnabled())) continue;
