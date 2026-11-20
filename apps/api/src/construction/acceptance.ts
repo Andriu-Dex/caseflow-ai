@@ -254,15 +254,24 @@ async function carryOut(page: Page, operation: Operation, mark: string) {
   await page.goto(operation.screenPath, { waitUntil: 'networkidle' });
   const action = page.locator(\`[data-action=\${JSON.stringify(operation.label)}]\`).first();
   await expect(action, \`The action «\${operation.label}» must be offered\`).toBeVisible();
+  // Its fields: the form around it, a form inside it, or (an action form
+  // without a form element) the closest container of the button with controls.
   const enclosing = action.locator('xpath=ancestor-or-self::form[1]');
-  const form = (await enclosing.count()) ? enclosing.first() : action.locator('form').first();
+  const inner = action.locator('form');
+  const around = action.locator('xpath=ancestor::*[.//input or .//select or .//textarea][1]');
+  const form = (await enclosing.count())
+    ? enclosing.first()
+    : (await inner.count())
+      ? inner.first()
+      : around.first();
   const hasForm = (await form.count()) > 0;
   if (hasForm) await fill(form, mark);
   const submit = (await action.evaluate((element) => element.tagName === 'BUTTON'))
     ? action
-    : hasForm
+    : (await form.locator('button[type=submit]').count())
       ? form.locator('button[type=submit]').first()
       : action.locator('button').first();
+  await expect(submit, \`«\${operation.label}» must accept the data it was given\`).toBeEnabled();
   page.once('dialog', (dialog) => void dialog.accept());
   const answer = page
     .waitForResponse((response) => matches(operation, response.request().method(), response.url()), {
