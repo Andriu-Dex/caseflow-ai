@@ -270,8 +270,10 @@ async function fill(form: Locator, mark: string): Promise<void> {
       .locator('button:not([data-acceptance-added])', { hasText: 'Agregar elemento' })
       .first();
     if (!(await add.count()) || !(await add.isEnabled())) break;
-    await add.evaluate((element) => element.setAttribute('data-acceptance-added', ''));
-    await add.click();
+    // Pressed through its handle: once marked, the locator no longer finds it.
+    const button = await add.elementHandle();
+    await button!.evaluate((element) => element.setAttribute('data-acceptance-added', ''));
+    await button!.click();
   }
   const radios = new Set<string>();
   for (const control of await form.locator('input, select, textarea').all()) {
@@ -359,7 +361,12 @@ async function carryOut(page: Page, operation: Operation, path: string, mark: st
     : (await form.locator('button[type=submit]').count())
       ? form.locator('button[type=submit]').first()
       : action.locator('button').first();
-  await expect(submit, \`«\${operation.label}» must accept the data it was given\`).toBeEnabled();
+  // When it does not, what the form shows says why (a missing value, a query that failed).
+  const shown = (await form.innerText().catch(() => '')).replace(/\\s+/g, ' ').slice(0, 400);
+  await expect(
+    submit,
+    \`«\${operation.label}» must accept the data it was given. The form shows: \${shown}\`,
+  ).toBeEnabled();
   page.once('dialog', (dialog) => void dialog.accept());
   const answer = page
     .waitForResponse((response) => matches(operation, response.request().method(), response.url()), {

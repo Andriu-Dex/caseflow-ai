@@ -288,6 +288,8 @@ describe('acceptance criteria (ADR-025)', () => {
     // A list in the form gets one item before it is filled.
     expect(spec).toContain("hasText: 'Agregar elemento'");
     expect(spec).toContain('.//textarea or .//fieldset][1]');
+    // Generated regular expressions keep their escapes.
+    expect(spec).toContain(".replace(/\\s+/g, ' ')");
     // The generated file is valid TypeScript.
     const parsed = ts.createSourceFile('acceptance.spec.ts', spec, ts.ScriptTarget.Latest, true);
     expect((parsed as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics).toEqual([]);
