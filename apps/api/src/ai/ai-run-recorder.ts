@@ -1,10 +1,11 @@
 import { Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common';
-import type {
-  AIErrorCode,
-  AIRunCompletion,
-  AIRunRecorder,
-  AIRunStart,
-  AIFailureDiagnostics,
+import {
+  MAX_AI_TIMEOUT_MS,
+  type AIErrorCode,
+  type AIRunCompletion,
+  type AIRunRecorder,
+  type AIRunStart,
+  type AIFailureDiagnostics,
 } from '@caseflow-ai/ai';
 import { PrismaService } from '../database/prisma.service';
 
@@ -13,13 +14,14 @@ export class PrismaAIRunRecorder implements AIRunRecorder, OnApplicationBootstra
   private readonly logger = new Logger(PrismaAIRunRecorder.name);
   constructor(private readonly prisma: PrismaService) {}
 
-  // The API process runs every AI call, so a run still marked as running when
-  // it starts was cut off by a restart or a crash and will never finish. It is
-  // closed as failed instead of being left "running" for good.
+  // A run still marked as running when a process starts was cut off by a
+  // restart or a crash and will never finish, so it is closed as failed. Only
+  // runs older than the longest AI call are closed: a younger one may belong to
+  // another live process (a second instance, a worker) and still finish.
   async onApplicationBootstrap(): Promise<void> {
     try {
       const closed = await this.prisma.aIRun.updateMany({
-        where: { status: 'RUNNING' },
+        where: { status: 'RUNNING', startedAt: { lt: new Date(Date.now() - MAX_AI_TIMEOUT_MS) } },
         data: {
           status: 'FAILED',
           completedAt: new Date(),
