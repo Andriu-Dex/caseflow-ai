@@ -115,9 +115,9 @@ export function PresentationShell({ children }: { children: ReactNode }) {
   if (selected?.navigation === 'NONE') return <main className="min-h-screen p-4 md:p-8">{children}</main>;
   // Even where the design places the menu on top, a long menu only fits in a
   // sidebar, which scrolls and filters it.
-  return <div className="flex min-h-screen flex-col md:flex-row">
-    <aside className="border-b bg-background p-4 md:w-72 md:shrink-0 md:border-b-0 md:border-r">
-      <p className="mb-4 px-3 font-semibold">{${JSON.stringify(projectName)}}</p>
+  return <div className="flex min-h-screen flex-col bg-muted/40 md:flex-row">
+    <aside className="bg-sidebar p-3 text-sidebar-foreground md:sticky md:top-0 md:h-screen md:w-64 md:shrink-0">
+      <p className="mb-4 px-3 py-2 font-bold text-sidebar-strong">{${JSON.stringify(projectName)}}</p>
       <div className="max-h-[50vh] overflow-y-auto md:max-h-[calc(100vh-8rem)]"><AppNav /></div>
       ${themeToggle ? '<div className="mt-4 px-3"><ThemeToggle /></div>' : ''}
     </aside>
@@ -183,6 +183,9 @@ export function navigationGroups(
   };
 }
 
+// The visual standard (ADR-028): a dark sidebar in the project's own primary
+// tone, grouped by module, with the session at its foot; the page on a light
+// ground with its breadcrumb above.
 function headerShell(
   routes: { routePath: string; navigation: string }[],
   projectName: string,
@@ -190,12 +193,16 @@ function headerShell(
   { home, logout, groups, access = [] }: NavigationGroups,
   scoped: boolean,
 ) {
+  const initials = (projectName.match(/\p{L}+/gu) ?? [])
+    .slice(0, 2)
+    .map((part) => part[0]!.toUpperCase())
+    .join('');
   return `'use client';
 import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronDown, ChevronRight, ${logout ? 'LogOut, ' : ''}UserRound } from 'lucide-react';
+import { ChevronRight, ${logout ? 'LogOut, ' : ''}UserRound } from 'lucide-react';
 import { api, accessToken } from '../lib/api';
 ${themeToggle ? "import { ThemeToggle } from './theme-toggle';\n" : ''}
 const bareRoutes: string[] = ${JSON.stringify(routes.filter((route) => route.navigation === 'NONE' && !route.routePath.includes('[')).map((route) => route.routePath))};
@@ -208,7 +215,7 @@ export const matchesRoute = (route: string, path: string) => {
   return a.length === b.length && a.every((part, index) => part.startsWith('[') ? Boolean(b[index]) : part === b[index]);
 };
 export const inGroup = (group: { paths: string[] }, path: string) => group.paths.some((route) => matchesRoute(route, path));
-const menu = 'flex min-w-64 flex-col rounded-md border bg-background p-1 shadow-lg md:absolute md:z-30 md:mt-1';
+const link = 'block rounded-lg px-3 py-2 text-sm text-sidebar-foreground hover:bg-sidebar-active aria-[current=page]:bg-sidebar-active aria-[current=page]:font-semibold';
 ${
   scoped
     ? `// Who may open each screen, as the server decides it: links to a screen this
@@ -235,10 +242,9 @@ function useLinkGuard(person: { roles: string[]; permissions: string[] } | undef
     : ''
 }
 
-// The application's header: its name, the approved navigation grouped by
-// module (only the options the server authorizes) and the session menu.
-function Header() {
-  const pathname = usePathname();
+// The application's sidebar: its name, the approved navigation grouped by
+// module (only the options the server authorizes) and the session at its foot.
+function Sidebar({ pathname }: { pathname: string }) {
   const [ready, setReady] = useState(false);
   useEffect(() => setReady(true), []);
   const query = useQuery({ queryKey: ['authorized-options'], queryFn: () => api.getAuthOptions(), enabled: ready && Boolean(accessToken.get()) });
@@ -248,63 +254,59 @@ function Header() {
     .filter((group) => group.items.length);
   const rest = options.filter((item) => item.path !== ${JSON.stringify(home ?? '')} && !groups.some((group) => inGroup(group, item.path)));
   if (rest.length) sections.push({ label: 'Otras opciones', items: rest });
-  const trail = sections.flatMap((section) => section.items.filter((item) => item.path === pathname).map((item) => ({ section: section.label, label: item.label })))[0];
   ${scoped ? "const person = useQuery({ queryKey: ['operation-context'], queryFn: () => api.getAuthContext(), enabled: ready && Boolean(accessToken.get()), retry: false }).data;\n  useLinkGuard(person);" : ''}
-  return <header className="border-b bg-background">
-    <div className="mx-auto flex max-w-screen-2xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 md:px-8">
-      <Link href={${JSON.stringify(home ?? '/')}} className="text-xl font-bold text-primary">{${JSON.stringify(projectName)}}</Link>
-      <nav aria-label="Navegación principal" className="flex flex-1 flex-wrap items-center gap-1">
-        {!ready || (query.isPending && Boolean(accessToken.get())) ? <p role="status" className="text-sm text-muted-foreground">Cargando navegación…</p> : null}
-        {query.isError ? <p role="alert" className="text-sm text-destructive">No se pudieron consultar las opciones autorizadas.</p> : null}
-        {sections.map((section) => {
-          const active = section.items.some((item) => item.path === pathname);
-          return <details key={section.label + pathname} className="relative">
-            <summary className={'flex cursor-pointer list-none items-center gap-1 rounded-md px-3 py-2 text-sm font-medium hover:bg-muted' + (active ? ' text-primary underline decoration-2 underline-offset-8' : '')}>
-              {section.label}<ChevronDown className="h-4 w-4" aria-hidden />
-            </summary>
-            <div className={menu}>
-              {section.items.map((item) => <Link key={item.path} href={item.path} aria-current={item.path === pathname ? 'page' : undefined} className="rounded-md px-3 py-2 text-sm hover:bg-muted aria-[current=page]:bg-primary aria-[current=page]:text-primary-foreground">{item.label}</Link>)}
-            </div>
-          </details>;
-        })}
-      </nav>
-      <div className="flex items-center gap-2">
-        ${themeToggle ? '<ThemeToggle />' : ''}
-        <details key={pathname} className="relative">
-          <summary className="flex cursor-pointer list-none items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted">${
-            scoped
-              ? `{person ? <><span aria-hidden className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">{initials(person.displayName)}</span><span className="flex flex-col text-left leading-tight"><span>{person.displayName}</span><span className="text-xs font-normal text-muted-foreground">{person.roles.join(', ')}</span></span></> : <><UserRound className="h-4 w-4" aria-hidden />Mi sesión</>}`
-              : '<UserRound className="h-4 w-4" aria-hidden />Mi sesión'
-          }</summary>
-          <div className={menu + ' right-0 min-w-80 gap-2 p-3'}>
-            ${
-              scoped
-                ? `{person ? <div className="space-y-1 rounded-md bg-muted/50 p-3 text-sm">
-              <p className="font-semibold">{person.displayName}</p>
-              <p className="text-muted-foreground">{person.roles.join(', ')}</p>
-              <p>{person.scopes.find((scope) => scope.id === person.selectedScopeId)?.label ?? 'Sin ámbito seleccionado'}</p>
-            </div> : null}
-            <Link href={${JSON.stringify(home ?? '/')}} className="rounded-md px-3 py-2 text-sm hover:bg-muted">Cambiar contexto de operación</Link>`
-                : ''
-            }
-            ${logout ? `<Link href={${JSON.stringify(logout)}} className="flex items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-muted"><LogOut className="h-4 w-4" aria-hidden />Cerrar sesión</Link>` : ''}
-          </div>
-        </details>
-      </div>
+  return <aside className="flex flex-col gap-4 bg-sidebar p-3 text-sidebar-foreground md:sticky md:top-0 md:h-screen md:w-64 md:shrink-0">
+    <Link href={${JSON.stringify(home ?? '/')}} className="flex items-center gap-2.5 px-2 py-2">
+      <span aria-hidden className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-xs font-bold text-accent-foreground">${initials}</span>
+      <span className="font-bold text-sidebar-strong">{${JSON.stringify(projectName)}}</span>
+    </Link>
+    <nav aria-label="Navegación principal" className="flex max-h-[45vh] flex-col gap-0.5 overflow-y-auto md:max-h-none md:flex-1">
+      {!ready || (query.isPending && Boolean(accessToken.get())) ? <p role="status" className="px-3 text-sm text-sidebar-muted">Cargando navegación…</p> : null}
+      {query.isError ? <p role="alert" className="px-3 text-sm text-sidebar-strong">No se pudieron consultar las opciones autorizadas.</p> : null}
+      ${home ? `{ready && options.length ? <Link href={${JSON.stringify(home)}} aria-current={pathname === ${JSON.stringify(home)} ? 'page' : undefined} className={link}>Inicio</Link> : null}` : ''}
+      {sections.map((section) => <div key={section.label} className="flex flex-col gap-0.5">
+        <p className="px-3 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wider text-sidebar-muted">{section.label}</p>
+        {section.items.map((item) => <Link key={item.path} href={item.path} aria-current={item.path === pathname ? 'page' : undefined} className={link}>{item.label}</Link>)}
+      </div>)}
+    </nav>
+    <div className="flex flex-col gap-1 border-t border-sidebar-active pt-3">
+      ${
+        scoped
+          ? `{person ? <div className="flex items-center gap-2.5 px-2 py-1.5">
+        <span aria-hidden className="flex h-8 w-8 items-center justify-center rounded-full bg-sidebar-active text-xs font-semibold text-sidebar-strong">{initials(person.displayName)}</span>
+        <span className="flex min-w-0 flex-col leading-tight"><span className="truncate text-sm font-semibold text-sidebar-strong">{person.displayName}</span><span className="truncate text-xs text-sidebar-muted">{person.roles.join(', ')}</span><span className="truncate text-xs text-sidebar-muted">{person.scopes.find((scope) => scope.id === person.selectedScopeId)?.label ?? 'Sin ámbito seleccionado'}</span></span>
+      </div> : <p className="flex items-center gap-2 px-3 py-2 text-sm"><UserRound className="h-4 w-4" aria-hidden />Mi sesión</p>}
+      <Link href={${JSON.stringify(home ?? '/')}} className={link}>Cambiar contexto de operación</Link>`
+          : '<p className="flex items-center gap-2 px-3 py-2 text-sm"><UserRound className="h-4 w-4" aria-hidden />Mi sesión</p>'
+      }
+      ${themeToggle ? '<div className="px-1"><ThemeToggle /></div>' : ''}
+      ${logout ? `<Link href={${JSON.stringify(logout)}} className={link + ' flex items-center gap-2'}><LogOut className="h-4 w-4" aria-hidden />Cerrar sesión</Link>` : ''}
     </div>
-    {trail ? <nav aria-label="Ruta de navegación" className="mx-auto flex max-w-screen-2xl items-center gap-2 border-t px-4 py-2 text-sm text-muted-foreground md:px-8">
-      <span>{trail.section}</span><ChevronRight className="h-4 w-4" aria-hidden /><span aria-current="page" className="font-medium text-foreground">{trail.label}</span>
-    </nav> : null}
-  </header>;
+  </aside>;
 }
 ${scoped ? "\nconst initials = (name: string) => (name.match(/\\p{L}+/gu) ?? []).slice(0, 2).map((part) => part[0]!.toUpperCase()).join('');\n" : ''}
+// Where the page is: its module and its name, above the page.
+function Trail({ pathname }: { pathname: string }) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => setReady(true), []);
+  const options = useQuery({ queryKey: ['authorized-options'], queryFn: () => api.getAuthOptions(), enabled: ready && Boolean(accessToken.get()) }).data ?? [];
+  const section = groups.find((group) => inGroup(group, pathname));
+  const item = options.find((option) => option.path === pathname);
+  if (!section || !item) return null;
+  return <nav aria-label="Ruta de navegación" className="flex items-center gap-2 border-b bg-background px-4 py-3 text-sm text-muted-foreground md:px-8">
+    <span>{section.label}</span><ChevronRight className="h-4 w-4" aria-hidden /><span aria-current="page" className="font-medium text-foreground">{item.label}</span>
+  </nav>;
+}
 
 export function PresentationShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   if (bareRoutes.includes(pathname)) return <main className="min-h-screen">{children}</main>;
-  return <div className="flex min-h-screen flex-col bg-muted/30">
-    <Header />
-    <main className="mx-auto w-full min-w-0 max-w-screen-2xl flex-1 p-4 md:p-8">{children}</main>
+  return <div className="flex min-h-screen flex-col bg-muted/40 md:flex-row">
+    <Sidebar pathname={pathname} />
+    <div className="flex min-w-0 flex-1 flex-col">
+      <Trail pathname={pathname} />
+      <main className="mx-auto w-full min-w-0 max-w-screen-2xl flex-1 p-4 md:p-8">{children}</main>
+    </div>
   </div>;
 }
 `;

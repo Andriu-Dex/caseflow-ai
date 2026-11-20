@@ -1,3 +1,4 @@
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import {
   applyPresentation,
@@ -256,6 +257,52 @@ describe('approved presentation compiler', () => {
     expect(files[0]!.content).not.toContain('<AppNav');
     expect(files[1]!.content).toContain('TOP');
     expect(files[1]!.content).toContain("selected?.navigation === 'NONE'");
+  });
+});
+
+describe('application frame (ADR-028)', () => {
+  it('draws a dark sidebar grouped by module, in the project tones, as valid TSX', () => {
+    const files: GeneratedProjectFile[] = [
+      {
+        path: 'apps/web/app/layout.tsx',
+        origin: 'TEMPLATE',
+        kind: 'SOURCE',
+        planElements: [],
+        content: `import { AppNav } from '../components/app-nav'; export default function Root({children}: {children: React.ReactNode}) { return <html><body><div><aside><AppNav /></aside><main>{children}</main></div></body></html>; }`,
+      },
+      {
+        path: 'apps/web/app/page.tsx',
+        origin: 'TEMPLATE',
+        kind: 'SOURCE',
+        planElements: [],
+        content: 'api.getAuthOptions()',
+      },
+    ];
+    applyPresentationShell(
+      files,
+      [{ routePath: '/orders', navigation: 'SIDE' }],
+      'Cine Aurora',
+      true,
+      {
+        home: '/',
+        logout: '/logout',
+        groups: [{ label: 'Ventas', paths: ['/orders'] }],
+      },
+    );
+    const shell = files.find(
+      (item) => item.path === 'apps/web/components/presentation-shell.tsx',
+    )!.content;
+    const parsed = ts.createSourceFile(
+      'shell.tsx',
+      shell,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+    expect((parsed as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics).toEqual([]);
+    expect(shell).toContain('bg-sidebar');
+    expect(shell).toContain('>CA</span>');
+    expect(shell).toContain('text-sidebar-muted">{section.label}');
   });
 });
 

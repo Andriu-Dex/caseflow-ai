@@ -30,6 +30,19 @@ type Route = Plan['routes'][number];
 // contracts the API validates with), TanStack Query over the generated
 // OpenAPI client — never hand-written fetch calls per screen.
 
+// ADR-028: the frame and the key-figure bands are dark tones of the project's
+// own primary colour, so they match any palette; the accent is the one colour
+// for the main action.
+const STANDARD_TONES = `  --color-sidebar: color-mix(in oklab, var(--color-primary) 22%, #0b1020);
+  --color-sidebar-active: color-mix(in oklab, var(--color-primary) 32%, #1e293b);
+  --color-sidebar-foreground: #e2e8f0;
+  --color-sidebar-strong: #ffffff;
+  --color-sidebar-muted: #94a3b8;
+  --color-band: color-mix(in oklab, var(--color-primary) 45%, #0b1020);
+  --color-band-tile: color-mix(in oklab, var(--color-primary) 62%, #0b1020);
+  --color-band-foreground: #ffffff;
+  --color-band-muted: color-mix(in oklab, #ffffff 78%, var(--color-primary));`;
+
 const STANDARD_GLOBALS_CSS = `@import 'tailwindcss';
 
 @theme {
@@ -40,6 +53,9 @@ const STANDARD_GLOBALS_CSS = `@import 'tailwindcss';
   --color-primary: oklch(0.51 0.2 268);
   --color-primary-foreground: oklch(0.99 0 0);
   --color-destructive: oklch(0.58 0.22 27);
+  --color-accent: oklch(0.7 0.18 50);
+  --color-accent-foreground: oklch(0.21 0.02 265);
+${STANDARD_TONES}
 }
 
 body {
@@ -66,13 +82,14 @@ function globalsCss(theme: DesignThemeContent | undefined): string {
 @theme {
 ${cssVariables(base, '  ')}
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
-  --radius-md: 0.375rem;
-  --radius-lg: 0.375rem;
-  --radius-xl: 0.5rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.875rem;
   --color-card: var(--color-background);
   --color-card-foreground: var(--color-foreground);
   --color-input: var(--color-border);
   --color-ring: var(--color-primary);
+${STANDARD_TONES}
 }
 ${
   theme.mode === 'BOTH'
