@@ -838,21 +838,20 @@ export function fillProvenance(
 }
 
 // A read-only required field of a record people create needs a value the
-// server gives at creation: a state starts at its lifecycle's initial state
-// (or its first value), a flag starts false, and anything else (a count that
-// starts at another field's value) is entered by the person instead.
+// server gives at creation: a state starts at its lifecycle's initial state,
+// a flag starts false, and anything else (a state with no lifecycle, a count
+// that starts at another field's value) is entered by the person instead.
 function withInitialValues(entity: IpEntity): IpEntity {
   const fields = entity.fields.map((field) => {
     if (!field.readOnly || !field.required || field.serverDefault !== undefined) return field;
-    if (field.type === 'ENUM' && field.enumValues.length)
-      return {
-        ...field,
-        serverDefault:
-          entity.lifecycle?.stateField === field.name &&
-          field.enumValues.includes(entity.lifecycle.initialState)
-            ? entity.lifecycle.initialState
-            : field.enumValues[0]!,
-      };
+    // Only the lifecycle says which state is the starting one; guessing
+    // another value could start a record in a privileged state.
+    if (
+      field.type === 'ENUM' &&
+      entity.lifecycle?.stateField === field.name &&
+      field.enumValues.includes(entity.lifecycle.initialState)
+    )
+      return { ...field, serverDefault: entity.lifecycle.initialState };
     if (field.type === 'BOOLEAN') return { ...field, serverDefault: false };
     return { ...field, readOnly: false };
   });

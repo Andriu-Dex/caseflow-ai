@@ -597,7 +597,9 @@ describe('records only a business action creates', () => {
       '11111111-1111-4111-8111-111111111111',
     ).entities;
     const field = (name: string) => entity!.fields.find((item) => item.name === name)!;
-    expect(field('status')).toMatchObject({ readOnly: true, serverDefault: 'ACTIVE' });
+    // Without a lifecycle no state is assumed to be the starting one.
+    expect(field('status')).toMatchObject({ readOnly: false });
+    expect(field('status').serverDefault).toBeUndefined();
     expect(field('retired')).toMatchObject({ readOnly: true, serverDefault: false });
     // A computed amount has no safe default: the person enters it.
     expect(field('total').readOnly).toBe(false);
