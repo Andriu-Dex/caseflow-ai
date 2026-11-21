@@ -596,4 +596,49 @@ describe('records only a business action creates', () => {
       ).entities[0]!.operations;
     expect(operations('LIST')).toEqual(['LIST', 'GET']);
   });
+
+  it('drops a cross-scope read without a scope and references to records no one lists', () => {
+    const report = {
+      moduleLocalId: 'sales',
+      method: 'GET',
+      path: '/reports/sales',
+      summary: 'Ventas del día',
+      roles: [],
+      scopeAccess: 'ASSIGNED_SET',
+      contract: {
+        response: {
+          type: 'ARRAY',
+          items: {
+            type: 'OBJECT',
+            properties: [
+              {
+                name: 'saleId',
+                required: true,
+                value: { type: 'UUID', referenceEntityLocalId: 'sale' },
+              },
+              {
+                name: 'fineId',
+                required: true,
+                value: { type: 'UUID', referenceEntityLocalId: 'fine' },
+              },
+            ],
+          },
+        },
+      },
+    };
+    const plan = finishImplementationPlan(
+      skeleton as never,
+      [sale] as never,
+      {
+        routes: [{ ...route('LIST'), actions: [{ label: 'Ver', endpoint: 'GET /reports/sales' }] }],
+        customEndpoints: [report],
+      } as never,
+      '11111111-1111-4111-8111-111111111111',
+    );
+    const endpoint = plan.customEndpoints[0]!;
+    expect(endpoint.scopeAccess).toBeUndefined();
+    const [saleId, fineId] = endpoint.contract!.response!.items!.properties!;
+    expect(saleId!.value.referenceEntityLocalId).toBe('sale');
+    expect(fineId!.value.referenceEntityLocalId).toBeUndefined();
+  });
 });

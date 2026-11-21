@@ -837,6 +837,38 @@ export function fillProvenance(
   };
 }
 
+// What the model sets that the rest of the plan cannot back: a cross-scope
+// read in a plan with no operation scope, and a contract reference to an
+// entity no one can list (no options to show it by name). Both are dropped,
+// leaving the endpoint and a plain identifier.
+function cleanEndpoints(
+  endpoints: RoutesAccumulated['customEndpoints'],
+  entities: IpEntity[],
+  skeleton: ImplementationSkeleton,
+): RoutesAccumulated['customEndpoints'] {
+  const listable = new Set(
+    entities.filter((entity) => entity.operations.includes('LIST')).map((entity) => entity.localId),
+  );
+  const strip = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(strip);
+    if (!node || typeof node !== 'object') return node;
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(node))
+      if (!(key === 'referenceEntityLocalId' && !listable.has(value as string)))
+        out[key] = strip(value);
+    return out;
+  };
+  return endpoints.map((endpoint) => {
+    const { scopeAccess, ...rest } = endpoint;
+    return {
+      ...(skeleton.authentication.local?.scope && scopeAccess ? { ...rest, scopeAccess } : rest),
+      ...(endpoint.contract
+        ? { contract: strip(endpoint.contract) as typeof endpoint.contract }
+        : {}),
+    } as typeof endpoint;
+  });
+}
+
 export function finishImplementationPlan(
   skeleton: ImplementationSkeleton,
   entities: IpEntity[],
@@ -889,7 +921,7 @@ export function finishImplementationPlan(
   const body = {
     ...skeleton,
     entities,
-    customEndpoints: routes.customEndpoints,
+    customEndpoints: cleanEndpoints(routes.customEndpoints, entities, skeleton),
     routes: routes.routes,
     tests: derivedTests(skeleton.modules, routes.routes),
   };
