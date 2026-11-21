@@ -10,6 +10,13 @@ import {
 } from './support/test-app';
 import { approvedDesignBaseline } from './support/construction-fixtures';
 
+const DEMO_DATA_PROMPT = 'demo-data.generate';
+// Inference requests other than the demonstration data proposal.
+const businessLogicCalls = (spy: { mock: { calls: unknown[][] } }) =>
+  spy.mock.calls.filter(
+    ([request]) => (request as { promptKey?: string }).promptKey !== DEMO_DATA_PROMPT,
+  );
+
 const planBody = (designBaselineId: string, uiCode: string) => ({
   designBaselineId,
   authentication: { required: false, roles: [] },
@@ -135,7 +142,11 @@ describe('Construction generation runs integration', () => {
       .expect(200);
     expect(run.body.status).toBe('GENERATED');
     expect(run.body.fileCount).toBeGreaterThan(10);
-    expect(run.body.warnings).toEqual([expect.stringContaining('fidelidad visual')]);
+    // The fake provider cannot propose demonstration data: generic values are kept.
+    expect(run.body.warnings).toEqual([
+      expect.stringContaining('datos de demostración usan valores genéricos'),
+      expect.stringContaining('fidelidad visual'),
+    ]);
 
     const files = await http()
       .get(`/projects/${projectId}/generation-runs/${runId}/files`)
@@ -179,9 +190,15 @@ describe('Construction generation runs integration', () => {
     const source = await ctx.prisma.generatedFile.findFirstOrThrow({
       where: { generationRun: { projectId }, path: { startsWith: 'docs/business-logic/' } },
     });
+    // Only demonstration data may ask the AI (and degrades when it cannot);
+    // any other inference would mean the corrections were not reused.
     const inference = vi
       .spyOn(ctx.app.get(AIOrchestrator), 'generateStructured')
-      .mockRejectedValue(new Error('No inference expected'));
+      .mockImplementation(async (request) => {
+        if (request.promptKey === DEMO_DATA_PROMPT)
+          throw new AIError('AI_PROVIDER_UNAVAILABLE', 'unavailable');
+        throw new Error('No inference expected');
+      });
     try {
       const created = await http()
         .post(`/projects/${projectId}/generation-runs/working-copies`)
@@ -230,7 +247,7 @@ describe('Construction generation runs integration', () => {
         where: { generationRunId: next.id, path: { endsWith: '-actions.service.ts' } },
       });
       expect(service.content).toContain('corrected: true');
-      expect(inference).not.toHaveBeenCalled();
+      expect(businessLogicCalls(inference)).toHaveLength(0);
     } finally {
       inference.mockRestore();
     }
@@ -244,7 +261,7 @@ describe('Construction generation runs integration', () => {
       const reused = await runs.start(projectId, ctx.userId, planVersionId);
       await runs.runJob(projectId, reused.id);
       expect(await runs.get(projectId, reused.id)).toMatchObject({ status: 'GENERATED' });
-      expect(unavailable).not.toHaveBeenCalled();
+      expect(businessLogicCalls(unavailable)).toHaveLength(0);
       const changed = structuredClone(approvedContent);
       changed.customEndpoints[0]!.summary =
         'Confirmar pedido con una regla nueva sin implementación disponible';
@@ -262,6 +279,14 @@ describe('Construction generation runs integration', () => {
           newPlan.version.id,
           status,
         );
+      // DEC-168: the unchanged plan reuses its action; the changed rule would be asked for.
+      expect(await runs.estimate(projectId, planVersionId)).toMatchObject({
+        businessActions: { total: 1, reused: 1 },
+      });
+      const estimate = await runs.estimate(projectId, newPlan.version.id);
+      expect(estimate.businessActions).toEqual({ total: 1, reused: 0 });
+      expect(estimate.requests.atLeast).toBeGreaterThanOrEqual(1);
+      expect(estimate.requests.atMost).toBeGreaterThanOrEqual(estimate.requests.atLeast);
       const run = await runs.start(projectId, ctx.userId, newPlan.version.id);
       await runs.runJob(projectId, run.id);
       expect(await runs.get(projectId, run.id)).toMatchObject({

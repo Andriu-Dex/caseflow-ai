@@ -310,7 +310,8 @@ export function layoutClasses(className: string) {
 
 // On a solid semantic background the text takes that background's paired
 // foreground, whatever color the proposal chose, so it is always readable.
-const SOLID = /^bg-(primary|secondary|accent|destructive)$/;
+// A key-figure band (ADR-028) pairs with band-foreground, its tiles too.
+const SOLID = /^bg-(primary|secondary|accent|destructive|band|band-tile)$/;
 const solidOf = (className: string) =>
   className
     .split(/\s+/)
@@ -326,7 +327,7 @@ export function readable(className: string, inherited?: string) {
       (token) =>
         !/^text-(?!xs$|sm$|base$|lg$|xl$|[2-9]xl$|left$|center$|right$|justify$)/.test(token),
     ),
-    `text-${solid}-foreground`,
+    `text-${solid.startsWith('band') ? 'band' : solid}-foreground`,
   ].join(' ');
 }
 

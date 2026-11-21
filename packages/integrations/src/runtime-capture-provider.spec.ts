@@ -32,6 +32,24 @@ const input = {
 };
 
 describe('Docker runtime capture boundary', () => {
+  it('loads the demonstration data before the application starts (ADR-027)', async () => {
+    const calls: string[][] = [];
+    const docker = vi.fn(async (args: string[]) => {
+      calls.push(args);
+      if (args[0] === 'cp' && args[1]?.includes(':/tmp/capture-output/'))
+        await writeFile(join(args[2]!, '0.json'), JSON.stringify({ status: 'SKIPPED' }));
+      return '';
+    });
+    await new DockerRuntimeCaptureProvider(docker).capture({
+      ...input,
+      files: [...input.files, { path: 'apps/api/src/seed/demo-data.ts', content: '' }],
+      targets: [input.targets[0]!],
+    });
+    const runtime = calls.find((args) => args.some((arg) => arg.includes('prisma db push;')))!;
+    const command = runtime.find((arg) => arg.includes('prisma db push;'))!;
+    expect(command).toMatch(/demo-data\.js \|\| echo .*; node apps\/api\/dist\/main\.js/);
+  });
+
   it('applies configured bounds to both the host and fixed container commands', async () => {
     const calls: { args: string[]; timeout: number }[] = [];
     const docker = vi.fn(async (args: string[], timeout: number) => {
@@ -60,6 +78,8 @@ describe('Docker runtime capture boundary', () => {
       const runtime = calls.find((call) =>
         call.args.some((arg) => arg.includes('prisma db push;')),
       )!;
+      // Without its script, a project has no demonstration data to load.
+      expect(runtime.args.some((arg) => arg.includes('seed/demo-data.js'))).toBe(false);
       expect(
         runtime.args.slice(runtime.args.indexOf('timeout'), runtime.args.indexOf('timeout') + 3),
       ).toEqual(['timeout', '--kill-after=5', '600']);
@@ -114,8 +134,8 @@ describe('Docker runtime capture boundary', () => {
   it('validates timeout units and refuses values that disable or overflow the capture boundary', async () => {
     expect(captureTimeouts({})).toEqual({
       buildMs: 600_000,
-      runtimeSeconds: 240,
-      browserMs: 180_000,
+      runtimeSeconds: 420,
+      browserMs: 360_000,
     });
     expect(
       captureTimeouts({

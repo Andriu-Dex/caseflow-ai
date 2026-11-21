@@ -41,7 +41,7 @@ export interface SandboxExecutionRequest {
   files: readonly { path: string; content: string }[];
   commands: readonly SandboxCommand[];
   // The TargetTemplate's validation commands: anything else is refused, so a
-  // command can never come from model output (AGENTS.md §26).
+  // command can never come from model output.
   allowedCommands: readonly (readonly string[])[];
   toolchain: { nodeMajor: number; packageManager: string };
   limits: SandboxLimits;

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 // Sandbox validation, bounded auto-repair and generated-project snapshots
-// (spec §172-§177). READY only when every P0 stage passed.
+// READY only when every P0 stage passed.
 
 export const SANDBOX_RUN_STATUSES = [
   'QUEUED',

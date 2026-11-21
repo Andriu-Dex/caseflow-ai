@@ -4,7 +4,7 @@ import { FirstDeliverableSnapshotService } from '../first-deliverable/first-deli
 import type { RequirementsService } from '../requirements/requirements.service';
 import type { StalenessService } from '../staleness/staleness.service';
 import type { TraceabilityService } from '../traceability/traceability.service';
-import { ReadinessService } from './readiness.service';
+import { ReadinessService, blocksPlanning } from './readiness.service';
 import type { ConsistencyEngineService } from '../consistency-engine/consistency-engine.service';
 
 function setup() {
@@ -42,6 +42,16 @@ function setup() {
     ),
   };
 }
+
+describe('blocksPlanning', () => {
+  it('ignores errors of construction artifacts, fixed inside Construction', () => {
+    expect(blocksPlanning({ severity: 'ERROR', artifactType: 'CONCEPTUAL_DOMAIN_MODEL' })).toBe(
+      false,
+    );
+    expect(blocksPlanning({ severity: 'ERROR', artifactType: 'MOCKUP' })).toBe(true);
+    expect(blocksPlanning({ severity: 'WARNING', artifactType: 'MOCKUP' })).toBe(false);
+  });
+});
 
 describe('ReadinessService', () => {
   it('propagates consistency blockers to their stage and overall readiness', async () => {

@@ -78,6 +78,7 @@ function setup() {
       findMany: vi.fn().mockResolvedValue([]),
     },
     designBaseline: { findFirst: vi.fn().mockResolvedValue({ entries: [] }) },
+    generationRun: { findUniqueOrThrow: vi.fn().mockResolvedValue({ deliveryId: null }) },
     generatedFile: {
       findMany: vi.fn().mockResolvedValue([{ id, path: 'apps/web/app/items/page.tsx' }]),
     },

@@ -198,8 +198,6 @@ export const TRACEABILITY_DIAGRAM_MAX_EDGES = 500;
 const TRACEABILITY_SOURCE_LIMIT = 45_000;
 
 // Line lengths of the component and deployment diagrams: notes, then dependency labels.
-const NOTE_WIDTH = 40;
-const DEPLOYMENT_NOTE_WIDTH = 60;
 const LABEL_WIDTH = 45;
 
 // Navigation trees with more nodes than this are drawn left to right.
@@ -331,7 +329,7 @@ export class DiagramEngine {
   }
 
   // Deterministic Mermaid flowchart from the structured Navigation Tree
-  // (spec §13.4). AI never produces this source directly. A big tree has far
+  // AI never produces this source directly. A big tree has far
   // more nodes per level than levels, so it is drawn left to right (depth
   // across, breadth down); top-down would make it many times wider than tall.
   generateNavigationFlowchart(model: NavigationDiagramModel): string {
@@ -344,8 +342,8 @@ export class DiagramEngine {
     return lines.join('\n');
   }
 
-  // Deterministic Mermaid flowchart from the Traceability graph (spec §4.8:
-  // canonical source over render — this source is derived and re-rendered on
+  // Deterministic Mermaid flowchart from the Traceability graph
+  // (canonical source over render — this source is derived and re-rendered on
   // demand, never persisted, since the graph itself is already recomputed on
   // every request). Node ids are real UUIDs, so safeId() is what keeps them
   // valid Mermaid identifiers.
@@ -400,12 +398,11 @@ export class DiagramEngine {
   }
 
   // Deterministic PlantUML component diagram from the structured Software
-  // Architecture (spec §14.3). Drawn left to right, with the dependency labels
-  // broken into short lines. A component's layer is the name of the package
-  // that holds it. Each component carries a short note with the quality
-  // requirements (RNF) it answers; its responsibilities and other sources are
-  // not drawn, since a note of several lines per component hid the structure.
-  // They stay in the stored content and in the component's card.
+  // Architecture, drawn left to right. A component's layer is the name of the
+  // package that holds it. Only the structure is drawn: components and one
+  // plain arrow per dependent pair. The dependency descriptions, the
+  // responsibilities and the quality requirements made a large system
+  // unreadable; they stay in the stored content and in each component's card.
   generateSoftwareComponentDiagram(model: SoftwareArchitectureDiagramModel): string {
     const components = [...model.components].sort((a, b) => compareOrdinal(a.localId, b.localId));
     const layers = [
@@ -424,32 +421,21 @@ export class DiagramEngine {
     for (const component of components)
       if (!component.layerLocalId && !layers.includes(component.localId))
         lines.push(`component "${quote(component.name)}" as ${safeId(component.localId)}`);
-    for (const dependency of model.dependencies)
-      lines.push(
-        `${safeId(dependency.fromLocalId)} --> ${safeId(dependency.toLocalId)}${
-          dependency.description
-            ? ` : "${wrapText(quote(dependency.description), LABEL_WIDTH)}"`
-            : ''
-        }`,
-      );
-    for (const component of components) {
-      const quality = (component.relatedSourceCodes ?? []).filter((code) => /^RNF-/.test(code));
-      if (quality.length)
-        lines.push(
-          `note right of ${safeId(component.localId)} : ${wrapText(`Calidad: ${quality.join(', ')}`, NOTE_WIDTH)}`,
-        );
-    }
+    const arrows = new Set(
+      model.dependencies.map(
+        (dependency) => `${safeId(dependency.fromLocalId)} --> ${safeId(dependency.toLocalId)}`,
+      ),
+    );
+    lines.push(...arrows);
     lines.push('@enduml');
     return lines.join('\n');
   }
 
   // Deterministic PlantUML deployment representation from the structured
-  // System Architecture (spec §15). Drawn left to right, with the link labels
-  // and the notes broken into short lines: with few nodes, each carrying many
-  // responsibilities and sources, the unbroken text made it about fourteen
-  // times wider than tall. A note keeps the node's responsibilities and the
-  // quality requirements (RNF) it answers; the other sources stay in the
-  // stored content and in the node's card.
+  // System Architecture, drawn left to right: the nodes and their links, each
+  // labelled with its protocol only. Responsibilities, link descriptions and
+  // quality requirements made notes of dozens of lines; they stay in the
+  // stored content and in each node's card.
   generateSystemDeploymentDiagram(model: SystemArchitectureDiagramModel): string {
     const nodeKeyword: Record<string, string> = {
       RUNTIME: 'node',
@@ -465,31 +451,21 @@ export class DiagramEngine {
       lines.push(
         `${nodeKeyword[node.kind] ?? 'node'} "${quote(node.name)}" as ${safeId(node.localId)}`,
       );
-    for (const link of model.links) {
-      const label = [link.protocol, link.description].filter(Boolean).map((x) => quote(x!));
+    for (const link of model.links)
       lines.push(
         `${safeId(link.fromLocalId)} --> ${safeId(link.toLocalId)}${
-          label.length ? ` : "${wrapText(label.join(' — '), LABEL_WIDTH)}"` : ''
+          link.protocol ? ` : "${wrapText(quote(link.protocol), LABEL_WIDTH)}"` : ''
         }`,
       );
-    }
-    for (const node of nodes) {
-      const quality = (node.relatedSourceCodes ?? []).filter((code) => /^RNF-/.test(code));
-      const details = [
-        ...(node.responsibilities ?? []),
-        ...(quality.length ? [`Calidad: ${quality.join(', ')}`] : []),
-      ];
-      if (details.length)
-        lines.push(
-          `note right of ${safeId(node.localId)} : ${details.map((detail) => wrapText(quote(detail).replace(/[<>]/g, ''), DEPLOYMENT_NOTE_WIDTH)).join('\\n')}`,
-        );
-    }
     lines.push('@enduml');
     return lines.join('\n');
   }
 
   // Deterministic Mermaid classDiagram from the structured domain class
-  // diagram (DEC-121): same input, byte-identical source.
+  // diagram (DEC-121): same input, byte-identical source. It shows the domain,
+  // not the signatures: no technical identifier (UUID) attributes, methods by
+  // name only, and an enumeration as its values. The full members stay in the
+  // stored content and in each class's card.
   generateClassDiagram(model: ClassDiagramModel): string {
     const classes = [...model.classes].sort((a, b) => compareOrdinal(a.localId, b.localId));
     const lines = ['classDiagram'];
@@ -499,15 +475,17 @@ export class DiagramEngine {
         lines.push(
           `    <<${cls.stereotype === 'VALUE_OBJECT' ? 'value object' : cls.stereotype.toLowerCase()}>>`,
         );
-      for (const attribute of cls.attributes)
-        lines.push(
-          `    ${visibilitySymbol[attribute.visibility ?? 'PRIVATE'] ?? '-'}${classText(attribute.type)} ${classText(attribute.name)}`,
-        );
+      if (cls.stereotype === 'ENUMERATION')
+        for (const value of cls.attributes) lines.push(`    ${classText(value.name)}`);
+      else
+        for (const attribute of cls.attributes)
+          if (attribute.type.trim().toUpperCase() !== 'UUID')
+            lines.push(
+              `    ${visibilitySymbol[attribute.visibility ?? 'PRIVATE'] ?? '-'}${classText(attribute.type)} ${classText(attribute.name)}`,
+            );
       for (const method of cls.methods)
         lines.push(
-          `    ${visibilitySymbol[method.visibility ?? 'PUBLIC'] ?? '+'}${classText(method.name)}(${method.parameters
-            .map((parameter) => `${classText(parameter.type)} ${classText(parameter.name)}`)
-            .join(', ')})${method.returnType ? ` ${classText(method.returnType)}` : ''}`,
+          `    ${visibilitySymbol[method.visibility ?? 'PUBLIC'] ?? '+'}${classText(method.name)}()`,
         );
       lines.push('  }');
     }

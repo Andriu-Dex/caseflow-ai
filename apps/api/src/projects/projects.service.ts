@@ -145,7 +145,7 @@ export class ProjectsService {
   }
 
   // Archival is the alternative to deletion once a project has approved
-  // history (spec §87: "fuentes utilizadas → archivar antes que borrar").
+  // history.
   // Purely additive on the Project row — never touches any ArtifactVersion,
   // so it needs no immutability exception.
   async archive(projectId: string): Promise<ProjectResponse> {
@@ -247,7 +247,7 @@ export class ProjectsService {
     return toProjectResponse(updated, await this.hasApprovedArtifacts(projectId));
   }
 
-  // Permanent deletion of a whole project (DEC-134, spec §87), approved
+  // Permanent deletion of a whole project (DEC-134), approved
   // history included: only its owner or the workspace's owner or admins, and
   // only after typing its exact name, checked here and not only in the page.
   // Every relation in the schema is ON DELETE RESTRICT and the history is
@@ -306,9 +306,14 @@ export class ProjectsService {
         await tx.$executeRaw`DELETE FROM generated_project_snapshots WHERE project_id = ${p}`;
         await tx.$executeRaw`DELETE FROM auto_repair_attempts WHERE generation_run_id IN (SELECT id FROM generation_runs WHERE project_id = ${p})`;
         await tx.$executeRaw`DELETE FROM sandbox_stage_results WHERE sandbox_run_id IN (SELECT id FROM sandbox_runs WHERE project_id = ${p})`;
+        await tx.$executeRaw`DELETE FROM acceptance_results WHERE sandbox_run_id IN (SELECT id FROM sandbox_runs WHERE project_id = ${p})`;
         await tx.$executeRaw`DELETE FROM sandbox_runs WHERE project_id = ${p}`;
         await tx.$executeRaw`DELETE FROM generated_files WHERE generation_run_id IN (SELECT id FROM generation_runs WHERE project_id = ${p})`;
+        await tx.$executeRaw`DELETE FROM delivery_approvals WHERE delivery_id IN (SELECT d.id FROM deliveries d JOIN delivery_plans dp ON dp.id = d.delivery_plan_id WHERE dp.project_id = ${p})`;
         await tx.$executeRaw`DELETE FROM generation_runs WHERE project_id = ${p}`;
+        await tx.$executeRaw`DELETE FROM delivery_modules WHERE delivery_plan_id IN (SELECT id FROM delivery_plans WHERE project_id = ${p})`;
+        await tx.$executeRaw`DELETE FROM deliveries WHERE delivery_plan_id IN (SELECT id FROM delivery_plans WHERE project_id = ${p})`;
+        await tx.$executeRaw`DELETE FROM delivery_plans WHERE project_id = ${p}`;
         await tx.$executeRaw`DELETE FROM dependency_proposals WHERE project_id = ${p}`;
 
         // Baselines
@@ -318,6 +323,7 @@ export class ProjectsService {
         await tx.$executeRaw`DELETE FROM structured_generation_jobs WHERE project_id = ${p}`;
         await tx.$executeRaw`DELETE FROM screen_design_exceptions WHERE project_id = ${p}`;
         await tx.$executeRaw`DELETE FROM screen_design_overrides WHERE project_id = ${p}`;
+        await tx.$executeRaw`DELETE FROM construction_unit_reviews WHERE project_id = ${p}`;
         await tx.$executeRaw`DELETE FROM design_baseline_entries WHERE baseline_id IN (SELECT id FROM design_baselines WHERE project_id = ${p})`;
         await tx.$executeRaw`DELETE FROM design_baselines WHERE project_id = ${p}`;
         await tx.$executeRaw`DELETE FROM project_baseline_entries WHERE baseline_id IN (SELECT id FROM project_baselines WHERE project_id = ${p})`;

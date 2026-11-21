@@ -5,7 +5,7 @@ import {
   type SandboxExecutionRequest,
 } from './sandbox-execution-provider';
 
-// Real Docker contract checks (AGENTS.md §44): opt-in with
+// Real Docker contract checks: opt-in with
 // CASEFLOW_SANDBOX_DOCKER_TESTS=1, never part of ordinary CI.
 const enabled = process.env.CASEFLOW_SANDBOX_DOCKER_TESTS === '1';
 const BIG = 'lockfile line\n'.repeat(20_000);

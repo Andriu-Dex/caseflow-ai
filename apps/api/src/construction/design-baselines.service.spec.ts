@@ -208,3 +208,81 @@ describe('DesignBaselinesService', () => {
     );
   });
 });
+
+// ADR-030: a conversation per generated screen.
+describe('screen design requests', () => {
+  function setup(rows: { id: string; instructions: string[]; note: string }[]) {
+    const stored = rows.map((row, index) => ({
+      ...row,
+      routePath: '/items',
+      createdAt: new Date(Date.UTC(2026, 0, index + 1)),
+      createdBy: { displayName: 'Ana' },
+    }));
+    const create = vi.fn(async ({ data }) => {
+      const row = {
+        ...data,
+        id: `r${stored.length + 1}`,
+        createdAt: new Date(Date.UTC(2026, 1, stored.length + 1)),
+        createdBy: { displayName: 'Ana' },
+      };
+      stored.push(row);
+      return row;
+    });
+    const prisma = {
+      projectMembership: { findFirst: vi.fn().mockResolvedValue({ id: 'm' }) },
+      screenDesignRequest: {
+        findMany: vi.fn(async () => [...stored]),
+        findFirst: vi.fn(async () => stored.at(-1) ?? null),
+      },
+      $transaction: vi.fn((callback) => callback({ screenDesignRequest: { create } })),
+    };
+    const audit = { record: vi.fn() };
+    const service = new DesignBaselinesService(prisma as never, audit as never, {} as never);
+    return { service, create, audit, prisma };
+  }
+
+  it('adds a request to the set in force and audits it', async () => {
+    const { service, create, audit } = setup([
+      { id: 'r1', instructions: ['Tabla arriba'], note: 'Tabla arriba' },
+    ]);
+    const { items } = await service.addScreenRequest('p1', 'u1', {
+      routePath: '/items',
+      instruction: 'Menos texto',
+    });
+    expect(create.mock.calls[0]![0].data.instructions).toEqual(['Tabla arriba', 'Menos texto']);
+    expect(audit.record.mock.calls[0]![0].action).toBe('SCREEN_DESIGN_REQUEST_RECORDED');
+    expect(items.map((item) => item.current)).toEqual([false, true]);
+  });
+
+  it('goes back by copying an earlier set, or to the mockup design with none', async () => {
+    const { service, create } = setup([
+      { id: 'r1', instructions: ['Tabla arriba'], note: 'Tabla arriba' },
+      { id: 'r2', instructions: ['Tabla arriba', 'Menos texto'], note: 'Menos texto' },
+    ]);
+    await service.restoreScreenRequest('p1', 'u1', { routePath: '/items', requestId: 'r1' });
+    expect(create.mock.calls[0]![0].data).toMatchObject({
+      instructions: ['Tabla arriba'],
+      note: 'Vuelta a la versión 1.',
+    });
+    await service.restoreScreenRequest('p1', 'u1', { routePath: '/items', requestId: null });
+    expect(create.mock.calls[1]![0].data).toMatchObject({
+      instructions: [],
+      note: 'Vuelta al diseño del boceto.',
+    });
+    await expect(
+      service.restoreScreenRequest('p1', 'u1', {
+        routePath: '/items',
+        requestId: '00000000-0000-4000-8000-000000000000',
+      }),
+    ).rejects.toThrow('No se encontró');
+  });
+
+  it('refuses people without permission to generate', async () => {
+    const { service, prisma, create } = setup([]);
+    prisma.projectMembership.findFirst.mockResolvedValue(null);
+    await expect(
+      service.addScreenRequest('p1', 'u1', { routePath: '/items', instruction: 'Menos texto' }),
+    ).rejects.toThrow('permisos');
+    expect(create).not.toHaveBeenCalled();
+  });
+});

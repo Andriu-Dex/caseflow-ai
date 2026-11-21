@@ -45,7 +45,7 @@ function detectOs(): Os {
   return platform.includes('mac') ? 'mac' : platform.includes('linux') ? 'linux' : 'windows';
 }
 
-// Construction validates generated code only inside Docker (§174). When it
+// Construction validates generated code only inside Docker. When it
 // is missing (typically the desktop edition), planning keeps working and this
 // assistant walks the user through installing it, then checks again.
 export function DockerSetupAssistant() {

@@ -39,6 +39,10 @@ function tsType(schema: Schema | undefined): string {
   else if (schema.type === 'boolean') base = 'boolean';
   else if (schema.type === 'string') base = 'string';
   else if (schema.type === 'object' && !schema.properties) base = 'Record<string, unknown>';
+  // An input with no fields (an action that only needs its path) is an empty
+  // object; `{}` would admit any value and fails the generated project's lint.
+  else if (schema.type === 'object' && !Object.keys(schema.properties ?? {}).length)
+    base = 'Record<string, never>';
   else if (schema.type === 'object')
     base = `{ ${Object.entries(schema.properties ?? {})
       .map(
@@ -55,6 +59,7 @@ function interfaceFor(name: string, schema: Schema): string {
   const props = Object.entries(schema.properties ?? {}).map(
     ([key, value]) => `  ${key}${required.has(key) ? '' : '?'}: ${tsType(value)};`,
   );
+  if (!props.length) return `export type ${name} = Record<string, never>;`;
   return `export interface ${name} {\n${props.join('\n')}\n}`;
 }
 

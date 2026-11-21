@@ -1,10 +1,13 @@
 import { z } from 'zod';
-import { implementationActionContractSchema } from './action-contract';
+import {
+  aiImplementationActionContractSchema,
+  implementationActionContractSchema,
+} from './action-contract';
 import { designThemeContentSchema } from './design-theme.contract';
 import { classDiagramContentSchema } from './class-diagram.contract';
 
 // Shared "structured content + candidate-first AI generation + optional
-// deterministic diagram" family (spec §13/§14/§15/§17). Each kind has its
+// deterministic diagram" family. Each kind has its
 // own content schema below; the generic envelope (version/provenance) is
 // identical across all kinds, mirroring the existing Data Model contract.
 
@@ -244,7 +247,7 @@ export const uiBlueprintContentSchema = z
   });
 export type UiBlueprintContent = z.output<typeof uiBlueprintContentSchema>;
 
-// ---- GENERATION_PLAN (spec §156) -------------------------------------------
+// ---- GENERATION_PLAN -------------------------------------------
 // "What system are we going to build?" — reviewed and approved before any
 // official code generation (DEC-090). Conceptual only: no physical types.
 const planModuleSchema = z
@@ -348,7 +351,7 @@ export const planDetailBatchOutputSchema = z
   })
   .strict();
 
-// ---- CONCEPTUAL_DOMAIN_MODEL (spec §157) ------------------------------------
+// ---- CONCEPTUAL_DOMAIN_MODEL ------------------------------------
 // Entities and relationships only. Deliberately not the physical model: no
 // column types or keys, which are decided after the Design Gate (DEC-096).
 export const CONCEPTUAL_CARDINALITIES = ['ONE_TO_ONE', 'ONE_TO_MANY', 'MANY_TO_MANY'] as const;
@@ -416,7 +419,7 @@ export const conceptualBatchOutputSchema = z
   })
   .strict();
 
-// ---- IMPLEMENTATION_PLAN (spec §161) ----------------------------------------
+// ---- IMPLEMENTATION_PLAN ----------------------------------------
 // "How exactly will the approved system be built?" Produced after the Design
 // Gate from an approved Design Baseline (DEC-095). It is also the logical and
 // physical data model and the API contract: the Prisma schema and OpenAPI
@@ -469,6 +472,9 @@ const implementationFieldSchema = z
     serverDefault: z
       .union([z.string().max(1000), z.number().int().min(-2147483648).max(2147483647), z.boolean()])
       .optional(),
+    // A server-managed field that starts, at creation, with the value of
+    // another field of the same record (available copies = total copies).
+    initialFrom: camelName().optional(),
     type: z.enum(IMPLEMENTATION_FIELD_TYPES),
     required: z.boolean().default(true),
     unique: z.boolean().default(false),
@@ -772,11 +778,13 @@ export const implementationPlanBodySchema = z
   .strict();
 
 export type ImplementationPlanBody = z.output<typeof implementationPlanBodySchema>;
+// What the AI is asked for: no disabledReason, and a contract it can answer
+// in strict mode.
+const aiImplementationEndpointSchema = implementationEndpointSchema
+  .omit({ disabledReason: true })
+  .extend({ contract: aiImplementationActionContractSchema.optional() });
 export const implementationPlanAIOutputSchema = implementationPlanBodySchema.extend({
-  customEndpoints: z
-    .array(implementationEndpointSchema.omit({ disabledReason: true }))
-    .max(100)
-    .default([]),
+  customEndpoints: z.array(aiImplementationEndpointSchema).max(100).default([]),
 });
 
 // DEC-144: the plan is drawn in stages. The skeleton gives the roles, modules
@@ -807,7 +815,19 @@ const looseRouteActionSchema = z
     label: text(200),
     operation: z.enum(IMPLEMENTATION_CRUD_OPERATIONS).optional(),
     endpoint: text(220).optional(),
-    navigation: routeNavigationSchema.optional(),
+    // Plain navigation only opens routePath: an identifier or collection
+    // field with no query to read them from has no use, and is dropped.
+    navigation: z
+      .preprocess(
+        (value) =>
+          value &&
+          typeof value === 'object' &&
+          !(value as { sourceEndpoint?: unknown }).sourceEndpoint
+            ? { ...value, idField: undefined, collectionField: undefined }
+            : value,
+        routeNavigationSchema,
+      )
+      .optional(),
     interaction: z.enum(IMPLEMENTATION_ROUTE_ACTION_INTERACTIONS).optional(),
   })
   .strict();
@@ -830,19 +850,13 @@ export const implementationActionsOutputSchema = z
       )
       .min(1)
       .max(40),
-    customEndpoints: z
-      .array(implementationEndpointSchema.omit({ disabledReason: true }))
-      .max(40)
-      .default([]),
+    customEndpoints: z.array(aiImplementationEndpointSchema).max(40).default([]),
   })
   .strict();
 export const implementationRoutesBatchOutputSchema = z
   .object({
     routes: z.array(looseRouteSchema).min(1).max(40),
-    customEndpoints: z
-      .array(implementationEndpointSchema.omit({ disabledReason: true }))
-      .max(40)
-      .default([]),
+    customEndpoints: z.array(aiImplementationEndpointSchema).max(40).default([]),
   })
   .strict();
 
@@ -867,6 +881,24 @@ export const implementationPlanContentSchema = implementationPlanBodySchema
         if (!roles.has(role)) issue(`El rol «${role}» no está declarado en autenticación.`, path);
     };
     value.entities.forEach((entity, i) => {
+      entity.fields.forEach((field, j) => {
+        if (field.initialFrom === undefined) return;
+        const source = entity.fields.find((item) => item.name === field.initialFrom);
+        if (
+          !field.readOnly ||
+          field.internal ||
+          field.serverDefault !== undefined ||
+          !source ||
+          source === field ||
+          source.readOnly ||
+          source.internal ||
+          source.type !== field.type
+        )
+          issue(
+            'El valor inicial de un campo de solo lectura debe tomarse de otro campo editable del mismo tipo.',
+            ['entities', i, 'fields', j, 'initialFrom'],
+          );
+      });
       if (entity.lifecycle) {
         const policy = entity.lifecycle;
         const state = entity.fields.find((field) => field.name === policy.stateField);

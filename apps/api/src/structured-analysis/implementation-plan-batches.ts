@@ -9,6 +9,8 @@ import {
   type UiBlueprintContent,
 } from '@caseflow-ai/contracts';
 import { conceptualCardinality, entityClasses } from './conceptual-model-batches';
+import { bindAuthenticationActions } from './implementation-plan-authentication';
+import { collectionPath } from '../code-generation/naming';
 
 // DEC-144: entity classes and screens per batch; an entity or a route carries
 // its fields or actions, so a batch of this size fits one response.
@@ -107,6 +109,29 @@ export function cleanSkeleton(
 // that does not exist refuses the batch). Anything else the plan checks across
 // the whole (module, roles, names, fields) is corrected here instead of
 // failing a long run.
+// The record's own identifier written as a field nobody fills, internal or
+// read-only with no starting value (bookIdentifier on Book, fineIdentifier on
+// LateFine): the generator already gives every record its id, and such a
+// required field would block creation.
+function ownIdentifier(
+  entityName: string,
+  field: {
+    name: string;
+    internal?: boolean;
+    readOnly?: boolean;
+    serverDefault?: unknown;
+    initialFrom?: string;
+  },
+) {
+  const match = /^(.*?)(?:Identifier|Id)$/.exec(field.name);
+  const unfilled =
+    field.internal ||
+    (field.readOnly && field.serverDefault === undefined && field.initialFrom === undefined);
+  if (!unfilled || !match) return false;
+  const prefix = match[1]!.toLowerCase();
+  return !prefix || entityName.toLowerCase().endsWith(prefix);
+}
+
 export function mergeEntityBatch(
   accumulated: IpEntity[],
   output: { entities: EntityDraft[] },
@@ -135,6 +160,7 @@ export function mergeEntityBatch(
       .filter((field) => {
         if ((IMPLEMENTATION_RESERVED_FIELDS as readonly string[]).includes(field.name))
           return false;
+        if (ownIdentifier(draft.name, field)) return false;
         if (fieldNames.has(field.name)) return false;
         fieldNames.add(field.name);
         return true;
@@ -145,7 +171,26 @@ export function mergeEntityBatch(
           : field.type !== 'ENUM' && field.enumValues.length
             ? { ...field, enumValues: [] }
             : field,
-      );
+      )
+      // An initial value the record cannot back (no such editable field of
+      // the same type) is dropped; the readiness check then reports the gap.
+      .map((field, _, all) => {
+        if (field.initialFrom === undefined) return field;
+        const source = all.find((item) => item.name === field.initialFrom);
+        const valid =
+          field.readOnly &&
+          !field.internal &&
+          field.serverDefault === undefined &&
+          source &&
+          source !== field &&
+          !source.readOnly &&
+          !source.internal &&
+          source.type === field.type;
+        if (valid) return field;
+        const { initialFrom: _dropped, ...rest } = field;
+        void _dropped;
+        return rest;
+      });
     if (!fields.length)
       fields.push({ name: 'name', type: 'STRING', required: true, unique: false, enumValues: [] });
     entities.push({
@@ -299,18 +344,190 @@ const endpointKey = (endpoint: Pick<IpEndpoint, 'method' | 'path'>) =>
 // camelCase names, so a trailing "id" is capitalised.
 export const camelParams = (value: string) =>
   value.replace(/([:[])([a-z][a-z0-9]*[a-z0-9])id(?![A-Za-z0-9])/g, '$1$2Id');
+const camelAction = <A extends LooseImplementationRoute['actions'][number]>(action: A): A => ({
+  ...action,
+  ...(action.endpoint ? { endpoint: camelParams(action.endpoint) } : {}),
+  ...(action.navigation
+    ? {
+        navigation: {
+          ...action.navigation,
+          routePath: camelParams(action.navigation.routePath),
+          ...(action.navigation.sourceEndpoint
+            ? { sourceEndpoint: camelParams(action.navigation.sourceEndpoint) }
+            : {}),
+        },
+      }
+    : {}),
+});
 
-// What serves an action: the operation when the entity offers it, else the
-// endpoint when it exists; null when neither does.
+// An action that creates a record of its own entity (POST) receives the
+// fields a person enters for it: required, neither read-only, internal nor
+// given by the server. A model may leave one out (a price), and nothing could
+// fill it. Records an action derives from its input (seats from a layout) are
+// left alone.
+function withCreatedFields(accumulated: RoutesAccumulated, entities: IpEntity[]) {
+  const byId = new Map(entities.map((entity) => [entity.localId, entity]));
+  return {
+    ...accumulated,
+    customEndpoints: accumulated.customEndpoints.map((endpoint) => {
+      const body = endpoint.contract?.body;
+      if (!body || body.type !== 'OBJECT' || endpoint.method !== 'POST') return endpoint;
+      const names = new Set((body.properties ?? []).map((property) => property.name));
+      const fields = (endpoint.dataAccess ?? [])
+        .filter(
+          (access) =>
+            access.entityLocalId === endpoint.entityLocalId && access.operations.includes('CREATE'),
+        )
+        .flatMap((access) => byId.get(access.entityLocalId)?.fields ?? []);
+      // An input the record stores as one of a set of values takes that set
+      // (a payment method given as free text would not fit the column).
+      const enums = new Map(
+        fields.filter((field) => field.type === 'ENUM').map((field) => [field.name, field]),
+      );
+      const properties = (body.properties ?? []).map((property) => {
+        const field = enums.get(property.name);
+        return field && property.value.type === 'STRING'
+          ? {
+              ...property,
+              value: { ...property.value, type: 'ENUM' as const, enumValues: field.enumValues },
+            }
+          : property;
+      });
+      const aligned = properties.some((property, index) => property !== body.properties![index]);
+      const missing = fields.filter(
+        (field) =>
+          field.required &&
+          !field.readOnly &&
+          !field.internal &&
+          field.serverDefault === undefined &&
+          !names.has(field.name) &&
+          (names.add(field.name), true),
+      );
+      if (!missing.length && !aligned) return endpoint;
+      return {
+        ...endpoint,
+        contract: {
+          ...endpoint.contract!,
+          body: {
+            ...body,
+            properties: [
+              ...properties,
+              ...missing.map((field) => ({
+                name: field.name,
+                required: true,
+                value: {
+                  type: field.type === 'TEXT' ? ('STRING' as const) : field.type,
+                  ...(field.description ? { description: field.description } : {}),
+                  ...(field.type === 'ENUM' ? { enumValues: field.enumValues } : {}),
+                },
+              })),
+            ],
+          },
+        },
+      };
+    }),
+  };
+}
+
+// A batch may refer to what another batch was to define. Once all are in, a
+// context query that is no GET endpoint with a contract is dropped, and so is
+// a navigation to a route nobody drew (its action is then settled like any
+// unserved one); a navigation whose result query cannot give the identifier
+// becomes a plain one.
+function dropDanglingReferences(accumulated: RoutesAccumulated): RoutesAccumulated {
+  const queries = new Map(
+    accumulated.customEndpoints
+      .filter((endpoint) => endpoint.method === 'GET' && endpoint.contract)
+      .map((endpoint) => [endpointKey(endpoint), endpoint]),
+  );
+  const paths = new Set(accumulated.routes.map((route) => route.path));
+  const gives = (navigation: NonNullable<IpRoute['actions'][number]['navigation']>) => {
+    const response = queries.get(navigation.sourceEndpoint ?? '')?.contract?.response;
+    const shape = navigation.collectionField
+      ? response?.properties?.find((field) => field.name === navigation.collectionField)?.value
+          .items
+      : response;
+    const id = shape?.properties?.find((field) => field.name === navigation.idField);
+    return (
+      id?.value.type === 'UUID' &&
+      id.required !== false &&
+      !id.value.nullable &&
+      navigation.routePath.split('[').length === 2
+    );
+  };
+  return {
+    // A write takes an input object and a read none, and the page a write
+    // opens on success must exist and get its identifier from the response.
+    customEndpoints: accumulated.customEndpoints.map((endpoint) => {
+      const contract = endpoint.contract;
+      if (!contract) return endpoint;
+      const writes = ['POST', 'PATCH', 'PUT'].includes(endpoint.method);
+      const next = contract.successNavigation;
+      const id = contract.response.properties?.find((field) => field.name === next?.idField);
+      const opens =
+        next &&
+        next.routePath.split('[').length === 2 &&
+        paths.has(next.routePath) &&
+        id &&
+        id.required !== false &&
+        !id.value.nullable &&
+        ['STRING', 'UUID'].includes(id.value.type);
+      const { body, successNavigation: _next, ...rest } = contract;
+      void _next;
+      return {
+        ...endpoint,
+        contract: {
+          ...rest,
+          ...(writes ? { body: body ?? { type: 'OBJECT' as const, properties: [] } } : {}),
+          ...(opens ? { successNavigation: next } : {}),
+        },
+      };
+    }),
+    routes: accumulated.routes.map((route) => {
+      const contextQueries = route.contextQueries?.filter((query) => queries.has(query));
+      const read = new Set([
+        ...(contextQueries ?? []),
+        ...route.actions.flatMap((action) => (action.endpoint ? [action.endpoint] : [])),
+      ]);
+      return {
+        ...route,
+        contextQueries: contextQueries?.length ? contextQueries : undefined,
+        actions: route.actions.flatMap((action): IpRoute['actions'] => {
+          const navigation = action.navigation;
+          if (!navigation) return [action];
+          if (!paths.has(navigation.routePath)) return [];
+          if (
+            navigation.sourceEndpoint &&
+            !(read.has(navigation.sourceEndpoint) && gives(navigation))
+          )
+            return [{ label: action.label, navigation: { routePath: navigation.routePath } }];
+          return [action];
+        }),
+      };
+    }),
+  };
+}
+
+// What serves an action: the endpoint when it exists, else the route it opens
+// (finishRoutes checks the route exists once every batch is in), else the
+// operation when the entity offers it; null when none does. A strict answer
+// fills every key, so an operation next to an endpoint or a navigation is
+// usually filler: the more specific choice wins.
 function serveAction(
-  action: { label: string; operation?: IpEntity['operations'][number]; endpoint?: string },
+  action: {
+    label: string;
+    operation?: IpEntity['operations'][number];
+    endpoint?: string;
+    navigation?: IpRoute['actions'][number]['navigation'];
+  },
   entity: IpEntity | undefined,
   endpointKeys: Set<string>,
 ): IpRoute['actions'][number] | null {
-  if (action.operation && entity?.operations.includes(action.operation))
-    return { label: action.label, operation: action.operation };
   if (action.endpoint && endpointKeys.has(action.endpoint))
     return { label: action.label, endpoint: action.endpoint };
+  if (action.navigation) return { label: action.label, navigation: action.navigation };
+  if (action.operation && entity?.operations.includes(action.operation))
+    return { label: action.label, operation: action.operation };
   return null;
 }
 
@@ -326,10 +543,8 @@ export function mergeRouteBatch(
     routes: output.routes.map((route) => ({
       ...route,
       path: camelParams(route.path),
-      actions: route.actions.map((action) => ({
-        ...action,
-        ...(action.endpoint ? { endpoint: camelParams(action.endpoint) } : {}),
-      })),
+      ...(route.contextQueries ? { contextQueries: route.contextQueries.map(camelParams) } : {}),
+      actions: route.actions.map(camelAction),
     })),
     customEndpoints: output.customEndpoints.map((endpoint) => ({
       ...endpoint,
@@ -347,6 +562,9 @@ export function mergeRouteBatch(
     endpointKeys.add(endpointKey(endpoint));
     endpoints.push({
       ...endpoint,
+      // Built-in operations and views belong to local authentication, which a
+      // batch does not define; a strict answer fills these keys anyway.
+      builtin: undefined,
       moduleLocalId: context.moduleIds.has(endpoint.moduleLocalId)
         ? endpoint.moduleLocalId
         : firstModule,
@@ -362,7 +580,9 @@ export function mergeRouteBatch(
   const done = new Set(routes.map((route) => route.screenLocalId));
   for (const route of output.routes) {
     const screen = route.screenLocalId ? screens.get(route.screenLocalId) : undefined;
-    if (!route.screenLocalId) invalid('Una ruta no indica la pantalla del plano que muestra.');
+    // A route of no screen (often one the model adds, such as sign-out) is
+    // skipped; a screen it left without a route is asked for again.
+    if (!route.screenLocalId) continue;
     if (!screen) {
       if (allScreenIds.has(route.screenLocalId!) && done.has(route.screenLocalId)) continue;
       invalid('Una ruta muestra una pantalla que no es de este lote.');
@@ -382,7 +602,9 @@ export function mergeRouteBatch(
     }
     routes.push({
       ...route,
-      path: unique(route.path, paths, '-'),
+      builtinView: undefined,
+      // A path ending in a parameter takes the suffix as its own segment.
+      path: unique(route.path, paths, route.path.endsWith(']') ? '/' : '-'),
       moduleLocalId: context.moduleIds.has(route.moduleLocalId)
         ? route.moduleLocalId
         : (entity?.moduleLocalId ?? firstModule),
@@ -442,13 +664,7 @@ export function mergeActionBatch(
   const screenById = new Map(screens.map((screen) => [screen.localId, screen]));
   output = {
     ...output,
-    routes: output.routes.map((route) => ({
-      ...route,
-      actions: route.actions.map((action) => ({
-        ...action,
-        ...(action.endpoint ? { endpoint: camelParams(action.endpoint) } : {}),
-      })),
-    })),
+    routes: output.routes.map((route) => ({ ...route, actions: route.actions.map(camelAction) })),
   };
   const withEndpoints = mergeRouteBatch(
     accumulated,
@@ -529,6 +745,10 @@ export function finishRoutes(
   entities: IpEntity[],
   roles: string[] = [],
 ): RoutesAccumulated {
+  accumulated = withCreatedFields(
+    dropDanglingReferences(bindAuthenticationActions(accumulated)),
+    entities,
+  );
   const entityById = new Map(entities.map((entity) => [entity.localId, entity]));
   const screenById = new Map(screens.map((screen) => [screen.localId, screen]));
   const routes = accumulated.routes.map((route) => {
@@ -585,7 +805,13 @@ export function finishRoutes(
     }
     return extra.length ? { ...route, actions: [...route.actions, ...extra] } : route;
   });
-  const used = new Set(served.flatMap((route) => route.actions.map((a) => a.endpoint)));
+  // An endpoint is kept when an action, a context query or a navigation reads it.
+  const used = new Set(
+    served.flatMap((route) => [
+      ...(route.contextQueries ?? []),
+      ...route.actions.flatMap((a) => [a.endpoint, a.navigation?.sourceEndpoint]),
+    ]),
+  );
   return {
     routes: served,
     customEndpoints: endpoints.filter((endpoint) => used.has(endpointKey(endpoint))),
@@ -654,16 +880,169 @@ export function fillProvenance(
   };
 }
 
+// With local authentication, creating an account is the template's own
+// operation: it stores the password as a protected hash. A business action
+// the model drew for it (a POST that creates the account) would leave that to
+// generated code, so its screens use the account's CREATE instead.
+function withTemplateAccountCreation(
+  skeleton: ImplementationSkeleton,
+  entities: IpEntity[],
+  routes: RoutesAccumulated,
+): { entities: IpEntity[]; routes: RoutesAccumulated } {
+  const account = skeleton.authentication.local?.userEntityLocalId;
+  if (!account) return { entities, routes };
+  const replaced = new Set(
+    routes.customEndpoints
+      .filter(
+        (endpoint) =>
+          !endpoint.builtin &&
+          endpoint.method === 'POST' &&
+          (endpoint.dataAccess?.some(
+            (access) => access.entityLocalId === account && access.operations.includes('CREATE'),
+          ) ||
+            (endpoint.entityLocalId === account && !endpoint.path.includes(':'))),
+      )
+      .map((endpoint) => `${endpoint.method} ${endpoint.path}`),
+  );
+  if (!replaced.size) return { entities, routes };
+  return {
+    entities: entities.map((entity) =>
+      entity.localId === account && !entity.operations.includes('CREATE')
+        ? { ...entity, operations: [...entity.operations, 'CREATE'] }
+        : entity,
+    ),
+    routes: {
+      customEndpoints: routes.customEndpoints.filter(
+        (endpoint) => !replaced.has(`${endpoint.method} ${endpoint.path}`),
+      ),
+      routes: routes.routes.map((route) =>
+        route.actions.some((action) => action.endpoint && replaced.has(action.endpoint))
+          ? {
+              ...route,
+              entityLocalId: account,
+              actions: route.actions.map((action) =>
+                action.endpoint && replaced.has(action.endpoint)
+                  ? { label: action.label, operation: 'CREATE' as const }
+                  : action,
+              ),
+            }
+          : route,
+      ),
+    },
+  };
+}
+
+// A read-only required field of a record people create needs a value the
+// server gives at creation: a state starts at its lifecycle's initial state
+// and a flag starts false. Nothing else is guessed; the readiness check asks
+// a person to decide.
+function withInitialValues(entity: IpEntity): IpEntity {
+  const fields = entity.fields.map((field) => {
+    if (!field.readOnly || !field.required || field.serverDefault !== undefined) return field;
+    // Only the lifecycle says which state is the starting one; guessing
+    // another value could start a record in a privileged state.
+    if (
+      field.type === 'ENUM' &&
+      entity.lifecycle?.stateField === field.name &&
+      field.enumValues.includes(entity.lifecycle.initialState)
+    )
+      return { ...field, serverDefault: entity.lifecycle.initialState };
+    if (field.type === 'BOOLEAN') return { ...field, serverDefault: false };
+    // Anything else stays server-managed and the readiness check reports it:
+    // making it writable would let any editor set it directly.
+    return field;
+  });
+  return fields.some((field, i) => field !== entity.fields[i]) ? { ...entity, fields } : entity;
+}
+
+// What the model sets that the rest of the plan cannot back: a cross-scope
+// read in a plan with no operation scope, and a contract reference to an
+// entity no one can list (no options to show it by name). Both are dropped,
+// leaving the endpoint and a plain identifier.
+function cleanEndpoints(
+  endpoints: RoutesAccumulated['customEndpoints'],
+  entities: IpEntity[],
+  skeleton: ImplementationSkeleton,
+): RoutesAccumulated['customEndpoints'] {
+  const listable = new Set(
+    entities.filter((entity) => entity.operations.includes('LIST')).map((entity) => entity.localId),
+  );
+  const strip = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(strip);
+    if (!node || typeof node !== 'object') return node;
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(node))
+      if (!(key === 'referenceEntityLocalId' && !listable.has(value as string)))
+        out[key] = strip(value);
+    return out;
+  };
+  return endpoints.map((endpoint) => {
+    const { scopeAccess, ...rest } = endpoint;
+    return {
+      ...(skeleton.authentication.local?.scope && scopeAccess ? { ...rest, scopeAccess } : rest),
+      ...(endpoint.contract
+        ? { contract: strip(endpoint.contract) as typeof endpoint.contract }
+        : {}),
+    } as typeof endpoint;
+  });
+}
+
 export function finishImplementationPlan(
   skeleton: ImplementationSkeleton,
   entities: IpEntity[],
   routes: RoutesAccumulated,
   designBaselineId: string,
 ): ImplementationPlanBody {
+  ({ entities, routes } = withTemplateAccountCreation(skeleton, entities, routes));
+  // The CRUD operations some screen uses, as `entity:operation`.
+  const used = new Set(
+    routes.routes.flatMap((route) =>
+      route.actions.flatMap((action) =>
+        route.entityLocalId && action.operation
+          ? [`${route.entityLocalId}:${action.operation}`]
+          : [],
+      ),
+    ),
+  );
+  // Where each CRUD operation is served, as the generated API exposes it.
+  const crud: Record<IpEntity['operations'][number], [string, boolean]> = {
+    LIST: ['GET', false],
+    CREATE: ['POST', false],
+    GET: ['GET', true],
+    UPDATE: ['PATCH', true],
+    DELETE: ['DELETE', true],
+  };
+  const signature = (method: string, path: string) =>
+    `${method} ${path.replace(/:[a-zA-Z0-9]+/g, '{}')}`;
+  const custom = new Set(routes.customEndpoints.map((e) => signature(e.method, e.path)));
+  entities = entities.map((entity) => {
+    const base = collectionPath(entity.name);
+    const operations = entity.operations.filter((operation) => {
+      if (used.has(`${entity.localId}:${operation}`)) return true;
+      // A record with a required read-only field the server gives no value (an
+      // amount or a date its business action computes) is created only by that
+      // action: a generic CREATE no screen uses could not fill it.
+      if (
+        operation === 'CREATE' &&
+        entity.localId !== skeleton.authentication.local?.userEntityLocalId &&
+        entity.fields.some(
+          (field) => field.readOnly && field.required && field.serverDefault === undefined,
+        )
+      )
+        return false;
+      // A business endpoint at the same method and path (a delete with its own
+      // rule) replaces the generic operation no screen uses.
+      const [method, item] = crud[operation];
+      return !custom.has(signature(method, item ? `${base}/:id` : base));
+    });
+    const kept =
+      operations.length === entity.operations.length ? entity : { ...entity, operations };
+    return operations.includes('CREATE') ? withInitialValues(kept) : kept;
+  });
   const body = {
     ...skeleton,
     entities,
-    customEndpoints: routes.customEndpoints,
+    customEndpoints: cleanEndpoints(routes.customEndpoints, entities, skeleton),
     routes: routes.routes,
     tests: derivedTests(skeleton.modules, routes.routes),
   };

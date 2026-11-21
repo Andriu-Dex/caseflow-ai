@@ -73,7 +73,39 @@ const base = z
   })
   .strict();
 
-function boundedValue(depth: number): z.ZodType<ActionValueDefinition> {
+// The keys each value type can carry. A strict json_schema answer lists every
+// key, and a model may fill one that its type cannot use (a table layout on a
+// text, a length on an object) instead of leaving it null.
+const KEYS_BY_TYPE: Record<string, readonly string[]> = {
+  minLength: ['STRING'],
+  maxLength: ['STRING'],
+  minimum: ['INT'],
+  maximum: ['INT'],
+  enumValues: ['ENUM'],
+  referenceEntityLocalId: ['UUID'],
+  properties: ['OBJECT'],
+  items: ['ARRAY'],
+  minItems: ['ARRAY'],
+  maxItems: ['ARRAY'],
+  maxBytes: ['FILE'],
+  mimeTypes: ['FILE'],
+};
+export function withoutInapplicableKeys(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const item = { ...(value as Record<string, unknown>) };
+  const type = item.type;
+  if (typeof type !== 'string') return value;
+  for (const [key, types] of Object.entries(KEYS_BY_TYPE))
+    if (!types.includes(type)) delete item[key];
+  const items = item.items as { type?: unknown } | undefined;
+  if (type !== 'ARRAY' || items?.type !== 'OBJECT') {
+    delete item.collectionLayout;
+    delete item.groupBy;
+  }
+  return item;
+}
+
+function boundedValue(depth: number, forAI = false): z.ZodType<ActionValueDefinition> {
   const schema = depth
     ? base
         .extend({
@@ -86,17 +118,21 @@ function boundedValue(depth: number): z.ZodType<ActionValueDefinition> {
                     .regex(/^[a-z][a-zA-Z0-9]*$/)
                     .max(60),
                   required: z.boolean().optional(),
-                  value: boundedValue(depth - 1),
+                  value: boundedValue(depth - 1, forAI),
                 })
                 .strict(),
             )
             .max(50)
             .optional(),
-          items: boundedValue(depth - 1).optional(),
+          items: boundedValue(depth - 1, forAI).optional(),
         })
         .strict()
-    : base;
-  return schema.superRefine((value, ctx) => {
+    : forAI
+      ? // At the last level a list or an object has no room for its contents:
+        // the AI is offered only the types that need none.
+        base.extend({ type: base.shape.type.exclude(['OBJECT', 'ARRAY']) })
+      : base;
+  const refined = schema.superRefine((value, ctx) => {
     const item = value as ActionValueDefinition;
     const fail = (message: string) => ctx.addIssue({ code: 'custom', message });
     if (
@@ -155,74 +191,90 @@ function boundedValue(depth: number): z.ZodType<ActionValueDefinition> {
       if (min !== undefined && max !== undefined && min > max)
         fail('El límite mínimo no puede superar al máximo.');
   });
+  return forAI
+    ? (z.preprocess(
+        withoutInapplicableKeys,
+        refined,
+      ) as unknown as z.ZodType<ActionValueDefinition>)
+    : refined;
 }
 
 export const actionValueDefinitionSchema = boundedValue(4);
-export const implementationActionContractSchema = z
-  .object({
-    bindings: z
-      .array(
-        z.discriminatedUnion('kind', [
-          z
-            .object({
-              kind: z.enum(['ACTION', 'PREFILL']),
-              field: z.string().regex(/^[a-z][a-zA-Z0-9]*$/),
-              sourceEndpoint: z.string().max(220),
-              sourceField: z.string().regex(/^[a-z][a-zA-Z0-9]*$/),
-              requireTrue: z
-                .string()
-                .regex(/^[a-z][a-zA-Z0-9]*$/)
-                .optional(),
-            })
-            .strict(),
-          z
-            .object({ kind: z.literal('UUID'), field: z.string().regex(/^[a-z][a-zA-Z0-9]*$/) })
-            .strict(),
-        ]),
-      )
-      .max(20)
-      .optional(),
-    successNavigation: z
-      .object({ routePath: z.string().max(200), idField: z.string().regex(/^[a-z][a-zA-Z0-9]*$/) })
-      .strict()
-      .optional(),
-    body: actionValueDefinitionSchema.optional(),
-    query: actionValueDefinitionSchema.optional(),
-    response: actionValueDefinitionSchema,
-  })
-  .strict()
-  .superRefine((contract, ctx) => {
-    const bindings = contract.bindings ?? [];
-    if (new Set(bindings.map((binding) => binding.field)).size !== bindings.length)
-      ctx.addIssue({
-        code: 'custom',
-        message: 'Cada campo solo puede tener un enlace de entrada.',
-        path: ['bindings'],
-      });
-    for (const binding of bindings) {
-      const field = contract.body?.properties?.find((field) => field.name === binding.field);
-      if (!field || (binding.kind === 'UUID' && field.value.type !== 'UUID'))
+const actionContract = (valueDefinition: z.ZodType<ActionValueDefinition>) =>
+  z
+    .object({
+      bindings: z
+        .array(
+          z.discriminatedUnion('kind', [
+            z
+              .object({
+                kind: z.enum(['ACTION', 'PREFILL']),
+                field: z.string().regex(/^[a-z][a-zA-Z0-9]*$/),
+                sourceEndpoint: z.string().max(220),
+                sourceField: z.string().regex(/^[a-z][a-zA-Z0-9]*$/),
+                requireTrue: z
+                  .string()
+                  .regex(/^[a-z][a-zA-Z0-9]*$/)
+                  .optional(),
+              })
+              .strict(),
+            z
+              .object({ kind: z.literal('UUID'), field: z.string().regex(/^[a-z][a-zA-Z0-9]*$/) })
+              .strict(),
+          ]),
+        )
+        .max(20)
+        .optional(),
+      successNavigation: z
+        .object({
+          routePath: z.string().max(200),
+          idField: z.string().regex(/^[a-z][a-zA-Z0-9]*$/),
+        })
+        .strict()
+        .optional(),
+      body: valueDefinition.optional(),
+      query: valueDefinition.optional(),
+      response: valueDefinition,
+    })
+    .strict()
+    .superRefine((contract, ctx) => {
+      const bindings = contract.bindings ?? [];
+      if (new Set(bindings.map((binding) => binding.field)).size !== bindings.length)
         ctx.addIssue({
           code: 'custom',
-          message: 'El enlace debe coincidir con un campo de entrada.',
+          message: 'Cada campo solo puede tener un enlace de entrada.',
           path: ['bindings'],
         });
-    }
-    for (const key of ['body', 'query'] as const)
-      if (contract[key] && (contract[key]!.type !== 'OBJECT' || contract[key]!.nullable))
+      for (const binding of bindings) {
+        const field = contract.body?.properties?.find((field) => field.name === binding.field);
+        if (!field || (binding.kind === 'UUID' && field.value.type !== 'UUID'))
+          ctx.addIssue({
+            code: 'custom',
+            message: 'El enlace debe coincidir con un campo de entrada.',
+            path: ['bindings'],
+          });
+      }
+      for (const key of ['body', 'query'] as const)
+        if (contract[key] && (contract[key]!.type !== 'OBJECT' || contract[key]!.nullable))
+          ctx.addIssue({
+            code: 'custom',
+            message: 'La entrada debe ser un objeto no nulo.',
+            path: [key],
+          });
+      if (
+        contract.query?.properties?.some(
+          (field) => ['OBJECT', 'ARRAY', 'FILE'].includes(field.value.type) || field.value.nullable,
+        )
+      )
         ctx.addIssue({
           code: 'custom',
-          message: 'La entrada debe ser un objeto no nulo.',
-          path: [key],
+          message: 'Los filtros de consulta deben ser valores escalares no nulos.',
+          path: ['query'],
         });
-    if (
-      contract.query?.properties?.some(
-        (field) => ['OBJECT', 'ARRAY', 'FILE'].includes(field.value.type) || field.value.nullable,
-      )
-    )
-      ctx.addIssue({
-        code: 'custom',
-        message: 'Los filtros de consulta deben ser valores escalares no nulos.',
-        path: ['query'],
-      });
-  });
+    });
+export const implementationActionContractSchema = actionContract(actionValueDefinitionSchema);
+// Strict json_schema allows at most 10 levels of object nesting: inside an
+// endpoint of a plan answer, four levels of values reach 12. What the AI is
+// asked for is one level shallower; what it returns still validates against
+// the canonical contract.
+export const aiImplementationActionContractSchema = actionContract(boundedValue(3, true));

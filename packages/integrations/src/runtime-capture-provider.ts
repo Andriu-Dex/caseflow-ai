@@ -63,8 +63,9 @@ export function captureTimeouts(environment: Record<string, string | undefined>)
   };
   return {
     buildMs: bounded('CASEFLOW_BUILD_TIMEOUT', 600_000, 1_000, 600_000),
-    runtimeSeconds: bounded('CASEFLOW_CAPTURE_TIMEOUT', 240, 1, 720),
-    browserMs: bounded('CASEFLOW_BROWSER_TIMEOUT', 180_000, 1_000, 600_000),
+    // ADR-027: the application also loads demo data and runs each acceptance operation.
+    runtimeSeconds: bounded('CASEFLOW_CAPTURE_TIMEOUT', 420, 1, 720),
+    browserMs: bounded('CASEFLOW_BROWSER_TIMEOUT', 360_000, 1_000, 600_000),
   };
 }
 
@@ -75,8 +76,25 @@ export function createCaptureSessionToken(role: string, secret: string, now = Da
   return `${content}.${createHmac('sha256', secret).update(content).digest('base64url')}`;
 }
 
-type Runner = (args: string[], timeoutMs: number, signal?: AbortSignal) => Promise<string>;
-const runDocker: Runner = (args, timeoutMs, signal) =>
+// The browser image screenshots and mockup pages are rendered in (DEC-152, DEC-167).
+export const CAPTURE_BROWSER_IMAGE = 'caseflow-runtime-capture-browser:1.55.0-v2';
+export const CAPTURE_BROWSER_DOCKERFILE =
+  'FROM mcr.microsoft.com/playwright:v1.55.0-noble\nWORKDIR /opt/capture\nRUN npm install --ignore-scripts --no-audit --no-fund @playwright/test@1.55.0 && mkdir /opt/capture/run && chown pwuser /opt/capture/run\n';
+export const CAPTURE_HARDENING = [
+  '--cap-drop=ALL',
+  '--security-opt=no-new-privileges',
+  '--pids-limit=256',
+  '--memory=3g',
+  '--cpus=2',
+];
+
+export type DockerRunner = (
+  args: string[],
+  timeoutMs: number,
+  signal?: AbortSignal,
+) => Promise<string>;
+type Runner = DockerRunner;
+export const runDocker: Runner = (args, timeoutMs, signal) =>
   new Promise((resolve, reject) => {
     const child = spawn('docker', args, {
       windowsHide: true,
@@ -239,6 +257,14 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider, E2E
         file.path === 'docs/auth-profile.json' &&
         JSON.parse(file.content).profile === 'LOCAL_AUTH_SESSION_V1',
     );
+    // ADR-027: the demonstration data the deployment loads, so the screens and
+    // the acceptance operations work on real records. Records that break a
+    // rule are skipped by the script itself; a failure does not stop the run.
+    const seedDemoData = request.files.some(
+      (file) => file.path === 'apps/api/src/seed/demo-data.ts',
+    )
+      ? "node apps/api/dist/seed/demo-data.js || echo 'Demo data could not be loaded.'; "
+      : '';
     const prefix = `caseflow-capture-${randomUUID()}`;
     const jwtSecret = randomUUID();
     const network = `${prefix}-net`;
@@ -261,15 +287,9 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider, E2E
       if (remaining <= 0) throw new Error('Capture deadline exceeded.');
       return this.docker(args, Math.min(timeout, remaining), request.signal);
     };
-    const hardened = [
-      '--cap-drop=ALL',
-      '--security-opt=no-new-privileges',
-      '--pids-limit=256',
-      '--memory=3g',
-      '--cpus=2',
-    ];
+    const hardened = CAPTURE_HARDENING;
     const nodeImage = 'caseflow-runtime-capture-node:24-pnpm11.27.0-v1';
-    const browserImage = 'caseflow-runtime-capture-browser:1.55.0-v2';
+    const browserImage = CAPTURE_BROWSER_IMAGE;
     try {
       await command(['info', '--format', '{{.ServerVersion}}'], 10_000);
       await Promise.all([mkdir(source), mkdir(dependencies), mkdir(controller), mkdir(output)]);
@@ -295,10 +315,7 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider, E2E
         join(controller, 'Dockerfile.node'),
         'FROM node:24-bookworm\nRUN npm install --global pnpm@11.27.0\nWORKDIR /app\n',
       );
-      await writeFile(
-        join(controller, 'Dockerfile.browser'),
-        'FROM mcr.microsoft.com/playwright:v1.55.0-noble\nWORKDIR /opt/capture\nRUN npm install --ignore-scripts --no-audit --no-fund @playwright/test@1.55.0 && mkdir /opt/capture/run && chown pwuser /opt/capture/run\n',
-      );
+      await writeFile(join(controller, 'Dockerfile.browser'), CAPTURE_BROWSER_DOCKERFILE);
       // Like sandbox validation, reuse the versioned controller toolchain.
       // No generated code is ever included in the image build context.
       for (const [tag, dockerfile, timeout] of [
@@ -449,7 +466,7 @@ export class DockerRuntimeCaptureProvider implements RuntimeCaptureProvider, E2E
         String(timeouts.runtimeSeconds),
         'sh',
         '-ec',
-        `pnpm --filter ./apps/api exec prisma db push; ${localSessions ? 'node apps/api/dist/auth/capture-fixtures.js > /app/.capture-sessions.json; ' : ''}node apps/api/dist/main.js & pnpm --filter ./apps/web start & wait`,
+        `pnpm --filter ./apps/api exec prisma db push; ${localSessions ? 'node apps/api/dist/auth/capture-fixtures.js > /app/.capture-sessions.json; ' : ''}${seedDemoData}node apps/api/dist/main.js & pnpm --filter ./apps/web start & wait`,
       ]);
       let sessionTokens: Record<string, string> = {};
       if (localSessions) {

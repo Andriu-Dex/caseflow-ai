@@ -1,5 +1,6 @@
 'use client';
 
+import { ProjectTechnologies } from '../../../components/project-technologies';
 import { RequireActiveProject } from '../../../components/query-state';
 import { StructuredKindPage } from '../../../components/structured-kind-page';
 
@@ -12,6 +13,7 @@ export default function GenerationPlanPage() {
             kind="GENERATION_PLAN"
             title="Plan de generación"
             projectId={projectId}
+            intro={<ProjectTechnologies />}
           />
         </div>
       )}

@@ -15,7 +15,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('sonner', () => ({ toast: { warning: (...args: unknown[]) => mocks.warning(...args) } }));
 
-vi.mock('next/navigation', () => ({ usePathname: () => '/' }));
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/',
+  useRouter: () => ({ push: vi.fn() }),
+}));
 
 vi.mock('../lib/api', () => ({
   api: {
@@ -217,7 +220,7 @@ describe('AppShell — Entregables group', () => {
     await screen.findByRole('link', { name: /Trazabilidad/ });
     expect(screen.getByText('Entregables')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Preparación / Exportar' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Líneas Base' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Líneas base' })).toBeInTheDocument();
   });
 });
 

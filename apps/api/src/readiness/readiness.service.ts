@@ -32,6 +32,16 @@ function stage(
   };
 }
 
+// Construction artifacts are fixed inside Construction, so their issues must
+// not lock the planning gate that leads there.
+const CONSTRUCTION_TYPES = new Set([
+  'CONCEPTUAL_DOMAIN_MODEL',
+  'GENERATION_PLAN',
+  'IMPLEMENTATION_PLAN',
+]);
+export const blocksPlanning = (issue: { severity: string; artifactType?: string | null }) =>
+  issue.severity === 'ERROR' && !CONSTRUCTION_TYPES.has(issue.artifactType ?? '');
+
 @Injectable()
 export class ReadinessService {
   constructor(
@@ -194,9 +204,7 @@ export class ReadinessService {
     }
     const blockers = stages.flatMap((s) => s.blockers);
     const warnings = stages.flatMap((s) => s.warnings);
-    const ready =
-      stages.every((s) => s.satisfied) &&
-      !consistencyIssues.some((issue) => issue.severity === 'ERROR');
+    const ready = stages.every((s) => s.satisfied) && !consistencyIssues.some(blocksPlanning);
 
     return { ready, stages, blockers, warnings };
   }
@@ -396,7 +404,7 @@ export class ReadinessService {
         contextItemsTotal: mandatory.length,
       },
       blockers,
-      // Quality findings are advisory (spec §4.3): they never block readiness.
+      // Quality findings are advisory: they never block readiness.
       warnings: [
         ...(strict ? [] : coverageMessages),
         ...(quality?.issues.map((i) => `${i.code}: ${i.message}`) ?? []),
@@ -441,7 +449,7 @@ export class ReadinessService {
   }
 
   // Use Case Diagram is a deterministic SYSTEM_GENERATED artifact with no
-  // approval capability of its own (spec §6.3/established policy): existence
+  // approval capability of its own (established policy): existence
   // plus relevant sourcing to the currently-approved Use Cases is what
   // satisfies this stage, not an APPROVED status that the artifact can never
   // reach.

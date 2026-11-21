@@ -17,6 +17,15 @@ import { STORAGE_PROVIDER } from '../sources/storage-provider.token';
 import { AutoRepairService } from './auto-repair.service';
 import { BusinessLogicService } from './business-logic.service';
 import { DeploymentsController } from './deployments.controller';
+import { DeliveriesController } from './deliveries.controller';
+import { AcceptanceController } from './acceptance.controller';
+import { AcceptanceService } from './acceptance.service';
+import { ImplementationTraceController } from './implementation-trace.controller';
+import { ImplementationTraceService } from './implementation-trace.service';
+import { ReleaseNotesController } from './release-notes.controller';
+import { ReleaseNotesService } from './release-notes.service';
+import { TechnicalHandoverService } from './technical-handover.service';
+import { DeliveriesService } from './deliveries.service';
 import { DeploymentsService } from './deployments.service';
 import {
   DependencyProposalsController,
@@ -25,7 +34,10 @@ import {
 import { CONSTRUCTION_QUEUE_TOKEN } from './construction-queue.token';
 import { DependencyCatalogService } from './dependency-catalog.service';
 import { DependencyProposalsService } from './dependency-proposals.service';
-import { DesignBaselinesController } from './design-baselines.controller';
+import {
+  DesignBaselinesController,
+  ScreenDesignRequestsController,
+} from './design-baselines.controller';
 import { DesignBaselinesService } from './design-baselines.service';
 import { GeneratedProjectSnapshotsService } from './generated-project-snapshots.service';
 import {
@@ -71,6 +83,7 @@ import { UserManualsController } from '../user-manuals/user-manuals.controller';
     TargetTemplatesController,
     DependencyProposalsController,
     DesignBaselinesController,
+    ScreenDesignRequestsController,
     GenerationRunsController,
     GeneratedProjectSnapshotsController,
     InternalConstructionJobsController,
@@ -78,12 +91,21 @@ import { UserManualsController } from '../user-manuals/user-manuals.controller';
     SandboxStatusController,
     UserManualsController,
     DeploymentsController,
+    DeliveriesController,
+    AcceptanceController,
+    ImplementationTraceController,
+    ReleaseNotesController,
   ],
   providers: [
     { provide: RUNTIME_CAPTURE_PROVIDER, useFactory: () => new DockerRuntimeCaptureProvider() },
     { provide: E2E_TEST_PROVIDER, useFactory: () => new DockerRuntimeCaptureProvider() },
     { provide: DEPLOYMENT_PROVIDER, useFactory: () => new DockerTunnelDeploymentProvider() },
     DeploymentsService,
+    DeliveriesService,
+    AcceptanceService,
+    ImplementationTraceService,
+    ReleaseNotesService,
+    TechnicalHandoverService,
     InterruptedJobsRecovery,
     UserManualsService,
     DependencyCatalogService,

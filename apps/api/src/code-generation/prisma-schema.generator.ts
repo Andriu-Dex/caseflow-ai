@@ -12,7 +12,7 @@ type Entity = ImplementationPlanContent['entities'][number];
 type Field = Entity['fields'][number];
 
 // Deterministic Implementation Plan -> Prisma schema for the generated project
-// (AGENTS.md §18: persistence boilerplate is templated, never AI-written).
+// (never AI-written).
 // Conventions: every model gets a UUID id and created/updated timestamps; FK
 // relations restrict deletes; database names are snake_case.
 

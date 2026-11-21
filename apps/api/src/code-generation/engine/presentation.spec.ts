@@ -1,3 +1,4 @@
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import {
   applyPresentation,
@@ -259,6 +260,52 @@ describe('approved presentation compiler', () => {
   });
 });
 
+describe('application frame (ADR-028)', () => {
+  it('draws a dark sidebar grouped by module, in the project tones, as valid TSX', () => {
+    const files: GeneratedProjectFile[] = [
+      {
+        path: 'apps/web/app/layout.tsx',
+        origin: 'TEMPLATE',
+        kind: 'SOURCE',
+        planElements: [],
+        content: `import { AppNav } from '../components/app-nav'; export default function Root({children}: {children: React.ReactNode}) { return <html><body><div><aside><AppNav /></aside><main>{children}</main></div></body></html>; }`,
+      },
+      {
+        path: 'apps/web/app/page.tsx',
+        origin: 'TEMPLATE',
+        kind: 'SOURCE',
+        planElements: [],
+        content: 'api.getAuthOptions()',
+      },
+    ];
+    applyPresentationShell(
+      files,
+      [{ routePath: '/orders', navigation: 'SIDE' }],
+      'Cine Aurora',
+      true,
+      {
+        home: '/',
+        logout: '/logout',
+        groups: [{ label: 'Ventas', paths: ['/orders'] }],
+      },
+    );
+    const shell = files.find(
+      (item) => item.path === 'apps/web/components/presentation-shell.tsx',
+    )!.content;
+    const parsed = ts.createSourceFile(
+      'shell.tsx',
+      shell,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+    expect((parsed as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics).toEqual([]);
+    expect(shell).toContain('bg-sidebar');
+    expect(shell).toContain('>CA</span>');
+    expect(shell).toContain('text-sidebar-muted">{section.label}');
+  });
+});
+
 describe('navigation groups', () => {
   it('groups screens by their top-level branch of the approved navigation tree', () => {
     const route = (path: string, screenLocalId: string, endpoint = 'GET /items') => ({
@@ -294,7 +341,8 @@ describe('navigation groups', () => {
         { localId: 'audit', label: 'Auditoría', parentLocalId: 'home' },
       ],
     } as unknown as NavigationTreeContent;
-    expect(navigationGroups(plan, blueprint, tree)).toEqual({
+    const result = navigationGroups(plan, blueprint, tree);
+    expect(result).toMatchObject({
       home: '/home',
       logout: '/logout',
       groups: [
@@ -302,6 +350,10 @@ describe('navigation groups', () => {
         { label: 'Auditoría', paths: ['/audit'] },
       ],
     });
+    // Every screen carries who may open it, for the shell's link guard.
+    expect(result.access?.map((item) => item.path)).toEqual(
+      expect.arrayContaining(['/products', '/products/new', '/audit']),
+    );
   });
 });
 
@@ -321,5 +373,12 @@ describe('readable static nodes', () => {
       'rounded-full bg-accent px-3 text-xs font-semibold text-accent-foreground',
     );
     expect(readable('bg-primary/10 text-primary')).toBe('bg-primary/10 text-primary');
+    // A key-figure band and its tiles (ADR-028) take the band's foreground.
+    expect(readable('rounded-2xl bg-band p-6 text-primary')).toBe(
+      'rounded-2xl bg-band p-6 text-band-foreground',
+    );
+    expect(readable('rounded-xl bg-band-tile p-4')).toBe(
+      'rounded-xl bg-band-tile p-4 text-band-foreground',
+    );
   });
 });

@@ -1,4 +1,4 @@
-import { Controller, Get, Inject, UseGuards } from '@nestjs/common';
+import { Controller, Get, HttpCode, Inject, Post, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import type { AIProvider } from '@caseflow-ai/ai';
@@ -17,6 +17,8 @@ const aiStatusResponseSchema = z.object({
       quota: z.enum(['MINUTE', 'DAY']).optional(),
     }),
   ),
+  // The ChatGPT plan is paused after reaching its usage limit (DEC-117).
+  planPaused: z.boolean().optional(),
 });
 type AIStatusResponse = z.infer<typeof aiStatusResponseSchema>;
 
@@ -31,10 +33,12 @@ export class AIStatusController {
   @Get()
   @ApiOperation({ operationId: 'getAIStatus', summary: 'Disponibilidad de la IA' })
   @ApiZodResponse(200, 'AI status.', aiStatusResponseSchema)
-  status(): AIStatusResponse {
+  async status(): Promise<AIStatusResponse> {
     if (this.provider.id === 'disabled') return { available: false, providers: [] };
+    const plan = this.plan();
     return {
       available: true,
+      ...(plan ? { planPaused: await plan.planPaused() } : {}),
       providers: this.provider.status?.() ?? [
         {
           id: this.provider.id,
@@ -42,5 +46,24 @@ export class AIStatusController {
         },
       ],
     };
+  }
+
+  // The person checked the usage in ChatGPT and decides to try again. Every
+  // edition with the plan runs on the person's own machine (DEC-117, DEC-128).
+  @Post('resume-plan')
+  @HttpCode(204)
+  @ApiOperation({ operationId: 'resumeAIPlan', summary: 'Reanudar el plan de ChatGPT' })
+  async resumePlan(): Promise<void> {
+    await this.plan()?.resumePlan();
+  }
+
+  private plan() {
+    const provider = this.provider as Partial<{
+      planPaused(): Promise<boolean>;
+      resumePlan(): Promise<void>;
+    }>;
+    return provider.planPaused && provider.resumePlan
+      ? (provider as { planPaused(): Promise<boolean>; resumePlan(): Promise<void> })
+      : undefined;
   }
 }

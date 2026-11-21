@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Info, X } from 'lucide-react';
 import { currentUserId } from '../lib/api';
 
@@ -28,6 +28,9 @@ function rememberDismissed(id: string) {
   }
 }
 
+// w-72 in pixels.
+const PANEL_WIDTH = 288;
+
 export function DismissibleHint({
   id,
   label,
@@ -40,10 +43,19 @@ export function DismissibleHint({
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  // Opens toward the side with room: near the right edge it aligns to the
+  // icon's right instead of overflowing the window.
+  const [alignEnd, setAlignEnd] = useState(false);
   const panelId = useId();
   const wrapper = useRef<HTMLSpanElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
+
+  useLayoutEffect(() => {
+    if (!open || !wrapper.current) return;
+    const { left } = wrapper.current.getBoundingClientRect();
+    setAlignEnd(left + PANEL_WIDTH > window.innerWidth - 8);
+  }, [open]);
 
   // Shown once until the user closes it; afterwards only on demand.
   useEffect(() => {
@@ -93,7 +105,7 @@ export function DismissibleHint({
         <span
           id={panelId}
           role="note"
-          className="absolute top-full left-0 z-20 mt-1 flex w-72 max-w-[80vw] gap-2 rounded-md border border-border bg-popover p-3 text-left text-xs font-normal text-popover-foreground shadow-md"
+          className={`absolute top-full ${alignEnd ? 'right-0' : 'left-0'} z-20 mt-1 flex w-72 max-w-[80vw] gap-2 rounded-md border border-border bg-popover p-3 text-left text-xs font-normal text-popover-foreground shadow-md`}
         >
           <span className="flex-1">{children}</span>
           <button

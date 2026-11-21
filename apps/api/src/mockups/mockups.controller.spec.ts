@@ -15,6 +15,9 @@ describe('MockupsController', () => {
       getPreview: vi.fn().mockResolvedValue({}),
       version: vi.fn().mockResolvedValue({}),
       transition: vi.fn().mockResolvedValue({}),
+      generateScreens: vi.fn().mockResolvedValue({}),
+      screenHistory: vi.fn().mockResolvedValue({}),
+      restoreScreen: vi.fn().mockResolvedValue({}),
       downloadScreenImage: vi.fn().mockResolvedValue({
         body: Buffer.from('png'),
         contentType: 'image/png',
@@ -24,25 +27,39 @@ describe('MockupsController', () => {
     };
     const controller = new MockupsController(service as unknown as MockupsService);
 
-    await controller.create('p', { uiBlueprintVersionId: 'b', deviceType: 'DESKTOP' });
+    await controller.create('p', {
+      uiBlueprintVersionId: 'b',
+      deviceType: 'DESKTOP',
+      generator: 'STITCH',
+    });
     await controller.list('p');
     await controller.get('p', 'm');
     await controller.getJob('p', 'j');
     await controller.cancelJob('p', 'j', { user: { id: 'u' } });
     await controller.preview('p', 'm');
-    await controller.version('p', 'm', { uiBlueprintVersionId: 'b2', deviceType: 'MOBILE' });
+    await controller.version('p', 'm', {
+      uiBlueprintVersionId: 'b2',
+      deviceType: 'MOBILE',
+      generator: 'HTML_CSS',
+    });
     await controller.transition('p', 'm', 'v', { status: 'IN_REVIEW' });
     const response = { setHeader: vi.fn(), send: vi.fn() } as unknown as Response;
     await controller.screenImage('p', 'm', 's', response);
     await controller.screenHtml('p', 'm', 's', response);
+    await controller.generateScreens('p', 'm', { screenLocalIds: ['home'] });
+    await controller.screenHistory('p', 'm', 'home');
+    await controller.restoreScreen('p', 'm', 'home', { screenId: 's' });
 
-    expect(service.create).toHaveBeenCalledWith('p', 'b', 'DESKTOP');
+    expect(service.create).toHaveBeenCalledWith('p', 'b', 'DESKTOP', 'STITCH', []);
+    expect(service.generateScreens).toHaveBeenCalledWith('p', 'm', ['home']);
+    expect(service.screenHistory).toHaveBeenCalledWith('p', 'm', 'home');
+    expect(service.restoreScreen).toHaveBeenCalledWith('p', 'm', 'home', 's');
     expect(service.list).toHaveBeenCalledWith('p');
     expect(service.get).toHaveBeenCalledWith('p', 'm');
     expect(service.getJob).toHaveBeenCalledWith('p', 'j');
     expect(service.cancelJob).toHaveBeenCalledWith('p', 'j', 'u');
     expect(service.getPreview).toHaveBeenCalledWith('p', 'm');
-    expect(service.version).toHaveBeenCalledWith('p', 'm', 'b2', 'MOBILE');
+    expect(service.version).toHaveBeenCalledWith('p', 'm', 'b2', 'MOBILE', 'HTML_CSS');
     expect(service.transition).toHaveBeenCalledWith('p', 'm', 'v', 'IN_REVIEW');
     expect(service.downloadScreenImage).toHaveBeenCalledWith('p', 'm', 's');
     expect(service.downloadScreenHtml).toHaveBeenCalledWith('p', 'm', 's');

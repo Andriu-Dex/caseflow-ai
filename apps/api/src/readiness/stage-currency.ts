@@ -1,8 +1,10 @@
-import { Injectable, Module, UnprocessableEntityException } from '@nestjs/common';
+import { Injectable, Module, Optional, UnprocessableEntityException } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { PIPELINE_LABELS, PIPELINE_ORDER, type ReadinessStageKey } from '@caseflow-ai/contracts';
 import { PrismaService } from '../database/prisma.service';
 import type { Prisma } from '../generated/prisma/client';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import type { ReadinessService } from './readiness.service';
 
 const orderedRebuild = new AsyncLocalStorage<string>();
 // Only server-owned orchestration may bypass the intermediate currency gate.
@@ -87,7 +89,21 @@ const stageByType: Record<string, PipelineStage> = {
 
 @Injectable()
 export class StageCurrencyService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly modules?: ModuleRef,
+  ) {}
+
+  // The readiness module depends on the modules that approve artifacts, which
+  // call this service: the evaluation is resolved when needed, not injected.
+  private async readiness(): Promise<ReadinessService | undefined> {
+    const { ReadinessService } = await import('./readiness.service');
+    try {
+      return this.modules?.get(ReadinessService, { strict: false });
+    } catch {
+      return undefined;
+    }
+  }
 
   async stageCurrency(
     projectId: string,
@@ -139,6 +155,23 @@ export class StageCurrencyService {
     if (first)
       throw new UnprocessableEntityException(
         `Hay pasos por rehacer desde ${PIPELINE_LABELS[first]}. Complételos antes de continuar.`,
+      );
+  }
+
+  async assertEarlierStagesSatisfied(projectId: string, artifactType: string) {
+    if (orderedRebuild.getStore() === projectId) return;
+    const target = stageByType[artifactType];
+    const service = target && (await this.readiness());
+    if (!target || !service) return;
+    const readiness = await service.evaluate(projectId);
+    const targetIndex = PIPELINE_ORDER.indexOf(target);
+    const firstIncomplete = readiness.stages.find((stage) => {
+      const stageIndex = PIPELINE_ORDER.indexOf(stage.key as PipelineStage);
+      return stageIndex >= 0 && stageIndex < targetIndex && !stage.satisfied;
+    });
+    if (firstIncomplete)
+      throw new UnprocessableEntityException(
+        `No se puede aprobar este paso porque falta completar ${firstIncomplete.label}.`,
       );
   }
 }

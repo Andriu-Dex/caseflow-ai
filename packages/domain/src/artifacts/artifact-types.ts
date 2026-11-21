@@ -1,4 +1,4 @@
-// Artifact types required by the First Deliverable MVP (spec §217).
+// Artifact types required by the First Deliverable MVP.
 // The authoritative, extensible list is the `artifact_types` reference table;
 // this constant only names the types the first deliverable depends on.
 
@@ -19,7 +19,7 @@ export const FIRST_DELIVERABLE_ARTIFACT_TYPE_CODES = [
 export type FirstDeliverableArtifactTypeCode =
   (typeof FIRST_DELIVERABLE_ARTIFACT_TYPE_CODES)[number];
 
-// Artifact types added by the Construction pipeline (spec §194-198).
+// Artifact types added by the Construction pipeline.
 export const CONSTRUCTION_ARTIFACT_TYPE_CODES = [
   'GENERATION_PLAN',
   'CONCEPTUAL_DOMAIN_MODEL',
@@ -27,7 +27,7 @@ export const CONSTRUCTION_ARTIFACT_TYPE_CODES = [
   'USER_MANUAL',
 ] as const;
 
-// Artifact codes are "<PREFIX>-<number>", e.g. RF-001 (spec §31.4).
+// Artifact codes are "<PREFIX>-<number>", e.g. RF-001.
 export function formatArtifactCode(prefix: string, sequenceNumber: number): string {
   return `${prefix}-${String(sequenceNumber).padStart(3, '0')}`;
 }

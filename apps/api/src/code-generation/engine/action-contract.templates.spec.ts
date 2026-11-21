@@ -81,6 +81,54 @@ describe('bounded business action contracts', () => {
       expect(implementationPlanContentSchema.safeParse(plan).success).toBe(false);
     }
   });
+  // A server-managed count that starts as another field of the record.
+  it('starts a server-managed field with the value of another field', () => {
+    const plan = actionContractPlan();
+    const item = plan.entities[0]!;
+    item.operations = ['LIST', 'GET', 'CREATE', 'UPDATE'];
+    item.fields.push(
+      { name: 'totalCopies', type: 'INT', required: true, unique: false, enumValues: [] },
+      {
+        name: 'availableCopies',
+        type: 'INT',
+        required: true,
+        unique: false,
+        enumValues: [],
+        readOnly: true,
+        initialFrom: 'totalCopies',
+      },
+    );
+    expect(implementationPlanContentSchema.safeParse(plan).success).toBe(true);
+    const service = generateProject(
+      { plan, template: CASEFLOW_WEB_TS_V2, projectName: 'Copias', slug: 'copies-test' },
+      actionContractImplementations,
+    ).find((f) => f.path.endsWith('/' + item.name.toLowerCase() + '.service.ts'))!.content;
+    expect(service).toContain('if (!updating) data.availableCopies = data.totalCopies;');
+    // The generated service test expects the copied field in the data too.
+    const test = generateProject(
+      { plan, template: CASEFLOW_WEB_TS_V2, projectName: 'Copias', slug: 'copies-test' },
+      actionContractImplementations,
+    ).find((f) => f.path.endsWith('/' + item.name.toLowerCase() + '.service.spec.ts'))!.content;
+    expect(test).toContain('"availableCopies"');
+    expect(test).toContain('expect(data.availableCopies).toEqual(data.totalCopies);');
+    // Only another editable field of the same type can be the source.
+    for (const initialFrom of ['missing', 'availableCopies']) {
+      item.fields.at(-1)!.initialFrom = initialFrom;
+      expect(implementationPlanContentSchema.safeParse(plan).success).toBe(false);
+    }
+  });
+
+  // ADR-028: a reference option never shows the record's id.
+  it('labels reference options with visible values when the record has no text', () => {
+    const plan = actionContractPlan();
+    const files = generateProject(
+      { plan, template: CASEFLOW_WEB_TS_V2, projectName: 'Etiquetas', slug: 'labels-test' },
+      actionContractImplementations,
+    );
+    const pages = files.filter((f) => f.path.endsWith('page.tsx')).map((f) => f.content);
+    expect(pages.join('\n')).not.toContain('label:String(item.id)');
+  });
+
   it('bounds file contracts and keeps upload and download payloads explicit', () => {
     const file = actionValueDefinitionSchema.parse({
       type: 'FILE',
@@ -237,6 +285,23 @@ describe('explicit action policy and relational constraints', () => {
       files.find((file) => file.path === 'apps/api/src/orders/orders-actions.service.ts')!.content,
     ).not.toContain('postOrdersDiscounts');
   });
+  it('renders one form for several screen actions served by the same query', () => {
+    const plan = actionContractPlan();
+    const route = plan.routes.find((item) => item.path === '/orders/[orderId]')!;
+    route.actions.push({ label: 'Examinar totales', endpoint: 'GET /orders/:orderId/review' });
+    const page = generateProject(
+      { plan, template: CASEFLOW_WEB_TS_V2, projectName: 'Prueba', slug: 'test' },
+      actionContractImplementations,
+    ).find((file) => file.path === 'apps/web/app/orders/[orderId]/page.tsx')!.content;
+    expect(page.match(/actionKey=\{"GET \/orders\/:orderId\/review"\}/g)).toHaveLength(1);
+    expect(page).toContain('data-action={"Revisar operación"}');
+    // The shared form covers both actions in the structural validation.
+    const files = generateProject(
+      { plan, template: CASEFLOW_WEB_TS_V2, projectName: 'Prueba', slug: 'test' },
+      actionContractImplementations,
+    );
+    expect(planCoverageProblems(files, plan)).toEqual([]);
+  });
   it('emits composite uniqueness and rejects nonexistent fields and duplicate constraints', () => {
     const input = actionContractPlan();
     input.entities[0]!.uniqueConstraints = [['name', 'active']];
@@ -331,5 +396,70 @@ describe('explicit action policy and relational constraints', () => {
     expect(
       files.find((file) => file.path === 'packages/api-client/src/index.ts')!.content,
     ).not.toContain('Texto */');
+  });
+});
+
+describe('a list screen with a context query', () => {
+  it('renders the query and the navigation that opens a record of its result', () => {
+    const plan = actionContractPlan();
+    plan.routes.push({
+      path: '/orders',
+      screenName: 'Operaciones',
+      moduleLocalId: 'orders',
+      kind: 'LIST',
+      entityLocalId: 'order',
+      contextQueries: ['GET /orders/invalid-response'],
+      actions: [
+        {
+          label: 'Abrir operación',
+          navigation: {
+            routePath: '/orders/[orderId]',
+            sourceEndpoint: 'GET /orders/invalid-response',
+            idField: 'id',
+          },
+        },
+      ],
+    } as never);
+    const page = generateProject(
+      { plan, template: CASEFLOW_WEB_TS_V2, projectName: 'Prueba', slug: 'test' },
+      actionContractImplementations,
+    ).find((file) => file.path === 'apps/web/app/orders/page.tsx')!.content;
+    expect(page).toContain('actionKey={"GET /orders/invalid-response"}');
+    expect(page).toContain('data-action={"Abrir operación"}');
+  });
+});
+
+describe('an action whose answer is only technical', () => {
+  it('imports no result slot it does not render', () => {
+    const plan = actionContractPlan();
+    for (const endpoint of plan.customEndpoints)
+      if (endpoint.contract?.response.type === 'OBJECT')
+        endpoint.contract.response = {
+          type: 'OBJECT',
+          properties: [{ name: 'id', value: { type: 'UUID', technical: true } }],
+        };
+    const pages = generateProject(
+      { plan, template: CASEFLOW_WEB_TS_V2, projectName: 'Prueba', slug: 'test' },
+      actionContractImplementations,
+    ).filter((file) => file.path.endsWith('/page.tsx') && file.content.includes('<ActionForm'));
+    expect(pages.length).toBeGreaterThan(0);
+    for (const page of pages)
+      expect(page.content.includes('ActionResult')).toBe(page.content.includes('<ActionResult'));
+  });
+});
+
+describe('an action with no input fields', () => {
+  it('types its empty body as an object with no keys, not `{}`', () => {
+    const plan = actionContractPlan();
+    const write = plan.customEndpoints.find(
+      (endpoint) => endpoint.method === 'POST' && endpoint.contract,
+    )!;
+    write.contract = { ...write.contract!, body: { type: 'OBJECT', properties: [] }, bindings: [] };
+    const client = generateProject(
+      { plan, template: CASEFLOW_WEB_TS_V2, projectName: 'Prueba', slug: 'test' },
+      actionContractImplementations,
+    ).find((file) => file.path === 'packages/api-client/src/index.ts')!.content;
+    expect(client).toContain('Record<string, never>');
+    expect(client).not.toMatch(/[:=<(,]\s*\{\s*\}/);
   });
 });

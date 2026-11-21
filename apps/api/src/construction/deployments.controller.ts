@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, Param, Post, Request, UseGuards } from
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { z } from 'zod';
 import {
+  deploymentHealthResponseSchema,
   deploymentListResponseSchema,
   deploymentResponseSchema,
   resumeDeploymentRequestSchema,
@@ -29,6 +30,19 @@ export class DeploymentsController {
   @ApiZodResponse(200, 'Despliegues.', deploymentListResponseSchema)
   list(@Param('projectId', uuidParamPipe) projectId: string) {
     return this.service.list(projectId);
+  }
+
+  @Get(':deploymentId/health')
+  @ApiOperation({
+    operationId: 'getDeploymentHealth',
+    summary: 'Consultar el estado de los contenedores de un despliegue',
+  })
+  @ApiZodResponse(200, 'Estado de los contenedores.', deploymentHealthResponseSchema)
+  health(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('deploymentId', uuidParamPipe) id: string,
+  ) {
+    return this.service.health(projectId, id);
   }
 
   @Post()

@@ -28,7 +28,13 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { Button } from '@caseflow-ai/ui';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+  Button,
+} from '@caseflow-ai/ui';
 import {
   editUserManualSchema,
   type EditUserManualRequest,
@@ -1030,18 +1036,11 @@ function ManualContent({ projectId, snapshotId }: { projectId: string; snapshotI
         </div>
       </div>
 
-      {/* Manual review notice */}
-      <div className="flex items-start gap-3 rounded-xl border border-border/80 bg-muted/30 p-3.5 text-xs leading-relaxed text-muted-foreground shadow-2xs">
-        <Info className="size-4 text-primary shrink-0 mt-0.5" />
-        <div className="flex flex-col gap-0.5">
-          <span className="font-semibold text-foreground">Aviso sobre el manual de entrega</span>
-          <p>
-            El manual pertenece a esta versión del software. Revise las instrucciones en la
-            aplicación antes de aprobar. Los esquemas no acreditan que una función haya sido
-            probada.
-          </p>
-        </div>
-      </div>
+      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Info className="size-4 shrink-0 text-primary" aria-hidden="true" />
+        Revise las instrucciones en la aplicación antes de aprobar: los esquemas no acreditan que
+        una función se haya probado.
+      </p>
 
       {/* Runtime captures for an existing manual */}
       {manual ? (
@@ -1138,19 +1137,25 @@ function ManualContent({ projectId, snapshotId }: { projectId: string; snapshotI
             </div>
           </div>
 
-          <p className="text-[11px] text-muted-foreground leading-relaxed">
-            Capturas reales en Docker: cuentas de prueba, base vacía y vista de escritorio. No
-            comprueban operaciones completas. Las rutas que necesiten registros se revisan
-            manualmente.
-          </p>
-          <p className="text-[11px] text-muted-foreground">
-            Genera una nueva versión del manual con las capturas obtenidas y deja sus tareas
-            pendientes de verificación.
-          </p>
-          <p className="text-[11px] text-muted-foreground">
-            Se procesan las primeras 40 combinaciones de pantalla y rol. Las demás quedan pendientes
-            de revisión manual.
-          </p>
+          <Accordion type="single" collapsible>
+            <AccordionItem value="info" className="border-b-0">
+              <AccordionTrigger className="py-1 text-xs text-muted-foreground">
+                Más información sobre las capturas
+              </AccordionTrigger>
+              <AccordionContent className="space-y-1 text-xs leading-relaxed text-muted-foreground">
+                <p>
+                  Son capturas reales en Docker, con cuentas de prueba, base vacía y vista de
+                  escritorio. No comprueban operaciones completas; las rutas que necesitan registros
+                  se revisan manualmente.
+                </p>
+                <p>
+                  Generan una nueva versión del manual con sus tareas pendientes de verificación. Se
+                  procesan las primeras 40 combinaciones de pantalla y rol; las demás quedan
+                  pendientes de revisión manual.
+                </p>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
 
           {state.data?.job?.status === 'CANCELLED' ? (
             <p role="status" className="text-sm text-muted-foreground">
@@ -1242,15 +1247,9 @@ function ManualContent({ projectId, snapshotId }: { projectId: string; snapshotI
             <div className="flex size-14 items-center justify-center rounded-2xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 shadow-sm mb-4">
               <BookOpen className="size-7" />
             </div>
-            <h2 className="text-base font-bold text-foreground">
+            <h2 role="status" className="text-base font-bold text-foreground">
               Esta entrega aún no tiene manual.
             </h2>
-            <p
-              role="status"
-              className="mt-1 max-w-md text-xs text-muted-foreground leading-relaxed"
-            >
-              Esta entrega aún no tiene manual.
-            </p>
             <p className="mt-1 max-w-md text-xs text-muted-foreground leading-relaxed">
               Genera un manual de usuario interactivo y descargable a partir de los casos de uso,
               navegación y componentes del software generado.

@@ -2,6 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { CASEFLOW_WEB_TS_V1, findCatalogDependency } from '@caseflow-ai/domain';
 import {
@@ -9,7 +10,7 @@ import {
   type ImplementationPlanContent,
 } from '@caseflow-ai/contracts';
 import { generateProject, projectSlug } from './project-generator';
-import { pruneUnusedParams } from './frontend.templates';
+import { pruneUnusedParams, technicalIdentifiers } from './frontend.templates';
 import { demoEntities } from './demo-data.templates';
 import { catalogVersion, type GenerationContext } from './types';
 
@@ -96,7 +97,16 @@ describe('generateProject', () => {
   const files = generateProject(ctx());
   const paths = byPath(files);
 
-  it('lays out the CASEFLOW_WEB_TS_V1 monorepo (spec §153)', () => {
+  it('puts a list navigation to one record on each row, with that row as the parameter', () => {
+    const plan = basePlan();
+    plan.routes[0]!.actions = [
+      { label: 'Ver pedido', navigation: { routePath: '/orders/[orderId]' } },
+    ];
+    const page = byPath(generateProject(ctx(plan))).get('apps/web/app/orders/page.tsx')!.content;
+    expect(page).toMatch(/href=\{`\/orders\/\$\{[a-zA-Z.]+\}`\} data-action=\{"Ver pedido"\}/);
+  });
+
+  it('lays out the CASEFLOW_WEB_TS_V1 monorepo', () => {
     for (const path of [
       'package.json',
       'pnpm-workspace.yaml',
@@ -121,6 +131,14 @@ describe('generateProject', () => {
   });
 
   // Regression: found by the real sandbox lint stage on a plan without routes.
+  it('offers the related records a list query filters by as a selector', () => {
+    const page = paths.get('apps/web/app/orders/page.tsx')!.content;
+    expect(page).toContain(
+      'customerIdOptions = useQuery({ queryKey: [\'filter-options\', "listCustomers"]',
+    );
+    expect(page).toContain('customerId: filterValues.customerId || undefined');
+    expect(page).toContain('<select id="filter-customerId"');
+  });
   it('emits a home page without unused imports when the plan has no routes', () => {
     const home = byPath(generateProject(ctx(basePlan({ routes: [] })), {})).get(
       'apps/web/app/page.tsx',
@@ -618,7 +636,13 @@ describe('forms and pages for every field type', () => {
           field('code', 'STRING', { required: false }),
         ],
         relations: [
-          { name: 'catalog', kind: 'MANY_TO_ONE', targetEntityLocalId: 'catalog', required: false },
+          {
+            name: 'catalog',
+            label: 'Catálogo de origen',
+            kind: 'MANY_TO_ONE',
+            targetEntityLocalId: 'catalog',
+            required: false,
+          },
           { name: 'hidden', kind: 'MANY_TO_ONE', targetEntityLocalId: 'hidden', required: true },
         ],
         operations: ['LIST', 'GET', 'CREATE', 'UPDATE', 'DELETE'],
@@ -673,6 +697,8 @@ describe('forms and pages for every field type', () => {
   it('lists the related records to choose from, or asks for the identifier when it cannot', () => {
     expect(form).toContain('catalogOptions');
     expect(form).toContain('placeholder="Identificador"');
+    // The plan's label for the relation, not one derived from its code name.
+    expect(form).toContain('{"Catálogo de origen"} (opcional)</label>');
   });
 
   it('edits an existing record and offers only the form the entity needs', () => {
@@ -690,8 +716,11 @@ describe('forms and pages for every field type', () => {
     expect(web.devDependencies['@playwright/test']).toBeDefined();
     const screens = without.get('apps/web/e2e/screens.spec.ts')!.content;
     expect(screens).toContain('"path": "/');
-    expect(screens).not.toContain('/[');
+    expect(screens).not.toMatch(/"path": "[^"]*\[/);
     expect(screens).toContain("locator('h1')");
+    // ADR-028: the visible text is checked for model names and UUIDs.
+    expect(screens).toContain('const IDENTIFIERS = new Set<string>(');
+    expect(screens).toContain('The screen must not show technical identifiers');
   });
 });
 
@@ -752,11 +781,11 @@ describe('shared list generator and pagination (DEC-121)', () => {
     expect(list).not.toContain('<Link href="/products"');
   });
 
-  it('renders a visible Identificador column and structured field labels safely escaped', () => {
-    expect(list).toContain('<th className="px-3 py-2 font-medium">{"Identificador"}</th>');
+  it('renders field labels safely escaped and no identifier column (ADR-028)', () => {
+    expect(list).not.toContain('{"Identificador"}');
+    expect(list).not.toContain('row.id.slice(0, 8)');
     expect(list).toContain('<th className="px-3 py-2 font-medium">{"Nombre comercial"}</th>');
     expect(list).toContain('<th className="px-3 py-2 font-medium">{"Precio unitario"}</th>');
-    expect(list).toContain('{row.id}');
     expect(list).toContain(
       'hasNextPage = items.length === limit && Boolean(nextPageQuery.data && nextPageQuery.data.length > 0)',
     );
@@ -831,11 +860,113 @@ describe('demonstration data (DEC-159)', () => {
     ]);
   });
 
+  it('moves a schedule of samples to the present, keeping its times and spacing', () => {
+    const seed = byPath(
+      generateProject({
+        ...ctx(),
+        demoValues: {
+          Order: [
+            { status: 'DRAFT', orderedOn: '2025-03-03' },
+            { status: 'CONFIRMED', orderedOn: '2025-03-05' },
+          ],
+        },
+      }),
+    ).get('apps/api/src/seed/demo-data.ts')!.content;
+    // The script's own functions, without its database access.
+    const source = seed
+      .replace(/^import .*$/m, '')
+      .replace(/^void main\(\).*$/m, 'module.exports = { ENTITIES, shifts, value, today, DAY };');
+    const run = new Function(
+      'module',
+      ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } })
+        .outputText,
+    );
+    const loaded = { exports: {} as Record<string, unknown> };
+    run(loaded);
+    const { ENTITIES, shifts, value, today, DAY } = loaded.exports as {
+      ENTITIES: { model: string; fields: { name: string }[]; samples: Record<string, string>[] }[];
+      shifts: (entity: unknown) => Record<string, number>;
+      value: (field: unknown, index: number, sample: unknown, shift: unknown) => Date;
+      today: number;
+      DAY: number;
+    };
+    const order = ENTITIES.find((entity) => entity.model === 'Order')!;
+    const field = order.fields.find((item) => item.name === 'orderedOn')!;
+    const shift = shifts(order);
+    expect(value(field, 1, order.samples[0], shift).getTime()).toBe(today);
+    expect(value(field, 2, order.samples[1], shift).getTime()).toBe(today + 2 * DAY);
+  });
+
   it('emits a runnable seed script and its command', () => {
     const files = byPath(generateProject(ctx()));
     expect(files.get('apps/api/src/seed/demo-data.ts')!.content).toContain('"model": "Customer"');
     expect(JSON.parse(files.get('package.json')!.content).scripts['seed:demo']).toBe(
       'pnpm --filter ./apps/api exec node dist/seed/demo-data.js',
     );
+  });
+});
+
+describe('contextual navigation', () => {
+  it('links each record to the screens that take its id after the same collection', () => {
+    const files = byPath(
+      generateProject(
+        ctx(
+          basePlan({
+            routes: [
+              {
+                path: '/orders',
+                screenName: 'Pedidos',
+                moduleLocalId: 'sales',
+                kind: 'LIST',
+                entityLocalId: 'order',
+                actions: [{ label: 'Consultar', operation: 'LIST' }],
+              },
+              {
+                path: '/orders/[orderid]/edit',
+                screenName: 'Editar pedido',
+                moduleLocalId: 'sales',
+                kind: 'FORM',
+                entityLocalId: 'order',
+                actions: [{ label: 'Guardar cambios', operation: 'UPDATE' }],
+              },
+              {
+                path: '/archive/orders/[orderid]/edit',
+                screenName: 'Otra colección',
+                moduleLocalId: 'sales',
+                kind: 'FORM',
+                entityLocalId: 'order',
+                actions: [{ label: 'Guardar', operation: 'UPDATE' }],
+              },
+            ],
+          }),
+        ),
+      ),
+    );
+    const list = files.get('apps/web/app/orders/page.tsx')!.content;
+    expect(list).toContain(
+      '<Link href={`/orders/${row.id}/edit`} className="text-primary underline">{"Editar pedido"}</Link>',
+    );
+    expect(list).toContain('/archive/orders/${row.id}/edit');
+  });
+});
+
+describe('technical identifiers (ADR-028)', () => {
+  it('lists the model names that read as code, not ordinary words', () => {
+    const plan = {
+      entities: [
+        {
+          localId: 'event',
+          name: 'CateringEvent',
+          moduleLocalId: 'sales',
+          fields: [
+            { name: 'operationalDate', type: 'DATE' },
+            { name: 'email', type: 'STRING' },
+          ],
+          relations: [{ name: 'ticket', kind: 'MANY_TO_ONE', targetEntityLocalId: 'event' }],
+          operations: ['LIST'],
+        },
+      ],
+    } as unknown as Parameters<typeof technicalIdentifiers>[0];
+    expect(technicalIdentifiers(plan)).toEqual(['CateringEvent', 'operationalDate']);
   });
 });

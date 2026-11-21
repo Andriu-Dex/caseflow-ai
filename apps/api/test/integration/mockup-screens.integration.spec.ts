@@ -1,5 +1,7 @@
+import JSZip from 'jszip';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  FakeHtmlScreenRenderer,
   FakeStorageProvider,
   MockupProviderError,
   type BlueprintScreen,
@@ -217,5 +219,107 @@ describe('Mockups drawn screen by screen', () => {
     expect(active('venta')).toBe('Ventas');
     expect(active('existencias')).toBe('Inventario');
     expect(active('acceso')).toBeNull();
+  });
+
+  it('draws an HTML and CSS mockup screen by screen with the AI and edits one screen from its previous body (DEC-167)', async () => {
+    const requests: {
+      screen: { localId: string; name: string };
+      refinement?: string;
+      previousBody?: string;
+    }[] = [];
+    const ai = {
+      generateStructured: async ({ messages }: { messages: { content: string }[] }) => {
+        const request = JSON.parse(messages[0]!.content);
+        requests.push(request);
+        return {
+          data: {
+            body: `<div class="page-header"><h1>${request.screen.name}</h1></div><p>${request.refinement ?? 'Contenido de la pantalla'}</p>`,
+          },
+        };
+      },
+    };
+    const renderer = new FakeHtmlScreenRenderer();
+    const htmlCss = new MockupsService(
+      ctx.prisma,
+      provider,
+      new FakeStorageProvider(),
+      { add: async () => undefined } as never,
+      undefined,
+      ai as never,
+      renderer,
+    );
+    const asking = asked.length;
+    const job = await htmlCss.create(projectId, blueprintVersionId, 'DESKTOP', 'HTML_CSS');
+    expect(
+      (await ctx.prisma.mockupGenerationJob.findUniqueOrThrow({ where: { id: job.id } }))
+        .generatorKind,
+    ).toBe('HTML_CSS');
+    await htmlCss.runJob(job.id);
+    const done = await htmlCss.getJob(projectId, job.id);
+    expect(done.status).toBe('COMPLETED');
+    const mockupId = done.resultArtifactId!;
+    const preview = await htmlCss.getPreview(projectId, mockupId);
+    expect(preview.generatorKind).toBe('HTML_CSS');
+    expect(preview.screens).toHaveLength(5);
+    expect(preview.screens!.every((screen) => screen.editable)).toBe(true);
+    expect(renderer.rendered).toHaveLength(5);
+    // Stitch was never asked.
+    expect(asked.length).toBe(asking);
+
+    const target = preview.screens!.find((screen) => screen.screenLocalId === 'b')!;
+    const edit = await htmlCss.refineScreen(
+      projectId,
+      mockupId,
+      target.id,
+      'Agrega un filtro por fecha',
+    );
+    await htmlCss.runJob(edit.id);
+    expect((await htmlCss.getJob(projectId, edit.id)).status).toBe('COMPLETED');
+    expect(requests.at(-1)).toMatchObject({
+      screen: { localId: 'b' },
+      refinement: 'Agrega un filtro por fecha',
+      previousBody: expect.stringContaining('Pantalla b'),
+    });
+    const next = await htmlCss.getPreview(projectId, mockupId);
+    expect(next.screens!.find((screen) => screen.screenLocalId === 'b')!.refinementPrompt).toBe(
+      'Agrega un filtro por fecha',
+    );
+    // The new version can be compared with the one it came from.
+    expect(next.previousVersion).toMatchObject({ versionNumber: 1, generatorKind: 'HTML_CSS' });
+    expect(next.previousVersion!.screens).toHaveLength(5);
+    expect(renderer.rendered).toHaveLength(6);
+  });
+
+  it('imports a hand-written HTML and CSS mockup and its next version, without the provider (DEC-166)', async () => {
+    const zip = new JSZip();
+    for (const id of ['a', 'b', 'c', 'd', 'e']) {
+      zip.file(`${id}.html`, `<html><head></head><body><h1>Pantalla ${id}</h1></body></html>`);
+      zip.file(`${id}.png`, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0]));
+    }
+    zip.file('styles.css', 'h1 { font-size: 1.5rem; }');
+    const archive = await zip.generateAsync({ type: 'nodebuffer' });
+    const asking = asked.length;
+    const mockup = await service.importManual(
+      projectId,
+      blueprintVersionId,
+      'DESKTOP',
+      undefined,
+      archive,
+    );
+    expect(mockup.version).toMatchObject({ versionNumber: 1, status: 'DRAFT', origin: 'MANUAL' });
+    const preview = await service.getPreview(projectId, mockup.id);
+    expect(preview.generatorKind).toBe('MANUAL');
+    expect(preview.screens?.map((screen) => screen.screenName)).toHaveLength(5);
+    expect(preview.screens?.every((screen) => !screen.editable)).toBe(true);
+    const next = await service.importManual(
+      projectId,
+      blueprintVersionId,
+      'DESKTOP',
+      mockup.id,
+      archive,
+    );
+    expect(next.id).toBe(mockup.id);
+    expect(next.version.versionNumber).toBe(2);
+    expect(asked.length).toBe(asking);
   });
 });

@@ -12,10 +12,83 @@ import {
 import { collectionPath } from '../naming';
 import { operationContextFiles } from './operation-context.templates';
 
+// Who may open each screen: its roles and, with an operation scope, the
+// operations its actions perform. The server's menu and the shell's link
+// guard read this same table, so they never disagree.
+// Names of the demonstration accounts of a deployed project: people, not
+// codes, so a demonstration reads like a real business.
+export const DEMO_PEOPLE = [
+  'Andrea Salazar',
+  'Carlos Mena',
+  'Paola Vinueza',
+  'Diego Toapanta',
+  'Gabriela Andrade',
+  'Luis Herrera',
+  'Mónica Castro',
+  'Javier Ortega',
+];
+
+export function routeAccess(plan: ImplementationPlanContent, scoped: boolean) {
+  return plan.routes
+    .filter(
+      (r) =>
+        !r.actions.some((a) =>
+          ['POST /auth/login', 'POST /auth/logout'].includes(a.endpoint ?? ''),
+        ),
+    )
+    .map((r) => ({
+      path: r.path,
+      label: r.screenName,
+      roles: r.roles ?? [],
+      ...(scoped
+        ? {
+            operations: r.actions.flatMap((action) =>
+              action.endpoint &&
+              !['GET /auth/options', 'GET /auth/context', 'POST /auth/context'].includes(
+                action.endpoint,
+              )
+                ? [action.endpoint]
+                : action.operation && r.entityLocalId
+                  ? [
+                      {
+                        LIST: 'GET',
+                        GET: 'GET',
+                        CREATE: 'POST',
+                        UPDATE: 'PATCH',
+                        DELETE: 'DELETE',
+                      }[action.operation] +
+                        ' ' +
+                        collectionPath(
+                          plan.entities.find((entity) => entity.localId === r.entityLocalId)!.name,
+                        ) +
+                        (['GET', 'UPDATE', 'DELETE'].includes(action.operation) ? '/:id' : ''),
+                    ]
+                  : [],
+            ),
+          }
+        : {}),
+    }));
+}
+
 export function localAuthFiles(ctx: GenerationContext): GeneratedProjectFile[] {
   const { plan } = ctx;
   const local = plan.authentication.local;
   if (!local) return [];
+  // A route whose only parameters name the operation scope ([branchid]) is
+  // offered in the menu with the selected scope in place.
+  const scopeName = plan.entities.find(
+    (entity) => entity.localId === local.scope?.entityLocalId,
+  )?.name;
+  const onlyScopeParams = (path: string) => {
+    const params = [...path.matchAll(/\[([a-zA-Z0-9]+)\]/g)].map((match) =>
+      match[1]!.toLowerCase(),
+    );
+    return (
+      Boolean(scopeName) &&
+      params.length > 0 &&
+      params.every((param) => param === `${scopeName!.toLowerCase()}id`)
+    );
+  };
   const account = plan.entities.find((e) => e.localId === local.userEntityLocalId)!;
   const session = plan.entities.find((e) => e.localId === local.sessionEntityLocalId)!;
   const scope = local.scope;
@@ -302,8 +375,8 @@ export class LocalAuthService {
     return { closed: true };
   }
   options(actor: SessionActor) {
-    const routes = ${JSON.stringify(plan.routes.filter((r) => !r.path.includes('[') && !r.actions.some((a) => ['POST /auth/login', 'POST /auth/logout'].includes(a.endpoint ?? ''))).map((r) => ({ path: r.path, label: r.screenName, roles: r.roles ?? [], ...(scope ? { operations: r.actions.flatMap((action) => (action.endpoint && !['GET /auth/options', 'GET /auth/context', 'POST /auth/context'].includes(action.endpoint) ? [action.endpoint] : action.operation && r.entityLocalId ? [{ LIST: 'GET', GET: 'GET', CREATE: 'POST', UPDATE: 'PATCH', DELETE: 'DELETE' }[action.operation] + ' ' + collectionPath(plan.entities.find((entity) => entity.localId === r.entityLocalId)!.name) + (['GET', 'UPDATE', 'DELETE'].includes(action.operation) ? '/:id' : '')] : [])) } : {}) })))};
-    return routes.filter(route => (!route.roles.length || route.roles.some(role => actor.roles.includes(role)))${scope ? ' && (!route.operations.length || route.operations.some(operation => actor.permissions.includes(operation)))' : ''}).map(({ path, label }) => ({ path, label }));
+    const routes = ${JSON.stringify(routeAccess(plan, Boolean(scope)).filter((r) => !r.path.includes('[') || onlyScopeParams(r.path)))};
+    return routes.filter(route => (!route.roles.length || route.roles.some(role => actor.roles.includes(role)))${scope ? ' && (!route.operations.length || route.operations.some(operation => actor.permissions.includes(operation)))' : ''}${scope ? " && (!route.path.includes('[') || Boolean(actor.selectedScopeId))" : ''}).map(({ path, label }) => ({ path: ${scope ? "path.replace(/\\[[a-zA-Z0-9]+\\]/g, actor.selectedScopeId ?? '')" : 'path'}, label }));
   }
   ${
     scope
@@ -431,8 +504,7 @@ void main().catch(() => { console.error('Capture accounts could not be prepared.
   files.push(
     file(
       'apps/api/src/auth/deploy-accounts.ts',
-      `import { randomBytes } from 'node:crypto';
-import { PrismaService } from '../prisma/prisma.service';
+      `import { PrismaService } from '../prisma/prisma.service';
 import { ${account.name}Service } from '../${kebabCase(plan.modules.find((m) => m.localId === account.moduleLocalId)!.name)}/${kebabCase(account.name)}.service';
 ${scope ? "import { initializeAuthorization } from './initialize-authorization';" : ''}
 // Invoked once by the fixed command of a deployment: one initial account per
@@ -440,7 +512,7 @@ ${scope ? "import { initializeAuthorization } from './initialize-authorization';
 // never printed. Only the identifiers are reported.
 async function main() {
  const prisma = new PrismaService();
- const accounts: { role: string; identifier: string }[] = [];
+ const accounts: { role: string; identifier: string; name: string }[] = [];
  const password = process.env.INITIAL_PASSWORD ?? '';
  if (password.length < 12) throw new Error('INITIAL_PASSWORD must have at least 12 characters.');
  try {
@@ -452,19 +524,22 @@ async function main() {
       : ''
   }
   const roles = ${JSON.stringify(plan.authentication.roles)} as const;
+  // A person per role, with a name and a readable sign-in name.
+  const people = ${JSON.stringify(DEMO_PEOPLE)};
   for (const [index, role] of roles.entries()) {
-   const identifier = 'demo-' + (index + 1) + '-' + randomBytes(3).toString('hex');
+   const person = people[index % people.length]! + (index >= people.length ? ' ' + (index + 1) : '');
+   const identifier = person.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().split(' ').slice(0, 2).join('.') + (index >= people.length ? '.' + (index + 1) : '');
    await new ${account.name}Service(prisma).create({ ...${JSON.stringify(createInput)}, ${account.fields
      .filter((field) => field.unique && field.name !== local.loginField && field.type === 'STRING')
      .map((field) =>
        field.name === scope?.displayNameField
-         ? `${field.name}: role + ' (demostración)',`
+         ? `${field.name}: person,`
          : `${field.name}: identifier + ${JSON.stringify('-' + field.name)},`,
      )
      .join(
        ' ',
      )} ${local.loginField}: identifier, password, roleNames: [role]${scope ? `, ${scope.accountRelation}Ids: [initialScope.id]` : ''} });
-   accounts.push({ role, identifier });
+   accounts.push({ role, identifier, name: person });
   }
   console.log(JSON.stringify(accounts));
  } finally { await prisma.$disconnect(); }
@@ -479,7 +554,23 @@ void main().catch(() => { console.error('Initial accounts could not be prepared.
       .map((a) => plan.customEndpoints.find((e) => `${e.method} ${e.path}` === a.endpoint)?.builtin)
       .find(Boolean);
     const up = toWebRoot(route.path);
-    const marker = route.actions[0] ? actionMarker(route.actions[0].label) : '';
+    // The marker goes on the action the built-in page serves, wherever the
+    // route lists it among its other actions.
+    const served = route.actions.find((a) =>
+      plan.customEndpoints.some((e) => e.builtin && `${e.method} ${e.path}` === a.endpoint),
+    );
+    const marker = served ? actionMarker(served.label) : '';
+    // Plain navigations of the route, rendered as links next to the built-in content.
+    const links = route.actions
+      .filter(
+        (a) =>
+          a.navigation && !a.navigation.sourceEndpoint && !a.navigation.routePath.includes('['),
+      )
+      .map(
+        (a) =>
+          `<Link className="text-primary underline" href={${JSON.stringify(a.navigation!.routePath)}} ${actionMarker(a.label)}>{${JSON.stringify(a.label)}}</Link>`,
+      )
+      .join('');
     if (builtin === 'LOGIN')
       files.push(
         file(
@@ -526,13 +617,20 @@ export default function LoginPage() {
           pagePath(route.path),
           `'use client';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '${up}lib/api';
+import { api, accessToken } from '${up}lib/api';
 import { PageState } from '${up}components/page-state';
 ${scope ? `import { OperationContextPanel } from '${up}components/operation-context';` : ''}
 export default function OperationHome() {
- const query = useQuery({ queryKey: ['authorized-options'], queryFn: () => api.getAuthOptions() });
- return <section className="space-y-6"><h1 className="text-2xl font-semibold" ${marker}>{${JSON.stringify(route.screenName)}}</h1>${scope ? `<section ${route.actions.find((action) => action.endpoint === 'GET /auth/context') ? actionMarker(route.actions.find((action) => action.endpoint === 'GET /auth/context')!.label) : ''}><OperationContextPanel ${route.actions.find((action) => action.endpoint === 'POST /auth/context') ? actionMarker(route.actions.find((action) => action.endpoint === 'POST /auth/context')!.label) : ''} /></section>` : ''}<PageState query={query}>{options => <ul className="grid gap-4 md:grid-cols-3">{options.filter(option => option.path !== ${JSON.stringify(route.path)}).map(option => <li key={option.path}><Link className="block rounded-xl border p-6 hover:bg-muted" href={option.path}>{option.label}</Link></li>)}</ul>}</PageState>${scope ? `<Link href={${JSON.stringify(plan.routes.find((item) => item.actions.some((action) => action.endpoint === 'POST /auth/logout'))!.path)}}>Ir al cierre de sesión</Link>` : ''}</section>;
+ // The home screen is where the application opens: without a session it signs
+ // in first. The session is read once mounted, so server and browser render alike.
+ const router = useRouter();
+ const [ready, setReady] = useState(false);
+ useEffect(() => { if (!accessToken.get()) router.replace(${JSON.stringify(loginRoute?.path ?? '/access')}); else setReady(true); }, [router]);
+ const query = useQuery({ queryKey: ['authorized-options'], queryFn: () => api.getAuthOptions(), enabled: ready });
+ return <section className="space-y-6"><h1 className="text-2xl font-semibold" ${marker}>{${JSON.stringify(route.screenName)}}</h1>${scope ? `<section ${route.actions.find((action) => action.endpoint === 'GET /auth/context') ? actionMarker(route.actions.find((action) => action.endpoint === 'GET /auth/context')!.label) : ''}><OperationContextPanel ${route.actions.find((action) => action.endpoint === 'POST /auth/context') ? actionMarker(route.actions.find((action) => action.endpoint === 'POST /auth/context')!.label) : ''} /></section>` : ''}<PageState query={query}>{options => <ul className="grid gap-4 md:grid-cols-3">{options.filter(option => option.path !== ${JSON.stringify(route.path)}).map(option => <li key={option.path}><Link className="block rounded-xl border p-6 hover:bg-muted" href={option.path}>{option.label}</Link></li>)}</ul>}</PageState>${links ? `<nav className="flex flex-wrap gap-4">${links}</nav>` : ''}${scope ? `<Link href={${JSON.stringify(plan.routes.find((item) => item.actions.some((action) => action.endpoint === 'POST /auth/logout'))!.path)}}>Ir al cierre de sesión</Link>` : ''}</section>;
 }
 `,
           { origin: 'DETERMINISTIC', planElements: [`route:${route.path}`, ...elements] },

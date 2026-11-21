@@ -665,7 +665,7 @@ describe('Construction sandbox validation integration', () => {
       .expect(403);
   });
 
-  // Real Docker end to end (spec §179 points 15, 19): opt-in, never in CI.
+  // Real Docker end to end (19): opt-in, never in CI.
   it.skipIf(process.env.CASEFLOW_SANDBOX_DOCKER_TESTS !== '1')(
     'validates a generated project in real Docker and exports its ZIP',
     async () => {

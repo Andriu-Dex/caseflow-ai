@@ -21,7 +21,7 @@ import { csv, useRows } from '../lib/use-rows';
 import { TagInput } from './tag-input';
 import { ManualFormShell, rowId, save, type FormProps } from './structured-manual-forms';
 
-// Manual editor for the Implementation Plan (AGENTS.md §4.6): the whole plan —
+// Manual editor for the Implementation Plan: the whole plan —
 // including the typed physical model — is editable as structured rows.
 
 type Plan = ImplementationPlanContent;

@@ -19,6 +19,7 @@ import { QueryState, RequireActiveProject } from '../components/query-state';
 import { STAGE_LINKS } from '../lib/stage-links';
 import { DismissibleHint } from '../components/dismissible-hint';
 import { WORKFLOW_ROUTE_LABELS } from '../components/workflow-route';
+import { HomeConstruction, HomeNextStep } from '../components/home-progress';
 
 const DASHBOARD_PHASES = [
   {
@@ -122,6 +123,8 @@ function HomeContent({ projectId }: { projectId: string }) {
         </CardContent>
       </Card>
 
+      <HomeNextStep projectId={projectId} stages={readiness.data?.stages} />
+
       <QueryState isLoading={readiness.isLoading} error={readiness.error}>
         {readiness.data ? (
           <Card>
@@ -149,13 +152,6 @@ function HomeContent({ projectId }: { projectId: string }) {
               </span>
             </CardHeader>
             <CardContent>
-              <p className="mb-4 text-sm text-muted-foreground">
-                Estas etapas corresponden al análisis y diseño. La construcción y validación del
-                software se revisan por separado.{' '}
-                <Link className="underline" href="/construction/generation-runs">
-                  Ver construcción y validaciones
-                </Link>
-              </p>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                 {groupedStages.map((phase) => {
                   const Icon = phase.icon;
@@ -285,6 +281,8 @@ function HomeContent({ projectId }: { projectId: string }) {
           </div>
         ) : null}
       </QueryState>
+
+      <HomeConstruction projectId={projectId} stages={readiness.data?.stages} />
     </div>
   );
 }

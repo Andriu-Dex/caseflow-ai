@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { ARTIFACT_VERSION_STATUSES } from '../artifacts/artifact.contract';
 
 // Semantic source kind (what the object represents), never inferred solely
-// from MIME type/extension (requirements.md §6.3).
+// from MIME type/extension.
 export const PROJECT_SOURCE_KINDS = [
   'PDF',
   'AUDIO',
@@ -54,7 +54,7 @@ export const SOURCE_EXTRACTION_STATES = [
 ] as const;
 export type SourceExtractionState = (typeof SOURCE_EXTRACTION_STATES)[number];
 
-// Deterministically extractable without any AI/OCR/ASR provider (§7.1).
+// Deterministically extractable without any AI/OCR/ASR provider.
 export const LOCALLY_EXTRACTABLE_MIME_TYPES = [
   'text/plain',
   'text/markdown',
@@ -62,7 +62,7 @@ export const LOCALLY_EXTRACTABLE_MIME_TYPES = [
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ];
 // MIME types accepted at all (upload/classification is always possible even
-// when automatic extraction is not — §7.2/§7.3).
+// when automatic extraction is not — ).
 export const ALLOWED_SOURCE_MIME_TYPES = [
   ...LOCALLY_EXTRACTABLE_MIME_TYPES,
   'image/png',
@@ -164,7 +164,7 @@ export const sourceResponseSchema = z.object({
   archivedAt: z.iso.datetime().nullable(),
   // Whether any version of this Source ever reached APPROVED — determines
   // whether it can still be hard-deleted or must be archived instead
-  // (spec §87: "fuentes utilizadas → archivar antes que borrar").
+  // (used sources are archived rather than deleted).
   hasApprovedHistory: z.boolean(),
   version: versionSchema,
   processing: z

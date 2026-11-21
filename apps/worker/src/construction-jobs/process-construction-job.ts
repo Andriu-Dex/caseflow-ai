@@ -7,7 +7,7 @@ export interface ConstructionJobRunnerConfig {
 }
 
 // Thin authenticated trigger, like the mockup jobs: apps/api owns generation.
-// Generated code is never executed here (AGENTS.md §26).
+// Generated code is never executed here.
 export async function runConstructionJob(
   payload: ConstructionJobPayload,
   config: ConstructionJobRunnerConfig,

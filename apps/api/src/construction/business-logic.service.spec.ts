@@ -5,6 +5,7 @@ import { implementationPlanContentSchema } from '@caseflow-ai/contracts';
 import {
   BusinessLogicService,
   reviewBusinessLogic,
+  scopedRelations,
   unimplementedWarning,
 } from './business-logic.service';
 
@@ -17,6 +18,9 @@ describe('reviewBusinessLogic', () => {
       'return this.prisma.$extends({});',
     ])
       expect(reviewBusinessLogic(body)).toMatchObject({ accepted: false });
+    expect(reviewBusinessLogic('return this.prisma._engine;')).toMatchObject({
+      reason: expect.stringContaining('(_engine)'),
+    });
     expect(
       reviewBusinessLogic(
         'return this.prisma.$transaction(async tx => tx.order.aggregate({ _sum: { total: true } }));',
@@ -46,6 +50,72 @@ describe('reviewBusinessLogic', () => {
     ['return globalThis;', 'accede al ámbito global', []],
   ])('rejects %j', (body, reason, packages) => {
     expect(reviewBusinessLogic(body)).toEqual({ accepted: false, reason, packages });
+  });
+});
+
+describe('isolated relation filters', () => {
+  // Only what scopedRelations reads: the scope entity and each relation's target.
+  const plan = {
+    authentication: { local: { scope: { entityLocalId: 'branch' } } },
+    entities: [
+      { localId: 'branch', name: 'Branch', relations: [], operationScope: { paths: [] } },
+      {
+        localId: 'menu',
+        name: 'DailyMenu',
+        relations: [{ name: 'branch', targetEntityLocalId: 'branch' }],
+        operationScope: { paths: [['branch']] },
+      },
+      {
+        localId: 'version',
+        name: 'MenuVersion',
+        relations: [{ name: 'dailyMenu', targetEntityLocalId: 'menu' }],
+        operationScope: { paths: [['dailyMenu', 'branch']] },
+      },
+    ],
+  };
+  const relations = scopedRelations(plan as never);
+
+  it('rejects a filter, include or select through a relation to a scope-isolated model', () => {
+    for (const [body, relation] of [
+      [
+        'return tx.menuVersion.findFirst({ where: { id: versionid, dailyMenu: { branchId } } });',
+        'menuVersion.dailyMenu',
+      ],
+      [
+        'return this.prisma.menuVersion.updateMany({ where: { AND: [{ dailyMenu: { is: { branchId } } }] }, data: {} });',
+        'menuVersion.dailyMenu',
+      ],
+      [
+        'return this.prisma.menuVersion.findMany({ include: { dailyMenu: true } });',
+        'menuVersion.dailyMenu',
+      ],
+      // Only an unrestricted role may project the scope entity, and the review
+      // does not know who calls: it is asked for in a query of its own.
+      ['return tx.dailyMenu.findMany({ include: { branch: true } });', 'dailyMenu.branch'],
+      // The guard has no exception for filtering by the scope entity itself.
+      [
+        'return tx.dailyMenu.findMany({ where: { branch: { status: "ACTIVE" } } });',
+        'dailyMenu.branch',
+      ],
+    ])
+      expect(reviewBusinessLogic(body!, [], relations)).toMatchObject({
+        accepted: false,
+        reason: expect.stringContaining(relation!),
+      });
+  });
+
+  it('accepts separate queries with their own where', () => {
+    expect(
+      reviewBusinessLogic(
+        [
+          'const menu = await tx.dailyMenu.findFirst({ where: { id: menuId, branchId } });',
+          'const version = await tx.menuVersion.findFirst({ where: { id: versionid, dailyMenuId: menu.id } });',
+          'return tx.branch.findFirst({ where: { id: menu.branchId } });',
+        ].join('\n'),
+        [],
+        relations,
+      ),
+    ).toEqual({ accepted: true });
   });
 });
 
@@ -114,7 +184,10 @@ describe('BusinessLogicService.implement', () => {
       },
     ],
   });
-  const prisma = { project: { findUnique: vi.fn().mockResolvedValue({ language: 'ES' }) } };
+  const prisma = {
+    project: { findUnique: vi.fn().mockResolvedValue({ language: 'ES' }) },
+    designBaseline: { findMany: vi.fn().mockResolvedValue([]) },
+  };
   const implement = (generateStructured: ReturnType<typeof vi.fn>) =>
     new BusinessLogicService(prisma as never, { generateStructured } as never).implement(
       'p',
@@ -173,12 +246,25 @@ describe('BusinessLogicService.implement', () => {
     ]);
   });
 
-  it('keeps the 501 stub and warns when the proposal is rejected', async () => {
-    const result = await implement(
-      vi.fn().mockResolvedValue({ data: { body: 'return process.env;' } }),
-    );
+  it('asks once more after a rejection, then keeps the 501 stub and warns', async () => {
+    const generate = vi.fn().mockResolvedValue({ data: { body: 'return process.env;' } });
+    const result = await implement(generate);
     expect(result.implementations).toEqual({});
     expect(result.warnings).toEqual([expect.stringContaining('Confirmar pedido')]);
+    // Bounded: one retry, never a third request.
+    expect(generate).toHaveBeenCalledTimes(2);
+  });
+
+  it('accepts a corrected proposal, telling the model why the first was rejected', async () => {
+    const generate = vi
+      .fn()
+      .mockResolvedValueOnce({ data: { body: 'return this.prisma._engine;' } })
+      .mockResolvedValueOnce({ data: { body: 'return this.prisma.order.findMany();' } });
+    const result = await implement(generate);
+    expect(Object.values(result.implementations)).toEqual(['return this.prisma.order.findMany();']);
+    const retry = generate.mock.calls[1]![0].messages;
+    expect(retry).toHaveLength(2);
+    expect(retry[1].content).toContain('(_engine)');
   });
 
   it('degrades gracefully when AI is unavailable', async () => {

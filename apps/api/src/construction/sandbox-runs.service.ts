@@ -1,3 +1,11 @@
+import {
+  ACCEPTANCE_SPEC_PATH,
+  acceptanceResults,
+  acceptanceSpec,
+  loadCriteria,
+  type AcceptanceCriterion,
+} from './acceptance';
+import { deliveryScope, scopePlan } from './delivery-scope';
 import { INTERRUPTED_BY_RESTART, startHeartbeat, staleHeartbeat } from '../common/interrupted';
 import { randomUUID } from 'node:crypto';
 import {
@@ -90,7 +98,7 @@ interface StageRecord {
   output: string;
 }
 
-// Validation of a generated project (spec §175-§177): the TargetTemplate's own
+// Validation of a generated project: the TargetTemplate's own
 // commands run in the sandbox, then structural and traceability checks. READY
 // — and its immutable snapshot — only when every P0 stage passed.
 @Injectable()
@@ -341,14 +349,26 @@ export class SandboxRunsService {
       const generation = await this.prisma.generationRun.findUniqueOrThrow({
         where: { id: generationRunId },
         select: {
+          origin: true,
+          deliveryId: true,
+          designBaselineId: true,
           implementationPlanVersion: { select: { structuredAnalysisDetail: true } },
         },
       });
-      const plan = generation.implementationPlanVersion.structuredAnalysisDetail
+      // A delivery is checked against what it builds (ADR-024).
+      const fullPlan = generation.implementationPlanVersion.structuredAnalysisDetail
         ?.content as unknown as ImplementationPlanContent;
+      const plan = generation.deliveryId
+        ? scopePlan(
+            fullPlan,
+            (await deliveryScope(this.prisma, projectId, generation.deliveryId)).modules,
+          )
+        : fullPlan;
       stages.push(
         check('STRUCTURE', [
-          ...structuralProblems(files, template, allowed, plan),
+          ...structuralProblems(files, template, allowed, plan, {
+            manual: generation.origin === 'MANUAL',
+          }),
           ...firstRunProblems(files),
           ...planCoverageProblems(files, plan),
         ]),
@@ -361,7 +381,16 @@ export class SandboxRunsService {
           ),
         );
       if (stages.at(-1)!.passed)
-        stages.push(await this.endToEnd(sandboxRunId, files, plan, result.collected[LOCKFILE]));
+        stages.push(
+          await this.endToEnd(
+            sandboxRunId,
+            files,
+            plan,
+            result.collected[LOCKFILE],
+            // ADR-025: the acceptance criteria of what this run builds.
+            await loadCriteria(this.prisma, projectId, plan, generation.designBaselineId),
+          ),
+        );
     }
     await this.prisma.sandboxRun.updateMany({
       where: { id: sandboxRunId, status: 'RUNNING' },
@@ -380,6 +409,7 @@ export class SandboxRunsService {
     files: ProjectFile[],
     plan: ImplementationPlanContent,
     lockfile: string | undefined,
+    criteria: AcceptanceCriterion[] = [],
   ): Promise<StageRecord> {
     await this.prisma.sandboxRun.updateMany({
       where: { id: sandboxRunId, status: 'RUNNING' },
@@ -399,12 +429,35 @@ export class SandboxRunsService {
       const result = await this.e2e.runE2E({
         files: [
           ...files
-            .filter((file) => file.path !== LOCKFILE)
+            .filter((file) => file.path !== LOCKFILE && file.path !== ACCEPTANCE_SPEC_PATH)
             .map(({ path, content }) => ({ path, content })),
+          ...(criteria.length
+            ? [{ path: ACCEPTANCE_SPEC_PATH, content: acceptanceSpec(criteria) }]
+            : []),
           { path: LOCKFILE, content: lockfile },
         ],
-        roles: e2eScreens(plan).map((screen) => screen.role),
+        roles: [
+          ...new Set([
+            ...e2eScreens(plan).map((screen) => screen.role),
+            ...criteria.map((criterion) => criterion.role),
+          ]),
+        ],
       });
+      const accepted = acceptanceResults(
+        result.output,
+        criteria.map((criterion) => criterion.key),
+        result.passed,
+      );
+      if (criteria.length)
+        await this.prisma.acceptanceResult.createMany({
+          data: criteria.map((criterion) => ({
+            sandboxRunId,
+            criterionKey: criterion.key,
+            useCaseCode: criterion.useCaseCode,
+            ...accepted.get(criterion.key)!,
+          })),
+          skipDuplicates: true,
+        });
       return {
         stage: 'E2E',
         passed: result.passed,
@@ -456,7 +509,7 @@ export class SandboxRunsService {
       ...(lockfile ? [{ path: LOCKFILE, content: lockfile }] : []),
     ];
     const hash = manifestHash(projectFiles);
-    // Generation/traceability manifest (spec §177.1), shipped inside the ZIP.
+    // Generation/traceability manifest, shipped inside the ZIP.
     const manifest = {
       snapshotId,
       targetTemplate: { identifier: template.identifier, version: template.version },
@@ -563,6 +616,20 @@ export class SandboxRunsService {
         status: 'VALIDATION_FAILED',
         failedStage: failed.stage,
         errorMessage: `La etapa ${failed.stage} sigue fallando tras ${MAX_AUTO_REPAIR_ROUNDS} rondas de reparación. Requiere revisión humana.`,
+      });
+      return;
+    }
+    // ADR-023: hand-written code is corrected by its authors. A patch applied
+    // here would be missing from their working folder and lost on the next import.
+    const { origin } = await this.prisma.generationRun.findUniqueOrThrow({
+      where: { id: run.generationRunId },
+      select: { origin: true },
+    });
+    if (origin === 'MANUAL') {
+      await this.finish(run.id, run.projectId, {
+        status: 'VALIDATION_FAILED',
+        failedStage: failed.stage,
+        errorMessage: `La etapa ${failed.stage} falló. Corrija el código e impórtelo de nuevo.`,
       });
       return;
     }

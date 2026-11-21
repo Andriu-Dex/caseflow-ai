@@ -26,6 +26,7 @@ describe('business checkpoint consolidation', () => {
   const prisma = {
     project: { findUnique: vi.fn() },
     generationRun: { findFirst: vi.fn() },
+    designBaseline: { findMany: vi.fn() },
     generatedFile: { findFirst: vi.fn(), upsert: vi.fn() },
   };
   const ai = { generateStructured: vi.fn() };
@@ -34,6 +35,7 @@ describe('business checkpoint consolidation', () => {
     vi.resetAllMocks();
     prisma.project.findUnique.mockResolvedValue({ language: 'ES' });
     prisma.generationRun.findFirst.mockResolvedValue({ id: 'new' });
+    prisma.designBaseline.findMany.mockResolvedValue([]);
     prisma.generatedFile.findFirst.mockResolvedValue({
       content: JSON.stringify({ body: 'return { previous: true };' }),
     });
@@ -47,7 +49,7 @@ describe('business checkpoint consolidation', () => {
     expect(prisma.generatedFile.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          generationRun: { projectId: 'project', designBaselineId: plan.designBaselineId },
+          generationRun: { projectId: 'project' },
         }),
         orderBy: [{ generationRun: { createdAt: 'desc' } }, { id: 'desc' }],
       }),
@@ -86,5 +88,25 @@ describe('business checkpoint consolidation', () => {
     expect(result.implementations).toEqual({});
     expect(result.warnings[0]).toContain('process');
     expect(prisma.generatedFile.upsert).not.toHaveBeenCalled();
+  });
+  it('proposes again a cached body that a newer review rejects, and stores the new one', async () => {
+    prisma.generatedFile.findFirst.mockResolvedValue({
+      content: JSON.stringify({ body: 'return process.env;' }),
+    });
+    ai.generateStructured.mockResolvedValue({ data: { body: 'return { fixed: true };' } });
+    const result = await service.implement('project', 'new', plan, CASEFLOW_WEB_TS_V2);
+    expect(result.implementations['POST /catalog/check']).toBe('return { fixed: true };');
+    expect(ai.generateStructured).toHaveBeenCalledTimes(1);
+    expect(prisma.generatedFile.upsert.mock.calls[0]![0].create.content).toContain('fixed');
+  });
+  it('keeps a cached body that a newer review rejects pending when AI is blocked', async () => {
+    prisma.generatedFile.findFirst.mockResolvedValue({
+      content: JSON.stringify({ body: 'return process.env;' }),
+    });
+    const result = await service.implement('project', 'new', plan, CASEFLOW_WEB_TS_V2, {
+      cacheOnly: true,
+    });
+    expect(result.implementations).toEqual({});
+    expect(ai.generateStructured).not.toHaveBeenCalled();
   });
 });

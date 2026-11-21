@@ -18,7 +18,7 @@ const isUniqueViolation = (error: unknown): boolean =>
   typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002';
 
 // Project-scoped exceptions to a template's Approved Dependency Catalog
-// (spec §155): DependencyProposal → human decision → approved for this project.
+// DependencyProposal → human decision → approved for this project.
 @Injectable()
 export class DependencyProposalsService {
   constructor(

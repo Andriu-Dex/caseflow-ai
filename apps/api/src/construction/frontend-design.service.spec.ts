@@ -74,10 +74,14 @@ async function setup() {
   };
   const prisma = {
     generationRun: { findFirst: vi.fn().mockResolvedValue({ id }) },
-    designBaseline: { findFirst: vi.fn().mockResolvedValue(baseline) },
+    designBaseline: {
+      findFirst: vi.fn().mockResolvedValue(baseline),
+      findMany: vi.fn().mockResolvedValue([]),
+    },
     project: { findUnique: vi.fn().mockResolvedValue({ language: 'ES' }) },
     screenDesignException: { findMany: vi.fn().mockResolvedValue([]) },
     screenDesignOverride: { findMany: vi.fn().mockResolvedValue([]) },
+    screenDesignRequest: { findMany: vi.fn().mockResolvedValue([]) },
     generatedFile: {
       findFirst: vi.fn().mockResolvedValue(null),
       upsert: vi.fn(async (args) => {
@@ -165,7 +169,7 @@ describe('frozen design adaptation', () => {
         projectId: id,
         sourceArtifactVersionId: mockupId,
         promptKey: 'frontend-design.generate',
-        promptVersion: 37,
+        promptVersion: 41,
       }),
     );
     const sent = JSON.parse(ai.generateStructured.mock.calls[0]![0].messages[0].content);
@@ -202,6 +206,29 @@ describe('frozen design adaptation', () => {
     expect(
       structuralProblems(modified, CASEFLOW_WEB_TS_V2, CASEFLOW_WEB_TS_V2.dependencies),
     ).toContainEqual(expect.stringContaining('no coincide'));
+  });
+  // ADR-030: a person's requests reach the AI and recompose only their screen.
+  it('sends the requests in force for a screen and keys its composition on them', async () => {
+    const { service, ai, prisma } = await setup();
+    const keys = () =>
+      prisma.generatedFile.findFirst.mock.calls
+        .map(([args]) => args.where.path.in[0] as string)
+        .filter((path) => path.startsWith('docs/presentations/'));
+    await service.adapt(id, id, plan, files(), 'Catálogo', false, id);
+    const plain = keys().at(-1);
+    prisma.screenDesignRequest.findMany.mockResolvedValue([
+      { routePath: '/items', instructions: ['Pon la tabla antes del buscador'] },
+    ]);
+    prisma.generatedFile.findFirst.mockResolvedValue(null);
+    await service.adapt(id, id, plan, files(), 'Catálogo', false, id);
+    const sent = JSON.parse(ai.generateStructured.mock.calls.at(-1)![0].messages[0].content);
+    expect(sent.personRequests).toEqual(['Pon la tabla antes del buscador']);
+    expect(keys().at(-1)).not.toBe(plain);
+    prisma.screenDesignRequest.findMany.mockResolvedValue([
+      { routePath: '/items', instructions: [] },
+    ]);
+    await service.adapt(id, id, plan, files(), 'Catálogo', false, id);
+    expect(keys().at(-1)).toBe(plain);
   });
   it('does not silently fall back to generic templates when approved HTML is unavailable, cross-project or not mapped', async () => {
     const { service, mockup, storage, ai, baseline } = await setup();
@@ -248,7 +275,49 @@ describe('frozen design adaptation', () => {
     expect(ai.generateStructured).not.toHaveBeenCalled();
     expect(result.records[0]!.mockupSha256).toBeNull();
   });
-  it('reports the exact screen and missing binding without storing an accepted presentation', async () => {
+  it('keeps a built-in access page with no screen as the template made it (ADR-026)', async () => {
+    const { service, ai } = await setup();
+    const signOut = file('apps/web/app/logout/page.tsx', 'export default function LogoutPage() {}');
+    const withSignOut = {
+      ...plan,
+      customEndpoints: [
+        {
+          moduleLocalId: 'catalog',
+          method: 'POST',
+          path: '/auth/logout',
+          summary: 'Salir',
+          builtin: 'LOGOUT',
+          roles: [],
+        },
+      ],
+      routes: [
+        ...plan.routes,
+        {
+          path: '/logout',
+          screenName: 'Cerrar sesión',
+          moduleLocalId: 'catalog',
+          kind: 'CUSTOM',
+          actions: [{ label: 'Cerrar sesión', endpoint: 'POST /auth/logout' }],
+        },
+      ],
+    };
+    const result = await service.adapt(
+      id,
+      id,
+      withSignOut as never,
+      [...files(), signOut],
+      'Catálogo',
+      false,
+      id,
+    );
+    expect(ai.generateStructured).toHaveBeenCalledTimes(1);
+    expect(result.records.find((record) => record.routePath === '/logout')).toMatchObject({
+      mockupSha256: null,
+      outputSha256: createHash('sha256').update(signOut.content).digest('hex'),
+    });
+    expect(result.files.find((item) => item.path === signOut.path)!.content).toBe(signOut.content);
+  });
+  it('ships a valid proposal with its limitations as observations, without blocking (DEC-164)', async () => {
     const { service, ai, prisma } = await setup();
     const original = ai.generateStructured.getMockImplementation()!;
     ai.generateStructured.mockImplementation(async (input) => {
@@ -264,24 +333,27 @@ describe('frozen design adaptation', () => {
     });
     const stored = new Map<string, string>();
     prisma.generatedFile.findFirst.mockImplementation(async ({ where }) =>
-      stored.has(where.path) ? { content: stored.get(where.path) } : null,
+      stored.has(where.path.in[0]) ? { content: stored.get(where.path.in[0]) } : null,
     );
     prisma.generatedFile.upsert.mockImplementation(async (args) => {
       stored.set(args.create.path, args.create.content);
       return args.create;
     });
-    await expect(service.adapt(id, id, plan, files(), 'Catálogo', false, id)).rejects.toThrow(
-      'Artículos',
-    );
-    // The findings are kept, never an accepted presentation, and a second run
-    // reports them again without another evaluation.
+    const adapted = await service.adapt(id, id, plan, files(), 'Catálogo', false, id);
+    expect(adapted.records[0]).toMatchObject({
+      routePath: '/items',
+      observations: 'MISSING_DATA_BINDING: Falta el enlace de existencias.',
+      presentation: expect.objectContaining({ limitations: [] }),
+    });
+    expect(adapted.records[0]).not.toHaveProperty('acceptedException');
+    // Only the findings are kept, so a second run reuses the proposal with
+    // its observations instead of asking again.
     expect([...stored.keys()]).toEqual([expect.stringMatching(/^docs\/presentation-findings\//)]);
-    await expect(service.adapt(id, id, plan, files(), 'Catálogo', false, id)).rejects.toThrow(
-      'Falta el enlace de existencias',
-    );
+    const again = await service.adapt(id, id, plan, files(), 'Catálogo', false, id);
+    expect(again.records[0]).toMatchObject({ observations: adapted.records[0]!.observations });
     expect(ai.generateStructured).toHaveBeenCalledTimes(1);
   });
-  it('lets findings through only with a justified exception for those exact findings', async () => {
+  it('records a justified exception for the exact findings it accepts', async () => {
     const { service, ai, prisma } = await setup();
     const original = ai.generateStructured.getMockImplementation()!;
     ai.generateStructured.mockImplementation(async (input) => {
@@ -295,15 +367,13 @@ describe('frozen design adaptation', () => {
     });
     const stored = new Map<string, string>();
     prisma.generatedFile.findFirst.mockImplementation(async ({ where }) =>
-      stored.has(where.path) ? { content: stored.get(where.path) } : null,
+      stored.has(where.path.in[0]) ? { content: stored.get(where.path.in[0]) } : null,
     );
     prisma.generatedFile.upsert.mockImplementation(async (args) => {
       stored.set(args.create.path, args.create.content);
       return args.create;
     });
-    await expect(service.adapt(id, id, plan, files(), 'Catálogo', false, id)).rejects.toThrow(
-      'Falta el resumen',
-    );
+    await service.adapt(id, id, plan, files(), 'Catálogo', false, id);
     const findings = JSON.parse([...stored.values()][0]!).findings as string;
     prisma.screenDesignException.findMany.mockResolvedValue([
       {
@@ -317,21 +387,9 @@ describe('frozen design adaptation', () => {
     expect(adapted.records[0]).toMatchObject({
       routePath: '/items',
       acceptedException: { id: 'exception' },
+      observations: findings,
     });
-    // The second run reused the recorded findings instead of asking again.
     expect(ai.generateStructured).toHaveBeenCalledTimes(1);
-    // An exception for different findings does not apply.
-    prisma.screenDesignException.findMany.mockResolvedValue([
-      {
-        id: 'other',
-        routePath: '/items',
-        findingsSha256: 'f'.repeat(64),
-        justification: 'x'.repeat(12),
-      },
-    ]);
-    await expect(service.adapt(id, id, plan, files(), 'Catálogo', false, id)).rejects.toThrow(
-      'Falta el resumen',
-    );
   });
 
   it('keeps the functional page of an excepted screen whose proposed layout is invalid', async () => {
@@ -390,7 +448,7 @@ describe('frozen design adaptation', () => {
     );
     const recorded = prisma.generatedFile.upsert.mock.calls[0]![0].create.content as string;
     prisma.generatedFile.findFirst.mockImplementation(async ({ where }) =>
-      where.path.startsWith('docs/presentation-findings/') ? { content: recorded } : null,
+      where.path.in[0].startsWith('docs/presentation-findings/') ? { content: recorded } : null,
     );
     ai.generateStructured.mockImplementation(original);
     await service.adapt(id, id, plan, files(), 'Catálogo', false, id);
@@ -401,10 +459,13 @@ describe('frozen design adaptation', () => {
     const { service, prisma } = await setup();
     prisma.generatedFile.findFirst.mockResolvedValue(null);
     await service.adapt(id, id, plan, files(), 'Catálogo', false, id);
-    // One lookup for an accepted presentation and one for recorded findings,
-    // both under the current version's inputs hash.
-    const paths = prisma.generatedFile.findFirst.mock.calls.map(([args]) => args.where.path);
-    expect(paths).toHaveLength(2);
+    // One lookup for an accepted presentation and two for recorded findings
+    // (a real evaluation first, then an unevaluated mark), all under the
+    // current version's inputs hash.
+    const calls = prisma.generatedFile.findFirst.mock.calls.map(([args]) => args.where);
+    const paths = calls.map((where) => where.path.in[0]);
+    expect(paths).toHaveLength(3);
+    expect(calls[1].NOT).toEqual({ content: { contains: 'NOT_EVALUATED:' } });
     expect(new Set(paths.map((path: string) => path.split('/').at(-1))).size).toBe(1);
   });
 });
@@ -469,6 +530,15 @@ describe('hand-written screens', () => {
     const written = `<section><input id="name" {...register('name')} /><MoneyInput {...register('price')} />
 <Button className="w-full" data-action={"Guardar producto"}>Guardar producto</Button>{api.listItems(query)}</section>`;
     expect(missingBindings(generated, written)).toEqual([]);
+  });
+  it('require the links to other screens of the generated page', () => {
+    const page = 'return <Link href={`/orders/${row.id}/edit`}>Editar</Link>;';
+    expect(missingBindings(page, '<a href="/orders">Pedidos</a>')).toEqual([
+      'href={`/orders/${row.id}/edit`}',
+    ]);
+    expect(
+      missingBindings(page, '<Link href={`/orders/${row.id}/edit`} className="x">Editar</Link>'),
+    ).toEqual([]);
   });
   it('report what a hand-written screen lost', () => {
     expect(missingBindings(generated, `<input {...register('name')} />`)).toEqual([

@@ -1,0 +1,229 @@
+# Plan de mejoras tras la reunión con el cliente
+
+Estado: fases 1 a 8 hechas (la 8.5 la sustituye la 10.1); fases 9 y 10 pendientes. Creado: 2026-11-16. Actualizado: 2026-11-17.
+
+## Decisiones tomadas
+
+1. La construcción de RestGuestMateos se hace a mano y se incorpora a CASEFlow mediante una función genérica, «Implementación manual». El núcleo no contiene código de RestGuestMateos.
+2. RestGuestMateos mantiene el catering.
+3. Los bocetos pasan a generarse como HTML y CSS con el sistema de diseño del proyecto, en lugar de Stitch.
+4. El código manual parte del snapshot validado `1a1ff376-8ecb-49bd-8e42-281995d11179`.
+5. No se lanzan generaciones con IA hasta terminar RestGuestMateos. Las pruebas de funciones que usan IA son deterministas (proveedor simulado).
+6. Trabajo repartido entre dos equipos de trabajo, A y B, según las reglas de la sección «Reparto del trabajo».
+7. El código de RestGuestMateos no tiene repositorio Git propio: es un proyecto generado y su historial es el de CASEFlow (cada importación queda como una corrida inmutable).
+8. La persona responsable aprobó el ADR-023 y autorizó modificar las reglas de la especificación que la implementación manual requiera.
+
+## Reparto del trabajo
+
+- Cada tarea tiene un responsable: **A** o **B**.
+- Cada responsable trabaja sobre archivos distintos para no pisarse. Las ramas son en inglés, por ejemplo `feat/manual-implementation`.
+- Revisión cruzada: quien no escribió el cambio lo revisa antes de integrarlo.
+- Las tareas se describen cerradas (archivos a leer, criterio de aceptación, comandos de comprobación). Una sola revisión por cambio; se repite solo si hubo correcciones.
+- Ambos siguen `AGENTS.md`: Conventional Commits, código en inglés e interfaz en español, avisos con sonner y sin emojis.
+- Nadie integra en `main` ni publica sin que lo pida la persona responsable del proyecto.
+
+## Fase 1. Pendientes inmediatos
+
+| ID  | Tarea                                                                                                                 | Resp. | Criterio de aceptación                                                |
+| --- | --------------------------------------------------------------------------------------------------------------------- | ----- | --------------------------------------------------------------------- |
+| 1.1 | La revisión de lógica de negocio rechaza también incluir o seleccionar la entidad de ámbito a través de una relación. | A     | Prueba que lo rechaza; los 34 métodos actuales siguen aceptados.      |
+| 1.2 | No se puede aprobar un paso de planificación mientras uno anterior no esté completo; el mensaje dice cuál falta.      | B     | Pruebas de API y de interfaz; los pasos completos siguen aprobándose. |
+
+## Fase 2. Implementación manual (base de la construcción de RestGuestMateos)
+
+| ID  | Tarea                                                                                                                                                                                                                        | Resp. | Criterio de aceptación                                                                |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ------------------------------------------------------------------------------------- |
+| 2.1 | ADR-023 «Implementación manual» y actualización de la especificación: quién puede aportarla, qué se valida, cómo se traza y que no usa IA. La exportación ya existe: el ZIP de un snapshot.                                  | A     | Aprobación ya concedida; el ADR y la especificación se actualizan en el mismo cambio. |
+| 2.2 | Migración: la corrida de construcción indica su origen (`GENERATED` o `MANUAL`).                                                                                                                                             | A     | Migración de Prisma nueva, sin reescribir las aplicadas.                              |
+| 2.3 | API: importar un árbol de código (zip) para una línea base congelada. Valida rutas, tamaño, tipos de archivo y ausencia de secretos (`.env`); guarda los archivos con origen `MANUAL`; autoriza por pertenencia al proyecto. | A     | Pruebas de rutas peligrosas, secretos, tamaño y otro proyecto.                        |
+| 2.4 | La validación en sandbox de una corrida manual no usa la reparación automática con IA: si falla, informa la etapa y el error.                                                                                                | A     | Prueba de que no se llama al orquestador de IA.                                       |
+| 2.5 | Trazabilidad: el manifiesto del ZIP declara qué elementos del plan implementa cada archivo; solo se aceptan los que el plan define. La cobertura del plan ya la comprueba la etapa de estructura.                            | A     | Prueba con manifiesto completo, con elementos desconocidos y ausente.                 |
+| 2.6 | Interfaz en Construcción: botón «Importar implementación manual», resumen de la importación y el mismo flujo de validación, snapshot y despliegue.                                                                           | B     | Prueba de componente; avisos con sonner.                                              |
+
+## Fase 3. Planificación: qué se va a construir (puntos 3, 4 y 5 de la reunión)
+
+| ID  | Tarea                                                                                                                                                                                                                                  | Resp.                               | Criterio de aceptación                                                 |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | ---------------------------------------------------------------------- |
+| 3.1 | Cálculo determinista de contenedores a partir de la plantilla y la arquitectura de sistema aprobada: nombre, responsabilidad, módulos o servicios, puertos, volúmenes y red. Hoy son 3: aplicación (API y web), base de datos y túnel. | A                                   | Prueba con la plantilla actual.                                        |
+| 3.2 | Pestaña «Contenedores e infraestructura» con tarjetas y diagrama de conexiones.                                                                                                                                                        | B                                   | Prueba de componente; sin texto técnico fuera de los desplegables.     |
+| 3.3 | Vista previa de la estructura: árbol de carpetas y archivos calculado sin IA a partir del plan, con el propósito de cada archivo, su módulo y la ruta web o de API que implementa.                                                     | A (cálculo) / B (árbol en interfaz) | En una corrida generada o manual, compara lo previsto con lo obtenido. |
+| 3.4 | Presentación por módulo: tarjeta con resumen de 1 o 2 líneas, contadores (entidades, pantallas, endpoints, archivos) y pestañas «Resumen / Datos / Pantallas / API / Archivos / Fuentes».                                              | B                                   | Prueba de componente; las fuentes y lo técnico quedan plegados.        |
+
+## Fase 4. Pantallas despejadas en CASEFlow (puntos 2 y 6)
+
+Patrón común: resumen con estado y siguiente acción arriba; pestañas «General / Detalle técnico»; acordeones para justificaciones, fuentes y listas largas; textos de 1 o 2 líneas con «Ver más».
+
+| ID  | Tarea                                                                                                                                          | Resp. |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
+| 4.1 | Componentes compartidos `Tabs`, `Accordion` y `SummaryHeader`, accesibles y con pruebas. Sin dependencias nuevas si `<details>` y ARIA bastan. | A     |
+| 4.2 | Construcción → Generación (1.906 líneas).                                                                                                      | B     |
+| 4.3 | Fuentes (1.595).                                                                                                                               | B     |
+| 4.4 | Bocetos (1.567).                                                                                                                               | B     |
+| 4.5 | Manual de usuario (1.502).                                                                                                                     | B     |
+| 4.6 | Trazabilidad (1.053) y Contexto (939).                                                                                                         | B     |
+
+Criterio común: las pruebas existentes siguen pasando; ninguna acción se pierde, solo se reubica; revisión visual en las páginas de RestGuestMateos.
+
+## Fase 5. Datos de demostración realistas en CASEFlow (punto 1)
+
+| ID  | Tarea                                                                                                                                                      | Resp. |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
+| 5.1 | Nueva versión del prompt de datos de demostración: datos verosímiles y coherentes con el país, la moneda y el sector del proyecto; sin códigos de relleno. | A     |
+| 5.2 | Comprobación determinista que rechaza valores de relleno («demo», «test», «prueba», hexadecimales o identificadores sin sentido) y reintenta una vez.      | B     |
+| 5.3 | Cuentas de demostración con nombre de persona y un identificador legible por rol (por ejemplo `admin.mateos`).                                             | B     |
+
+Se prueba solo con un proveedor simulado hasta terminar RestGuestMateos.
+
+## Fase 6. Construcción manual de RestGuestMateos
+
+El código se edita en una carpeta de trabajo sin Git, fuera del repositorio de CASEFlow (`RestGuestMateos/`, junto a `CASEFlow-AI/`), creada con la exportación del snapshot `1a1ff376`. Al ser un proyecto generado, su historial lo lleva CASEFlow:
+
+- Al cerrar cada módulo se importa en CASEFlow, lo que deja una corrida inmutable que sirve de punto de control y de copia de seguridad.
+- A y B editan carpetas de módulos distintas para no pisarse. Los archivos compartidos (shell, navegación, contratos, esquema de Prisma, siembra) solo los toca el responsable de la tarea 6.2, y los demás piden los cambios.
+
+Convenciones de interfaz:
+
+- No se muestran identificadores; se muestran nombres.
+- La cabecera de cada pantalla es breve, sin repetir la descripción del módulo.
+- Las definiciones y fórmulas van en un panel plegable «Cómo se calcula».
+- Estados y valores en español.
+- Avisos con sonner.
+
+| ID   | Tarea                                                                                                                                            | Resp. |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ----- |
+| 6.1  | Crear el repositorio desde el snapshot, comprobar que instala, compila y pasa las pruebas; documento corto de convenciones.                      | A     |
+| 6.2  | Diseño base: shell, navegación, componentes de tabla, formularios, tarjetas y panel «Cómo se calcula».                                           | A     |
+| 6.3  | Acceso, inicio y usuarios.                                                                                                                       | A     |
+| 6.4  | Caja y ventas (borrador, confirmación, corrección, anulación, observaciones).                                                                    | A     |
+| 6.5  | Catálogo: productos, categorías, disponibilidad y precio local.                                                                                  | B     |
+| 6.6  | Menús diarios: versiones, edición, publicación y copia.                                                                                          | B     |
+| 6.7  | Inventario: entradas, salidas, mermas, ajustes, mínimos y alertas.                                                                               | B     |
+| 6.8  | Gastos: categorías, gastos, confirmación posterior de un borrador y corrección del importe.                                                      | B     |
+| 6.9  | Reportes e indicadores, incluidos los de solicitudes y eventos de catering y la comparación con selector de sucursal.                            | B     |
+| 6.10 | Catering: clientes, solicitudes, condiciones, eventos con cambios de estado y vínculo de gastos.                                                 | A     |
+| 6.11 | Siembra realista escrita a mano: sucursales de Quito, personal con nombres, platos, menús por día, ventas, gastos y eventos coherentes entre sí. | B     |
+| 6.12 | Manifiesto de trazabilidad completo contra el plan v33.                                                                                          | A     |
+| 6.13 | Importar en CASEFlow, validar, desplegar y repetir las pruebas por rol y por acción.                                                             | A     |
+
+Cada módulo se cierra con sus pruebas, una revisión del otro responsable y una prueba en el navegador con el rol correspondiente.
+
+## Fase 7. Bocetos en HTML y CSS (después de RestGuestMateos)
+
+| ID  | Tarea                                                                                                                                                                             | Resp. |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
+| 7.1 | Hecho (DEC-167). Proveedor de bocetos que genera HTML y CSS con el tema, los colores y los componentes aprobados del proyecto, detrás de la interfaz `ScreenGenerator` existente. | A     |
+| 7.2 | Hecho. Vista previa y comparación de bocetos en la pantalla de Bocetos: cada pantalla se compara con la misma pantalla de la versión anterior.                                    | B     |
+| 7.3 | Alternativa manual: importar bocetos hechos por una persona (HTML y CSS con su imagen PNG, DEC-166).                                                                              | B     |
+
+## Fase 8. Mejoras adicionales (backlog, por prioridad)
+
+1. Hecho (DEC-168). Estimación de llamadas de IA antes de lanzar una generación, con lo que se reutiliza y lo que se regenera.
+2. Hecho. Panel de la demostración desplegada: cuentas con nombre y rol, copiar, acceso directo y estado de los contenedores.
+3. Hecho. Indicador de progreso de la planificación con el motivo de cada bloqueo: «Siguiente paso» en Inicio, con sus motivos pendientes y el estado de la construcción y la demostración.
+4. Hecho. Enlace de despliegue estable con un túnel con nombre de Cloudflare (requiere cuenta): token y dirección fija en el panel de despliegue.
+5. Sustituido por la mejora 10.1 (construcción por módulos). Asistente para dividir un proyecto grande en entregas cuando supera la capacidad de la IA. La estimación previa (DEC-168) ya muestra el costo antes de generar, y la implementación manual (ADR-023) cubre los proyectos que no caben; se retomará si un proyecto real lo necesita.
+
+Mejoras de experiencia añadidas tras revisar las pantallas con datos reales:
+
+- Tarjetas de proyecto con el avance de la planificación y la demostración en línea.
+- Coherencia resumida por gravedad: las observaciones ya no aparecen como incidencias.
+- Página 404 en español con salida a Inicio y Proyectos; `/settings` abre los ajustes de IA.
+- Las ayudas de primer uso no se salen de la ventana; textos sin jerga interna y menú con iconos propios.
+- Bocetos: comparación de cada pantalla con su versión anterior.
+- Búsqueda rápida (Ctrl+K o «Buscar» en el menú): abre una página o un artefacto del proyecto activo por su código (RF-001, CU-003…) o por su título, sin distinguir tildes ni mayúsculas. En requisitos y casos de uso, el artefacto elegido queda filtrado y abierto. API: `GET /projects/:projectId/artifacts/search?q=`.
+
+## Fase 9. Proyecto del cine
+
+Comprobar el flujo genérico completo con IA en un proyecto pequeño, ya con las fases 3, 4, 5 y 7 terminadas.
+
+Hecho el 2026-11-19 con Cine Aurora (taquilla de un cine con dos roles):
+
+- **Análisis y diseño:** todas las etapas generadas con IA, revisadas y aprobadas.
+- **Construcción por entregas:** las 7 entregas están validadas y aprobadas, de la base a los reportes.
+- **Aceptación:** los 20 criterios de aceptación se cumplen, uno por caso de uso.
+- **Gasto de IA:** 171 solicitudes en total, contando las fallidas.
+
+La prueba sacó a la luz fallos que impedían construir cualquier proyecto generado con IA. Se corrigieron en CASEFlow con pruebas de regresión:
+
+- **Esquemas para la IA en modo estricto:** uniones como `anyOf`, profundidad máxima de 10 niveles, se descartan las claves que el tipo de un valor no admite y en el último nivel solo hay tipos simples.
+- **Plan de implementación:**
+  - el servidor completa la autenticación local (ADR-026, DEC-177);
+  - se conservan las navegaciones;
+  - una acción la atiende antes un endpoint o una navegación que una operación de relleno;
+  - se descartan las referencias que no existen;
+  - las escrituras reciben su cuerpo de entrada;
+  - se retira la operación CRUD que no puede rellenar campos calculados o que choca con un endpoint de negocio;
+  - una acción que crea un registro recibe los campos que introduce la persona, con los valores de su enumeración.
+- **Plantilla generada:**
+  - la página de cierre de sesión es la de la plantilla, sin pantalla de diseño;
+  - el enlace por ámbito solo existe con ámbito;
+  - la acción integrada lleva su marca;
+  - el inicio abre el acceso cuando no hay sesión y lee la sesión una vez montado;
+  - se puede abrir un registro desde su fila;
+  - el cuerpo sin campos no usa `{}`;
+  - cada página importa solo lo que dibuja;
+  - las listas muestran sus consultas de contexto.
+- **Entregas (ADR-024):** un intento fallido de una entrega ya no impide volver a construirla.
+
+Pendiente:
+
+- **Despliegue:** se hace desde la web, porque requiere la contraseña inicial que elige la persona.
+- **Moneda:** los importes se muestran sin símbolo. El plan no nombra la moneda, así que para ver USD hay que indicarla en las etiquetas de los campos de importe.
+
+## Correcciones previas a la fase 10
+
+Acordadas el 2026-11-17. Se hacen antes de la fase 10 porque corrigen lo que el cliente ya vio.
+
+| ID  | Tarea                                                                                                                                                                                                                                                                                                                                                                                         | Criterio de aceptación                                                                                        |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| C.1 | Hecho. Tarjeta «Tecnologías del proyecto» en el plan de generación: frontend, backend, base de datos y ORM, autenticación, infraestructura (Docker y túnel) y pruebas, con versión y una línea de para qué sirve cada una. Se calcula sin IA a partir de la plantilla y su catálogo de dependencias aprobadas; también se usará en la entrega técnica (10.6).                                 | Lo mostrado coincide con las dependencias que la plantilla genera; prueba de componente.                      |
+| C.2 | Hecho. Revisión de todos los diagramas generados (casos de uso, entidad-relación, clases, navegación, arquitectura de software, arquitectura de sistema, contenedores y plano de interfaz) con los datos de RestGuestMateos: elementos que no corresponden al tipo de diagrama (por ejemplo, tablas o pantallas en una arquitectura), tarjetas con exceso de detalle y errores de relaciones. | Informe con cada hallazgo y su «antes / después» propuesto, aprobado por la persona responsable antes de C.3. |
+| C.3 | Hecho (DEC-169). Reglas por tipo de diagrama: qué elementos admite cada uno y cuánto detalle lleva cada tarjeta. Se aplican en tres sitios: las instrucciones genéricas de generación, una comprobación determinista que avisa o rechaza lo que no corresponde y el dibujo, que muestra la vista esencial con «Ver detalle completo» para el resto.                                           | Pruebas por tipo de diagrama con casos que deben rechazarse; ningún detalle se pierde, solo se pliega.        |
+| C.4 | Hecho. Corrección de los diagramas de RestGuestMateos según el informe de C.2, a mano (sin generaciones con IA) y aprobados de nuevo.                                                                                                                                                                                                                                                         | Todos los diagramas pasan la comprobación de C.3; las etapas de preparación siguen completas y vigentes.      |
+
+Resultado de C.2 a C.4 en RestGuestMateos:
+
+- Arquitectura de sistema (SARQ-003 v5): navegador, túnel de publicación, contenedor de la aplicación y PostgreSQL, con enlaces rotulados por protocolo. Las responsabilidades de los nodos retirados (despliegue, configuración, monitorización, respaldos, reportes) pasan al nodo donde ocurren, sin perder ningún requisito citado.
+- Arquitectura de software (ARQ-003 v6): sin el grupo «Infraestructura»; la persistencia queda en su propia capa y sus requisitos se trasladan a la persistencia y a la API.
+- Diagrama de clases (DC-003 v5): mismo contenido, dibujado con las reglas de DEC-169 y sin letras cortadas. Las etapas siguientes se confirmaron como vigentes; la línea base de diseño no cambia, porque el contenido congelado es el mismo.
+- Categorías de producto: se mantienen la relación muchos a muchos con las categorías (agrupación del catálogo) y la clasificación operativa en texto, que son conceptos distintos y ya están construidos así.
+- Casos de uso: el diagrama completo se conserva, porque la preparación exige uno que represente todos los casos aprobados; un filtro por actor en el visor queda como mejora posible. «Registrar intento de autenticación rechazado» se mantiene como caso de uso porque el plan y el código construidos lo referencian.
+
+## Fase 10. Mejoras de construcción aceptadas
+
+Aceptadas el 2026-11-17. Cada mejora es genérica: lo propio de un proyecto va en sus datos, nunca en el núcleo.
+
+| #    | Mejora                                                          | Qué hace                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Depende de       |
+| ---- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| 10.1 | Hecho (DEC-170, ADR-024). Dos modos de construcción             | **Todo de una vez** (el actual) o **por módulos**. Por módulos: la entrega 0 es la base (inicio de sesión, roles, estructura con el menú y el esquema completo de la base de datos); después, un módulo funcional por entrega con sus pantallas, lógica, datos y pruebas. Cada entrega se estima, genera, valida (también con las pruebas de las entregas anteriores) y aprueba; lo aprobado queda fijo y se reutiliza. CASEFlow propone el orden por dependencias y el usuario puede cambiarlo. Se puede pasar de un modo a otro. | —                |
+| 10.2 | Hecho (DEC-171, ADR-025). Pruebas de aceptación por caso de uso | Criterios «dado / cuando / entonces» a partir de los flujos de cada caso de uso, aprobados por el usuario, ejecutados en la validación, con resultado por requisito. En el modo por módulos son la condición para aprobar una entrega.                                                                                                                                                                                                                                                                                             | 10.1             |
+| 10.3 | Hecho (DEC-172). «¿Dónde está implementado?»                    | Desde un requisito o caso de uso: pantallas, endpoints, archivos generados y pruebas que lo cubren, con el resultado de la última validación.                                                                                                                                                                                                                                                                                                                                                                                      | 10.1, 10.2       |
+| 10.4 | Hecho (DEC-173). Notas de cada entrega                          | Resumen en lenguaje sencillo al aprobar una entrega o una construcción completa: qué se puede hacer, qué requisitos se cumplen, con qué cuentas probarlo y qué cambió desde la anterior.                                                                                                                                                                                                                                                                                                                                           | 10.1, 10.2, 10.3 |
+| 10.5 | Hecho (DEC-175). Prototipo navegable                            | Bocetos aprobados unidos por el árbol de navegación, recorribles con clics y por rol antes de construir.                                                                                                                                                                                                                                                                                                                                                                                                                           | —                |
+| 10.6 | Hecho (DEC-174). Entrega técnica del proyecto                   | Paquete para quien mantendrá el sistema: código, guía de instalación y despliegue, documentación de la API, diagrama de arquitectura, cuentas de ejemplo y las notas de entrega.                                                                                                                                                                                                                                                                                                                                                   | 10.4             |
+| 10.7 | Hecho (DEC-176). Partir de un proyecto parecido                 | Biblioteca de puntos de partida (por ejemplo, inicio de sesión con roles, auditoría, inventario, reservas) con requisitos, casos de uso y entidades que el usuario adapta. Se pueden crear desde un proyecto propio («Guardar como punto de partida»); el contenido son datos, no código del núcleo.                                                                                                                                                                                                                               | —                |
+
+### Cómo se trabaja cada mejora
+
+1. **Decisión:** DEC en la especificación, y ADR si toca una regla de integridad (10.1 y 10.2 cambian qué se aprueba y cuándo una corrida está lista).
+2. **Datos:** migración de Prisma; nunca `db push` ni reescribir migraciones aplicadas.
+3. **API:** contrato en `@caseflow-ai/contracts`, OpenAPI, autorización por pertenencia al proyecto; el trabajo largo, en trabajos idempotentes.
+4. **Web:** textos en español, avisos con sonner, sin emojis; accesible con teclado.
+5. **Pruebas:** unitarias, de la web, de integración y E2E cuando cambia el flujo. Lo que usa IA se prueba con el proveedor simulado; antes de gastar cuota real se presenta la estimación.
+6. **Cierre:** lint, formato, tipos, pruebas y build; documentación actualizada; un commit por parte coherente en una rama propia.
+
+### Orden
+
+0. **Correcciones previas** (C.1 a C.4).
+1. **10.1 Dos modos de construcción.** Es la base: introduce la «entrega», que usan 10.2, 10.3, 10.4 y 10.6. Partes: modelo de entregas y orden propuesto; generación limitada a una entrega reutilizando lo aprobado; validación con regresión; aprobación y congelado; selector de modo en la pantalla de construcción.
+2. **10.2 Pruebas de aceptación.** Se conectan como condición de aprobación de cada entrega y como resultado por requisito.
+3. **Fase 9 (proyecto del cine).** Primera prueba real con IA del modo por módulos y de las pruebas de aceptación, en un proyecto pequeño. Lo que falle aquí se corrige antes de seguir.
+4. **10.3 «¿Dónde está implementado?».** Usa los archivos de cada entrega y los resultados de 10.2.
+5. **10.4 Notas de cada entrega** y después **10.6 Entrega técnica**, que las incluye.
+6. **10.5 Prototipo navegable** y **10.7 Partir de un proyecto parecido.** No dependen de las demás: pertenecen a la planificación y pueden adelantarse si hace falta para una presentación.
+
+## Orden y dependencias
+
+1 → 2 → (3 y 4 en paralelo) → 5 → 6 → 7 → 9. La fase 8 se toma por partes cuando haya hueco. Después vienen las correcciones previas (C.1 a C.4) y la fase 10 en su propio orden (arriba), con la fase 9 entre 10.2 y 10.3.
+
+Dentro de la fase 6, las tareas 6.1 y 6.2 van primero. Después A (6.3, 6.4, 6.10) y B (6.5 a 6.9 y 6.11) avanzan en paralelo.

@@ -1,5 +1,5 @@
 // Deterministic ISO/IEC/IEEE 29148:2018-aligned Requirement quality checks
-// (spec §4.3). This is a cheap structural analyzer, never proof of standards
+// This is a cheap structural analyzer, never proof of standards
 // compliance or a substitute for human review, which remains authoritative.
 
 export interface RequirementForQualityCheck {
@@ -77,7 +77,7 @@ export function analyzeRequirementQuality(
       push('MISSING_PROVENANCE', 'Un requisito generado por IA no conserva su procedencia exacta.');
 
     // Heuristic only, not a grammar/NLP analysis — flags for human review,
-    // never blocks generation/approval by itself (spec §4.3).
+    // never blocks generation/approval by itself.
     const sentenceCount = requirement.description
       .split(/[.;]+/)
       .map((sentence) => sentence.trim())

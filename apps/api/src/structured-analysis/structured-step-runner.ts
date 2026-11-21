@@ -64,7 +64,22 @@ export function createStepRunner(deps: {
       apply: (output: z.infer<S>) => void,
     ): Promise<void> {
       const { ai, projectId, language, progress } = deps;
-      const cached = progress ? await parts.find(progress.jobId, part) : null;
+      const saved = progress ? await parts.find(progress.jobId, part) : null;
+      // An answer saved under an older prompt is asked again: resuming after
+      // the prompt changed must not bring back what the change fixed.
+      const source = saved
+        ? await deps.prisma.aIRun.findUnique({
+            where: { id: saved.aiRunId },
+            select: { promptKey: true, promptVersion: true },
+          })
+        : null;
+      const cached =
+        saved &&
+        (!source ||
+          (source.promptKey === request.promptKey &&
+            source.promptVersion === request.promptVersion))
+          ? saved
+          : null;
       let output: z.infer<S>;
       if (cached) {
         output = request.schema.parse(cached.content) as z.infer<S>;

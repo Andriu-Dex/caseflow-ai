@@ -7,10 +7,14 @@ import type {
   DataModelInput,
   DesignBaselineResponse,
   ScreenDesignExceptionResponse,
+  ScreenDesignConversationResponse,
+  DeploymentHealthResponse,
   DeploymentResponse,
   ScreenFindingsResponse,
   GeneratedFileResponse,
   ConstructionUnit,
+  ConstructionPreviewResponse,
+  GenerationEstimateResponse,
   GeneratedFileSummary,
   GenerationRunResponse,
   SandboxRunResponse,
@@ -19,9 +23,11 @@ import type {
   DiagramResponse,
   FirstDeliverableExport,
   MockupDeviceType,
+  MockupGenerator,
   MockupJobResponse,
   MockupPreviewResponse,
   MockupResponse,
+  MockupScreenHistoryResponse,
   ProjectContextCandidate,
   ProjectContextGenerationJob,
   RequirementGenerationJob,
@@ -45,6 +51,15 @@ import type {
   UseCaseBulkAction,
   UseCaseGenerationJob,
   ArchivedArtifactsResponse,
+  ArtifactSearchResponse,
+  ApplyStartingPointResponse,
+  StartingPoint,
+  StartingPointListResponse,
+  ReleaseNotesResponse,
+  ImplementationTraceResponse,
+  AcceptanceReportResponse,
+  DeliveryPlanResponse,
+  TargetTemplateListResponse,
   RestoreArtifactResponse,
   DataModelGenerationJob,
   StructuredGenerationJob,
@@ -89,6 +104,7 @@ export interface AIStatus {
     unavailableUntil?: string;
     quota?: 'MINUTE' | 'DAY';
   }[];
+  planPaused?: boolean;
 }
 
 export interface GenerationResult {
@@ -342,6 +358,8 @@ const post = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
 const patch = <T>(path: string, body: unknown) =>
   request<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
+const put = <T>(path: string, body: unknown) =>
+  request<T>(path, { method: 'PUT', body: JSON.stringify(body) });
 const del = <T>(path: string, body?: unknown) =>
   request<T>(path, {
     method: 'DELETE',
@@ -409,6 +427,13 @@ export const api = {
       ),
     restore: (projectId: string, artifactId: string) =>
       post<RestoreArtifactResponse>(`/projects/${projectId}/artifacts/${artifactId}/restore`),
+    search: (projectId: string, text: string) =>
+      get<ArtifactSearchResponse>(
+        `/projects/${projectId}/artifacts/search?q=${encodeURIComponent(text)}`,
+      ),
+  },
+  targetTemplates: {
+    list: () => get<TargetTemplateListResponse>('/target-templates'),
   },
   readiness: {
     get: (projectId: string) => get<ReadinessResponse>(`/projects/${projectId}/readiness`),
@@ -822,11 +847,49 @@ export const api = {
     list: (projectId: string) => get<{ items: MockupResponse[] }>(`/projects/${projectId}/mockups`),
     getPreview: (projectId: string, id: string) =>
       get<MockupPreviewResponse>(`/projects/${projectId}/mockups/${id}/preview`),
-    create: (projectId: string, uiBlueprintVersionId: string, deviceType: MockupDeviceType) =>
+    create: (
+      projectId: string,
+      uiBlueprintVersionId: string,
+      deviceType: MockupDeviceType,
+      generator: MockupGenerator = 'STITCH',
+      screenLocalIds?: string[],
+    ) =>
       post<MockupJobResponse>(`/projects/${projectId}/mockups`, {
         uiBlueprintVersionId,
         deviceType,
+        generator,
+        ...(screenLocalIds ? { screenLocalIds } : {}),
       }),
+    // ADR-029: screen by screen, with each screen's conversation.
+    generateScreens: (projectId: string, id: string, screenLocalIds: string[]) =>
+      post<MockupJobResponse>(`/projects/${projectId}/mockups/${id}/screens/generate`, {
+        screenLocalIds,
+      }),
+    screenHistory: (projectId: string, id: string, screenLocalId: string) =>
+      get<MockupScreenHistoryResponse>(
+        `/projects/${projectId}/mockups/${id}/screen-history/${encodeURIComponent(screenLocalId)}`,
+      ),
+    restoreScreen: (projectId: string, id: string, screenLocalId: string, screenId: string) =>
+      post<MockupResponse>(
+        `/projects/${projectId}/mockups/${id}/screen-history/${encodeURIComponent(screenLocalId)}/restore`,
+        { screenId },
+      ),
+    // DEC-166: a mockup written by people, one HTML page and one PNG per screen.
+    importManual: (
+      projectId: string,
+      input: { uiBlueprintVersionId: string; deviceType: MockupDeviceType; mockupId?: string },
+      file: File,
+    ) => {
+      const form = new FormData();
+      form.set('uiBlueprintVersionId', input.uiBlueprintVersionId);
+      form.set('deviceType', input.deviceType);
+      if (input.mockupId) form.set('mockupId', input.mockupId);
+      form.set('file', file);
+      return request<MockupResponse>(`/projects/${projectId}/mockups/manual`, {
+        method: 'POST',
+        body: form,
+      });
+    },
     refine: (projectId: string, id: string, prompt: string) =>
       post<MockupJobResponse>(`/projects/${projectId}/mockups/${id}/refine`, { prompt }),
     refineScreen: (projectId: string, id: string, screenId: string, prompt: string) =>
@@ -897,6 +960,21 @@ export const api = {
         `/projects/${projectId}/design-baselines/${baselineId}/screen-exceptions`,
         data,
       ),
+    // ADR-030: the conversation of a generated screen, by its route.
+    screenConversation: (projectId: string, routePath: string) =>
+      get<ScreenDesignConversationResponse>(
+        `/projects/${projectId}/screen-design-requests?routePath=${encodeURIComponent(routePath)}`,
+      ),
+    addScreenRequest: (projectId: string, routePath: string, instruction: string) =>
+      post<ScreenDesignConversationResponse>(`/projects/${projectId}/screen-design-requests`, {
+        routePath,
+        instruction,
+      }),
+    restoreScreenRequest: (projectId: string, routePath: string, requestId: string | null) =>
+      post<ScreenDesignConversationResponse>(
+        `/projects/${projectId}/screen-design-requests/restore`,
+        { routePath, requestId },
+      ),
   },
   // ADR-019: a READY snapshot running locally behind Cloudflare Tunnel.
   deployments: {
@@ -904,15 +982,26 @@ export const api = {
       get<{ items: DeploymentResponse[] }>(`/projects/${projectId}/deployments`),
     start: (
       projectId: string,
-      data: { snapshotId: string; initialPassword: string; tunnelToken?: string },
+      data: {
+        snapshotId: string;
+        initialPassword: string;
+        tunnelToken?: string;
+        tunnelUrl?: string;
+      },
     ) => post<DeploymentResponse>(`/projects/${projectId}/deployments`, data),
     stop: (projectId: string, id: string) =>
       post<DeploymentResponse>(`/projects/${projectId}/deployments/${id}/stop`),
-    resume: (projectId: string, id: string, data: { tunnelToken?: string } = {}) =>
-      post<DeploymentResponse>(`/projects/${projectId}/deployments/${id}/start`, data),
+    resume: (
+      projectId: string,
+      id: string,
+      data: { tunnelToken?: string; tunnelUrl?: string } = {},
+    ) => post<DeploymentResponse>(`/projects/${projectId}/deployments/${id}/start`, data),
+    health: (projectId: string, id: string) =>
+      get<DeploymentHealthResponse>(`/projects/${projectId}/deployments/${id}/health`),
   },
   ai: {
     status: () => get<AIStatus>('/ai/status'),
+    resumePlan: () => post<void>('/ai/status/resume-plan'),
   },
   construction: {
     sandboxStatus: () => get<{ available: boolean }>('/construction/sandbox-status'),
@@ -964,7 +1053,65 @@ export const api = {
     downloadUrl: (p: string, s: string, v: string, format: 'html' | 'pdf' | 'zip') =>
       `${BASE_URL}/projects/${p}/generated-project-snapshots/${s}/user-manual/versions/${v}/download?format=${format}`,
   },
+  // DEC-176: starting a project from a similar one.
+  startingPoints: {
+    list: (projectId: string) =>
+      get<StartingPointListResponse>(`/projects/${projectId}/starting-points`),
+    save: (projectId: string, input: { name: string; description: string }) =>
+      post<StartingPoint>(`/projects/${projectId}/starting-points`, input),
+    apply: (projectId: string, id: string) =>
+      post<ApplyStartingPointResponse>(`/projects/${projectId}/starting-points/${id}/apply`),
+    remove: (projectId: string, id: string) =>
+      del<void>(`/projects/${projectId}/starting-points/${id}`),
+  },
+  // DEC-172: where a requirement or use case is implemented.
+  implementationTrace: (projectId: string, code: string) =>
+    get<ImplementationTraceResponse>(
+      `/projects/${projectId}/implementation-trace/${encodeURIComponent(code)}`,
+    ),
+  // ADR-024: the plan of deliveries of an approved implementation plan version.
+  deliveries: {
+    get: (projectId: string, versionId: string) =>
+      get<DeliveryPlanResponse>(
+        `/projects/${projectId}/implementation-plans/${versionId}/delivery-plan`,
+      ),
+    create: (projectId: string, versionId: string) =>
+      post<DeliveryPlanResponse>(
+        `/projects/${projectId}/implementation-plans/${versionId}/delivery-plan`,
+        {},
+      ),
+    save: (projectId: string, versionId: string, deliveries: { modules: string[] }[]) =>
+      put<DeliveryPlanResponse>(
+        `/projects/${projectId}/implementation-plans/${versionId}/delivery-plan`,
+        { deliveries },
+      ),
+    approve: (projectId: string, versionId: string, deliveryId: string, generationRunId: string) =>
+      post<DeliveryPlanResponse>(
+        `/projects/${projectId}/implementation-plans/${versionId}/delivery-plan/deliveries/${deliveryId}/approval`,
+        { generationRunId },
+      ),
+  },
   generationRuns: {
+    preview: (projectId: string, implementationPlanVersionId: string) =>
+      get<ConstructionPreviewResponse>(
+        `/projects/${projectId}/generation-runs/preview/${implementationPlanVersionId}`,
+      ),
+    // With a delivery, what building that delivery would ask the AI for (ADR-024).
+    estimate: (projectId: string, implementationPlanVersionId: string, deliveryId?: string) =>
+      get<GenerationEstimateResponse>(
+        `/projects/${projectId}/generation-runs/estimate/${implementationPlanVersionId}${
+          deliveryId ? `?deliveryId=${deliveryId}` : ''
+        }`,
+      ),
+    manual: (projectId: string, implementationPlanVersionId: string, file: File) => {
+      const form = new FormData();
+      form.set('implementationPlanVersionId', implementationPlanVersionId);
+      form.set('file', file);
+      return request<GenerationRunResponse>(`/projects/${projectId}/generation-runs/manual`, {
+        method: 'POST',
+        body: form,
+      });
+    },
     workingCopy: (projectId: string, implementationPlanVersionId: string) =>
       post<GenerationRunResponse>(`/projects/${projectId}/generation-runs/working-copies`, {
         implementationPlanVersionId,
@@ -973,9 +1120,16 @@ export const api = {
       }),
     list: (projectId: string) =>
       get<{ items: GenerationRunResponse[] }>(`/projects/${projectId}/generation-runs`),
-    start: (projectId: string, implementationPlanVersionId: string) =>
+    // DEC-173: what the run brings, in plain words.
+    releaseNotes: (projectId: string, runId: string) =>
+      get<ReleaseNotesResponse>(`/projects/${projectId}/generation-runs/${runId}/release-notes`),
+    // ADR-025: the run's acceptance criteria and each requirement's result.
+    acceptance: (projectId: string, runId: string) =>
+      get<AcceptanceReportResponse>(`/projects/${projectId}/generation-runs/${runId}/acceptance`),
+    start: (projectId: string, implementationPlanVersionId: string, deliveryId?: string) =>
       post<GenerationRunResponse>(`/projects/${projectId}/generation-runs`, {
         implementationPlanVersionId,
+        ...(deliveryId ? { deliveryId } : {}),
       }),
     archive: (projectId: string, runId: string) =>
       post<GenerationRunResponse>(`/projects/${projectId}/generation-runs/${runId}/archive`),
@@ -989,6 +1143,12 @@ export const api = {
       get<GeneratedFileResponse>(`/projects/${projectId}/generation-runs/${runId}/files/${fileId}`),
     units: (projectId: string, runId: string) =>
       get<{ items: ConstructionUnit[] }>(`/projects/${projectId}/generation-runs/${runId}/units`),
+    reviewUnit: (
+      projectId: string,
+      runId: string,
+      body: { unitKey: string; contentSha256: string; reviewed: boolean },
+    ) =>
+      post<ConstructionUnit>(`/projects/${projectId}/generation-runs/${runId}/units/review`, body),
     sandboxRuns: (projectId: string, runId: string) =>
       get<{ items: SandboxRunResponse[] }>(
         `/projects/${projectId}/generation-runs/${runId}/sandbox-runs`,
@@ -997,5 +1157,8 @@ export const api = {
       post<SandboxRunResponse>(`/projects/${projectId}/generation-runs/${runId}/sandbox-runs`),
     snapshotArchiveUrl: (projectId: string, snapshotId: string) =>
       `${BASE_URL}/projects/${projectId}/generated-project-snapshots/${snapshotId}/archive`,
+    // DEC-174: the code with its technical documentation.
+    technicalHandoverUrl: (projectId: string, snapshotId: string) =>
+      `${BASE_URL}/projects/${projectId}/generated-project-snapshots/${snapshotId}/handover`,
   },
 };

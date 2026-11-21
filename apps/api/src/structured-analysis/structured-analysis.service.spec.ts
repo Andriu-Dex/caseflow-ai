@@ -46,7 +46,9 @@ const ACCESSIBLE_PALETTE = {
   border: '#000000',
 };
 
-function setup() {
+function setup(currency?: {
+  assertEarlierStagesSatisfied: (projectId: string, kind: string) => Promise<void>;
+}) {
   const tx = {
     project: { findUnique: vi.fn().mockResolvedValue({ id: 'project' }) },
     artifactType: {
@@ -94,11 +96,35 @@ function setup() {
       ai as unknown as AIOrchestrator,
       new DiagramEngine(),
       new FakeDiagramProvider({ svg: FAKE_SVG }),
+      undefined,
+      undefined,
+      currency as never,
     ),
   };
 }
 
 describe('StructuredAnalysisService', () => {
+  it('does not approve a planning artifact while an earlier stage is incomplete', async () => {
+    const currency = {
+      assertEarlierStagesSatisfied: vi
+        .fn()
+        .mockRejectedValue(
+          new Error('No se puede aprobar este paso porque falta completar Requisitos.'),
+        ),
+    };
+    const { service, prisma } = setup(currency);
+    prisma.artifactVersion.findFirst.mockResolvedValue({
+      id: 'version',
+      status: 'IN_REVIEW',
+      versionNumber: 1,
+    });
+
+    await expect(
+      service.transition('project', 'NAVIGATION_TREE', 'artifact', 'version', 'APPROVED'),
+    ).rejects.toThrow('falta completar Requisitos');
+    expect(prisma.artifactVersion.update).not.toHaveBeenCalled();
+  });
+
   it('creates a manual navigation tree as DRAFT with its deterministic diagram', async () => {
     const { service, tx } = setup();
     await expect(

@@ -24,7 +24,7 @@ import {
 
 // CASEFlow AI desktop edition (DEC-117, DEC-120): the same API and web app,
 // on loopback only, over a local PGlite database and an in-process queue.
-// Generated code still runs only inside Docker (§174).
+// Generated code still runs only inside Docker.
 
 // Packaged: everything sits in the app's resources folder. From the
 // repository: the monorepo root, and the web server from build/web.

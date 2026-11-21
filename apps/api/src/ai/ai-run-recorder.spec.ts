@@ -3,9 +3,20 @@ import type { PrismaService } from '../database/prisma.service';
 import { PrismaAIRunRecorder } from './ai-run-recorder';
 
 describe('PrismaAIRunRecorder', () => {
-  const prisma = { aIRun: { create: vi.fn(), update: vi.fn() } };
+  const prisma = { aIRun: { create: vi.fn(), update: vi.fn(), updateMany: vi.fn() } };
   const recorder = new PrismaAIRunRecorder(prisma as unknown as PrismaService);
   beforeEach(() => vi.resetAllMocks());
+
+  // A restart closes only runs older than the longest AI call: a younger one
+  // may belong to another live process.
+  it('closes on startup only the runs that can no longer be running', async () => {
+    prisma.aIRun.updateMany.mockResolvedValue({ count: 0 });
+    const before = Date.now();
+    await recorder.onApplicationBootstrap();
+    const { where } = prisma.aIRun.updateMany.mock.calls[0]![0];
+    expect(where.status).toBe('RUNNING');
+    expect(before - where.startedAt.lt.getTime()).toBeGreaterThanOrEqual(180_000 - 5);
+  });
 
   it('persists successful metadata and nullable usage without payloads or secrets', async () => {
     prisma.aIRun.create.mockResolvedValue({ id: 'run-1' });

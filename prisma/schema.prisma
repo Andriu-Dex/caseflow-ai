@@ -20,7 +20,7 @@ datasource db {
   provider = "postgresql"
 }
 
-// Lifecycle of an ArtifactVersion (spec §5.2).
+// Lifecycle of an ArtifactVersion.
 enum ArtifactVersionStatus {
   DRAFT
   GENERATED
@@ -31,7 +31,7 @@ enum ArtifactVersionStatus {
   @@map("artifact_version_status")
 }
 
-// Where an ArtifactVersion came from (spec §6.3). SYSTEM_GENERATED is
+// Where an ArtifactVersion came from. SYSTEM_GENERATED is
 // deterministically derived by CASEFlow from already approved/structured CASE
 // data (e.g. a Use Case Diagram) — no manual authoring and no AI involvement.
 enum ArtifactOrigin {
@@ -245,8 +245,13 @@ model User {
   requestedProposals          DependencyProposal[]         @relation("DependencyProposalRequester")
   decidedProposals            DependencyProposal[]         @relation("DependencyProposalDecider")
   designBaselines             DesignBaseline[]
+  deliveryPlans               DeliveryPlan[]
+  deliveryApprovals           DeliveryApproval[]
+  startingPoints              StartingPoint[]
   screenDesignExceptions      ScreenDesignException[]
   screenDesignOverrides       ScreenDesignOverride[]
+  screenDesignRequests        ScreenDesignRequest[]
+  constructionUnitReviews     ConstructionUnitReview[]
   generatedProjectDeployments GeneratedProjectDeployment[]
   workflowRuns                WorkflowRun[]
   generationRuns              GenerationRun[]
@@ -304,7 +309,7 @@ model ProjectMembership {
   @@map("project_memberships")
 }
 
-// Logical team/organization that groups projects (spec §3.1).
+// Logical team/organization that groups projects.
 model Workspace {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   slug      String   @unique
@@ -313,13 +318,14 @@ model Workspace {
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   projects         Project[]
+  startingPoints   StartingPoint[]
   memberships      WorkspaceMembership[]
   projectDeletions ProjectDeletion[]
 
   @@map("workspaces")
 }
 
-// Main functional unit of the system (spec §3.2). Domain-independent.
+// Main functional unit of the system. Domain-independent.
 // DEC-116: how much of the planning a person reviews. Only upgrades.
 enum WorkflowRoute {
   FULL
@@ -347,7 +353,7 @@ model Project {
   language            ProjectLanguage @default(ES)
   createdAt           DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  // Archival (spec §87): hides the project from active use once it has
+  // Archival: hides the project from active use once it has
   // approved history and therefore can no longer be hard-deleted.
   archivedAt          DateTime?       @map("archived_at") @db.Timestamptz(6)
   // DEC-118: projects created before the theme step existed keep the
@@ -374,8 +380,11 @@ model Project {
   auditEvents                   AuditEvent[]
   dependencyProposals           DependencyProposal[]
   designBaselines               DesignBaseline[]
+  deliveryPlans                 DeliveryPlan[]
   screenDesignExceptions        ScreenDesignException[]
   screenDesignOverrides         ScreenDesignOverride[]
+  screenDesignRequests          ScreenDesignRequest[]
+  constructionUnitReviews       ConstructionUnitReview[]
   generatedProjectDeployments   GeneratedProjectDeployment[]
   generationRuns                GenerationRun[]
   sandboxRuns                   SandboxRun[]
@@ -404,7 +413,7 @@ model ArtifactType {
   @@map("artifact_types")
 }
 
-// Stable logical identity of an artifact (spec §6.2, §31.1).
+// Stable logical identity of an artifact.
 // The "current state" is derived from the latest ArtifactVersion.
 model Artifact {
   id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -412,10 +421,10 @@ model Artifact {
   artifactTypeCode String    @map("artifact_type_code")
   code             String
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  // Archival (spec §87: "fuentes utilizadas → archivar antes que borrar"):
+  // Archival:
   // hides the artifact from active use without touching any ArtifactVersion
   // row, so it needs no immutability-trigger exception. The code stays
-  // reserved forever (spec §31.4), unlike a hard delete.
+  // reserved forever, unlike a hard delete.
   archivedAt       DateTime? @map("archived_at") @db.Timestamptz(6)
   // When it was last archived or restored (DEC-137), set by a trigger: an
   // artifact with approved history leaving or returning is a change of its
@@ -430,16 +439,16 @@ model Artifact {
   projectBaselineEntries               ProjectBaselineEntry[]
   useCaseRelationTargets               UseCaseRelation[]
 
-  // Project-scoped, never-reused codes (spec §31.4).
+  // Project-scoped, never-reused codes.
   @@unique([projectId, code])
   // Target of the composite foreign key that keeps versions inside the
-  // artifact's project (spec §32).
+  // artifact's project.
   @@unique([id, projectId])
   @@index([projectId, artifactTypeCode])
   @@map("artifacts")
 }
 
-// Historical state of an artifact (spec §6.2, §15). Content columns are
+// Historical state of an artifact. Content columns are
 // immutable; see the trigger in the 1A migration.
 model ArtifactVersion {
   id                String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -450,7 +459,7 @@ model ArtifactVersion {
   title             String
   status            ArtifactVersionStatus
   origin            ArtifactOrigin
-  // Auxiliary structured metadata only (spec §6.2). Never a substitute for
+  // Auxiliary structured metadata only. Never a substitute for
   // relational modeling of domain entities.
   metadataAuxiliary Json                  @default("{}") @map("metadata_auxiliary")
   createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -493,6 +502,7 @@ model ArtifactVersion {
   snapshotsAsGenerationPlan           GeneratedProjectSnapshot[]           @relation("SnapshotGenerationPlan")
   snapshotsAsImplementationPlan       GeneratedProjectSnapshot[]           @relation("SnapshotImplementationPlan")
   userManualDetail                    UserManualDetail?
+  deliveryPlans                       DeliveryPlan[]
 
   @@unique([artifactId, versionNumber])
   @@unique([id, projectId])
@@ -1209,12 +1219,12 @@ model SourceReportCandidate {
   @@map("source_report_candidates")
 }
 
-// AI-proposed pre-fill for the Project Context form (spec §5 human-in-the-loop):
+// AI-proposed pre-fill for the Project Context form:
 // never auto-persisted as the canonical context — the reviewer edits it and
 // submits it through the same manual create/createVersion path as any
 // hand-authored context. content mirrors only the fields the Context form
 // actually exposes (no scopeItems yet); sourceVersionIds records which
-// approved Project Source versions were used as input, for evidence (§36.4).
+// approved Project Source versions were used as input, for evidence.
 model ProjectContextCandidate {
   id                      String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   projectId               String   @map("project_id") @db.Uuid
@@ -1257,7 +1267,7 @@ model ContextGenerationJob {
   @@map("context_generation_jobs")
 }
 
-// Structured interpretation of a source's extracted content (spec §8):
+// Structured interpretation of a source's extracted content:
 // summary, actors, business concepts, candidate rules/constraints, needs,
 // facts, ambiguities, provenance. Immutable once created; attached to the
 // same ArtifactVersion as its SourceDetail. Never an official Requirement.
@@ -1275,7 +1285,7 @@ model SourceReportDetail {
 }
 
 // One shared candidate-first AI generation batch for Navigation/Software
-// Architecture/System Architecture/UI Blueprint (spec §13/§14/§15/§17). The
+// Architecture/System Architecture/UI Blueprint. The
 // `kind` discriminator keeps each generation scoped to exactly one artifact
 // type; content shape per kind is validated by packages/contracts, not here.
 model StructuredAnalysisGeneration {
@@ -1345,6 +1355,10 @@ model StructuredAnalysisDetail {
 enum MockupGeneratorKind {
   INTERNAL_WIREFRAME
   STITCH
+  // HTML and CSS written by people and imported (DEC-166).
+  MANUAL
+  // HTML and CSS drawn by the AI on CASEFlow's own page (DEC-167).
+  HTML_CSS
 
   @@map("mockup_generator_kind")
 }
@@ -1478,29 +1492,34 @@ model SourceProcessingJob {
   @@map("source_processing_jobs")
 }
 
-// Tracks an async mockup generation request (spec §40 job states), so the
+// Tracks an async mockup generation request, so the
 // HTTP request that creates it never blocks on Stitch's real latency.
 // existingMockupId is set only when the job regenerates a version of an
 // already-approved mockup artifact; null means a brand-new one.
 model MockupGenerationJob {
-  id                   String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  projectId            String           @map("project_id") @db.Uuid
-  uiBlueprintVersionId String           @map("ui_blueprint_version_id") @db.Uuid
-  existingMockupId     String?          @map("existing_mockup_id") @db.Uuid
-  deviceType           MockupDeviceType @default(DESKTOP) @map("device_type")
-  refinementPrompt     String?          @map("refinement_prompt")
+  id                   String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId            String               @map("project_id") @db.Uuid
+  uiBlueprintVersionId String               @map("ui_blueprint_version_id") @db.Uuid
+  existingMockupId     String?              @map("existing_mockup_id") @db.Uuid
+  deviceType           MockupDeviceType     @default(DESKTOP) @map("device_type")
+  refinementPrompt     String?              @map("refinement_prompt")
   // Set only for a single-screen edit: the blueprint localId of the screen to edit.
-  screenLocalId        String?          @map("screen_local_id")
-  status               MockupJobStatus  @default(QUEUED)
-  resultArtifactId     String?          @map("result_artifact_id") @db.Uuid
-  errorMessage         String?          @map("error_message")
+  screenLocalId        String?              @map("screen_local_id")
+  // Screen-by-screen generation (ADR-029): the blueprint screens this job draws;
+  // empty = every screen.
+  screenLocalIds       String[]             @default([]) @map("screen_local_ids")
+  status               MockupJobStatus      @default(QUEUED)
+  resultArtifactId     String?              @map("result_artifact_id") @db.Uuid
+  errorMessage         String?              @map("error_message")
   // DEC-146: progress of a screen-by-screen Stitch generation, and the Stitch
   // project its screens go to, so a resumed run adds to the same one.
-  totalScreens         Int              @default(0) @map("total_screens")
-  completedScreens     Int              @default(0) @map("completed_screens")
-  stitchProjectId      String?          @map("stitch_project_id")
-  createdAt            DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt            DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  totalScreens         Int                  @default(0) @map("total_screens")
+  completedScreens     Int                  @default(0) @map("completed_screens")
+  stitchProjectId      String?              @map("stitch_project_id")
+  // DEC-167: the generator chosen for the job; null = the configured provider.
+  generatorKind        MockupGeneratorKind? @map("generator_kind")
+  createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   project Project                @relation(fields: [projectId], references: [id], onDelete: Restrict)
   parts   MockupGenerationPart[]
@@ -1578,7 +1597,7 @@ model ProjectBaselineEntry {
   @@map("project_baseline_entries")
 }
 
-// Append-only domain/security audit trail (AGENTS.md §35). Rows are never
+// Append-only domain/security audit trail. Rows are never
 // updated or deleted: a database trigger rejects both. Distinct from logs.
 model AuditEvent {
   id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -1617,7 +1636,7 @@ enum DependencyProposalStatus {
 }
 
 // A package a generated project needs that is outside its TargetTemplate's
-// Approved Dependency Catalog (spec §155, DEC-100). An approval is an exception
+// Approved Dependency Catalog (DEC-100). An approval is an exception
 // for this project only — the shared template catalog never changes. Decided
 // once: a partial unique index allows one open-or-approved proposal per package.
 model DependencyProposal {
@@ -1661,11 +1680,11 @@ enum DesignBaselineRole {
   @@map("design_baseline_role")
 }
 
-// Approved, frozen design (spec §160, DEC-094): the exact approved versions an
+// Approved, frozen design (DEC-094): the exact approved versions an
 // official ImplementationPlan and code generation are built from. Creating
 // one is the human Design Gate approval; rows are immutable afterwards.
 // A justified acceptance of the exact findings the screen evaluator reported
-// for one screen of a design baseline (AGENTS.md §16: justify exceptions).
+// for one screen of a design baseline.
 // It covers only those findings: different findings need a new justification.
 model ScreenDesignException {
   id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -1685,6 +1704,24 @@ model ScreenDesignException {
   @@unique([designBaselineId, routePath, findingsSha256])
   @@index([projectId])
   @@map("screen_design_exceptions")
+}
+
+// A person's mark that a construction unit's code was reviewed (ADR-020). It
+// is keyed on the unit's content hash, so it carries over to later runs while
+// that code is unchanged; it never changes READY or validation.
+model ConstructionUnitReview {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId        String   @map("project_id") @db.Uuid
+  unitKey          String   @map("unit_key")
+  contentSha256    String   @map("content_sha256") @db.Char(64)
+  reviewedByUserId String   @map("reviewed_by_user_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project    Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  reviewedBy User    @relation(fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([projectId, unitKey, contentSha256])
+  @@map("construction_unit_reviews")
 }
 
 // A screen of a design baseline written by hand to follow its mockup (DEC-161).
@@ -1709,6 +1746,26 @@ model ScreenDesignOverride {
   @@index([designBaselineId, routePath, createdAt])
   @@index([projectId])
   @@map("screen_design_overrides")
+}
+
+// A person's requests about how one generated screen looks (ADR-030). Each row
+// holds the whole set in force, so the conversation is immutable and going back
+// copies an earlier set; the latest row of a route is the one applied.
+model ScreenDesignRequest {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId       String   @map("project_id") @db.Uuid
+  routePath       String   @map("route_path")
+  instructions    String[]
+  // What this row changed: the new request, or the version it went back to.
+  note            String
+  createdByUserId String   @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  createdBy User    @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, routePath, createdAt])
+  @@map("screen_design_requests")
 }
 
 model DesignBaseline {
@@ -1782,8 +1839,17 @@ enum CodeTraceLinkType {
   @@map("code_trace_link_type")
 }
 
-// One official code generation from an approved Implementation Plan (spec
-// §197). A retry is a new run: finished runs and their files are history.
+// One official code generation from an approved Implementation Plan.
+// A retry is a new run: finished runs and their files are history.
+// GENERATED: templates, deterministic generation and AI. MANUAL: written by
+// people and imported (ADR-023).
+enum GenerationRunOrigin {
+  GENERATED
+  MANUAL
+
+  @@map("generation_run_origin")
+}
+
 model GenerationRun {
   id                          String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   projectId                   String              @map("project_id") @db.Uuid
@@ -1792,6 +1858,7 @@ model GenerationRun {
   targetTemplateIdentifier    String              @map("target_template_identifier")
   targetTemplateVersion       Int                 @map("target_template_version")
   status                      GenerationRunStatus @default(QUEUED)
+  origin                      GenerationRunOrigin @default(GENERATED)
   errorMessage                String?             @map("error_message")
   // Non-fatal outcomes a reviewer must see (e.g. an action left unimplemented).
   warnings                    String[]            @default([])
@@ -1812,6 +1879,10 @@ model GenerationRun {
   sandboxRuns               SandboxRun[]
   repairAttempts            AutoRepairAttempt[]
   snapshot                  GeneratedProjectSnapshot?
+  // ADR-024: the delivery this run builds; empty when built all at once.
+  deliveryId                String?                   @map("delivery_id") @db.Uuid
+  delivery                  Delivery?                 @relation(fields: [deliveryId], references: [id], onDelete: Restrict)
+  deliveryApprovals         DeliveryApproval[]
 
   @@index([projectId, createdAt])
   @@map("generation_runs")
@@ -1886,7 +1957,7 @@ enum AutoRepairStatus {
   @@map("auto_repair_status")
 }
 
-// One validation attempt of a generation run inside the sandbox (spec §174-175).
+// One validation attempt of a generation run inside the sandbox.
 model SandboxRun {
   id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   projectId       String           @map("project_id") @db.Uuid
@@ -1905,12 +1976,13 @@ model SandboxRun {
   heartbeatAt     DateTime?        @map("heartbeat_at") @db.Timestamptz(6)
   finishedAt      DateTime?        @map("finished_at") @db.Timestamptz(6)
 
-  project       Project                   @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  generationRun GenerationRun             @relation(fields: [generationRunId], references: [id], onDelete: Restrict)
-  createdBy     User                      @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
-  stageResults  SandboxStageResult[]
-  repairAttempt AutoRepairAttempt?
-  snapshot      GeneratedProjectSnapshot?
+  project           Project                   @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  generationRun     GenerationRun             @relation(fields: [generationRunId], references: [id], onDelete: Restrict)
+  createdBy         User                      @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  stageResults      SandboxStageResult[]
+  acceptanceResults AcceptanceResult[]
+  repairAttempt     AutoRepairAttempt?
+  snapshot          GeneratedProjectSnapshot?
 
   @@index([generationRunId, createdAt])
   @@map("sandbox_runs")
@@ -1981,7 +2053,7 @@ model RepairFinding {
   @@map("repair_findings")
 }
 
-// Immutable official result of a validated generation (spec §172, DEC-104/105).
+// Immutable official result of a validated generation (DEC-104, 105).
 enum DeploymentStatus {
   STARTING
   RUNNING
@@ -2364,4 +2436,108 @@ model DataModelGenerationPart {
 
   @@id([jobId, position])
   @@map("data_model_generation_parts")
+}
+
+// ADR-024: construction by deliveries. The plan of deliveries of one approved
+// implementation plan version; each delivery adds modules to the approved ones.
+model DeliveryPlan {
+  id                          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId                   String   @map("project_id") @db.Uuid
+  implementationPlanVersionId String   @unique @map("implementation_plan_version_id") @db.Uuid
+  createdByUserId             String   @map("created_by_user_id") @db.Uuid
+  createdAt                   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project                   Project          @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  implementationPlanVersion ArtifactVersion  @relation(fields: [implementationPlanVersionId], references: [id], onDelete: Restrict)
+  createdBy                 User             @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  deliveries                Delivery[]
+  modules                   DeliveryModule[]
+
+  @@index([projectId, createdAt])
+  @@map("delivery_plans")
+}
+
+model Delivery {
+  id             String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  deliveryPlanId String @map("delivery_plan_id") @db.Uuid
+  // 0 is the base (sign-in, users, roles and the application frame).
+  position       Int
+  name           String
+
+  deliveryPlan   DeliveryPlan       @relation(fields: [deliveryPlanId], references: [id], onDelete: Restrict)
+  modules        DeliveryModule[]
+  generationRuns GenerationRun[]
+  approvals      DeliveryApproval[]
+
+  @@unique([deliveryPlanId, position])
+  @@map("deliveries")
+}
+
+model DeliveryModule {
+  deliveryPlanId String @map("delivery_plan_id") @db.Uuid
+  deliveryId     String @map("delivery_id") @db.Uuid
+  // The implementation plan module (its localId) this delivery builds.
+  moduleLocalId  String @map("module_local_id")
+
+  deliveryPlan DeliveryPlan @relation(fields: [deliveryPlanId], references: [id], onDelete: Restrict)
+  delivery     Delivery     @relation(fields: [deliveryId], references: [id], onDelete: Restrict)
+
+  // A module belongs to one delivery of the plan.
+  @@id([deliveryPlanId, moduleLocalId])
+  @@index([deliveryId])
+  @@map("delivery_modules")
+}
+
+// Append-only (enforced by a trigger): who approved which run of a delivery.
+model DeliveryApproval {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  deliveryId       String   @map("delivery_id") @db.Uuid
+  generationRunId  String   @map("generation_run_id") @db.Uuid
+  approvedByUserId String   @map("approved_by_user_id") @db.Uuid
+  note             String?
+  approvedAt       DateTime @default(now()) @map("approved_at") @db.Timestamptz(6)
+
+  delivery      Delivery      @relation(fields: [deliveryId], references: [id], onDelete: Restrict)
+  generationRun GenerationRun @relation(fields: [generationRunId], references: [id], onDelete: Restrict)
+  approvedBy    User          @relation(fields: [approvedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([deliveryId, approvedAt])
+  @@map("delivery_approvals")
+}
+
+// ADR-025: the result of each acceptance criterion in a validation.
+model AcceptanceResult {
+  sandboxRunId String   @map("sandbox_run_id") @db.Uuid
+  // CA-<use case code>
+  criterionKey String   @map("criterion_key")
+  useCaseCode  String   @map("use_case_code")
+  passed       Boolean
+  message      String?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  sandboxRun SandboxRun @relation(fields: [sandboxRunId], references: [id], onDelete: Restrict)
+
+  @@id([sandboxRunId, criterionKey])
+  @@map("acceptance_results")
+}
+
+// DEC-176: requirements, use cases and a data model saved from a project of
+// the workspace, for another project to copy as drafts. The content is a
+// package of creation requests, kept whole and never queried by its parts.
+model StartingPoint {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId     String   @map("workspace_id") @db.Uuid
+  name            String
+  description     String   @default("")
+  content         Json
+  // The project it was saved from; kept when that project is deleted.
+  sourceProjectId String?  @map("source_project_id") @db.Uuid
+  createdByUserId String   @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  createdBy User      @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, createdAt])
+  @@map("starting_points")
 }

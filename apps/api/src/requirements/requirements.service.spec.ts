@@ -109,7 +109,7 @@ describe('RequirementsService', () => {
       response: { code: 'AI_NOT_CONFIGURED' },
     });
     expect(ai.generateStructured).toHaveBeenCalledWith(
-      expect.objectContaining({ maxOutputTokens: 8192, language: 'EN', promptVersion: 3 }),
+      expect.objectContaining({ maxOutputTokens: 8192, language: 'EN', promptVersion: 8 }),
     );
     // The model receives the coded context and what it must cover (DEC-126).
     const sent = JSON.parse(ai.generateStructured.mock.calls[0]![0].messages[0].content);

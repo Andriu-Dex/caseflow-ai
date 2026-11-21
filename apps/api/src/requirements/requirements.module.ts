@@ -6,9 +6,10 @@ import { RequirementDocumentExportService } from './requirement-document-export.
 import { KnowledgeBaseModule } from '../knowledge-base/knowledge-base.module';
 import { RequirementGenerationJobsService } from './requirement-generation-jobs.service';
 import { RequirementBulkService } from './requirement-bulk.service';
+import { StageCurrencyModule } from '../readiness/stage-currency';
 
 @Module({
-  imports: [AIModule, KnowledgeBaseModule],
+  imports: [AIModule, KnowledgeBaseModule, StageCurrencyModule],
   controllers: [RequirementsController],
   providers: [
     RequirementsService,

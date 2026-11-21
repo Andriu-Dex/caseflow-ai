@@ -370,12 +370,10 @@ describe('TraceabilityPage — construction transition & milestone', () => {
 
     renderPage();
 
-    expect(
-      await screen.findByText('¡Fase de Planificación Completada con Éxito!'),
-    ).toBeInTheDocument();
-    expect(screen.getByText('Planificación Completada (13/13)')).toBeInTheDocument();
+    expect(await screen.findByText('Planificación completa')).toBeInTheDocument();
+    expect(screen.getByText('Planificación completa (13/13)')).toBeInTheDocument();
 
-    const startBtn = screen.getByRole('link', { name: /Iniciar Fase de Construcción/i });
+    const startBtn = screen.getByRole('link', { name: /Iniciar la construcción/i });
     expect(startBtn).toHaveAttribute('href', '/construction/generation-plan');
   });
 
@@ -391,10 +389,10 @@ describe('TraceabilityPage — construction transition & milestone', () => {
 
     renderPage();
 
-    expect(await screen.findByText('Siguiente fase: Construcción de Software')).toBeInTheDocument();
-    expect(screen.getByText('Fase 2: Construcción (Bloqueada)')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Construcción Bloqueada/i })).toBeDisabled();
-    expect(screen.getByRole('link', { name: /Revisar Preparación/i })).toHaveAttribute(
+    expect(await screen.findByText('Siguiente fase: construcción')).toBeInTheDocument();
+    expect(screen.getByText('Construcción bloqueada')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /No disponible/i })).toBeDisabled();
+    expect(screen.getByRole('link', { name: /Revisar preparación/i })).toHaveAttribute(
       'href',
       '/readiness',
     );

@@ -156,6 +156,10 @@ export class ChatGPTConnection {
     await this.onProviderChange();
   }
 
+  async isPaused(): Promise<boolean> {
+    return (await this.load()).paused;
+  }
+
   // After checking the usage in ChatGPT, the user decides to try again.
   async resume(): Promise<void> {
     (await this.load()).paused = false;
@@ -235,6 +239,7 @@ export async function startBroker(
         await connection.markUsageLimit();
         return reply(204);
       }
+      if (route === 'GET /state') return reply(200, { paused: await connection.isPaused() });
       if (route === 'POST /resume') {
         await connection.resume();
         return reply(204);

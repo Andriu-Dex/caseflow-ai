@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type {
   ConstructionUnit,
   GeneratedFileSummary,
@@ -5,7 +6,10 @@ import type {
 } from '@caseflow-ai/contracts';
 
 type Plan = ImplementationPlanContent;
-export interface UnitFile extends Pick<GeneratedFileSummary, 'id' | 'path' | 'origin' | 'kind'> {
+export interface UnitFile extends Pick<
+  GeneratedFileSummary,
+  'id' | 'path' | 'origin' | 'kind' | 'sha256'
+> {
   planElements: string[];
   traces: { code: string; versionNumber: number }[];
 }
@@ -46,13 +50,14 @@ export function constructionUnits(plan: Plan, files: UnitFile[]): ConstructionUn
     plan.modules.find((item) => item.localId === localId)?.name;
   const unit = (
     key: string,
-    build: () => Omit<ConstructionUnit, 'id' | 'files' | 'origins' | 'traces'>,
+    build: () => Pick<ConstructionUnit, 'kind' | 'title' | 'module' | 'summary'>,
   ) => {
     let found = units.get(key);
     if (!found) {
       found = {
         id: key,
         ...build(),
+        contentSha256: '',
         files: [],
         origins: { TEMPLATE: 0, DETERMINISTIC: 0, AI_ASSISTED: 0, MANUAL: 0 },
         traces: [],
@@ -139,7 +144,13 @@ export function constructionUnits(plan: Plan, files: UnitFile[]): ConstructionUn
         summary:
           'Estructura, configuración, dependencias, documentación y componentes comunes del proyecto generado.',
       }));
-    target.files.push({ id: file.id, path: file.path, origin: file.origin, kind: file.kind });
+    target.files.push({
+      id: file.id,
+      path: file.path,
+      origin: file.origin,
+      kind: file.kind,
+      sha256: file.sha256,
+    });
     target.origins[file.origin] += 1;
     for (const trace of file.traces)
       if (
@@ -150,6 +161,49 @@ export function constructionUnits(plan: Plan, files: UnitFile[]): ConstructionUn
         target.traces.push(trace);
   }
   return [...units.values()]
-    .map((item) => ({ ...item, traces: item.traces.sort((a, b) => a.code.localeCompare(b.code)) }))
+    .map((item) => ({
+      ...item,
+      traces: item.traces.sort((a, b) => a.code.localeCompare(b.code)),
+      contentSha256: createHash('sha256')
+        .update(
+          item.files
+            .map((file) => `${file.path}\0${file.sha256}`)
+            .sort()
+            .join('\n'),
+        )
+        .digest('hex'),
+    }))
     .sort((a, b) => ORDER[a.kind] - ORDER[b.kind] || a.title.localeCompare(b.title, 'es'));
+}
+
+type ScreenDesign = NonNullable<ConstructionUnit['design']>;
+// The design record of each screen unit, read from the run's fidelity record
+// (docs/design-fidelity.json). Observations are split by their codes.
+export function screenDesigns(content: string | undefined): Map<string, ScreenDesign> {
+  const designs = new Map<string, ScreenDesign>();
+  if (!content) return designs;
+  const records = (
+    JSON.parse(content) as {
+      records?: {
+        routePath: string;
+        presentation?: unknown;
+        manualOverride?: unknown;
+        observations?: string;
+        acceptedException?: { justification: string };
+      }[];
+    }
+  ).records;
+  for (const record of records ?? [])
+    designs.set(`route:${record.routePath}`, {
+      source: record.manualOverride ? 'MANUAL' : record.presentation ? 'COMPOSED' : 'FUNCTIONAL',
+      observations: [
+        ...(record.observations ?? '').matchAll(
+          /\b([A-Z]+(?:_[A-Z]+)+): ([\s\S]*?)(?=\s[A-Z]+(?:_[A-Z]+)+: |$)/g,
+        ),
+      ].map((match) => ({ code: match[1]!, description: match[2]!.trim() })),
+      ...(record.acceptedException
+        ? { acceptedJustification: record.acceptedException.justification }
+        : {}),
+    });
+  return designs;
 }

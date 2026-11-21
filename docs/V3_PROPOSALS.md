@@ -6,7 +6,7 @@ Prioridad sugerida: **A** (conviene hacerlo primero), **B** (valioso, no urgente
 
 ## 1. Interfaz bilingüe completa (EN/ES) — A
 
-- **Estado:** el selector de idioma del proyecto solo afecta al contenido que genera la IA. La interfaz está fija en español. La especificación la lista como planificada para después de cerrar la v2 (§221.4).
+- **Estado:** el selector de idioma del proyecto solo afecta al contenido que genera la IA. La interfaz está fija en español. Planificada para después de cerrar la v2.
 - **Tamaño:** unos 85 archivos del frontend con cientos de textos escritos en el código; más de un centenar de mensajes de error de la API en español; además correos, reportes y los textos de la plantilla del proyecto generado.
 - **Cómo hacerlo:**
   1. Decidir el alcance: interfaz web y mensajes de la API, o solo la interfaz; y si el idioma de la API sigue al de la interfaz.
@@ -18,7 +18,7 @@ Prioridad sugerida: **A** (conviene hacerlo primero), **B** (valioso, no urgente
 
 ## 2. Vista previa en vivo del proyecto generado — sustituida por el despliegue de la versión 2 (DEC-157)
 
-- **Estado:** prevista como P1 y no bloqueante (DEC-108, §177.2); fuera del alcance de la v2 (§221.4). La guía «Cómo probar el proyecto» cubre mientras tanto la necesidad de ejecutarlo en la máquina de la persona.
+- **Estado:** prevista como P1 y no bloqueante (DEC-108); fuera del alcance de la v2. La guía «Cómo probar el proyecto» cubre mientras tanto la necesidad de ejecutarlo en la máquina de la persona.
 - **Requiere una decisión (ADR)** que la incluya en el alcance y defina antes su diseño de seguridad. Proporcionado a una herramienta local, bastaría:
   1. Ejecutarla en un contenedor Docker aislado, como el sandbox, y no en el sistema directamente.
   2. Sin ningún secreto ni variable de entorno de CASEFlow dentro del contenedor.
@@ -35,12 +35,12 @@ Prioridad sugerida: **A** (conviene hacerlo primero), **B** (valioso, no urgente
 - **Endpoints numerados:** cuando la IA no nombra el endpoint de una acción de escritura, el plan crea uno numerado (`/actions/1`) con una advertencia de calidad; una versión futura podría proponer un nombre y pedir confirmación.
 - **Parámetros de ruta:** los planes antiguos tienen parámetros en minúsculas (`:saleid`); los nuevos salen en camelCase.
 
-## 4. Pendientes de la hoja de ruta (`AGENTS.md`)
+## 4. Pendientes de la hoja de ruta
 
 - **Validación de generalidad:** cumplida en la v2 con dos dominios distintos validados en el sandbox real (DEC-114: tienda y biblioteca). Un siguiente paso razonable es repetirla de punta a punta, desde fuentes y requisitos, con un segundo proyecto real (por ejemplo Tutorías Académicas o Inventario), porque el flujo completo solo se ha recorrido con RestGuestMateos y es donde aparecen los errores.
 - Endurecimiento, endurecimiento de la demostración y candidata a lanzamiento.
 
-## 5. Capacidades de la especificación para después de la v2 (§19.2 y §19.3)
+## 5. Capacidades previstas para después de la v2
 
 - **Integraciones:** Git y push automático a GitHub/GitLab, despliegue automático, integración con Figma, varios motores de diagramación.
 - **Seguridad y operación de IA:** BYOK completo, MFA, presupuestos de IA, roles personalizados.
@@ -54,5 +54,5 @@ Prioridad sugerida: **A** (conviene hacerlo primero), **B** (valioso, no urgente
 
 Pasaron al alcance de la versión 2, que es la versión final:
 
-- **Software generado ya desplegado:** DEC-157, ADR-019, `CASEFLOW_AI_SPEC.md` §221.34. Sustituye la vista previa de §2.
-- **Revisión guiada del código generado:** DEC-158, ADR-020, `CASEFLOW_AI_SPEC.md` §221.35.
+- **Software generado ya desplegado:** DEC-157, ADR-019. Sustituye la vista previa del punto 2.
+- **Revisión guiada del código generado:** DEC-158, ADR-020.

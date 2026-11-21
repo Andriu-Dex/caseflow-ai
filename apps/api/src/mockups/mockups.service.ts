@@ -10,6 +10,7 @@ import {
   PayloadTooLargeException,
   ServiceUnavailableException,
   UnprocessableEntityException,
+  Optional,
 } from '@nestjs/common';
 import type { Queue } from 'bullmq';
 import {
@@ -46,6 +47,24 @@ import { MOCKUP_PROVIDER } from './mockup-provider.token';
 import { MOCKUP_QUEUE } from './mockup-queue.token';
 import { STORAGE_PROVIDER } from './storage-provider.token';
 import { reviewMockupHtml } from './mockup-fidelity';
+import { StageCurrencyService } from '../readiness/stage-currency';
+import { ManualImportError } from '../construction/manual-import';
+import { readManualMockupArchive } from './manual-mockup-archive';
+import { AIOrchestrator } from '@caseflow-ai/ai';
+import { HTML_SCREEN_RENDERER, type HtmlScreenRenderer } from '@caseflow-ai/integrations';
+import type { MockupGenerator } from '@caseflow-ai/contracts';
+import { getProjectLanguage } from '../projects/project-language';
+import {
+  HTML_CSS_GENERATOR_VERSION,
+  HTML_CSS_PROVIDER_REF,
+  HtmlCssScreenGenerator,
+  mockupBody,
+} from './html-css-screens';
+
+// Stitch and hand-written mockups are a set of screen images with their HTML;
+// the internal wireframe is a single drawing.
+const hasScreens = (kind: string) => kind !== 'INTERNAL_WIREFRAME';
+const MANUAL_GENERATOR_VERSION = 'manual-html-css-v1';
 
 type Tx = Prisma.TransactionClient;
 const MOCKUP_CODE_PREFIX = 'MCK';
@@ -81,7 +100,8 @@ type StoredScreen = {
   refinementPrompt: string | null;
 };
 type StoredGeneration = (
-  { kind: 'INTERNAL_WIREFRAME'; svg: string } | { kind: 'STITCH'; screens: StoredScreen[] }
+  | { kind: 'INTERNAL_WIREFRAME'; svg: string }
+  | { kind: 'STITCH' | 'MANUAL' | 'HTML_CSS'; screens: StoredScreen[] }
 ) & {
   designThemeVersionId: string | null;
   // Shown with the result: why it is the internal wireframe instead of Stitch.
@@ -95,19 +115,188 @@ export class MockupsService {
     @Inject(MOCKUP_PROVIDER) private readonly mockupProvider: MockupProvider,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
     @Inject(MOCKUP_QUEUE) private readonly queue: Queue<MockupGenerationJobPayload>,
+    @Optional() private readonly currency?: StageCurrencyService,
+    // DEC-167: HTML and CSS mockups; absent where neither is configured.
+    @Optional() private readonly ai?: AIOrchestrator,
+    @Optional() @Inject(HTML_SCREEN_RENDERER) private readonly renderer?: HtmlScreenRenderer,
   ) {}
 
-  // Creation/regeneration only enqueue the real generation (spec §40): the
+  // Creation/regeneration only enqueue the real generation: the
   // HTTP request never blocks on Stitch's real latency. The client polls
   // getJob() until it reaches COMPLETED/FAILED.
   async create(
     projectId: string,
     uiBlueprintVersionId: string,
     deviceType: MockupDeviceType = 'DESKTOP',
+    generator: MockupGenerator = 'STITCH',
+    screenLocalIds: string[] = [],
   ): Promise<MockupJobResponse> {
     await this.assertApprovedBlueprint(projectId, uiBlueprintVersionId);
     await this.currentTheme(projectId);
-    return this.enqueueJob(projectId, uiBlueprintVersionId, null, deviceType);
+    if (generator === 'HTML_CSS') this.assertHtmlCssAvailable();
+    if (screenLocalIds.length)
+      await this.assertBlueprintScreens(projectId, uiBlueprintVersionId, screenLocalIds);
+    return this.enqueueJob(
+      projectId,
+      uiBlueprintVersionId,
+      null,
+      deviceType,
+      null,
+      null,
+      generator,
+      [...new Set(screenLocalIds)],
+    );
+  }
+
+  // ADR-029: the chosen screens are drawn (again) into the next version; the
+  // others are carried over as they are.
+  async generateScreens(
+    projectId: string,
+    mockupId: string,
+    screenLocalIds: string[],
+  ): Promise<MockupJobResponse> {
+    const detail = (await this.findLatest(projectId, mockupId)).versions[0]!.mockupDetail!;
+    if (detail.generatorKind !== 'STITCH' && detail.generatorKind !== 'HTML_CSS')
+      throw new UnprocessableEntityException(
+        'Solo los bocetos generados con Stitch o en HTML y CSS se generan por pantallas.',
+      );
+    if (detail.generatorKind === 'HTML_CSS') this.assertHtmlCssAvailable();
+    await this.assertApprovedBlueprint(projectId, detail.uiBlueprintVersionId);
+    await this.assertBlueprintScreens(projectId, detail.uiBlueprintVersionId, screenLocalIds);
+    return this.enqueueJob(
+      projectId,
+      detail.uiBlueprintVersionId,
+      mockupId,
+      detail.deviceType,
+      null,
+      null,
+      detail.generatorKind,
+      [...new Set(screenLocalIds)],
+    );
+  }
+
+  private async blueprintScreens(projectId: string, uiBlueprintVersionId: string) {
+    const blueprint = await this.prisma.artifactVersion.findFirst({
+      where: {
+        id: uiBlueprintVersionId,
+        projectId,
+        artifact: { artifactTypeCode: 'UI_BLUEPRINT' },
+      },
+      include: { structuredAnalysisDetail: true },
+    });
+    const parsed = uiBlueprintContentSchema.safeParse(blueprint?.structuredAnalysisDetail?.content);
+    return parsed.success
+      ? parsed.data.screens.map((screen) => ({ localId: screen.localId, name: screen.name }))
+      : [];
+  }
+
+  private async assertBlueprintScreens(
+    projectId: string,
+    uiBlueprintVersionId: string,
+    screenLocalIds: string[],
+  ) {
+    const known = new Set(
+      (await this.blueprintScreens(projectId, uiBlueprintVersionId)).map(
+        (screen) => screen.localId,
+      ),
+    );
+    if (screenLocalIds.some((id) => !known.has(id)))
+      throw new UnprocessableEntityException(
+        'Alguna pantalla elegida no está en el plano de interfaz del boceto.',
+      );
+  }
+
+  // ADR-029: a screen's conversation, the versions in which its drawing
+  // changed with the instruction that produced each one.
+  async screenHistory(projectId: string, mockupId: string, screenLocalId: string) {
+    const versions = await this.prisma.artifactVersion.findMany({
+      where: { artifactId: mockupId, projectId, artifact: { artifactTypeCode: 'MOCKUP' } },
+      orderBy: { versionNumber: 'asc' },
+      include: { mockupDetail: { include: { screens: { where: { screenLocalId } } } } },
+    });
+    if (!versions.length) throw new NotFoundException('Boceto no encontrado.');
+    const items: {
+      screenId: string;
+      versionNumber: number;
+      instruction: string | null;
+      createdAt: string;
+      current: boolean;
+    }[] = [];
+    let drawing: string | null = null;
+    for (const version of versions) {
+      const screen = version.mockupDetail?.screens[0];
+      if (!screen || screen.htmlStorageKey === drawing) continue;
+      drawing = screen.htmlStorageKey;
+      items.push({
+        screenId: screen.id,
+        versionNumber: version.versionNumber,
+        instruction: screen.refinementPrompt,
+        createdAt: version.createdAt.toISOString(),
+        current: false,
+      });
+    }
+    // The drawing the latest version shows is the current one.
+    const shown = versions.at(-1)!.mockupDetail?.screens[0]?.htmlStorageKey;
+    const last = items.at(-1);
+    if (last && shown === drawing) last.current = true;
+    return { items };
+  }
+
+  // ADR-029: back to an earlier drawing of a screen, without AI. The next
+  // version reuses that drawing's stored files; the other screens stay.
+  async restoreScreen(
+    projectId: string,
+    mockupId: string,
+    screenLocalId: string,
+    screenId: string,
+  ) {
+    const detail = (await this.findLatest(projectId, mockupId)).versions[0]!.mockupDetail!;
+    if (detail.generatorKind === 'INTERNAL_WIREFRAME')
+      throw new UnprocessableEntityException(
+        'El esquema interno no tiene pantallas que restaurar.',
+      );
+    const source = await this.prisma.mockupScreenDetail.findFirst({
+      where: {
+        id: screenId,
+        screenLocalId,
+        mockup: { artifactVersion: { artifactId: mockupId, projectId } },
+      },
+      include: { mockup: { include: { artifactVersion: { select: { versionNumber: true } } } } },
+    });
+    if (!source) throw new NotFoundException('Versión de la pantalla no encontrada.');
+    if (!detail.screens.some((screen) => screen.screenLocalId === screenLocalId))
+      throw new NotFoundException('Pantalla no encontrada en el boceto.');
+    const generated: StoredGeneration = {
+      kind: detail.generatorKind,
+      designThemeVersionId: detail.designThemeVersionId,
+      screens: detail.screens.map((screen) => {
+        const from = screen.screenLocalId === screenLocalId ? source : screen;
+        return {
+          screenLocalId: screen.screenLocalId,
+          screenName: from.screenName,
+          imageStorageKey: from.imageStorageKey,
+          imageContentType: from.imageContentType,
+          htmlStorageKey: from.htmlStorageKey,
+          stitchProjectId: from.stitchProjectId,
+          stitchScreenId: from.stitchScreenId,
+          refinementPrompt:
+            from === source
+              ? `Restaurada la versión ${source.mockup.artifactVersion.versionNumber}.`
+              : screen.refinementPrompt,
+        };
+      }),
+    };
+    return this.prisma.$transaction((tx) =>
+      this.createVersionInTx(
+        tx,
+        projectId,
+        mockupId,
+        detail.uiBlueprintVersionId,
+        detail.deviceType,
+        generated,
+        null,
+      ),
+    );
   }
 
   // For a route orchestration that already runs as a job (DEC-116): the
@@ -122,30 +311,162 @@ export class MockupsService {
     return this.getJob(projectId, job.id);
   }
 
+  // DEC-166: a mockup written by people as HTML and CSS, one page and one PNG
+  // image per blueprint screen. No AI is involved; it starts as a draft that a
+  // person reviews and approves like any other mockup.
+  async importManual(
+    projectId: string,
+    uiBlueprintVersionId: string,
+    deviceType: MockupDeviceType,
+    mockupId: string | undefined,
+    archive: Buffer | undefined,
+  ) {
+    if (!archive?.length) throw new UnprocessableEntityException('Adjunte un archivo ZIP.');
+    await this.assertApprovedBlueprint(projectId, uiBlueprintVersionId);
+    const detail = await this.prisma.structuredAnalysisDetail.findUniqueOrThrow({
+      where: { artifactVersionId: uiBlueprintVersionId },
+    });
+    const content = uiBlueprintContentSchema.parse(detail.content);
+    let pages: Awaited<ReturnType<typeof readManualMockupArchive>>;
+    try {
+      pages = await readManualMockupArchive(
+        archive,
+        content.screens.map((screen) => screen.localId),
+      );
+    } catch (error) {
+      if (error instanceof ManualImportError) throw new UnprocessableEntityException(error.message);
+      throw error;
+    }
+    const theme = await this.currentTheme(projectId);
+    const generated: StoredGeneration = {
+      kind: 'MANUAL',
+      designThemeVersionId: theme?.versionId ?? null,
+      screens: [],
+    };
+    for (const screen of content.screens) {
+      const page = pages.get(screen.localId)!;
+      generated.screens.push({
+        screenLocalId: screen.localId,
+        screenName: screen.name,
+        ...(await this.storeScreenAssets(projectId, page.image, page.html)),
+        stitchProjectId: null,
+        stitchScreenId: null,
+        refinementPrompt: null,
+      });
+    }
+    return this.prisma.$transaction((tx) =>
+      mockupId
+        ? this.createVersionInTx(
+            tx,
+            projectId,
+            mockupId,
+            uiBlueprintVersionId,
+            deviceType,
+            generated,
+            null,
+            'MANUAL',
+          )
+        : this.createInTx(tx, projectId, uiBlueprintVersionId, deviceType, generated, 'MANUAL'),
+    );
+  }
+
   async version(
     projectId: string,
     mockupId: string,
     uiBlueprintVersionId: string,
     deviceType: MockupDeviceType = 'DESKTOP',
+    generator: MockupGenerator = 'STITCH',
   ): Promise<MockupJobResponse> {
     await this.assertApprovedBlueprint(projectId, uiBlueprintVersionId);
     await this.currentTheme(projectId);
+    if (generator === 'HTML_CSS') this.assertHtmlCssAvailable();
     const exists = await this.prisma.artifact.findFirst({
       where: { id: mockupId, projectId, artifactTypeCode: 'MOCKUP' },
       select: { id: true },
     });
     if (!exists) throw new NotFoundException('Artefacto no encontrado.');
-    return this.enqueueJob(projectId, uiBlueprintVersionId, mockupId, deviceType);
+    return this.enqueueJob(
+      projectId,
+      uiBlueprintVersionId,
+      mockupId,
+      deviceType,
+      null,
+      null,
+      generator,
+    );
+  }
+
+  // A new version of an approved Stitch or HTML and CSS mockup for a newer approved UI
+  // Blueprint whose screens all existed before (a scope cut or a wording
+  // fix): the approved images are carried over, nothing is regenerated.
+  async carryOver(projectId: string, mockupId: string, uiBlueprintVersionId: string) {
+    await this.assertApprovedBlueprint(projectId, uiBlueprintVersionId);
+    const latest = (await this.findLatest(projectId, mockupId)).versions[0]!;
+    const detail = latest.mockupDetail!;
+    if (
+      latest.status !== 'APPROVED' ||
+      (detail.generatorKind !== 'STITCH' && detail.generatorKind !== 'HTML_CSS')
+    )
+      throw new UnprocessableEntityException(
+        'Solo se puede trasladar la última versión aprobada de un boceto generado con pantallas.',
+      );
+    if (detail.uiBlueprintVersionId === uiBlueprintVersionId)
+      throw new UnprocessableEntityException('El boceto ya corresponde a esta versión del plano.');
+    const [before, after] = (await Promise.all(
+      [detail.uiBlueprintVersionId, uiBlueprintVersionId].map(async (id) =>
+        uiBlueprintContentSchema.parse(
+          (
+            await this.prisma.artifactVersion.findFirstOrThrow({
+              where: { id, projectId },
+              include: { structuredAnalysisDetail: true },
+            })
+          ).structuredAnalysisDetail?.content,
+        ),
+      ),
+    )) as [
+      ReturnType<typeof uiBlueprintContentSchema.parse>,
+      ReturnType<typeof uiBlueprintContentSchema.parse>,
+    ];
+    const { blocked, changedScreens } = carryOverScreens(
+      before.screens,
+      after.screens,
+      detail.screens.map((item) => item.screenLocalId),
+    );
+    if (blocked.length)
+      throw new UnprocessableEntityException(
+        `Estas pantallas son nuevas y deben generarse: ${blocked.join(', ')}.`,
+      );
+    const kept = new Set(after.screens.map((screen) => screen.localId));
+    const carried = await this.prisma.$transaction((tx) =>
+      this.createVersionInTx(tx, projectId, mockupId, uiBlueprintVersionId, detail.deviceType, {
+        kind: detail.generatorKind as 'STITCH' | 'HTML_CSS',
+        designThemeVersionId: detail.designThemeVersionId,
+        screens: detail.screens
+          .filter((screen) => kept.has(screen.screenLocalId))
+          .map((screen) => ({
+            screenLocalId: screen.screenLocalId,
+            screenName: screen.screenName,
+            imageStorageKey: screen.imageStorageKey,
+            imageContentType: screen.imageContentType,
+            htmlStorageKey: screen.htmlStorageKey,
+            stitchProjectId: screen.stitchProjectId,
+            stitchScreenId: screen.stitchScreenId,
+            refinementPrompt: screen.refinementPrompt,
+          })),
+      }),
+    );
+    return { ...carried, changedScreens };
   }
 
   // Refinement = a new version of the same mockup, regenerated from the same
-  // approved UI Blueprint plus the user's instruction. Only Stitch mockups
-  // qualify: the internal wireframe is deterministic and has no prompt.
+  // approved UI Blueprint plus the user's instruction. Only Stitch and HTML and
+  // CSS mockups qualify: the internal wireframe is deterministic and has no
+  // prompt, and a hand-made one changes by importing its next version.
   async refine(projectId: string, mockupId: string, prompt: string): Promise<MockupJobResponse> {
     const detail = (await this.findLatest(projectId, mockupId)).versions[0]!.mockupDetail!;
-    if (detail.generatorKind !== 'STITCH')
+    if (detail.generatorKind !== 'STITCH' && detail.generatorKind !== 'HTML_CSS')
       throw new UnprocessableEntityException(
-        'Solo los bocetos generados con Stitch pueden editarse con instrucciones.',
+        'Solo los bocetos generados con Stitch o en HTML y CSS pueden editarse con instrucciones.',
       );
     await this.assertApprovedBlueprint(projectId, detail.uiBlueprintVersionId);
     return this.enqueueJob(
@@ -154,6 +475,8 @@ export class MockupsService {
       mockupId,
       detail.deviceType,
       prompt,
+      null,
+      detail.generatorKind,
     );
   }
 
@@ -170,9 +493,13 @@ export class MockupsService {
     // page can't silently fork history from a superseded version.
     const screen = detail.screens.find((s) => s.id === screenId);
     if (!screen) throw new NotFoundException('Pantalla no encontrada.');
-    if (detail.generatorKind !== 'STITCH' || !screen.stitchProjectId || !screen.stitchScreenId)
+    if (
+      (detail.generatorKind !== 'STITCH' && detail.generatorKind !== 'HTML_CSS') ||
+      !screen.stitchProjectId ||
+      !screen.stitchScreenId
+    )
       throw new UnprocessableEntityException(
-        'Esta pantalla no se puede editar individualmente. Regenere el boceto con Stitch para habilitarlo.',
+        'Esta pantalla no se puede editar individualmente. Regenere el boceto con Stitch o en HTML y CSS para habilitarlo.',
       );
     await this.assertApprovedBlueprint(projectId, detail.uiBlueprintVersionId);
     return this.enqueueJob(
@@ -182,6 +509,7 @@ export class MockupsService {
       detail.deviceType,
       prompt,
       screen.screenLocalId,
+      detail.generatorKind,
     );
   }
 
@@ -192,7 +520,11 @@ export class MockupsService {
     deviceType: MockupDeviceType,
     refinementPrompt: string | null = null,
     screenLocalId: string | null = null,
+    generator: MockupGenerator = 'STITCH',
+    screenLocalIds: string[] = [],
   ): Promise<MockupJobResponse> {
+    // Stitch jobs keep no generator, as before DEC-167: the configured provider.
+    const generatorKind = generator === 'HTML_CSS' ? 'HTML_CSS' : null;
     // DEC-146: the same request after a run that stopped with screens already
     // drawn continues that run, so only the missing screens are asked for.
     const resumable = screenLocalId
@@ -205,6 +537,8 @@ export class MockupsService {
             deviceType,
             refinementPrompt,
             screenLocalId: null,
+            screenLocalIds: { equals: screenLocalIds },
+            generatorKind,
             status: { in: ['FAILED', 'CANCELLED'] },
             parts: { some: {} },
           },
@@ -226,6 +560,8 @@ export class MockupsService {
         deviceType,
         refinementPrompt,
         ...(screenLocalId ? { screenLocalId } : {}),
+        ...(screenLocalIds.length ? { screenLocalIds } : {}),
+        ...(generatorKind ? { generatorKind } : {}),
       },
     });
     await this.queue.add(MOCKUP_GENERATION_QUEUE, { jobId: job.id, projectId });
@@ -328,7 +664,33 @@ export class MockupsService {
             job.deviceType,
             job.refinementPrompt,
             job.id,
+            job.generatorKind === 'HTML_CSS' ? 'HTML_CSS' : 'STITCH',
+            job.screenLocalIds,
           );
+      // ADR-029: some screens drawn into an existing mockup; the rest stay.
+      if (job.screenLocalIds.length && job.existingMockupId && 'screens' in generated) {
+        const kept = (await this.findLatest(job.projectId, job.existingMockupId)).versions[0]!
+          .mockupDetail!.screens;
+        const drawn = new Map(generated.screens.map((screen) => [screen.screenLocalId, screen]));
+        generated.screens = [
+          ...kept.map(
+            (screen) =>
+              drawn.get(screen.screenLocalId) ?? {
+                screenLocalId: screen.screenLocalId,
+                screenName: screen.screenName,
+                imageStorageKey: screen.imageStorageKey,
+                imageContentType: screen.imageContentType,
+                htmlStorageKey: screen.htmlStorageKey,
+                stitchProjectId: screen.stitchProjectId,
+                stitchScreenId: screen.stitchScreenId,
+                refinementPrompt: screen.refinementPrompt,
+              },
+          ),
+          ...generated.screens.filter(
+            (screen) => !kept.some((item) => item.screenLocalId === screen.screenLocalId),
+          ),
+        ];
+      }
       const result = await this.prisma.$transaction((tx) =>
         job.existingMockupId
           ? this.createVersionInTx(
@@ -377,6 +739,7 @@ export class MockupsService {
     errorMessage: string | null;
     uiBlueprintVersionId?: string;
     deviceType?: string;
+    generatorKind?: string | null;
     existingMockupId?: string | null;
     completedScreens?: number;
     totalScreens?: number;
@@ -391,6 +754,9 @@ export class MockupsService {
       errorMessage: job.errorMessage,
       ...(job.uiBlueprintVersionId ? { uiBlueprintVersionId: job.uiBlueprintVersionId } : {}),
       ...(job.deviceType ? { deviceType: job.deviceType as MockupDeviceType } : {}),
+      ...(job.uiBlueprintVersionId
+        ? { generator: job.generatorKind === 'HTML_CSS' ? 'HTML_CSS' : 'STITCH' }
+        : {}),
       completedScreens: job.completedScreens ?? 0,
       totalScreens: job.totalScreens ?? 0,
       createdAt: job.createdAt.toISOString(),
@@ -512,10 +878,9 @@ export class MockupsService {
           deviceType: detail.deviceType,
           svg: detail.svg,
           generatorKind: detail.generatorKind,
-          screens:
-            detail.generatorKind === 'STITCH'
-              ? this.screenLinks(projectId, row.id, detail.screens)
-              : null,
+          screens: hasScreens(detail.generatorKind)
+            ? this.screenLinks(projectId, row.id, detail.screens)
+            : null,
           refinementPrompt: detail.refinementPrompt,
           createdAt: version.createdAt.toISOString(),
         };
@@ -535,16 +900,43 @@ export class MockupsService {
       deviceType: detail.deviceType,
       generatorKind: detail.generatorKind,
       svg: detail.svg,
-      screens:
-        detail.generatorKind === 'STITCH'
-          ? this.screenLinks(projectId, row.id, detail.screens)
-          : null,
+      screens: hasScreens(detail.generatorKind)
+        ? this.screenLinks(projectId, row.id, detail.screens)
+        : null,
       refinementPrompt: detail.refinementPrompt,
       createdAt: version.createdAt.toISOString(),
-      ...(detail.generatorKind === 'STITCH'
+      ...(hasScreens(detail.generatorKind)
         ? { fidelityReview: await this.fidelityReview(projectId, detail) }
         : {}),
+      previousVersion: await this.previousVersionWithScreens(row.id, version.versionNumber),
+      // ADR-029: screens of the blueprint not drawn yet, to generate them one by one.
+      missingScreens: hasScreens(detail.generatorKind)
+        ? (await this.blueprintScreens(projectId, detail.uiBlueprintVersionId)).filter(
+            (screen) => !detail.screens.some((item) => item.screenLocalId === screen.localId),
+          )
+        : [],
     };
+  }
+
+  private async previousVersionWithScreens(mockupId: string, versionNumber: number) {
+    const previous = await this.prisma.artifactVersion.findFirst({
+      where: {
+        artifactId: mockupId,
+        versionNumber: { lt: versionNumber },
+        mockupDetail: { generatorKind: { not: 'INTERNAL_WIREFRAME' } },
+      },
+      orderBy: { versionNumber: 'desc' },
+      include: {
+        mockupDetail: { include: { screens: { select: { id: true, screenLocalId: true } } } },
+      },
+    });
+    return previous?.mockupDetail
+      ? {
+          versionNumber: previous.versionNumber,
+          generatorKind: previous.mockupDetail.generatorKind,
+          screens: previous.mockupDetail.screens,
+        }
+      : null;
   }
 
   private async approvedRequirements(projectId: string) {
@@ -663,6 +1055,7 @@ export class MockupsService {
     deviceType: MockupDeviceType,
     generated: StoredGeneration,
     refinementPrompt: string | null = null,
+    origin: 'SYSTEM_GENERATED' | 'MANUAL' = 'SYSTEM_GENERATED',
   ) {
     const locked = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM artifacts WHERE id=${mockupId}::uuid AND project_id=${projectId}::uuid AND artifact_type_code='MOCKUP' FOR NO KEY UPDATE`;
@@ -677,8 +1070,8 @@ export class MockupsService {
         projectId,
         versionNumber: latest.versionNumber + 1,
         title: latest.title,
-        status: initialStatusForOrigin('SYSTEM_GENERATED'),
-        origin: 'SYSTEM_GENERATED',
+        status: initialStatusForOrigin(origin),
+        origin,
       },
     });
     await this.saveDetail(
@@ -708,13 +1101,23 @@ export class MockupsService {
     if (!canTransitionArtifactVersionStatus(version.status, status))
       throw new UnprocessableEntityException('Transición de estado no permitida.');
     if (status === 'APPROVED') {
+      await this.currency?.assertEarlierStagesSatisfied(projectId, 'MOCKUP');
       const detail = await this.prisma.mockupDetail.findUnique({
         where: { artifactVersionId: versionId },
         include: { screens: true },
       });
       if (!detail)
         throw new UnprocessableEntityException('No se encontró el contenido del boceto.');
-      if (detail.generatorKind === 'STITCH') {
+      if (hasScreens(detail.generatorKind)) {
+        // ADR-029: a mockup drawn screen by screen is approved once complete.
+        const drawn = new Set(detail.screens.map((screen) => screen.screenLocalId));
+        const missing = (
+          await this.blueprintScreens(projectId, detail.uiBlueprintVersionId)
+        ).filter((screen) => !drawn.has(screen.localId)).length;
+        if (missing)
+          throw new UnprocessableEntityException(
+            `Faltan ${missing} pantallas del plano de interfaz por generar. Genérelas antes de aprobar el boceto.`,
+          );
         const review = await this.fidelityReview(projectId, detail);
         if (review.findings.some((finding) => finding.severity === 'ERROR'))
           throw new UnprocessableEntityException({
@@ -746,6 +1149,8 @@ export class MockupsService {
     deviceType: MockupDeviceType,
     refinementPrompt: string | null = null,
     jobId: string | null = null,
+    generatorChoice: MockupGenerator = 'STITCH',
+    screenLocalIds: string[] = [],
   ): Promise<StoredGeneration> {
     const source = await this.prisma.artifactVersion.findFirst({
       where: {
@@ -760,10 +1165,30 @@ export class MockupsService {
       throw new UnprocessableEntityException(
         'Se requiere una versión exacta APPROVED de plano de interfaz del mismo proyecto.',
       );
-    const content = uiBlueprintContentSchema.parse(source.structuredAnalysisDetail.content);
+    const blueprint = uiBlueprintContentSchema.parse(source.structuredAnalysisDetail.content);
+    // The menu shows every screen; only the chosen ones are drawn (ADR-029).
+    const content = screenLocalIds.length
+      ? {
+          ...blueprint,
+          screens: blueprint.screens.filter((screen) => screenLocalIds.includes(screen.localId)),
+        }
+      : blueprint;
     const theme = await this.currentTheme(projectId);
     const designThemeVersionId = theme?.versionId ?? null;
-    const appContext = await this.appContext(projectId, content);
+    const appContext = await this.appContext(projectId, blueprint);
+    if (generatorChoice === 'HTML_CSS' && jobId)
+      return this.generateScreenByScreen(
+        jobId,
+        projectId,
+        content,
+        deviceType,
+        refinementPrompt,
+        theme?.content,
+        designThemeVersionId,
+        this.htmlCssGenerator(projectId, await getProjectLanguage(this.prisma, projectId)),
+        appContext,
+        'HTML_CSS',
+      );
     const generator = this.mockupProvider.screens;
     if (generator && jobId)
       return this.generateScreenByScreen(
@@ -901,6 +1326,7 @@ export class MockupsService {
     designThemeVersionId: string | null,
     generator: ScreenGenerator,
     appContext: MockupAppContext,
+    kind: 'STITCH' | 'HTML_CSS' = 'STITCH',
   ): Promise<StoredGeneration> {
     const job = await this.prisma.mockupGenerationJob.findUniqueOrThrow({
       where: { id: jobId },
@@ -1002,14 +1428,20 @@ export class MockupsService {
           ? failures[0]!.error.message
           : 'El proveedor de bocetos no está disponible.';
       // Nothing drawn and nothing to keep: the internal wireframe, as before.
-      if (!done.size && !refinementPrompt && this.mockupProvider.generateFallback) {
+      // Never for some screens only (ADR-029): it would replace the whole mockup.
+      if (
+        !done.size &&
+        !refinementPrompt &&
+        !job.screenLocalIds.length &&
+        this.mockupProvider.generateFallback
+      ) {
         const fallback = await this.mockupProvider.generateFallback(content, deviceType, theme);
         if (fallback.kind === 'INTERNAL_WIREFRAME')
           return {
             kind: 'INTERNAL_WIREFRAME',
             svg: sanitizeDiagramSvg(fallback.svg),
             designThemeVersionId,
-            notice: `Stitch no generó ninguna pantalla (${reason}); se creó el esquema interno.`,
+            notice: `${kind === 'HTML_CSS' ? 'La IA' : 'Stitch'} no generó ninguna pantalla (${reason}); se creó el esquema interno.`,
           };
       }
       const missing = content.screens.length - done.size;
@@ -1023,7 +1455,7 @@ export class MockupsService {
       );
     }
     return {
-      kind: 'STITCH',
+      kind,
       designThemeVersionId,
       screens: content.screens.map((screen) => {
         const part = done.get(screen.localId)!;
@@ -1053,9 +1485,14 @@ export class MockupsService {
   ): Promise<StoredGeneration> {
     const detail = (await this.findLatest(projectId, mockupId)).versions[0]!.mockupDetail!;
     const target = detail.screens.find((s) => s.screenLocalId === screenLocalId);
-    if (detail.generatorKind !== 'STITCH' || !target?.stitchProjectId || !target.stitchScreenId)
+    const htmlCss = detail.generatorKind === 'HTML_CSS';
+    if (
+      (detail.generatorKind !== 'STITCH' && !htmlCss) ||
+      !target?.stitchProjectId ||
+      !target.stitchScreenId
+    )
       throw new UnprocessableEntityException('Esta pantalla no se puede editar individualmente.');
-    if (!this.mockupProvider.editScreen)
+    if (!htmlCss && !this.mockupProvider.editScreen)
       throw new ServiceUnavailableException('Stitch no está disponible para editar la pantalla.');
     const [requirements, blueprint] = await Promise.all([
       this.approvedRequirements(projectId),
@@ -1076,6 +1513,47 @@ export class MockupsService {
       throw new UnprocessableEntityException(
         'No se encontró la pantalla en el plano de interfaz de origen.',
       );
+    if (htmlCss) {
+      // The screen is drawn again from the blueprint, with the instruction and
+      // what it showed before, in the palette it was painted with.
+      const drawn = await this.htmlCssGenerator(
+        projectId,
+        await getProjectLanguage(this.prisma, projectId),
+      ).draw(
+        sourceScreen,
+        deviceType,
+        prompt,
+        await this.themeContent(projectId, detail.designThemeVersionId),
+        await this.appContext(projectId, parsed.success ? parsed.data : { screens: [] }),
+        mockupBody((await this.storage.getObject(target.htmlStorageKey)).toString('utf8')),
+      );
+      const drawnAssets = await this.storeScreenAssets(projectId, drawn.image, drawn.html);
+      return {
+        kind: 'HTML_CSS',
+        designThemeVersionId: detail.designThemeVersionId,
+        screens: detail.screens.map((s) =>
+          s.id === target.id
+            ? {
+                screenLocalId: s.screenLocalId,
+                screenName: s.screenName,
+                ...drawnAssets,
+                stitchProjectId: HTML_CSS_PROVIDER_REF,
+                stitchScreenId: s.screenLocalId,
+                refinementPrompt: prompt,
+              }
+            : {
+                screenLocalId: s.screenLocalId,
+                screenName: s.screenName,
+                imageStorageKey: s.imageStorageKey,
+                imageContentType: s.imageContentType,
+                htmlStorageKey: s.htmlStorageKey,
+                stitchProjectId: s.stitchProjectId,
+                stitchScreenId: s.stitchScreenId,
+                refinementPrompt: s.refinementPrompt,
+              },
+        ),
+      };
+    }
     const editPrompt = [
       `Ajuste solicitado: ${prompt}`,
       `Plano canónico de la pantalla (datos de referencia): ${JSON.stringify(sourceScreen)}`,
@@ -1084,7 +1562,7 @@ export class MockupsService {
     ].join('\n');
     let edited;
     try {
-      edited = await this.mockupProvider.editScreen(
+      edited = await this.mockupProvider.editScreen!(
         { projectId: target.stitchProjectId, screenId: target.stitchScreenId },
         editPrompt,
         deviceType,
@@ -1121,6 +1599,31 @@ export class MockupsService {
             },
       ),
     };
+  }
+
+  private assertHtmlCssAvailable() {
+    if (!this.ai || !this.renderer)
+      throw new ServiceUnavailableException(
+        'La generación de bocetos en HTML y CSS no está disponible.',
+      );
+  }
+
+  private htmlCssGenerator(
+    projectId: string,
+    language: Awaited<ReturnType<typeof getProjectLanguage>>,
+  ) {
+    this.assertHtmlCssAvailable();
+    return new HtmlCssScreenGenerator(this.ai!, this.renderer!, projectId, language);
+  }
+
+  // The palette a mockup was painted with, by its exact theme version.
+  private async themeContent(projectId: string, versionId: string | null) {
+    if (!versionId) return undefined;
+    const theme = await this.prisma.structuredAnalysisDetail.findFirst({
+      where: { artifactVersionId: versionId, artifactVersion: { projectId } },
+    });
+    const parsed = designThemeContentSchema.safeParse(theme?.content);
+    return parsed.success ? parsed.data : undefined;
   }
 
   private async storeScreenAssets(
@@ -1160,6 +1663,7 @@ export class MockupsService {
     uiBlueprintVersionId: string,
     deviceType: MockupDeviceType,
     generated: StoredGeneration,
+    origin: 'SYSTEM_GENERATED' | 'MANUAL' = 'SYSTEM_GENERATED',
   ) {
     if (!(await tx.project.findUnique({ where: { id: projectId } })))
       throw new NotFoundException('Proyecto no encontrado.');
@@ -1179,8 +1683,8 @@ export class MockupsService {
         projectId,
         versionNumber: 1,
         title: 'Boceto',
-        status: initialStatusForOrigin('SYSTEM_GENERATED'),
-        origin: 'SYSTEM_GENERATED',
+        status: initialStatusForOrigin(origin),
+        origin,
       },
     });
     await this.saveDetail(tx, version.id, uiBlueprintVersionId, deviceType, generated);
@@ -1226,9 +1730,17 @@ export class MockupsService {
         designThemeVersionId: generated.designThemeVersionId,
         generatorKind: generated.kind,
         generatorVersion:
-          generated.kind === 'STITCH' ? 'stitch-sdk-0.3.5' : MOCKUP_GENERATOR_VERSION,
+          generated.kind === 'STITCH'
+            ? 'stitch-sdk-0.3.5'
+            : generated.kind === 'MANUAL'
+              ? MANUAL_GENERATOR_VERSION
+              : generated.kind === 'HTML_CSS'
+                ? HTML_CSS_GENERATOR_VERSION
+                : MOCKUP_GENERATOR_VERSION,
         svg: generated.kind === 'INTERNAL_WIREFRAME' ? generated.svg : null,
-        ...(generated.kind === 'STITCH' ? { screens: { create: generated.screens } } : {}),
+        ...(generated.kind !== 'INTERNAL_WIREFRAME'
+          ? { screens: { create: generated.screens } }
+          : {}),
       },
     });
   }
@@ -1291,7 +1803,7 @@ export class MockupsService {
   async downloadMockupScreensZip(projectId: string, mockupId: string) {
     const mockup = await this.findLatest(projectId, mockupId);
     const detail = mockup.versions[0]!.mockupDetail!;
-    const screens = detail.generatorKind === 'STITCH' ? detail.screens : [];
+    const screens = hasScreens(detail.generatorKind) ? detail.screens : [];
     if (screens.length === 0) throw new NotFoundException('No hay imágenes para descargar.');
 
     const zip = new JSZip();
@@ -1362,4 +1874,31 @@ export class MockupsService {
       createdAt: artifact.createdAt.toISOString(),
     };
   }
+}
+
+// Which screens of a newer blueprint can keep an approved mockup's images.
+// A new screen has no approved image to keep and must be generated (blocked).
+// A changed one keeps its image and is listed, so the person approving the
+// carried mockup knows which screens to check against the blueprint.
+export function carryOverScreens(
+  before: readonly { localId: string; name: string }[],
+  after: readonly { localId: string; name: string }[],
+  mockedScreenIds: readonly string[],
+) {
+  return {
+    blocked: after
+      .filter(
+        (screen) =>
+          !before.some((item) => item.localId === screen.localId) ||
+          !mockedScreenIds.includes(screen.localId),
+      )
+      .map((screen) => screen.name),
+    changedScreens: after
+      .filter(
+        (screen) =>
+          JSON.stringify(before.find((item) => item.localId === screen.localId)) !==
+          JSON.stringify(screen),
+      )
+      .map((screen) => screen.name),
+  };
 }

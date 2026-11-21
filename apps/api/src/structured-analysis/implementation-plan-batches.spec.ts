@@ -95,6 +95,42 @@ describe('cleanSkeleton', () => {
 describe('mergeEntityBatch', () => {
   const targets = [cls('a', 'A'), cls('b', 'B')];
   const all = new Set(['a', 'b', 'c']);
+  it("drops an internal field that only repeats the record's own identifier", () => {
+    const field = (name: string, internal: boolean) => ({
+      name,
+      type: 'STRING' as const,
+      required: true,
+      unique: false,
+      enumValues: [],
+      internal,
+    });
+    const [merged] = mergeEntityBatch(
+      [],
+      {
+        entities: [
+          draft('x', 'a', {
+            name: 'LateFine',
+            fields: [
+              field('fineIdentifier', true),
+              { ...field('lateFineId', false), readOnly: true },
+              field('memberId', true),
+              field('loanIdentifier', false),
+              field('amount', false),
+            ],
+          }),
+        ],
+      },
+      targets,
+      context,
+      all,
+    );
+    expect(merged!.fields.map((item) => item.name)).toEqual([
+      'memberId',
+      'loanIdentifier',
+      'amount',
+    ]);
+  });
+
   it('corrects what the plan cross-checks instead of failing', () => {
     const merged = mergeEntityBatch(
       [],

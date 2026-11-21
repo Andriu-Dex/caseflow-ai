@@ -28,7 +28,20 @@ type Route = Plan['routes'][number];
 // Next.js frontend following the CASEFLOW_STANDARD_WEB_V1 design profile:
 // Tailwind + shadcn-style primitives, React Hook Form + Zod (the same
 // contracts the API validates with), TanStack Query over the generated
-// OpenAPI client — never hand-written fetch calls per screen (AGENTS.md §20).
+// OpenAPI client — never hand-written fetch calls per screen.
+
+// ADR-028: the frame and the key-figure bands are dark tones of the project's
+// own primary colour, so they match any palette; the accent is the one colour
+// for the main action.
+const STANDARD_TONES = `  --color-sidebar: color-mix(in oklab, var(--color-primary) 22%, #0b1020);
+  --color-sidebar-active: color-mix(in oklab, var(--color-primary) 32%, #1e293b);
+  --color-sidebar-foreground: #e2e8f0;
+  --color-sidebar-strong: #ffffff;
+  --color-sidebar-muted: #94a3b8;
+  --color-band: color-mix(in oklab, var(--color-primary) 45%, #0b1020);
+  --color-band-tile: color-mix(in oklab, var(--color-primary) 62%, #0b1020);
+  --color-band-foreground: #ffffff;
+  --color-band-muted: color-mix(in oklab, #ffffff 78%, var(--color-primary));`;
 
 const STANDARD_GLOBALS_CSS = `@import 'tailwindcss';
 
@@ -40,6 +53,9 @@ const STANDARD_GLOBALS_CSS = `@import 'tailwindcss';
   --color-primary: oklch(0.51 0.2 268);
   --color-primary-foreground: oklch(0.99 0 0);
   --color-destructive: oklch(0.58 0.22 27);
+  --color-accent: oklch(0.7 0.18 50);
+  --color-accent-foreground: oklch(0.21 0.02 265);
+${STANDARD_TONES}
 }
 
 body {
@@ -66,13 +82,14 @@ function globalsCss(theme: DesignThemeContent | undefined): string {
 @theme {
 ${cssVariables(base, '  ')}
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
-  --radius-md: 0.375rem;
-  --radius-lg: 0.375rem;
-  --radius-xl: 0.5rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.875rem;
   --color-card: var(--color-background);
   --color-card-foreground: var(--color-foreground);
   --color-input: var(--color-border);
   --color-ring: var(--color-primary);
+${STANDARD_TONES}
 }
 ${
   theme.mode === 'BOTH'
@@ -205,7 +222,6 @@ const SPANISH_LABELS: Record<string, string> = {
   concept: 'Concepto',
   currency: 'Moneda',
   balance: 'Saldo',
-  dailymenu: 'Menú diario',
   versionlabel: 'Versión',
   creationdate: 'Fecha de creación',
   publicationdate: 'Fecha de publicación',
@@ -223,8 +239,6 @@ const SPANISH_LABELS: Record<string, string> = {
   unitprice: 'Precio unitario',
   discount: 'Descuento',
   componenttype: 'Tipo de componente',
-  menuversioncomponent: 'Componente de versión de menú',
-  menuversion: 'Versión de menú',
 };
 
 export const labelOf = (name: string) => {
@@ -245,7 +259,7 @@ const routeParamNames = (routePath: string) =>
   [...routePath.matchAll(/\[([a-zA-Z0-9]+)\]/g)].map((m) => m[1]!);
 // The URL parameter that identifies a record of this entity on the page, if
 // any: [id], or [<name>Id] where <name> ends the entity name ([eventId] for
-// CateringEvent).
+// CalendarEvent).
 const entityParam = (entity: Entity | undefined, names: string[]) =>
   entity
     ? names.find((name) => {
@@ -317,8 +331,14 @@ const entityRoute = (plan: Plan, entity: Entity, kind: Route['kind']) =>
       (kind !== 'DETAIL' || Boolean(dynamicParam(r.path))),
   );
 
-// Actions that need one record: they live on list rows and detail pages.
-function isItemAction(plan: Plan, action: Action): boolean {
+// Actions that need one record: they live on list rows and detail pages. A
+// navigation does when its target needs a parameter the page does not have.
+function isItemAction(plan: Plan, action: Action, pageParams: string[] = []): boolean {
+  if (action.navigation)
+    return (
+      !action.navigation.sourceEndpoint &&
+      routeParamNames(action.navigation.routePath).some((name) => !pageParams.includes(name))
+    );
   if (action.operation) return ['GET', 'UPDATE', 'DELETE'].includes(action.operation);
   const endpoint = customEndpoint(plan, action);
   return Boolean(endpoint && pathParams(endpoint.path).length);
@@ -358,6 +378,70 @@ function routeHref(
 const recordHref = (path: string, entity: Entity, names: string[], id: string) =>
   routeHref(path, names, id, entityParam(entity, routeParamNames(path)));
 
+// The screens a record opens, so every parametrized route of the plan is
+// reachable: routes that take this entity's id right after the page's own
+// collection segment (/products -> /products/[productid]/edit and
+// /branches/[branchid]/products/[productid]/availability), with any other
+// parameter taken from the page or from the selected operation scope.
+function contextLinks(
+  plan: Plan,
+  entity: Entity,
+  page: Route,
+  names: string[],
+  idExpr: string,
+  collection: string | undefined,
+): string[] {
+  const scope = plan.entities
+    .find((item) => item.localId === plan.authentication.local?.scope?.entityLocalId)
+    ?.name.toLowerCase();
+  const detail = entityRoute(plan, entity, 'DETAIL')?.path;
+  return plan.routes.flatMap((target) => {
+    if (
+      !collection ||
+      target === page ||
+      target.path === detail ||
+      target.builtinView === 'ACCOUNT_ACCESS' ||
+      !target.path.includes('[')
+    )
+      return [];
+    const own = entityParam(entity, routeParamNames(target.path));
+    const segments = target.path.split('/');
+    if (!own || segments[segments.indexOf(`[${own}]`) - 1] !== collection) return [];
+    // The parameter is another entity's id when the target screen's own
+    // entity claims it too (an audit event is not a calendar event).
+    const targetEntity = plan.entities.find((item) => item.localId === target.entityLocalId);
+    if (targetEntity && targetEntity !== entity && entityParam(targetEntity, [own]) === own)
+      return [];
+    let scoped = false;
+    let unresolved = false;
+    const href = target.path.replace(/\[([a-zA-Z0-9]+)\]/g, (_, name: string) => {
+      if (name === own) return `\${${idExpr}}`;
+      const matched = names.find((item) => item.toLowerCase() === name.toLowerCase());
+      if (matched) return `\${${matched}}`;
+      if (scope && name.toLowerCase() === `${scope}id`) {
+        scoped = true;
+        return '__scope__';
+      }
+      unresolved = true;
+      return '';
+    });
+    if (unresolved) return [];
+    const label = text(target.screenName.replace(/[<>{}]/g, ''));
+    return [
+      scoped
+        ? `<ScopeLink href={\`${href}\`}>${label}</ScopeLink>`
+        : `<Link href={\`${href}\`} className="text-primary underline">${label}</Link>`,
+    ];
+  });
+}
+// The static segment a page's records belong to: /products -> products,
+// /sales/[saleid] -> sales.
+const collectionOf = (path: string, recordParam?: string) => {
+  const segments = path.split('/').filter(Boolean);
+  const at = recordParam ? segments.indexOf(`[${recordParam}]`) : -1;
+  return at > 0 ? segments[at - 1] : [...segments].reverse().find((item) => !item.startsWith('['));
+};
+
 interface ActionTarget {
   autoLoad?: boolean;
   navigations?: Array<{
@@ -389,7 +473,10 @@ function actionControl(
   const { idExpr } = target;
   if (action.navigation) {
     if (action.navigation.sourceEndpoint) return null;
-    return linkControl(label, routeHref(action.navigation.routePath, target.routeParams ?? []));
+    return linkControl(
+      label,
+      routeHref(action.navigation.routePath, target.routeParams ?? [], idExpr),
+    );
   }
   if (action.operation) {
     if (!entity || !entity.operations.includes(action.operation)) return null;
@@ -487,7 +574,21 @@ function actionControl(
       const label = entity.fields.find(
         (field) => ['STRING', 'TEXT'].includes(field.type) && !field.internal,
       )?.name;
-      return `${JSON.stringify(localId)}:async()=>(await api.list${pluralize(entity.name)}()).map(item=>({id:item.id,label:String(item.${label ?? 'id'})}))`;
+      // ADR-028: an option never shows the record's id. Without a text field
+      // it reads as its first visible values (dates cut to the day).
+      const shown = entity.fields
+        .filter((field) => !field.internal && field.type !== 'BOOLEAN')
+        .slice(0, 2)
+        .map(
+          (field) =>
+            `String(item.${field.name} ?? '')${['DATE', 'DATETIME'].includes(field.type) ? '.slice(0, 10)' : ''}`,
+        );
+      const text = label
+        ? `String(item.${label})`
+        : shown.length
+          ? `[${shown.join(',')}].filter(Boolean).join(' · ') || 'Registro ' + (index + 1)`
+          : `'Registro ' + (index + 1)`;
+      return `${JSON.stringify(localId)}:async()=>(await api.list${pluralize(entity.name)}()).map((${text.includes('index') ? 'item,index' : 'item'})=>({id:item.id,label:${text}}))`;
     });
     const args = [
       ...(params.length === 1 && params[0] === 'id'
@@ -540,6 +641,13 @@ const controls = (
   target: ActionTarget,
 ) =>
   actions
+    // Several blueprint actions served by the same query ("Consultar",
+    // "Examinar totales"…) are one form: the first one names it.
+    .filter(
+      (action, index) =>
+        !action.endpoint?.startsWith('GET ') ||
+        actions.findIndex((other) => other.endpoint === action.endpoint) === index,
+    )
     .map((action) => actionControl(plan, entity, action, target))
     .filter((control): control is string => control !== null);
 
@@ -551,10 +659,12 @@ const indent = (block: string, spaces: number) =>
 
 // Imports a page needs, read from the JSX it renders.
 function pageImports(body: string, up: string, extra: string[] = []): string {
+  // A response whose fields are all technical shows no result slot.
+  const actionParts = ['ActionForm', 'ActionControls', 'ActionFeedback', 'ActionResult'].filter(
+    (name) => body.includes(`<${name}`),
+  );
   if (body.includes('<ActionForm'))
-    extra.push(
-      `import { ActionForm, ActionControls, ActionFeedback, ActionResult } from '${up}components/action-form';`,
-    );
+    extra.push(`import { ${actionParts.join(', ')} } from '${up}components/action-form';`);
   const actionSchemas = [
     ...new Set(
       [...body.matchAll(/\b([a-z][a-zA-Z0-9]*(?:Body|Query)Schema)\.parse\(/g)].map(
@@ -566,6 +676,10 @@ function pageImports(body: string, up: string, extra: string[] = []): string {
     extra.push(`import { ${actionSchemas.join(', ')} } from '@app/contracts';`);
   const lines = [
     body.includes('<Link') ? "import Link from 'next/link';" : '',
+    body.includes('<ScopeLink') ? `import { ScopeLink } from '${up}components/scope-link';` : '',
+    body.includes('<RecordLabel')
+      ? `import { RecordLabel } from '${up}components/record-label';`
+      : '',
     ...extra,
     body.includes('<Button') ? `import { Button } from '${up}components/ui/button';` : '',
     body.includes('<Input') ? `import { Input } from '${up}components/ui/input';` : '',
@@ -603,23 +717,51 @@ function listPage(plan: Plan, entity: Entity, route: Route): string {
       !filter.enumValues && names.find((name) => name.toLowerCase() === filter.name.toLowerCase());
     return param ? [`${filter.name}: ${param}`] : [];
   });
+  // A many-to-one relation the list query already filters by is offered as
+  // a selector of its records, except the operation scope (fixed by the
+  // operation context) and user accounts (listed only by administrators).
+  const local = plan.authentication.local;
+  const relationFilters = (entity.relations ?? []).flatMap((relation) => {
+    const target = plan.entities.find((item) => item.localId === relation.targetEntityLocalId);
+    const labelField = target?.fields.find(
+      (field) => ['STRING', 'TEXT'].includes(field.type) && !field.internal,
+    )?.name;
+    const name = `${relation.name}Id`;
+    return relation.kind === 'MANY_TO_ONE' &&
+      target &&
+      labelField &&
+      target.operations.includes('LIST') &&
+      target.localId !== local?.scope?.entityLocalId &&
+      target.localId !== local?.userEntityLocalId &&
+      !names.some((param) => param.toLowerCase() === name.toLowerCase())
+      ? [
+          {
+            name,
+            label: relation.label ?? relation.name,
+            list: `list${pluralize(target.name)}`,
+            labelField,
+          },
+        ]
+      : [];
+  });
+  const selectFilters = [...enumFilters, ...relationFilters];
   const filterArgs = [
     ...routeFilters,
-    ...enumFilters.map((filter) => `${filter.name}: filterValues.${filter.name} || undefined`),
+    ...selectFilters.map((filter) => `${filter.name}: filterValues.${filter.name} || undefined`),
   ];
   const filterKey = filterArgs.length
-    ? `, ${[...routeFilters.map((item) => item.split(': ')[1]), ...(enumFilters.length ? ['filterValues'] : [])].join(', ')}`
+    ? `, ${[...routeFilters.map((item) => item.split(': ')[1]), ...(selectFilters.length ? ['filterValues'] : [])].join(', ')}`
     : '';
 
   const columns = [...entity.fields, ...relColumns].slice(0, 8);
   const refresh = `() => queryClient.invalidateQueries({ queryKey: ${baseKey} })`;
   const pageActions = route.actions.filter(
     (a) =>
-      !isItemAction(plan, a) &&
+      !isItemAction(plan, a, names) &&
       a.interaction !== 'PAGINATE_NEXT' &&
       a.interaction !== 'PAGINATE_PREVIOUS',
   );
-  const itemActions = route.actions.filter((a) => isItemAction(plan, a));
+  const itemActions = route.actions.filter((a) => isItemAction(plan, a, names));
   // The pager buttons realise the plan's own paging actions, by their labels.
   const nextLabel =
     route.actions.find((a) => a.interaction === 'PAGINATE_NEXT')?.label ??
@@ -627,12 +769,32 @@ function listPage(plan: Plan, entity: Entity, route: Route): string {
   const previousLabel =
     route.actions.find((a) => a.interaction === 'PAGINATE_PREVIOUS')?.label ??
     'Ir a la página anterior';
-  const header = controls(plan, entity, pageActions, {
-    isListPage: true,
-    routeParams: names,
-    onDone: refresh,
-    hasDate,
-  });
+  // The screen's context queries, with the navigations that open a record of
+  // their results (as on any other screen).
+  const navigations = route.actions.flatMap((action) =>
+    action.navigation?.sourceEndpoint
+      ? [{ ...action.navigation, label: action.label, idField: action.navigation.idField! }]
+      : [],
+  );
+  const contextControls = (route.contextQueries ?? [])
+    .map((endpoint) =>
+      actionControl(
+        plan,
+        entity,
+        { label: 'Información de la pantalla', endpoint },
+        { autoLoad: true, navigations, routeParams: names },
+      ),
+    )
+    .filter((value): value is string => value !== null);
+  const header = [
+    ...contextControls,
+    ...controls(plan, entity, pageActions, {
+      isListPage: true,
+      routeParams: names,
+      onDone: refresh,
+      hasDate,
+    }),
+  ];
   const rowControls = controls(plan, entity, itemActions, {
     idExpr: 'row.id',
     routeParams: names,
@@ -646,17 +808,44 @@ function listPage(plan: Plan, entity: Entity, route: Route): string {
     rowControls.push(
       `<Link href=${recordHref(accessEditor.path, entity, names, 'row.id')} className="text-primary underline">Roles y ámbitos de operación</Link>`,
     );
+  rowControls.push(...contextLinks(plan, entity, route, names, 'row.id', collectionOf(route.path)));
   const detailHref = detail ? recordHref(detail.path, entity, names, 'row.id') : undefined;
   const idCell = detailHref
-    ? `<td className="px-3 py-2 font-mono text-xs">\n  <Link className="text-primary underline" href=${detailHref}>\n    {row.id}\n  </Link>\n</td>`
-    : `<td className="px-3 py-2 font-mono text-xs">{row.id}</td>`;
+    ? `<td className="px-3 py-2 font-mono text-xs">\n  <Link className="text-primary underline" href=${detailHref} title={row.id}>\n    {row.id.slice(0, 8)}\n  </Link>\n</td>`
+    : `<td className="px-3 py-2 font-mono text-xs" title={row.id}>{row.id.slice(0, 8)}</td>`;
+  // Relation columns show the related record's name where this screen may
+  // read it (the operation scope from its context), a short id otherwise.
+  const relationSource = new Map<string, string>(
+    inputRelations(entity).map((rel) => {
+      const target = plan.entities.find((item) => item.localId === rel.targetEntityLocalId);
+      const field = target?.fields.find(
+        (item) => ['STRING', 'TEXT'].includes(item.type) && !item.internal,
+      )?.name;
+      const readable =
+        target?.operations.includes('LIST') &&
+        field &&
+        (!target.readRoles?.length ||
+          (route.roles ?? []).every((role) => target.readRoles!.includes(role)));
+      const source =
+        target && target.localId === plan.authentication.local?.scope?.entityLocalId
+          ? `source="scope"`
+          : readable
+            ? `source=${JSON.stringify(`list${pluralize(target!.name)}`)} field=${JSON.stringify(field)}`
+            : '';
+      return [`${rel.name}Id`, source] as const;
+    }),
+  );
   const dataCells = columns.map((f, i) => {
-    const expr = display(f, `row.${f.name}`);
+    const expr = relationSource.has(f.name)
+      ? `<RecordLabel id={row.${f.name}} ${relationSource.get(f.name)} />`
+      : display(f, `row.${f.name}`);
     return i === 0 && detailHref
       ? `<td className="px-3 py-2">\n  <Link className="text-primary underline" href=${detailHref}>\n    {${expr}}\n  </Link>\n</td>`
       : `<td className="px-3 py-2">{${expr}}</td>`;
   });
-  const cells = [idCell, ...dataCells];
+  // ADR-028: no identifier column; the first data column opens the record.
+  // An entity with nothing else to show keeps it as the only way in.
+  const cells = columns.length ? dataCells : [idCell];
   if (rowControls.length)
     cells.push(
       `<td className="px-3 py-2">\n  <div className="flex flex-wrap gap-2">\n${indent(rowControls.join('\n'), 4)}\n  </div>\n</td>`,
@@ -666,7 +855,16 @@ function listPage(plan: Plan, entity: Entity, route: Route): string {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-semibold">${route.screenName.replace(/[<>{}]/g, '')}</h1>
 ${header.length ? `        <div className="flex flex-wrap gap-2">\n${indent(header.join('\n'), 10)}\n        </div>\n` : ''}      </div>
-${names.map((n) => `      {${n} && <div className="text-xs text-muted-foreground"><span className="font-semibold">${text(labelOf(n.replace(/id$/i, '')))}:</span> {${n}}</div>}`).join('\n')}
+${names
+  .flatMap((n) => {
+    const source = [...relationSource].find(([key]) => key.toLowerCase() === n.toLowerCase())?.[1];
+    return source
+      ? [
+          `      {${n} && <div className="text-xs text-muted-foreground"><span className="font-semibold">${text(labelOf(n.replace(/id$/i, '')))}:</span> <RecordLabel id={${n}} ${source} /></div>}`,
+        ]
+      : [];
+  })
+  .join('\n')}
       <div className="rounded border bg-card p-3 text-xs text-muted-foreground flex flex-col gap-1.5" role="status">
         <div className="flex items-center justify-between">
           <span className="font-semibold text-foreground">${text('Criterios de consulta y ámbito operativo:')}</span>
@@ -712,19 +910,30 @@ ${names.map((n) => `      {${n} && <div className="text-xs text-muted-foreground
       </div>\n`
           : ''
       }${
-        enumFilters.length
+        selectFilters.length
           ? `      <div className="flex flex-wrap items-end gap-3 rounded border bg-card p-3">
-${enumFilters
+${relationFilters
   .map(
     (filter) => `        <div className="flex flex-col gap-1">
+          <label htmlFor="filter-${filter.name}" className="text-xs font-medium">${text(filter.label)}</label>
+          <select id="filter-${filter.name}" className="h-8 rounded border bg-background px-2 text-xs" value={filterValues.${filter.name} ?? ''} disabled={!${filter.name}Options.data} onChange={(e) => { setFilterValues((current) => ({ ...current, ${filter.name}: e.target.value })); setPage(1); }}>
+            <option value="">Todos</option>
+            {${filter.name}Options.data?.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+          </select>
+        </div>
+`,
+  )
+  .join('')}${enumFilters
+              .map(
+                (filter) => `        <div className="flex flex-col gap-1">
           <label htmlFor="filter-${filter.name}" className="text-xs font-medium">${text(filter.label)}</label>
           <select id="filter-${filter.name}" className="h-8 rounded border bg-background px-2 text-xs" value={filterValues.${filter.name} ?? ''} onChange={(e) => { setFilterValues((current) => ({ ...current, ${filter.name}: e.target.value })); setPage(1); }}>
             <option value="">Todos</option>
 ${filter.enumValues!.map((value) => `            <option value=${JSON.stringify(value)}>${text(value)}</option>`).join('\n')}
           </select>
         </div>`,
-  )
-  .join('\n')}
+              )
+              .join('\n')}
         {Object.values(filterValues).some(Boolean) && (
           <Button type="button" variant="ghost" size="sm" onClick={() => { setFilterValues({}); setPage(1); }}>
             Limpiar filtros
@@ -741,8 +950,7 @@ ${filter.enumValues!.map((value) => `            <option value=${JSON.stringify(
               <table className="w-full text-sm">
                 <thead className="bg-muted text-left">
                   <tr>
-                    <th className="px-3 py-2 font-medium">${text('Identificador')}</th>
-${columns.map((f) => `                    <th className="px-3 py-2 font-medium">${text(f.label ?? labelOf(f.name))}</th>`).join('\n')}${rowControls.length ? `\n                    <th className="px-3 py-2 font-medium">${text('Acciones')}</th>` : ''}
+${columns.length ? '' : `                    <th className="px-3 py-2 font-medium">${text('Identificador')}</th>\n`}${columns.map((f) => `                    <th className="px-3 py-2 font-medium">${text(f.label ?? labelOf(f.name))}</th>`).join('\n')}${rowControls.length ? `\n                    <th className="px-3 py-2 font-medium">${text('Acciones')}</th>` : ''}
                   </tr>
                 </thead>
                 <tbody>
@@ -796,7 +1004,14 @@ ${indent(cells.join('\n'), 22)}
 ${pageImports(body, up, extraImports)}
 
 export default function ${entity.name}ListPage() {
-  const [page, setPage] = useState(1);${enumFilters.length ? '\n  const [filterValues, setFilterValues] = useState<Record<string, string>>({});' : ''}${hasDate ? "\n  const [dateFrom, setDateFrom] = useState('');\n  const [dateTo, setDateTo] = useState('');\n  const isInvalidDateRange = Boolean(dateFrom && dateTo && dateFrom > dateTo);" : ''}
+  const [page, setPage] = useState(1);${selectFilters.length ? '\n  const [filterValues, setFilterValues] = useState<Record<string, string>>({});' : ''}${relationFilters
+    .map(
+      (filter) =>
+        `\n  const ${filter.name}Options = useQuery({ queryKey: ['filter-options', ${JSON.stringify(filter.list)}], queryFn: async () => (await api.${filter.list}()).map((item) => ({ id: item.id, label: String(item.${filter.labelField}) })) });`,
+    )
+    .join(
+      '',
+    )}${hasDate ? "\n  const [dateFrom, setDateFrom] = useState('');\n  const [dateTo, setDateTo] = useState('');\n  const isInvalidDateRange = Boolean(dateFrom && dateTo && dateFrom > dateTo);" : ''}
   const limit = 20;
   const query = useQuery({
     queryKey: ['${lowerFirst(plural)}', page, limit${hasDate ? ', dateFrom, dateTo' : ''}${filterKey}],
@@ -831,10 +1046,12 @@ function detailPage(plan: Plan, entity: Entity, route: Route): string {
     onDone: '() => query.refetch()',
     onDelete: `() => router.push(${list ? routeHref(list.path, names).replace(/^\{(.*)\}$/, '$1') : JSON.stringify('/')})`,
   });
+  const links = contextLinks(plan, entity, route, names, param, collectionOf(route.path, param));
   const body = `    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-semibold"${own ? ` ${actionMarker(own.label)}` : ''}>${route.screenName.replace(/[<>{}]/g, '')}</h1>
 ${header.length ? `        <div className="flex flex-wrap gap-2">\n${indent(header.join('\n'), 10)}\n        </div>\n` : ''}      </div>
+${links.length ? `      <nav aria-label="Operaciones del registro" className="flex flex-wrap gap-3 text-sm">\n${indent(links.join('\n'), 8)}\n      </nav>\n` : ''}
       <PageState query={query}>
         {(item) => (
           <dl className="grid gap-3 rounded-lg border p-4 sm:grid-cols-2">
@@ -969,7 +1186,7 @@ function formPage(plan: Plan, entity: Entity, route: Route, list: Route | undefi
       ? ''
       : ", { setValueAs: (v: string) => (v === '' ? undefined : v) }";
     return `        <div className="flex flex-col gap-1">
-          <label htmlFor="${name}" className="text-sm font-medium">${labelOf(relation.name)}${relation.required ? '' : ' (opcional)'}</label>
+          <label htmlFor="${name}" className="text-sm font-medium">${text(relation.label ?? labelOf(relation.name))}${relation.required ? '' : ' (opcional)'}</label>
           ${
             target
               ? `<select id="${name}" className={input} {...register('${name}'${empty})}>
@@ -1171,11 +1388,20 @@ function simplePage(plan: Plan, route: Route): string {
       routeParams: names,
     }),
   ];
-  const hook = paramsHook(names, [...names, ...header].join('\n'));
+  const recordParam = entityParam(entity, names);
+  const recordLinks =
+    entity && recordParam
+      ? contextLinks(plan, entity, route, names, recordParam, collectionOf(route.path, recordParam))
+      : [];
+  const hook = paramsHook(names, [...names, ...header, ...recordLinks].join('\n'));
   const body = `    <div className="flex flex-col gap-4">
       <h1 className="text-xl font-semibold">${route.screenName.replace(/[<>{}]/g, '')}</h1>
       <p className="text-sm text-muted-foreground">${module.description.replace(/[<>{}]/g, '')}</p>
 ${header.length ? `      <div className="flex flex-wrap gap-2">\n${indent(header.join('\n'), 8)}\n      </div>\n` : ''}${
+    recordLinks.length
+      ? `      <nav aria-label="Operaciones del registro" className="flex flex-wrap gap-3 text-sm">\n${indent(recordLinks.join('\n'), 8)}\n      </nav>\n`
+      : ''
+  }${
     links.length
       ? `      <ul className="grid gap-2 sm:grid-cols-2">
 ${links.map((l) => `        <li>\n          <Link className="block rounded-lg border p-4 hover:bg-muted" href="${l.path}">\n            ${l.screenName.replace(/[<>{}]/g, '')}\n          </Link>\n        </li>`).join('\n')}
@@ -1637,6 +1863,70 @@ describe('PasswordInput', () => {
 `,
     ),
     file(
+      'apps/web/components/record-label.tsx',
+      `'use client';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../lib/api';
+
+type Labels = Record<string, string>;
+const sources = api as unknown as Record<string, () => Promise<Record<string, unknown>[]>> & {
+  getAuthContext?: () => Promise<{ scopes: { id: string; label: string }[] }>;
+};
+
+// A related record by its name: from the operation context for the scope,
+// or from a list this screen's roles may read. Otherwise a short identifier,
+// with the full one on hover.
+export function RecordLabel({ id, source, field }: { id?: string | null; source?: string; field?: string }) {
+  const query = useQuery({
+    queryKey: ['record-labels', source],
+    enabled: Boolean(source && id),
+    staleTime: 60_000,
+    retry: false,
+    queryFn: async (): Promise<Labels> => {
+      if (source === 'scope')
+        return Object.fromEntries(((await sources.getAuthContext?.())?.scopes ?? []).map((scope) => [scope.id, scope.label]));
+      const rows = await sources[source!]!();
+      return Object.fromEntries(rows.map((row) => [String(row.id), String(row[field ?? 'id'] ?? row.id)]));
+    },
+  });
+  if (!id) return <>—</>;
+  return <span title={id}>{query.data?.[id] ?? id.slice(0, 8)}</span>;
+}
+`,
+    ),
+    // Only a plan with an operation scope exports operationScope from lib/api.
+    ...(plan.authentication.local?.scope
+      ? [
+          file(
+            'apps/web/components/scope-link.tsx',
+            `'use client';
+import Link from 'next/link';
+import { useEffect, useState, type ReactNode } from 'react';
+import { operationScope } from '../lib/api';
+
+// A link whose route needs the selected operation scope (__scope__ in href).
+// It appears once the scope is known in the browser, so server and client
+// render the same markup.
+export function ScopeLink({ href, children }: { href: string; children: ReactNode }) {
+  const [scope, setScope] = useState<string | null>(null);
+  useEffect(() => {
+    const read = () => setScope(operationScope.get());
+    read();
+    window.addEventListener('operation-scope-changed', read);
+    return () => window.removeEventListener('operation-scope-changed', read);
+  }, []);
+  if (!scope) return null;
+  return (
+    <Link href={href.replace('__scope__', scope)} className="text-primary underline">
+      {children}
+    </Link>
+  );
+}
+`,
+          ),
+        ]
+      : []),
+    file(
       'apps/web/components/field-error.tsx',
       `export function FieldError({ message }: { message?: string }) {
   return message ? (
@@ -2003,6 +2293,9 @@ ${plannedE2E.map((t) => `// Planned: ${t.description.replace(/\n/g, ' ')}`).join
 type Session = { token: string | null; scopeId: string | null };
 
 const SCREENS: { path: string; screenName: string; role: string }[] = ${JSON.stringify(screens, null, 2)};
+// ADR-028: names of the data model that must never reach the visible text.
+const IDENTIFIERS = new Set<string>(${JSON.stringify(technicalIdentifiers(plan))});
+const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 ${
   entry
     ? `
@@ -2039,6 +2332,15 @@ for (const screen of SCREENS) {
     expect(new URL(page.url()).pathname, 'The screen must not redirect').toBe(screen.path);
     await expect(page.locator('h1').first()).toBeVisible();
     expect(errors).toEqual([]);
+    // Folded technical data (a closed <details>) is not part of the visible text.
+    const text = await page.locator('body').innerText();
+    const shown = [
+      ...new Set([
+        ...text.split(/[^A-Za-z0-9_]+/).filter((word) => IDENTIFIERS.has(word)),
+        ...(text.match(UUID) ?? []),
+      ]),
+    ];
+    expect(shown, 'The screen must not show technical identifiers').toEqual([]);
   });
 }
 `,
@@ -2053,6 +2355,18 @@ for (const screen of SCREENS) {
     ),
   );
   return files;
+}
+
+// ADR-028: entity, field and relation names of the plan that read as code
+// (an inner capital: operationalDate, CateringEvent, branchId). One-word names
+// such as Ticket or email can be ordinary words and are not listed.
+export function technicalIdentifiers(plan: ImplementationPlanContent) {
+  const names = plan.entities.flatMap((entity) => [
+    entity.name,
+    ...entity.fields.map((field) => field.name),
+    ...entity.relations.map((relation) => relation.name),
+  ]);
+  return [...new Set(names.filter((name) => /[a-z][A-Z]/.test(name)))].sort();
 }
 
 // DEC-159: every static screen opens with one authorized role. Detail routes

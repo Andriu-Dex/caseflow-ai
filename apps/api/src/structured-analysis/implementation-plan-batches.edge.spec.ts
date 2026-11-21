@@ -244,10 +244,42 @@ describe('routes', () => {
     expect(kept.customEndpoints[0]).toMatchObject({ moduleLocalId: 'stock', entityLocalId: 'o' });
   });
 
-  it('refuses a route with no screen and skips the route of a screen already drawn', () => {
-    expect(() => merge(base, [route({ screenLocalId: undefined })])).toThrow(
-      'no indica la pantalla',
+  it('drops built-in markers a batch cannot define and keeps repeated parameter paths valid', () => {
+    const earlier = { routes: [route({ screenLocalId: 'other', path: '/orders/[orderId]' })] };
+    const merged = merge(
+      { ...earlier, customEndpoints: [] },
+      [route({ path: '/orders/[orderId]', builtinView: 'ACCOUNT_ACCESS' })],
+      [endpoint({ builtin: 'AUTH_CONTEXT' })],
     );
+    expect(merged.routes[1]).toMatchObject({ path: '/orders/[orderId]/2' });
+    expect(merged.routes[1]!.builtinView).toBeUndefined();
+    expect(merged.customEndpoints[0]!.builtin).toBeUndefined();
+  });
+
+  it('serves an action by its endpoint or navigation before a filler operation', () => {
+    const served = (action: Record<string, unknown>, endpoints: unknown[] = []) =>
+      merge(
+        base,
+        [route({ entityLocalId: 'o', actions: [{ label: 'Nuevo', ...action }] })],
+        endpoints,
+      ).routes[0]!.actions[0];
+    expect(served({ operation: 'LIST', endpoint: 'POST /orders/:id/x' }, [endpoint()])).toEqual({
+      label: 'Nuevo',
+      endpoint: 'POST /orders/:id/x',
+    });
+    expect(served({ operation: 'CREATE', navigation: { routePath: '/orders/new' } })).toEqual({
+      label: 'Nuevo',
+      navigation: { routePath: '/orders/new' },
+    });
+    expect(served({ operation: 'CREATE', endpoint: 'POST /missing' })).toEqual({
+      label: 'Nuevo',
+      operation: 'CREATE',
+    });
+  });
+
+  it('skips a route with no screen and the route of a screen already drawn', () => {
+    const merged = merge(base, [route({ screenLocalId: undefined }), route({ path: '/home' })]);
+    expect(merged.routes.map((item) => item.path)).toEqual(['/home']);
     const earlier = { routes: [route({ screenLocalId: 'other' })], customEndpoints: [] };
     expect(merge(earlier, [route({ screenLocalId: 'other', path: '/x' })]).routes).toHaveLength(1);
   });
@@ -327,5 +359,323 @@ describe('finishing the plan', () => {
         '11111111-1111-4111-8111-111111111111',
       ),
     ).toThrow('inválidos');
+  });
+});
+
+describe('action contracts once every batch is in', () => {
+  it('gives a write its input object, a read none, and drops a success page that cannot open', () => {
+    const response = { type: 'OBJECT', properties: [{ name: 'id', value: { type: 'UUID' } }] };
+    const done = finishRoutes(
+      {
+        routes: [
+          {
+            path: '/orders',
+            screenName: 'Pedidos',
+            moduleLocalId: 'orders',
+            kind: 'CUSTOM',
+            actions: [
+              { label: 'Confirmar', endpoint: 'POST /orders/confirm' },
+              { label: 'Consultar', endpoint: 'GET /orders/summary' },
+            ],
+          },
+        ],
+        customEndpoints: [
+          {
+            moduleLocalId: 'orders',
+            method: 'POST',
+            path: '/orders/confirm',
+            summary: 'Confirmar',
+            roles: [],
+            contract: {
+              response,
+              successNavigation: { routePath: '/orders/[orderId]', idField: 'id' },
+            },
+          },
+          {
+            moduleLocalId: 'orders',
+            method: 'GET',
+            path: '/orders/summary',
+            summary: 'Consultar',
+            roles: [],
+            contract: { response, body: { type: 'OBJECT', properties: [] } },
+          },
+        ],
+      } as never,
+      [],
+      [],
+    );
+    const [write, read] = done.customEndpoints;
+    expect(write!.contract).toEqual({ response, body: { type: 'OBJECT', properties: [] } });
+    expect(read!.contract).toEqual({ response });
+  });
+});
+
+describe('an action that creates records', () => {
+  it('receives the required fields a person enters, and only those', () => {
+    const screening = {
+      localId: 'screening',
+      name: 'Screening',
+      moduleLocalId: 'shows',
+      fields: [
+        { name: 'startsAt', type: 'DATETIME', required: true, unique: false, enumValues: [] },
+        { name: 'ticketPrice', type: 'DECIMAL', required: true, unique: false, enumValues: [] },
+        { name: 'note', type: 'TEXT', required: false, unique: false, enumValues: [] },
+        { name: 'format', type: 'ENUM', required: true, unique: false, enumValues: ['2D', '3D'] },
+        {
+          name: 'cancelled',
+          type: 'BOOLEAN',
+          required: true,
+          readOnly: true,
+          serverDefault: false,
+          unique: false,
+          enumValues: [],
+        },
+      ],
+      relations: [],
+      operations: ['LIST'],
+    };
+    const done = finishRoutes(
+      {
+        routes: [
+          {
+            path: '/shows/new',
+            screenName: 'Programar',
+            moduleLocalId: 'shows',
+            kind: 'FORM',
+            actions: [{ label: 'Programar', endpoint: 'POST /shows/schedule' }],
+          },
+        ],
+        customEndpoints: [
+          {
+            moduleLocalId: 'shows',
+            method: 'POST',
+            path: '/shows/schedule',
+            summary: 'Programar',
+            roles: [],
+            entityLocalId: 'screening',
+            dataAccess: [{ entityLocalId: 'screening', operations: ['CREATE'] }],
+            contract: {
+              body: {
+                type: 'OBJECT',
+                properties: [
+                  { name: 'startsAt', required: true, value: { type: 'DATETIME' } },
+                  { name: 'format', required: true, value: { type: 'STRING' } },
+                ],
+              },
+              response: { type: 'OBJECT', properties: [] },
+            },
+          },
+        ],
+      } as never,
+      [],
+      [screening] as never,
+    );
+    const properties = done.customEndpoints[0]!.contract!.body!.properties!;
+    expect(properties.map((p) => p.name)).toEqual(['startsAt', 'format', 'ticketPrice']);
+    expect(properties[1]!.value).toMatchObject({ type: 'ENUM', enumValues: ['2D', '3D'] });
+  });
+
+  it('leaves alone records an action derives from its input', () => {
+    const seat = {
+      localId: 'seat',
+      name: 'Seat',
+      moduleLocalId: 'rooms',
+      fields: [{ name: 'row', type: 'STRING', required: true, unique: false, enumValues: [] }],
+      relations: [],
+      operations: ['LIST'],
+    };
+    const layout = {
+      type: 'OBJECT',
+      properties: [
+        { name: 'rows', required: true, value: { type: 'ARRAY', items: { type: 'STRING' } } },
+      ],
+    };
+    const done = finishRoutes(
+      {
+        routes: [
+          {
+            path: '/rooms',
+            screenName: 'Salas',
+            moduleLocalId: 'rooms',
+            kind: 'CUSTOM',
+            actions: [{ label: 'Guardar', endpoint: 'PUT /rooms/:roomId/seating' }],
+          },
+        ],
+        customEndpoints: [
+          {
+            moduleLocalId: 'rooms',
+            method: 'PUT',
+            path: '/rooms/:roomId/seating',
+            summary: 'Guardar distribución',
+            roles: [],
+            entityLocalId: 'room',
+            dataAccess: [{ entityLocalId: 'seat', operations: ['CREATE'] }],
+            contract: { body: layout, response: { type: 'OBJECT', properties: [] } },
+          },
+        ],
+      } as never,
+      [],
+      [seat] as never,
+    );
+    expect(done.customEndpoints[0]!.contract!.body).toEqual(layout);
+  });
+});
+
+describe('records only a business action creates', () => {
+  const skeleton = {
+    authentication: { required: false, roles: [] },
+    modules: [{ localId: 'sales', name: 'Sales', description: 'Ventas' }],
+    envVars: [],
+  };
+  const sale = {
+    localId: 'sale',
+    name: 'Sale',
+    moduleLocalId: 'sales',
+    fields: [
+      {
+        name: 'total',
+        type: 'DECIMAL',
+        readOnly: true,
+        required: true,
+        unique: false,
+        enumValues: [],
+      },
+    ],
+    relations: [],
+    operations: ['LIST', 'GET', 'CREATE'],
+    readRoles: [],
+    writeRoles: [],
+  };
+  const route = (operation: string) => ({
+    path: '/sales',
+    screenName: 'Ventas',
+    moduleLocalId: 'sales',
+    kind: 'LIST',
+    entityLocalId: 'sale',
+    actions: [{ label: 'Acción', operation }],
+  });
+  const build = (operation: string) =>
+    finishImplementationPlan(
+      skeleton as never,
+      [sale] as never,
+      { routes: [route(operation)], customEndpoints: [] } as never,
+      '11111111-1111-4111-8111-111111111111',
+    ).entities[0]!.operations;
+
+  it('withdraws a CREATE no screen uses when it could not fill a computed field', () => {
+    expect(build('LIST')).toEqual(['LIST', 'GET']);
+    expect(build('CREATE')).toEqual(['LIST', 'GET', 'CREATE']);
+  });
+
+  it('gives a created record the initial values of its read-only fields', () => {
+    const member = {
+      ...sale,
+      fields: [
+        ...sale.fields,
+        {
+          name: 'status',
+          type: 'ENUM',
+          readOnly: true,
+          required: true,
+          unique: false,
+          enumValues: ['ACTIVE', 'SUSPENDED'],
+        },
+        {
+          name: 'retired',
+          type: 'BOOLEAN',
+          readOnly: true,
+          required: true,
+          unique: false,
+          enumValues: [],
+        },
+      ],
+    };
+    const [entity] = finishImplementationPlan(
+      skeleton as never,
+      [member] as never,
+      { routes: [route('CREATE')], customEndpoints: [] } as never,
+      '11111111-1111-4111-8111-111111111111',
+    ).entities;
+    const field = (name: string) => entity!.fields.find((item) => item.name === name)!;
+    // Without a lifecycle nothing is guessed and nothing becomes writable.
+    expect(field('status')).toMatchObject({ readOnly: true });
+    expect(field('status').serverDefault).toBeUndefined();
+    expect(field('retired')).toMatchObject({ readOnly: true, serverDefault: false });
+    expect(field('total').readOnly).toBe(true);
+  });
+
+  it('withdraws a CRUD operation a business endpoint replaces at its method and path', () => {
+    const voidable = { ...sale, fields: [], operations: ['LIST', 'GET', 'DELETE'] };
+    voidable.fields = [
+      { name: 'note', type: 'STRING', required: true, unique: false, enumValues: [] },
+    ] as never;
+    const endpoint = {
+      moduleLocalId: 'sales',
+      method: 'DELETE',
+      path: '/sales/:saleId',
+      summary: 'Eliminar sin entradas',
+      roles: [],
+    };
+    const operations = (operation: string) =>
+      finishImplementationPlan(
+        skeleton as never,
+        [voidable] as never,
+        {
+          routes: [
+            {
+              ...route(operation),
+              actions: [{ label: 'Eliminar', endpoint: 'DELETE /sales/:saleId' }],
+            },
+          ],
+          customEndpoints: [endpoint],
+        } as never,
+        '11111111-1111-4111-8111-111111111111',
+      ).entities[0]!.operations;
+    expect(operations('LIST')).toEqual(['LIST', 'GET']);
+  });
+
+  it('drops a cross-scope read without a scope and references to records no one lists', () => {
+    const report = {
+      moduleLocalId: 'sales',
+      method: 'GET',
+      path: '/reports/sales',
+      summary: 'Ventas del día',
+      roles: [],
+      scopeAccess: 'ASSIGNED_SET',
+      contract: {
+        response: {
+          type: 'ARRAY',
+          items: {
+            type: 'OBJECT',
+            properties: [
+              {
+                name: 'saleId',
+                required: true,
+                value: { type: 'UUID', referenceEntityLocalId: 'sale' },
+              },
+              {
+                name: 'fineId',
+                required: true,
+                value: { type: 'UUID', referenceEntityLocalId: 'fine' },
+              },
+            ],
+          },
+        },
+      },
+    };
+    const plan = finishImplementationPlan(
+      skeleton as never,
+      [sale] as never,
+      {
+        routes: [{ ...route('LIST'), actions: [{ label: 'Ver', endpoint: 'GET /reports/sales' }] }],
+        customEndpoints: [report],
+      } as never,
+      '11111111-1111-4111-8111-111111111111',
+    );
+    const endpoint = plan.customEndpoints[0]!;
+    expect(endpoint.scopeAccess).toBeUndefined();
+    const [saleId, fineId] = endpoint.contract!.response!.items!.properties!;
+    expect(saleId!.value.referenceEntityLocalId).toBe('sale');
+    expect(fineId!.value.referenceEntityLocalId).toBeUndefined();
   });
 });

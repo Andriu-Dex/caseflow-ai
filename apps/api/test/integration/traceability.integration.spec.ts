@@ -218,7 +218,7 @@ describe('Traceability graph integration', () => {
     // StructuredAnalysisGenerationSource — never inferred from adjacency.
     const softwareArchitectureService = new StructuredAnalysisService(
       ctx.prisma,
-      fakeAi(ctx, 'software-architecture.generate', 3, {
+      fakeAi(ctx, 'software-architecture.generate', 4, {
         style: 'Monolito modular',
         components: [{ localId: 'api', name: 'API' }],
         dependencies: [],
@@ -242,7 +242,7 @@ describe('Traceability graph integration', () => {
 
     const systemArchitectureService = new StructuredAnalysisService(
       ctx.prisma,
-      fakeAi(ctx, 'system-architecture.generate', 3, {
+      fakeAi(ctx, 'system-architecture.generate', 4, {
         boundary: 'Sistema',
         nodes: [{ localId: 'server', name: 'Servidor', kind: 'RUNTIME' as const }],
         links: [],

@@ -146,6 +146,45 @@ describe('local authentication generation', () => {
     expect(e2e).toContain('the application opens on its login without a session');
   });
 
+  it('marks the built-in action of a page that lists another action first', () => {
+    const input = planInput();
+    const home = input.routes.find((route) => route.path === '/home')!;
+    (home as { actions: unknown[] }).actions = [
+      { label: 'Registrar persona', navigation: { routePath: '/members/new' } },
+      ...home.actions,
+    ];
+    const page = generateProject({
+      plan: implementationPlanContentSchema.parse(input),
+      template: CASEFLOW_WEB_TS_V2,
+      projectName: 'Biblioteca',
+      slug: 'library',
+    }).find((file) => file.path === 'apps/web/app/home/page.tsx')!.content;
+    expect(page).toContain('data-action={"Consultar opciones"}');
+    expect(page).toContain('href={"/members/new"} data-action={"Registrar persona"}');
+    // Opened without a session, the home screen sends the person to sign in.
+    expect(page).toContain(
+      'if (!accessToken.get()) router.replace("/signin"); else setReady(true);',
+    );
+    expect(page).not.toContain('typeof window');
+  });
+
+  it('names the demonstration accounts after people, with readable sign-in names', () => {
+    const files = generateProject({
+      plan: implementationPlanContentSchema.parse(planInput()),
+      template: CASEFLOW_WEB_TS_V2,
+      projectName: 'Biblioteca',
+      slug: 'library',
+    });
+    const accounts = files.find(
+      (file) => file.path === 'apps/api/src/auth/deploy-accounts.ts',
+    )!.content;
+    expect(accounts).toContain('"Andrea Salazar"');
+    // The accent range reaches the generated code as escapes, not as characters.
+    expect(accounts).toMatch(/normalize\('NFD'\)\.replace\(\/\[\\u0300-\\u036f\]\/g/);
+    expect(accounts).not.toContain("'demo-'");
+    expect(accounts).not.toContain('(demostración)');
+  });
+
   it('rejects creating an account as the implementation of deactivating that account', () => {
     const input = planInput();
     input.routes.push({
@@ -213,6 +252,8 @@ describe('local authentication generation', () => {
     expect(get('apps/api/src/auth/safe-response.interceptor.ts')).toContain('secretDigest');
     expect(get('apps/api/src/app.module.ts')).not.toContain('DevLoginController');
     expect(files.some((file) => file.path.includes('/auth/dev-'))).toBe(false);
+    // Without an operation scope, lib/api exports no operationScope to link with.
+    expect(files.some((file) => file.path === 'apps/web/components/scope-link.tsx')).toBe(false);
     const doc = generateOpenApi(plan, 'Biblioteca') as {
       paths: Record<string, Record<string, { security?: unknown[] }>>;
       components: { schemas: Record<string, unknown> };
@@ -260,7 +301,9 @@ describe('local authentication generation', () => {
           upsert: vi.fn().mockResolvedValue({}),
         },
         generationRun: { findFirst: vi.fn().mockResolvedValue({ id: 'r' }) },
+        artifactVersion: { findFirst: vi.fn().mockResolvedValue(null) },
         designBaseline: {
+          findMany: vi.fn().mockResolvedValue([]),
           findFirst: vi.fn().mockResolvedValue({
             entries: [
               {
@@ -297,10 +340,8 @@ describe('local authentication generation', () => {
     );
     const result = await service.implement('p', 'r', plan, CASEFLOW_WEB_TS_V2);
     expect(result.checkpoints).toHaveLength(1);
-    expect(checkpointRead.mock.calls[0]![0].where.generationRun).toEqual({
-      projectId: 'p',
-      designBaselineId: plan.designBaselineId,
-    });
+    // Checkpoints are found across the project's design baselines.
+    expect(checkpointRead.mock.calls[0]![0].where.generationRun).toEqual({ projectId: 'p' });
     checkpointRead.mockResolvedValue({ content: result.checkpoints![0]!.content });
     const retried = await service.implement('p', 'r', plan, CASEFLOW_WEB_TS_V2);
     expect(retried.implementations).toEqual(result.implementations);

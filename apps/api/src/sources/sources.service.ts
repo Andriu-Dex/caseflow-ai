@@ -72,7 +72,7 @@ function safeStorageKey(projectId: string, mimeType: string): string {
   };
   const extension = extensionByMime[mimeType] ?? '';
   // Never derived from the client-supplied filename: no path traversal, no
-  // filename trust for storage paths (spec §6.6).
+  // filename trust for storage paths.
   return `sources/${projectId}/${randomUUID()}${extension}`;
 }
 
@@ -600,7 +600,7 @@ export class SourcesService implements OnApplicationBootstrap {
   }
 
   // "Editing" a Source never mutates the current row (ArtifactVersion
-  // content is immutable by design — spec §15.2/§5.3); it creates the next
+  // content is immutable by design — ); it creates the next
   // version carrying the corrected metadata, exactly like submitManualTranscript.
   async editMetadata(projectId: string, id: string, metadata: SourceMetadataInput) {
     const row = await this.findLatest(projectId, id);
@@ -662,7 +662,7 @@ export class SourcesService implements OnApplicationBootstrap {
   }
 
   // Archival is the alternative to deletion once a Source has approved
-  // history (spec §87: "fuentes utilizadas → archivar antes que borrar").
+  // history.
   // Purely additive on the Artifact row — never touches any ArtifactVersion,
   // so it needs no immutability exception.
   // DEC-137: a new file for the same source, as its next version (same code).

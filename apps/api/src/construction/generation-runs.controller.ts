@@ -1,3 +1,4 @@
+import { TechnicalHandoverService } from './technical-handover.service';
 import {
   Body,
   Controller,
@@ -7,17 +8,25 @@ import {
   NotFoundException,
   Param,
   Post,
+  Query,
   Request,
   Res,
   UnauthorizedException,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import type { z } from 'zod';
 import { timingSafeEqual } from 'node:crypto';
 import {
+  deliveryQuerySchema,
   constructionUnitListResponseSchema,
+  constructionUnitReviewRequestSchema,
+  constructionUnitSchema,
+  type ConstructionUnitReviewRequest,
   generatedFileListResponseSchema,
   generatedProjectSnapshotListResponseSchema,
   generatedProjectSnapshotResponseSchema,
@@ -28,6 +37,9 @@ import {
   sandboxRunResponseSchema,
   startGenerationRunRequestSchema,
   createWorkingCopyRequestSchema,
+  importManualImplementationRequestSchema,
+  constructionPreviewResponseSchema,
+  generationEstimateResponseSchema,
 } from '@caseflow-ai/contracts';
 import { CONSTRUCTION_JOB_TYPES, type ConstructionJobType } from '@caseflow-ai/domain';
 import { JwtAuthGuard } from '../identity/jwt-auth.guard';
@@ -40,6 +52,7 @@ import { GenerationRunsService } from './generation-runs.service';
 import { SandboxRunsService } from './sandbox-runs.service';
 import { WorkflowRunsService } from './workflow-runs.service';
 import { UserManualsService } from '../user-manuals/user-manuals.service';
+import { MANUAL_IMPORT_LIMITS } from './manual-import';
 
 interface AuthenticatedRequest {
   user: { id: string };
@@ -71,6 +84,74 @@ export class GenerationRunsController {
     return this.service.createWorkingCopy(projectId, req.user.id, body);
   }
 
+  @Get('preview/:implementationPlanVersionId')
+  @ApiOperation({
+    operationId: 'previewConstruction',
+    summary: 'Consultar los contenedores y archivos que producirá un plan de implementación',
+  })
+  @ApiZodResponse(200, 'Construction preview.', constructionPreviewResponseSchema)
+  preview(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('implementationPlanVersionId', uuidParamPipe) versionId: string,
+    @Query(new ZodValidationPipe(deliveryQuerySchema))
+    query: z.output<typeof deliveryQuerySchema>,
+  ) {
+    return this.service.preview(projectId, versionId, query.deliveryId);
+  }
+
+  @Get('estimate/:implementationPlanVersionId')
+  @ApiOperation({
+    operationId: 'estimateGeneration',
+    summary: 'Estimar las solicitudes a la IA que haría una generación desde un plan',
+  })
+  @ApiZodResponse(200, 'Generation estimate.', generationEstimateResponseSchema)
+  estimate(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('implementationPlanVersionId', uuidParamPipe) versionId: string,
+    @Query(new ZodValidationPipe(deliveryQuerySchema))
+    query: z.output<typeof deliveryQuerySchema>,
+  ) {
+    return this.service.estimate(projectId, versionId, query.deliveryId);
+  }
+
+  @Post('manual')
+  @HttpCode(201)
+  @ApiOperation({
+    operationId: 'importManualImplementation',
+    summary: 'Importar el código de un proyecto escrito a mano como una corrida de construcción',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file', 'implementationPlanVersionId'],
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        implementationPlanVersionId: { type: 'string', format: 'uuid' },
+        deliveryId: { type: 'string', format: 'uuid' },
+      },
+    },
+  })
+  @ApiZodResponse(201, 'Generation run.', generationRunResponseSchema)
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: MANUAL_IMPORT_LIMITS.archiveBytes } }),
+  )
+  importManual(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body(new ZodValidationPipe(importManualImplementationRequestSchema))
+    body: z.output<typeof importManualImplementationRequestSchema>,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.service.importManual(
+      projectId,
+      req.user.id,
+      body.implementationPlanVersionId,
+      file?.buffer,
+      body.deliveryId,
+    );
+  }
+
   @Post()
   @HttpCode(202)
   @ApiOperation({
@@ -85,7 +166,12 @@ export class GenerationRunsController {
     body: z.output<typeof startGenerationRunRequestSchema>,
     @Request() req: AuthenticatedRequest,
   ) {
-    return this.service.start(projectId, req.user.id, body.implementationPlanVersionId);
+    return this.service.start(
+      projectId,
+      req.user.id,
+      body.implementationPlanVersionId,
+      body.deliveryId,
+    );
   }
 
   @Get()
@@ -155,6 +241,23 @@ export class GenerationRunsController {
     return this.service.units(projectId, runId);
   }
 
+  @Post(':runId/units/review')
+  @ApiOperation({
+    operationId: 'reviewConstructionUnit',
+    summary: 'Marcar o desmarcar una unidad de construcción como revisada',
+  })
+  @ApiZodBody(constructionUnitReviewRequestSchema)
+  @ApiZodResponse(201, 'Construction unit.', constructionUnitSchema)
+  reviewUnit(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('runId', uuidParamPipe) runId: string,
+    @Request() req: AuthenticatedRequest,
+    @Body(new ZodValidationPipe(constructionUnitReviewRequestSchema))
+    body: ConstructionUnitReviewRequest,
+  ) {
+    return this.service.reviewUnit(projectId, runId, req.user.id, body);
+  }
+
   @Get(':runId/files/:fileId')
   @ApiOperation({ operationId: 'getGeneratedFile', summary: 'Consultar un archivo generado' })
   @ApiZodResponse(200, 'Generated file.', generatedFileResponseSchema)
@@ -196,7 +299,10 @@ export class GenerationRunsController {
 @UseGuards(JwtAuthGuard, ProjectMembershipGuard)
 @Controller('projects/:projectId/generated-project-snapshots')
 export class GeneratedProjectSnapshotsController {
-  constructor(private readonly service: GeneratedProjectSnapshotsService) {}
+  constructor(
+    private readonly service: GeneratedProjectSnapshotsService,
+    private readonly handoverService: TechnicalHandoverService,
+  ) {}
 
   @Get()
   @ApiOperation({
@@ -230,6 +336,29 @@ export class GeneratedProjectSnapshotsController {
     @Res() res: Response,
   ) {
     const { body, filename } = await this.service.archive(projectId, snapshotId, req.user.id);
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.send(body);
+  }
+
+  // DEC-174: the code with the documentation for whoever maintains it.
+  @Get(':snapshotId/handover')
+  @ApiOperation({
+    operationId: 'downloadTechnicalHandover',
+    summary: 'Descargar la entrega técnica del proyecto validado',
+  })
+  async handover(
+    @Param('projectId', uuidParamPipe) projectId: string,
+    @Param('snapshotId', uuidParamPipe) snapshotId: string,
+    @Request() req: AuthenticatedRequest,
+    @Res() res: Response,
+  ) {
+    const { body, filename } = await this.handoverService.package(
+      projectId,
+      snapshotId,
+      req.user.id,
+    );
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('X-Content-Type-Options', 'nosniff');

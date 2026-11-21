@@ -1,3 +1,4 @@
+import { StartingPointsModule } from '../../../src/starting-points/starting-points.module';
 import { IdentityModule } from '../../../src/identity/identity.module';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { configureBodyLimits } from '../../../src/common/body-limits';
@@ -24,6 +25,7 @@ import { ArtifactsService } from '../../../src/artifacts/artifacts.service';
 import { DatabaseModule } from '../../../src/database/database.module';
 import { PrismaService } from '../../../src/database/prisma.service';
 import { ProjectsModule } from '../../../src/projects/projects.module';
+import { StageCurrencyService } from '../../../src/readiness/stage-currency';
 import { ProjectsService } from '../../../src/projects/projects.service';
 import { ProjectContextModule } from '../../../src/project-context/project-context.module';
 import { ProjectContextService } from '../../../src/project-context/project-context.service';
@@ -68,7 +70,7 @@ import { getTestConnectionString, resetTestData } from './test-database';
 import type { CreateProjectRequest, ProjectResponse } from '@caseflow-ai/contracts';
 
 // A minimal, always-valid graphical SVG: ordinary integration tests (Postgres
-// only) must not depend on a live renderer (AGENTS.md §23/47). Real
+// only) must not depend on a live renderer (47). Real
 // Mermaid/PlantUML-via-Kroki compatibility is verified separately in
 // diagram-rendering.integration.spec.ts against a live local Kroki.
 const FAKE_DIAGRAM_SVG =
@@ -106,10 +108,17 @@ export interface TestContext {
   close: () => Promise<void>;
 }
 
+// Most scenarios approve a single step of a fixture project without building
+// every earlier one; the order of approvals is exercised only where a test
+// asks for it with `enforceStageOrder`.
+class UnorderedStageCurrencyService extends StageCurrencyService {
+  override async assertEarlierStagesSatisfied() {}
+}
+
 // Boots the real Nest modules against the isolated test database.
 // `aiProvider` replaces the configured AI provider (e.g. a scripted fake).
 export async function createTestContext(
-  options: { aiProvider?: AIProvider } = {},
+  options: { aiProvider?: AIProvider; enforceStageOrder?: boolean } = {},
 ): Promise<TestContext> {
   const connectionString = getTestConnectionString();
 
@@ -145,8 +154,11 @@ export async function createTestContext(
       BaselinesModule,
       AuditModule,
       ConstructionModule,
+      StartingPointsModule,
     ],
   })
+    .overrideProvider(StageCurrencyService)
+    .useClass(options.enforceStageOrder ? StageCurrencyService : UnorderedStageCurrencyService)
     .overrideProvider(DIAGRAM_PROVIDER)
     .useValue(new FakeDiagramProvider({ svg: FAKE_DIAGRAM_SVG }))
     .overrideProvider(STORAGE_PROVIDER)

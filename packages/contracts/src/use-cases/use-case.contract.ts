@@ -25,10 +25,12 @@ export type UseCaseBulkResponse = z.infer<typeof useCaseBulkResponseSchema>;
 export const USE_CASE_FLOW_STEP_LIMIT = 100;
 const text = (max: number) => z.string().trim().min(1, 'El valor es obligatorio.').max(max);
 const orderedText = z.array(text(2000)).max(50).default([]);
-const flowStepSchema = z.object({ actor: text(200), action: text(2000) }).strict();
-const alternativeFlowSchema = z
+export const useCaseFlowStepSchema = z.object({ actor: text(200), action: text(2000) }).strict();
+const flowStepSchema = useCaseFlowStepSchema;
+export const useCaseAlternativeFlowSchema = z
   .object({ name: text(200), condition: text(2000), steps: z.array(flowStepSchema).min(1).max(50) })
   .strict();
+const alternativeFlowSchema = useCaseAlternativeFlowSchema;
 
 // UML relationships between use cases (DEC-129). The use case that carries
 // the relation is its origin: an INCLUDE points to the behaviour it always

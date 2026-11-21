@@ -6,7 +6,7 @@ import type { ImplementationPlanContent } from '@caseflow-ai/contracts';
 import { actionMarker, pagePath } from '../code-generation/engine/frontend.templates';
 import { hasOnlyThrowingPaths } from './business-flow';
 
-// Deterministic checks and packaging of a generated project (spec §175, §177).
+// Deterministic checks and packaging of a generated project.
 // Pure functions: no I/O, so every rule is unit-testable.
 
 export interface ProjectFile {
@@ -36,6 +36,8 @@ export function structuralProblems(
   template: TargetTemplateVersion,
   allowed: readonly { name: string; version: string }[],
   plan?: ImplementationPlanContent,
+  // A hand-written project (ADR-023) has no registered composition to compare.
+  options: { manual?: boolean } = {},
 ): string[] {
   const problems: string[] = [];
   const byPath = new Map(files.map((f) => [f.path, f]));
@@ -67,8 +69,9 @@ export function structuralProblems(
   }
   if (template.version >= 2) {
     const manifest = byPath.get('docs/design-fidelity.json');
-    if (!manifest) problems.push('Falta el manifiesto de fidelidad del diseño aprobado.');
-    else {
+    if (options.manual || !manifest) {
+      if (!options.manual) problems.push('Falta el manifiesto de fidelidad del diseño aprobado.');
+    } else {
       try {
         const value = JSON.parse(manifest.content) as {
           records?: { routePath: string; outputSha256: string }[];
@@ -159,6 +162,32 @@ export function structuralProblems(
   return problems;
 }
 
+// The generator writes data-action={"label"}; code formatted by hand or by a
+// formatter may use single quotes or a plain attribute instead.
+const hasMarker = (page: string, label: string) =>
+  page.includes(actionMarker(label)) ||
+  [`data-action={'${label.replace(/'/g, "\\'")}'}`, `data-action="${label}"`].some((marker) =>
+    page.includes(marker),
+  );
+
+// Files a page imports with a relative path that stays inside the web app's
+// route folders, resolved as the bundler would (.tsx, .ts or an index file).
+function localImports(pagePath: string, content: string): string[] {
+  const folder = pagePath.split('/').slice(0, -1);
+  const found: string[] = [];
+  for (const [, specifier] of content.matchAll(/from\s+['"](\.{1,2}\/[^'"]+)['"]/g)) {
+    const parts = [...folder];
+    for (const segment of specifier!.split('/')) {
+      if (segment === '..') parts.pop();
+      else if (segment !== '.') parts.push(segment);
+    }
+    const base = parts.join('/');
+    if (!base.startsWith('apps/web/app/')) continue;
+    found.push(...['.tsx', '.ts', '/index.tsx', '/index.ts'].map((extension) => base + extension));
+  }
+  return found;
+}
+
 // Plan coverage (DEC-121): every planned entity has its Prisma model, every
 // route its page and every screen action its control, also after auto-repair.
 export function planCoverageProblems(
@@ -174,13 +203,25 @@ export function planCoverageProblems(
         `La entidad «${entity.name}» del plan no tiene su modelo en el esquema de Prisma.`,
       );
   for (const route of plan.routes) {
-    const page = byPath.get(pagePath(route.path));
-    if (page === undefined) {
+    const path = pagePath(route.path);
+    const own = byPath.get(path);
+    if (own === undefined) {
       problems.push(`La ruta ${route.path} del plan no tiene su página.`);
       continue;
     }
+    // A screen may compose its controls from components it imports from its
+    // own route folder or a parent one (shared by sibling screens).
+    const page = [own, ...localImports(path, own).map((file) => byPath.get(file) ?? '')].join('\n');
+    // Screen actions served by the same query share one form (the first
+    // names it), so that form's control covers all of them.
+    const marked = (action: (typeof route.actions)[number]) =>
+      hasMarker(page, action.label) ||
+      (action.endpoint?.startsWith('GET ') &&
+        route.actions.some(
+          (other) => other.endpoint === action.endpoint && hasMarker(page, other.label),
+        ));
     for (const action of route.actions)
-      if (!page.includes(actionMarker(action.label)))
+      if (!marked(action))
         problems.push(
           `La acción «${action.label}» de la ruta ${route.path} no tiene un control en su página.`,
         );
@@ -240,7 +281,7 @@ const FORBIDDEN_IN_REPAIR = [
 
 // A repair may only rewrite source files named in the diagnosis, and may not
 // bring in any module the project does not already use: no new dependencies,
-// no weakened tests, no configuration changes (AGENTS.md §27).
+// no weakened tests, no configuration changes.
 export function reviewRepairPatch(
   patch: { path: string; content: string },
   candidates: ReadonlyMap<string, ProjectFile>,

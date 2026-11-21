@@ -10,7 +10,7 @@ import { rootFiles } from './root.templates';
 import type { GeneratedProjectFile, GenerationContext } from './types';
 
 // Deterministic Implementation Plan -> complete CASEFLOW_WEB_TS_V1 project
-// (spec §153 layout). Same plan and inputs always yield the same files, so a
+// Same plan and inputs always yield the same files, so a
 // regeneration is reproducible and diffable. The only non-template input is
 // `implementations`: AI-assisted bodies for custom business endpoints, which
 // the caller validates before passing them in.

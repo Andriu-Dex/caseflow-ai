@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-// Code generation runs (spec §197). A run is started from one exact APPROVED
+// Code generation runs. A run is started from one exact APPROVED
 // Implementation Plan version; its files are immutable once generated.
 
 export const GENERATION_RUN_STATUSES = [
@@ -19,9 +19,11 @@ export const GENERATED_FILE_ORIGINS = [
 export const GENERATED_FILE_KINDS = ['SOURCE', 'TEST', 'CONFIG', 'DOCUMENTATION'] as const;
 export const CODE_TRACE_LINK_TYPES = ['IMPLEMENTS', 'TESTS', 'CONFIGURES'] as const;
 
+// ADR-024: with deliveryId, the run builds that delivery of the plan.
 export const startGenerationRunRequestSchema = z
-  .object({ implementationPlanVersionId: z.uuid() })
+  .object({ implementationPlanVersionId: z.uuid(), deliveryId: z.uuid().optional() })
   .strict();
+export const deliveryQuerySchema = z.object({ deliveryId: z.uuid().optional() }).strict();
 export type StartGenerationRunRequest = z.output<typeof startGenerationRunRequestSchema>;
 
 export const createWorkingCopyRequestSchema = z
@@ -62,14 +64,21 @@ export const workingCopyManifestSummarySchema = z
   );
 export type WorkingCopyManifestSummary = z.infer<typeof workingCopyManifestSummarySchema>;
 
+// GENERATED: templates, deterministic generation and AI. MANUAL: a project
+// written by people and imported (ADR-023).
+export const GENERATION_RUN_ORIGINS = ['GENERATED', 'MANUAL'] as const;
+
 export const generationRunResponseSchema = z.object({
   id: z.uuid(),
   projectId: z.uuid(),
   implementationPlanVersionId: z.uuid(),
+  // The delivery the run builds; null when built all at once (ADR-024).
+  deliveryId: z.uuid().nullable(),
   designBaselineId: z.uuid(),
   targetTemplateIdentifier: z.string(),
   targetTemplateVersion: z.number().int(),
   status: z.enum(GENERATION_RUN_STATUSES),
+  origin: z.enum(GENERATION_RUN_ORIGINS),
   errorMessage: z.string().nullable(),
   warnings: z.array(z.string()),
   fileCount: z.number().int(),
@@ -81,6 +90,10 @@ export const generationRunResponseSchema = z.object({
   archivedAt: z.iso.datetime().nullable(),
 });
 export type GenerationRunResponse = z.infer<typeof generationRunResponseSchema>;
+export const importManualImplementationRequestSchema = z
+  .object({ implementationPlanVersionId: z.uuid(), deliveryId: z.uuid().optional() })
+  .strict();
+
 export const generationRunListResponseSchema = z.object({
   items: z.array(generationRunResponseSchema),
 });
@@ -116,9 +129,39 @@ export const constructionUnitSchema = z.object({
       path: z.string(),
       origin: z.enum(GENERATED_FILE_ORIGINS),
       kind: z.enum(GENERATED_FILE_KINDS),
+      sha256: z.string(),
+      // Against the previous run of the same plan, when there is one.
+      change: z.enum(['ADDED', 'CHANGED', 'UNCHANGED']).optional(),
     }),
   ),
+  // Hash of the unit's files (path and content): the key of its review mark.
+  contentSha256: z.string(),
+  changes: z
+    .object({
+      previousRunId: z.uuid(),
+      added: z.number().int(),
+      changed: z.number().int(),
+      removed: z.array(z.string()),
+    })
+    .nullable()
+    .optional(),
+  review: z.object({ reviewedAt: z.string(), reviewerName: z.string() }).nullable().optional(),
+  // A screen's design record (DEC-164): how it was built and what the
+  // canonical blueprint describes that it does not do.
+  design: z
+    .object({
+      source: z.enum(['COMPOSED', 'MANUAL', 'FUNCTIONAL']),
+      observations: z.array(z.object({ code: z.string(), description: z.string() })),
+      acceptedJustification: z.string().optional(),
+    })
+    .optional(),
 });
+export const constructionUnitReviewRequestSchema = z.object({
+  unitKey: z.string().min(1).max(400),
+  contentSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  reviewed: z.boolean(),
+});
+export type ConstructionUnitReviewRequest = z.infer<typeof constructionUnitReviewRequestSchema>;
 export type ConstructionUnit = z.infer<typeof constructionUnitSchema>;
 export const constructionUnitListResponseSchema = z.object({
   items: z.array(constructionUnitSchema),

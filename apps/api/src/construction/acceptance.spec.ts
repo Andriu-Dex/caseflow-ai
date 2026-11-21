@@ -1,0 +1,312 @@
+import ts from 'typescript';
+import { describe, expect, it } from 'vitest';
+import type { ImplementationPlanContent } from '@caseflow-ai/contracts';
+import {
+  acceptanceResults,
+  acceptanceSpec,
+  deriveCriteria,
+  type AcceptanceUseCase,
+} from './acceptance';
+
+const plan = {
+  authentication: { required: true, roles: ['Administrador', 'Cajero'] },
+  routes: [
+    {
+      path: '/sales',
+      screenName: 'Ventas',
+      screenLocalId: 'sales',
+      roles: ['Administrador', 'Cajero'],
+      actions: [
+        { label: 'Registrar venta', endpoint: 'POST /sales' },
+        { label: 'Anular', endpoint: 'POST /sales/:saleId/void' },
+        { label: 'Ver detalle', navigation: { routePath: '/sales/[saleId]', idField: 'id' } },
+        { label: 'Siguiente', interaction: 'PAGINATE_NEXT' },
+        { label: 'Nuevo', operation: 'CREATE' },
+        { label: 'Editar', operation: 'UPDATE' },
+      ],
+    },
+    { path: '/sales/[saleId]', screenName: 'Detalle', screenLocalId: 'detail', actions: [] },
+    {
+      path: '/products',
+      screenName: 'Productos',
+      screenLocalId: 'products',
+      roles: ['Administrador'],
+      actions: [],
+    },
+  ],
+} as unknown as ImplementationPlanContent;
+
+const useCase = (code: string, patch: Partial<AcceptanceUseCase> = {}): AcceptanceUseCase => ({
+  code,
+  name: 'Registrar venta',
+  primaryActor: 'cajero',
+  preconditions: ['Hay una caja abierta.'],
+  mainFlow: [
+    { actor: 'Cajero', action: 'elige los productos' },
+    { actor: 'Sistema', action: 'calcula el total' },
+    { actor: 'Cajero', action: 'confirma la venta' },
+  ],
+  postconditions: ['La venta queda confirmada.'],
+  alternativeFlows: ['Producto agotado'],
+  requirementCodes: ['RF-010'],
+  ...patch,
+});
+
+describe('acceptance criteria (ADR-025)', () => {
+  it('derives one criterion per realized use case, with the actor role and the actions shown without a record', () => {
+    const criteria = deriveCriteria(
+      plan,
+      [
+        { localId: 'sales', relatedUseCaseCodes: ['CU-002'] },
+        { localId: 'detail', relatedUseCaseCodes: ['CU-002'] },
+      ],
+      [useCase('CU-002'), useCase('CU-009', { name: 'Sin pantalla' })],
+    );
+    expect(criteria).toEqual([
+      {
+        key: 'CA-CU-002',
+        useCaseCode: 'CU-002',
+        useCaseName: 'Registrar venta',
+        given: 'Hay una caja abierta; y cajero inició sesión',
+        when: 'cajero elige los productos; confirma la venta',
+        then: 'La venta queda confirmada',
+        alternativeFlows: ['Producto agotado'],
+        requirementCodes: ['RF-010'],
+        role: 'Cajero',
+        // The detail screen needs a record; row actions and paging are left out.
+        screens: [{ path: '/sales', screenName: 'Ventas', actions: ['Registrar venta', 'Nuevo'] }],
+        // ADR-027: its first write that needs no record.
+        operation: {
+          screenPath: '/sales',
+          label: 'Registrar venta',
+          method: 'POST',
+          apiPath: '/sales',
+          business: true,
+        },
+      },
+    ]);
+  });
+
+  it('carries out a generic create at its collection, never a write that needs a record', () => {
+    const catalog = {
+      ...plan,
+      entities: [{ localId: 'product', name: 'Product' }],
+      routes: [
+        {
+          path: '/products/new',
+          screenName: 'Nuevo producto',
+          screenLocalId: 'products',
+          roles: ['Administrador'],
+          entityLocalId: 'product',
+          actions: [
+            { label: 'Anular', endpoint: 'POST /products/:productId/void' },
+            { label: 'Salir', endpoint: 'POST /auth/logout' },
+            { label: 'Guardar', operation: 'CREATE' },
+          ],
+        },
+      ],
+    } as unknown as ImplementationPlanContent;
+    const [criterion] = deriveCriteria(
+      catalog,
+      [{ localId: 'products', relatedUseCaseCodes: ['CU-003'] }],
+      [useCase('CU-003', { primaryActor: 'Administrador' })],
+    );
+    expect(criterion!.operation).toEqual({
+      screenPath: '/products/new',
+      label: 'Guardar',
+      method: 'POST',
+      apiPath: '/products',
+      business: false,
+    });
+  });
+
+  it('uses the screen role when no role matches the actor, and only screens it may open', () => {
+    const [criterion] = deriveCriteria(
+      plan,
+      [
+        { localId: 'products', relatedUseCaseCodes: ['CU-003'] },
+        { localId: 'sales', relatedUseCaseCodes: ['CU-003'] },
+      ],
+      [useCase('CU-003', { primaryActor: 'Gerente' })],
+    );
+    expect(criterion!.role).toBe('Administrador');
+    expect(criterion!.screens.map((s) => s.path)).toEqual(['/sales', '/products']);
+  });
+
+  it('checks signing in without a session and signing out last', () => {
+    const access = {
+      ...plan,
+      routes: [
+        {
+          path: '/login',
+          screenName: 'Acceso',
+          screenLocalId: 'login',
+          builtinView: 'ACCOUNT_ACCESS',
+          actions: [{ label: 'Iniciar sesión', endpoint: 'POST /auth/login' }],
+        },
+        {
+          path: '/logout',
+          screenName: 'Salir',
+          screenLocalId: 'logout',
+          roles: ['Cajero'],
+          actions: [{ label: 'Cerrar sesión', endpoint: 'POST /auth/logout' }],
+        },
+        {
+          path: '/home',
+          screenName: 'Inicio',
+          screenLocalId: 'home',
+          roles: ['Cajero'],
+          actions: [],
+        },
+      ],
+    } as unknown as ImplementationPlanContent;
+    const [signIn, session] = deriveCriteria(
+      access,
+      [
+        { localId: 'login', relatedUseCaseCodes: ['CU-001'] },
+        { localId: 'home', relatedUseCaseCodes: ['CU-001', 'CU-002'] },
+        { localId: 'logout', relatedUseCaseCodes: ['CU-002'] },
+      ],
+      [
+        useCase('CU-001', {
+          name: 'Iniciar sesión',
+          primaryActor: 'Usuario',
+          mainFlow: [{ actor: 'Usuario', action: 'Introduce sus credenciales' }],
+        }),
+        useCase('CU-002', { name: 'Cerrar sesión' }),
+      ],
+    );
+    expect(signIn).toMatchObject({
+      role: '',
+      given: 'Hay una caja abierta',
+      when: 'Usuario introduce sus credenciales',
+      screens: [{ path: '/login' }],
+    });
+    expect(session!.role).toBe('Cajero');
+    expect(session!.screens.map((s) => s.path)).toEqual(['/home', '/logout']);
+  });
+
+  it('writes a test per criterion and reads each result from the runner report', () => {
+    const spec = acceptanceSpec(
+      deriveCriteria(
+        plan,
+        [{ localId: 'sales', relatedUseCaseCodes: ['CU-002'] }],
+        [useCase('CU-002')],
+      ),
+    );
+    expect(spec).toContain('"title": "[CA-CU-002] Registrar venta"');
+    expect(spec).toContain('toBeVisible()');
+    const output = [
+      '  ✓  1 [chromium] › acceptance.spec.ts:20:3 › [CA-CU-002] Registrar venta (3.1s)',
+      '  ✘  2 [chromium] › acceptance.spec.ts:20:3 › [CA-CU-004] Anular venta (2.0s)',
+    ].join('\n');
+    expect(
+      Object.fromEntries(acceptanceResults(output, ['CA-CU-002', 'CA-CU-004', 'CA-CU-005'], false)),
+    ).toEqual({
+      'CA-CU-002': { passed: true, message: null },
+      'CA-CU-004': { passed: false, message: 'La prueba de aceptación falló.' },
+      'CA-CU-005': { passed: false, message: 'La prueba de aceptación no llegó a ejecutarse.' },
+    });
+    // A run whose tests all passed passed every criterion, whatever it printed.
+    expect(acceptanceResults('Fake run.', ['CA-CU-002'], true).get('CA-CU-002')).toEqual({
+      passed: true,
+      message: null,
+    });
+  });
+
+  it('opens a record of the demonstration data when the write is on its screen', () => {
+    const sales = {
+      ...plan,
+      entities: [
+        { localId: 'sale', name: 'Sale', operations: ['LIST', 'GET'] },
+        { localId: 'note', name: 'Note', operations: [] },
+      ],
+      routes: [
+        {
+          path: '/sales',
+          screenName: 'Ventas',
+          screenLocalId: 'sales',
+          roles: ['Cajero'],
+          entityLocalId: 'sale',
+          actions: [{ label: 'Ver', navigation: { routePath: '/sales/[saleId]' } }],
+        },
+        {
+          path: '/sales/[saleId]/cancel',
+          screenName: 'Anular',
+          screenLocalId: 'cancel',
+          roles: ['Cajero'],
+          entityLocalId: 'sale',
+          actions: [{ label: 'Confirmar anulación', endpoint: 'POST /sales/:saleId/cancel' }],
+        },
+        {
+          path: '/notes/[noteId]',
+          screenName: 'Nota',
+          screenLocalId: 'note',
+          roles: ['Cajero'],
+          entityLocalId: 'note',
+          actions: [{ label: 'Guardar', operation: 'UPDATE' }],
+        },
+      ],
+    } as unknown as ImplementationPlanContent;
+    const screens = [
+      { localId: 'sales', relatedUseCaseCodes: ['CU-017'] },
+      { localId: 'cancel', relatedUseCaseCodes: ['CU-017'] },
+      { localId: 'note', relatedUseCaseCodes: ['CU-018'] },
+    ];
+    const [cancel, note] = deriveCriteria(sales, screens, [useCase('CU-017'), useCase('CU-018')]);
+    expect(cancel!.operation).toEqual({
+      screenPath: '/sales/[saleId]/cancel',
+      label: 'Confirmar anulación',
+      method: 'POST',
+      apiPath: '/sales/:saleId/cancel',
+      business: true,
+      params: [{ name: 'saleId', apiPath: '/sales' }],
+    });
+    // A record no role can list cannot be opened: no operation.
+    expect(note?.operation).toBeUndefined();
+    const results = acceptanceResults(
+      'ACCEPTANCE {"key":"CA-CU-017","label":"Confirmar anulación","skipped":true}',
+      ['CA-CU-017'],
+      true,
+    );
+    expect(results.get('CA-CU-017')!.message).toBe(
+      'No había registros con los que ejecutar «Confirmar anulación».',
+    );
+  });
+
+  it('writes a test that carries out the operation and says what it did', () => {
+    const spec = acceptanceSpec(
+      deriveCriteria(
+        plan,
+        [{ localId: 'sales', relatedUseCaseCodes: ['CU-002'] }],
+        [useCase('CU-002')],
+      ),
+    );
+    expect(spec).toContain('"apiPath": "/sales"');
+    expect(spec).toContain('await carryOut(page, operation');
+    expect(spec).toContain('must not fail on the server');
+    // A list in the form gets one item before it is filled.
+    expect(spec).toContain("hasText: 'Agregar elemento'");
+    // Each record operation takes a record no earlier operation touched.
+    expect(spec).toContain('!touched.has(row.id)');
+    // The accounts of the test sessions are never worked on.
+    expect(spec).toContain('if (claims.sub) touched.add(claims.sub);');
+    // An action form without a form element is found by its mark.
+    expect(spec).toContain('ancestor-or-self::*[@data-action-form][1]');
+    // Generated regular expressions keep their escapes.
+    expect(spec).toContain(".replace(/\\s+/g, ' ')");
+    // The generated file is valid TypeScript.
+    const parsed = ts.createSourceFile('acceptance.spec.ts', spec, ts.ScriptTarget.Latest, true);
+    expect((parsed as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics).toEqual([]);
+    const output = [
+      'ACCEPTANCE {"key":"CA-CU-002","label":"Registrar venta","status":201}',
+      'ACCEPTANCE {"key":"CA-CU-004","label":"Anular venta","status":409}',
+    ].join('\n');
+    const results = acceptanceResults(output, ['CA-CU-002', 'CA-CU-004', 'CA-CU-005'], true);
+    expect(results.get('CA-CU-002')!.message).toBe('Se completó «Registrar venta».');
+    expect(results.get('CA-CU-004')!.message).toBe(
+      '«Anular venta» se rechazó con un aviso a la persona (HTTP 409).',
+    );
+    expect(results.get('CA-CU-005')!.message).toBeNull();
+  });
+});

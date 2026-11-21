@@ -1,3 +1,4 @@
+import { StartingPointsModule } from './starting-points/starting-points.module';
 import { Module } from '@nestjs/common';
 import { ArtifactsModule } from './artifacts/artifacts.module';
 import { DatabaseModule } from './database/database.module';
@@ -30,6 +31,7 @@ import { ConstructionModule } from './construction/construction.module';
     IdentityModule,
     AIModule,
     HealthModule,
+    StartingPointsModule,
     ProjectsModule,
     ArtifactsModule,
     ProjectContextModule,

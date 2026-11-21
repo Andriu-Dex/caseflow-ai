@@ -4,10 +4,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   MOCKUP_REFINEMENT_PROMPT_MAX_LENGTH,
   type MockupDeviceType,
+  type MockupGenerator,
   type MockupJobResponse,
   type MockupPreviewResponse,
   type MockupResponse,
 } from '@caseflow-ai/contracts';
+import { ManualMockupDialog } from './manual-mockup-dialog';
 import { useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
@@ -24,6 +26,7 @@ import {
   Minimize2,
   Monitor,
   Pencil,
+  RotateCcw,
   Search,
   Smartphone,
   Sparkles,
@@ -31,9 +34,15 @@ import {
   X,
   ZoomIn,
   ZoomOut,
+  MousePointerClick,
 } from 'lucide-react';
+import { PrototypeDialog } from '../../../components/prototype-dialog';
 import { toast } from 'sonner';
 import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
   Button,
   Dialog,
   DialogClose,
@@ -200,18 +209,47 @@ type MockupScreen = NonNullable<MockupPreviewResponse['screens']>[number];
 
 // Edits one screen at Stitch; the other screens are carried over unchanged.
 function ScreenEditDialog({
+  projectId,
+  mockupId,
   screen,
   imageUrl,
   busy,
   onClose,
   onRefine,
 }: {
+  projectId: string;
+  mockupId: string;
   screen: MockupScreen | null;
   imageUrl: string | null;
   busy: boolean;
   onClose: () => void;
   onRefine: (prompt: string) => Promise<boolean>;
 }) {
+  const queryClient = useQueryClient();
+  const [restoring, setRestoring] = useState<string | null>(null);
+  const screenLocalId = screen?.screenLocalId ?? null;
+  // ADR-029: the screen's conversation, each change with what was asked.
+  const history = useQuery({
+    queryKey: ['mockup-screen-history', projectId, mockupId, screenLocalId],
+    queryFn: () => api.mockups.screenHistory(projectId, mockupId, screenLocalId!),
+    enabled: screenLocalId !== null,
+  });
+  async function restore(screenId: string, versionNumber: number) {
+    setRestoring(screenId);
+    try {
+      await api.mockups.restoreScreen(projectId, mockupId, screenLocalId!, screenId);
+      toast.success(`Pantalla restaurada a la versión ${versionNumber}.`);
+      queryClient.invalidateQueries({ queryKey: ['mockups', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['mockup-preview', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['mockup-screen-history', projectId, mockupId] });
+      onClose();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'No se pudo restaurar la pantalla.');
+    } finally {
+      setRestoring(null);
+    }
+  }
+  const items = history.data?.items ?? [];
   return (
     <Dialog open={screen !== null} onOpenChange={(open) => (!open && !busy ? onClose() : null)}>
       <DialogContent className="sm:max-w-lg p-6 gap-5">
@@ -250,7 +288,45 @@ function ScreenEditDialog({
           </div>
         ) : null}
 
-        {screen?.refinementPrompt ? (
+        {items.length > 1 ? (
+          <div className="flex flex-col gap-1.5">
+            <p className="text-sm font-medium text-foreground">Conversación de esta pantalla</p>
+            <ol className="flex max-h-48 flex-col gap-1.5 overflow-y-auto">
+              {items.map((item) => (
+                <li
+                  key={item.screenId}
+                  className="flex items-start justify-between gap-3 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs"
+                >
+                  <span className="min-w-0">
+                    <span className="font-semibold text-foreground">
+                      Versión {item.versionNumber}
+                    </span>
+                    <span className="block text-muted-foreground">
+                      {item.instruction ?? 'Primera versión de la pantalla.'}
+                    </span>
+                  </span>
+                  {item.current ? (
+                    <span className="shrink-0 rounded-md bg-primary/10 px-1.5 py-0.5 font-medium text-primary">
+                      Actual
+                    </span>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 shrink-0 gap-1 text-xs"
+                      disabled={busy || restoring !== null}
+                      onClick={() => void restore(item.screenId, item.versionNumber)}
+                    >
+                      <RotateCcw aria-hidden="true" className="size-3.5" />
+                      {restoring === item.screenId ? 'Restaurando…' : 'Restaurar'}
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </div>
+        ) : screen?.refinementPrompt ? (
           <div className="rounded-xl border border-border/60 bg-muted/30 px-3.5 py-2.5 text-xs text-muted-foreground">
             <span className="font-semibold text-foreground">Última edición:</span>{' '}
             {screen.refinementPrompt}
@@ -281,16 +357,21 @@ function MockupPreview({
   busy,
   onRefine,
   onRefineScreen,
+  onGenerateScreens,
 }: {
   mockupId: string;
   projectId: string;
   busy: boolean;
   onRefine: (prompt: string) => Promise<boolean>;
   onRefineScreen: (screenId: string, prompt: string) => Promise<boolean>;
+  onGenerateScreens: (screenLocalIds: string[]) => Promise<boolean>;
 }) {
+  const [chosenMissing, setChosenMissing] = useState<Set<string>>(new Set());
   const [selectedScreenIndex, setSelectedScreenIndex] = useState<number | null>(null);
+  const [comparing, setComparing] = useState(false);
   const [editingScreen, setEditingScreen] = useState<MockupScreen | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [prototypeOpen, setPrototypeOpen] = useState(false);
   const preview = useQuery({
     queryKey: ['mockup-preview', projectId, mockupId],
     queryFn: () => api.mockups.getPreview(projectId, mockupId),
@@ -426,6 +507,29 @@ function MockupPreview({
         </div>
       ) : null}
 
+      {screens.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-primary/30 bg-primary/5 p-3 text-xs">
+          <p className="text-muted-foreground">
+            Recorra las pantallas por el árbol de navegación, como las verá cada rol, antes de
+            construir.
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => setPrototypeOpen(true)}
+          >
+            <MousePointerClick className="size-3.5" aria-hidden="true" />
+            Recorrer como prototipo
+          </Button>
+          <PrototypeDialog
+            open={prototypeOpen}
+            onOpenChange={setPrototypeOpen}
+            projectId={projectId}
+            mockup={preview.data}
+          />
+        </div>
+      ) : null}
       {screens.length > 0 ? (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-border/70 bg-muted/20 p-3">
           <div className="relative flex-1 max-w-sm">
@@ -629,30 +733,62 @@ function MockupPreview({
             )
           }
         >
-          <AuthedImage
-            url={api.mockups.screenImageUrl(projectId, mockupId, screens[selectedScreenIndex]!.id)}
-            alt={screens[selectedScreenIndex]!.screenName}
-            className="h-auto w-full object-contain"
+          <ScreenComparison
+            projectId={projectId}
+            mockupId={mockupId}
+            screen={screens[selectedScreenIndex]!}
+            previousVersion={preview.data.previousVersion ?? null}
+            comparing={comparing}
+            onComparingChange={setComparing}
           />
         </MockupScreenDialog>
       ) : null}
 
-      {screens.some((screen) => !screen.editable) ? (
+      {preview.data.generatorKind === 'STITCH' && screens.some((screen) => !screen.editable) ? (
         <p className="text-xs text-muted-foreground">
           Algunas pantallas se generaron antes de habilitar la edición individual. Regenere el
           boceto completo una vez para poder editarlas una por una.
         </p>
       ) : null}
-
-      <MockupRefineForm
-        busy={busy}
-        onRefine={onRefine}
-        label="Editar todas las pantallas"
-        hint={`Para cambios que afectan a todo el boceto (p. ej., la paleta de colores); regenera todas las pantallas. ${REFINE_HINT}`}
-        placeholder="Ej.: usa una paleta verde y una tipografía más grande en todas las pantallas."
-        suggestions={GLOBAL_REFINEMENT_SUGGESTIONS}
-      />
+      {preview.data.missingScreens?.length ? (
+        <MissingScreens
+          screens={preview.data.missingScreens}
+          chosen={chosenMissing}
+          onChosen={setChosenMissing}
+          busy={busy}
+          onGenerate={async () => {
+            const ids = preview.data
+              .missingScreens!.map((screen) => screen.localId)
+              .filter((id) => chosenMissing.has(id));
+            if (await onGenerateScreens(ids)) setChosenMissing(new Set());
+          }}
+        />
+      ) : null}
+      {/* A hand-written mockup changes by importing its next version, not by AI. */}
+      {preview.data.generatorKind === 'MANUAL' ? (
+        <p className="text-xs text-muted-foreground">
+          Boceto hecho a mano en HTML y CSS. Para cambiarlo, importe una nueva versión.
+        </p>
+      ) : (
+        <Accordion type="single" collapsible className="rounded-lg border border-border px-3">
+          <AccordionItem value="refine" className="border-b-0">
+            <AccordionTrigger className="text-sm">Cambios para todo el boceto</AccordionTrigger>
+            <AccordionContent className="flex flex-col gap-3">
+              <MockupRefineForm
+                busy={busy}
+                onRefine={onRefine}
+                label="Editar todas las pantallas"
+                hint={`Para cambios que afectan a todo el boceto (p. ej., la paleta de colores); regenera todas las pantallas. ${REFINE_HINT}`}
+                placeholder="Ej.: usa una paleta verde y una tipografía más grande en todas las pantallas."
+                suggestions={GLOBAL_REFINEMENT_SUGGESTIONS}
+              />
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      )}
       <ScreenEditDialog
+        projectId={projectId}
+        mockupId={mockupId}
         screen={editingScreen}
         imageUrl={
           editingScreen ? api.mockups.screenImageUrl(projectId, mockupId, editingScreen.id) : null
@@ -661,6 +797,130 @@ function MockupPreview({
         onClose={() => setEditingScreen(null)}
         onRefine={(prompt) => onRefineScreen(editingScreen!.id, prompt)}
       />
+    </div>
+  );
+}
+
+// ADR-029: blueprint screens the mockup has not drawn yet, generated on request.
+function MissingScreens({
+  screens,
+  chosen,
+  onChosen,
+  busy,
+  onGenerate,
+}: {
+  screens: { localId: string; name: string }[];
+  chosen: Set<string>;
+  onChosen: (next: Set<string>) => void;
+  busy: boolean;
+  onGenerate: () => Promise<void>;
+}) {
+  return (
+    <section className="flex flex-col gap-2 rounded-lg border border-dashed border-border p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium text-foreground">
+          Pantallas por generar ({screens.length})
+        </p>
+        <Button
+          type="button"
+          size="sm"
+          className="gap-1.5"
+          disabled={busy || chosen.size === 0}
+          onClick={() => void onGenerate()}
+        >
+          <Sparkles aria-hidden="true" className="size-4" />
+          {chosen.size ? `Generar seleccionadas (${chosen.size})` : 'Generar seleccionadas'}
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        El boceto se aprueba cuando tiene todas las pantallas del plano de interfaz.
+      </p>
+      <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+        {screens.map((screen) => (
+          <label key={screen.localId} className="flex cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              disabled={busy}
+              checked={chosen.has(screen.localId)}
+              onChange={(event) => {
+                const next = new Set(chosen);
+                if (event.target.checked) next.add(screen.localId);
+                else next.delete(screen.localId);
+                onChosen(next);
+              }}
+            />
+            {screen.name}
+          </label>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// The screen as it is now and, on request, next to the same screen in the
+// previous version of the mockup, to see what an edit or a new generator changed.
+function ScreenComparison({
+  projectId,
+  mockupId,
+  screen,
+  previousVersion,
+  comparing,
+  onComparingChange,
+}: {
+  projectId: string;
+  mockupId: string;
+  screen: MockupScreen;
+  previousVersion: MockupPreviewResponse['previousVersion'] | null;
+  comparing: boolean;
+  onComparingChange: (comparing: boolean) => void;
+}) {
+  const before = previousVersion?.screens.find(
+    (item) => item.screenLocalId === screen.screenLocalId,
+  );
+  const current = (
+    <AuthedImage
+      url={api.mockups.screenImageUrl(projectId, mockupId, screen.id)}
+      alt={screen.screenName}
+      className="h-auto w-full object-contain"
+    />
+  );
+  if (!before || !previousVersion) return current;
+  return (
+    <div className="flex flex-col gap-3">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="self-start"
+        aria-pressed={comparing}
+        onClick={() => onComparingChange(!comparing)}
+      >
+        {comparing
+          ? 'Ver solo la versión actual'
+          : `Comparar con la versión ${previousVersion.versionNumber}`}
+      </Button>
+      {comparing ? (
+        <div className="grid gap-3 md:grid-cols-2">
+          <figure className="flex flex-col gap-1.5">
+            <figcaption className="text-xs font-medium text-muted-foreground">
+              Versión {previousVersion.versionNumber}
+            </figcaption>
+            <AuthedImage
+              url={api.mockups.screenImageUrl(projectId, mockupId, before.id)}
+              alt={`${screen.screenName}, versión ${previousVersion.versionNumber}`}
+              className="h-auto w-full rounded border object-contain"
+            />
+          </figure>
+          <figure className="flex flex-col gap-1.5">
+            <figcaption className="text-xs font-medium text-muted-foreground">
+              Versión actual
+            </figcaption>
+            {current}
+          </figure>
+        </div>
+      ) : (
+        current
+      )}
     </div>
   );
 }
@@ -821,7 +1081,8 @@ function MockupScreenDialog({
           ref={viewportRef}
           className="flex min-h-0 cursor-grab touch-none items-start justify-center overflow-hidden rounded-md bg-muted/30 p-2 active:cursor-grabbing md:p-4"
           onPointerDown={(event) => {
-            if (event.button !== 0) return;
+            // Pressing a control inside the viewer, such as the comparison toggle, is not a drag.
+            if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return;
             dragStart.current = {
               x: event.clientX,
               y: event.clientY,
@@ -966,7 +1227,10 @@ function MockupsContent({ projectId }: { projectId: string }) {
   const [creatingVersionId, setCreatingVersionId] = useState<string | null>(null);
   const [creatingJobStatus, setCreatingJobStatus] = useState<MockupUiStatus | null>(null);
   // The generation waiting for the person to confirm it (it is long and costs credits).
-  const [confirming, setConfirming] = useState<{ id: string; screens: number | null } | null>(null);
+  const [confirming, setConfirming] = useState<{
+    id: string;
+    screens: { localId: string; name: string }[] | null;
+  } | null>(null);
   // A generation that stopped with screens already drawn, to offer to continue it.
   const [stopped, setStopped] = useState<MockupJobResponse | null>(null);
   // Screens drawn so far, when the provider draws them one by one.
@@ -987,10 +1251,14 @@ function MockupsContent({ projectId }: { projectId: string }) {
     queryClient.invalidateQueries({ queryKey: ['archived-artifacts', projectId] });
   }
 
-  function createMockup(uiBlueprintVersionId: string) {
+  function createMockup(
+    uiBlueprintVersionId: string,
+    generator: MockupGenerator,
+    screenLocalIds?: string[],
+  ) {
     const deviceType = deviceTypes[uiBlueprintVersionId] ?? 'DESKTOP';
     return runMockupJob(uiBlueprintVersionId, () =>
-      api.mockups.create(projectId, uiBlueprintVersionId, deviceType),
+      api.mockups.create(projectId, uiBlueprintVersionId, deviceType, generator, screenLocalIds),
     );
   }
 
@@ -1124,12 +1392,149 @@ function MockupsContent({ projectId }: { projectId: string }) {
   const items = mockups.data?.items ?? [];
   const pending = items.filter((m) => isPendingApproval(m.version.status));
 
+  // The approved blueprints a sketch can be generated from.
+  const blueprintList =
+    approvedBlueprints.length === 0 ? (
+      <div className="rounded-lg border border-dashed border-border/80 bg-muted/20 p-4 text-center text-sm text-muted-foreground">
+        Cuando tenga un Plano de interfaz aprobado podrá generar aquí su boceto.
+      </div>
+    ) : (
+      <ul className="flex flex-col gap-2.5 text-sm">
+        {approvedBlueprints.map((b) => {
+          const screensCount = 'screens' in b.content ? b.content.screens.length : null;
+          const currentDevice = deviceTypes[b.version.id] ?? 'DESKTOP';
+          return (
+            <li
+              key={b.id}
+              className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-border/70 bg-muted/20 p-3 transition-colors hover:bg-muted/30"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 shrink-0">
+                  {b.code}
+                </span>
+                <span className="font-medium text-foreground truncate" title={b.title}>
+                  {b.title}
+                </span>
+                {screensCount !== null && screensCount > 0 ? (
+                  <span className="hidden md:inline-flex items-center rounded-md border border-border/60 bg-background px-2 py-0.5 text-xs text-muted-foreground shrink-0">
+                    {screensCount} {screensCount === 1 ? 'pantalla' : 'pantallas'}
+                  </span>
+                ) : null}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <div
+                  role="radiogroup"
+                  aria-label="Dispositivo de destino"
+                  className="inline-flex rounded-lg border border-border/80 bg-muted/40 p-0.5"
+                >
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={currentDevice === 'DESKTOP'}
+                    disabled={creatingVersionId === b.version.id}
+                    onClick={() =>
+                      setDeviceTypes((prev) => ({
+                        ...prev,
+                        [b.version.id]: 'DESKTOP',
+                      }))
+                    }
+                    className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+                      currentDevice === 'DESKTOP'
+                        ? 'bg-background text-foreground shadow-xs'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <Monitor className="size-3.5" />
+                    <span>Escritorio</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={currentDevice === 'MOBILE'}
+                    disabled={creatingVersionId === b.version.id}
+                    onClick={() =>
+                      setDeviceTypes((prev) => ({
+                        ...prev,
+                        [b.version.id]: 'MOBILE',
+                      }))
+                    }
+                    className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+                      currentDevice === 'MOBILE'
+                        ? 'bg-background text-foreground shadow-xs'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <Smartphone className="size-3.5" />
+                    <span>Móvil</span>
+                  </button>
+                </div>
+                {/* Accessible fallback select */}
+                <select
+                  aria-label="Formato del boceto"
+                  className="sr-only"
+                  value={currentDevice}
+                  disabled={creatingVersionId === b.version.id}
+                  onChange={(e) =>
+                    setDeviceTypes((prev) => ({
+                      ...prev,
+                      [b.version.id]: e.target.value as MockupDeviceType,
+                    }))
+                  }
+                >
+                  <option value="DESKTOP">Escritorio</option>
+                  <option value="MOBILE">Móvil</option>
+                </select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={creatingVersionId === b.version.id}
+                  onClick={() =>
+                    setConfirming({
+                      id: b.version.id,
+                      screens:
+                        'screens' in b.content
+                          ? b.content.screens.flatMap((screen) =>
+                              'localId' in screen
+                                ? [{ localId: screen.localId, name: screen.name }]
+                                : [],
+                            )
+                          : null,
+                    })
+                  }
+                  className="border-primary/40 hover:bg-primary/5 hover:text-primary"
+                >
+                  {creatingVersionId === b.version.id ? (
+                    <>
+                      <Loader2 aria-hidden="true" className="size-4 animate-spin" /> Generando…
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles aria-hidden="true" className="size-3.5 text-primary mr-1" />
+                      Generar boceto
+                    </>
+                  )}
+                </Button>
+                <ManualMockupDialog
+                  projectId={projectId}
+                  uiBlueprintVersionId={b.version.id}
+                  deviceType={currentDevice}
+                  mockups={items.map((m) => ({ id: m.id, code: m.code }))}
+                  disabled={creatingVersionId !== null}
+                  onImported={invalidate}
+                />
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    );
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeading title="Bocetos" projectId={projectId} />
       <p className="text-sm text-muted-foreground">
-        Cada boceto se genera a partir de un Plano de interfaz aprobado y muestra cómo se
-        organizarán las pantallas. Si cambia el plano de interfaz, genere un boceto nuevo.
+        Cómo se verán las pantallas de un Plano de interfaz aprobado.
       </p>
 
       <section className="rounded-xl border border-border bg-card p-5 shadow-2xs">
@@ -1152,132 +1557,28 @@ function MockupsContent({ projectId }: { projectId: string }) {
             onDone={invalidate}
           />
         </div>
-        {approvedBlueprints.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border/80 bg-muted/20 p-4 text-center text-sm text-muted-foreground">
-            Cuando tenga un Plano de interfaz aprobado podrá generar aquí su boceto.
-          </div>
+        {items.length ? (
+          // With sketches already made, generating another is the less common step.
+          <Accordion type="single" collapsible>
+            <AccordionItem value="generate" className="border-b-0">
+              <AccordionTrigger className="py-1 text-sm">Generar un boceto nuevo</AccordionTrigger>
+              <AccordionContent>{blueprintList}</AccordionContent>
+            </AccordionItem>
+          </Accordion>
         ) : (
-          <ul className="flex flex-col gap-2.5 text-sm">
-            {approvedBlueprints.map((b) => {
-              const screensCount = 'screens' in b.content ? b.content.screens.length : null;
-              const currentDevice = deviceTypes[b.version.id] ?? 'DESKTOP';
-              return (
-                <li
-                  key={b.id}
-                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-border/70 bg-muted/20 p-3 transition-colors hover:bg-muted/30"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 shrink-0">
-                      {b.code}
-                    </span>
-                    <span className="font-medium text-foreground truncate" title={b.title}>
-                      {b.title}
-                    </span>
-                    {screensCount !== null && screensCount > 0 ? (
-                      <span className="hidden md:inline-flex items-center rounded-md border border-border/60 bg-background px-2 py-0.5 text-xs text-muted-foreground shrink-0">
-                        {screensCount} {screensCount === 1 ? 'pantalla' : 'pantallas'}
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <div
-                      role="radiogroup"
-                      aria-label="Dispositivo de destino"
-                      className="inline-flex rounded-lg border border-border/80 bg-muted/40 p-0.5"
-                    >
-                      <button
-                        type="button"
-                        role="radio"
-                        aria-checked={currentDevice === 'DESKTOP'}
-                        disabled={creatingVersionId === b.version.id}
-                        onClick={() =>
-                          setDeviceTypes((prev) => ({
-                            ...prev,
-                            [b.version.id]: 'DESKTOP',
-                          }))
-                        }
-                        className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
-                          currentDevice === 'DESKTOP'
-                            ? 'bg-background text-foreground shadow-xs'
-                            : 'text-muted-foreground hover:text-foreground'
-                        }`}
-                      >
-                        <Monitor className="size-3.5" />
-                        <span>Escritorio</span>
-                      </button>
-                      <button
-                        type="button"
-                        role="radio"
-                        aria-checked={currentDevice === 'MOBILE'}
-                        disabled={creatingVersionId === b.version.id}
-                        onClick={() =>
-                          setDeviceTypes((prev) => ({
-                            ...prev,
-                            [b.version.id]: 'MOBILE',
-                          }))
-                        }
-                        className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
-                          currentDevice === 'MOBILE'
-                            ? 'bg-background text-foreground shadow-xs'
-                            : 'text-muted-foreground hover:text-foreground'
-                        }`}
-                      >
-                        <Smartphone className="size-3.5" />
-                        <span>Móvil</span>
-                      </button>
-                    </div>
-                    {/* Accessible fallback select */}
-                    <select
-                      aria-label="Formato del boceto"
-                      className="sr-only"
-                      value={currentDevice}
-                      disabled={creatingVersionId === b.version.id}
-                      onChange={(e) =>
-                        setDeviceTypes((prev) => ({
-                          ...prev,
-                          [b.version.id]: e.target.value as MockupDeviceType,
-                        }))
-                      }
-                    >
-                      <option value="DESKTOP">Escritorio</option>
-                      <option value="MOBILE">Móvil</option>
-                    </select>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={creatingVersionId === b.version.id}
-                      onClick={() => setConfirming({ id: b.version.id, screens: screensCount })}
-                      className="border-primary/40 hover:bg-primary/5 hover:text-primary"
-                    >
-                      {creatingVersionId === b.version.id ? (
-                        <>
-                          <Loader2 aria-hidden="true" className="size-4 animate-spin" /> Generando…
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles aria-hidden="true" className="size-3.5 text-primary mr-1" />
-                          Generar boceto
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+          blueprintList
         )}
       </section>
 
       <MockupGenerationConfirm
         open={confirming !== null}
-        screens={confirming?.screens ?? null}
+        blueprintScreens={confirming?.screens ?? null}
         device={confirming ? (deviceTypes[confirming.id] ?? 'DESKTOP') : 'DESKTOP'}
         onCancel={() => setConfirming(null)}
-        onConfirm={() => {
+        onConfirm={(generator, screenLocalIds) => {
           const id = confirming!.id;
           setConfirming(null);
-          void createMockup(id);
+          void createMockup(id, generator, screenLocalIds);
         }}
       />
 
@@ -1305,6 +1606,7 @@ function MockupsContent({ projectId }: { projectId: string }) {
                     projectId,
                     job.uiBlueprintVersionId!,
                     job.deviceType ?? 'DESKTOP',
+                    job.generator ?? 'STITCH',
                   ),
                 );
               }}
@@ -1543,6 +1845,11 @@ function MockupsContent({ projectId }: { projectId: string }) {
                     onRefineScreen={(screenId, prompt) =>
                       runMockupJob(m.id, () =>
                         api.mockups.refineScreen(projectId, m.id, screenId, prompt),
+                      )
+                    }
+                    onGenerateScreens={(screenLocalIds) =>
+                      runMockupJob(m.id, () =>
+                        api.mockups.generateScreens(projectId, m.id, screenLocalIds),
                       )
                     }
                   />

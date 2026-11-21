@@ -6,8 +6,8 @@ import type {
   UiBlueprintContent,
 } from '@caseflow-ai/contracts';
 
-// Every project-controlled or AI-generated string is untrusted (spec §36.5 /
-// Phase H "Export security"): escaped before interpolation into HTML. Only
+// Every project-controlled or AI-generated string is untrusted
+// (Phase H "Export security"): escaped before interpolation into HTML. Only
 // diagram/mockup `svg` fields are embedded raw, because they already passed
 // the trusted sanitizeDiagramSvg() boundary before being persisted — never
 // arbitrary uploaded SVG.

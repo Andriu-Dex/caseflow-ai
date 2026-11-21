@@ -15,6 +15,9 @@ const mocks = vi.hoisted(() => ({
   getJob: vi.fn(),
   cancelJob: vi.fn(),
   create: vi.fn(),
+  generateScreens: vi.fn(),
+  screenHistory: vi.fn(),
+  restoreScreen: vi.fn(),
   latestJob: vi.fn<(...args: unknown[]) => Promise<{ job: MockupJobResponse | null }>>(
     async () => ({
       job: null,
@@ -41,6 +44,9 @@ vi.mock('../../../lib/api', () => ({
       screenHtmlUrl: mocks.screenHtmlUrl,
       transition: vi.fn(),
       create: (...args: unknown[]) => mocks.create(...args),
+      generateScreens: (...args: unknown[]) => mocks.generateScreens(...args),
+      screenHistory: (...args: unknown[]) => mocks.screenHistory(...args),
+      restoreScreen: (...args: unknown[]) => mocks.restoreScreen(...args),
       refine: (...args: unknown[]) => mocks.refine(...args),
       refineScreen: (...args: unknown[]) => mocks.refineScreen(...args),
       getJob: (...args: unknown[]) => mocks.getJob(...args),
@@ -106,6 +112,7 @@ beforeEach(() => {
     ],
   });
   mocks.listBlueprints.mockResolvedValue({ items: [] });
+  mocks.screenHistory.mockResolvedValue({ items: [] });
   mocks.getPreview.mockResolvedValue({
     id: 'mockup-1',
     projectId: 'p1',
@@ -227,6 +234,7 @@ describe('MockupsPage refinement', () => {
         <MockupsPage />
       </TestProviders>,
     );
+    await user.click(await screen.findByRole('button', { name: 'Cambios para todo el boceto' }));
     const input = await screen.findByLabelText('Editar todas las pantallas');
     const submit = screen.getByRole('button', { name: /aplicar cambios/i });
     expect(submit).toBeDisabled();
@@ -269,6 +277,63 @@ describe('MockupsPage refinement', () => {
     expect(mocks.refine).not.toHaveBeenCalled();
   });
 
+  // ADR-029: each screen keeps its conversation and can go back to an earlier drawing.
+  it('shows the conversation of a screen and restores an earlier drawing', async () => {
+    const user = userEvent.setup();
+    mocks.screenHistory.mockResolvedValue({
+      items: [
+        { screenId: 'old-1', versionNumber: 1, instruction: null, createdAt: '', current: false },
+        {
+          screenId: 'screen-2',
+          versionNumber: 2,
+          instruction: 'Agrega un buscador',
+          createdAt: '',
+          current: true,
+        },
+      ],
+    });
+    mocks.restoreScreen.mockResolvedValue({});
+    render(
+      <TestProviders>
+        <MockupsPage />
+      </TestProviders>,
+    );
+    await user.click(
+      await screen.findByRole('button', { name: 'Editar la pantalla Catálogo con instrucciones' }),
+    );
+    const dialog = screen.getByRole('dialog');
+    expect(await within(dialog).findByText('Agrega un buscador')).toBeInTheDocument();
+    expect(mocks.screenHistory).toHaveBeenCalledWith('p1', 'mockup-1', 'screen-2');
+    await user.click(within(dialog).getByRole('button', { name: 'Restaurar' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(mocks.restoreScreen).toHaveBeenCalledWith('p1', 'mockup-1', 'screen-2', 'old-1');
+  });
+
+  it('generates the chosen screens the mockup still lacks', async () => {
+    const user = userEvent.setup();
+    mocks.getPreview.mockResolvedValue({
+      ...(await mocks.getPreview()),
+      missingScreens: [
+        { localId: 'pay', name: 'Pago' },
+        { localId: 'receipt', name: 'Recibo' },
+      ],
+    });
+    mocks.generateScreens.mockResolvedValue(job('QUEUED'));
+    mocks.getJob.mockResolvedValue(job('COMPLETED'));
+    render(
+      <TestProviders>
+        <MockupsPage />
+      </TestProviders>,
+    );
+    expect(await screen.findByText('Pantallas por generar (2)')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Generar seleccionadas' })).toBeDisabled();
+    await user.click(screen.getByRole('checkbox', { name: 'Pago' }));
+    await user.click(screen.getByRole('button', { name: 'Generar seleccionadas (1)' }));
+    await waitFor(() =>
+      expect(mocks.generateScreens).toHaveBeenCalledWith('p1', 'mockup-1', ['pay']),
+    );
+  });
+
   it('explains that an internal wireframe cannot be refined instead of offering the form', async () => {
     mocks.getPreview.mockResolvedValue({
       id: 'mockup-1',
@@ -288,6 +353,49 @@ describe('MockupsPage refinement', () => {
 });
 
 describe('MockupsPage screen gallery', () => {
+  it('compares a screen with the same screen of the previous version', async () => {
+    const user = userEvent.setup();
+    mocks.getPreview.mockResolvedValue({
+      id: 'mockup-1',
+      projectId: 'p1',
+      code: 'MCK-001',
+      versionId: 'mockup-version-2',
+      uiBlueprintVersionId: 'blueprint-version-1',
+      deviceType: 'DESKTOP',
+      generatorKind: 'MANUAL',
+      svg: null,
+      screens: [
+        stitchScreen('screen-1', 'Inicio', false),
+        stitchScreen('screen-2', 'Catálogo', false),
+      ],
+      refinementPrompt: null,
+      createdAt: new Date().toISOString(),
+      previousVersion: {
+        versionNumber: 3,
+        generatorKind: 'STITCH',
+        screens: [{ id: 'old-screen-1', screenLocalId: 'screen-1' }],
+      },
+    });
+    render(
+      <TestProviders>
+        <MockupsPage />
+      </TestProviders>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Ampliar pantalla Inicio' }));
+    const dialog = screen.getByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Comparar con la versión 3' }));
+    expect(
+      await within(dialog).findByRole('img', { name: 'Inicio, versión 3' }),
+    ).toBeInTheDocument();
+    expect(mocks.screenImageUrl).toHaveBeenCalledWith('p1', 'mockup-1', 'old-screen-1');
+    expect(within(dialog).getByRole('img', { name: 'Inicio' })).toBeInTheDocument();
+    // A screen that did not exist before has nothing to compare with.
+    await user.click(within(dialog).getByRole('button', { name: /siguiente/i }));
+    expect(
+      within(screen.getByRole('dialog')).queryByRole('button', { name: /Comparar con la versión/ }),
+    ).not.toBeInTheDocument();
+  });
+
   it('opens a large screen viewer and navigates with buttons and keyboard arrows', async () => {
     const user = userEvent.setup();
     render(
@@ -383,6 +491,7 @@ describe('MockupsPage refinement suggestions and options', () => {
       </TestProviders>,
     );
 
+    await user.click(await screen.findByRole('button', { name: 'Cambios para todo el boceto' }));
     const input = await screen.findByLabelText('Editar todas las pantallas');
     expect(input).toHaveValue('');
 
@@ -423,6 +532,8 @@ describe('MockupsPage generation and badges', () => {
       </TestProviders>,
     );
 
+    // With a sketch already made, the generator is folded until opened.
+    fireEvent.click(await screen.findByRole('button', { name: 'Generar un boceto nuevo' }));
     expect(await screen.findByText('UI-001')).toBeInTheDocument();
     expect(screen.getByText('Plano Principal')).toBeInTheDocument();
     expect(screen.getByText('2 pantallas')).toBeInTheDocument();
@@ -498,7 +609,7 @@ describe('MockupsPage background generation (DEC-146)', () => {
     expect(await screen.findByText(/76 de 77/)).toBeInTheDocument();
     expect(screen.getByText(/Faltan 1 de 77 pantallas/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Continuar la generación' }));
-    expect(mocks.create).toHaveBeenCalledWith('p1', 'blueprint-version-1', 'DESKTOP');
+    expect(mocks.create).toHaveBeenCalledWith('p1', 'blueprint-version-1', 'DESKTOP', 'STITCH');
   });
 
   it('scrolls a screen with the wheel and zooms it only with Ctrl + wheel, in the dialog', async () => {
@@ -544,6 +655,7 @@ describe('MockupsPage background generation (DEC-146)', () => {
         <MockupsPage />
       </TestProviders>,
     );
+    await user.click(await screen.findByRole('button', { name: 'Generar un boceto nuevo' }));
     await user.click(await screen.findByRole('button', { name: /Generar boceto/ }));
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText(/77 pantallas de escritorio/)).toBeInTheDocument();
@@ -559,7 +671,93 @@ describe('MockupsPage background generation (DEC-146)', () => {
     await user.click(
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'Generar boceto' }),
     );
-    await waitFor(() => expect(mocks.create).toHaveBeenCalledWith('p1', 'bp-version-1', 'DESKTOP'));
+    await waitFor(() =>
+      expect(mocks.create).toHaveBeenCalledWith(
+        'p1',
+        'bp-version-1',
+        'DESKTOP',
+        'STITCH',
+        undefined,
+      ),
+    );
+  });
+
+  it('starts a mockup with only the chosen screens (ADR-029)', async () => {
+    const user = userEvent.setup();
+    mocks.listBlueprints.mockResolvedValue({
+      items: [
+        {
+          id: 'bp-1',
+          code: 'UI-002',
+          version: { id: 'bp-version-1', status: 'APPROVED' },
+          content: {
+            screens: [
+              { localId: 'home', name: 'Inicio' },
+              { localId: 'list', name: 'Listado' },
+              { localId: 'detail', name: 'Detalle' },
+            ],
+          },
+        },
+      ],
+    });
+    mocks.create.mockResolvedValue({ id: 'job-1', status: 'QUEUED' });
+    mocks.getJob.mockResolvedValue({ id: 'job-1', status: 'COMPLETED' });
+    render(
+      <TestProviders>
+        <MockupsPage />
+      </TestProviders>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Generar un boceto nuevo' }));
+    await user.click(await screen.findByRole('button', { name: /Generar boceto/ }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Quitar todas' }));
+    expect(within(dialog).getByRole('button', { name: 'Generar boceto' })).toBeDisabled();
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Listado' }));
+    expect(within(dialog).getByText(/1 pantalla de escritorio/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Generar boceto' }));
+    await waitFor(() =>
+      expect(mocks.create).toHaveBeenCalledWith('p1', 'bp-version-1', 'DESKTOP', 'STITCH', [
+        'list',
+      ]),
+    );
+  });
+
+  it('generates the mockup in HTML and CSS with the AI when chosen, saying the requests it uses (DEC-167)', async () => {
+    const user = userEvent.setup();
+    mocks.listBlueprints.mockResolvedValue({
+      items: [
+        {
+          id: 'bp-1',
+          code: 'UI-002',
+          version: { id: 'bp-version-1', status: 'APPROVED' },
+          content: { screens: Array.from({ length: 77 }, (_, i) => ({ localId: `s${i}` })) },
+        },
+      ],
+    });
+    mocks.create.mockResolvedValue({ id: 'job-1', status: 'QUEUED' });
+    mocks.getJob.mockResolvedValue({ id: 'job-1', status: 'COMPLETED' });
+    render(
+      <TestProviders>
+        <MockupsPage />
+      </TestProviders>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Generar un boceto nuevo' }));
+    await user.click(await screen.findByRole('button', { name: /Generar boceto/ }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('radio', { name: /HTML y CSS con IA/ }));
+    expect(within(dialog).getByText('77 solicitudes')).toBeInTheDocument();
+    expect(within(dialog).getByText(/unos 20 minutos/)).toBeInTheDocument();
+    expect(within(dialog).queryByText(/créditos de Stitch/)).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Generar boceto' }));
+    await waitFor(() =>
+      expect(mocks.create).toHaveBeenCalledWith(
+        'p1',
+        'bp-version-1',
+        'DESKTOP',
+        'HTML_CSS',
+        undefined,
+      ),
+    );
   });
 
   it('cancels a running generation after asking, and offers to continue what was drawn', async () => {
@@ -601,6 +799,7 @@ describe('MockupsPage background generation (DEC-146)', () => {
         <MockupsPage />
       </TestProviders>,
     );
+    await user.click(await screen.findByRole('button', { name: 'Generar un boceto nuevo' }));
     await user.click(await screen.findByRole('button', { name: /Generar boceto/ }));
     await user.click(
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'Generar boceto' }),

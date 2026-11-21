@@ -37,6 +37,9 @@ describe('implementation readiness', () => {
     );
     value.entities[0]!.fields[0]!.serverDefault = 'Initial';
     expect(implementationReadinessProblems(value)).toEqual([]);
+    delete value.entities[0]!.fields[0]!.serverDefault;
+    value.entities[0]!.fields[0]!.initialFrom = 'label';
+    expect(implementationReadinessProblems(value)).toEqual([]);
   });
   it('keeps manual unauthenticated projects available and refuses unbound authentication or public credentials', () => {
     const value = plan();

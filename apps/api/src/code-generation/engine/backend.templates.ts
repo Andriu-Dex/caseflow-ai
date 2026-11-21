@@ -73,7 +73,7 @@ export function findPrimaryDateResolution(
       label: validityDate.label ?? validityDate.name,
     };
   }
-  // 3. Parent relation domain operational dates (e.g. dailyMenu.operationalDate)
+  // 3. An operational date of a parent record (order.operationalDate for an order line)
   if (plan) {
     for (const rel of entity.relations.filter((r) => r.kind === 'MANY_TO_ONE')) {
       const target = plan.entities.find((e) => e.localId === rel.targetEntityLocalId);
@@ -85,7 +85,7 @@ export function findPrimaryDateResolution(
         if (parentDomainDate) {
           return {
             name: parentDomainDate.name,
-            label: `Fecha operativa de ${rel.name === 'dailyMenu' ? 'menú diario' : rel.name}`,
+            label: `Fecha operativa de ${rel.name}`,
             relationName: rel.name,
           };
         }
@@ -421,6 +421,10 @@ ${entity.fields
   .filter((f) => f.serverDefault !== undefined)
   .map((f) => `  if (!updating) data.${f.name} = ${JSON.stringify(f.serverDefault)};`)
   .join('\n')}
+${entity.fields
+  .filter((f) => f.initialFrom !== undefined)
+  .map((f) => `  if (!updating) data.${f.name} = data.${f.initialFrom};`)
+  .join('\n')}
 ${many.map((relation) => `  if (Array.isArray(data.${relation.name}Ids)) { data.${relation.name} = { [updating ? 'set' : 'connect']: (data.${relation.name}Ids as string[]).map(id => ({ id })) }; delete data.${relation.name}Ids; }`).join('\n')}
 ${conversions.join('\n')}${conversions.length ? '\n' : ''}  return data;
 }
@@ -515,10 +519,13 @@ function entityServiceSpec(entity: Entity, plan: ImplementationPlanContent): str
         ? `expect(data.${local.passwordHashField}).toMatch(/^\\$argon2id\\$/);
     expect(data).not.toHaveProperty('password');
     expect(data).not.toHaveProperty('roleNames');`
-        : `expect(Object.keys(data).sort()).toEqual([...Object.keys(input), ...${JSON.stringify(entity.fields.filter((f) => f.serverDefault !== undefined).map((f) => f.name))}].sort());\n${entity.fields
+        : `expect(Object.keys(data).sort()).toEqual([...Object.keys(input), ...${JSON.stringify(entity.fields.filter((f) => f.serverDefault !== undefined || f.initialFrom !== undefined).map((f) => f.name))}].sort());\n${entity.fields
             .filter((f) => f.serverDefault !== undefined)
             .map((f) => `    expect(data.${f.name}).toEqual(${JSON.stringify(f.serverDefault)});`)
-            .join('\n')}`
+            .join('\n')}${entity.fields
+            .filter((f) => f.initialFrom !== undefined)
+            .map((f) => `\n    expect(data.${f.name}).toEqual(data.${f.initialFrom});`)
+            .join('')}`
     }${
       dateField
         ? `

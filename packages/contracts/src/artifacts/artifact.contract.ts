@@ -12,7 +12,7 @@ export type ArtifactVersionStatus = (typeof ARTIFACT_VERSION_STATUSES)[number];
 
 // SYSTEM_GENERATED: deterministically derived by CASEFlow from already
 // approved/structured CASE data (e.g. a Use Case Diagram) — no manual
-// authoring and no AI involvement (spec §6.3).
+// authoring and no AI involvement.
 export const ARTIFACT_ORIGINS = [
   'MANUAL',
   'AI_GENERATED',
@@ -108,6 +108,23 @@ export type ArchivedArtifactsResponse = z.infer<typeof archivedArtifactsResponse
 export const listArchivedArtifactsQuerySchema = z
   .object({ types: z.string().min(1).max(500).optional() })
   .strict();
+// Quick search: the project's active artifacts whose code or current title
+// contains the text.
+export const searchArtifactsQuerySchema = z
+  .object({ q: z.string().trim().min(1).max(100) })
+  .strict();
+export const artifactSearchResultSchema = z.object({
+  id: z.uuid(),
+  type: z.string(),
+  code: z.string(),
+  title: z.string(),
+  status: z.enum(ARTIFACT_VERSION_STATUSES),
+});
+export type ArtifactSearchResult = z.infer<typeof artifactSearchResultSchema>;
+export const artifactSearchResponseSchema = z.object({
+  items: z.array(artifactSearchResultSchema),
+});
+export type ArtifactSearchResponse = z.infer<typeof artifactSearchResponseSchema>;
 // `warning` is set when the restored artifact now competes with another
 // approved one of a type the project uses once.
 export const restoreArtifactResponseSchema = z.object({

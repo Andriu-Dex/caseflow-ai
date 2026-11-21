@@ -83,6 +83,7 @@ import {
   type PlanContext,
   type RoutesAccumulated,
 } from './implementation-plan-batches';
+import { completeLocalAuthentication } from './implementation-plan-authentication';
 import {
   PLAN_BATCH_ATTEMPTS,
   cleanOutline,
@@ -149,7 +150,7 @@ const KIND_LABELS: Record<StructuredAnalysisKind, string> = {
   CLASS_DIAGRAM: 'Diagrama de clases',
 };
 
-// Construction gates whose approval is an audited event (AGENTS.md §35).
+// Construction gates whose approval is an audited event.
 const APPROVAL_AUDIT_ACTIONS: Partial<Record<StructuredAnalysisKind, AuditAction>> = {
   GENERATION_PLAN: 'GENERATION_PLAN_APPROVED',
   CONCEPTUAL_DOMAIN_MODEL: 'CONCEPTUAL_DOMAIN_MODEL_APPROVED',
@@ -172,7 +173,7 @@ interface KindConfig {
 }
 
 // One AI/HTTP/DB call per generation stays honest about which project
-// materials are eligible sources for each kind (spec §13.2/§14.2/§15/§17.2).
+// materials are eligible sources for each kind.
 export const ELIGIBLE_SOURCE_TYPES: Record<StructuredAnalysisKind, string[]> = {
   NAVIGATION_TREE: ['REQUIREMENT', 'USE_CASE', 'DATA_MODEL'],
   SOFTWARE_ARCHITECTURE: ['REQUIREMENT', 'USE_CASE', 'DATA_MODEL', 'NAVIGATION_TREE'],
@@ -184,7 +185,7 @@ export const ELIGIBLE_SOURCE_TYPES: Record<StructuredAnalysisKind, string[]> = {
     'SOFTWARE_ARCHITECTURE',
     'SYSTEM_ARCHITECTURE',
   ],
-  // spec §156: the plan is derived from the whole approved analysis and design.
+  // the plan is derived from the whole approved analysis and design.
   GENERATION_PLAN: [
     'REQUIREMENT',
     'USE_CASE',
@@ -195,7 +196,7 @@ export const ELIGIBLE_SOURCE_TYPES: Record<StructuredAnalysisKind, string[]> = {
     'SYSTEM_ARCHITECTURE',
     'UI_BLUEPRINT',
   ],
-  // spec §157: the conceptual model refines the plan's conceptual entities.
+  // the conceptual model refines the plan's conceptual entities.
   CONCEPTUAL_DOMAIN_MODEL: [
     'GENERATION_PLAN',
     'REQUIREMENT',
@@ -203,7 +204,7 @@ export const ELIGIBLE_SOURCE_TYPES: Record<StructuredAnalysisKind, string[]> = {
     'DATA_MODEL',
     'CLASS_DIAGRAM',
   ],
-  // spec §161: built from what the approved Design Baseline froze (the mockup
+  // built from what the approved Design Baseline froze (the mockup
   // itself carries no structured content, its UI blueprint does).
   IMPLEMENTATION_PLAN: [
     'GENERATION_PLAN',
@@ -245,7 +246,7 @@ const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
   },
   SOFTWARE_ARCHITECTURE: {
     promptKey: 'software-architecture.generate',
-    promptVersion: 3,
+    promptVersion: 4,
     maxOutputTokens: 12_288,
     diagram: {
       format: 'PLANTUML_COMPONENT',
@@ -257,7 +258,7 @@ const KIND_CONFIG: Record<StructuredAnalysisKind, KindConfig> = {
   },
   SYSTEM_ARCHITECTURE: {
     promptKey: 'system-architecture.generate',
-    promptVersion: 3,
+    promptVersion: 4,
     maxOutputTokens: 12_288,
     diagram: {
       format: 'PLANTUML_DEPLOYMENT',
@@ -1569,7 +1570,8 @@ export class StructuredAnalysisService {
             1 + position * IP_BATCH_ATTEMPTS + attempt,
             {
               promptKey: 'implementation-plan.entities',
-              promptVersion: 1,
+              // @3: how each server-managed field of a created record starts.
+              promptVersion: 3,
               payload: {
                 targetClasses: remaining.map((cls) => ({
                   localId: cls.localId,
@@ -1617,8 +1619,11 @@ export class StructuredAnalysisService {
         progress?.update(2 + position, total, 0);
       }
       entities = addRelations(entities, classRelationships);
+      const authentication = completeLocalAuthentication(skeleton, entities);
+      skeleton = authentication.skeleton;
+      entities = authentication.entities;
 
-      let routes: RoutesAccumulated = { routes: [], customEndpoints: [] };
+      let routes: RoutesAccumulated = { routes: [], customEndpoints: authentication.endpoints };
       const allScreenIds = new Set(screens.map((screen) => screen.localId));
       const routeBase = 1 + entityBatches.length * IP_BATCH_ATTEMPTS;
       for (const [position, batch] of routeBatches.entries()) {
@@ -1628,7 +1633,7 @@ export class StructuredAnalysisService {
             routeBase + position * IP_BATCH_ATTEMPTS + attempt,
             {
               promptKey: 'implementation-plan.routes',
-              promptVersion: 2,
+              promptVersion: 3,
               payload: {
                 targetScreens: remaining.map((screen) => ({
                   localId: screen.localId,
@@ -1652,6 +1657,7 @@ export class StructuredAnalysisService {
                 existingEndpoints: routes.customEndpoints.map(
                   (endpoint) => `${endpoint.method} ${endpoint.path}`,
                 ),
+                existingRoutes: routes.routes.map((route) => route.path),
               },
               schema: implementationRoutesBatchOutputSchema,
               schemaName: 'implementation_plan_routes',
@@ -1676,7 +1682,7 @@ export class StructuredAnalysisService {
               attempt,
             {
               promptKey: 'implementation-plan.actions',
-              promptVersion: 1,
+              promptVersion: 2,
               payload: {
                 routes: pending,
                 entities: entities.map((entity) => ({
@@ -1693,6 +1699,7 @@ export class StructuredAnalysisService {
                 existingEndpoints: routes.customEndpoints.map(
                   (endpoint) => `${endpoint.method} ${endpoint.path}`,
                 ),
+                existingRoutes: routes.routes.map((route) => route.path),
               },
               schema: implementationActionsOutputSchema,
               schemaName: 'implementation_plan_actions',
@@ -1880,6 +1887,7 @@ export class StructuredAnalysisService {
     if (!version) throw new NotFoundException('Versión no encontrada.');
     if (!canTransitionArtifactVersionStatus(version.status, status))
       throw new UnprocessableEntityException('Transición de estado no permitida.');
+    if (status === 'APPROVED') await this.currency?.assertEarlierStagesSatisfied(projectId, kind);
     if (kind === 'DESIGN_THEME' && status === 'APPROVED') await this.assertAccessibleTheme(id);
     if (
       status === 'APPROVED' &&
@@ -1943,7 +1951,7 @@ export class StructuredAnalysisService {
     return this.mapDiagram(row, version, diagram);
   }
 
-  // Re-rendered on demand from the stored canonical source (spec §4.8), never
+  // Re-rendered on demand from the stored canonical source, never
   // persisted: PNG export via client-side canvas rasterization is unreliable
   // for Mermaid output (Chromium taints the canvas for any SVG containing
   // `<foreignObject>`, which Mermaid emits for every flowchart edge label).

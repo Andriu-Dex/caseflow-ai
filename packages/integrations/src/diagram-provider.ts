@@ -45,7 +45,7 @@ export interface DiagramProvider {
   readonly id: string;
   render(request: DiagramProviderRequest): Promise<DiagramProviderResponse>;
   // PNG is always re-derived on demand from the canonical stored diagram
-  // source (spec §4.8) — never persisted, so this has no separate "detail"
+  // source — never persisted, so this has no separate "detail"
   // record of its own.
   renderPng(request: DiagramProviderRequest): Promise<DiagramProviderPngResponse>;
 }

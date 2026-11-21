@@ -23,7 +23,7 @@ import { DIAGRAM_PROVIDER } from '../data-models/diagram-provider.token';
 import { sanitizeDiagramSvg } from '../data-models/svg-sanitizer';
 
 // A project with no traceable artifacts yet is a normal, valid state (spec
-// §56 graceful degradation) — this fixed placeholder avoids sending an empty
+//  graceful degradation) — this fixed placeholder avoids sending an empty
 // project through the diagram renderer just to get an equally empty result.
 const EMPTY_DIAGRAM_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" width="360" height="48">' +
@@ -328,7 +328,7 @@ export class TraceabilityService {
     return { nodes, edges, truncated };
   }
 
-  // A rendered, downloadable view of the same graph (spec §4.8): re-derived
+  // A rendered, downloadable view of the same graph: re-derived
   // and re-rendered on every request, exactly like every other diagram in the
   // product — nothing here is persisted.
   private async buildDiagramSource(
@@ -369,7 +369,7 @@ export class TraceabilityService {
   }
 
   // Re-rendered from the same on-demand source as buildDiagram(), never from
-  // a stored SVG (spec §4.8; PNG rasterization is unreliable client-side —
+  // a stored SVG (; PNG rasterization is unreliable client-side —
   // see apps/web/components/diagram-viewer.tsx).
   async getDiagramPng(projectId: string): Promise<Buffer> {
     const built = await this.buildDiagramSource(projectId);

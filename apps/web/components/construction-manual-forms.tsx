@@ -19,7 +19,7 @@ import { csv, useRows } from '../lib/use-rows';
 import { TagInput } from './tag-input';
 import { ManualFormShell, rowId, save, type FormProps } from './structured-manual-forms';
 
-// Manual, non-AI editors for the construction design artifacts (AGENTS.md §4.6):
+// Manual, non-AI editors for the construction design artifacts:
 // every field of the Generation Plan and Conceptual Domain Model is editable as
 // structured rows, never as raw JSON.
 

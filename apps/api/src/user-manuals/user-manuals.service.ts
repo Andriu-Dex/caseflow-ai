@@ -1,3 +1,4 @@
+import { deliveryScope, scopePlan } from '../construction/delivery-scope';
 import {
   ConflictException,
   ForbiddenException,
@@ -190,9 +191,17 @@ export class UserManualsService {
           select: { id: true, path: true },
         }),
       ]);
-      const plan = implementationPlanContentSchema.parse(
+      // A delivery's manual covers the screens it delivers (ADR-024).
+      const run = await this.prisma.generationRun.findUniqueOrThrow({
+        where: { id: snapshot.generationRunId },
+        select: { deliveryId: true },
+      });
+      const fullPlan = implementationPlanContentSchema.parse(
         planVersion?.structuredAnalysisDetail?.content,
       );
+      const plan = run.deliveryId
+        ? scopePlan(fullPlan, (await deliveryScope(this.prisma, projectId, run.deliveryId)).modules)
+        : fullPlan;
       const uiEntry = baseline?.entries.find((entry) => entry.role === 'UI_BLUEPRINT');
       const ui = uiBlueprintContentSchema.safeParse(
         uiEntry?.artifactVersion.structuredAnalysisDetail?.content,

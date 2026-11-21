@@ -156,8 +156,15 @@ export function sanitizeDiagramSvg(rawSvg: string): string {
     if (pattern.test(output))
       throw new SvgSanitizationError('El SVG saneado aún contiene contenido no seguro.');
   }
-  return output;
+  return output.includes('<foreignObject')
+    ? output.replace(/<svg\b[^>]*>/, (open) => open + LABEL_OVERFLOW_STYLE)
+    : output;
 }
+
+// Mermaid sizes each label box with the regular font weight but draws class
+// titles in bold, so the last letter of a long title fell outside its box and
+// was cut ("Evento de acces"). Letting the boxes overflow shows the whole text.
+const LABEL_OVERFLOW_STYLE = '<style>foreignObject{overflow:visible}</style>';
 
 // fast-xml-parser's `processEntities` only decodes the five predefined XML
 // entities (&amp; &lt; &gt; &quot; &apos;) — it leaves numeric character

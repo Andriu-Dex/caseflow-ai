@@ -5,6 +5,7 @@ import {
   NotFoundException,
   UnprocessableEntityException,
   ServiceUnavailableException,
+  Optional,
 } from '@nestjs/common';
 import { AIError, AIOrchestrator, estimateTokens } from '@caseflow-ai/ai';
 import { canTransitionArtifactVersionStatus, formatArtifactCode } from '@caseflow-ai/domain';
@@ -47,6 +48,7 @@ import {
   type CompleteOutput,
 } from './requirement-batches';
 import type { z } from 'zod';
+import { StageCurrencyService } from '../readiness/stage-currency';
 
 export interface RequirementGenerationProgress {
   jobId: string;
@@ -78,6 +80,7 @@ export class RequirementsService {
     private readonly prisma: PrismaService,
     private readonly ai: AIOrchestrator,
     @Inject(KnowledgeBaseService) private readonly knowledgeBase: KnowledgeBaseService,
+    @Optional() private readonly currency?: StageCurrencyService,
   ) {}
   create(projectId: string, input: RequirementDraft) {
     return this.prisma.$transaction((tx) => this.createInTx(tx, projectId, input, 'MANUAL'));
@@ -264,8 +267,9 @@ export class RequirementsService {
           sourceArtifactVersionId: sourceContextVersionId,
           promptKey: 'requirements.generate',
           // ISO/IEC/IEEE 29148:2018-aligned, citing the coded context items
-          // and proposing optional ideas (DEC-126).
-          promptVersion: 3,
+          // and proposing optional ideas (DEC-126); rules stay inside the
+          // requirement they condition (DEC-182).
+          promptVersion: 8,
           messages: [
             {
               role: 'user',
@@ -434,7 +438,8 @@ export class RequirementsService {
         position,
         requirementBatchOutputSchema,
         'requirements.generate',
-        6,
+        // DEC-182: rules fold into the requirement they condition.
+        7,
         input,
         (data, runId) => {
           if (position !== plan.length - 1 && data.suggestions.length)
@@ -616,7 +621,7 @@ export class RequirementsService {
     return contextCoverage(this.prisma, projectId, { approvedOnly: false });
   }
   // Deterministic ISO/IEC/IEEE 29148:2018-aligned quality check over every
-  // current Requirement in the project (spec §4.3). Not a certification
+  // current Requirement in the project. Not a certification
   // claim; human review remains authoritative.
   async qualityReport(projectId: string) {
     const { items } = await this.list(projectId);
@@ -656,6 +661,8 @@ export class RequirementsService {
           'Indique el origen del requisito antes de aprobarlo: los elementos del contexto que atiende o por qué se incluye.',
         );
     }
+    if (status === 'APPROVED')
+      await this.currency?.assertEarlierStagesSatisfied(projectId, 'REQUIREMENT');
     return provenanceGuard(
       this.prisma.artifactVersion.update({
         where: { id },

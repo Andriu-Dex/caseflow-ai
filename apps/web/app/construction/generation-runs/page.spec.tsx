@@ -5,6 +5,7 @@ import GenerationRunsPage from './page';
 import { TestProviders } from '../../../lib/test-utils';
 
 const mocks = vi.hoisted(() => ({
+  estimate: vi.fn(),
   listPlans: vi.fn(),
   listRuns: vi.fn(),
   start: vi.fn(),
@@ -15,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   validate: vi.fn(),
   archive: vi.fn(),
   restore: vi.fn(),
+  units: vi.fn<(...args: unknown[]) => Promise<{ items: unknown[] }>>(async () => ({ items: [] })),
+  reviewUnit: vi.fn(),
 }));
 
 vi.mock('../../../lib/api', () => ({
@@ -22,16 +25,19 @@ vi.mock('../../../lib/api', () => ({
     structuredAnalysis: { list: (...args: unknown[]) => mocks.listPlans(...args) },
     generationRuns: {
       list: (...args: unknown[]) => mocks.listRuns(...args),
+      estimate: (...args: unknown[]) => mocks.estimate(...args),
       start: (...args: unknown[]) => mocks.start(...args),
       workingCopy: (...args: unknown[]) => mocks.workingCopy(...args),
       files: (...args: unknown[]) => mocks.files(...args),
       file: (...args: unknown[]) => mocks.file(...args),
-      units: async () => ({ items: [] }),
+      units: (...args: unknown[]) => mocks.units(...args),
+      reviewUnit: (...args: unknown[]) => mocks.reviewUnit(...args),
       sandboxRuns: (...args: unknown[]) => mocks.sandboxRuns(...args),
       validate: (...args: unknown[]) => mocks.validate(...args),
       archive: (...args: unknown[]) => mocks.archive(...args),
       restore: (...args: unknown[]) => mocks.restore(...args),
       snapshotArchiveUrl: (p: string, s: string) => `/api/${p}/${s}.zip`,
+      technicalHandoverUrl: (p: string, s: string) => `/api/${p}/${s}-handover.zip`,
     },
     readiness: { get: vi.fn(async () => ({ stages: [] })) },
   },
@@ -110,7 +116,7 @@ describe('GenerationRunsPage', () => {
     mocks.restore.mockResolvedValue({});
     render(<GenerationRunsPage />, { wrapper: TestProviders });
     // Only the visible run is counted and shown with its button.
-    expect(await screen.findByText(/Generaciones Realizadas \(1\)/)).toBeInTheDocument();
+    expect(await screen.findByText(/Generaciones \(1\)/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Archivar' }));
     const dialog = await screen.findByRole('dialog', { name: /Archivar generación de código/i });
     await userEvent.click(within(dialog).getByRole('button', { name: 'Archivar' }));
@@ -123,12 +129,85 @@ describe('GenerationRunsPage', () => {
   it('shows warnings, files and their traceability', async () => {
     render(<GenerationRunsPage />, { wrapper: TestProviders });
     expect(await screen.findByText(/Confirmar pedido/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Ver archivos' }));
+    await userEvent.click(screen.getByRole('tab', { name: /Código/ }));
     await userEvent.click(screen.getByRole('tab', { name: 'Todos los archivos' }));
     await userEvent.click(screen.getByRole('tab', { name: 'Todos los archivos' }));
     await userEvent.click(await screen.findByRole('button', { name: /main\.ts/ }));
     expect(await screen.findByText('bootstrap();')).toBeInTheDocument();
     expect(screen.getByText(/Configura PI-001 v1/)).toBeInTheDocument();
+  });
+
+  it('presents the code by construction unit and records its review', async () => {
+    const unit = {
+      id: 'route:/products/new',
+      kind: 'SCREEN',
+      title: 'Registro de producto',
+      module: 'Catálogo',
+      summary: 'Pantalla de tipo formulario en /products/new.',
+      origins: { TEMPLATE: 0, DETERMINISTIC: 0, AI_ASSISTED: 1, MANUAL: 0 },
+      traces: [{ code: 'UI-002', versionNumber: 1 }],
+      files: [
+        {
+          id: 'f-page',
+          path: 'apps/web/app/products/new/page.tsx',
+          origin: 'AI_ASSISTED',
+          kind: 'SOURCE',
+          sha256: 'b'.repeat(64),
+          change: 'CHANGED',
+        },
+      ],
+      contentSha256: 'c'.repeat(64),
+      changes: { previousRunId: 'run-old', added: 0, changed: 1, removed: [] },
+      review: null,
+      design: {
+        source: 'COMPOSED',
+        observations: [
+          { code: 'MISSING_FORM_BINDING', description: 'Falta el filtro de categoría.' },
+        ],
+      },
+    };
+    mocks.units.mockResolvedValue({ items: [unit] });
+    mocks.reviewUnit.mockResolvedValue({
+      ...unit,
+      review: { reviewedAt: new Date().toISOString(), reviewerName: 'Ana' },
+    });
+    render(<GenerationRunsPage />, { wrapper: TestProviders });
+    await userEvent.click(await screen.findByRole('tab', { name: /Código/ }));
+    expect(await screen.findByText('Registro de producto')).toBeInTheDocument();
+    expect(screen.getByText('Revisar primero: IA')).toBeInTheDocument();
+    expect(screen.getByText(/0 añadidos, 1 cambiados, 0 eliminados/)).toBeInTheDocument();
+    expect(screen.getByText(/Revisadas 0 de 1 unidades/)).toBeInTheDocument();
+    expect(screen.getByText('Diseño: Compuesta desde el boceto')).toBeInTheDocument();
+    expect(screen.getByText(/1 observación de cobertura/)).toBeInTheDocument();
+    expect(screen.getByText('Falta el filtro de categoría.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Marcar como revisada' }));
+    await waitFor(() =>
+      expect(mocks.reviewUnit).toHaveBeenCalledWith('p1', 'run-1', {
+        unitKey: 'route:/products/new',
+        contentSha256: 'c'.repeat(64),
+        reviewed: true,
+      }),
+    );
+  });
+
+  it('says how many AI requests generating would make before starting (DEC-168)', async () => {
+    mocks.estimate.mockResolvedValue({
+      implementationPlanVersionId: 'pv1',
+      businessActions: { total: 12, reused: 9 },
+      demoData: 'REUSED',
+      screens: { atMost: 5 },
+      requests: { atLeast: 3, atMost: 8 },
+    });
+    render(<GenerationRunsPage />, { wrapper: TestProviders });
+    expect(
+      await screen.findByText('Uso de IA previsto: entre 3 y 8 solicitudes.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/9 de 12 acciones se reutilizan; 3 se piden a la IA/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Datos de demostración: se reutilizan/)).toBeInTheDocument();
+    expect(screen.getByText(/hasta 5 se revisan con la IA/)).toBeInTheDocument();
+    expect(mocks.estimate).toHaveBeenCalledWith('p1', 'pv1');
   });
 
   it('starts the sandbox validation of a generated run', async () => {
@@ -174,10 +253,17 @@ describe('GenerationRunsPage', () => {
     expect(screen.queryByRole('button', { name: /Validar proyecto/ })).not.toBeInTheDocument();
   });
 
-  it('renders executive header banner', async () => {
+  it('keeps the run summary in view and the technical detail in tabs and a closed panel', async () => {
     render(<GenerationRunsPage />, { wrapper: TestProviders });
-    expect(await screen.findByText('Generación de Código Fuente y Sandbox')).toBeInTheDocument();
-    expect(screen.getAllByText(/Fase de Construcción · Paso 5 de 5/i).length).toBeGreaterThan(0);
+    // Validation is the next step of a generated run, so its tab opens first.
+    expect(await screen.findByRole('tab', { name: 'Validación y despliegue' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(screen.getByRole('tab', { name: /Código \(\d+ archivos\)/ })).toBeInTheDocument();
+    expect(screen.queryByText(/sin nuevas inferencias/)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Más información' }));
+    expect(await screen.findByText(/sin nuevas inferencias/)).toBeInTheDocument();
   });
 
   it('filters generated files with search input and copies code', async () => {
@@ -192,7 +278,7 @@ describe('GenerationRunsPage', () => {
 
     render(<GenerationRunsPage />, { wrapper: TestProviders });
 
-    await user.click(await screen.findByRole('button', { name: 'Ver archivos' }));
+    await user.click(await screen.findByRole('tab', { name: /Código/ }));
     await user.click(screen.getByRole('tab', { name: 'Todos los archivos' }));
     expect(await screen.findByRole('button', { name: /main\.ts/ })).toBeInTheDocument();
 
@@ -284,6 +370,7 @@ describe('GenerationRunsPage', () => {
 
     // Both "Descargar ZIP" and "Cómo probarlo" should appear
     expect(await screen.findByRole('button', { name: /Descargar ZIP/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Entrega técnica/ })).toBeInTheDocument();
     const quickstartBtn = screen.getByRole('button', { name: /Cómo probarlo/i });
     expect(quickstartBtn).toBeInTheDocument();
 
@@ -302,7 +389,7 @@ it('distinguishes a working copy from a validated official delivery', async () =
   });
   render(<GenerationRunsPage />, { wrapper: TestProviders });
   expect(await screen.findByText('Versión de trabajo · incompleta')).toBeInTheDocument();
-  await userEvent.click(screen.getByRole('button', { name: 'Ver archivos' }));
+  await userEvent.click(screen.getByRole('tab', { name: /Código/ }));
   await userEvent.click(screen.getByRole('tab', { name: 'Todos los archivos' }));
   expect(await screen.findByText('apps/api/src/main.ts')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /Validar en Docker/i })).not.toBeInTheDocument();

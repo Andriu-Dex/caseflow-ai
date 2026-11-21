@@ -59,14 +59,136 @@ ${body}
   return first ? ts.flattenDiagnosticMessageText(first.messageText, ' ') : null;
 }
 
+// Per Prisma delegate, its relations and whether each one reaches a model
+// isolated by operation scope. The generated scope guard rejects at run time
+// any query that filters, includes or selects through such a relation, so a
+// body doing it fails on every call.
+export type ScopedRelations = Readonly<
+  Record<string, Readonly<Record<string, { target: string; isolated: boolean }>>>
+>;
+
+export function scopedRelations(plan: ImplementationPlanContent): ScopedRelations {
+  const scope = plan.authentication.local?.scope;
+  if (!scope) return {};
+  const byId = new Map(plan.entities.map((entity) => [entity.localId, entity]));
+  return Object.fromEntries(
+    plan.entities.map((entity) => [
+      lowerFirst(entity.name),
+      Object.fromEntries(
+        entity.relations.map((relation) => {
+          const target = byId.get(relation.targetEntityLocalId)!;
+          return [
+            relation.name,
+            {
+              target: lowerFirst(target.name),
+              isolated: !!target.operationScope,
+            },
+          ];
+        }),
+      ),
+    ]),
+  );
+}
+
+const PRISMA_METHODS = new Set([
+  'findUnique',
+  'findUniqueOrThrow',
+  'findFirst',
+  'findFirstOrThrow',
+  'findMany',
+  'count',
+  'aggregate',
+  'groupBy',
+  'create',
+  'createMany',
+  'createManyAndReturn',
+  'update',
+  'updateMany',
+  'updateManyAndReturn',
+  'delete',
+  'deleteMany',
+  'upsert',
+]);
+
+// First `delegate.relation` crossed by a literal where/include/select/orderBy
+// of a Prisma call in the body, or null. Arguments built in variables are not
+// followed: the check is a floor, not a proof.
+function isolatedRelationUse(source: ts.SourceFile, relations: ScopedRelations): string | null {
+  let found: string | null = null;
+  const property = (literal: ts.ObjectLiteralExpression, name: string) =>
+    literal.properties.find(
+      (item): item is ts.PropertyAssignment =>
+        ts.isPropertyAssignment(item) && item.name.getText(source) === name,
+    )?.initializer;
+  const filter = (delegate: string, node: ts.Expression | undefined) => {
+    if (!node || found) return;
+    if (ts.isArrayLiteralExpression(node)) {
+      for (const element of node.elements) filter(delegate, element);
+      return;
+    }
+    if (!ts.isObjectLiteralExpression(node)) return;
+    for (const item of node.properties) {
+      if (!ts.isPropertyAssignment(item) && !ts.isShorthandPropertyAssignment(item)) continue;
+      const name = item.name.getText(source).replace(/^['"]|['"]$/g, '');
+      const value = ts.isPropertyAssignment(item) ? item.initializer : undefined;
+      if (['AND', 'OR', 'NOT'].includes(name)) {
+        filter(delegate, value);
+        continue;
+      }
+      const relation = relations[delegate]?.[name];
+      if (!relation) continue;
+      if (relation.isolated) {
+        found = `${delegate}.${name}`;
+        return;
+      }
+      // Relation filters wrap the nested condition in some/every/none/is/isNot.
+      if (value && ts.isObjectLiteralExpression(value))
+        for (const nested of value.properties)
+          if (ts.isPropertyAssignment(nested)) filter(relation.target, nested.initializer);
+      filter(relation.target, value);
+    }
+  };
+  const projection = (delegate: string, node: ts.Expression | undefined) => {
+    if (!node || found || !ts.isObjectLiteralExpression(node)) return;
+    for (const item of node.properties) {
+      if (!ts.isPropertyAssignment(item)) continue;
+      const relation = relations[delegate]?.[item.name.getText(source)];
+      if (relation?.isolated) found = `${delegate}.${item.name.getText(source)}`;
+    }
+  };
+  const visit = (node: ts.Node) => {
+    if (found) return;
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      PRISMA_METHODS.has(node.expression.name.text) &&
+      ts.isPropertyAccessExpression(node.expression.expression)
+    ) {
+      const delegate = node.expression.expression.name.text;
+      const args = node.arguments[0];
+      if (relations[delegate] && args && ts.isObjectLiteralExpression(args)) {
+        filter(delegate, property(args, 'where'));
+        filter(delegate, property(args, 'orderBy'));
+        projection(delegate, property(args, 'include'));
+        projection(delegate, property(args, 'select'));
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return found;
+}
+
 // Pure check of one AI-proposed method body.
 export function reviewBusinessLogic(
   body: string,
   internalFields: readonly string[] = [],
+  relations: ScopedRelations = {},
 ): BusinessLogicReview {
   const source = ts.createSourceFile('body.ts', body, ts.ScriptTarget.Latest, true);
   let touchesInternal = false;
-  let bypassesBoundary = false;
+  // What crossed the boundary, named in the reason so a retry can avoid it.
+  let bypassesBoundary: string | null = null;
   const visit = (node: ts.Node) => {
     if ((ts.isIdentifier(node) || ts.isStringLiteral(node)) && internalFields.includes(node.text))
       touchesInternal = true;
@@ -75,7 +197,7 @@ export function reviewBusinessLogic(
       (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
         (ts.isIdentifier(node.expression) && node.expression.text === 'require'))
     )
-      bypassesBoundary = true;
+      bypassesBoundary ??= 'import/require';
     if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
       const property = ts.isPropertyAccessExpression(node)
         ? node.name.text
@@ -87,7 +209,7 @@ export function reviewBusinessLogic(
         (property.startsWith('$') && property !== '$transaction') ||
         (property.startsWith('_') && !['_sum', '_avg', '_min', '_max', '_count'].includes(property))
       )
-        bypassesBoundary = true;
+        bypassesBoundary ??= property;
     }
     ts.forEachChild(node, visit);
   };
@@ -111,7 +233,14 @@ export function reviewBusinessLogic(
   if (bypassesBoundary)
     return {
       accepted: false,
-      reason: 'intenta eludir los límites de ejecución o persistencia',
+      reason: `intenta eludir los límites de ejecución o persistencia (${bypassesBoundary})`,
+      packages: [],
+    };
+  const isolated = isolatedRelationUse(source, relations);
+  if (isolated)
+    return {
+      accepted: false,
+      reason: `filtra, incluye o selecciona a través de la relación ${isolated}, que apunta a un modelo aislado por ámbito: consulte ese modelo por separado con su propio where`,
       packages: [],
     };
   return { accepted: true };
@@ -131,7 +260,7 @@ export function unimplementedWarning(
   return `La acción «${action}» quedó sin implementar (responde 501): la propuesta se descartó porque ${review.reason}.`;
 }
 
-// AI assistance only where interpretation is needed (AGENTS.md §18): the body
+// AI assistance only where interpretation is needed: the body
 // of business actions beyond CRUD. Everything else stays deterministic. The
 // output is untrusted — it is reviewed here, and it only ever runs inside the
 // validation sandbox; a rejected or unavailable proposal leaves the honest
@@ -143,12 +272,206 @@ export class BusinessLogicService {
     private readonly ai: AIOrchestrator,
   ) {}
 
+  // The context an action is implemented from and the checkpoint keys it is
+  // found under: shared by the generation and its estimate (DEC-168), so both
+  // always agree on what is reused.
+  private endpointCheckpoint(
+    plan: ImplementationPlanContent,
+    endpoint: ImplementationPlanContent['customEndpoints'][number],
+    template: TargetTemplateVersion,
+    language: Awaited<ReturnType<typeof getProjectLanguage>>,
+    frozenContext: Awaited<ReturnType<typeof loadFrozenBusinessContext>> | undefined,
+    baselineIds: string[],
+  ) {
+    const promptVersion = endpoint.contract
+      ? 7
+      : plan.authentication.local?.scope
+        ? 5
+        : plan.authentication.local
+          ? 4
+          : 3;
+    const module = plan.modules.find((m) => m.localId === endpoint.moduleLocalId)!;
+    const params = [...endpoint.path.matchAll(/:([a-zA-Z0-9]+)/g)].map((m) => m[1]!);
+    const hasBody = ['POST', 'PATCH', 'PUT'].includes(endpoint.method);
+    const context = {
+      ...(endpoint.contract ? { userFacingLanguage: language } : {}),
+      ...(plan.authentication.local?.scope
+        ? {
+            scopeProfile: {
+              ...plan.authentication.local.scope,
+              model: plan.entities.find(
+                (entity) => entity.localId === plan.authentication.local!.scope!.entityLocalId,
+              )!.name,
+            },
+          }
+        : {}),
+      ...(frozenContext ? { approvedContext: frozenContext(endpoint, plan) } : {}),
+      action: {
+        ...(endpoint.rules ? { rules: endpoint.rules } : {}),
+        ...(endpoint.contract ? { contract: endpoint.contract } : {}),
+        roles: endpoint.roles,
+        ...(plan.authentication.local?.scope
+          ? { scopeAccess: endpoint.scopeAccess ?? 'SELECTED', dataAccess: endpoint.dataAccess }
+          : {}),
+        summary: endpoint.summary,
+        method: endpoint.method,
+        path: endpoint.path,
+        methodName: actionMethodName(endpoint),
+        parameters: [
+          ...params.map((p) => ({ name: p, type: 'string (path parameter)' })),
+          ...(hasBody
+            ? [
+                {
+                  name: 'body',
+                  type: endpoint.contract?.body
+                    ? 'Validated input matching action.contract.body'
+                    : 'Record<string, unknown> (request body)',
+                },
+              ]
+            : []),
+          ...(endpoint.contract?.query
+            ? [{ name: 'query', type: 'Validated filters matching action.contract.query' }]
+            : []),
+          ...(plan.authentication.local
+            ? [
+                {
+                  name: 'actor',
+                  type: plan.authentication.local.scope
+                    ? '{ userId: string; sessionId: string; roles: string[]; selectedScopeId?: string; scopeIds: string[]; permissions: string[] } (immutable verified server context)'
+                    : '{ userId: string; sessionId: string; roles: string[] } (verified server session)',
+                },
+              ]
+            : []),
+        ],
+        mainEntity: plan.entities.find((e) => e.localId === endpoint.entityLocalId)?.name ?? null,
+      },
+      module: { name: module.name, description: module.description },
+      prismaDelegates: plan.entities
+        .filter(
+          (entity) =>
+            !plan.authentication.local?.scope ||
+            endpoint.dataAccess?.some((access) => access.entityLocalId === entity.localId),
+        )
+        .map((e) => ({
+          delegate: `this.prisma.${lowerFirst(e.name)}`,
+          model: e.name,
+          ...(e.fields.some((field) => field.readOnly)
+            ? {
+                serverOwnedFields: e.fields
+                  .filter((field) => field.readOnly)
+                  .map((field) => ({
+                    name: field.name,
+                    ...(field.serverDefault !== undefined
+                      ? { initialValue: field.serverDefault }
+                      : {}),
+                  })),
+              }
+            : {}),
+          ...(e.uniqueConstraints ? { uniqueConstraints: e.uniqueConstraints } : {}),
+          fields: [
+            'id',
+            ...e.fields
+              .filter((field) => !field.internal)
+              .map(
+                // An optional field may be null: said so, the body checks it
+                // instead of failing the generated project's typecheck.
+                (f) =>
+                  `${f.name}: ${f.type}${f.type === 'ENUM' ? ` (${f.enumValues.join('|')})` : ''}${f.required ? '' : ' | null'}`,
+              ),
+            ...e.relations.map((r) =>
+              r.kind === 'MANY_TO_MANY'
+                ? `${r.name}: relation[]`
+                : `${r.name}Id: string${r.required ? '' : ' | null'}`,
+            ),
+          ],
+        })),
+      availableExceptions: HTTP_EXCEPTIONS,
+    };
+    const keyed = (approvedBaselineId?: string) => {
+      // Same key order as the context: only the baseline id inside
+      // approvedContext is left out (or replaced by an earlier one).
+      const keptContext = Object.fromEntries(
+        Object.entries(context).map(([key, value]) => {
+          if (key !== 'approvedContext' || !value || typeof value !== 'object') return [key, value];
+          const approved = value as Record<string, unknown>;
+          return [
+            key,
+            approvedBaselineId === undefined
+              ? Object.fromEntries(
+                  Object.entries(approved).filter(([name]) => name !== 'baselineId'),
+                )
+              : { ...approved, baselineId: approvedBaselineId },
+          ];
+        }),
+      );
+      return `docs/business-logic/${createHash('sha256')
+        .update(json({ templateVersion: template.version, promptVersion, context: keptContext }))
+        .digest('hex')}.json`;
+    };
+    const checkpointPath = keyed();
+    const legacyPaths = frozenContext ? baselineIds.map((id) => keyed(id)) : [];
+    return { context, promptVersion, checkpointPath, legacyPaths };
+  }
+
+  // DEC-168: of the actions a generation from this plan implements, how many
+  // already have a checkpoint under the same inputs (reused without the AI).
+  // A delivery (ADR-024) implements the actions of its scoped plan, keyed on
+  // the whole plan: an action's context (the screens that use it) must not
+  // change when a later delivery adds those screens.
+  async estimate(
+    projectId: string,
+    plan: ImplementationPlanContent,
+    template: TargetTemplateVersion,
+    contextPlan: ImplementationPlanContent = plan,
+  ): Promise<{ total: number; reused: number }> {
+    const endpoints = plan.customEndpoints.filter((item) => !item.builtin && !item.disabledReason);
+    if (!endpoints.length || template.version < 2) return { total: endpoints.length, reused: 0 };
+    const language = await getProjectLanguage(this.prisma, projectId);
+    const frozenContext = await loadFrozenBusinessContext(
+      this.prisma,
+      projectId,
+      plan.designBaselineId,
+    );
+    const baselineIds = (
+      await this.prisma.designBaseline.findMany({ where: { projectId }, select: { id: true } })
+    ).map((baseline) => baseline.id);
+    const keys = endpoints.map((endpoint) => {
+      const { checkpointPath, legacyPaths } = this.endpointCheckpoint(
+        contextPlan,
+        endpoint,
+        template,
+        language,
+        frozenContext,
+        baselineIds,
+      );
+      return [checkpointPath, ...legacyPaths];
+    });
+    const found = new Set(
+      (
+        await this.prisma.generatedFile.findMany({
+          where: { path: { in: keys.flat() }, generationRun: { projectId } },
+          select: { path: true },
+          distinct: ['path'],
+        })
+      ).map((item) => item.path),
+    );
+    return {
+      total: endpoints.length,
+      reused: keys.filter((paths) => paths.some((path) => found.has(path))).length,
+    };
+  }
+
   async implement(
     projectId: string,
     generationRunId: string,
     plan: ImplementationPlanContent,
     template: TargetTemplateVersion,
-    options: { cacheOnly?: boolean; revisions?: ReadonlyMap<string, string> } = {},
+    options: {
+      cacheOnly?: boolean;
+      revisions?: ReadonlyMap<string, string>;
+      // The whole plan when `plan` is a delivery's scoped plan (ADR-024).
+      contextPlan?: ImplementationPlanContent;
+    } = {},
   ): Promise<{
     implementations: EndpointImplementations;
     warnings: string[];
@@ -178,132 +501,34 @@ export class BusinessLogicService {
         : undefined;
     const implementations: EndpointImplementations = {};
     const checkpoints: GeneratedProjectFile[] = [];
+    const relations = scopedRelations(plan);
+    // Checkpoints are reused across design baselines when an action's inputs
+    // are unchanged: the key leaves out the baseline id, and the keys written
+    // before (with each earlier baseline id in the context) are still found.
+    const baselineIds = (
+      await this.prisma.designBaseline.findMany({ where: { projectId }, select: { id: true } })
+    ).map((baseline) => baseline.id);
     for (const endpoint of plan.customEndpoints.filter(
       (item) => !item.builtin && !item.disabledReason,
     )) {
-      const promptVersion = endpoint.contract
-        ? 7
-        : plan.authentication.local?.scope
-          ? 5
-          : plan.authentication.local
-            ? 4
-            : 3;
-      const module = plan.modules.find((m) => m.localId === endpoint.moduleLocalId)!;
-      const params = [...endpoint.path.matchAll(/:([a-zA-Z0-9]+)/g)].map((m) => m[1]!);
-      const hasBody = ['POST', 'PATCH', 'PUT'].includes(endpoint.method);
-      const context = {
-        ...(endpoint.contract ? { userFacingLanguage: language } : {}),
-        ...(plan.authentication.local?.scope
-          ? {
-              scopeProfile: {
-                ...plan.authentication.local.scope,
-                model: plan.entities.find(
-                  (entity) => entity.localId === plan.authentication.local!.scope!.entityLocalId,
-                )!.name,
-              },
-            }
-          : {}),
-        ...(frozenContext ? { approvedContext: frozenContext(endpoint, plan) } : {}),
-        action: {
-          ...(endpoint.rules ? { rules: endpoint.rules } : {}),
-          ...(endpoint.contract ? { contract: endpoint.contract } : {}),
-          roles: endpoint.roles,
-          ...(plan.authentication.local?.scope
-            ? { scopeAccess: endpoint.scopeAccess ?? 'SELECTED', dataAccess: endpoint.dataAccess }
-            : {}),
-          summary: endpoint.summary,
-          method: endpoint.method,
-          path: endpoint.path,
-          methodName: actionMethodName(endpoint),
-          parameters: [
-            ...params.map((p) => ({ name: p, type: 'string (path parameter)' })),
-            ...(hasBody
-              ? [
-                  {
-                    name: 'body',
-                    type: endpoint.contract?.body
-                      ? 'Validated input matching action.contract.body'
-                      : 'Record<string, unknown> (request body)',
-                  },
-                ]
-              : []),
-            ...(endpoint.contract?.query
-              ? [{ name: 'query', type: 'Validated filters matching action.contract.query' }]
-              : []),
-            ...(plan.authentication.local
-              ? [
-                  {
-                    name: 'actor',
-                    type: plan.authentication.local.scope
-                      ? '{ userId: string; sessionId: string; roles: string[]; selectedScopeId?: string; scopeIds: string[]; permissions: string[] } (immutable verified server context)'
-                      : '{ userId: string; sessionId: string; roles: string[] } (verified server session)',
-                  },
-                ]
-              : []),
-          ],
-          mainEntity: plan.entities.find((e) => e.localId === endpoint.entityLocalId)?.name ?? null,
-        },
-        module: { name: module.name, description: module.description },
-        prismaDelegates: plan.entities
-          .filter(
-            (entity) =>
-              !plan.authentication.local?.scope ||
-              endpoint.dataAccess?.some((access) => access.entityLocalId === entity.localId),
-          )
-          .map((e) => ({
-            delegate: `this.prisma.${lowerFirst(e.name)}`,
-            model: e.name,
-            ...(e.fields.some((field) => field.readOnly)
-              ? {
-                  serverOwnedFields: e.fields
-                    .filter((field) => field.readOnly)
-                    .map((field) => ({
-                      name: field.name,
-                      ...(field.serverDefault !== undefined
-                        ? { initialValue: field.serverDefault }
-                        : {}),
-                    })),
-                }
-              : {}),
-            ...(e.uniqueConstraints ? { uniqueConstraints: e.uniqueConstraints } : {}),
-            fields: [
-              'id',
-              ...e.fields
-                .filter((field) => !field.internal)
-                .map(
-                  // An optional field may be null: said so, the body checks it
-                  // instead of failing the generated project's typecheck.
-                  (f) =>
-                    `${f.name}: ${f.type}${f.type === 'ENUM' ? ` (${f.enumValues.join('|')})` : ''}${f.required ? '' : ' | null'}`,
-                ),
-              ...e.relations.map((r) =>
-                r.kind === 'MANY_TO_MANY'
-                  ? `${r.name}: relation[]`
-                  : `${r.name}Id: string${r.required ? '' : ' | null'}`,
-              ),
-            ],
-          })),
-        availableExceptions: HTTP_EXCEPTIONS,
-      };
+      const { context, promptVersion, checkpointPath, legacyPaths } = this.endpointCheckpoint(
+        options.contextPlan ?? plan,
+        endpoint,
+        template,
+        language,
+        frozenContext,
+        baselineIds,
+      );
       const internalFields = plan.entities.flatMap((entity) =>
         entity.fields.filter((field) => field.internal).map((field) => field.name),
       );
-      const checkpointPath = `docs/business-logic/${createHash('sha256')
-        .update(
-          json({
-            templateVersion: template.version,
-            promptVersion,
-            context,
-          }),
-        )
-        .digest('hex')}.json`;
       try {
         const cached =
           template.version >= 2
             ? await this.prisma.generatedFile.findFirst({
                 where: {
-                  path: checkpointPath,
-                  generationRun: { projectId, designBaselineId: plan.designBaselineId },
+                  path: { in: [checkpointPath, ...legacyPaths] },
+                  generationRun: { projectId },
                 },
                 orderBy: [{ generationRun: { createdAt: 'desc' } }, { id: 'desc' }],
                 select: { content: true },
@@ -314,23 +539,56 @@ export class BusinessLogicService {
           warnings.push(`La acción «${endpointKey(endpoint)}» está pendiente de implementación.`);
           continue;
         }
+        const generate = (rejection?: string) =>
+          this.ai.generateStructured({
+            projectId,
+            ...(endpoint.contract ? {} : { language }),
+            promptKey: 'business-logic.generate',
+            promptVersion,
+            messages: [
+              { role: 'user', content: JSON.stringify(context) },
+              ...(rejection
+                ? [
+                    {
+                      role: 'user' as const,
+                      content: `La revisión estática rechazó la propuesta anterior para esta acción porque ${rejection}. Escribe de nuevo el cuerpo completo cumpliendo todas las reglas: solo los delegados de Prisma suministrados (incluido $transaction), sin SQL directo ni propiedades que empiecen por $ o _ (salvo _sum, _avg, _min, _max y _count), sin import ni require y sin paquetes.`,
+                    },
+                  ]
+                : []),
+            ],
+            outputSchema: businessLogicOutputSchema,
+            schemaName: 'business_logic_generation',
+            // The schema's length limit cuts an answer where it falls, so both
+            // leave room for a long action.
+            maxOutputTokens: 8192,
+          });
+        let fresh = !cached && !revision;
         const result = revision
           ? { data: businessLogicOutputSchema.parse({ body: revision }) }
           : cached
             ? { data: businessLogicOutputSchema.parse(JSON.parse(cached.content)) }
-            : await this.ai.generateStructured({
-                projectId,
-                ...(endpoint.contract ? {} : { language }),
-                promptKey: 'business-logic.generate',
-                promptVersion,
-                messages: [{ role: 'user', content: JSON.stringify(context) }],
-                outputSchema: businessLogicOutputSchema,
-                schemaName: 'business_logic_generation',
-                // The schema's length limit cuts an answer where it falls, so both
-                // leave room for a long action.
-                maxOutputTokens: 8192,
-              });
-        const review = reviewBusinessLogic(result.data.body, internalFields);
+            : await generate();
+        let review = reviewBusinessLogic(result.data.body, internalFields, relations);
+        // A checkpoint written before a check existed is not trusted past it:
+        // it is proposed again instead of leaving the action unimplemented.
+        if (!review.accepted && cached && !revision && !options.cacheOnly) {
+          logger.warn(
+            `Cached business logic for "${endpointKey(endpoint)}" (run ${generationRunId}) no longer passes review: ${review.reason}. Proposing it again.`,
+          );
+          result.data = (await generate()).data;
+          fresh = true;
+          review = reviewBusinessLogic(result.data.body, internalFields, relations);
+        }
+        // One bounded retry of a fresh AI proposal, told exactly why the
+        // previous one was rejected; a second rejection leaves the action
+        // unimplemented as before.
+        if (!review.accepted && fresh) {
+          logger.warn(
+            `Business logic for "${endpointKey(endpoint)}" (run ${generationRunId}) rejected: ${review.reason}. Asking once more.`,
+          );
+          result.data = (await generate(review.reason)).data;
+          review = reviewBusinessLogic(result.data.body, internalFields, relations);
+        }
         if (review.accepted) {
           implementations[endpointKey(endpoint)] = result.data.body;
           if (template.version >= 2) {
@@ -360,7 +618,7 @@ export class BusinessLogicService {
         );
         warnings.push(unimplementedWarning(endpoint.summary, review, template));
       } catch (error) {
-        // Graceful degradation (AGENTS.md §56): no AI, no invented logic.
+        // Graceful degradation: no AI, no invented logic.
         if (!(error instanceof AIError)) throw error;
         logger.warn(
           `Business logic for "${endpointKey(endpoint)}" not generated: ${error.message}`,

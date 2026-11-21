@@ -141,6 +141,9 @@ importers:
       multer:
         specifier: 2.4.0
         version: 2.4.0
+      parse5:
+        specifier: 7.3.0
+        version: 7.3.0
       passport-jwt:
         specifier: ^4.0.1
         version: 4.0.1

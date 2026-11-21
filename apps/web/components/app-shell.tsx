@@ -8,10 +8,13 @@ import {
   ClipboardCheck,
   Check,
   FolderKanban,
+  Grid3x3,
   Hammer,
   Home,
+  Layers,
   Lock,
   RefreshCw,
+  Search,
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
@@ -36,20 +39,21 @@ import {
 import { useConstructionState } from '../lib/use-construction-state';
 import { StageOutdatedBanner } from './stage-outdated-banner';
 import { ProjectSwitcher } from './project-switcher';
+import { OPEN_QUICK_SEARCH_EVENT, QuickSearch } from './quick-search';
 
 type NavItem = { href: string; label: string };
 
 // Per-viewer convenience (whether this browser keeps the sidebar folded).
 const COLLAPSED_KEY = 'caseflow.sidebarCollapsed';
 
-// The Construction group (forward engineering, AGENTS.md §10) comes after
+// The Construction group (forward engineering) comes after
 // the 12-step planning pipeline, not alongside it: collapsing it until
 // planning is done keeps the sidebar reading as one stepper instead of two
 // unrelated flows, and avoids the user clicking into a page whose every
 // action the backend would reject anyway (no approved plan yet).
 const CONSTRUCTION_GROUP_LABEL = 'Construcción';
 
-// Order matches the Construction Pipeline (AGENTS.md §10): each group is a
+// Order matches the Construction Pipeline: each group is a
 // consecutive slice of the same linear sequence, numbered (via
 // ROUTE_STEP_NUMBER) across the whole flow rather than per group, so the
 // sidebar reads as one stepper.
@@ -103,7 +107,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     items: [
       { href: '/readiness', label: 'Preparación / Exportar' },
       { href: '/coherence', label: 'Matriz de coherencia' },
-      { href: '/baselines', label: 'Líneas Base' },
+      { href: '/baselines', label: 'Líneas base' },
     ],
   },
   {
@@ -312,6 +316,23 @@ export function AppShell({ children }: { children: ReactNode }) {
             )}
           </button>
         </div>
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new Event(OPEN_QUICK_SEARCH_EVENT))}
+          title="Buscar (Ctrl+K)"
+          className={`mb-5 flex w-full items-center gap-2 rounded-md border border-sidebar-border px-2.5 py-1.5 text-sm text-sidebar-foreground/60 transition-colors hover:bg-white/5 hover:text-white ${
+            collapsed ? 'md:justify-center md:px-0' : ''
+          }`}
+        >
+          <Search className="size-4 shrink-0" aria-hidden="true" />
+          <span className={label}>Buscar</span>
+          <kbd
+            className={`ml-auto rounded border border-sidebar-border px-1 text-[10px] ${collapsed ? 'md:hidden' : ''}`}
+          >
+            Ctrl K
+          </kbd>
+        </button>
+        <QuickSearch projectId={projectId} pages={groups.flatMap((group) => group.items)} />
         <div className="flex flex-col gap-5">
           {firstOutdated ? (
             <Link
@@ -446,6 +467,10 @@ export function AppShell({ children }: { children: ReactNode }) {
                             <FolderKanban className="size-4 shrink-0" aria-hidden="true" />
                           ) : item.href === '/readiness' ? (
                             <ClipboardCheck className="size-4 shrink-0" aria-hidden="true" />
+                          ) : item.href === '/coherence' ? (
+                            <Grid3x3 className="size-4 shrink-0" aria-hidden="true" />
+                          ) : item.href === '/baselines' ? (
+                            <Layers className="size-4 shrink-0" aria-hidden="true" />
                           ) : item.href.startsWith('/construction/') ||
                             item.href === '/build' ||
                             item.href === '/express' ? (

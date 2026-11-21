@@ -4,8 +4,9 @@ import { UseCasesController } from './use-cases.controller';
 import { UseCasesService } from './use-cases.service';
 import { UseCaseBulkService } from './use-case-bulk.service';
 import { UseCaseGenerationJobsService } from './use-case-generation-jobs.service';
+import { StageCurrencyModule } from '../readiness/stage-currency';
 @Module({
-  imports: [AIModule],
+  imports: [AIModule, StageCurrencyModule],
   controllers: [UseCasesController],
   providers: [UseCasesService, UseCaseBulkService, UseCaseGenerationJobsService],
   exports: [UseCasesService],

@@ -1,3 +1,4 @@
+import { deploymentNodeWarnings } from './diagram-fit';
 import { Injectable, UnprocessableEntityException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import type {
@@ -118,6 +119,17 @@ export class ConsistencyEngineService {
           affectedArtifactIds: [version.artifact.id],
           artifactType: 'DATA_MODEL',
           chain: 'ENTITY_CLASS_PLAN',
+        });
+    for (const version of versions.filter(
+      (item) => item.artifact.artifactTypeCode === 'SYSTEM_ARCHITECTURE',
+    ))
+      for (const message of deploymentNodeWarnings(version.structuredAnalysisDetail?.content))
+        issues.push({
+          rule: 'Elementos del diagrama',
+          severity: 'WARNING',
+          message,
+          affectedArtifactIds: [version.artifact.id],
+          artifactType: 'SYSTEM_ARCHITECTURE',
         });
     const design = versions.filter((v) =>
       ['NAVIGATION_TREE', 'UI_BLUEPRINT', 'SOFTWARE_ARCHITECTURE', 'SYSTEM_ARCHITECTURE'].includes(

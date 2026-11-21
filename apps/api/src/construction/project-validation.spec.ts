@@ -55,6 +55,33 @@ describe('structuralProblems', () => {
       ),
     ).toBe(false);
   });
+  it('does not ask a hand-written project for the design fidelity record, but still for its actions', () => {
+    const fidelity = (problems: string[]) =>
+      problems.filter((problem) => problem.includes('manifiesto de fidelidad'));
+    const files = [
+      {
+        path: 'apps/api/src/orders/orders-actions.service.ts',
+        kind: 'SOURCE' as const,
+        content:
+          'export class OrdersActionsService { confirm() { throw new NotImplementedException(); } }',
+      },
+    ];
+    const generated = structuralProblems(
+      files,
+      CASEFLOW_WEB_TS_V2,
+      CASEFLOW_WEB_TS_V2.dependencies,
+    );
+    const manual = structuralProblems(
+      files,
+      CASEFLOW_WEB_TS_V2,
+      CASEFLOW_WEB_TS_V2.dependencies,
+      undefined,
+      { manual: true },
+    );
+    expect(fidelity(generated)).toHaveLength(1);
+    expect(fidelity(manual)).toHaveLength(0);
+    expect(manual).toContainEqual(expect.stringContaining('sin implementar'));
+  });
   it('accepts the template layout with catalog dependencies', () => {
     expect(structuralProblems(layout(), CASEFLOW_WEB_TS_V1, allowed)).toEqual([]);
   });
@@ -281,5 +308,55 @@ describe('planCoverageProblems (DEC-121)', () => {
       'La acción «Borrar» de la ruta /orders no tiene un control en su página.',
       'La ruta /invoices del plan no tiene su página.',
     ]);
+  });
+
+  it('accepts the action marker with single quotes or as a plain attribute', () => {
+    const formatted = [
+      files[0],
+      {
+        path: 'apps/web/app/orders/page.tsx',
+        content: '<a data-action={\'Nuevo\'} /><button data-action="Borrar" />',
+        kind: 'SOURCE',
+      },
+    ] as const;
+    expect(
+      planCoverageProblems(formatted, plan).some((problem) => problem.includes('/orders')),
+    ).toBe(false);
+  });
+
+  it('counts controls of a component the page imports from its route folders', () => {
+    const shared = [
+      files[0],
+      {
+        path: 'apps/web/app/orders/page.tsx',
+        content: "import { OrderEditor } from './[orderid]/order-editor';\n<OrderEditor />",
+        kind: 'SOURCE',
+      },
+      {
+        path: 'apps/web/app/orders/[orderid]/order-editor.tsx',
+        content: '<button data-action={"Nuevo"} /><button data-action={"Borrar"} />',
+        kind: 'SOURCE',
+      },
+      {
+        path: 'apps/web/components/elsewhere.tsx',
+        content: '<button data-action={"Borrar"} />',
+        kind: 'SOURCE',
+      },
+    ] as const;
+    expect(planCoverageProblems(shared, plan).some((problem) => problem.includes('Borrar'))).toBe(
+      false,
+    );
+    const outside = [
+      files[0],
+      {
+        path: 'apps/web/app/orders/page.tsx',
+        content: 'import { X } from \'../../components/elsewhere\';\n<X data-action={"Nuevo"} />',
+        kind: 'SOURCE',
+      },
+      shared[3],
+    ] as const;
+    expect(planCoverageProblems(outside, plan)).toContainEqual(
+      'La acción «Borrar» de la ruta /orders no tiene un control en su página.',
+    );
   });
 });

@@ -27,7 +27,12 @@ import { file, json, type GeneratedProjectFile } from '../code-generation/engine
 import { kebabCase } from '../code-generation/naming';
 import { actionMethodName } from '../code-generation/engine/backend.templates';
 
-const FRONTEND_DESIGN_VERSION = 37;
+const FRONTEND_DESIGN_VERSION = 39;
+// The prompt can move ahead of the cache version when it only adds rules for
+// inputs that older keys never had (ADR-030: a person's requests), so screens
+// without them keep their composition.
+// v41 only rewords v40 in generic terms, so the cache version stays.
+const FRONTEND_DESIGN_PROMPT_VERSION = 41;
 const NOT_EVALUATED = 'NOT_EVALUATED:';
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 
@@ -98,6 +103,9 @@ export class FrontendDesignService {
       presentation?: unknown;
       // The justified exception that let this screen through, if any.
       acceptedException?: { id: string; justification: string; findingsSha256: string };
+      // What the canonical blueprint describes and this screen does not do
+      // (DEC-164): shown for review, never a blocker.
+      observations?: string;
       // The hand-written screen used instead of the AI composition (DEC-161).
       manualOverride?: { id: string; justification: string; contentSha256: string };
     }[] = [];
@@ -108,7 +116,7 @@ export class FrontendDesignService {
     // Every screen is evaluated before failing, so one run reports all gaps;
     // accepted screens stay checkpointed for the next run.
     const incomplete: string[] = [];
-    // Justified acceptances of exact findings (AGENTS.md §16), by route and hash.
+    // Justified acceptances of exact findings, by route and hash.
     const exceptions = new Map(
       (
         await this.prisma.screenDesignException.findMany({
@@ -134,14 +142,46 @@ export class FrontendDesignService {
       },
     }))
       overrides.set(item.routePath, item);
+    // ADR-030: the requests in force for each screen, from its latest row.
+    const requests = new Map<string, string[]>();
+    for (const item of await this.prisma.screenDesignRequest.findMany({
+      where: { projectId },
+      orderBy: { createdAt: 'asc' },
+      select: { routePath: true, instructions: true },
+    }))
+      requests.set(item.routePath, item.instructions);
+    const projectBaselineIds = (
+      await this.prisma.designBaseline.findMany({ where: { projectId }, select: { id: true } })
+    ).map((item) => item.id);
+    // ADR-026: a page that only runs built-in access operations (such as the
+    // sign-out the server adds) is the template's own, with no screen to compose.
+    const builtins = new Set(
+      (plan.customEndpoints ?? []).flatMap((e) => (e.builtin ? [`${e.method} ${e.path}`] : [])),
+    );
     for (const route of plan.routes) {
       const screen = blueprint.screens.find((item) => item.localId === route.screenLocalId);
+      const path = `apps/web/app${route.path === '/' ? '' : route.path}/page.tsx`;
+      const target = output.find((item) => item.path === path);
+      if (
+        !screen &&
+        target &&
+        route.actions.length &&
+        route.actions.every((action) => action.endpoint && builtins.has(action.endpoint))
+      ) {
+        records.push({
+          routePath: route.path,
+          screenLocalId: '',
+          mockupSha256: null,
+          sourceSha256: hash(target.content),
+          outputSha256: hash(target.content),
+          navigation: 'SIDE',
+        });
+        continue;
+      }
       if (!screen)
         throw new UnprocessableEntityException(
           `La ruta ${route.path} no identifica una pantalla del plano aprobado.`,
         );
-      const path = `apps/web/app${route.path === '/' ? '' : route.path}/page.tsx`;
-      const target = output.find((item) => item.path === path);
       if (!target)
         throw new UnprocessableEntityException(`No se generó la pantalla ${route.path}.`);
       if (mockup.generatorKind === 'INTERNAL_WIREFRAME') {
@@ -279,34 +319,56 @@ export class FrontendDesignService {
           })),
         ),
       };
-      const cacheHash = hash(
-        json({
-          version: FRONTEND_DESIGN_VERSION,
-          evaluator: screenEvaluator(process.env),
-          sourceHash,
-          htmlHash: hash(html),
-          screen,
-          bindings,
-          baselineId,
-        }),
-      );
+      // The key leaves out the baseline id, so a screen whose inputs did not
+      // change keeps its evaluated composition in a new baseline; keys written
+      // before (with an earlier baseline id last) are still found.
+      const personRequests = requests.get(route.path) ?? [];
+      const keyFor = (withBaseline?: string) =>
+        hash(
+          json({
+            version: FRONTEND_DESIGN_VERSION,
+            evaluator: screenEvaluator(process.env),
+            sourceHash,
+            htmlHash: hash(html),
+            screen,
+            bindings,
+            // Only present when there are requests, so other keys stay the same.
+            ...(personRequests.length ? { personRequests } : {}),
+            ...(withBaseline === undefined ? {} : { baselineId: withBaseline }),
+          }),
+        );
+      const cacheHash = keyFor();
+      const legacyHashes = projectBaselineIds.map((id) => keyFor(id));
       const cachePath = `docs/presentations/${cacheHash}.json`;
       const cached = await this.prisma.generatedFile.findFirst({
-        where: { path: cachePath, generationRun: { projectId, designBaselineId: baselineId } },
+        where: {
+          path: { in: [cacheHash, ...legacyHashes].map((key) => `docs/presentations/${key}.json`) },
+          generationRun: { projectId },
+        },
+        orderBy: [{ generationRun: { createdAt: 'desc' } }, { id: 'desc' }],
         select: { content: true },
       });
       // An evaluation with findings is kept under the same inputs hash: the
       // findings survive an interrupted run and are not paid for twice.
       const findingsPath = `docs/presentation-findings/${cacheHash}.json`;
+      // A real evaluation wins over an "unevaluated" mark left by a failed or
+      // blocked call for the same inputs, so it is never paid for twice.
+      const findingsWhere = {
+        path: {
+          in: [cacheHash, ...legacyHashes].map((key) => `docs/presentation-findings/${key}.json`),
+        },
+        generationRun: { projectId },
+      };
       const found = cached
         ? null
-        : await this.prisma.generatedFile.findFirst({
-            where: {
-              path: findingsPath,
-              generationRun: { projectId, designBaselineId: baselineId },
-            },
+        : ((await this.prisma.generatedFile.findFirst({
+            where: { ...findingsWhere, NOT: { content: { contains: NOT_EVALUATED } } },
             select: { content: true },
-          });
+          })) ??
+          (await this.prisma.generatedFile.findFirst({
+            where: findingsWhere,
+            select: { content: true },
+          })));
       // A screen the provider could not evaluate is kept only once a person
       // accepted shipping it unevaluated; otherwise the next run asks again.
       const unevaluated = found
@@ -321,23 +383,28 @@ export class FrontendDesignService {
         incomplete.push(
           `La pantalla «${screen.name}» (${route.path}) necesita completar sus enlaces funcionales. ${findings}`,
         );
-      // Findings a person accepted with a justification let the proposed
-      // layout through; without a valid proposed layout the screen keeps its
-      // functional page. Findings nobody accepted are reported.
-      const excepted = (findings: string, proposal: unknown) => {
+      // Limitations are coverage observations, not blockers (DEC-164): the
+      // proposed layout goes through when it is valid; otherwise the screen
+      // keeps its functional page. A justified exception (DEC-160) is kept
+      // as the record that a person accepted them explicitly.
+      const observed = (findings: string, proposal: unknown) => {
         const exception = exceptions.get(`${route.path}|${hash(findings)}`);
-        if (!exception) return undefined;
         try {
           const accepted = presentationSchema.parse({ ...(proposal as object), limitations: [] });
           validatePresentation(accepted, sources);
-          return { presentation: accepted as typeof accepted | undefined, exception };
+          return {
+            presentation: accepted as typeof accepted | undefined,
+            exception,
+            observations: findings,
+          };
         } catch {
-          return { presentation: undefined, exception };
+          return { presentation: undefined, exception, observations: findings };
         }
       };
       let presentation;
       let acceptedException:
         { id: string; justification: string; findingsSha256: string } | undefined;
+      let observations: string | undefined;
       if (reported) {
         // Reused findings are recorded in this run too, so the current
         // findings of a design are those of its latest run.
@@ -354,12 +421,11 @@ export class FrontendDesignService {
           },
         });
         const stored = JSON.parse(reported.content) as { findings: string; presentation?: unknown };
-        const accepted = excepted(stored.findings, stored.presentation);
-        if (!accepted) {
-          report(stored.findings);
-          continue;
-        }
-        ({ presentation, exception: acceptedException } = accepted);
+        ({
+          presentation,
+          exception: acceptedException,
+          observations,
+        } = observed(stored.findings, stored.presentation));
       } else if (cached) {
         presentation = presentationSchema.parse(JSON.parse(cached.content));
         validatePresentation(presentation, sources);
@@ -373,11 +439,17 @@ export class FrontendDesignService {
             language,
             sourceArtifactVersionId: entry!.artifactVersionId,
             promptKey: 'frontend-design.generate',
-            promptVersion: FRONTEND_DESIGN_VERSION,
+            promptVersion: FRONTEND_DESIGN_PROMPT_VERSION,
             messages: [
               {
                 role: 'user',
-                content: json({ screen, bindings, sources, referenceHtml: html.toString('utf8') }),
+                content: json({
+                  screen,
+                  bindings,
+                  sources,
+                  referenceHtml: html.toString('utf8'),
+                  ...(personRequests.length ? { personRequests } : {}),
+                }),
               },
             ],
             outputSchema: presentationSchema,
@@ -406,8 +478,10 @@ export class FrontendDesignService {
               sha256: hash(content),
             },
           });
-          const accepted = excepted(findings, undefined);
-          if (!accepted) report(findings);
+          // An uncomposed screen is retried by the next run unless a person
+          // accepted shipping its functional page.
+          const exception = exceptions.get(`${route.path}|${hash(findings)}`);
+          if (!exception) report(findings);
           else
             records.push({
               routePath: route.path,
@@ -416,7 +490,8 @@ export class FrontendDesignService {
               sourceSha256: sourceHash,
               outputSha256: hash(target.content),
               navigation: 'SIDE',
-              acceptedException: accepted.exception,
+              acceptedException: exception,
+              observations: findings,
             });
           continue;
         }
@@ -443,17 +518,16 @@ export class FrontendDesignService {
               sha256: hash(content),
             },
           });
-          const accepted = excepted(findings, presentation);
-          if (!accepted) {
-            report(findings);
-            continue;
-          }
-          ({ presentation, exception: acceptedException } = accepted);
+          ({
+            presentation,
+            exception: acceptedException,
+            observations,
+          } = observed(findings, presentation));
         }
         // An invalid proposal fails only its screen and is not kept, so the
         // next run asks again instead of stopping every other screen.
         try {
-          if (!acceptedException) validatePresentation(presentation!, sources);
+          if (!observations) validatePresentation(presentation!, sources);
         } catch (error) {
           report(
             `INVALID_PRESENTATION: ${error instanceof Error ? error.message : 'La propuesta no es válida.'}`,
@@ -461,7 +535,7 @@ export class FrontendDesignService {
           continue;
         }
       }
-      if (acceptedException && !presentation) {
+      if (!presentation) {
         records.push({
           routePath: route.path,
           screenLocalId: screen.localId,
@@ -469,13 +543,14 @@ export class FrontendDesignService {
           sourceSha256: sourceHash,
           outputSha256: hash(target.content),
           navigation: 'SIDE',
-          acceptedException,
+          ...(acceptedException ? { acceptedException } : {}),
+          ...(observations ? { observations } : {}),
         });
         continue;
       }
-      // Only an excepted screen without a valid layout lacks one; it left above.
-      presentation = presentation!;
-      if (!acceptedException) {
+      // Observed screens are not checkpointed: their findings file is, so the
+      // next run reuses the proposal with its observations.
+      if (!acceptedException && !observations) {
         const checkpoint = file(cachePath, json(presentation), {
           kind: 'DOCUMENTATION',
           origin: 'AI_ASSISTED',
@@ -515,6 +590,7 @@ export class FrontendDesignService {
         navigation: presentation.navigation,
         presentation,
         ...(acceptedException ? { acceptedException } : {}),
+        ...(observations ? { observations } : {}),
       });
     }
     if (incomplete.length)
@@ -606,7 +682,8 @@ export function screenEvaluator(environment: NodeJS.ProcessEnv): string {
 }
 
 // The functional bindings of a generated page a hand-written screen must keep:
-// its action markers, registered form fields and API client calls.
+// its action markers, registered form fields, API client calls and links to
+// other screens.
 export function missingBindings(generated: string, written: string): string[] {
   const bindings = new Set([
     ...[...generated.matchAll(/data-action=\{("(?:[^"\\]|\\.)*")\}/g)].map(
@@ -614,6 +691,8 @@ export function missingBindings(generated: string, written: string): string[] {
     ),
     ...[...generated.matchAll(/register\('([^']+)'/g)].map((m) => `register('${m[1]}'`),
     ...[...generated.matchAll(/\bapi\.(\w+)\(/g)].map((m) => `api.${m[1]}(`),
+    // Navigation to other screens, so every route stays reachable.
+    ...[...generated.matchAll(/href=\{`([^`]+)`\}/g)].map((m) => `href={\`${m[1]}\`}`),
   ]);
   return [...bindings].filter((binding) => !written.includes(binding));
 }

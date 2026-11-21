@@ -670,8 +670,7 @@ function ContextContent({ projectId }: { projectId: string }) {
               ))}
             </ul>
             <p className="mt-2">
-              Cree una nueva versión para incluirlo — el formulario parte de lo ya aprobado y de las
-              versiones más recientes de sus fuentes, no desde cero.{' '}
+              La nueva versión parte de lo ya aprobado.{' '}
               <button type="button" onClick={() => setShowForm(true)} className="underline">
                 Crear nueva versión ahora
               </button>

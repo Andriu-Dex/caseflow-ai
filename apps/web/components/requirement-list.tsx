@@ -51,6 +51,8 @@ import { bulkGuards } from './bulk-guards';
 import { StaleNotice, isPendingApproval } from './artifact-actions';
 import { ContextCode, ContextCoverageSummary } from './context-coverage';
 import { PaginationNav } from './pagination-nav';
+import { ImplementationTrace } from './implementation-trace';
+import { useLinkedArtifact } from '../lib/linked-artifact';
 
 // The project's requirements at a glance (DEC-126): a summary, search and
 // filters, functional and non-functional groups, and compact rows that open
@@ -655,6 +657,7 @@ function RequirementRow({
             </div>
           ) : null}
 
+          <ImplementationTrace code={r.code} />
           {stale ? <StaleNotice /> : null}
         </div>
       ) : null}
@@ -690,6 +693,13 @@ export function RequirementList({
     'APPROVE'
   > | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
+
+  // Quick search: show and open the artifact it was asked for.
+  useLinkedArtifact((code) => {
+    setSearch(code);
+    setPage(0);
+    setOpen(items.find((item) => item.code === code)?.id ?? null);
+  });
 
   useEffect(() => {
     try {

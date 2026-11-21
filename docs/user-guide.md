@@ -115,6 +115,23 @@ o continuación antes de comenzar otra generación.
    del análisis es una instantánea documental; no es el ZIP de código ni el manual
    de la aplicación construida.
 
+### Recorrer el prototipo
+
+En **Bocetos**, **Recorrer como prototipo** muestra las pantallas aprobadas unidas por el
+árbol de navegación. Elige un rol en **Ver como** para recorrerlas como las verá esa
+persona: el árbol a un lado, la pantalla con su propósito y acciones principales, y
+botones para ir a la anterior, la siguiente y las pantallas vecinas. Sirve para que el
+cliente valide el flujo antes de construir.
+
+### Partir de un proyecto parecido
+
+En **Requisitos**, **Partir de un proyecto parecido** ofrece puntos de partida: uno
+incluido (acceso, usuarios, roles y auditoría) y los que se hayan guardado en el espacio
+de trabajo. **Usar en este proyecto** copia sus requisitos, casos de uso y modelo de
+datos como borradores, enlazados entre sí, para adaptarlos y aprobarlos. Desde la misma
+ventana, **Guardar este proyecto como punto de partida** guarda lo aprobado del proyecto
+actual para reutilizarlo en otros.
+
 ## Construir software
 
 La construcción utiliza el TargetTemplate soportado: TypeScript, Next.js, NestJS,
@@ -131,6 +148,65 @@ Prisma y PostgreSQL, con arquitectura de monolito modular.
    controles obligatorios aprobados; crear archivos o compilar no basta.
 7. Descarga el ZIP correspondiente y sigue su README en un entorno separado.
 
+### Entrega técnica
+
+Junto a **Descargar ZIP** de una construcción validada está **Entrega técnica**: un ZIP
+con el código y una carpeta `documentacion/` para quien vaya a mantener el sistema:
+instalación, tecnologías y versiones, API, arquitectura con sus diagramas, roles y
+cuentas de prueba (sin contraseñas) y notas de entrega.
+
+### Notas de cada entrega
+
+En cada construcción, la pestaña **Notas de entrega** resume para quien la va a usar
+qué puede hacer cada rol, cuántos requisitos están cumplidos, cómo probarla (el enlace
+y las cuentas de la demostración, si está desplegada) y qué hay de nuevo respecto de
+la entrega o construcción anterior. Puedes copiarlas o descargarlas en Markdown para
+enviarlas. La contraseña de las cuentas nunca se incluye.
+
+### ¿Dónde está implementado?
+
+Al abrir un requisito o un caso de uso, la sección **¿Dónde está implementado?** muestra
+sus casos de uso, las pantallas que los realizan, las acciones del servidor, los
+elementos del diseño que lo atienden (útil para los requisitos no funcionales), sus
+pruebas de aceptación y los archivos de la última construcción. Antes de construir,
+muestra lo que prevé el plan de implementación.
+
+### Pruebas de aceptación
+
+Cada caso de uso aprobado que tiene pantallas en el plan produce un criterio de
+aceptación «dado / cuando / entonces». Al validar una construcción, CASEFlow carga los
+datos de demostración y comprueba que el actor llega a esas pantallas sin errores,
+encuentra sus acciones y realiza la operación principal del caso de uso:
+
+- **Creación:** debe completarse.
+- **Acción de negocio:** puede rechazarse si la pantalla explica el motivo.
+
+En la validación verás cuántos requisitos funcionales quedan **cumplidos**,
+**fallidos**, **sin ejecutar** o **sin criterio**, y qué hizo la operación de cada
+criterio. La comprobación no verifica que el resultado sea el correcto para el negocio
+(por ejemplo, el importe de un total); revísalo en la demostración.
+
+### Construir por entregas
+
+En **Generación de código** puedes elegir entre construir **todo de una vez** o
+**por entregas**. Por entregas, el proyecto avanza en partes que se aprueban una a una:
+
+1. Pulsa **Proponer plan de entregas**. La entrega 0 es la base (acceso, usuarios
+   y roles); después va un módulo por entrega. El orden respeta las dependencias:
+   «¿Por qué este orden?» explica qué módulo necesita a cuál. Puedes adelantar o
+   atrasar las entregas que aún no se construyeron.
+2. En la entrega en curso verás el uso de IA previsto. Pulsa **Construir la entrega**.
+   Solo se pide a la IA lo nuevo; lo de las entregas aprobadas se reutiliza.
+3. Valida la construcción en la lista de construcciones. Si quieres, despliégala para
+   mostrarla. Las pantallas que llegan en entregas posteriores muestran un aviso.
+4. Pulsa **Aprobar la entrega**. La siguiente solo se construye cuando las anteriores
+   están aprobadas.
+
+Si una construcción posterior cambia algo de una entrega ya aprobada, esa entrega
+aparece como **Cambió: revisar**: valida la construcción más reciente y apruébala de
+nuevo antes de seguir. En cualquier momento puedes pasar a **Todo de una vez** para
+construir lo que falta; también reutiliza lo aprobado.
+
 Una ejecución fallida debe investigarse a partir de sus resultados. No suprimas
 pruebas para obtener READY. Las reparaciones automáticas están limitadas y no
 reemplazan la revisión. Exportar no despliega el sistema; el CI de CASEFlow tampoco
@@ -144,7 +220,7 @@ publica automáticamente las aplicaciones generadas.
 3. Revisa las tareas por pantalla y rol. Completa las instrucciones genéricas con
    los pasos reales de negocio y comprueba los resultados en la aplicación.
 4. Consulta las capturas disponibles. El perfil inicial captura vistas de escritorio
-   con una base vacía: no completa formularios ni demuestra transacciones de negocio.
+   con los datos de demostración del proyecto: no completa formularios ni demuestra transacciones de negocio.
    Un esquema numerado no es una captura real. Las rutas que no se pudieron capturar
    deben conservar su limitación explícita.
 5. Guarda tus cambios y marca cada tarea como comprobada solo después de verificarla.

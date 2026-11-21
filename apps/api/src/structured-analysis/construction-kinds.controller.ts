@@ -39,7 +39,7 @@ import { generateOpenApi } from '../code-generation/openapi.generator';
 import { generatePrismaSchema } from '../code-generation/prisma-schema.generator';
 import { PlanGenerationError } from '../code-generation/naming';
 
-// Generation Plan and Conceptual Domain Model (spec §156-157): same
+// Generation Plan and Conceptual Domain Model: same
 // structured-analysis lifecycle as the design kinds, without diagrams, and
 // approvals pass the acting user so they reach the audit trail.
 
