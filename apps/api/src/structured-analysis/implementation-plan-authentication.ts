@@ -131,11 +131,30 @@ export function completeLocalAuthentication(
   });
 
   const relationNames = new Set(account.relations.map((relation) => relation.name));
-  const existingRole = entities.find(
+  // The design's own role entity (Role, StaffRole, UserRol) becomes the role
+  // catalogue, its name field the unique role name.
+  const designRole = entities.find(
     (entity) =>
-      /^(role|rol)$/i.test(entity.name) &&
-      entity.fields.some((field) => field.type === 'STRING' && field.unique && field.required),
+      entity !== account &&
+      /(^|[a-z])(role|rol)$/i.test(entity.name) &&
+      entity.fields.some((field) => field.type === 'STRING' && !field.internal),
   );
+  const roleName =
+    designRole?.fields.find(
+      (field) =>
+        field.type === 'STRING' &&
+        !field.internal &&
+        (field.unique || /name|nombre/i.test(field.name)),
+    ) ?? designRole?.fields.find((field) => field.type === 'STRING' && !field.internal);
+  const existingRole =
+    designRole && roleName
+      ? {
+          ...designRole,
+          fields: designRole.fields.map((field) =>
+            field === roleName ? { ...field, unique: true, required: true } : field,
+          ),
+        }
+      : undefined;
   const role: IpEntity = existingRole ?? {
     localId: free('role', ids),
     name: free('Role', names),
@@ -198,8 +217,11 @@ export function completeLocalAuthentication(
           ? {
               ...entity,
               fields,
+              // The account reaches its roles through the role relation only.
               relations: [
-                ...entity.relations,
+                ...entity.relations.filter(
+                  (relation) => relation.targetEntityLocalId !== role.localId,
+                ),
                 {
                   name: roleRelation,
                   kind: 'MANY_TO_MANY' as const,
@@ -208,7 +230,9 @@ export function completeLocalAuthentication(
                 },
               ],
             }
-          : entity,
+          : existingRole && entity === designRole
+            ? existingRole
+            : entity,
       ),
       ...(existingRole ? [] : [role]),
       session,

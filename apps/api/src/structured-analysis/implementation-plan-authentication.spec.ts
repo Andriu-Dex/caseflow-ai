@@ -153,6 +153,40 @@ describe('local authentication of an AI plan (ADR-026)', () => {
     ).toEqual([]);
   });
 
+  it("uses the design's own role entity and drops the account's direct link to it", () => {
+    const staffRole: IpEntity = {
+      localId: 'staff-role',
+      name: 'StaffRole',
+      moduleLocalId: 'identity',
+      fields: [{ name: 'name', type: 'STRING', required: false, unique: false, enumValues: [] }],
+      relations: [],
+      operations: [],
+      readRoles: [],
+      writeRoles: [],
+    };
+    const withRole: IpEntity = {
+      ...account,
+      relations: [
+        {
+          name: 'staffRole',
+          kind: 'MANY_TO_ONE',
+          targetEntityLocalId: 'staff-role',
+          required: true,
+        },
+      ],
+    };
+    const done = completeLocalAuthentication(skeleton, [withRole, staffRole]);
+    expect(done.entities.map((entity) => entity.name)).not.toContain('Role');
+    expect(done.skeleton.authentication.local).toMatchObject({ roleNameField: 'name' });
+    const staff = done.entities.find((entity) => entity.localId === 'staff')!;
+    expect(staff.relations.map((relation) => [relation.name, relation.kind])).toEqual([
+      ['roles', 'MANY_TO_MANY'],
+    ]);
+    expect(
+      done.entities.find((entity) => entity.localId === 'staff-role')!.fields[0],
+    ).toMatchObject({ unique: true, required: true });
+  });
+
   it('creates accounts with the template, not with a business action the model drew', () => {
     const done = completeLocalAuthentication(skeleton, [
       { ...account, operations: ['LIST', 'GET'] },
