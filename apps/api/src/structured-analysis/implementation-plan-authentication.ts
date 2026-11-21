@@ -142,7 +142,7 @@ export function completeLocalAuthentication(
     (field) =>
       field.type === 'STRING' &&
       !field.internal &&
-      (field.unique || /^(name|nombre|code|codigo)$/i.test(field.name)),
+      (field.unique || /^(name|nombre|code|codigo)$|[a-z](Name|Nombre)$/.test(field.name)),
   );
   const existingRole =
     designRole && roleName

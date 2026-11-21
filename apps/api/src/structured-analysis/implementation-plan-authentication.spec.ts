@@ -186,6 +186,11 @@ describe('local authentication of an AI plan (ADR-026)', () => {
     expect(catalogue.fields[0]).toMatchObject({ unique: true, required: true, readOnly: true });
     // Hardened like the server-made catalogue.
     expect(catalogue).toMatchObject({ operations: ['LIST'], writeRoles: [], readRoles: ['Admin'] });
+    // A name field such as roleName is recognized too.
+    const named = { ...staffRole, fields: [{ ...staffRole.fields[0]!, name: 'roleName' }] };
+    expect(
+      completeLocalAuthentication(skeleton, [withRole, named]).skeleton.authentication.local,
+    ).toMatchObject({ roleNameField: 'roleName' });
     // Words that only end in "rol" are not role entities.
     const patrol = { ...staffRole, localId: 'patrol', name: 'Patrol' };
     expect(
