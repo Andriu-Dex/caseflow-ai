@@ -191,6 +191,16 @@ describe('local authentication of an AI plan (ADR-026)', () => {
     expect(
       completeLocalAuthentication(skeleton, [withRole, named]).skeleton.authentication.local,
     ).toMatchObject({ roleNameField: 'roleName' });
+    // So is an ENUM of the role names, which becomes the catalogue's text name.
+    const listed = {
+      ...staffRole,
+      fields: [{ ...staffRole.fields[0]!, type: 'ENUM' as const, enumValues: ['ADMIN', 'CLERK'] }],
+    };
+    const fromEnum = completeLocalAuthentication(skeleton, [withRole, listed]);
+    expect(fromEnum.entities.map((entity) => entity.name)).not.toContain('Role');
+    expect(
+      fromEnum.entities.find((entity) => entity.localId === 'staff-role')!.fields[0],
+    ).toMatchObject({ type: 'STRING', enumValues: [], unique: true });
     // Words that only end in "rol" are not role entities.
     const patrol = { ...staffRole, localId: 'patrol', name: 'Patrol' };
     expect(

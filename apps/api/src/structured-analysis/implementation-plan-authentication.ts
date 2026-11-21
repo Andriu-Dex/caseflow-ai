@@ -138,9 +138,11 @@ export function completeLocalAuthentication(
   const designRole = entities.find(
     (entity) => entity !== account && /^(?:[A-Z][a-z0-9]*)*(?:Role|Rol)$/.test(entity.name),
   );
+  // An ENUM of the role names also names them; it becomes text, the role
+  // catalogue holding the values.
   const roleName = designRole?.fields.find(
     (field) =>
-      field.type === 'STRING' &&
+      (field.type === 'STRING' || field.type === 'ENUM') &&
       !field.internal &&
       (field.unique || /^(name|nombre|code|codigo)$|[a-z](Name|Nombre)$/.test(field.name)),
   );
@@ -149,7 +151,16 @@ export function completeLocalAuthentication(
       ? {
           ...designRole,
           fields: designRole.fields.map((field) =>
-            field === roleName ? { ...field, unique: true, required: true, readOnly: true } : field,
+            field === roleName
+              ? {
+                  ...field,
+                  type: 'STRING' as const,
+                  enumValues: [],
+                  unique: true,
+                  required: true,
+                  readOnly: true,
+                }
+              : field,
           ),
           operations: ['LIST' as const],
           readRoles: account.writeRoles,
@@ -221,7 +232,9 @@ export function completeLocalAuthentication(
               // The account reaches its roles through the role relation only.
               relations: [
                 ...entity.relations.filter(
-                  (relation) => relation.targetEntityLocalId !== role.localId,
+                  (relation) =>
+                    relation.targetEntityLocalId !== role.localId &&
+                    relation.targetEntityLocalId !== designRole?.localId,
                 ),
                 {
                   name: roleRelation,
