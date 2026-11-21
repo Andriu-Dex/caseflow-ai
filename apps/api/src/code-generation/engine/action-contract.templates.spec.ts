@@ -118,6 +118,17 @@ describe('bounded business action contracts', () => {
     }
   });
 
+  // ADR-028: a reference option never shows the record's id.
+  it('labels reference options with visible values when the record has no text', () => {
+    const plan = actionContractPlan();
+    const files = generateProject(
+      { plan, template: CASEFLOW_WEB_TS_V2, projectName: 'Etiquetas', slug: 'labels-test' },
+      actionContractImplementations,
+    );
+    const pages = files.filter((f) => f.path.endsWith('page.tsx')).map((f) => f.content);
+    expect(pages.join('\n')).not.toContain('label:String(item.id)');
+  });
+
   it('bounds file contracts and keeps upload and download payloads explicit', () => {
     const file = actionValueDefinitionSchema.parse({
       type: 'FILE',

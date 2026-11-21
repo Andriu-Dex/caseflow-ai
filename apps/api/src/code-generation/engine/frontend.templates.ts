@@ -574,7 +574,21 @@ function actionControl(
       const label = entity.fields.find(
         (field) => ['STRING', 'TEXT'].includes(field.type) && !field.internal,
       )?.name;
-      return `${JSON.stringify(localId)}:async()=>(await api.list${pluralize(entity.name)}()).map(item=>({id:item.id,label:String(item.${label ?? 'id'})}))`;
+      // ADR-028: an option never shows the record's id. Without a text field
+      // it reads as its first visible values (dates cut to the day).
+      const shown = entity.fields
+        .filter((field) => !field.internal && field.type !== 'BOOLEAN')
+        .slice(0, 2)
+        .map(
+          (field) =>
+            `String(item.${field.name} ?? '')${['DATE', 'DATETIME'].includes(field.type) ? '.slice(0, 10)' : ''}`,
+        );
+      const text = label
+        ? `String(item.${label})`
+        : shown.length
+          ? `[${shown.join(',')}].filter(Boolean).join(' · ') || 'Registro ' + (index + 1)`
+          : `'Registro ' + (index + 1)`;
+      return `${JSON.stringify(localId)}:async()=>(await api.list${pluralize(entity.name)}()).map((${text.includes('index') ? 'item,index' : 'item'})=>({id:item.id,label:${text}}))`;
     });
     const args = [
       ...(params.length === 1 && params[0] === 'id'
