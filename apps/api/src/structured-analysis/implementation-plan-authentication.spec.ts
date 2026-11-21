@@ -153,6 +153,48 @@ describe('local authentication of an AI plan (ADR-026)', () => {
     ).toEqual([]);
   });
 
+  it('creates accounts with the template, not with a business action the model drew', () => {
+    const done = completeLocalAuthentication(skeleton, [
+      { ...account, operations: ['LIST', 'GET'] },
+    ]);
+    const plan = finishImplementationPlan(
+      done.skeleton,
+      done.entities,
+      {
+        customEndpoints: [
+          ...done.endpoints,
+          {
+            moduleLocalId: 'identity',
+            method: 'POST',
+            path: '/staff/accounts',
+            summary: 'Registrar una cuenta',
+            roles: ['Admin'],
+            dataAccess: [{ entityLocalId: 'staff', operations: ['CREATE'] }],
+          },
+        ],
+        routes: [
+          route('/staff/accounts/new', [
+            { label: 'Registrar cuenta', endpoint: 'POST /staff/accounts' },
+          ]),
+        ],
+      } as never,
+      BASELINE,
+    );
+    expect(plan.customEndpoints.some((endpoint) => endpoint.path === '/staff/accounts')).toBe(
+      false,
+    );
+    expect(plan.routes[0]).toMatchObject({
+      entityLocalId: 'staff',
+      actions: [{ label: 'Registrar cuenta', operation: 'CREATE' }],
+    });
+    expect(plan.entities.find((entity) => entity.localId === 'staff')!.operations).toContain(
+      'CREATE',
+    );
+    expect(implementationReadinessProblems(plan as never)).not.toContainEqual(
+      expect.stringContaining('preparar cuentas'),
+    );
+  });
+
   it('completes again a configuration that names fields the entities lack', () => {
     const written = {
       ...skeleton,

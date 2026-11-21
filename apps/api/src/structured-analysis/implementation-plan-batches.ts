@@ -856,6 +856,58 @@ export function fillProvenance(
   };
 }
 
+// With local authentication, creating an account is the template's own
+// operation: it stores the password as a protected hash. A business action
+// the model drew for it (a POST that creates the account) would leave that to
+// generated code, so its screens use the account's CREATE instead.
+function withTemplateAccountCreation(
+  skeleton: ImplementationSkeleton,
+  entities: IpEntity[],
+  routes: RoutesAccumulated,
+): { entities: IpEntity[]; routes: RoutesAccumulated } {
+  const account = skeleton.authentication.local?.userEntityLocalId;
+  if (!account) return { entities, routes };
+  const replaced = new Set(
+    routes.customEndpoints
+      .filter(
+        (endpoint) =>
+          !endpoint.builtin &&
+          endpoint.method === 'POST' &&
+          (endpoint.dataAccess?.some(
+            (access) => access.entityLocalId === account && access.operations.includes('CREATE'),
+          ) ||
+            (endpoint.entityLocalId === account && !endpoint.path.includes(':'))),
+      )
+      .map((endpoint) => `${endpoint.method} ${endpoint.path}`),
+  );
+  if (!replaced.size) return { entities, routes };
+  return {
+    entities: entities.map((entity) =>
+      entity.localId === account && !entity.operations.includes('CREATE')
+        ? { ...entity, operations: [...entity.operations, 'CREATE'] }
+        : entity,
+    ),
+    routes: {
+      customEndpoints: routes.customEndpoints.filter(
+        (endpoint) => !replaced.has(`${endpoint.method} ${endpoint.path}`),
+      ),
+      routes: routes.routes.map((route) =>
+        route.actions.some((action) => action.endpoint && replaced.has(action.endpoint))
+          ? {
+              ...route,
+              entityLocalId: account,
+              actions: route.actions.map((action) =>
+                action.endpoint && replaced.has(action.endpoint)
+                  ? { label: action.label, operation: 'CREATE' as const }
+                  : action,
+              ),
+            }
+          : route,
+      ),
+    },
+  };
+}
+
 // A read-only required field of a record people create needs a value the
 // server gives at creation: a state starts at its lifecycle's initial state
 // and a flag starts false. Nothing else is guessed; the readiness check asks
@@ -917,6 +969,7 @@ export function finishImplementationPlan(
   routes: RoutesAccumulated,
   designBaselineId: string,
 ): ImplementationPlanBody {
+  ({ entities, routes } = withTemplateAccountCreation(skeleton, entities, routes));
   // The CRUD operations some screen uses, as `entity:operation`.
   const used = new Set(
     routes.routes.flatMap((route) =>
