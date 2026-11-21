@@ -260,8 +260,13 @@ export function evaluateStructuredGeneration(
         continue;
       }
       const screenActions = new Set([...screen.primaryActions, ...screen.secondaryActions]);
+      // ADR-026: the server adds the built-in access actions (the options a
+      // signed-in person may open) to the screen that hosts them.
+      const builtins = new Set(
+        parsed.customEndpoints.flatMap((e) => (e.builtin ? [`${e.method} ${e.path}`] : [])),
+      );
       for (const action of route.actions)
-        if (!screenActions.has(action.label))
+        if (!screenActions.has(action.label) && !(action.endpoint && builtins.has(action.endpoint)))
           findings.push({
             severity: 'ERROR',
             code: 'UNKNOWN_SCREEN_ACTION',

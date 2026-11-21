@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { coherenceGaps } from '../consistency-engine/coherence-rules';
+import { evaluateStructuredGeneration } from './structured-generation-quality';
 import { implementationReadinessProblems } from '../construction/implementation-readiness';
 import {
   completeLocalAuthentication,
@@ -143,6 +144,12 @@ describe('local authentication of an AI plan (ADR-026)', () => {
       coherenceGaps('IMPLEMENTATION_PLAN', drawn, { classes, screens } as never).map(
         (gap) => gap.message,
       ),
+    ).toEqual([]);
+    // Nor does the quality review count the access actions it adds to a screen.
+    expect(
+      evaluateStructuredGeneration('IMPLEMENTATION_PLAN', drawn, [
+        { code: 'UI-001', type: 'UI_BLUEPRINT', content: { screens } },
+      ] as never).filter((finding) => finding.code === 'UNKNOWN_SCREEN_ACTION'),
     ).toEqual([]);
   });
 
