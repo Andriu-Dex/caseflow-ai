@@ -838,9 +838,9 @@ export function fillProvenance(
 }
 
 // A read-only required field of a record people create needs a value the
-// server gives at creation: a state starts at its lifecycle's initial state,
-// a flag starts false, and anything else (a state with no lifecycle, a count
-// that starts at another field's value) is entered by the person instead.
+// server gives at creation: a state starts at its lifecycle's initial state
+// and a flag starts false. Nothing else is guessed; the readiness check asks
+// a person to decide.
 function withInitialValues(entity: IpEntity): IpEntity {
   const fields = entity.fields.map((field) => {
     if (!field.readOnly || !field.required || field.serverDefault !== undefined) return field;
@@ -853,7 +853,9 @@ function withInitialValues(entity: IpEntity): IpEntity {
     )
       return { ...field, serverDefault: entity.lifecycle.initialState };
     if (field.type === 'BOOLEAN') return { ...field, serverDefault: false };
-    return { ...field, readOnly: false };
+    // Anything else stays server-managed and the readiness check reports it:
+    // making it writable would let any editor set it directly.
+    return field;
   });
   return fields.some((field, i) => field !== entity.fields[i]) ? { ...entity, fields } : entity;
 }

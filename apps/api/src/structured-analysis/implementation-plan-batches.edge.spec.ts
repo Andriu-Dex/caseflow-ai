@@ -597,12 +597,11 @@ describe('records only a business action creates', () => {
       '11111111-1111-4111-8111-111111111111',
     ).entities;
     const field = (name: string) => entity!.fields.find((item) => item.name === name)!;
-    // Without a lifecycle no state is assumed to be the starting one.
-    expect(field('status')).toMatchObject({ readOnly: false });
+    // Without a lifecycle nothing is guessed and nothing becomes writable.
+    expect(field('status')).toMatchObject({ readOnly: true });
     expect(field('status').serverDefault).toBeUndefined();
     expect(field('retired')).toMatchObject({ readOnly: true, serverDefault: false });
-    // A computed amount has no safe default: the person enters it.
-    expect(field('total').readOnly).toBe(false);
+    expect(field('total').readOnly).toBe(true);
   });
 
   it('withdraws a CRUD operation a business endpoint replaces at its method and path', () => {
