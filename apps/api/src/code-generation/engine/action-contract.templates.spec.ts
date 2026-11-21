@@ -104,6 +104,13 @@ describe('bounded business action contracts', () => {
       actionContractImplementations,
     ).find((f) => f.path.endsWith('/' + item.name.toLowerCase() + '.service.ts'))!.content;
     expect(service).toContain('if (!updating) data.availableCopies = data.totalCopies;');
+    // The generated service test expects the copied field in the data too.
+    const test = generateProject(
+      { plan, template: CASEFLOW_WEB_TS_V2, projectName: 'Copias', slug: 'copies-test' },
+      actionContractImplementations,
+    ).find((f) => f.path.endsWith('/' + item.name.toLowerCase() + '.service.spec.ts'))!.content;
+    expect(test).toContain('"availableCopies"');
+    expect(test).toContain('expect(data.availableCopies).toEqual(data.totalCopies);');
     // Only another editable field of the same type can be the source.
     for (const initialFrom of ['missing', 'availableCopies']) {
       item.fields.at(-1)!.initialFrom = initialFrom;

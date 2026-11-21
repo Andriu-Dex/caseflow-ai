@@ -519,10 +519,13 @@ function entityServiceSpec(entity: Entity, plan: ImplementationPlanContent): str
         ? `expect(data.${local.passwordHashField}).toMatch(/^\\$argon2id\\$/);
     expect(data).not.toHaveProperty('password');
     expect(data).not.toHaveProperty('roleNames');`
-        : `expect(Object.keys(data).sort()).toEqual([...Object.keys(input), ...${JSON.stringify(entity.fields.filter((f) => f.serverDefault !== undefined).map((f) => f.name))}].sort());\n${entity.fields
+        : `expect(Object.keys(data).sort()).toEqual([...Object.keys(input), ...${JSON.stringify(entity.fields.filter((f) => f.serverDefault !== undefined || f.initialFrom !== undefined).map((f) => f.name))}].sort());\n${entity.fields
             .filter((f) => f.serverDefault !== undefined)
             .map((f) => `    expect(data.${f.name}).toEqual(${JSON.stringify(f.serverDefault)});`)
-            .join('\n')}`
+            .join('\n')}${entity.fields
+            .filter((f) => f.initialFrom !== undefined)
+            .map((f) => `\n    expect(data.${f.name}).toEqual(data.${f.initialFrom});`)
+            .join('')}`
     }${
       dateField
         ? `
