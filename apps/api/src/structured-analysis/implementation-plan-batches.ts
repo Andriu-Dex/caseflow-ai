@@ -837,6 +837,28 @@ export function fillProvenance(
   };
 }
 
+// A read-only required field of a record people create needs a value the
+// server gives at creation: a state starts at its lifecycle's initial state
+// (or its first value), a flag starts false, and anything else (a count that
+// starts at another field's value) is entered by the person instead.
+function withInitialValues(entity: IpEntity): IpEntity {
+  const fields = entity.fields.map((field) => {
+    if (!field.readOnly || !field.required || field.serverDefault !== undefined) return field;
+    if (field.type === 'ENUM' && field.enumValues.length)
+      return {
+        ...field,
+        serverDefault:
+          entity.lifecycle?.stateField === field.name &&
+          field.enumValues.includes(entity.lifecycle.initialState)
+            ? entity.lifecycle.initialState
+            : field.enumValues[0]!,
+      };
+    if (field.type === 'BOOLEAN') return { ...field, serverDefault: false };
+    return { ...field, readOnly: false };
+  });
+  return fields.some((field, i) => field !== entity.fields[i]) ? { ...entity, fields } : entity;
+}
+
 // What the model sets that the rest of the plan cannot back: a cross-scope
 // read in a plan with no operation scope, and a contract reference to an
 // entity no one can list (no options to show it by name). Both are dropped,
@@ -916,7 +938,9 @@ export function finishImplementationPlan(
       const [method, item] = crud[operation];
       return !custom.has(signature(method, item ? `${base}/:id` : base));
     });
-    return operations.length === entity.operations.length ? entity : { ...entity, operations };
+    const kept =
+      operations.length === entity.operations.length ? entity : { ...entity, operations };
+    return operations.includes('CREATE') ? withInitialValues(kept) : kept;
   });
   const body = {
     ...skeleton,

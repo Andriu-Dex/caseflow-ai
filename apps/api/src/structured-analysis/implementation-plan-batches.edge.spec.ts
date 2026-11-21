@@ -567,6 +567,42 @@ describe('records only a business action creates', () => {
     expect(build('CREATE')).toEqual(['LIST', 'GET', 'CREATE']);
   });
 
+  it('gives a created record the initial values of its read-only fields', () => {
+    const member = {
+      ...sale,
+      fields: [
+        ...sale.fields,
+        {
+          name: 'status',
+          type: 'ENUM',
+          readOnly: true,
+          required: true,
+          unique: false,
+          enumValues: ['ACTIVE', 'SUSPENDED'],
+        },
+        {
+          name: 'retired',
+          type: 'BOOLEAN',
+          readOnly: true,
+          required: true,
+          unique: false,
+          enumValues: [],
+        },
+      ],
+    };
+    const [entity] = finishImplementationPlan(
+      skeleton as never,
+      [member] as never,
+      { routes: [route('CREATE')], customEndpoints: [] } as never,
+      '11111111-1111-4111-8111-111111111111',
+    ).entities;
+    const field = (name: string) => entity!.fields.find((item) => item.name === name)!;
+    expect(field('status')).toMatchObject({ readOnly: true, serverDefault: 'ACTIVE' });
+    expect(field('retired')).toMatchObject({ readOnly: true, serverDefault: false });
+    // A computed amount has no safe default: the person enters it.
+    expect(field('total').readOnly).toBe(false);
+  });
+
   it('withdraws a CRUD operation a business endpoint replaces at its method and path', () => {
     const voidable = { ...sale, fields: [], operations: ['LIST', 'GET', 'DELETE'] };
     voidable.fields = [
