@@ -131,28 +131,29 @@ export function completeLocalAuthentication(
   });
 
   const relationNames = new Set(account.relations.map((relation) => relation.name));
-  // The design's own role entity (Role, StaffRole, UserRol) becomes the role
-  // catalogue, its name field the unique role name.
+  // The design's own role entity (Role, StaffRole, UserRol: a capitalized
+  // Role/Rol suffix, so Control or Patrol never match) becomes the role
+  // catalogue when it has a clear name field; it is hardened like the
+  // server-made one: listed only, written by no one, read by account admins.
   const designRole = entities.find(
-    (entity) =>
-      entity !== account &&
-      /(^|[a-z])(role|rol)$/i.test(entity.name) &&
-      entity.fields.some((field) => field.type === 'STRING' && !field.internal),
+    (entity) => entity !== account && /^(?:[A-Z][a-z0-9]*)*(?:Role|Rol)$/.test(entity.name),
   );
-  const roleName =
-    designRole?.fields.find(
-      (field) =>
-        field.type === 'STRING' &&
-        !field.internal &&
-        (field.unique || /name|nombre/i.test(field.name)),
-    ) ?? designRole?.fields.find((field) => field.type === 'STRING' && !field.internal);
+  const roleName = designRole?.fields.find(
+    (field) =>
+      field.type === 'STRING' &&
+      !field.internal &&
+      (field.unique || /^(name|nombre|code|codigo)$/i.test(field.name)),
+  );
   const existingRole =
     designRole && roleName
       ? {
           ...designRole,
           fields: designRole.fields.map((field) =>
-            field === roleName ? { ...field, unique: true, required: true } : field,
+            field === roleName ? { ...field, unique: true, required: true, readOnly: true } : field,
           ),
+          operations: ['LIST' as const],
+          readRoles: account.writeRoles,
+          writeRoles: [],
         }
       : undefined;
   const role: IpEntity = existingRole ?? {

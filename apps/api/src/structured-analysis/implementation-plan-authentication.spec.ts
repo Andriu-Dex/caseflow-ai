@@ -182,9 +182,17 @@ describe('local authentication of an AI plan (ADR-026)', () => {
     expect(staff.relations.map((relation) => [relation.name, relation.kind])).toEqual([
       ['roles', 'MANY_TO_MANY'],
     ]);
+    const catalogue = done.entities.find((entity) => entity.localId === 'staff-role')!;
+    expect(catalogue.fields[0]).toMatchObject({ unique: true, required: true, readOnly: true });
+    // Hardened like the server-made catalogue.
+    expect(catalogue).toMatchObject({ operations: ['LIST'], writeRoles: [], readRoles: ['Admin'] });
+    // Words that only end in "rol" are not role entities.
+    const patrol = { ...staffRole, localId: 'patrol', name: 'Patrol' };
     expect(
-      done.entities.find((entity) => entity.localId === 'staff-role')!.fields[0],
-    ).toMatchObject({ unique: true, required: true });
+      completeLocalAuthentication(skeleton, [account, patrol]).entities.map(
+        (entity) => entity.name,
+      ),
+    ).toContain('Role');
   });
 
   it('creates accounts with the template, not with a business action the model drew', () => {
