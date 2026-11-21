@@ -147,7 +147,26 @@ export function mergeEntityBatch(
           : field.type !== 'ENUM' && field.enumValues.length
             ? { ...field, enumValues: [] }
             : field,
-      );
+      )
+      // An initial value the record cannot back (no such editable field of
+      // the same type) is dropped; the readiness check then reports the gap.
+      .map((field, _, all) => {
+        if (field.initialFrom === undefined) return field;
+        const source = all.find((item) => item.name === field.initialFrom);
+        const valid =
+          field.readOnly &&
+          !field.internal &&
+          field.serverDefault === undefined &&
+          source &&
+          source !== field &&
+          !source.readOnly &&
+          !source.internal &&
+          source.type === field.type;
+        if (valid) return field;
+        const { initialFrom: _dropped, ...rest } = field;
+        void _dropped;
+        return rest;
+      });
     if (!fields.length)
       fields.push({ name: 'name', type: 'STRING', required: true, unique: false, enumValues: [] });
     entities.push({

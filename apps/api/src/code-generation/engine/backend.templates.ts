@@ -421,6 +421,10 @@ ${entity.fields
   .filter((f) => f.serverDefault !== undefined)
   .map((f) => `  if (!updating) data.${f.name} = ${JSON.stringify(f.serverDefault)};`)
   .join('\n')}
+${entity.fields
+  .filter((f) => f.initialFrom !== undefined)
+  .map((f) => `  if (!updating) data.${f.name} = data.${f.initialFrom};`)
+  .join('\n')}
 ${many.map((relation) => `  if (Array.isArray(data.${relation.name}Ids)) { data.${relation.name} = { [updating ? 'set' : 'connect']: (data.${relation.name}Ids as string[]).map(id => ({ id })) }; delete data.${relation.name}Ids; }`).join('\n')}
 ${conversions.join('\n')}${conversions.length ? '\n' : ''}  return data;
 }

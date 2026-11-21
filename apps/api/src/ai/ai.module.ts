@@ -27,6 +27,7 @@ import {
 import {
   CONCEPTUAL_BATCH_PROMPT,
   IP_ENTITY_PROMPT,
+  IP_ENTITY_PROMPT_V3,
   IP_ACTIONS_PROMPT,
   IP_ROUTES_PROMPT,
   IP_SKELETON_PROMPT,
@@ -514,6 +515,13 @@ function defaultProvider(): AIProvider {
             capability: 'STRUCTURED_OUTPUT',
             purpose: 'implementation_plan_generation',
             systemInstructions: IP_ENTITY_PROMPT,
+          },
+          {
+            key: 'implementation-plan.entities',
+            version: 3,
+            capability: 'STRUCTURED_OUTPUT',
+            purpose: 'implementation_plan_generation',
+            systemInstructions: IP_ENTITY_PROMPT_V3,
           },
           {
             key: 'implementation-plan.actions',

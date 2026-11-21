@@ -81,6 +81,36 @@ describe('bounded business action contracts', () => {
       expect(implementationPlanContentSchema.safeParse(plan).success).toBe(false);
     }
   });
+  // A server-managed count that starts as another field of the record.
+  it('starts a server-managed field with the value of another field', () => {
+    const plan = actionContractPlan();
+    const item = plan.entities[0]!;
+    item.operations = ['LIST', 'GET', 'CREATE', 'UPDATE'];
+    item.fields.push(
+      { name: 'totalCopies', type: 'INT', required: true, unique: false, enumValues: [] },
+      {
+        name: 'availableCopies',
+        type: 'INT',
+        required: true,
+        unique: false,
+        enumValues: [],
+        readOnly: true,
+        initialFrom: 'totalCopies',
+      },
+    );
+    expect(implementationPlanContentSchema.safeParse(plan).success).toBe(true);
+    const service = generateProject(
+      { plan, template: CASEFLOW_WEB_TS_V2, projectName: 'Copias', slug: 'copies-test' },
+      actionContractImplementations,
+    ).find((f) => f.path.endsWith('/' + item.name.toLowerCase() + '.service.ts'))!.content;
+    expect(service).toContain('if (!updating) data.availableCopies = data.totalCopies;');
+    // Only another editable field of the same type can be the source.
+    for (const initialFrom of ['missing', 'availableCopies']) {
+      item.fields.at(-1)!.initialFrom = initialFrom;
+      expect(implementationPlanContentSchema.safeParse(plan).success).toBe(false);
+    }
+  });
+
   it('bounds file contracts and keeps upload and download payloads explicit', () => {
     const file = actionValueDefinitionSchema.parse({
       type: 'FILE',

@@ -15,7 +15,8 @@ export function implementationReadinessProblems(plan: ImplementationPlanContent)
         field.readOnly &&
         field.required &&
         entity.operations.includes('CREATE') &&
-        field.serverDefault === undefined
+        field.serverDefault === undefined &&
+        field.initialFrom === undefined
       )
         problems.push(
           `El campo de solo lectura ${entity.name}.${field.name} requiere un valor inicial del servidor para crear registros.`,

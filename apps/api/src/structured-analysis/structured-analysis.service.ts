@@ -1570,7 +1570,8 @@ export class StructuredAnalysisService {
             1 + position * IP_BATCH_ATTEMPTS + attempt,
             {
               promptKey: 'implementation-plan.entities',
-              promptVersion: 2,
+              // @3: how each server-managed field of a created record starts.
+              promptVersion: 3,
               payload: {
                 targetClasses: remaining.map((cls) => ({
                   localId: cls.localId,

@@ -472,6 +472,9 @@ const implementationFieldSchema = z
     serverDefault: z
       .union([z.string().max(1000), z.number().int().min(-2147483648).max(2147483647), z.boolean()])
       .optional(),
+    // A server-managed field that starts, at creation, with the value of
+    // another field of the same record (available copies = total copies).
+    initialFrom: camelName().optional(),
     type: z.enum(IMPLEMENTATION_FIELD_TYPES),
     required: z.boolean().default(true),
     unique: z.boolean().default(false),
@@ -878,6 +881,24 @@ export const implementationPlanContentSchema = implementationPlanBodySchema
         if (!roles.has(role)) issue(`El rol «${role}» no está declarado en autenticación.`, path);
     };
     value.entities.forEach((entity, i) => {
+      entity.fields.forEach((field, j) => {
+        if (field.initialFrom === undefined) return;
+        const source = entity.fields.find((item) => item.name === field.initialFrom);
+        if (
+          !field.readOnly ||
+          field.internal ||
+          field.serverDefault !== undefined ||
+          !source ||
+          source === field ||
+          source.readOnly ||
+          source.internal ||
+          source.type !== field.type
+        )
+          issue(
+            'El valor inicial de un campo de solo lectura debe tomarse de otro campo editable del mismo tipo.',
+            ['entities', i, 'fields', j, 'initialFrom'],
+          );
+      });
       if (entity.lifecycle) {
         const policy = entity.lifecycle;
         const state = entity.fields.find((field) => field.name === policy.stateField);
