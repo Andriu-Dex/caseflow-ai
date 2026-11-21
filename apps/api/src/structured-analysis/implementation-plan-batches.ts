@@ -109,6 +109,16 @@ export function cleanSkeleton(
 // that does not exist refuses the batch). Anything else the plan checks across
 // the whole (module, roles, names, fields) is corrected here instead of
 // failing a long run.
+// The record's own identifier written as an internal field (bookIdentifier on
+// Book, fineIdentifier on LateFine): the generator already gives every record
+// its id, and a required internal field nobody fills would block creation.
+function ownIdentifier(entityName: string, field: { name: string; internal?: boolean }) {
+  const match = /^(.*?)(?:Identifier|Id)$/.exec(field.name);
+  if (!field.internal || !match) return false;
+  const prefix = match[1]!.toLowerCase();
+  return !prefix || entityName.toLowerCase().endsWith(prefix);
+}
+
 export function mergeEntityBatch(
   accumulated: IpEntity[],
   output: { entities: EntityDraft[] },
@@ -137,6 +147,7 @@ export function mergeEntityBatch(
       .filter((field) => {
         if ((IMPLEMENTATION_RESERVED_FIELDS as readonly string[]).includes(field.name))
           return false;
+        if (ownIdentifier(draft.name, field)) return false;
         if (fieldNames.has(field.name)) return false;
         fieldNames.add(field.name);
         return true;
