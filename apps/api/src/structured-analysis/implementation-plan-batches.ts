@@ -109,12 +109,25 @@ export function cleanSkeleton(
 // that does not exist refuses the batch). Anything else the plan checks across
 // the whole (module, roles, names, fields) is corrected here instead of
 // failing a long run.
-// The record's own identifier written as an internal field (bookIdentifier on
-// Book, fineIdentifier on LateFine): the generator already gives every record
-// its id, and a required internal field nobody fills would block creation.
-function ownIdentifier(entityName: string, field: { name: string; internal?: boolean }) {
+// The record's own identifier written as a field nobody fills, internal or
+// read-only with no starting value (bookIdentifier on Book, fineIdentifier on
+// LateFine): the generator already gives every record its id, and such a
+// required field would block creation.
+function ownIdentifier(
+  entityName: string,
+  field: {
+    name: string;
+    internal?: boolean;
+    readOnly?: boolean;
+    serverDefault?: unknown;
+    initialFrom?: string;
+  },
+) {
   const match = /^(.*?)(?:Identifier|Id)$/.exec(field.name);
-  if (!field.internal || !match) return false;
+  const unfilled =
+    field.internal ||
+    (field.readOnly && field.serverDefault === undefined && field.initialFrom === undefined);
+  if (!unfilled || !match) return false;
   const prefix = match[1]!.toLowerCase();
   return !prefix || entityName.toLowerCase().endsWith(prefix);
 }

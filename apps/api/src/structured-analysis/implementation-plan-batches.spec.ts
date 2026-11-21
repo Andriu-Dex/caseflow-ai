@@ -112,6 +112,7 @@ describe('mergeEntityBatch', () => {
             name: 'LateFine',
             fields: [
               field('fineIdentifier', true),
+              { ...field('lateFineId', false), readOnly: true },
               field('memberId', true),
               field('loanIdentifier', false),
               field('amount', false),
