@@ -153,6 +153,39 @@ describe('local authentication of an AI plan (ADR-026)', () => {
     ).toEqual([]);
   });
 
+  it('completes again a configuration that names fields the entities lack', () => {
+    const written = {
+      ...skeleton,
+      authentication: {
+        ...skeleton.authentication,
+        local: {
+          userEntityLocalId: 'staff',
+          loginField: 'identificador',
+          passwordHashField: 'hashContrasena',
+          statusField: 'estado',
+          activeStatus: 'Activa',
+          roleRelation: 'rol',
+          roleNameField: 'nombre',
+          sessionEntityLocalId: 'sesion',
+          sessionUserRelation: 'cuenta',
+          startedAtField: 'iniciadaEn',
+          lastActivityAtField: 'ultimaActividadEn',
+          invalidatedAtField: 'invalidadaEn',
+          sessionStatusField: 'estado',
+          activeSessionStatus: 'Activa',
+          closedSessionStatus: 'Cerrada',
+        },
+      },
+    };
+    const done = completeLocalAuthentication(written as never, [account]);
+    expect(done.skeleton.authentication.local).toMatchObject({
+      userEntityLocalId: 'staff',
+      loginField: 'login',
+      passwordHashField: 'passwordHash',
+    });
+    expect(done.endpoints.length).toBeGreaterThan(0);
+  });
+
   it('leaves a plan alone when sign-in is not required or already bound', () => {
     const open = { ...skeleton, authentication: { required: false, roles: [] } };
     expect(completeLocalAuthentication(open, [account]).endpoints).toEqual([]);

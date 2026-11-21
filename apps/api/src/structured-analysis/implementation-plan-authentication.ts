@@ -48,6 +48,30 @@ export function completeLocalAuthentication(
   skeleton: ImplementationSkeleton,
   entities: IpEntity[],
 ): { skeleton: ImplementationSkeleton; entities: IpEntity[]; endpoints: IpEndpoint[] } {
+  // A configuration the model wrote that names fields the entities do not
+  // have binds nothing: it is completed again from the entities.
+  const written = skeleton.authentication.local;
+  const user = written && entities.find((entity) => entity.localId === written.userEntityLocalId);
+  const writtenSession =
+    written && entities.find((entity) => entity.localId === written.sessionEntityLocalId);
+  const has = (entity: IpEntity | undefined, ...names: (string | undefined)[]) =>
+    Boolean(entity) &&
+    names.every((name) => !name || entity!.fields.some((field) => field.name === name));
+  const bound =
+    written &&
+    has(user, written.loginField, written.passwordHashField, written.statusField) &&
+    has(
+      writtenSession,
+      written.startedAtField,
+      written.lastActivityAtField,
+      written.invalidatedAtField,
+      written.sessionStatusField,
+    );
+  if (written && !bound) {
+    const { local: _unbound, ...rest } = skeleton.authentication;
+    void _unbound;
+    skeleton = { ...skeleton, authentication: rest };
+  }
   const auth = skeleton.authentication;
   const account =
     entities.find((entity) => entity.fields.some((field) => SECRET.test(field.name))) ??
